@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
+import '../../../widgets/design/facteur_image.dart';
+import '../../feed/widgets/initial_circle.dart';
 import '../models/digest_models.dart';
 import 'bias_spectrum_bar.dart';
 import 'markdown_text.dart';
@@ -15,6 +17,11 @@ class DivergenceAnalysisBlock extends StatefulWidget {
   final VoidCallback? onCompare;
   final int perspectiveCount;
   final List<SourceMini> perspectiveSources;
+  // Identity of the singleton article's source — excluded from the 3 mini
+  // logos shown in the CTA so the button complements (not duplicates) the
+  // source already visible on the card. Match on id first, name fallback.
+  final String? excludeSourceId;
+  final String? excludeSourceName;
 
   const DivergenceAnalysisBlock({
     super.key,
@@ -25,6 +32,8 @@ class DivergenceAnalysisBlock extends StatefulWidget {
     this.onCompare,
     this.perspectiveCount = 0,
     this.perspectiveSources = const [],
+    this.excludeSourceId,
+    this.excludeSourceName,
   });
 
   @override
@@ -144,9 +153,9 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                         : colors.textSecondary,
                   ),
                 ),
-                // CTA — outline pill button aligned DS (SecondaryButton-style
-                // compact). The OutlinedButton intercepts taps so they don't
-                // bubble up to the parent InkWell's toggle.
+                // CTA — outline pill "Voir les N perspectives [logo][logo][logo]".
+                // Logos are up to 3 other sources from the perspective pool
+                // (excluding the singleton's own source already on the card).
                 if (widget.onCompare != null &&
                     widget.perspectiveCount > 1) ...[
                   const SizedBox(height: 12),
@@ -154,23 +163,28 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                     alignment: Alignment.centerRight,
                     child: SizedBox(
                       height: 36,
-                      child: OutlinedButton.icon(
+                      child: OutlinedButton(
                         onPressed: widget.onCompare,
-                        icon: const Icon(Icons.arrow_forward, size: 14),
-                        label: Text(
-                          'Voir les ${widget.perspectiveCount} perspectives',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: colors.primary,
                           side: BorderSide(color: colors.primary, width: 1.2),
                           shape: const StadiumBorder(),
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 2),
+                              horizontal: 12, vertical: 2),
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Voir les ${widget.perspectiveCount} perspectives',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            ..._buildCtaLogos(colors),
+                          ],
                         ),
                       ),
                     ),
@@ -181,6 +195,61 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Up to 3 mini source logos rendered after the CTA text, showing
+  /// "other" sources covering the topic (i.e. excluding the singleton's
+  /// source — already visible on the card). Returns an empty list if
+  /// nothing to show so the button layout degrades cleanly.
+  List<Widget> _buildCtaLogos(FacteurColors colors) {
+    const maxLogos = 3;
+    const size = 20.0;
+
+    bool isExcluded(SourceMini s) =>
+        (widget.excludeSourceId != null && s.id == widget.excludeSourceId) ||
+        (widget.excludeSourceName != null && s.name == widget.excludeSourceName);
+
+    final others = <SourceMini>[];
+    final seen = <String>{};
+    for (final s in widget.perspectiveSources) {
+      if (isExcluded(s)) continue;
+      if (!seen.add(s.name)) continue;
+      others.add(s);
+      if (others.length >= maxLogos) break;
+    }
+
+    if (others.isEmpty) return const [];
+
+    final widgets = <Widget>[const SizedBox(width: 8)];
+    for (var i = 0; i < others.length; i++) {
+      if (i > 0) widgets.add(const SizedBox(width: 4));
+      widgets.add(_logoCircle(others[i], size, colors));
+    }
+    return widgets;
+  }
+
+  Widget _logoCircle(SourceMini s, double size, FacteurColors colors) {
+    final logoUrl = s.logoUrl;
+    if (logoUrl != null && logoUrl.isNotEmpty) {
+      return ClipOval(
+        child: FacteurImage(
+          imageUrl: logoUrl,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorWidget: (context) => InitialCircle(
+            initial: s.name.isNotEmpty ? s.name[0].toUpperCase() : '?',
+            colors: colors,
+            size: size,
+          ),
+        ),
+      );
+    }
+    return InitialCircle(
+      initial: s.name.isNotEmpty ? s.name[0].toUpperCase() : '?',
+      colors: colors,
+      size: size,
     );
   }
 
