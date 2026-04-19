@@ -92,6 +92,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   String? _selectedSourceId;
   String? _selectedEntity;
   String? _selectedKeyword;
+  bool _includeUnfollowed = false;
   final Set<String> _consumedContentIds =
       {}; // Track content being animated out
 
@@ -214,6 +215,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedSourceId = null;
     _selectedEntity = null;
     _selectedKeyword = null;
+    _includeUnfollowed = false;
     await refresh();
   }
 
@@ -225,6 +227,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedSourceId = null;
     _selectedEntity = null;
     _selectedKeyword = null;
+    _includeUnfollowed = false;
     await refresh();
   }
 
@@ -236,6 +239,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedSourceId = null;
     _selectedEntity = null;
     _selectedKeyword = null;
+    _includeUnfollowed = false;
     await refresh();
   }
 
@@ -247,12 +251,16 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedTopic = null;
     _selectedSourceId = null;
     _selectedKeyword = null;
+    _includeUnfollowed = false;
     await refresh();
   }
 
-  Future<void> setKeyword(String? keyword) async {
-    if (_selectedKeyword == keyword) return;
+  Future<void> setKeyword(String? keyword, {bool includeUnfollowed = false}) async {
+    if (_selectedKeyword == keyword && _includeUnfollowed == includeUnfollowed) {
+      return;
+    }
     _selectedKeyword = keyword;
+    _includeUnfollowed = keyword != null ? includeUnfollowed : false;
     _selectedFilter = null;
     _selectedTheme = null;
     _selectedTopic = null;
@@ -269,6 +277,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedTopic = null;
     _selectedEntity = null;
     _selectedKeyword = null;
+    _includeUnfollowed = false;
     await refresh();
   }
 
@@ -318,6 +327,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         sourceId: _selectedSourceId,
         entity: _selectedEntity,
         keyword: _selectedKeyword,
+        includeUnfollowed: _includeUnfollowed,
         serein: isSerein);
 
     // Hybrid pagination: trust the backend's `has_next` (based on the

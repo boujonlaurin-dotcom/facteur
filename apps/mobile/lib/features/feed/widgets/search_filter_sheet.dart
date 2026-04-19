@@ -6,9 +6,14 @@ import '../../../config/theme.dart';
 import '../providers/search_history_provider.dart';
 import '../providers/trending_topics_provider.dart';
 
+typedef SearchSubmittedCallback = void Function(
+  String query, {
+  bool fromTrending,
+});
+
 class SearchFilterSheet extends ConsumerStatefulWidget {
   final String? currentKeyword;
-  final ValueChanged<String> onSearchSubmitted;
+  final SearchSubmittedCallback onSearchSubmitted;
 
   const SearchFilterSheet({
     super.key,
@@ -19,7 +24,7 @@ class SearchFilterSheet extends ConsumerStatefulWidget {
   static Future<void> show(
     BuildContext context, {
     String? currentKeyword,
-    required ValueChanged<String> onSearchSubmitted,
+    required SearchSubmittedCallback onSearchSubmitted,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -59,13 +64,13 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
     super.dispose();
   }
 
-  void _submitSearch(String query) {
+  void _submitSearch(String query, {bool fromTrending = false}) {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return;
 
     ref.read(searchHistoryProvider.notifier).addSearch(trimmed);
     Navigator.of(context).pop();
-    widget.onSearchSubmitted(trimmed);
+    widget.onSearchSubmitted(trimmed, fromTrending: fromTrending);
   }
 
   @override
@@ -266,7 +271,10 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
                                 return _TrendingChip(
                                   topic: topic,
                                   colors: colors,
-                                  onTap: () => _submitSearch(topic.keyword),
+                                  onTap: () => _submitSearch(
+                                    topic.keyword,
+                                    fromTrending: true,
+                                  ),
                                 );
                               }).toList(),
                             ),

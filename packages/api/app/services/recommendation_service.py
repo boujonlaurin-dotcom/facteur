@@ -125,6 +125,7 @@ class RecommendationService:
         entity: str | None = None,
         keyword: str | None = None,
         serein: bool = False,
+        include_unfollowed: bool = False,
     ) -> list[Content]:
         """
         Génère un feed personnalisé pour l'utilisateur.
@@ -374,6 +375,8 @@ class RecommendationService:
             # Serein content filter (orthogonal to mode)
             serein=serein,
             sensitive_themes=_user_sensitive,
+            # Trending chip fallback: expand search to all sources when keyword is set
+            include_unfollowed=include_unfollowed,
         )
         self.total_candidates = len(candidates)
 
@@ -2090,6 +2093,7 @@ class RecommendationService:
         keyword: str | None = None,
         serein: bool = False,
         sensitive_themes: list[str] | None = None,
+        include_unfollowed: bool = False,
     ) -> list[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import and_, or_
@@ -2177,11 +2181,12 @@ class RecommendationService:
         # Base source filter
         # source_id: show only articles from this specific source
         # theme/topic/entity: show curated sources (broader discovery)
+        # keyword + include_unfollowed: same broader discovery as theme/topic/entity
         # followed_source_ids: followed sources only (no curated enrichment)
         _use_two_phase = False
         if source_id:
             query = query.where(Content.source_id == source_id)
-        elif theme or topic or entity:
+        elif theme or topic or entity or (keyword and include_unfollowed):
             if followed_source_ids:
                 query = query.where(
                     or_(

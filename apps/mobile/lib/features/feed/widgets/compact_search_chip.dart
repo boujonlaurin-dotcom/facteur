@@ -4,13 +4,18 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'search_filter_sheet.dart';
 
+typedef SearchChangedCallback = void Function(
+  String? keyword, {
+  bool fromTrending,
+});
+
 /// Compact pill chip for search — matches CompactSourceChip / CompactThemeChip design.
 ///
 /// Inactive: 🔍 (magnifying glass icon only)
 /// Active:   🔍 keyword ✕
 class CompactSearchChip extends StatelessWidget {
   final String? activeKeyword;
-  final ValueChanged<String?> onSearchChanged;
+  final SearchChangedCallback onSearchChanged;
 
   const CompactSearchChip({
     super.key,
@@ -39,7 +44,7 @@ class CompactSearchChip extends StatelessWidget {
               keyword: activeKeyword!,
               onClear: () {
                 HapticFeedback.mediumImpact();
-                onSearchChanged(null);
+                onSearchChanged(null, fromTrending: false);
               },
               onTap: () {
                 HapticFeedback.mediumImpact();
@@ -60,7 +65,8 @@ class CompactSearchChip extends StatelessWidget {
     SearchFilterSheet.show(
       context,
       currentKeyword: activeKeyword,
-      onSearchSubmitted: (keyword) => onSearchChanged(keyword),
+      onSearchSubmitted: (keyword, {bool fromTrending = false}) =>
+          onSearchChanged(keyword, fromTrending: fromTrending),
     );
   }
 }
