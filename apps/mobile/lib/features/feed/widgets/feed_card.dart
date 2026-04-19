@@ -534,13 +534,10 @@ class _FeedCardState extends State<FeedCard>
       BuildContext context, FacteurColors colors, TextTheme textTheme) {
     final hasDescription =
         widget.content.description != null && widget.content.description!.isNotEmpty;
-    final showDescription = widget.alwaysShowDescription
-        ? hasDescription
-        : widget.expandContent
-            ? hasDescription
-            : ((widget.content.thumbnailUrl == null ||
-                    widget.content.thumbnailUrl!.isEmpty) &&
-                hasDescription);
+    final hasImage = widget.content.thumbnailUrl != null &&
+        widget.content.thumbnailUrl!.isNotEmpty;
+    final effectiveTitleMaxLines =
+        hasImage ? math.min(3, widget.titleMaxLines) : widget.titleMaxLines;
 
     final bodyContent = Padding(
       padding: const EdgeInsets.symmetric(
@@ -551,30 +548,66 @@ class _FeedCardState extends State<FeedCard>
         mainAxisSize: widget.expandContent ? MainAxisSize.max : MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Titre
-          Text(
-            widget.content.title,
-            style: textTheme.displaySmall?.copyWith(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              height: 1.2,
-            ),
-            maxLines: widget.expandContent ? null : widget.titleMaxLines,
-            overflow: widget.expandContent ? null : TextOverflow.ellipsis,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final estimatedTitleLines = ArticleTitleLayout.estimateTitleLines(
+                title: widget.content.title,
+                availableWidth: constraints.maxWidth,
+                hasImage: hasImage,
+              );
+              final int descMaxLines;
+              if (widget.expandContent) {
+                descMaxLines = 8;
+              } else if (widget.alwaysShowDescription) {
+                descMaxLines = ArticleTitleLayout.descriptionMaxLinesForCarousel(
+                  estimatedTitleLines: estimatedTitleLines,
+                  hasImage: hasImage,
+                  hasDescription: hasDescription,
+                );
+              } else {
+                descMaxLines = ArticleTitleLayout.descriptionMaxLines(
+                  estimatedTitleLines: estimatedTitleLines,
+                  hasImage: hasImage,
+                  hasDescription: hasDescription,
+                );
+              }
+              final showDescription = widget.expandContent
+                  ? hasDescription
+                  : descMaxLines > 0;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.content.title,
+                    style: textTheme.displaySmall?.copyWith(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      height: 1.2,
+                    ),
+                    maxLines:
+                        widget.expandContent ? null : effectiveTitleMaxLines,
+                    overflow:
+                        widget.expandContent ? null : TextOverflow.ellipsis,
+                  ),
+                  if (showDescription) ...[
+                    const SizedBox(height: FacteurSpacing.space2),
+                    Text(
+                      stripHtml(widget.content.description!),
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary.withOpacity(0.85),
+                        height: 1.3,
+                        fontSize: widget.descriptionFontSize,
+                      ),
+                      maxLines:
+                          widget.expandContent ? 8 : descMaxLines,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              );
+            },
           ),
-          if (showDescription) ...[
-            const SizedBox(height: FacteurSpacing.space2),
-            Text(
-              stripHtml(widget.content.description!),
-              style: textTheme.bodySmall?.copyWith(
-                color: colors.textSecondary.withOpacity(0.85),
-                height: 1.3,
-                fontSize: widget.descriptionFontSize,
-              ),
-              maxLines: widget.expandContent ? 8 : widget.alwaysShowDescription ? 4 : 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
           const SizedBox(height: FacteurSpacing.space2),
           // Métadonnées (Type • Durée)
           Row(

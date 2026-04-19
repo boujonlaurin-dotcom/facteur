@@ -10,6 +10,7 @@ import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
+import '../../feed/utils/article_title_layout.dart';
 import '../../feed/widgets/dismiss_banner.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../feed/widgets/initial_circle.dart';
@@ -158,27 +159,31 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   double _estimateCardHeight(DigestItem article, double cardWidth) {
     final hasImage = _imageWillRender(article);
 
-    // Title: fontSize 20, lineHeight 1.2, max lines = digest title budget.
-    // Estimate line count from title length vs available width.
-    // Average char width ≈ 10px at fontSize 20 → chars per line ≈ cardWidth / 10.
-    final charsPerLine = (cardWidth - _bodyPadding) / 10;
-    final titleLines = (article.title.length / charsPerLine)
-        .round()
-        .clamp(1, _digestTitleMaxLines);
-    final titleHeight = titleLines * 20.0 * 1.2;
+    final titleLines = ArticleTitleLayout.estimateTitleLines(
+      title: article.title,
+      availableWidth: cardWidth - _bodyPadding,
+      hasImage: hasImage,
+    );
+    final titleHeight = titleLines * ArticleTitleLayout.titleLineHeight;
 
     double bodyHeight = _bodyPadding + titleHeight + _spacer + _metaRowHeight;
 
-    // Description only shown when no image (alwaysShowDescription: !imageVisible)
     if (!hasImage) {
       final desc = article.description ?? '';
       if (desc.isNotEmpty) {
-        final descCharsPerLine = (cardWidth - _bodyPadding) / 8;
-        final descLines =
-            (desc.length / descCharsPerLine).round().clamp(1, 4);
-        // descriptionFontSize: 15, lineHeight: 1.3
-        final descHeight = descLines * 15.0 * 1.3;
-        bodyHeight += _spacer + descHeight;
+        final descMax = ArticleTitleLayout.descriptionMaxLinesForCarousel(
+          estimatedTitleLines: titleLines,
+          hasImage: false,
+          hasDescription: true,
+        );
+        final descLines = ArticleTitleLayout.estimateDescriptionLines(
+          description: desc,
+          availableWidth: cardWidth - _bodyPadding,
+          maxLines: descMax,
+        );
+        if (descLines > 0) {
+          bodyHeight += _spacer + descLines * ArticleTitleLayout.descLineHeight;
+        }
       }
     }
 

@@ -5,6 +5,7 @@ import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
 import '../../digest/widgets/editorial_badge.dart';
 import '../models/content_model.dart';
+import '../utils/article_title_layout.dart';
 import 'feed_card.dart';
 
 /// Horizontal carousel intercalated in the feed.
@@ -104,19 +105,31 @@ class _FeedCarouselState extends State<FeedCarousel> {
   double _estimateCardHeight(Content article, double cardWidth) {
     final hasImage = _imageWillRender(article);
 
-    final charsPerLine = (cardWidth - _bodyPadding) / 10;
-    final titleLines = (article.title.length / charsPerLine).ceil().clamp(1, 3);
-    final titleHeight = titleLines * 20.0 * 1.2;
+    final titleLines = ArticleTitleLayout.estimateTitleLines(
+      title: article.title,
+      availableWidth: cardWidth - _bodyPadding,
+      hasImage: hasImage,
+    );
+    final titleHeight = titleLines * ArticleTitleLayout.titleLineHeight;
 
     double bodyHeight = _bodyPadding + titleHeight + _spacer + _metaRowHeight;
 
     if (!hasImage) {
       final desc = article.description ?? '';
       if (desc.isNotEmpty) {
-        final descCharsPerLine = (cardWidth - _bodyPadding) / 8;
-        final descLines = (desc.length / descCharsPerLine).ceil().clamp(1, 4);
-        final descHeight = descLines * 15.0 * 1.3;
-        bodyHeight += _spacer + descHeight;
+        final descMax = ArticleTitleLayout.descriptionMaxLinesForCarousel(
+          estimatedTitleLines: titleLines,
+          hasImage: false,
+          hasDescription: true,
+        );
+        final descLines = ArticleTitleLayout.estimateDescriptionLines(
+          description: desc,
+          availableWidth: cardWidth - _bodyPadding,
+          maxLines: descMax,
+        );
+        if (descLines > 0) {
+          bodyHeight += _spacer + descLines * ArticleTitleLayout.descLineHeight;
+        }
       }
     }
 
@@ -228,6 +241,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
           content: article,
           alwaysShowDescription: !imageVisible,
           descriptionFontSize: 15,
+          titleMaxLines: 5,
           onImageError: () => _onImageError(article.id),
           onTap: () => widget.onArticleTap(article),
           // T1: Full card feature parity
@@ -326,6 +340,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
       content: article,
       alwaysShowDescription: !imageVisible,
       descriptionFontSize: 15,
+      titleMaxLines: 5,
       onImageError: () => _onImageError(article.id),
       onTap: () => widget.onArticleTap(article),
       // T1: Full card feature parity
