@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../sources/models/source_model.dart';
@@ -203,6 +205,9 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
                     );
                   }
 
+                  final showFavoritesSection =
+                      _searchQuery.isEmpty || favorites.isNotEmpty;
+
                   return ListView(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 20,
@@ -211,7 +216,7 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
                     shrinkWrap: true,
                     children: [
                       // Favorites section
-                      if (favorites.isNotEmpty) ...[
+                      if (showFavoritesSection) ...[
                         Padding(
                           padding: const EdgeInsets.only(top: 8, bottom: 10),
                           child: Text(
@@ -226,15 +231,11 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
                                 ),
                           ),
                         ),
-                        SizedBox(
-                          height: 40,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: favorites.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(width: 8),
-                            itemBuilder: (context, index) {
-                              final source = favorites[index];
+                        if (favorites.isNotEmpty)
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: favorites.map((source) {
                               final isSelected =
                                   source.id == widget.currentSourceId;
                               return _FavoriteChip(
@@ -246,9 +247,22 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
                                   Navigator.of(context).pop();
                                 },
                               );
+                            }).toList(),
+                          ),
+                        if (favorites.length < 3) ...[
+                          if (favorites.isNotEmpty) const SizedBox(height: 12),
+                          _FavoritesPromptCta(
+                            label: 'Définir mes sources favorites',
+                            subtitle: favorites.isEmpty
+                                ? 'Pousse leur priorité à 3/3 dans Mes sources'
+                                : '${favorites.length}/3 — ajoute-en encore ${3 - favorites.length}',
+                            colors: colors,
+                            onTap: () {
+                              Navigator.of(context).pop();
+                              context.pushNamed(RouteNames.sources);
                             },
                           ),
-                        ),
+                        ],
                         const SizedBox(height: 20),
                       ],
 
@@ -360,6 +374,77 @@ class _FavoriteChip extends StatelessWidget {
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FavoritesPromptCta extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final FacteurColors colors;
+  final VoidCallback onTap;
+
+  const _FavoritesPromptCta({
+    required this.label,
+    required this.subtitle,
+    required this.colors,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: colors.surface,
+          border: Border.all(
+            color: colors.primary.withValues(alpha: 0.3),
+            width: 1.5,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              PhosphorIcons.star(PhosphorIconsStyle.regular),
+              color: colors.primary,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: colors.textTertiary,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
+              color: colors.textTertiary,
+              size: 16,
             ),
           ],
         ),
