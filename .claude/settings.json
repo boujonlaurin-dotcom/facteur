@@ -1,7 +1,25 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:facteur-production.up.railway.app)"
+      "WebFetch(domain:facteur-production.up.railway.app)",
+      "Bash(make *)",
+      "Bash(bash scripts/*)",
+      "Bash(packages/api/.venv/bin/pytest *)",
+      "Bash(packages/api/.venv/bin/ruff *)",
+      "Bash(packages/api/.venv/bin/python *)",
+      "Bash(packages/api/.venv/bin/alembic upgrade *)",
+      "Bash(docker compose -f docker-compose.test.yml *)",
+      "Bash(docker ps)",
+      "Bash(docker ps --format *)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git branch *)",
+      "Bash(git rev-parse *)"
     ]
   },
   "hooks": {
