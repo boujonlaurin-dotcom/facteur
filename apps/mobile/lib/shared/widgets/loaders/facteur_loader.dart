@@ -15,7 +15,7 @@ class FacteurLoader extends StatelessWidget {
     this.color,
   });
 
-  static const _asset = 'assets/loaders/loading_facteur.lottie';
+  static const _asset = 'assets/loaders/loading_facteur.json';
 
   @override
   Widget build(BuildContext context) {
@@ -25,12 +25,6 @@ class FacteurLoader extends StatelessWidget {
       height: height,
       child: Lottie.asset(
         _asset,
-        decoder: (bytes) => LottieComposition.decodeZip(
-          bytes,
-          filePicker: (files) => files.firstWhere(
-            (f) => f.name.endsWith('.json') && f.name != 'manifest.json',
-          ),
-        ),
         fit: BoxFit.contain,
         repeat: true,
         delegates: LottieDelegates(
