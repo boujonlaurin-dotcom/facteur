@@ -252,3 +252,19 @@ class ExternalLinks {
   static const String feedbackFormUrl =
       'https://sopht.notion.site/3ba67e485f214716b9b830d145beabc3?pvs=105';
 }
+
+/// Contact direct du créateur — utilisé par le fallback "Quelques pépins"
+/// quand l'app n'arrive plus à charger malgré plusieurs retries.
+class LaurinContact {
+  LaurinContact._();
+
+  static const String email = 'boujon.laurin@gmail.com';
+
+  /// Numéro WhatsApp au format E.164 sans le `+` (ex: 33612345678).
+  /// TODO(loader-fallback): renseigner avant merge ou laisser vide pour
+  /// masquer le bouton WhatsApp.
+  static const String whatsappE164 = '';
+
+  /// Helper : `true` si le bouton WhatsApp doit être affiché.
+  static bool get hasWhatsapp => whatsappE164.isNotEmpty;
+}

@@ -19,7 +19,6 @@ import '../../../core/providers/navigation_providers.dart';
 import '../providers/feed_provider.dart';
 import '../widgets/welcome_banner.dart';
 import '../../../widgets/design/facteur_logo.dart';
-import '../../../widgets/design/facteur_button.dart';
 import '../models/content_model.dart';
 import '../widgets/feed_card.dart';
 import '../widgets/compact_source_chip.dart';
@@ -53,7 +52,10 @@ import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/widgets/serein_toggle_chip.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../progress/widgets/progression_card.dart';
+import '../../../shared/widgets/loaders/loading_view.dart';
 import '../../../shared/widgets/mode_accent.dart';
+import '../../../shared/widgets/states/friendly_error_view.dart';
+import '../../../shared/widgets/states/laurin_fallback_view.dart';
 
 /// Écran principal du feed
 class FeedScreen extends ConsumerStatefulWidget {
@@ -100,6 +102,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     setState(() => _pendingFeedback.remove(contentId));
     ref.read(feedProvider.notifier).removeFromState(contentId);
   }
+
+  // Compteur d'échecs consécutifs pour basculer entre FriendlyErrorView et
+  // LaurinFallbackView (UX uniquement, pas de modif provider).
+  int _consecutiveErrorCount = 0;
 
   Future<void> _withFeedLoading(Future<void> Function() action) async {
     if (mounted) setState(() => _isFeedRefreshing = true);
@@ -364,6 +370,20 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     ref.listen(sereinToggleProvider.select((s) => s.enabled), (prev, next) {
       if (prev != next && mounted) {
         _withFeedLoading(() => ref.read(feedProvider.notifier).refresh());
+      }
+    });
+
+    // Compteur d'échecs consécutifs (UX uniquement) : bascule entre
+    // FriendlyErrorView et LaurinFallbackView après 2 échecs.
+    ref.listen(feedProvider, (previous, next) {
+      if (next is AsyncError && previous is! AsyncError) {
+        if (mounted) {
+          setState(() => _consecutiveErrorCount++);
+        }
+      } else if (next is AsyncData && _consecutiveErrorCount != 0) {
+        if (mounted) {
+          setState(() => _consecutiveErrorCount = 0);
+        }
       }
     });
 
@@ -1154,48 +1174,18 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           ),
                         );
                       },
-                      loading: () => SliverToBoxAdapter(
-                        child: Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: CircularProgressIndicator(
-                              color: colors.primary,
-                            ),
-                          ),
-                        ),
+                      loading: () => const SliverToBoxAdapter(
+                        child: LoadingView(compact: true),
                       ),
                       error: (err, stack) => SliverToBoxAdapter(
-                        child: Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              children: [
-                                Icon(
-                                    PhosphorIcons.warning(
-                                        PhosphorIconsStyle.duotone),
-                                    size: 48,
-                                    color: colors.error),
-                                const SizedBox(height: 16),
-                                Text('Erreur de chargement',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium),
-                                Text(err.toString(),
-                                    textAlign: TextAlign.center,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(color: colors.error)),
-                                const SizedBox(height: 16),
-                                FacteurButton(
-                                    label: 'Réessayer',
-                                    icon: PhosphorIcons.arrowClockwise(
-                                        PhosphorIconsStyle.bold),
-                                    onPressed: () => ref.refresh(feedProvider)),
-                              ],
-                            ),
-                          ),
-                        ),
+                        child: _consecutiveErrorCount >= 2
+                            ? LaurinFallbackView(
+                                onRetry: () => ref.refresh(feedProvider),
+                              )
+                            : FriendlyErrorView(
+                                error: err,
+                                onRetry: () => ref.refresh(feedProvider),
+                              ),
                       ),
                     ),
                   ],
