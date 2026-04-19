@@ -87,6 +87,7 @@ class FeedRepository {
     String? sourceId,
     String? entity,
     String? keyword,
+    bool includeUnfollowed = false,
     bool serein = false,
     bool forceFresh = false,
   }) async {
@@ -102,6 +103,7 @@ class FeedRepository {
       sourceId: sourceId,
       entity: entity,
       keyword: keyword,
+      includeUnfollowed: includeUnfollowed,
       serein: serein,
       forceFresh: forceFresh,
     );
@@ -128,6 +130,7 @@ class FeedRepository {
     String? sourceId,
     String? entity,
     String? keyword,
+    bool includeUnfollowed = false,
     bool serein = false,
     bool forceFresh = false,
   }) async {
@@ -168,6 +171,7 @@ class FeedRepository {
         sourceId: sourceId,
         entity: entity,
         keyword: keyword,
+        includeUnfollowed: includeUnfollowed,
         serein: serein,
       );
       _defaultViewInflight = future;
@@ -197,6 +201,7 @@ class FeedRepository {
       sourceId: sourceId,
       entity: entity,
       keyword: keyword,
+      includeUnfollowed: includeUnfollowed,
       serein: serein,
     );
   }
@@ -213,6 +218,7 @@ class FeedRepository {
     String? sourceId,
     String? entity,
     String? keyword,
+    bool includeUnfollowed = false,
     bool serein = false,
   }) async {
     try {
@@ -259,6 +265,10 @@ class FeedRepository {
 
       if (keyword != null) {
         queryParams['keyword'] = keyword;
+      }
+
+      if (includeUnfollowed) {
+        queryParams['include_unfollowed'] = true;
       }
 
       if (serein) {

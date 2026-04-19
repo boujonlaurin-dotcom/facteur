@@ -119,6 +119,13 @@ async def get_personalized_feed(
     keyword: str | None = Query(
         None, description="Keyword to filter articles by title (ILIKE match)"
     ),
+    include_unfollowed: bool = Query(
+        False,
+        description=(
+            "When True AND keyword is set, expand the search to articles from "
+            "sources the user does not follow (used by trending chip taps)."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -178,6 +185,7 @@ async def get_personalized_feed(
                 source_id=source_id,
                 entity=entity,
                 keyword=keyword,
+                include_unfollowed=include_unfollowed,
             )
             payload = json.dumps(response.model_dump(mode="json")).encode("utf-8")
             FEED_CACHE.put(user_uuid, payload)
@@ -198,6 +206,7 @@ async def get_personalized_feed(
         source_id=source_id,
         entity=entity,
         keyword=keyword,
+        include_unfollowed=include_unfollowed,
     )
     return response
 
@@ -218,6 +227,7 @@ async def _compute_feed(
     source_id: str | None,
     entity: str | None,
     keyword: str | None,
+    include_unfollowed: bool = False,
 ) -> FeedResponse:
     """Run the full recommendation pipeline. Identical to the pre-Round-5
     body of `get_personalized_feed`, extracted for cache-miss reuse."""
@@ -242,6 +252,7 @@ async def _compute_feed(
         entity=entity,
         keyword=keyword,
         serein=serein,
+        include_unfollowed=include_unfollowed,
     )
 
     # Epic 11: Build clusters from custom topics (reuse from service, no duplicate query)
@@ -572,10 +583,11 @@ async def get_trending_topics(
                 break
 
         titles = [c.title for c in cluster.contents]
+        keyword = _best_keyword(titles)
         response.append(
             TrendingTopicResponse(
-                label=best_content.title,
-                keyword=_best_keyword(titles),
+                label=keyword.title() if keyword else best_content.title,
+                keyword=keyword,
                 article_count=len(cluster.contents),
                 source_count=len(cluster.source_ids),
                 topic_slug=topic_slug,

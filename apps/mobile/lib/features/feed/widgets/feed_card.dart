@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/core/utils/html_utils.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
+import 'package:facteur/features/feed/utils/article_title_layout.dart';
 import 'package:facteur/features/feed/widgets/reading_badge.dart';
 import 'package:facteur/widgets/design/facteur_card.dart';
 import 'package:facteur/widgets/design/facteur_image.dart';

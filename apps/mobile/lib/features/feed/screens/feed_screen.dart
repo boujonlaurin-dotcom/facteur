@@ -515,9 +515,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                               Flexible(
                                 child: CompactSearchChip(
                                   activeKeyword: notifier.selectedKeyword,
-                                  onSearchChanged: (keyword) {
-                                    _withFeedLoading(
-                                        () => notifier.setKeyword(keyword));
+                                  onSearchChanged: (keyword,
+                                      {bool fromTrending = false}) {
+                                    _withFeedLoading(() => notifier.setKeyword(
+                                          keyword,
+                                          includeUnfollowed: fromTrending,
+                                        ));
                                     _scrollToTop();
                                   },
                                 ),
