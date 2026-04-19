@@ -84,16 +84,27 @@ Future<void> main() async {
       // (peut être révoquée par une mise à jour Android ou un changement système)
       await pushNotificationService.ensureExactAlarmPermission();
 
-      final scheduled =
-          await pushNotificationService.scheduleDailyDigestNotification();
-      if (!scheduled) {
-        debugPrint(
-            'Main: WARNING — digest notification scheduling failed, retrying...');
-        // Retry après re-demande explicite de permission
-        await pushNotificationService.requestExactAlarmPermission();
-        final retryOk =
+      // Ne planifier la notification statique que si aucune n'existe déjà.
+      // Si une notification personnalisée (avec les sujets du digest) a été
+      // planifiée par DigestNotifier._updateNotificationWithTopics(), on la
+      // préserve — écraser avec le corps statique régresserait la feature.
+      final alreadyScheduled =
+          await pushNotificationService.isDigestNotificationScheduled();
+      if (!alreadyScheduled) {
+        final scheduled =
             await pushNotificationService.scheduleDailyDigestNotification();
-        debugPrint('Main: Retry result: $retryOk');
+        if (!scheduled) {
+          debugPrint(
+              'Main: WARNING — digest notification scheduling failed, retrying...');
+          // Retry après re-demande explicite de permission
+          await pushNotificationService.requestExactAlarmPermission();
+          final retryOk =
+              await pushNotificationService.scheduleDailyDigestNotification();
+          debugPrint('Main: Retry result: $retryOk');
+        }
+      } else {
+        debugPrint(
+            'Main: Digest notification already scheduled — skipping static placeholder.');
       }
 
       // Logger l'état complet pour diagnostic
@@ -205,11 +216,20 @@ Future<void> homeWidgetBackgroundCallback(Uri? uri) async {
 }
 
 /// Open a Hive box safely — if corrupted, delete and recreate it.
+///
+/// Une corruption sur la box `supabase_auth_persistence` provoque un logout
+/// silencieux (la session est perdue). On logge donc explicitement l'événement
+/// pour télémétrie.
+/// TODO(sentry): remplacer par `Sentry.captureMessage(level: error)` dès que
+/// `sentry_flutter` sera initialisé.
+/// Cf. docs/bugs/bug-android-session-forced-logouts.md.
 Future<Box<T>> _openBoxSafe<T>(String name) async {
   try {
     return await Hive.openBox<T>(name);
   } catch (e) {
     debugPrint('Main: Hive box "$name" corrupted, recreating: $e');
+    debugPrint(
+        '[AUTH_TELEMETRY] event=hive_box_corrupted box_name=$name error=$e');
     await Hive.deleteBoxFromDisk(name);
     return await Hive.openBox<T>(name);
   }
