@@ -1911,9 +1911,7 @@ class DigestService:
                         # DigestTopic.subjects: list[str] validation. Emit an
                         # empty list for null angles rather than [""].
                         subjects=(
-                            [subject["deep_angle"]]
-                            if subject.get("deep_angle")
-                            else []
+                            [subject["deep_angle"]] if subject.get("deep_angle") else []
                         ),
                         articles=topic_articles,
                         intro_text=subject.get("intro_text"),

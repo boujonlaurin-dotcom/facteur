@@ -768,7 +768,8 @@ async def get_perspectives(
     # Keep only Google News entries whose domain isn't already covered by
     # the cluster — no double-counting.
     new_gnews = [
-        p for p in gnews_perspectives
+        p
+        for p in gnews_perspectives
         if p.source_domain and p.source_domain not in cluster_domains
     ]
 

@@ -370,11 +370,12 @@ class EditorialPipelineService:
                     pass
 
             try:
-                gnews_perspectives, _ = (
-                    await perspective_service.get_perspectives_hybrid(
-                        content=representative,
-                        exclude_domain=exclude_domain,
-                    )
+                (
+                    gnews_perspectives,
+                    _,
+                ) = await perspective_service.get_perspectives_hybrid(
+                    content=representative,
+                    exclude_domain=exclude_domain,
                 )
             except Exception:
                 logger.warning(
@@ -568,13 +569,13 @@ class EditorialPipelineService:
             "editorial_pipeline.perspectives_done",
             duration_ms=round(perspective_time * 1000, 2),
             subjects=len(subjects),
-            subjects_with_perspectives=sum(1 for s in subjects if s.perspective_count > 0),
+            subjects_with_perspectives=sum(
+                1 for s in subjects if s.perspective_count > 0
+            ),
             # "coherent" means the header count is at least the cluster count
             # — the invariant we want to hold after this fix.
             subjects_coherent_with_cluster=coherent,
-            divergence_analyses=sum(
-                1 for s in subjects if s.divergence_analysis
-            ),
+            divergence_analyses=sum(1 for s in subjects if s.divergence_analysis),
         )
 
         # Serialize cluster data (clusters are dataclasses)

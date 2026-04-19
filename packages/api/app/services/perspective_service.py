@@ -528,9 +528,7 @@ class PerspectiveService:
 
         return quoted + context_words
 
-    async def build_cluster_perspectives(
-        self, contents: list
-    ) -> list[Perspective]:
+    async def build_cluster_perspectives(self, contents: list) -> list[Perspective]:
         """Build Perspective objects from a list of Content (cluster articles).
 
         One Perspective per unique source_id (caller's ordering preserved —
