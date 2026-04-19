@@ -142,4 +142,9 @@ async def get_community_recommendations(
         )
     except Exception:
         logger.exception("community_recommendations_failed")
+        # Explicit rollback — _invalidate_on_supabase_kill misses some PgBouncer kill signatures (PYTHON-14)
+        try:
+            await db.rollback()
+        except Exception as rb_exc:
+            logger.debug("community_rollback_failed", error=str(rb_exc))
         return CommunityCarouselsResponse()
