@@ -103,7 +103,8 @@ void main() {
       const hasSession = true;
 
       // Comportement attendu : l'utilisateur DOIT être déconnecté
-      const shouldSignOut = !rememberMe && hasSession;
+      bool checkSignOut(bool r, bool h) => !r && h;
+      final shouldSignOut = checkSignOut(rememberMe, hasSession);
       expect(shouldSignOut, isTrue,
           reason:
               'Quand remember_me=false, la session doit être effacée au cold start');
@@ -115,7 +116,8 @@ void main() {
       const rememberMe = true;
       const hasSession = true;
 
-      const shouldSignOut = !rememberMe && hasSession;
+      bool checkSignOut(bool r, bool h) => !r && h;
+      final shouldSignOut = checkSignOut(rememberMe, hasSession);
       expect(shouldSignOut, isFalse,
           reason:
               'Quand remember_me=true, la session doit être restaurée sans demander re-login');

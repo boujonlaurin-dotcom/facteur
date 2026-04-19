@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
-import '../../../config/constants.dart';
 import '../../../config/routes.dart';
+import '../widgets/feedback_modal.dart';
 
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
@@ -75,16 +74,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       child: InkWell(
                         borderRadius:
                             BorderRadius.circular(FacteurRadius.large),
-                        onTap: () async {
-                          final uri =
-                              Uri.parse(ExternalLinks.feedbackFormUrl);
-                          if (await canLaunchUrl(uri)) {
-                            await launchUrl(
-                              uri,
-                              mode: LaunchMode.externalApplication,
-                            );
-                          }
-                        },
+                        onTap: () => showModalBottomSheet<void>(
+                          context: context,
+                          backgroundColor: Colors.transparent,
+                          isScrollControlled: true,
+                          builder: (_) => const FeedbackModal(),
+                        ),
                         child: Padding(
                           padding:
                               const EdgeInsets.all(FacteurSpacing.space4),
@@ -127,7 +122,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                 ),
                               ),
                               Icon(
-                                PhosphorIcons.arrowSquareOut(
+                                PhosphorIcons.caretRight(
                                     PhosphorIconsStyle.regular),
                                 color: colors.primary.withOpacity(0.6),
                                 size: 18,

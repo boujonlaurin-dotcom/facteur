@@ -251,6 +251,10 @@ class ExternalLinks {
   /// URL du formulaire de feedback (Notion)
   static const String feedbackFormUrl =
       'https://sopht.notion.site/3ba67e485f214716b9b830d145beabc3?pvs=105';
+
+  /// Lien d'invitation au groupe WhatsApp "Facteur - Retours & idées"
+  static const String whatsappGroupUrl =
+      'https://chat.whatsapp.com/Fq4oKgSDEgc9AmAyZR9uhJ?mode=gi_t';
 }
 
 /// Contact direct du créateur — utilisé par le fallback "Quelques pépins"
