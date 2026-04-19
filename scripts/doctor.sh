@@ -96,11 +96,20 @@ else
   ko "venv API" "absent — lance: bash $REPO_ROOT/scripts/dev-bootstrap.sh"
 fi
 
-# ─── 5. DB test en cours d'exécution ──────────────────────────────────────────
-if command -v docker &>/dev/null && docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^facteur-postgres-test$'; then
-  ok "DB test running" "(localhost:54322)"
+# ─── 5. .env (infra/tooling) ──────────────────────────────────────────────────
+if [ -f "$REPO_ROOT/.env" ]; then
+  ok ".env" "(repo root)"
 else
-  ko "DB test running" "éteinte — lance: docker compose -f docker-compose.test.yml up -d"
+  ko ".env" "absent — lance: cp .env.example .env  (ou: make bootstrap)"
+fi
+
+# ─── 6. DB test en cours d'exécution ──────────────────────────────────────────
+if command -v docker &>/dev/null && docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^facteur-postgres-test$'; then
+  TEST_PORT="${POSTGRES_TEST_PORT:-54322}"
+  [ -f "$REPO_ROOT/.env" ] && TEST_PORT=$(grep -E '^POSTGRES_TEST_PORT=' "$REPO_ROOT/.env" | cut -d= -f2 || echo 54322)
+  ok "DB test running" "(localhost:${TEST_PORT:-54322})"
+else
+  ko "DB test running" "éteinte — lance: make db-up"
 fi
 
 # ─── 6. ~/.facteur/.env.test ──────────────────────────────────────────────────

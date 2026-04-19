@@ -59,6 +59,18 @@ packages/api/.venv/bin/pip install -q --upgrade pip
 packages/api/.venv/bin/pip install -q -e "packages/api[dev]"
 
 # ─── 3. Docker test DB ────────────────────────────────────────────────────────
+# Assure que .env existe (docker-compose le lit pour POSTGRES_TEST_*)
+if [ ! -f "$REPO_ROOT/.env" ]; then
+  cp "$REPO_ROOT/.env.example" "$REPO_ROOT/.env"
+  echo "[3/6] .env créé depuis .env.example ✓"
+fi
+
+# Charge les valeurs test DB (pour alembic ci-dessous)
+set -a
+# shellcheck disable=SC1091
+source "$REPO_ROOT/.env"
+set +a
+
 if ! command -v docker &>/dev/null; then
   echo "[3/6] Docker absent — skip DB test. Installe Docker Desktop pour activer."
 else
@@ -75,7 +87,7 @@ if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^facteur-postgres-test
   echo "[4/6] Migrations Alembic…"
   (
     cd packages/api
-    DATABASE_URL="postgresql+psycopg://facteur:facteur@localhost:54322/facteur_test" \
+    DATABASE_URL="postgresql+psycopg://${POSTGRES_TEST_USER}:${POSTGRES_TEST_PASSWORD}@localhost:${POSTGRES_TEST_PORT:-54322}/${POSTGRES_TEST_DB}" \
       .venv/bin/alembic upgrade head
   )
 else

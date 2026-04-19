@@ -45,6 +45,7 @@ fmt-api:
 	@$(VENV)/bin/ruff format $(REPO_ROOT)/packages/api/app
 
 db-up:
+	@test -f $(REPO_ROOT)/.env || cp $(REPO_ROOT)/.env.example $(REPO_ROOT)/.env
 	@docker compose -f $(REPO_ROOT)/docker-compose.test.yml up -d --wait
 
 db-down:
@@ -53,6 +54,6 @@ db-down:
 db-reset:
 	@docker compose -f $(REPO_ROOT)/docker-compose.test.yml down -v
 	@docker compose -f $(REPO_ROOT)/docker-compose.test.yml up -d --wait
-	@cd $(REPO_ROOT)/packages/api && \
-		DATABASE_URL="postgresql+psycopg://facteur:facteur@localhost:54322/facteur_test" \
+	@set -a && . $(REPO_ROOT)/.env && set +a && cd $(REPO_ROOT)/packages/api && \
+		DATABASE_URL="postgresql+psycopg://$${POSTGRES_TEST_USER}:$${POSTGRES_TEST_PASSWORD}@localhost:$${POSTGRES_TEST_PORT:-54322}/$${POSTGRES_TEST_DB}" \
 		$(VENV)/bin/alembic upgrade head
