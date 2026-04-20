@@ -21,7 +21,7 @@ class LoaderBlurb {
   String get label {
     switch (kind) {
       case LoaderBlurbKind.citation:
-        return 'On y pensait';
+        return 'Citation';
       case LoaderBlurbKind.stat:
         return 'Le saviez-vous';
       case LoaderBlurbKind.anecdote:
@@ -33,7 +33,7 @@ class LoaderBlurb {
 }
 
 const List<LoaderBlurb> loaderBlurbs = [
-  // --- Citations (12) ---
+  // --- Citations (10) — toutes attribuées ---
   LoaderBlurb(
     kind: LoaderBlurbKind.citation,
     text:
@@ -83,16 +83,6 @@ const List<LoaderBlurb> loaderBlurbs = [
     text:
         'La vérité est rarement pure et jamais simple. La vie moderne serait extrêmement ennuyeuse si elle l\'était.',
     attribution: 'Oscar Wilde',
-  ),
-  LoaderBlurb(
-    kind: LoaderBlurbKind.citation,
-    text:
-        'L\'urgence n\'est pas l\'information. C\'est la compréhension qui prend du temps.',
-  ),
-  LoaderBlurb(
-    kind: LoaderBlurbKind.citation,
-    text:
-        'S\'informer, c\'est choisir ce à quoi on accepte de donner son attention.',
   ),
   LoaderBlurb(
     kind: LoaderBlurbKind.citation,

@@ -71,7 +71,7 @@ class LaurinFallbackView extends StatelessWidget {
               Center(
                 child: Icon(
                   PhosphorIcons.heartStraight(PhosphorIconsStyle.duotone),
-                  size: 56,
+                  size: 32,
                   color: colors.primary.withValues(alpha: 0.85),
                 ),
               ),
@@ -79,7 +79,7 @@ class LaurinFallbackView extends StatelessWidget {
               Text(
                 LaurinFallbackStrings.title,
                 textAlign: TextAlign.center,
-                style: FacteurTypography.displaySmall(colors.textPrimary),
+                style: FacteurTypography.displayMedium(colors.textPrimary),
               ),
               const SizedBox(height: FacteurSpacing.space2),
               Text(
@@ -88,10 +88,13 @@ class LaurinFallbackView extends StatelessWidget {
                 style: FacteurTypography.bodyMedium(colors.textSecondary),
               ),
               const SizedBox(height: FacteurSpacing.space6),
-              PrimaryButton(
-                label: LaurinFallbackStrings.retryLabel,
-                icon: PhosphorIcons.arrowClockwise(PhosphorIconsStyle.bold),
-                onPressed: onRetry,
+              Center(
+                child: PrimaryButton(
+                  label: LaurinFallbackStrings.retryLabel,
+                  icon: PhosphorIcons.arrowClockwise(PhosphorIconsStyle.bold),
+                  onPressed: onRetry,
+                  fullWidth: false,
+                ),
               ),
               const SizedBox(height: FacteurSpacing.space6),
               Container(

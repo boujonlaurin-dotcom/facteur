@@ -92,7 +92,7 @@ class _EditorialLoaderCardState extends State<EditorialLoaderCard> {
           children: [
             Text(
               _current.label.toUpperCase(),
-              style: FacteurTypography.stamp(colors.textStamp),
+              style: FacteurTypography.labelMedium(colors.textStamp),
             ),
             const SizedBox(height: FacteurSpacing.space2),
             Text(
