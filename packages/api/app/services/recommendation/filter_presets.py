@@ -56,7 +56,9 @@ async def load_serein_preferences(
     """
     prefs_rows = (
         await session.execute(
-            select(UserPreference.preference_key, UserPreference.preference_value).where(
+            select(
+                UserPreference.preference_key, UserPreference.preference_value
+            ).where(
                 UserPreference.user_id == user_id,
                 UserPreference.preference_key.in_(
                     ("sensitive_themes", "serein_personalized")
@@ -78,9 +80,7 @@ async def load_serein_preferences(
 
     topic_rows = (
         await session.execute(
-            select(
-                UserTopicProfile.canonical_name, UserTopicProfile.keywords
-            ).where(
+            select(UserTopicProfile.canonical_name, UserTopicProfile.keywords).where(
                 UserTopicProfile.user_id == user_id,
                 UserTopicProfile.excluded_from_serein == True,  # noqa: E712
             )
@@ -96,6 +96,7 @@ async def load_serein_preferences(
         excluded_topics=excluded_topics,
         personalized=personalized,
     )
+
 
 # --- Constantes Serein ---
 
