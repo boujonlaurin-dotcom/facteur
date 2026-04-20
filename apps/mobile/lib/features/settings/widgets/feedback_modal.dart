@@ -18,54 +18,63 @@ class FeedbackModal extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
 
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: colors.textTertiary.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Donner mon avis',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: colors.textPrimary,
-                  ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Votre retour nous aide à améliorer Facteur',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colors.textSecondary,
-                  ),
-            ),
-            const SizedBox(height: 20),
-            _FeedbackOption(
-              icon: PhosphorIcons.users(PhosphorIconsStyle.regular),
-              title: 'Rejoindre le groupe',
-              subtitle: 'Facteur — Retours & idées',
-              onTap: () => _launch(ExternalLinks.whatsappGroupUrl),
-            ),
-            if (LaurinContact.hasWhatsapp) ...[
-              const SizedBox(height: 12),
-              _FeedbackOption(
-                icon: PhosphorIcons.chatText(PhosphorIconsStyle.regular),
-                title: 'Écrire à Laurin',
-                subtitle: 'Réponse garantie',
-                onTap: () => _launch(
-                  'https://wa.me/${LaurinContact.whatsappE164}',
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.backgroundPrimary,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: colors.textTertiary.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
+              const SizedBox(height: 20),
+              Text(
+                'Donner mon avis',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colors.textPrimary,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Votre retour nous aide à améliorer Facteur',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
+                    ),
+              ),
+              const SizedBox(height: 20),
+              _FeedbackOption(
+                icon: PhosphorIcons.users(PhosphorIconsStyle.regular),
+                title: 'Rejoindre le groupe',
+                subtitle: 'Facteur — Retours & idées',
+                onTap: () => _launch(ExternalLinks.whatsappGroupUrl),
+              ),
+              if (LaurinContact.hasWhatsapp) ...[
+                const SizedBox(height: 12),
+                _FeedbackOption(
+                  icon: PhosphorIcons.chatText(PhosphorIconsStyle.regular),
+                  title: 'Envoyer un message à Laurin',
+                  subtitle: 'Réponse garantie',
+                  onTap: () => _launch(
+                    'https://wa.me/${LaurinContact.whatsappE164}?text=Retours%20Facteur%20',
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

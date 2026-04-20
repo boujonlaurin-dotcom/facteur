@@ -27,12 +27,17 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
   final TextEditingController _customController = TextEditingController();
   bool _saving = false;
 
+  late final PageController _pageController;
+  int _currentTheme = 0;
+  final Set<int> _visitedPages = {0};
+
   List<String> get _selectedThemes =>
       ref.read(onboardingProvider).answers.themes ?? [];
 
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(viewportFraction: 0.92);
     final answers = ref.read(onboardingProvider).answers;
 
     if (answers.subtopics != null && answers.subtopics!.isNotEmpty) {
@@ -53,6 +58,7 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
   @override
   void dispose() {
     _customController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -152,6 +158,11 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final selectedThemes = _selectedThemes;
+    final isMulti = selectedThemes.length > 1;
+    final safeIndex = _currentTheme.clamp(0, selectedThemes.length - 1);
+    final currentTheme = selectedThemes.isNotEmpty
+        ? _resolveTheme(selectedThemes[safeIndex])
+        : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
@@ -177,33 +188,51 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
             textAlign: TextAlign.center,
           ),
 
-          const SizedBox(height: FacteurSpacing.space6),
+          const SizedBox(height: FacteurSpacing.space4),
+
+          if (isMulti && currentTheme != null) ...[
+            _buildStickyHeader(currentTheme),
+            const SizedBox(height: FacteurSpacing.space3),
+            _buildPageIndicator(selectedThemes.length, currentTheme.color),
+            const SizedBox(height: FacteurSpacing.space3),
+          ],
 
           Expanded(
             flex: 10,
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Column(
-                children: selectedThemes.map((themeSlug) {
-                  final theme = AvailableThemes.all.firstWhere(
-                    (t) => t.slug == themeSlug,
-                    orElse: () => ThemeOption(
-                      slug: themeSlug,
-                      label: themeSlug,
-                      emoji: '📌',
-                      color: Colors.grey,
-                    ),
-                  );
-                  return _buildThemeCard(theme);
-                }).toList(),
-              ),
-            ),
+            child: isMulti
+                ? PageView.builder(
+                    controller: _pageController,
+                    onPageChanged: (i) {
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        _currentTheme = i;
+                        _visitedPages.add(i);
+                      });
+                    },
+                    itemCount: selectedThemes.length,
+                    itemBuilder: (context, index) {
+                      final theme = _resolveTheme(selectedThemes[index]);
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          child: _buildThemeCard(theme, includeHeader: false),
+                        ),
+                      );
+                    },
+                  )
+                : SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: currentTheme != null
+                        ? _buildThemeCard(currentTheme, includeHeader: true)
+                        : const SizedBox.shrink(),
+                  ),
           ),
 
           const SizedBox(height: FacteurSpacing.space4),
 
           ElevatedButton(
-            onPressed: _saving ? null : _continue,
+            onPressed: _saving ? null : _onContinuePressed,
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 24),
             ),
@@ -222,7 +251,108 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
     );
   }
 
-  Widget _buildThemeCard(ThemeOption theme) {
+  ThemeOption _resolveTheme(String slug) {
+    return AvailableThemes.all.firstWhere(
+      (t) => t.slug == slug,
+      orElse: () => ThemeOption(
+        slug: slug,
+        label: slug,
+        emoji: '📌',
+        color: Colors.grey,
+      ),
+    );
+  }
+
+  Widget _buildStickyHeader(ThemeOption theme) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 250),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.2),
+              end: Offset.zero,
+            ).animate(animation),
+            child: child,
+          ),
+        );
+      },
+      child: Row(
+        key: ValueKey(theme.slug),
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(theme.emoji, style: const TextStyle(fontSize: 26)),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              theme.label,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: theme.color,
+                    fontWeight: FontWeight.w700,
+                  ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPageIndicator(int count, Color activeColor) {
+    final colors = context.facteurColors;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(count, (index) {
+        final isActive = index == _currentTheme;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: isActive ? 24 : 10,
+          height: 10,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          decoration: BoxDecoration(
+            color: isActive
+                ? activeColor
+                : colors.textTertiary.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(5),
+          ),
+        );
+      }),
+    );
+  }
+
+  Future<void> _onContinuePressed() async {
+    final selectedThemes = _selectedThemes;
+    final allVisited = _visitedPages.length >= selectedThemes.length;
+
+    if (selectedThemes.length > 1 && !allVisited) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Êtes-vous sûr ?'),
+          content: const Text(
+            'Vous pourrez toujours définir vos intérêts plus tard dans "Mes intérêts".',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Voir les autres thèmes'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Continuer'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+    await _continue();
+  }
+
+  Widget _buildThemeCard(ThemeOption theme, {bool includeHeader = true}) {
     final subtopics = AvailableSubtopics.byTheme[theme.slug] ?? [];
     final backendEntities =
         ref.watch(popularEntitiesProvider(theme.slug)).valueOrNull ??
@@ -242,7 +372,9 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
     final colors = context.facteurColors;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: FacteurSpacing.space4),
+      margin: includeHeader
+          ? const EdgeInsets.only(bottom: FacteurSpacing.space4)
+          : EdgeInsets.zero,
       decoration: BoxDecoration(
         color: colors.surfacePaper,
         borderRadius: BorderRadius.circular(12),
@@ -254,22 +386,22 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: emoji + label
-          Row(
-            children: [
-              Text(theme.emoji, style: const TextStyle(fontSize: 18)),
-              const SizedBox(width: 6),
-              Text(
-                theme.label,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: theme.color,
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: FacteurSpacing.space3),
+          if (includeHeader) ...[
+            Row(
+              children: [
+                Text(theme.emoji, style: const TextStyle(fontSize: 18)),
+                const SizedBox(width: 6),
+                Text(
+                  theme.label,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: theme.color,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: FacteurSpacing.space3),
+          ],
 
           // Subtopics wrap
           if (subtopics.isNotEmpty)

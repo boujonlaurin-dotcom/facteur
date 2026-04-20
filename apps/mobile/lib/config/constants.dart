@@ -267,7 +267,7 @@ class LaurinContact {
   /// Numéro WhatsApp au format E.164 sans le `+` (ex: 33612345678).
   /// TODO(loader-fallback): renseigner avant merge ou laisser vide pour
   /// masquer le bouton WhatsApp.
-  static const String whatsappE164 = '';
+  static const String whatsappE164 = '33614582296';
 
   /// Helper : `true` si le bouton WhatsApp doit être affiché.
   static bool get hasWhatsapp => whatsappE164.isNotEmpty;
