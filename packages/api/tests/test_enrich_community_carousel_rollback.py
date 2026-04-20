@@ -14,7 +14,7 @@ Fix mirrors D3 (PR #437 community.py) : explicit `await db.rollback()` guarded
 by `try/except` so a failing rollback does not break the fail-open contract.
 """
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -30,7 +30,7 @@ def _make_digest_response() -> DigestResponse:
         digest_id=uuid4(),
         user_id=uuid4(),
         target_date=date(2026, 4, 19),
-        generated_at=datetime(2026, 4, 19, 6, 0, 0, tzinfo=timezone.utc),
+        generated_at=datetime(2026, 4, 19, 6, 0, 0, tzinfo=UTC),
         items=[],
         is_completed=False,
         completed_at=None,
