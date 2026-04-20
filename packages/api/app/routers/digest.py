@@ -58,6 +58,16 @@ DIGEST_BOTH_GATHER_TIMEOUT_S = 30.0
 DIGEST_SINGLE_TIMEOUT_S = 30.0
 DIGEST_GENERATE_TIMEOUT_S = 60.0  # force=True peut prendre plus
 
+# Singleflight per user_uuid for /digest/both. Hotfix P0 2026-04-20: mobile
+# spammait 4 requêtes concurrentes → chacune ouvrait 2 sessions DB (gather) →
+# pool saturé en boucle. Les followers rejoignent le future du leader au lieu
+# de relancer leur propre gather.
+# Follower timeout > DIGEST_BOTH_GATHER_TIMEOUT_S + marge pour laisser le
+# leader propager son 503 avant que le follower raise lui-même.
+_digest_both_inflight: dict[UUID, asyncio.Future] = {}
+_digest_both_inflight_lock = asyncio.Lock()
+DIGEST_BOTH_FOLLOWER_TIMEOUT_S = 35.0
+
 
 class ActionRequest(BaseModel):
     """Simple action request body model."""
@@ -349,86 +359,126 @@ async def get_both_digests(
                 },
             )
 
-    # Generate both variants in parallel with separate DB sessions
-    # to avoid SQLAlchemy session conflicts and halve on-demand latency.
-    #
-    # BUG FIX (bug-infinite-load-requests.md) — each variant is bounded by
-    # DIGEST_BOTH_VARIANT_TIMEOUT_S; the whole gather is bounded by
-    # DIGEST_BOTH_GATHER_TIMEOUT_S. Without these, a slow upstream (Mistral
-    # LLM, Google News RSS, Supabase) hangs the request forever, holds 2 DB
-    # sessions, and rapidly exhausts the pool — making *every* other endpoint
-    # appear to "load indefinitely".
-    async def _gen_variant(is_serene: bool) -> DigestResponse | None:
-        async with async_session_maker() as session:
-            svc = DigestService(session, session_maker=async_session_maker)
+    # Singleflight per user_uuid: si une requête est déjà en vol pour ce user,
+    # les suivantes attendent son résultat au lieu de spawner leurs propres
+    # sessions DB. Protège le pool sous rafale mobile (4 requêtes concurrentes
+    # × 2 sessions gather = 8 slots par user sans dédup).
+    async with _digest_both_inflight_lock:
+        inflight_fut = _digest_both_inflight.get(user_uuid)
+        if inflight_fut is not None and not inflight_fut.done():
+            leader_fut: asyncio.Future = inflight_fut
+            leader_role = False
+        else:
+            leader_fut = asyncio.get_event_loop().create_future()
+            _digest_both_inflight[user_uuid] = leader_fut
+            leader_role = True
+
+    if not leader_role:
+        logger.info("digest_both_singleflight_join", user_id=current_user_id)
+        try:
             return await asyncio.wait_for(
-                svc.get_or_create_digest(user_uuid, target_date, is_serene=is_serene),
-                timeout=DIGEST_BOTH_VARIANT_TIMEOUT_S,
+                asyncio.shield(leader_fut),
+                timeout=DIGEST_BOTH_FOLLOWER_TIMEOUT_S,
+            )
+        except TimeoutError:
+            raise HTTPException(
+                status_code=503,
+                detail="digest_generation_timeout",
             )
 
     try:
-        normal, serein = await asyncio.wait_for(
-            asyncio.gather(
-                _gen_variant(False),
-                _gen_variant(True),
-            ),
-            timeout=DIGEST_BOTH_GATHER_TIMEOUT_S,
-        )
-    except TimeoutError:
-        logger.warning(
-            "digest_both_timeout",
-            user_id=current_user_id,
-            variant_timeout_s=DIGEST_BOTH_VARIANT_TIMEOUT_S,
-            gather_timeout_s=DIGEST_BOTH_GATHER_TIMEOUT_S,
-            hint="Upstream hang detected — sessions released to protect pool.",
-        )
-        raise HTTPException(
-            status_code=503,
-            detail="digest_generation_timeout",
-        )
+        # Generate both variants in parallel with separate DB sessions
+        # to avoid SQLAlchemy session conflicts and halve on-demand latency.
+        #
+        # BUG FIX (bug-infinite-load-requests.md) — each variant is bounded by
+        # DIGEST_BOTH_VARIANT_TIMEOUT_S; the whole gather is bounded by
+        # DIGEST_BOTH_GATHER_TIMEOUT_S. Without these, a slow upstream (Mistral
+        # LLM, Google News RSS, Supabase) hangs the request forever, holds 2 DB
+        # sessions, and rapidly exhausts the pool — making *every* other endpoint
+        # appear to "load indefinitely".
+        async def _gen_variant(is_serene: bool) -> DigestResponse | None:
+            async with async_session_maker() as session:
+                svc = DigestService(session, session_maker=async_session_maker)
+                return await asyncio.wait_for(
+                    svc.get_or_create_digest(
+                        user_uuid, target_date, is_serene=is_serene
+                    ),
+                    timeout=DIGEST_BOTH_VARIANT_TIMEOUT_S,
+                )
 
-    # If either variant is missing, don't return a 200 with null fields (the
-    # mobile client mishandles null variants as a permanent failure). Schedule
-    # regen for the specific missing variant(s) and ask the client to retry
-    # on the same 202 contract as the batch-running branch. Both-None and
-    # partial-None converge on the same response so the mobile side stays
-    # on a single polling contract.
-    if normal is None or serein is None:
-        effective_date = target_date or today_paris()
-        logger.warning(
-            "digest_both_returned_none_scheduled_regen",
-            user_id=current_user_id,
-            target_date=str(effective_date),
-            normal_missing=normal is None,
-            serein_missing=serein is None,
+        try:
+            normal, serein = await asyncio.wait_for(
+                asyncio.gather(
+                    _gen_variant(False),
+                    _gen_variant(True),
+                ),
+                timeout=DIGEST_BOTH_GATHER_TIMEOUT_S,
+            )
+        except TimeoutError:
+            logger.warning(
+                "digest_both_timeout",
+                user_id=current_user_id,
+                variant_timeout_s=DIGEST_BOTH_VARIANT_TIMEOUT_S,
+                gather_timeout_s=DIGEST_BOTH_GATHER_TIMEOUT_S,
+                hint="Upstream hang detected — sessions released to protect pool.",
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="digest_generation_timeout",
+            )
+
+        # If either variant is missing, don't return a 200 with null fields (the
+        # mobile client mishandles null variants as a permanent failure). Schedule
+        # regen for the specific missing variant(s) and ask the client to retry
+        # on the same 202 contract as the batch-running branch. Both-None and
+        # partial-None converge on the same response so the mobile side stays
+        # on a single polling contract.
+        if normal is None or serein is None:
+            effective_date = target_date or today_paris()
+            logger.warning(
+                "digest_both_returned_none_scheduled_regen",
+                user_id=current_user_id,
+                target_date=str(effective_date),
+                normal_missing=normal is None,
+                serein_missing=serein is None,
+            )
+            if normal is None:
+                schedule_digest_regen(user_uuid, effective_date, is_serene=False)
+            if serein is None:
+                schedule_digest_regen(user_uuid, effective_date, is_serene=True)
+            result: DualDigestResponse | JSONResponse = JSONResponse(
+                status_code=202,
+                content={
+                    "status": "preparing",
+                    "message": "Votre briefing est en cours de préparation...",
+                },
+            )
+            leader_fut.set_result(result)
+            return result
+
+        # Use the original session for the lightweight preference read
+        service = DigestService(db)
+        serein_enabled = await service._get_user_serein_enabled(user_uuid)
+
+        # Enrich both variants with community carousel
+        if normal:
+            normal = await _enrich_community_carousel(db, user_uuid, normal)
+        if serein:
+            serein = await _enrich_community_carousel(db, user_uuid, serein)
+
+        result = DualDigestResponse(
+            normal=normal,
+            serein=serein,
+            serein_enabled=serein_enabled,
         )
-        if normal is None:
-            schedule_digest_regen(user_uuid, effective_date, is_serene=False)
-        if serein is None:
-            schedule_digest_regen(user_uuid, effective_date, is_serene=True)
-        return JSONResponse(
-            status_code=202,
-            content={
-                "status": "preparing",
-                "message": "Votre briefing est en cours de préparation...",
-            },
-        )
-
-    # Use the original session for the lightweight preference read
-    service = DigestService(db)
-    serein_enabled = await service._get_user_serein_enabled(user_uuid)
-
-    # Enrich both variants with community carousel
-    if normal:
-        normal = await _enrich_community_carousel(db, user_uuid, normal)
-    if serein:
-        serein = await _enrich_community_carousel(db, user_uuid, serein)
-
-    return DualDigestResponse(
-        normal=normal,
-        serein=serein,
-        serein_enabled=serein_enabled,
-    )
+        leader_fut.set_result(result)
+        return result
+    except BaseException as exc:
+        if not leader_fut.done():
+            leader_fut.set_exception(exc)
+        raise
+    finally:
+        _digest_both_inflight.pop(user_uuid, None)
 
 
 @router.post("/{digest_id}/action", response_model=DigestActionResponse)
