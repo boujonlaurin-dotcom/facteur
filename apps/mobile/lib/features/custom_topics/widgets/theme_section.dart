@@ -134,7 +134,7 @@ class ThemeSection extends ConsumerWidget {
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
-            initiallyExpanded: true,
+            initiallyExpanded: false,
             tilePadding: const EdgeInsets.symmetric(
               horizontal: FacteurSpacing.space4,
               vertical: FacteurSpacing.space1,

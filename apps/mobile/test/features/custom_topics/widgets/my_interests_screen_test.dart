@@ -126,12 +126,20 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      // Should find both topic names
+      final tileCount = find.byType(ExpansionTile).evaluate().length;
+      for (int i = 0; i < tileCount; i++) {
+        final tile = find.byType(ExpansionTile).at(i);
+        await tester.ensureVisible(tile);
+        await tester.pumpAndSettle();
+        await tester.tap(tile, warnIfMissed: false);
+        await tester.pumpAndSettle();
+      }
+
       expect(find.text('Intelligence Artificielle'), findsOneWidget);
       expect(find.text('Climat'), findsOneWidget);
     });
 
-    testWidgets('expansion tiles are open by default', (tester) async {
+    testWidgets('expansion tiles are collapsed by default', (tester) async {
       await tester.pumpWidget(createWidget(
         topics: [
           const UserTopicProfile(
@@ -144,7 +152,12 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      // Topic should be visible (ExpansionTile open)
+      // Topic should NOT be visible while the tile is collapsed.
+      expect(find.text('IA'), findsNothing);
+
+      // Tapping expands the tile.
+      await tester.tap(find.byType(ExpansionTile).first);
+      await tester.pumpAndSettle();
       expect(find.text('IA'), findsOneWidget);
     });
 
@@ -177,6 +190,9 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byType(ExpansionTile).first);
+      await tester.pumpAndSettle();
+
       // Verify the topic is displayed (slider interaction tested in slider tests)
       expect(find.text('IA'), findsOneWidget);
     });
@@ -195,6 +211,9 @@ void main() {
           ),
         ],
       ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(ExpansionTile).first);
       await tester.pumpAndSettle();
 
       // Find the Dismissible and swipe it
@@ -224,6 +243,9 @@ void main() {
           ),
         ],
       ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(ExpansionTile).first);
       await tester.pumpAndSettle();
 
       final dismissible = find.byType(Dismissible);
@@ -264,6 +286,15 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
+      final tileCount = find.byType(ExpansionTile).evaluate().length;
+      for (int i = 0; i < tileCount; i++) {
+        final tile = find.byType(ExpansionTile).at(i);
+        await tester.ensureVisible(tile);
+        await tester.pumpAndSettle();
+        await tester.tap(tile, warnIfMissed: false);
+        await tester.pumpAndSettle();
+      }
+
       // Should show API suggestions (appears in multiple theme sections)
       expect(find.text('Suggestion unique'), findsWidgets);
 
@@ -285,6 +316,9 @@ void main() {
           ),
         ],
       ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(ExpansionTile).first);
       await tester.pumpAndSettle();
 
       // Should find the topic name rendered

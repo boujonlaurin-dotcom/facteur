@@ -1192,7 +1192,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         );
                       },
                       loading: () => const SliverToBoxAdapter(
-                        child: LoadingView(compact: true),
+                        child: LoadingView(),
                       ),
                       error: (err, stack) => SliverToBoxAdapter(
                         child: _consecutiveErrorCount >= 2
@@ -1239,10 +1239,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
                         child: Container(
                           color: colors.backgroundPrimary
-                              .withValues(alpha: 0.72),
+                              .withValues(alpha: 0.88),
                           padding: EdgeInsets.fromLTRB(
                             16,
-                            MediaQuery.of(context).padding.top,
+                            MediaQuery.of(context).padding.top + 10,
                             16,
                             8,
                           ),
