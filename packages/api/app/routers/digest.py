@@ -163,6 +163,12 @@ async def _enrich_community_carousel(
 
     except Exception:
         logger.exception("community_carousel_enrichment_failed")
+        # Round 6 — mirror D3 (PR #437 community.py). Handler is fail-open so
+        # get_db never sees the raise and cannot rollback a dirty session.
+        try:
+            await db.rollback()
+        except Exception as rb_exc:
+            logger.debug("community_carousel_rollback_failed", error=str(rb_exc))
 
     return digest
 
