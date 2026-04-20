@@ -8,6 +8,10 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import AsyncAdaptedQueuePool, NullPool
 
 from app.config import get_settings
+from app.middleware.request_context import (
+    current_request_method,
+    current_request_path,
+)
 
 settings = get_settings()
 
@@ -87,6 +91,24 @@ else:
 
 # Pool observability: log connections held longer than 10 seconds.
 # Helps detect session leaks that cause pool exhaustion.
+_LONG_CHECKOUT_THRESHOLD_S = 10.0
+
+
+def _maybe_log_long_checkout(connection_record) -> None:
+    checkout_time = getattr(connection_record, "_checkout_time", None)
+    if checkout_time is None:
+        return
+    duration = time.monotonic() - checkout_time
+    if duration > _LONG_CHECKOUT_THRESHOLD_S:
+        logger.warning(
+            "long_session_checkout",
+            duration_s=round(duration, 1),
+            endpoint=current_request_path.get("unknown"),
+            method=current_request_method.get("unknown"),
+        )
+    connection_record._checkout_time = None
+
+
 if _use_queue_pool:
 
     @event.listens_for(engine.sync_engine, "checkout")
@@ -95,15 +117,7 @@ if _use_queue_pool:
 
     @event.listens_for(engine.sync_engine, "checkin")
     def _on_checkin(dbapi_conn, connection_record):
-        checkout_time = getattr(connection_record, "_checkout_time", None)
-        if checkout_time:
-            duration = time.monotonic() - checkout_time
-            if duration > 10.0:
-                logger.warning(
-                    "long_session_checkout",
-                    duration_s=round(duration, 1),
-                )
-            connection_record._checkout_time = None
+        _maybe_log_long_checkout(connection_record)
 
 
 # Session factory
