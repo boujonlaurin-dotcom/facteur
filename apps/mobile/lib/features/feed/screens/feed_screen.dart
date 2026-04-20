@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -76,7 +77,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   bool _hasNudged = false;
 
   bool _swipeHintSeen = false;
-  final double _lastScrollPosition = 0;
+
+  // Sticky filter bar overlay state
+  bool _showStickyBar = false;
+  double _lastScrollPos = 0;
+  static const double _stickyScrollThreshold = 12;
+  static const double _stickyHideAboveScroll = 240;
 
   // Feed Refresh: track timestamps of recent refreshes for anti-addiction
   final List<DateTime> _refreshTimestamps = [];
@@ -231,6 +237,23 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     final maxScroll = _scrollController.position.maxScrollExtent;
     final currentScroll = _scrollController.position.pixels;
 
+    // Sticky filter bar visibility
+    final delta = currentScroll - _lastScrollPos;
+    if (delta.abs() >= _stickyScrollThreshold) {
+      bool next = _showStickyBar;
+      if (currentScroll < _stickyHideAboveScroll) {
+        next = false;
+      } else if (delta < 0) {
+        next = true;
+      } else if (delta > 0) {
+        next = false;
+      }
+      if (next != _showStickyBar) {
+        setState(() => _showStickyBar = next);
+      }
+      _lastScrollPos = currentScroll;
+    }
+
     // Analytics
     if (maxScroll > 0) {
       final percent = (currentScroll / maxScroll).clamp(0.0, 1.0);
@@ -342,6 +365,103 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
   }
 
+  Widget _buildFilterBarContent(BuildContext context) {
+    final notifier = ref.read(feedProvider.notifier);
+
+    if (notifier.selectedTheme == null &&
+        notifier.selectedTopic == null &&
+        notifier.selectedEntity == null) {
+      _selectedInterestName = null;
+      _selectedIsTheme = false;
+    }
+
+    final allSources = ref.watch(userSourcesProvider).valueOrNull ?? [];
+    final followedSources = allSources
+        .where((s) => (s.isTrusted || s.isCustom) && !s.isMuted)
+        .toList();
+    final selectedSourceId = notifier.selectedSourceId;
+    final selectedSourceName = selectedSourceId != null
+        ? followedSources
+            .where((s) => s.id == selectedSourceId)
+            .firstOrNull
+            ?.name
+        : null;
+    final selectedSourceLogoUrl = selectedSourceId != null
+        ? followedSources
+            .where((s) => s.id == selectedSourceId)
+            .firstOrNull
+            ?.logoUrl
+        : null;
+
+    final customTopics = ref.watch(customTopicsProvider).valueOrNull ?? [];
+
+    return Row(
+      children: [
+        Flexible(
+          child: CompactSourceChip(
+            followedSources: followedSources,
+            selectedSourceId: selectedSourceId,
+            selectedSourceName: selectedSourceName,
+            selectedSourceLogoUrl: selectedSourceLogoUrl,
+            onSourceChanged: (sourceId) {
+              if (sourceId != null) {
+                _withFeedLoading(() => notifier.setSource(sourceId));
+              } else {
+                notifier.setSource(null);
+              }
+              _scrollToTop();
+            },
+          ),
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: CompactThemeChip(
+            followedTopics: customTopics,
+            selectedSlug: notifier.selectedTopic ??
+                notifier.selectedTheme ??
+                notifier.selectedEntity,
+            selectedName: _selectedInterestName,
+            selectedIsTheme: _selectedIsTheme,
+            onInterestChanged: (slug, name,
+                {isTheme = false, isEntity = false}) {
+              setState(() {
+                _selectedInterestName = name;
+                _selectedIsTheme = isTheme;
+              });
+              _withFeedLoading(() async {
+                if (slug == null) {
+                  await notifier.setTopic(null);
+                  await notifier.setTheme(null);
+                  await notifier.setEntity(null);
+                } else if (isTheme) {
+                  await notifier.setTheme(slug);
+                } else if (isEntity) {
+                  await notifier.setEntity(slug);
+                } else {
+                  await notifier.setTopic(slug);
+                }
+              });
+              _scrollToTop();
+            },
+          ),
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: CompactSearchChip(
+            activeKeyword: notifier.selectedKeyword,
+            onSearchChanged: (keyword, {bool fromTrending = false}) {
+              _withFeedLoading(() => notifier.setKeyword(
+                    keyword,
+                    includeUnfollowed: fromTrending,
+                  ));
+              _scrollToTop();
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final feedAsync = ref.watch(feedProvider);
@@ -444,110 +564,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16.0, vertical: 8.0),
-                        child: Builder(builder: (context) {
-                          final notifier = ref.read(feedProvider.notifier);
-
-                          // Sync local display state with notifier — reset if no filter active
-                          if (notifier.selectedTheme == null &&
-                              notifier.selectedTopic == null &&
-                              notifier.selectedEntity == null) {
-                            _selectedInterestName = null;
-                            _selectedIsTheme = false;
-                          }
-
-                          // Source filter state
-                          final sourcesAsync = ref.watch(userSourcesProvider);
-                          final allSources = sourcesAsync.valueOrNull ?? [];
-                          final followedSources = allSources
-                              .where((s) =>
-                                  (s.isTrusted || s.isCustom) && !s.isMuted)
-                              .toList();
-                          final selectedSourceId = notifier.selectedSourceId;
-                          final selectedSourceName = selectedSourceId != null
-                              ? followedSources
-                                  .where((s) => s.id == selectedSourceId)
-                                  .firstOrNull
-                                  ?.name
-                              : null;
-                          final selectedSourceLogoUrl = selectedSourceId != null
-                              ? followedSources
-                                  .where((s) => s.id == selectedSourceId)
-                                  .firstOrNull
-                                  ?.logoUrl
-                              : null;
-
-                          // Interest filter state
-                          final customTopics =
-                              ref.watch(customTopicsProvider).valueOrNull ?? [];
-
-                          return Row(
-                            children: [
-                              Flexible(
-                                child: CompactSourceChip(
-                                  followedSources: followedSources,
-                                  selectedSourceId: selectedSourceId,
-                                  selectedSourceName: selectedSourceName,
-                                  selectedSourceLogoUrl: selectedSourceLogoUrl,
-                                  onSourceChanged: (sourceId) {
-                                    if (sourceId != null) {
-                                      _withFeedLoading(
-                                          () => notifier.setSource(sourceId));
-                                    } else {
-                                      notifier.setSource(null);
-                                    }
-                                    _scrollToTop();
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: CompactThemeChip(
-                                  followedTopics: customTopics,
-                                  selectedSlug: notifier.selectedTopic ??
-                                      notifier.selectedTheme ??
-                                      notifier.selectedEntity,
-                                  selectedName: _selectedInterestName,
-                                  selectedIsTheme: _selectedIsTheme,
-                                  onInterestChanged: (slug, name,
-                                      {isTheme = false, isEntity = false}) {
-                                    setState(() {
-                                      _selectedInterestName = name;
-                                      _selectedIsTheme = isTheme;
-                                    });
-                                    _withFeedLoading(() async {
-                                      if (slug == null) {
-                                        await notifier.setTopic(null);
-                                        await notifier.setTheme(null);
-                                        await notifier.setEntity(null);
-                                      } else if (isTheme) {
-                                        await notifier.setTheme(slug);
-                                      } else if (isEntity) {
-                                        await notifier.setEntity(slug);
-                                      } else {
-                                        await notifier.setTopic(slug);
-                                      }
-                                    });
-                                    _scrollToTop();
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: CompactSearchChip(
-                                  activeKeyword: notifier.selectedKeyword,
-                                  onSearchChanged: (keyword,
-                                      {bool fromTrending = false}) {
-                                    _withFeedLoading(() => notifier.setKeyword(
-                                          keyword,
-                                          includeUnfollowed: fromTrending,
-                                        ));
-                                    _scrollToTop();
-                                  },
-                                ),
-                              ),
-                            ],
-                          );
-                        }),
+                        child: _buildFilterBarContent(context),
                       ),
                     ),
                     SliverToBoxAdapter(
@@ -1200,6 +1217,40 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                 bottom: false,
                 child: ModeAccent(
                   isSerein: ref.watch(sereinToggleProvider).enabled,
+                ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                ignoring: !_showStickyBar,
+                child: AnimatedSlide(
+                  offset: _showStickyBar ? Offset.zero : const Offset(0, -1),
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  child: AnimatedOpacity(
+                    opacity: _showStickyBar ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOut,
+                    child: ClipRect(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                        child: Container(
+                          color: colors.backgroundPrimary
+                              .withValues(alpha: 0.72),
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            MediaQuery.of(context).padding.top,
+                            16,
+                            8,
+                          ),
+                          child: _buildFilterBarContent(context),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
