@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker
 from app.models.daily_digest import DailyDigest
-from app.models.user import UserPreference, UserProfile
+from app.models.user import UserProfile
 from app.services.digest_generation_state_service import (
     mark_failed as state_mark_failed,
 )

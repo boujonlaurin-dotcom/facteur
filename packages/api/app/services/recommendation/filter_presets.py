@@ -64,7 +64,7 @@ async def load_serein_preferences(
             )
         )
     ).all()
-    prefs = {k: v for k, v in prefs_rows}
+    prefs = dict(prefs_rows)
     personalized = prefs.get("serein_personalized") == "true"
 
     if personalized:
@@ -251,11 +251,16 @@ def _legacy_serein_keyword_filter(excluded_themes: list[str] | None = None):
     - Exclusion de mots-clés anxiogènes dans titre et description
 
     Args:
-        excluded_themes: liste de thèmes à exclure (défaut: SEREIN_EXCLUDED_THEMES)
+        excluded_themes: liste de thèmes à exclure.
+            - None : applique les défauts (SEREIN_EXCLUDED_THEMES).
+            - [] : personnalisé à vide, aucune exclusion thématique.
+            - [...] : utilise la liste verbatim.
     """
-    themes = excluded_themes or SEREIN_EXCLUDED_THEMES
+    themes = (
+        list(SEREIN_EXCLUDED_THEMES) if excluded_themes is None else excluded_themes
+    )
     keywords_pattern = "|".join(SEREIN_KEYWORDS)
-    theme_ok = Source.theme.notin_(themes)
+    theme_ok = Source.theme.notin_(themes) if themes else literal_column("TRUE")
     # Handle NULL title/description: NULL ~* 'pattern' → NULL → NOT NULL → NULL
     # which silently excludes rows. Use OR IS NULL to keep them.
     title_ok = or_(Content.title.is_(None), ~Content.title.op("~*")(keywords_pattern))

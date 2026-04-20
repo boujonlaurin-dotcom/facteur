@@ -242,17 +242,22 @@ class TestSereinFilterSensitiveThemes:
         )
         assert content.id not in [r.id for r in results]
 
-    async def test_sensitive_theme_does_not_affect_llm_tagged(
+    async def test_sensitive_theme_overrides_llm_is_serene_true(
         self, db_session, tech_source
     ):
-        """is_serene=True still passes even if theme is in user's sensitive list."""
+        """User-personalized theme exclusion overrides LLM is_serene=True.
+
+        Nouveau comportement : une fois l'utilisateur personnalisé
+        (sensitive_themes non-None), ses exclusions s'appliquent verbatim
+        et un choix explicite l'emporte sur la classification LLM.
+        """
         content = await _create_content(
             db_session, tech_source, "Innovation IA", is_serene=True
         )
         results = await _query_with_serein_filter_custom(
             db_session, tech_source, sensitive_themes=["tech"]
         )
-        assert content.id in [r.id for r in results]
+        assert content.id not in [r.id for r in results]
 
     async def test_custom_themes_replace_defaults(
         self, db_session, politics_source
