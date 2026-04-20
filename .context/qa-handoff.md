@@ -1,138 +1,112 @@
-# QA Handoff — Story 15.1 Mode Serein Refine
+# QA Handoff — Onboarding Q9b : carrousel pour l'affinage des thèmes
 
-Feature : refonte du mode serein — suppression de l'écran onboarding `SensitiveThemesQuestion`, ajout d'un CTA « Personnaliser mon mode serein » sous la question "Rester serein ?", et déplacement de la configuration (granulaire, tri-state par thème + par topic individuel) dans **Paramètres > Mes Intérêts** via le switch Normal/Serein existant, déplacé en top-right de la page.
+## Feature développée
+
+L'écran d'affinage des centres d'intérêt (`Q9b — Affine tes centres d'intérêt`) ne défile plus verticalement. Les thèmes sélectionnés à Q9 sont désormais présentés sous forme de carrousel horizontal (un thème par page, swipe latéral). Un sticky header animé affiche le thème courant au-dessus du carrousel ; des dots indicateurs colorés à la couleur du thème courant indiquent la progression. Le bouton "Continue" reste actif dès le départ ; un modal de confirmation apparaît si l'utilisateur tente de continuer sans avoir parcouru tous les thèmes.
+
+## PR associée
+
+À créer après validation QA.
 
 ## Écrans impactés
 
-| Écran | Route | Modifié |
-|-------|-------|---------|
-| Onboarding — "Rester serein ?" | `/onboarding` (section 2) | Ajout CTA `TextButton` "Personnaliser mon mode serein" |
-| Onboarding — `SensitiveThemesQuestion` | supprimé | Route + écran entier retirés |
-| Paramètres — Mes Intérêts | `/settings/interests` | AppBar.bottom = `SereinToggleChip` top-right ; mode Serein → checkbox tri-state thème + checkbox par topic ; section "Sujets sensibles" dépliable retirée |
+| Écran | Route | Modifié / Nouveau |
+|-------|-------|-------------------|
+| Onboarding Q9b — Affine tes centres d'intérêt | Onboarding section 3, step 1 (après Q9 themes) | Modifié |
 
-## Pré-requis
+## Scénarios de test
 
-- Environnement staging (API + front mobile web `flutter run -d chrome`)
-- Compte utilisateur **neuf** (onboarding frais)
-- Compte utilisateur **existant** déjà configuré avec un mode serein (pour scénario E3)
-- SQL one-shot à exécuter avant test E3 : `docs/qa/scripts/backfill_serein_personalized.sql`
+### Scénario 1 : Happy path multi-thèmes
+**Parcours** :
+1. Démarrer un nouvel onboarding (ou réinitialiser)
+2. Avancer jusqu'à Q9 et sélectionner 4 thèmes (ex. tech, international, science, culture)
+3. Continuer vers Q9b
 
-## Scénarios — Happy path
+**Résultat attendu** :
+- Le sticky header affiche l'emoji + label du premier thème (couleur primaire du thème).
+- 4 dots apparaissent sous le header ; le 1er est actif (forme allongée 24×10), les 3 autres sont inactifs (10×10).
+- La carte du thème courant occupe la majorité de l'espace ; un léger peek de la carte suivante est visible à droite (viewportFraction 0.92).
+- Swipe vers la gauche → navigation vers le 2ᵉ thème : le sticky header s'anime (fade + slide), les dots avancent, la couleur active du dot passe à celle du nouveau thème.
 
-### Scénario 1 — Fresh onboarding, "Oui, rester serein" sans personnalisation
+### Scénario 2 : Persistance des sélections au swipe
+**Parcours** :
+1. Sur Q9b avec 3+ thèmes
+2. Sur le thème 1, cocher 2 subtopics et 1 entité populaire
+3. Swipe vers le thème 2, cocher 1 subtopic
+4. Swipe retour vers le thème 1
 
-1. Démarrer un onboarding neuf.
-2. Arriver sur la question "🌿 Rester serein ?".
-3. **Attendu** :
-   - Deux boutons : "Oui, rester serein" (primary) / "Non, tout voir" (outlined).
-   - Sous les boutons : `TextButton` "Personnaliser mon mode serein" (visible en permanence).
-   - Aucun écran intermédiaire `SensitiveThemesQuestion` n'apparaît après le choix.
-4. Taper "Oui, rester serein" → le bouton "Continuer" apparaît.
-5. Taper "Continuer" → passage direct à la section 3.
-6. Terminer l'onboarding.
-7. **Attendu** : le digest généré respecte les défauts `SEREIN_EXCLUDED_THEMES` (pas d'articles dont `Source.theme` ∈ {politics, international, economy, society} ni contenant des mots-clés anxiogènes).
+**Résultat attendu** : les 2 subtopics + l'entité du thème 1 sont toujours cochés.
 
-### Scénario 2 — Fresh onboarding → CTA "Personnaliser"
+### Scénario 3 : Couleur dynamique des dots
+**Parcours** : sélectionner ≥ 3 thèmes de couleurs différentes, swipe entre eux.
 
-1. Onboarding neuf jusqu'à la question "Rester serein ?".
-2. Taper "Personnaliser mon mode serein".
-3. **Attendu** :
-   - Navigation via `pushNamed` vers `/settings/interests?serein=1`.
-   - La page "Mes Intérêts" s'affiche avec le `SereinToggleChip` **positionné sur Serein** (fond pastel sauge).
-4. En mode Serein :
-   - Chaque `ThemeSection` affiche un **checkbox tri-state** dans son header.
-   - Chaque `TopicRow` affiche un **checkbox à gauche** (à la place du point terracotta).
-   - Le slider de priorité est **caché**.
-5. Par défaut : tous les thèmes/topics sont **cochés** SAUF ceux des macro-thèmes exclus (society / international / economy / politics) qui sont **décochés**.
-6. Décocher un thème neutre (e.g. "Tech") : header passe à false, tous les topics enfants se décochent.
-7. Taper back. Retour sur `DigestModeQuestion` : "Oui, rester serein" est pré-sélectionné, "Continuer" disponible.
-8. Terminer l'onboarding.
-9. **Attendu** : le digest exclut "Tech" (aucun article tech) en plus des défauts.
+**Résultat attendu** : à chaque page, le dot actif prend la couleur du thème courant (ex. bleu pour tech, vert pour environnement, etc.).
 
-### Scénario 3 — Settings : toggle Normal/Serein top-right
+### Scénario 4 : Mono-thème (pas de carrousel)
+**Parcours** : à Q9, ne sélectionner qu'1 seul thème, continuer.
 
-1. Se connecter avec un utilisateur ayant terminé son onboarding.
-2. Ouvrir `Paramètres > Mes Intérêts`.
-3. **Attendu** : AppBar = "Mes Intérêts", en dessous à droite le `SereinToggleChip` en mode Normal par défaut.
-4. Taper le segment "Serein" → transition animée, chip vert sauge.
-5. **Attendu** :
-   - La section "Types de contenu" disparaît.
-   - La section "Sujets mis en sourdine" disparaît.
-   - Le bouton "Ajouter un sujet personnalisé" disparaît (FAB + block).
-   - Checkbox tri-state sur thème, checkbox par topic (sans slider, sans icône mute).
-   - Swipe-to-unfollow désactivé (le `Dismissible` ne wrap plus en mode serein).
-6. Décocher un topic individuel (e.g. "Donald Trump").
-7. Re-taper "Normal" → retour à l'affichage standard avec sliders et muted.
+**Résultat attendu** :
+- Pas de sticky header au-dessus.
+- Pas de dots indicateurs.
+- La carte unique du thème s'affiche directement, avec son header interne (emoji + label) en haut de la carte (comportement legacy préservé).
+- Tap Continue → pas de modal, navigation directe vers Q10.
 
-### Scénario 4 — Persistance
+### Scénario 5 : Custom topic + clavier
+**Parcours** :
+1. Sur Q9b, sur n'importe quel thème, tap "ajouter un sujet"
+2. Le clavier apparaît, le TextField se met en focus
+3. Saisir un nom et soumettre
 
-1. Scénario 3 effectué : switch Serein ON, décoche un thème, décoche un topic.
-2. Quitter l'app, la relancer.
-3. Rouvrir `Paramètres > Mes Intérêts`, retaper Serein.
-4. **Attendu** : les mêmes cases sont encore décochées (persisté via `user_preferences.sensitive_themes`, `user_preferences.serein_personalized='true'`, et `user_topic_profiles.excluded_from_serein`).
+**Résultat attendu** : le TextField reste visible (le SingleChildScrollView interne à la page absorbe le décalage du clavier). Le custom chip apparaît dans la liste au-dessus du CTA.
 
-## Scénarios — Edge cases
+### Scénario 6 : Continue sans tout parcourir → modal
+**Parcours** :
+1. Sélectionner 4 thèmes à Q9
+2. Sur Q9b, ne swiper que jusqu'au 2ᵉ thème (visited = {0, 1})
+3. Tap Continue
 
-### E1 — Cascade tri-state sur le header de thème
+**Résultat attendu** :
+- Modal `AlertDialog` apparaît avec titre "Êtes-vous sûr ?" et contenu "Vous pourrez toujours définir vos intérêts plus tard dans 'Mes intérêts'."
+- 2 actions : "Voir les autres thèmes" (referme sans naviguer) et "Continuer" (procède à la sauvegarde + navigation Q10).
+- Tester les 2 actions.
 
-1. En mode Serein, dans un thème à 3 topics, décocher 1 seul topic.
-2. **Attendu** : le checkbox du header passe en **indéterminé** (tri-state `null`, dash visuel).
-3. Décocher les 2 autres → header passe à **false**.
-4. Cocher le header depuis false → les 3 topics se cochent en cascade ET le thème sort de `excludedThemeSlugs`.
+### Scénario 7 : Continue après tout parcourir → pas de modal
+**Parcours** : sélectionner 4 thèmes, swiper jusqu'au dernier (indice 3, visited = {0, 1, 2, 3}), tap Continue.
 
-### E2 — Back depuis CTA sans rien changer
+**Résultat attendu** : pas de modal, navigation directe vers Q10. Les sélections (subtopics + entities + customs des 4 thèmes) sont sauvegardées en backend.
 
-1. Onboarding → "Personnaliser" → arrive sur Mes Intérêts en Serein.
-2. Ne rien changer, taper back immédiatement.
-3. **Attendu** : retour sur `DigestModeQuestion` avec "Oui, rester serein" pré-sélectionné. Aucun flag `serein_personalized` posé côté API — le filtre reste sur défauts.
+### Scénario 8 : Restart onboarding
+**Parcours** : compléter Q9b une fois, revenir à Q9b via reset partiel.
 
-### E3 — Utilisateur existant avec `sensitive_themes` pré-migration
-
-1. En staging, sélectionner un compte avec `user_preferences.sensitive_themes` non-null mais **pas** de `serein_personalized`.
-2. Exécuter `docs/qa/scripts/backfill_serein_personalized.sql`.
-3. Vérifier que le digest de cet utilisateur reste identique à avant (pas de régression de contenu affiché).
-
-### E4 — `SereinToggleChip` sans overflow
-
-1. Ouvrir `Paramètres > Mes Intérêts` sur viewport étroit (iPhone SE / 375px).
-2. **Attendu** : le chip s'affiche intégralement sous l'AppBar, aligné à droite, sans texte tronqué (protégé par `FittedBox` interne).
+**Résultat attendu** : les sélections précédentes sont restaurées (chips cochés sur les bons thèmes), la page initiale est 0 (premier thème).
 
 ## Critères d'acceptation
 
-- [ ] Section 2 de l'onboarding compte 5 questions (non plus 6 quand serein est choisi).
-- [ ] `SensitiveThemesQuestion` n'apparaît jamais.
-- [ ] CTA "Personnaliser mon mode serein" toujours visible sous les boutons du choix serein.
-- [ ] `MyInterestsScreen` en mode Serein affiche des cases cochables par thème (tri-state) et par topic, avec persistance immédiate optimiste.
-- [ ] Le digest en mode Serein exclut l'union des thèmes décochés **+** des topics décochés.
-- [ ] Par défaut, `SEREIN_EXCLUDED_THEMES` (society/international/economy/politics) reste bloqué tant que `serein_personalized` n'est pas posé.
-- [ ] Aucun overflow UI sur iPhone SE.
-- [ ] Aucune régression sur les flux existants (onboarding section 1/3, paramètres hors mode serein).
-
-## Tests automatisés
-
-- `flutter analyze` : 0 erreur sur les fichiers modifiés (warnings pré-existants conservés).
-- `flutter test` mobile : 37 échecs **pré-existants** (baseline `main` identique). 0 régression introduite par ce refactor.
-- `pytest tests/test_serein_filter.py` (hors tests DB) : 10/10 passent, incluant nouveaux tests `test_custom_themes_replace_defaults`.
-- Les tests DB-backed (`TestSereinFilterWithIsSerene`, `TestSereinFilterFallbackKeywords`, etc.) nécessitent Postgres local (`make db-up`) — CI gère.
+- [ ] Carrousel horizontal swipeable entre thèmes (≥ 2 thèmes sélectionnés)
+- [ ] Sticky header animé au-dessus du carrousel reflétant le thème courant
+- [ ] Dots indicateurs colorés à la couleur du thème courant
+- [ ] Bouton Continue actif dès le départ
+- [ ] Modal de confirmation uniquement si pas tous les thèmes parcourus
+- [ ] Cas mono-thème : rendu direct sans carrousel ni modal
+- [ ] Sélections persistantes lors des changements de page
+- [ ] Custom topic + keyboard fonctionnent dans une page de carrousel
+- [ ] Aucune régression sur la sauvegarde des subtopics/entities/customs
 
 ## Zones de risque
 
-- **Migration Alembic** : nouveau head `sr01_add_serein_exclusion` fusionne 2 heads existants (`ln01` + `ss01_search_cache`) et ajoute la colonne `user_topic_profiles.excluded_from_serein`. À appliquer manuellement via Supabase SQL Editor (hors Railway).
-- **Sémantique changée** : `sensitive_themes` stocké ne fait **plus union** avec les défauts — il les **remplace** dès que `serein_personalized=true`. Un utilisateur ayant `sensitive_themes=['tech']` voit **uniquement** tech filtré (society/politics repassent). Backfill SQL obligatoire avant déploiement.
-- **UI sur petits écrans** : `SereinToggleChip` = 148px de large. Déplacement dans `AppBar.bottom` au lieu de `actions` pour éviter l'overflow lié au titre AppBar.
+- **Hauteur dynamique** : les cards de "tech" ou "international" peuvent être plus hautes que l'écran (beaucoup de subtopics + entités). Vérifier que le `SingleChildScrollView` interne à la page absorbe correctement le débordement vertical.
+- **Keyboard + PageView** : sur certains devices, le clavier qui s'ouvre dans une page de carrousel peut perturber le scroll. Vérifier que le TextField reste visible et que le scroll-into-view fonctionne.
+- **Animation du sticky header** : à valider visuellement — fade + slide de 0.2 vertical sur 250ms. Si trop sec ou trop lent, ajuster.
+- **Couleurs des thèmes** : 9 thèmes ont chacun leur couleur (cf. `AvailableThemes.all`). Vérifier que toutes les couleurs sont lisibles en tant que dot actif sur le fond standard.
 
-## Fichiers critiques à vérifier visuellement
+## Dépendances
 
-```
-apps/mobile/lib/features/custom_topics/screens/my_interests_screen.dart
-apps/mobile/lib/features/custom_topics/widgets/theme_section.dart        # tri-state header
-apps/mobile/lib/features/custom_topics/widgets/topic_row.dart            # checkbox left
-apps/mobile/lib/features/onboarding/screens/questions/digest_mode_question.dart  # CTA
-apps/mobile/lib/config/routes.dart                                        # ?serein=1 query
-```
+- API `/topics/follow` (via `customTopicsProvider.followTopic`) — inchangé.
+- Provider `popularEntitiesProvider(themeSlug)` — inchangé.
+- `OnboardingAnswers.subtopics` (state via Riverpod) — inchangé.
 
-## Ressources
+Aucun endpoint backend modifié, aucune migration DB.
 
-- Story doc : `docs/stories/core/15.1.mode-serein-refine.story.md`
-- Plan : `~/.claude/plans/system-instruction-you-are-working-glistening-donut.md`
-- Backfill SQL : `docs/qa/scripts/backfill_serein_personalized.sql`
+## Fichiers modifiés
+
+- `apps/mobile/lib/features/onboarding/screens/questions/subtopics_question.dart` (seul fichier modifié pour cette feature)

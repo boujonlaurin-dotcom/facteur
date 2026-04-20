@@ -90,7 +90,7 @@ class AboutScreen extends StatelessWidget {
             const SizedBox(height: FacteurSpacing.space8),
             Center(
               child: Text(
-                'Version 1.0.0 • Open Source',
+                'Version Beta 1.0 • Open Source',
                 style:
                     textTheme.labelSmall?.copyWith(color: colors.textTertiary),
               ),
