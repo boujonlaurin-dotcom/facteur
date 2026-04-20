@@ -606,22 +606,14 @@ class DigestGenerationJob:
                         editorial_ctx_serein if is_serene else editorial_ctx_pour_vous
                     )
 
-                    # Load user's sensitive_themes for personalized serein filter
-                    import json as _json
-
-                    _st_result = await session.execute(
-                        select(UserPreference.preference_value).where(
-                            UserPreference.user_id == user_id,
-                            UserPreference.preference_key == "sensitive_themes",
-                        )
+                    # Load user's serein preferences (themes + topic exclusions)
+                    from app.services.recommendation.filter_presets import (
+                        load_serein_preferences,
                     )
-                    _st_raw = _st_result.scalar_one_or_none()
-                    try:
-                        sensitive_themes: list[str] | None = (
-                            _json.loads(_st_raw) if _st_raw else None
-                        )
-                    except (ValueError, TypeError):
-                        sensitive_themes = None
+
+                    _serein_prefs = await load_serein_preferences(session, user_id)
+                    sensitive_themes: list[str] | None = _serein_prefs.sensitive_themes
+                    excluded_topics = _serein_prefs.excluded_topics
 
                     # Sélectionner les articles via DigestSelector
                     # session_maker propagé → pipeline LLM utilisera des
@@ -641,6 +633,7 @@ class DigestGenerationJob:
                         output_format="editorial",
                         editorial_global_ctx=editorial_ctx,
                         sensitive_themes=sensitive_themes,
+                        excluded_topics=excluded_topics,
                     )
 
                     # Handle editorial pipeline result (Pydantic object, not a list)
@@ -862,22 +855,14 @@ async def generate_digest_for_user(
                     )
                     return existing
 
-            # Load user's sensitive_themes for personalized serein filter
-            import json as _json
-
-            _st_result = await session.execute(
-                select(UserPreference.preference_value).where(
-                    UserPreference.user_id == user_id,
-                    UserPreference.preference_key == "sensitive_themes",
-                )
+            # Load user's serein preferences (themes + topic exclusions)
+            from app.services.recommendation.filter_presets import (
+                load_serein_preferences,
             )
-            _st_raw = _st_result.scalar_one_or_none()
-            try:
-                sensitive_themes: list[str] | None = (
-                    _json.loads(_st_raw) if _st_raw else None
-                )
-            except (ValueError, TypeError):
-                sensitive_themes = None
+
+            _serein_prefs = await load_serein_preferences(session, user_id)
+            sensitive_themes: list[str] | None = _serein_prefs.sensitive_themes
+            excluded_topics = _serein_prefs.excluded_topics
 
             # Générer — session_maker pour que la pipeline LLM (si format
             # éditorial activé) ouvre des sessions courtes et n'agrippe pas
@@ -888,6 +873,7 @@ async def generate_digest_for_user(
                 limit=DiversityConstraints.TARGET_DIGEST_SIZE,
                 hours_lookback=48,
                 sensitive_themes=sensitive_themes,
+                excluded_topics=excluded_topics,
             )
 
             if not digest_items:

@@ -14,6 +14,7 @@ Pipeline :
 
 import datetime
 from dataclasses import dataclass, field
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -80,6 +81,7 @@ class TopicSelector:
         trending_context: GlobalTrendingContext | None,
         mode: str = "pour_vous",
         sensitive_themes: list[str] | None = None,
+        excluded_topics: list[Any] | None = None,
     ) -> list[TopicGroup]:
         """Sélectionne N topics pour le digest d'un utilisateur.
 
@@ -112,6 +114,7 @@ class TopicSelector:
             trending_context=trending_context,
             mode=mode,
             sensitive_themes=sensitive_themes,
+            excluded_topics=excluded_topics,
         )
 
         # 3. Sélectionner N topics
@@ -153,6 +156,7 @@ class TopicSelector:
         trending_context: GlobalTrendingContext | None,
         mode: str,
         sensitive_themes: list[str] | None = None,
+        excluded_topics: list[Any] | None = None,
     ) -> list[tuple[TopicCluster, float, str]]:
         """Score chaque cluster au niveau topic.
 
@@ -164,7 +168,9 @@ class TopicSelector:
         for cluster in clusters:
             # Mode serein : exclure les clusters anxiogènes
             if mode == "serein" and not is_cluster_serein_compatible(
-                cluster, sensitive_themes=sensitive_themes
+                cluster,
+                sensitive_themes=sensitive_themes,
+                excluded_topics=excluded_topics,
             ):
                 continue
 

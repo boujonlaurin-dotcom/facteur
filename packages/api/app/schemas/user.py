@@ -84,10 +84,6 @@ class OnboardingAnswers(BaseModel):
     digest_mode: str | None = Field(
         "pour_vous", description="pour_vous, serein, perspective"
     )
-    sensitive_themes: list[str] | None = Field(
-        None,
-        description="Thèmes sensibles pour le mode serein (personnalisation utilisateur)",
-    )
 
     # Section 3 - Source Preferences
     preferred_sources: list[str] | None = Field(

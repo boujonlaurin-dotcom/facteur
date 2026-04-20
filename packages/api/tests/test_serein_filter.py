@@ -254,34 +254,54 @@ class TestSereinFilterSensitiveThemes:
         )
         assert content.id in [r.id for r in results]
 
-    async def test_default_themes_still_excluded_with_custom(
+    async def test_custom_themes_replace_defaults(
         self, db_session, politics_source
     ):
-        """Default excluded themes (politics) remain excluded when custom themes added."""
+        """Custom sensitive_themes REPLACE defaults (no union).
+
+        New semantic: once the user personalizes, the stored list is used
+        verbatim. Default excluded themes no longer apply automatically.
+        """
         content = await _create_content(
             db_session, politics_source, "Débat parlementaire", is_serene=None
         )
         results = await _query_with_serein_filter_custom(
             db_session, politics_source, sensitive_themes=["tech"]
         )
-        assert content.id not in [r.id for r in results]
+        # politics is NOT in ["tech"], so the article passes.
+        assert content.id in [r.id for r in results]
 
-    async def test_none_sensitive_themes_same_as_default(
+    async def test_none_sensitive_themes_applies_defaults(
         self, db_session, tech_source
     ):
-        """sensitive_themes=None produces the same behavior as no param (backward compat)."""
+        """sensitive_themes=None applies the SEREIN_EXCLUDED_THEMES defaults."""
         content = await _create_content(
             db_session, tech_source, "Article tech neutre", is_serene=None
         )
-        results_none = await _query_with_serein_filter_custom(
+        results = await _query_with_serein_filter_custom(
             db_session, tech_source, sensitive_themes=None
         )
-        results_empty = await _query_with_serein_filter_custom(
-            db_session, tech_source, sensitive_themes=[]
+        # Tech is NOT in default excluded themes, so article passes.
+        assert content.id in [r.id for r in results]
+
+    async def test_empty_sensitive_themes_means_no_theme_exclusion(
+        self, db_session, politics_source
+    ):
+        """Personalized empty list = aucune exclusion thématique appliquée.
+
+        Distinct from `None` (defaults). A user who explicitly unchecks every
+        theme in the UI persists `sensitive_themes=[]`, and expects no theme
+        to be excluded — only the LLM `is_serene` path filters then.
+        """
+        content = await _create_content(
+            db_session, politics_source, "Débat parlementaire", is_serene=None
         )
-        # Tech is NOT in default excluded themes, so article should pass
-        assert content.id in [r.id for r in results_none]
-        assert content.id in [r.id for r in results_empty]
+        results = await _query_with_serein_filter_custom(
+            db_session, politics_source, sensitive_themes=[]
+        )
+        # Politics article passes because the user opted out of all theme
+        # exclusions (empty list ≠ defaults).
+        assert content.id in [r.id for r in results]
 
 
 class TestIsClusterSereinCompatibleSensitiveThemes:
@@ -323,17 +343,28 @@ class TestIsClusterSereinCompatibleSensitiveThemes:
         cluster = self._make_cluster("tech")
         assert not is_cluster_serein_compatible(cluster, sensitive_themes=["tech"])
 
-    def test_default_themes_still_incompatible_with_custom(self):
-        """Default excluded themes remain incompatible when custom themes added."""
+    def test_custom_themes_replace_defaults(self):
+        """Custom sensitive_themes REPLACE defaults (no union).
+
+        New semantic: user-provided list is used verbatim. Defaults no
+        longer apply once the caller passes an explicit list.
+        """
         cluster = self._make_cluster("society")
-        assert not is_cluster_serein_compatible(cluster, sensitive_themes=["tech"])
+        # society not in ["tech"], so the cluster is now compatible.
+        assert is_cluster_serein_compatible(cluster, sensitive_themes=["tech"])
 
     def test_none_sensitive_themes_backward_compatible(self):
-        """sensitive_themes=None produces same result as before."""
+        """sensitive_themes=None applies the defaults (backward compat)."""
         tech_cluster = self._make_cluster("tech")
         politics_cluster = self._make_cluster("politics")
         assert is_cluster_serein_compatible(tech_cluster, sensitive_themes=None)
         assert not is_cluster_serein_compatible(politics_cluster, sensitive_themes=None)
+
+    def test_empty_sensitive_themes_means_no_theme_exclusion(self):
+        """Personalized empty list = aucune exclusion thématique (≠ None)."""
+        politics_cluster = self._make_cluster("politics")
+        # User personalized to exclude no theme → politics passes here.
+        assert is_cluster_serein_compatible(politics_cluster, sensitive_themes=[])
 
 
 # ---------------------------------------------------------------------------

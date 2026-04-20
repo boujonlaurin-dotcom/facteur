@@ -80,11 +80,14 @@ class CreateTopicRequest(BaseModel):
 
 
 class UpdateTopicRequest(BaseModel):
-    priority_multiplier: float
+    priority_multiplier: float | None = None
+    excluded_from_serein: bool | None = None
 
     @field_validator("priority_multiplier")
     @classmethod
-    def validate_multiplier(cls, v: float) -> float:
+    def validate_multiplier(cls, v: float | None) -> float | None:
+        if v is None:
+            return v
         allowed = {0.2, 1.0, 2.0}
         if v not in allowed:
             raise ValueError(
@@ -104,6 +107,7 @@ class TopicResponse(BaseModel):
     source_type: str
     entity_type: str | None = None
     canonical_name: str | None = None
+    excluded_from_serein: bool = False
     created_at: str
 
     model_config = {"from_attributes": True}
@@ -135,6 +139,7 @@ def _topic_to_response(t: UserTopicProfile) -> TopicResponse:
         source_type=t.source_type,
         entity_type=t.entity_type,
         canonical_name=t.canonical_name,
+        excluded_from_serein=getattr(t, "excluded_from_serein", False),
         created_at=t.created_at.isoformat() if t.created_at else "",
     )
 
@@ -454,7 +459,10 @@ async def update_topic(
     if not topic:
         raise HTTPException(status_code=404, detail="Topic non trouvé")
 
-    topic.priority_multiplier = request.priority_multiplier
+    if request.priority_multiplier is not None:
+        topic.priority_multiplier = request.priority_multiplier
+    if request.excluded_from_serein is not None:
+        topic.excluded_from_serein = request.excluded_from_serein
     await db.flush()
     await db.refresh(topic)
     await db.commit()
@@ -465,6 +473,7 @@ async def update_topic(
         user_id=current_user_id,
         topic_id=str(topic_id),
         multiplier=request.priority_multiplier,
+        excluded_from_serein=request.excluded_from_serein,
     )
 
     return _topic_to_response(topic)

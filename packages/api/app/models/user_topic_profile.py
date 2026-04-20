@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, String, Text, text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -50,6 +50,9 @@ class UserTopicProfile(Base):
     )
     priority_multiplier: Mapped[float] = mapped_column(Float, default=1.0)
     composite_score: Mapped[float] = mapped_column(Float, default=0.0)
+    excluded_from_serein: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

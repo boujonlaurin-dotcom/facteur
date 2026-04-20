@@ -188,6 +188,7 @@ class DigestSelector:
         output_format: str = "topics",
         editorial_global_ctx: object | None = None,
         sensitive_themes: list[str] | None = None,
+        excluded_topics: list[Any] | None = None,
     ) -> list:
         """Sélectionne les articles pour le digest d'un utilisateur.
 
@@ -263,6 +264,7 @@ class DigestSelector:
                 min_pool_size=limit,
                 mode=mode,
                 sensitive_themes=sensitive_themes,
+                excluded_topics=excluded_topics,
             )
             candidates_time = time.time() - step_start
 
@@ -397,6 +399,7 @@ class DigestSelector:
                     trending_context=trending_context,
                     mode=mode,
                     sensitive_themes=sensitive_themes,
+                    excluded_topics=excluded_topics,
                 )
                 topic_time = time.time() - step_start
                 total_time = time.time() - start_time
@@ -681,6 +684,7 @@ class DigestSelector:
         min_pool_size: int,
         mode: str = "pour_vous",
         sensitive_themes: list[str] | None = None,
+        excluded_topics: list[Any] | None = None,
     ) -> list[Content]:
         """Récupère les candidats pour le digest.
 
@@ -766,7 +770,9 @@ class DigestSelector:
             # Appliquer le filtre serein si demandé
             if mode == "serein":
                 user_sources_query = apply_serein_filter(
-                    user_sources_query, sensitive_themes=sensitive_themes
+                    user_sources_query,
+                    sensitive_themes=sensitive_themes,
+                    excluded_topics=excluded_topics,
                 )
 
             result = await self.session.execute(user_sources_query)
@@ -838,7 +844,9 @@ class DigestSelector:
         # Appliquer le filtre serein si demandé
         if mode == "serein":
             curated_query = apply_serein_filter(
-                curated_query, sensitive_themes=sensitive_themes
+                curated_query,
+                sensitive_themes=sensitive_themes,
+                excluded_topics=excluded_topics,
             )
 
         result = await self.session.execute(curated_query)

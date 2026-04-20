@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../config/routes.dart';
 import '../../../../config/serein_colors.dart';
 import '../../../../config/theme.dart';
 import '../../onboarding_strings.dart';
@@ -113,6 +115,32 @@ class DigestModeQuestion extends ConsumerWidget {
               ),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(FacteurRadius.large),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: FacteurSpacing.space2),
+
+          // Optional: personalise the serein filter before continuing.
+          TextButton(
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              // Mark the choice but stay on this question so the user returns
+              // here after configuring exclusions.
+              ref
+                  .read(onboardingProvider.notifier)
+                  .markDigestMode('serein');
+              context.pushNamed(
+                RouteNames.myInterests,
+                queryParameters: const {'serein': '1'},
+              );
+            },
+            child: Text(
+              OnboardingStrings.personalizeSereinCta,
+              style: TextStyle(
+                color: SereinColors.sereinColor,
+                fontWeight: FontWeight.w600,
+                decoration: TextDecoration.underline,
               ),
             ),
           ),

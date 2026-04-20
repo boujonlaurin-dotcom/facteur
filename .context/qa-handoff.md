@@ -1,129 +1,138 @@
-# QA Handoff — Digest UI Polish Phase 2 (sous-cartes article ouvert)
+# QA Handoff — Story 15.1 Mode Serein Refine
 
-> Polish UI ciblé sur l'état "expanded" d'un topic editorial du digest : allégement des sous-cartes Analyse de biais + Pas de recul, harmonisation des page indicators.
-
-## Feature développée
-
-Refonte visuelle des blocs **Analyse de biais** (sobre, replié par défaut, CTA inline) et **Pas de recul** (info @ 5%, sans border-left), compactage du spacing wrapper expanded, et harmonisation des page indicator dots sur **3 carousels** de l'app (digest expanded, feed, community).
-
-## PR associée
-
-À créer après validation visuelle (cible `main`).
+Feature : refonte du mode serein — suppression de l'écran onboarding `SensitiveThemesQuestion`, ajout d'un CTA « Personnaliser mon mode serein » sous la question "Rester serein ?", et déplacement de la configuration (granulaire, tri-state par thème + par topic individuel) dans **Paramètres > Mes Intérêts** via le switch Normal/Serein existant, déplacé en top-right de la page.
 
 ## Écrans impactés
 
 | Écran | Route | Modifié |
 |-------|-------|---------|
-| Digest — Topic editorial expanded | `/digest` (tap sur topic editorial) | Modifié |
-| Feed — Carousels topiques | `/feed` | Modifié (page indicator only) |
-| Community — Carousel | écran community | Modifié (page indicator only) |
+| Onboarding — "Rester serein ?" | `/onboarding` (section 2) | Ajout CTA `TextButton` "Personnaliser mon mode serein" |
+| Onboarding — `SensitiveThemesQuestion` | supprimé | Route + écran entier retirés |
+| Paramètres — Mes Intérêts | `/settings/interests` | AppBar.bottom = `SereinToggleChip` top-right ; mode Serein → checkbox tri-state thème + checkbox par topic ; section "Sujets sensibles" dépliable retirée |
 
-## Scénarios de test
+## Pré-requis
 
-### Scénario 1 — Digest Analyse de biais (E1.b — replié par défaut)
-**Parcours** :
-1. Aller sur `/digest`
-2. Trouver un topic editorial avec analyse de biais (ex. topic rang 1)
-3. Taper sur le topic pour l'ouvrir (expanded state)
-4. Observer la sous-carte "🔍 Analyse de biais (N sources)"
+- Environnement staging (API + front mobile web `flutter run -d chrome`)
+- Compte utilisateur **neuf** (onboarding frais)
+- Compte utilisateur **existant** déjà configuré avec un mode serein (pour scénario E3)
+- SQL one-shot à exécuter avant test E3 : `docs/qa/scripts/backfill_serein_personalized.sql`
 
-**Résultat attendu** :
-- Background **sobre** : `colors.surface` (#FDFBF7 light) + border 1px subtle (`colors.border @ 0.15`). Plus de gradient ocre/orange.
-- Plus de tooltip ⓘ "Mistral Medium" dans le header
-- DivergenceChip "Angles différents" visible (conservé)
-- Bias spectrum bar visible (height 6px) avec labels Gauche/Centre/Droite à **8px** (vs 9px avant)
-- Texte d'analyse **non visible** par défaut
-- Chevron `▼ Lire l'analyse` cliquable visible (primary @ 0.7, 12px W500)
+## Scénarios — Happy path
 
-### Scénario 2 — Digest tap chevron révèle l'analyse
-**Parcours** :
-1. Depuis l'état précédent, taper sur "Lire l'analyse"
+### Scénario 1 — Fresh onboarding, "Oui, rester serein" sans personnalisation
 
-**Résultat attendu** :
-- Texte d'analyse complet révélé (line-height 1.4 vs 1.5 avant — plus compact)
-- CTA inline `Voir les N perspectives →` aligné droite (sans pill, primary @ 0.7, 11px W500)
-- Plus de pile de logos sources (supprimée — épuration A3.b)
-- Tap sur le texte le replie
+1. Démarrer un onboarding neuf.
+2. Arriver sur la question "🌿 Rester serein ?".
+3. **Attendu** :
+   - Deux boutons : "Oui, rester serein" (primary) / "Non, tout voir" (outlined).
+   - Sous les boutons : `TextButton` "Personnaliser mon mode serein" (visible en permanence).
+   - Aucun écran intermédiaire `SensitiveThemesQuestion` n'apparaît après le choix.
+4. Taper "Oui, rester serein" → le bouton "Continuer" apparaît.
+5. Taper "Continuer" → passage direct à la section 3.
+6. Terminer l'onboarding.
+7. **Attendu** : le digest généré respecte les défauts `SEREIN_EXCLUDED_THEMES` (pas d'articles dont `Source.theme` ∈ {politics, international, economy, society} ni contenant des mots-clés anxiogènes).
 
-### Scénario 3 — Pas de recul (B1.a + B2.c)
-**Parcours** :
-1. Toujours dans le topic editorial expanded, observer la sous-carte "🔭 Prendre du recul"
+### Scénario 2 — Fresh onboarding → CTA "Personnaliser"
 
-**Résultat attendu** :
-- Background **bleu très clair** `colors.info @ 0.05` (ou 0.10 dark)
-- Border 1px tout autour `colors.info @ 0.15` (plus de border-left épaisse)
-- Padding interne **10px** (vs 12 avant)
-- Tap → ouvre l'article (animation InkWell, plus FacteurCard bounce)
+1. Onboarding neuf jusqu'à la question "Rester serein ?".
+2. Taper "Personnaliser mon mode serein".
+3. **Attendu** :
+   - Navigation via `pushNamed` vers `/settings/interests?serein=1`.
+   - La page "Mes Intérêts" s'affiche avec le `SereinToggleChip` **positionné sur Serein** (fond pastel sauge).
+4. En mode Serein :
+   - Chaque `ThemeSection` affiche un **checkbox tri-state** dans son header.
+   - Chaque `TopicRow` affiche un **checkbox à gauche** (à la place du point terracotta).
+   - Le slider de priorité est **caché**.
+5. Par défaut : tous les thèmes/topics sont **cochés** SAUF ceux des macro-thèmes exclus (society / international / economy / politics) qui sont **décochés**.
+6. Décocher un thème neutre (e.g. "Tech") : header passe à false, tous les topics enfants se décochent.
+7. Taper back. Retour sur `DigestModeQuestion` : "Oui, rester serein" est pré-sélectionné, "Continuer" disponible.
+8. Terminer l'onboarding.
+9. **Attendu** : le digest exclut "Tech" (aucun article tech) en plus des défauts.
 
-### Scénario 4 — Page indicator dots discrets (cohérence cross-app)
-**Parcours** :
-1. Sur le carousel d'un topic editorial expanded (digest), observer les dots
-2. Aller sur `/feed`, observer les dots des carousels topiques
-3. Aller sur la section community, observer les dots du carousel
+### Scénario 3 — Settings : toggle Normal/Serein top-right
 
-**Résultat attendu sur les 3 écrans** :
-- Dot actif : **16×6** (vs 24×10 avant) — `colors.primary` (digest, feed) ou `sunflowerYellow` (community)
-- Dot inactif : **6×6** (vs 10×10 avant) — opacity **0.2** (vs 0.3 avant)
-- Border-radius 3 (cohérent)
+1. Se connecter avec un utilisateur ayant terminé son onboarding.
+2. Ouvrir `Paramètres > Mes Intérêts`.
+3. **Attendu** : AppBar = "Mes Intérêts", en dessous à droite le `SereinToggleChip` en mode Normal par défaut.
+4. Taper le segment "Serein" → transition animée, chip vert sauge.
+5. **Attendu** :
+   - La section "Types de contenu" disparaît.
+   - La section "Sujets mis en sourdine" disparaît.
+   - Le bouton "Ajouter un sujet personnalisé" disparaît (FAB + block).
+   - Checkbox tri-state sur thème, checkbox par topic (sans slider, sans icône mute).
+   - Swipe-to-unfollow désactivé (le `Dismissible` ne wrap plus en mode serein).
+6. Décocher un topic individuel (e.g. "Donald Trump").
+7. Re-taper "Normal" → retour à l'affichage standard avec sliders et muted.
 
-### Scénario 5 — Wrapper expanded compacté (C1.a)
-**Parcours** :
-1. Topic editorial expanded — vérifier l'espacement vertical
+### Scénario 4 — Persistance
 
-**Résultat attendu** :
-- Espacements `SizedBox(height: 6)` au lieu de 8 entre carousel/dots/sous-cartes/feedback
-- Sensation : ~80-110px gagnés sur l'ensemble
+1. Scénario 3 effectué : switch Serein ON, décoche un thème, décoche un topic.
+2. Quitter l'app, la relancer.
+3. Rouvrir `Paramètres > Mes Intérêts`, retaper Serein.
+4. **Attendu** : les mêmes cases sont encore décochées (persisté via `user_preferences.sensitive_themes`, `user_preferences.serein_personalized='true'`, et `user_topic_profiles.excluded_from_serein`).
 
-### Scénario 6 — Edge cases
-- Topic avec **1 source** seule (pas de divergence) : CTA "Voir les N perspectives →" doit être absent même quand l'analyse est dépliée
-- Topic **sans onCompare callback** : pas de CTA même déplié
-- Topic **sans introText** dans Pas de recul : juste title + thumbnail + arrow (compact)
+## Scénarios — Edge cases
+
+### E1 — Cascade tri-state sur le header de thème
+
+1. En mode Serein, dans un thème à 3 topics, décocher 1 seul topic.
+2. **Attendu** : le checkbox du header passe en **indéterminé** (tri-state `null`, dash visuel).
+3. Décocher les 2 autres → header passe à **false**.
+4. Cocher le header depuis false → les 3 topics se cochent en cascade ET le thème sort de `excludedThemeSlugs`.
+
+### E2 — Back depuis CTA sans rien changer
+
+1. Onboarding → "Personnaliser" → arrive sur Mes Intérêts en Serein.
+2. Ne rien changer, taper back immédiatement.
+3. **Attendu** : retour sur `DigestModeQuestion` avec "Oui, rester serein" pré-sélectionné. Aucun flag `serein_personalized` posé côté API — le filtre reste sur défauts.
+
+### E3 — Utilisateur existant avec `sensitive_themes` pré-migration
+
+1. En staging, sélectionner un compte avec `user_preferences.sensitive_themes` non-null mais **pas** de `serein_personalized`.
+2. Exécuter `docs/qa/scripts/backfill_serein_personalized.sql`.
+3. Vérifier que le digest de cet utilisateur reste identique à avant (pas de régression de contenu affiché).
+
+### E4 — `SereinToggleChip` sans overflow
+
+1. Ouvrir `Paramètres > Mes Intérêts` sur viewport étroit (iPhone SE / 375px).
+2. **Attendu** : le chip s'affiche intégralement sous l'AppBar, aligné à droite, sans texte tronqué (protégé par `FittedBox` interne).
 
 ## Critères d'acceptation
 
-- [ ] Sous-carte analyse rendue avec background neutre `colors.surface` + border subtle
-- [ ] Tooltip ⓘ supprimé du header analyse
-- [ ] DivergenceChip et bias bar conservés
-- [ ] Bias bar labels en 8px
-- [ ] Analyse repliée par défaut, chevron "Lire l'analyse" visible
-- [ ] Tap chevron → texte révélé + CTA "Voir les N perspectives →" inline droite
-- [ ] Pas de recul fond bleu très clair, border 1px, padding 10
-- [ ] Page indicators 16×6/6×6/0.2 sur **3 carousels** (digest, feed, community)
-- [ ] Aucune régression visuelle sur le mode dark
-- [ ] Aucune régression sur les tests existants (suite mobile)
-
-## Zones de risque
-
-- **E1.b changement comportemental** : analyse repliée par défaut. Vérifier que l'utilisateur retrouve facilement l'info au tap. Si confusion, retour possible sur le pattern "3 lignes ellipsis + Lire la suite" (commit révert ciblé).
-- **Dissymétrie A1.a (analyse neutre) vs B1.a (recul tinted bleu)** : assumé. Si visuellement étrange, fallback = passer le recul aussi sur surface neutre.
-- **Mode dark** : `colors.surface` = #1C1C1C (sombre) ; `colors.info @ 0.10` (dark) testé via fallback. À vérifier visuellement.
-- **Animation tap** : Pas de recul perd l'animation bounce de FacteurCard (remplacée par InkWell ripple). Si jugé trop neutre, possibilité de wrapper dans FacteurCard.
-
-## Dépendances
-
-Aucune. 100% changements front (Flutter widgets), pas d'impact API/DB/services.
-
-## Fichiers modifiés (phase 2 uniquement)
-
-```
-apps/mobile/lib/features/digest/widgets/divergence_analysis_block.dart    # refonte complète
-apps/mobile/lib/features/digest/widgets/pas_de_recul_block.dart           # bg + border + padding
-apps/mobile/lib/features/digest/widgets/bias_spectrum_bar.dart            # labels 9→8
-apps/mobile/lib/features/digest/widgets/topic_section.dart                # spacing 8→6 + indicator
-apps/mobile/lib/features/digest/widgets/community_carousel_section.dart   # indicator dimensions
-apps/mobile/lib/features/feed/widgets/feed_carousel.dart                  # indicator dimensions
-apps/mobile/test/features/digest/widgets/divergence_analysis_block_test.dart  # E1.b tests
-apps/mobile/test/features/digest/widgets/pas_de_recul_block_test.dart        # FacteurCard → InkWell
-```
+- [ ] Section 2 de l'onboarding compte 5 questions (non plus 6 quand serein est choisi).
+- [ ] `SensitiveThemesQuestion` n'apparaît jamais.
+- [ ] CTA "Personnaliser mon mode serein" toujours visible sous les boutons du choix serein.
+- [ ] `MyInterestsScreen` en mode Serein affiche des cases cochables par thème (tri-state) et par topic, avec persistance immédiate optimiste.
+- [ ] Le digest en mode Serein exclut l'union des thèmes décochés **+** des topics décochés.
+- [ ] Par défaut, `SEREIN_EXCLUDED_THEMES` (society/international/economy/politics) reste bloqué tant que `serein_personalized` n'est pas posé.
+- [ ] Aucun overflow UI sur iPhone SE.
+- [ ] Aucune régression sur les flux existants (onboarding section 1/3, paramètres hors mode serein).
 
 ## Tests automatisés
 
-- `flutter analyze` : 0 erreur (warnings info préexistants uniquement)
-- `flutter test` ciblés : 17/17 passent (divergence + pas_de_recul)
-- `flutter test` complet : 275 passent / 35 échecs **tous préexistants** (validés via stash)
+- `flutter analyze` : 0 erreur sur les fichiers modifiés (warnings pré-existants conservés).
+- `flutter test` mobile : 37 échecs **pré-existants** (baseline `main` identique). 0 régression introduite par ce refactor.
+- `pytest tests/test_serein_filter.py` (hors tests DB) : 10/10 passent, incluant nouveaux tests `test_custom_themes_replace_defaults`.
+- Les tests DB-backed (`TestSereinFilterWithIsSerene`, `TestSereinFilterFallbackKeywords`, etc.) nécessitent Postgres local (`make db-up`) — CI gère.
 
-## Ressources de référence
+## Zones de risque
 
-- Document de propositions : `.context/digest-ui-polish-phase2-proposals.md`
-- Plan d'implémentation : `~/.claude/plans/hazy-humming-shannon.md`
-- Captures avant : `/tmp/attachments/image-v2.png`, `/tmp/attachments/image-v3.png`
+- **Migration Alembic** : nouveau head `sr01_add_serein_exclusion` fusionne 2 heads existants (`ln01` + `ss01_search_cache`) et ajoute la colonne `user_topic_profiles.excluded_from_serein`. À appliquer manuellement via Supabase SQL Editor (hors Railway).
+- **Sémantique changée** : `sensitive_themes` stocké ne fait **plus union** avec les défauts — il les **remplace** dès que `serein_personalized=true`. Un utilisateur ayant `sensitive_themes=['tech']` voit **uniquement** tech filtré (society/politics repassent). Backfill SQL obligatoire avant déploiement.
+- **UI sur petits écrans** : `SereinToggleChip` = 148px de large. Déplacement dans `AppBar.bottom` au lieu de `actions` pour éviter l'overflow lié au titre AppBar.
+
+## Fichiers critiques à vérifier visuellement
+
+```
+apps/mobile/lib/features/custom_topics/screens/my_interests_screen.dart
+apps/mobile/lib/features/custom_topics/widgets/theme_section.dart        # tri-state header
+apps/mobile/lib/features/custom_topics/widgets/topic_row.dart            # checkbox left
+apps/mobile/lib/features/onboarding/screens/questions/digest_mode_question.dart  # CTA
+apps/mobile/lib/config/routes.dart                                        # ?serein=1 query
+```
+
+## Ressources
+
+- Story doc : `docs/stories/core/15.1.mode-serein-refine.story.md`
+- Plan : `~/.claude/plans/system-instruction-you-are-working-glistening-donut.md`
+- Backfill SQL : `docs/qa/scripts/backfill_serein_personalized.sql`
