@@ -126,6 +126,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           matchedLocation == RoutePaths.emailConfirmation;
       final isOnOnboarding = matchedLocation == RoutePaths.onboarding ||
           matchedLocation == RoutePaths.onboardingConclusion;
+      // Escape hatch: the onboarding "Personnaliser mon mode serein" CTA pushes
+      // the interests screen with ?serein=1. Let that through so the user can
+      // configure their exclusions before completing onboarding.
+      final isOnInterestsFromOnboarding =
+          matchedLocation == RoutePaths.myInterests &&
+              state.uri.queryParameters['serein'] == '1';
       final isOnDigest = matchedLocation == RoutePaths.digest;
 
       // 1. Les utilisateurs non connectés
@@ -157,7 +163,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       // 4. Onboarding : forcer si nécessaire
-      if (authState.needsOnboarding && !isOnOnboarding) {
+      if (authState.needsOnboarding &&
+          !isOnOnboarding &&
+          !isOnInterestsFromOnboarding) {
         return RoutePaths.onboarding;
       }
 
@@ -365,9 +373,14 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'interests', // /settings/interests
                 name: RouteNames.myInterests,
-                pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-                  child: MyInterestsScreen(),
-                ),
+                pageBuilder: (context, state) {
+                  final forceSereinOn =
+                      state.uri.queryParameters['serein'] == '1';
+                  return FullSwipeCupertinoPage(
+                    child:
+                        MyInterestsScreen(forceSereinOn: forceSereinOn),
+                  );
+                },
               ),
             ],
           ),

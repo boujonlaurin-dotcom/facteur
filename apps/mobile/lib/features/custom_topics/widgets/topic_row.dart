@@ -6,6 +6,10 @@ import '../models/topic_models.dart';
 import 'topic_priority_slider.dart';
 
 /// A row displaying a followed custom topic with its priority slider.
+///
+/// When [sereinMode] is true, the priority slider is hidden and a leading
+/// checkbox reflects whether the topic is shown in serein mode ([sereinShown]
+/// = not excluded). Tapping it calls [onSereinToggle].
 class TopicRow extends StatelessWidget {
   final UserTopicProfile topic;
   final ValueChanged<double> onPriorityChanged;
@@ -14,6 +18,9 @@ class TopicRow extends StatelessWidget {
   final bool isMuted;
   final VoidCallback? onMute;
   final VoidCallback? onUnmute;
+  final bool sereinMode;
+  final bool sereinShown;
+  final ValueChanged<bool>? onSereinToggle;
 
   const TopicRow({
     super.key,
@@ -24,6 +31,9 @@ class TopicRow extends StatelessWidget {
     this.isMuted = false,
     this.onMute,
     this.onUnmute,
+    this.sereinMode = false,
+    this.sereinShown = true,
+    this.onSereinToggle,
   });
 
   @override
@@ -41,16 +51,28 @@ class TopicRow extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: isMuted
-                      ? colors.textTertiary.withOpacity(0.4)
-                      : const Color(0xFFE07A5F),
-                  shape: BoxShape.circle,
+              if (sereinMode && onSereinToggle != null)
+                SizedBox(
+                  height: 24,
+                  width: 24,
+                  child: Checkbox(
+                    value: sereinShown,
+                    onChanged: (v) => onSereinToggle!(v ?? false),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                )
+              else
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: isMuted
+                        ? colors.textTertiary.withOpacity(0.4)
+                        : const Color(0xFFE07A5F),
+                    shape: BoxShape.circle,
+                  ),
                 ),
-              ),
               const SizedBox(width: FacteurSpacing.space2),
               Expanded(
                 child: Text(
@@ -63,7 +85,7 @@ class TopicRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (!isMuted)
+              if (!isMuted && !sereinMode)
                 TopicPrioritySlider(
                   currentMultiplier: topic.priorityMultiplier,
                   onChanged: onPriorityChanged,
@@ -73,7 +95,7 @@ class TopicRow extends StatelessWidget {
             ],
           ),
         ),
-        if (onMute != null || onUnmute != null)
+        if (!sereinMode && (onMute != null || onUnmute != null))
           Padding(
             padding: const EdgeInsets.only(
               left: FacteurSpacing.space4 + 6 + FacteurSpacing.space2,
@@ -121,6 +143,9 @@ class DismissibleTopicRow extends StatelessWidget {
   final bool isMuted;
   final VoidCallback? onMute;
   final VoidCallback? onUnmute;
+  final bool sereinMode;
+  final bool sereinShown;
+  final ValueChanged<bool>? onSereinToggle;
 
   const DismissibleTopicRow({
     super.key,
@@ -132,11 +157,31 @@ class DismissibleTopicRow extends StatelessWidget {
     this.isMuted = false,
     this.onMute,
     this.onUnmute,
+    this.sereinMode = false,
+    this.sereinShown = true,
+    this.onSereinToggle,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+
+    // Disable the swipe-to-unfollow gesture while in serein mode so accidental
+    // swipes on the checkbox row don't unfollow a topic.
+    if (sereinMode) {
+      return TopicRow(
+        topic: topic,
+        onPriorityChanged: onPriorityChanged,
+        usageWeight: usageWeight,
+        onReset: onReset,
+        isMuted: isMuted,
+        onMute: onMute,
+        onUnmute: onUnmute,
+        sereinMode: true,
+        sereinShown: sereinShown,
+        onSereinToggle: onSereinToggle,
+      );
+    }
 
     return Dismissible(
       key: ValueKey(topic.id),

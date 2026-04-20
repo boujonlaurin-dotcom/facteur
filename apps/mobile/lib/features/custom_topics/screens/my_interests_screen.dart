@@ -1,23 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:go_router/go_router.dart';
 
-import '../../../config/serein_colors.dart';
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
-import '../../digest/providers/sensitive_themes_provider.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
+import '../../digest/widgets/serein_toggle_chip.dart';
 import '../../feed/repositories/personalization_repository.dart';
-import '../../onboarding/providers/onboarding_provider.dart';
-import '../../onboarding/widgets/theme_with_subtopics.dart';
 import '../models/topic_models.dart';
 import '../providers/custom_topics_provider.dart';
 import '../providers/personalization_provider.dart';
+import '../providers/serein_exclusions_provider.dart';
 import '../providers/theme_priority_provider.dart';
 import '../widgets/entity_add_sheet.dart';
 import '../widgets/theme_section.dart';
-
-const _howItWorksKey = 'how_it_works_dismissed';
 
 /// Settings screen for managing custom topic subscriptions.
 ///
@@ -26,7 +23,11 @@ const _howItWorksKey = 'how_it_works_dismissed';
 /// Theme sections are sorted by max user priority on initial load only
 /// (no dynamic reordering while the user is on the page).
 class MyInterestsScreen extends ConsumerStatefulWidget {
-  const MyInterestsScreen({super.key});
+  /// If set, forces the serein toggle ON on first open (typically when the
+  /// user arrived from the onboarding "Personnaliser" CTA).
+  final bool forceSereinOn;
+
+  const MyInterestsScreen({super.key, this.forceSereinOn = false});
 
   @override
   ConsumerState<MyInterestsScreen> createState() => _MyInterestsScreenState();
@@ -35,27 +36,30 @@ class MyInterestsScreen extends ConsumerStatefulWidget {
 class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
   /// Sorted group order, computed once on first data load.
   List<String>? _sortedGroups;
-  bool _howItWorksDismissed = true; // Default true until loaded
 
   @override
   void initState() {
     super.initState();
-    _loadHowItWorks();
+    // Prime the serein exclusions cache so the tri-state headers are correct
+    // on first frame, even before the user taps the switch.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(sereinExclusionsProvider.notifier).loadIfNeeded();
+      if (widget.forceSereinOn &&
+          !ref.read(sereinToggleProvider).enabled) {
+        ref.read(sereinToggleProvider.notifier).toggle();
+      }
+    });
   }
 
-  Future<void> _loadHowItWorks() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _howItWorksDismissed = prefs.getBool(_howItWorksKey) ?? false;
-      });
+  /// When the user arrived from onboarding, back needs to return to the
+  /// questionnaire rather than pop inside the settings shell.
+  void _handleBack() {
+    if (widget.forceSereinOn) {
+      context.goNamed(RouteNames.onboarding);
+    } else if (context.canPop()) {
+      context.pop();
     }
-  }
-
-  Future<void> _dismissHowItWorks() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_howItWorksKey, true);
-    if (mounted) setState(() => _howItWorksDismissed = true);
   }
 
   @override
@@ -66,13 +70,39 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
     final themePriorities =
         ref.watch(themePriorityProvider).valueOrNull ?? <String, double>{};
 
-    return Scaffold(
+    final sereinMode = ref.watch(sereinToggleProvider).enabled;
+
+    return PopScope(
+      canPop: !widget.forceSereinOn,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && widget.forceSereinOn) {
+          context.goNamed(RouteNames.onboarding);
+        }
+      },
+      child: Scaffold(
       backgroundColor: colors.backgroundPrimary,
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: _handleBack,
+        ),
         title: const Text('Mes Intérêts'),
         backgroundColor: colors.backgroundPrimary,
         elevation: 0,
         titleTextStyle: textTheme.displaySmall,
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(40),
+          child: Padding(
+            padding: EdgeInsets.only(
+              right: FacteurSpacing.space3,
+              bottom: FacteurSpacing.space2,
+            ),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: SereinToggleChip(),
+            ),
+          ),
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => EntityAddSheet.show(context),
@@ -203,14 +233,18 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Vos centres d\'intérêt',
+                        sereinMode
+                            ? 'Votre mode serein'
+                            : 'Vos centres d\'intérêt',
                         style: textTheme.displaySmall?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: FacteurSpacing.space2),
                       Text(
-                        'Ajustez vos thèmes et sujets pour les voir plus ou moins apparaître dans l\'Essentiel du jour et votre flux.',
+                        sereinMode
+                            ? 'Choisissez ce qui reste dans votre bulle apaisée. Cochez pour garder, décochez pour mettre de côté — votre digest ne gardera que l\'essentiel pour vous.'
+                            : 'Ajustez vos thèmes et sujets pour les voir plus ou moins apparaître dans l\'Essentiel du jour et votre flux.',
                         style: textTheme.bodyMedium?.copyWith(
                           color: colors.textSecondary,
                         ),
@@ -219,8 +253,9 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                   ),
                 ),
 
-                // How it works card
-                if (!_howItWorksDismissed)
+                // How it works card — only in serein mode (explains the
+                // checkbox semantic). Normal mode relies on inline affordances.
+                if (sereinMode) ...[
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: FacteurSpacing.space4,
@@ -235,30 +270,28 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Icon(
+                            Icons.eco_outlined,
+                            size: 18,
+                            color: colors.textSecondary,
+                          ),
+                          const SizedBox(width: FacteurSpacing.space2),
                           Expanded(
                             child: Text(
-                              'Les bordures = votre réglage. '
-                              'Le remplissage = vos habitudes de lecture. '
-                              'Tapez pour ajuster, \u21BA pour réinitialiser.',
+                              'Coché = présent dans votre digest serein. '
+                              'Décoché = mis en pause. '
+                              'La case du thème agit sur l\'ensemble de ses sujets.',
                               style: textTheme.bodySmall?.copyWith(
                                 color: colors.textSecondary,
                               ),
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: _dismissHowItWorks,
-                            child: Icon(
-                              Icons.close,
-                              size: 16,
-                              color: colors.textTertiary,
                             ),
                           ),
                         ],
                       ),
                     ),
                   ),
-                if (!_howItWorksDismissed)
                   const SizedBox(height: FacteurSpacing.space3),
+                ],
 
                 // Theme sections (order fixed on initial load)
                 ..._sortedGroups!
@@ -275,6 +308,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                       themeLabel: group,
                       followedTopics: const [],
                       mutedTopicSlugs: mutedByTheme[group] ?? {},
+                      sereinMode: sereinMode,
                     );
                   }
                   final allTopics =
@@ -284,14 +318,12 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                     themeLabel: group,
                     followedTopics: allTopics,
                     mutedTopicSlugs: mutedByTheme[group] ?? {},
+                    sereinMode: sereinMode,
                   );
                 }),
 
-                // Content types section
-                _ContentTypesSection(),
-
-                // Sensitive themes section (mode serein only)
-                _SensitiveThemesSection(),
+                // Content types section (hidden in serein mode — not relevant).
+                if (!sereinMode) _ContentTypesSection(),
 
                 // Empty state
                 if (topics.isEmpty)
@@ -333,6 +365,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
           );
         },
       ),
+    ),
     );
   }
 }
@@ -444,98 +477,3 @@ class _ContentTypesSection extends ConsumerWidget {
   }
 }
 
-/// Section for managing sensitive themes (only visible when serein mode is enabled).
-class _SensitiveThemesSection extends ConsumerStatefulWidget {
-  @override
-  ConsumerState<_SensitiveThemesSection> createState() =>
-      _SensitiveThemesSectionState();
-}
-
-class _SensitiveThemesSectionState
-    extends ConsumerState<_SensitiveThemesSection> {
-  @override
-  void initState() {
-    super.initState();
-    // Load sensitive themes from API on first build
-    ref.read(sensitiveThemesProvider.notifier).loadIfNeeded();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final sereinState = ref.watch(sereinToggleProvider);
-
-    // Only show if serein mode is enabled
-    if (!sereinState.enabled) return const SizedBox.shrink();
-
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
-    final sensitiveThemes = ref.watch(sensitiveThemesProvider);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: FacteurSpacing.space4,
-        vertical: FacteurSpacing.space2,
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: BorderRadius.circular(FacteurRadius.large),
-          border: Border.all(color: SereinColors.sereinColor.withOpacity(0.3)),
-        ),
-        padding: const EdgeInsets.symmetric(
-          horizontal: FacteurSpacing.space4,
-          vertical: FacteurSpacing.space3,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  SereinColors.sereinIcon,
-                  size: 16,
-                  color: SereinColors.sereinColor,
-                ),
-                const SizedBox(width: FacteurSpacing.space2),
-                Text(
-                  'SUJETS SENSIBLES',
-                  style: textTheme.labelSmall?.copyWith(
-                    color: SereinColors.sereinColor,
-                    letterSpacing: 1.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: FacteurSpacing.space1),
-            Text(
-              'Thèmes filtrés en mode serein',
-              style: textTheme.bodySmall?.copyWith(
-                color: colors.textTertiary,
-              ),
-            ),
-            const SizedBox(height: FacteurSpacing.space3),
-            Wrap(
-              spacing: FacteurSpacing.space2,
-              runSpacing: FacteurSpacing.space2,
-              children: AvailableThemes.all.map((theme) {
-                final isSelected = sensitiveThemes.contains(theme.slug);
-                return GestureDetector(
-                  onTap: () {
-                    ref
-                        .read(sensitiveThemesProvider.notifier)
-                        .toggle(theme.slug);
-                  },
-                  child: ThemeChip(
-                    theme: theme,
-                    isSelected: isSelected,
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

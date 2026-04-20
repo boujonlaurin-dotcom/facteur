@@ -1,6 +1,5 @@
 """Service utilisateur."""
 
-import json
 from uuid import UUID, uuid4
 
 import structlog
@@ -139,9 +138,6 @@ class UserService:
             "format_preference": answers.format_preference,
             "personal_goal": answers.personal_goal,
             "serein_enabled": getattr(answers, "serein_enabled", None),
-            "sensitive_themes": json.dumps(answers.sensitive_themes)
-            if answers.sensitive_themes
-            else None,
         }
 
         pref_count = 0

@@ -579,11 +579,11 @@ class TestDeferredStaleFormatDeletion:
         service.selector = Mock()
         service.selector.select_for_user = AsyncMock(return_value=[])
 
-        # sensitive_themes lookup is a session.execute(...) + scalar_one_or_none().
-        # AsyncMock children default to AsyncMock, so scalar_one_or_none() would
-        # return a coroutine. Wire a sync Mock result so the code sees None.
+        # load_serein_preferences issues session.execute(...).all() queries.
+        # Wire a sync Mock result so the code sees empty prefs and topics.
         _prefs_result = Mock()
         _prefs_result.scalar_one_or_none = Mock(return_value=None)
+        _prefs_result.all = Mock(return_value=[])
         mock_session.execute.return_value = _prefs_result
 
         async def fake_emergency(*args, **kwargs):
@@ -677,6 +677,7 @@ class TestRenderFailureFallback:
 
         _prefs_result = Mock()
         _prefs_result.scalar_one_or_none = Mock(return_value=None)
+        _prefs_result.all = Mock(return_value=[])
         mock_session.execute.return_value = _prefs_result
 
         call_log: list[str] = []
@@ -752,6 +753,7 @@ class TestRenderFailureFallback:
 
         _prefs_result = Mock()
         _prefs_result.scalar_one_or_none = Mock(return_value=None)
+        _prefs_result.all = Mock(return_value=[])
         mock_session.execute.return_value = _prefs_result
 
         async def fake_build(digest, user_id):

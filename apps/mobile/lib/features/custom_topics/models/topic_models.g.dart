@@ -26,6 +26,7 @@ _$UserTopicProfileImpl _$$UserTopicProfileImplFromJson(
           TopicSourceType.explicit,
       entityType: json['entity_type'] as String?,
       canonicalName: json['canonical_name'] as String?,
+      excludedFromSerein: json['excluded_from_serein'] as bool? ?? false,
       createdAt: json['created_at'] == null
           ? null
           : DateTime.parse(json['created_at'] as String),
@@ -44,6 +45,7 @@ Map<String, dynamic> _$$UserTopicProfileImplToJson(
       'source_type': _$TopicSourceTypeEnumMap[instance.sourceType]!,
       'entity_type': instance.entityType,
       'canonical_name': instance.canonicalName,
+      'excluded_from_serein': instance.excludedFromSerein,
       'created_at': instance.createdAt?.toIso8601String(),
     };
 

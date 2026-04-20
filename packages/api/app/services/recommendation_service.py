@@ -5,6 +5,7 @@ import re
 import time
 import unicodedata
 from dataclasses import dataclass, field
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -371,16 +372,12 @@ class RecommendationService:
         # Convert source_id string to UUID if provided
         source_uuid = UUID(source_id) if source_id else None
 
-        # Load sensitive_themes for personalized serein filter
-        import json as _json
+        # Load serein prefs (themes + topic exclusions + personalized sentinel)
+        from app.services.recommendation.filter_presets import load_serein_preferences
 
-        _raw_sensitive = user_prefs.get("sensitive_themes")
-        try:
-            _user_sensitive: list[str] | None = (
-                _json.loads(_raw_sensitive) if _raw_sensitive else None
-            )
-        except (ValueError, TypeError):
-            _user_sensitive = None
+        _serein_prefs = await load_serein_preferences(self.session, user_id)
+        _user_sensitive: list[str] | None = _serein_prefs.sensitive_themes
+        _user_excluded_topics = _serein_prefs.excluded_topics
 
         t2 = time.monotonic()
         candidates = await self._get_candidates(
@@ -415,6 +412,7 @@ class RecommendationService:
             sensitive_themes=_user_sensitive,
             # Trending chip fallback: expand search to all sources when keyword is set
             include_unfollowed=include_unfollowed,
+            excluded_topics=_user_excluded_topics,
         )
         self.total_candidates = len(candidates)
 
@@ -2221,6 +2219,7 @@ class RecommendationService:
         serein: bool = False,
         sensitive_themes: list[str] | None = None,
         include_unfollowed: bool = False,
+        excluded_topics: list[Any] | None = None,
     ) -> list[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import and_, or_
@@ -2372,7 +2371,11 @@ class RecommendationService:
 
         # Apply serein content filter (orthogonal to mode — filters anxiety content)
         if serein and not source_id:
-            query = apply_serein_filter(query, sensitive_themes=sensitive_themes)
+            query = apply_serein_filter(
+                query,
+                sensitive_themes=sensitive_themes,
+                excluded_topics=excluded_topics,
+            )
 
         # Apply Mode Logic (skip when filtering by specific source)
         if mode and not source_id:

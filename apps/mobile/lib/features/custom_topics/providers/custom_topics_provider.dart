@@ -162,6 +162,37 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
     }
   });
 
+  /// Toggle `excluded_from_serein` for a topic.
+  /// Optimistic: updates state immediately, rolls back on error.
+  Future<void> setExcludedFromSerein(String topicId, bool excluded) =>
+      _serialized(() async {
+    final repo = ref.read(topicRepositoryProvider);
+
+    final previousState = state;
+    if (state.hasValue) {
+      state = AsyncData([
+        for (final topic in state.value!)
+          if (topic.id == topicId)
+            topic.copyWith(excludedFromSerein: excluded)
+          else
+            topic,
+      ]);
+    }
+
+    try {
+      final updated = await repo.updateTopicSereinExclusion(topicId, excluded);
+      if (state.hasValue) {
+        state = AsyncData([
+          for (final topic in state.value!)
+            if (topic.id == topicId) updated else topic,
+        ]);
+      }
+    } catch (e) {
+      state = previousState;
+      rethrow;
+    }
+  });
+
   /// Force refresh from server.
   Future<void> refresh() async {
     state = const AsyncLoading();

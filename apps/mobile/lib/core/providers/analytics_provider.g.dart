@@ -6,7 +6,7 @@ part of 'analytics_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$posthogServiceHash() => r'1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b';
+String _$posthogServiceHash() => r'c52a2c31e624342f05c7a83772ca8fa2f7c501e5';
 
 /// PostHog wrapper — keepAlive so identify/reset calls persist across rebuilds.
 ///
@@ -23,8 +23,7 @@ final posthogServiceProvider = Provider<PostHogService>.internal(
 );
 
 typedef PosthogServiceRef = ProviderRef<PostHogService>;
-
-String _$analyticsServiceHash() => r'975e641a9ba922fe426408c6eec15e7fb24d7b4f';
+String _$analyticsServiceHash() => r'ce5011ca427202ed88c7e0a870ad1c06c4944912';
 
 /// See also [analyticsService].
 @ProviderFor(analyticsService)

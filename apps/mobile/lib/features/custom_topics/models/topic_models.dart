@@ -27,6 +27,7 @@ class UserTopicProfile with _$UserTopicProfile {
     TopicSourceType sourceType,
     @JsonKey(name: 'entity_type') String? entityType,
     @JsonKey(name: 'canonical_name') String? canonicalName,
+    @JsonKey(name: 'excluded_from_serein') @Default(false) bool excludedFromSerein,
     @JsonKey(name: 'created_at') DateTime? createdAt,
   }) = _UserTopicProfile;
 

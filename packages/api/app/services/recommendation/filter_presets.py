@@ -7,18 +7,96 @@ DigestSelector (digest).
 
 from __future__ import annotations
 
+import json
+import re
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import and_, exists, func, literal_column, or_, select
+from sqlalchemy import and_, exists, func, literal_column, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.content import Content
 from app.models.enums import BiasStance
 from app.models.source import Source, UserSource
+from app.models.user import UserPreference
+from app.models.user_topic_profile import UserTopicProfile
 
 if TYPE_CHECKING:
     from app.services.briefing.importance_detector import TopicCluster
+
+
+@dataclass
+class ExcludedTopic:
+    """Topic exclu du mode serein, pré-résolu pour matching."""
+
+    entity_name: str | None
+    keywords: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SereinPreferences:
+    """Préférences serein résolues pour un utilisateur."""
+
+    sensitive_themes: list[str]
+    excluded_topics: list[ExcludedTopic]
+    personalized: bool
+
+
+async def load_serein_preferences(
+    session: AsyncSession, user_id: UUID
+) -> SereinPreferences:
+    """Charge toutes les préférences serein pour un utilisateur.
+
+    - `sensitive_themes` : list[str] des thèmes masqués. Si `serein_personalized`
+      n'est pas posé, les défauts `SEREIN_EXCLUDED_THEMES` sont retournés.
+    - `excluded_topics` : topics marqués `excluded_from_serein=True`,
+      pré-résolus en ExcludedTopic(entity_name, keywords).
+    - `personalized` : True si l'utilisateur a posé `serein_personalized=true`.
+    """
+    prefs_rows = (
+        await session.execute(
+            select(
+                UserPreference.preference_key, UserPreference.preference_value
+            ).where(
+                UserPreference.user_id == user_id,
+                UserPreference.preference_key.in_(
+                    ("sensitive_themes", "serein_personalized")
+                ),
+            )
+        )
+    ).all()
+    prefs = dict(prefs_rows)
+    personalized = prefs.get("serein_personalized") == "true"
+
+    if personalized:
+        raw = prefs.get("sensitive_themes")
+        try:
+            sensitive_themes: list[str] = json.loads(raw) if raw else []
+        except (ValueError, TypeError):
+            sensitive_themes = []
+    else:
+        sensitive_themes = list(SEREIN_EXCLUDED_THEMES)
+
+    topic_rows = (
+        await session.execute(
+            select(UserTopicProfile.canonical_name, UserTopicProfile.keywords).where(
+                UserTopicProfile.user_id == user_id,
+                UserTopicProfile.excluded_from_serein == True,  # noqa: E712
+            )
+        )
+    ).all()
+    excluded_topics = [
+        ExcludedTopic(entity_name=canonical, keywords=list(keywords or []))
+        for canonical, keywords in topic_rows
+    ]
+
+    return SereinPreferences(
+        sensitive_themes=sensitive_themes,
+        excluded_topics=excluded_topics,
+        personalized=personalized,
+    )
+
 
 # --- Constantes Serein ---
 
@@ -74,21 +152,39 @@ SEREIN_KEYWORDS = [
 ]
 
 
-def apply_serein_filter(query, sensitive_themes: list[str] | None = None):
-    """Exclut les articles anxiogènes via is_serene (LLM) + fallback mots-clés.
+def apply_serein_filter(
+    query,
+    sensitive_themes: list[str] | None = None,
+    excluded_topics: list[ExcludedTopic] | None = None,
+):
+    """Exclut les articles anxiogènes via is_serene (LLM) + fallback mots-clés,
+    puis retire tout contenu matchant un topic exclu (granularité par sujet).
 
     Stratégie :
     1. is_serene=True  → article passe (classification LLM, plus précis)
     2. is_serene=False → article exclu
     3. is_serene=NULL  → fallback sur filtre mots-clés/thèmes legacy
+    4. Pour TOUS les chemins, exclusion supplémentaire des contenus matchant
+       les topics `excluded_topics` (entity_name ou keywords).
+    5. Si l'utilisateur a personnalisé (`sensitive_themes is not None`), ses
+       thèmes exclus sont appliqués au niveau TOP-LEVEL — un choix explicite
+       l'emporte sur `is_serene=True`. En mode défaut (None), on conserve le
+       comportement legacy (LLM autorité).
 
     Args:
         query: SQLAlchemy query to filter
-        sensitive_themes: thèmes sensibles de l'utilisateur (union avec les défauts)
+        sensitive_themes: thèmes sensibles à exclure.
+            - None : pas de personnalisation, applique les défauts.
+            - [] : personnalisé à vide, aucune exclusion thématique (seul
+              le path `is_serene` filtre).
+            - [...] : utilise la liste verbatim.
+        excluded_topics: topics individuels à exclure (pré-résolus).
 
     Utilisé par le mode INSPIRATION (feed) et le toggle serein (digest).
     """
-    effective_themes = list(set(SEREIN_EXCLUDED_THEMES) | set(sensitive_themes or []))
+    effective_themes = (
+        list(SEREIN_EXCLUDED_THEMES) if sensitive_themes is None else sensitive_themes
+    )
     serene_condition = or_(
         Content.is_serene == True,  # noqa: E712 — SQLAlchemy needs == True
         and_(
@@ -96,7 +192,56 @@ def apply_serein_filter(query, sensitive_themes: list[str] | None = None):
             _legacy_serein_keyword_filter(excluded_themes=effective_themes),
         ),
     )
-    return query.where(serene_condition)
+    query = query.where(serene_condition)
+
+    # User-personalized theme exclusions override LLM is_serene=True: if the
+    # user explicitly said "no tech", hide every tech article regardless of
+    # classification. The default-themes case keeps the LLM allowance.
+    if sensitive_themes is not None and effective_themes:
+        query = query.where(Source.theme.notin_(effective_themes))
+
+    if excluded_topics:
+        topic_exclusion = _topic_exclusion_condition(excluded_topics)
+        if topic_exclusion is not None:
+            query = query.where(topic_exclusion)
+    return query
+
+
+def _topic_exclusion_condition(excluded_topics: list[ExcludedTopic]):
+    """Construit une clause NOT(match any excluded topic).
+
+    Pour chaque topic exclu :
+    - Si `entity_name` : exclut les contenus dont `entities` contient ce nom.
+    - Sinon (ou en complément) : exclut les contenus dont titre/description
+      match un des keywords (regex OR).
+
+    Retourne None si aucun topic n'a de critère exploitable.
+    """
+    clauses = []
+    for topic in excluded_topics:
+        topic_clauses = []
+        if topic.entity_name:
+            entity_element = func.unnest(Content.entities).column_valued()
+            pattern = f'%"name": "{topic.entity_name}"%'
+            topic_clauses.append(
+                exists(select(literal_column("1")).where(entity_element.ilike(pattern)))
+            )
+        if topic.keywords:
+            kw_pattern = "|".join(re.escape(k) for k in topic.keywords)
+            topic_clauses.append(
+                or_(
+                    Content.title.op("~*")(kw_pattern),
+                    and_(
+                        Content.description.isnot(None),
+                        Content.description.op("~*")(kw_pattern),
+                    ),
+                )
+            )
+        if topic_clauses:
+            clauses.append(or_(*topic_clauses))
+    if not clauses:
+        return None
+    return not_(or_(*clauses))
 
 
 def _legacy_serein_keyword_filter(excluded_themes: list[str] | None = None):
@@ -107,11 +252,16 @@ def _legacy_serein_keyword_filter(excluded_themes: list[str] | None = None):
     - Exclusion de mots-clés anxiogènes dans titre et description
 
     Args:
-        excluded_themes: liste de thèmes à exclure (défaut: SEREIN_EXCLUDED_THEMES)
+        excluded_themes: liste de thèmes à exclure.
+            - None : applique les défauts (SEREIN_EXCLUDED_THEMES).
+            - [] : personnalisé à vide, aucune exclusion thématique.
+            - [...] : utilise la liste verbatim.
     """
-    themes = excluded_themes or SEREIN_EXCLUDED_THEMES
+    themes = (
+        list(SEREIN_EXCLUDED_THEMES) if excluded_themes is None else excluded_themes
+    )
     keywords_pattern = "|".join(SEREIN_KEYWORDS)
-    theme_ok = Source.theme.notin_(themes)
+    theme_ok = Source.theme.notin_(themes) if themes else literal_column("TRUE")
     # Handle NULL title/description: NULL ~* 'pattern' → NULL → NOT NULL → NULL
     # which silently excludes rows. Use OR IS NULL to keep them.
     title_ok = or_(Content.title.is_(None), ~Content.title.op("~*")(keywords_pattern))
@@ -327,37 +477,64 @@ def cap_low_priority_clusters(
 
 
 def is_cluster_serein_compatible(
-    cluster: TopicCluster, sensitive_themes: list[str] | None = None
+    cluster: TopicCluster,
+    sensitive_themes: list[str] | None = None,
+    excluded_topics: list[ExcludedTopic] | None = None,
 ) -> bool:
     """Vérifie si un topic cluster est compatible avec le mode Serein.
 
     Un cluster est EXCLU si :
-    - Son thème dominant ∈ thèmes exclus (défauts + sensibles utilisateur), OU
-    - >50% de ses articles matchent au moins un SEREIN_KEYWORD dans titre/description
+    - Son thème dominant ∈ thèmes exclus utilisateur (ou défauts si non-personnalisé), OU
+    - >50% de ses articles matchent au moins un SEREIN_KEYWORD global, OU
+    - Au moins un de ses articles match un topic exclu (entity ou keyword).
 
     Args:
         cluster: TopicCluster à évaluer (from importance_detector)
-        sensitive_themes: thèmes sensibles de l'utilisateur (union avec les défauts)
+        sensitive_themes: thèmes à exclure.
+            - None : pas de personnalisation, applique les défauts.
+            - [] : personnalisé à vide, aucune exclusion thématique.
+            - [...] : utilise la liste verbatim.
+        excluded_topics: topics individuels à exclure.
 
     Returns:
         True si le cluster est serein-compatible (peut être inclus)
     """
-    effective_themes = list(set(SEREIN_EXCLUDED_THEMES) | set(sensitive_themes or []))
+    effective_themes = (
+        list(SEREIN_EXCLUDED_THEMES) if sensitive_themes is None else sensitive_themes
+    )
     # Check 1: thème dominant
     if cluster.theme and cluster.theme.lower() in effective_themes:
         return False
 
     # Check 2: mots-clés anxiogènes dans titre/description
-    import re as _re
-
-    pattern = _re.compile("|".join(SEREIN_KEYWORDS), _re.IGNORECASE)
+    pattern = re.compile("|".join(SEREIN_KEYWORDS), re.IGNORECASE)
     match_count = 0
     for content in cluster.contents:
         text = (content.title or "") + " " + (content.description or "")
         if pattern.search(text):
             match_count += 1
 
-    return not (len(cluster.contents) > 0 and match_count / len(cluster.contents) > 0.5)
+    if len(cluster.contents) > 0 and match_count / len(cluster.contents) > 0.5:
+        return False
+
+    # Check 3: topic-level exclusions (any article matches → exclude cluster)
+    if excluded_topics:
+        for topic in excluded_topics:
+            topic_patterns: list[re.Pattern] = []
+            if topic.keywords:
+                topic_patterns.append(
+                    re.compile(
+                        "|".join(re.escape(k) for k in topic.keywords), re.IGNORECASE
+                    )
+                )
+            for content in cluster.contents:
+                text = (content.title or "") + " " + (content.description or "")
+                if topic.entity_name and topic.entity_name.lower() in text.lower():
+                    return False
+                if any(p.search(text) for p in topic_patterns):
+                    return False
+
+    return True
 
 
 async def calculate_user_bias(session: AsyncSession, user_id: UUID) -> BiasStance:

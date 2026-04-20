@@ -142,13 +142,9 @@ class OnboardingStrings {
   static const String digestModeSereinPart4 =
       ' grâce au bouton dédié en haut de votre essentiel et du flux.';
 
-  // Sensitive Themes (conditional step after digestMode == 'serein')
-  static const String sensitiveThemesTitle = 'Quels sujets vous pèsent ?';
-  static const String sensitiveThemesSubtitle =
-      'Facteur filtrera ces sujets de votre sélection quotidienne.';
-  static const String sensitiveThemesSkip = 'Passer cette étape';
-  static String sensitiveThemesContinue(int count) =>
-      'Continuer ($count sélectionné${count > 1 ? 's' : ''})';
+  // Personalised serein CTA (shown on the DigestMode question).
+  static const String personalizeSereinCta =
+      'Personnaliser mon mode serein';
 
   // Q9: Sources
   static const String q9Title = 'Vos sources, sur mesure.';

@@ -38,6 +38,8 @@ mixin _$UserTopicProfile {
   String? get entityType => throw _privateConstructorUsedError;
   @JsonKey(name: 'canonical_name')
   String? get canonicalName => throw _privateConstructorUsedError;
+  @JsonKey(name: 'excluded_from_serein')
+  bool get excludedFromSerein => throw _privateConstructorUsedError;
   @JsonKey(name: 'created_at')
   DateTime? get createdAt => throw _privateConstructorUsedError;
 
@@ -65,6 +67,7 @@ abstract class $UserTopicProfileCopyWith<$Res> {
       TopicSourceType sourceType,
       @JsonKey(name: 'entity_type') String? entityType,
       @JsonKey(name: 'canonical_name') String? canonicalName,
+      @JsonKey(name: 'excluded_from_serein') bool excludedFromSerein,
       @JsonKey(name: 'created_at') DateTime? createdAt});
 }
 
@@ -91,6 +94,7 @@ class _$UserTopicProfileCopyWithImpl<$Res, $Val extends UserTopicProfile>
     Object? sourceType = null,
     Object? entityType = freezed,
     Object? canonicalName = freezed,
+    Object? excludedFromSerein = null,
     Object? createdAt = freezed,
   }) {
     return _then(_value.copyWith(
@@ -134,6 +138,10 @@ class _$UserTopicProfileCopyWithImpl<$Res, $Val extends UserTopicProfile>
           ? _value.canonicalName
           : canonicalName // ignore: cast_nullable_to_non_nullable
               as String?,
+      excludedFromSerein: null == excludedFromSerein
+          ? _value.excludedFromSerein
+          : excludedFromSerein // ignore: cast_nullable_to_non_nullable
+              as bool,
       createdAt: freezed == createdAt
           ? _value.createdAt
           : createdAt // ignore: cast_nullable_to_non_nullable
@@ -162,6 +170,7 @@ abstract class _$$UserTopicProfileImplCopyWith<$Res>
       TopicSourceType sourceType,
       @JsonKey(name: 'entity_type') String? entityType,
       @JsonKey(name: 'canonical_name') String? canonicalName,
+      @JsonKey(name: 'excluded_from_serein') bool excludedFromSerein,
       @JsonKey(name: 'created_at') DateTime? createdAt});
 }
 
@@ -186,6 +195,7 @@ class __$$UserTopicProfileImplCopyWithImpl<$Res>
     Object? sourceType = null,
     Object? entityType = freezed,
     Object? canonicalName = freezed,
+    Object? excludedFromSerein = null,
     Object? createdAt = freezed,
   }) {
     return _then(_$UserTopicProfileImpl(
@@ -229,6 +239,10 @@ class __$$UserTopicProfileImplCopyWithImpl<$Res>
           ? _value.canonicalName
           : canonicalName // ignore: cast_nullable_to_non_nullable
               as String?,
+      excludedFromSerein: null == excludedFromSerein
+          ? _value.excludedFromSerein
+          : excludedFromSerein // ignore: cast_nullable_to_non_nullable
+              as bool,
       createdAt: freezed == createdAt
           ? _value.createdAt
           : createdAt // ignore: cast_nullable_to_non_nullable
@@ -252,6 +266,7 @@ class _$UserTopicProfileImpl implements _UserTopicProfile {
       this.sourceType = TopicSourceType.explicit,
       @JsonKey(name: 'entity_type') this.entityType,
       @JsonKey(name: 'canonical_name') this.canonicalName,
+      @JsonKey(name: 'excluded_from_serein') this.excludedFromSerein = false,
       @JsonKey(name: 'created_at') this.createdAt})
       : _keywords = keywords;
 
@@ -294,12 +309,15 @@ class _$UserTopicProfileImpl implements _UserTopicProfile {
   @JsonKey(name: 'canonical_name')
   final String? canonicalName;
   @override
+  @JsonKey(name: 'excluded_from_serein')
+  final bool excludedFromSerein;
+  @override
   @JsonKey(name: 'created_at')
   final DateTime? createdAt;
 
   @override
   String toString() {
-    return 'UserTopicProfile(id: $id, name: $name, slugParent: $slugParent, keywords: $keywords, intentDescription: $intentDescription, priorityMultiplier: $priorityMultiplier, compositeScore: $compositeScore, sourceType: $sourceType, entityType: $entityType, canonicalName: $canonicalName, createdAt: $createdAt)';
+    return 'UserTopicProfile(id: $id, name: $name, slugParent: $slugParent, keywords: $keywords, intentDescription: $intentDescription, priorityMultiplier: $priorityMultiplier, compositeScore: $compositeScore, sourceType: $sourceType, entityType: $entityType, canonicalName: $canonicalName, excludedFromSerein: $excludedFromSerein, createdAt: $createdAt)';
   }
 
   @override
@@ -324,6 +342,8 @@ class _$UserTopicProfileImpl implements _UserTopicProfile {
                 other.entityType == entityType) &&
             (identical(other.canonicalName, canonicalName) ||
                 other.canonicalName == canonicalName) &&
+            (identical(other.excludedFromSerein, excludedFromSerein) ||
+                other.excludedFromSerein == excludedFromSerein) &&
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt));
   }
@@ -342,6 +362,7 @@ class _$UserTopicProfileImpl implements _UserTopicProfile {
       sourceType,
       entityType,
       canonicalName,
+      excludedFromSerein,
       createdAt);
 
   @JsonKey(ignore: true)
@@ -372,6 +393,7 @@ abstract class _UserTopicProfile implements UserTopicProfile {
       final TopicSourceType sourceType,
       @JsonKey(name: 'entity_type') final String? entityType,
       @JsonKey(name: 'canonical_name') final String? canonicalName,
+      @JsonKey(name: 'excluded_from_serein') final bool excludedFromSerein,
       @JsonKey(name: 'created_at')
       final DateTime? createdAt}) = _$UserTopicProfileImpl;
 
@@ -406,6 +428,9 @@ abstract class _UserTopicProfile implements UserTopicProfile {
   @override
   @JsonKey(name: 'canonical_name')
   String? get canonicalName;
+  @override
+  @JsonKey(name: 'excluded_from_serein')
+  bool get excludedFromSerein;
   @override
   @JsonKey(name: 'created_at')
   DateTime? get createdAt;

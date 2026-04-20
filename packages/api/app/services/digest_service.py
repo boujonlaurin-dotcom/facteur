@@ -530,25 +530,12 @@ class DigestService:
         # 2. Determine effective mode from is_serene toggle
         effective_mode = "serein" if is_serene else "pour_vous"
 
-        # 2a. Load user's sensitive_themes for personalized serein filter
-        import json as _json
+        # 2a. Load user's serein preferences (themes + topic exclusions + sentinel)
+        from app.services.recommendation.filter_presets import load_serein_preferences
 
-        from app.models.user import UserPreference as _UPref
-
-        _st_result = await self.session.execute(
-            select(_UPref.preference_value).where(
-                _UPref.user_id == user_id,
-                _UPref.preference_key == "sensitive_themes",
-            )
-        )
-        _st_raw = _st_result.scalar_one_or_none()
-        try:
-            sensitive_themes: list[str] | None = (
-                _json.loads(_st_raw) if _st_raw else None
-            )
-        except (ValueError, TypeError):
-            logger.warning("sensitive_themes malformed for user %s, ignoring", user_id)
-            sensitive_themes = None
+        _serein_prefs = await load_serein_preferences(self.session, user_id)
+        sensitive_themes: list[str] | None = _serein_prefs.sensitive_themes
+        excluded_topics = _serein_prefs.excluded_topics
 
         # 2b. Reuse format already resolved above (step 1a)
         effective_format = expected_format
@@ -587,6 +574,7 @@ class DigestService:
                 mode=effective_mode,
                 output_format=effective_format,
                 sensitive_themes=sensitive_themes,
+                excluded_topics=excluded_topics,
             )
         except Exception:
             logger.exception(
@@ -646,6 +634,7 @@ class DigestService:
                 limit=target_size,
                 is_serene=is_serene,
                 sensitive_themes=sensitive_themes,
+                excluded_topics=excluded_topics,
             )
             fallback_time = time.time() - step_start
 
@@ -780,6 +769,7 @@ class DigestService:
         limit: int = 5,
         is_serene: bool = False,
         sensitive_themes: list[str] | None = None,
+        excluded_topics: list[Any] | None = None,
     ) -> list[Any]:
         """Last resort: get most recent content from user's followed sources first.
 
@@ -828,7 +818,11 @@ class DigestService:
                 .limit(fetch_limit)
             )
             if is_serene:
-                stmt = apply_serein_filter(stmt, sensitive_themes=sensitive_themes)
+                stmt = apply_serein_filter(
+                    stmt,
+                    sensitive_themes=sensitive_themes,
+                    excluded_topics=excluded_topics,
+                )
 
             result = await self.session.execute(stmt)
             all_contents = list(result.scalars().all())
@@ -853,7 +847,9 @@ class DigestService:
                 )
             if is_serene:
                 curated_query = apply_serein_filter(
-                    curated_query, sensitive_themes=sensitive_themes
+                    curated_query,
+                    sensitive_themes=sensitive_themes,
+                    excluded_topics=excluded_topics,
                 )
             stmt = curated_query
 
@@ -882,7 +878,9 @@ class DigestService:
                 )
             if is_serene:
                 any_source_query = apply_serein_filter(
-                    any_source_query, sensitive_themes=sensitive_themes
+                    any_source_query,
+                    sensitive_themes=sensitive_themes,
+                    excluded_topics=excluded_topics,
                 )
 
             result = await self.session.execute(any_source_query)

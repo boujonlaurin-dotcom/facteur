@@ -56,7 +56,15 @@ def mock_session():
     session.flush = AsyncMock()
     session.add = Mock()
     session.scalar = AsyncMock(return_value=None)
-    session.execute = AsyncMock()
+    # Default execute result: empty .all() and empty .scalars().all() so that
+    # load_serein_preferences / other queries don't blow up on coroutine
+    # auto-generated children of AsyncMock.
+    _default_result = MagicMock()
+    _default_result.all = Mock(return_value=[])
+    _default_scalars = MagicMock()
+    _default_scalars.all = Mock(return_value=[])
+    _default_result.scalars = Mock(return_value=_default_scalars)
+    session.execute = AsyncMock(return_value=_default_result)
     session.commit = AsyncMock()
     return session
 

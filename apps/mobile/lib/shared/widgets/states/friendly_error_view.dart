@@ -74,14 +74,14 @@ class FriendlyErrorView extends StatelessWidget {
             children: [
               Icon(
                 copy.icon,
-                size: 56,
+                size: 32,
                 color: colors.primary.withValues(alpha: 0.85),
               ),
               const SizedBox(height: FacteurSpacing.space4),
               Text(
                 copy.title,
                 textAlign: TextAlign.center,
-                style: FacteurTypography.displaySmall(colors.textPrimary),
+                style: FacteurTypography.displayMedium(colors.textPrimary),
               ),
               const SizedBox(height: FacteurSpacing.space2),
               Text(
@@ -90,11 +90,14 @@ class FriendlyErrorView extends StatelessWidget {
                 style: FacteurTypography.bodyMedium(colors.textSecondary),
               ),
               const SizedBox(height: FacteurSpacing.space6),
-              PrimaryButton(
-                label: FriendlyErrorStrings.retryLabel,
-                icon: PhosphorIcons.arrowClockwise(PhosphorIconsStyle.bold),
-                onPressed: onRetry,
-                fullWidth: false,
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 200),
+                child: PrimaryButton(
+                  label: FriendlyErrorStrings.retryLabel,
+                  icon: PhosphorIcons.arrowClockwise(PhosphorIconsStyle.bold),
+                  onPressed: onRetry,
+                  fullWidth: false,
+                ),
               ),
             ],
           ),

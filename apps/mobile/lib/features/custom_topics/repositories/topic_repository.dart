@@ -65,6 +65,24 @@ class TopicRepository {
     }
   }
 
+  /// PUT personalization/topics/{id} → toggle `excluded_from_serein`.
+  Future<UserTopicProfile> updateTopicSereinExclusion(
+    String topicId,
+    bool excluded,
+  ) async {
+    try {
+      final data = await _apiClient.put(
+        'personalization/topics/$topicId',
+        body: {'excluded_from_serein': excluded},
+      );
+      return UserTopicProfile.fromJson(data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint(
+          'TopicRepository: [ERROR] updateTopicSereinExclusion: ${e.response?.statusCode} ${e.response?.data}');
+      rethrow;
+    }
+  }
+
   /// DELETE personalization/topics/{id} → 200
   Future<void> unfollowTopic(String topicId) async {
     try {
