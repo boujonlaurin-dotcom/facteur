@@ -114,6 +114,11 @@
       "env": {
         "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"
       }
+    },
+    "remotion": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@remotion/mcp@latest"]
     }
   }
 }
