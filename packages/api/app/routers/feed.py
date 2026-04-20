@@ -330,9 +330,7 @@ async def _compute_feed(
             try:
                 await db.rollback()
             except Exception as rb_exc:
-                logger.debug(
-                    "feed_precommit_rollback_failed", error=str(rb_exc)
-                )
+                logger.debug("feed_precommit_rollback_failed", error=str(rb_exc))
 
         try:
             learning_service = LearningService(

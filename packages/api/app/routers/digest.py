@@ -168,9 +168,7 @@ async def _enrich_community_carousel(
         try:
             await db.rollback()
         except Exception as rb_exc:
-            logger.debug(
-                "community_carousel_rollback_failed", error=str(rb_exc)
-            )
+            logger.debug("community_carousel_rollback_failed", error=str(rb_exc))
 
     return digest
 
