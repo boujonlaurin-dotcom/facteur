@@ -191,13 +191,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             # than degraded mode. The readiness probe (/api/health/ready) will
             # correctly return 503, and pool_pre_ping will reconnect when DB is back.
             sentry_sdk.capture_exception(e)
-            sentry_sdk.flush(timeout=5)
+            # sentry_sdk.flush() is synchronous — run in executor to avoid
+            # blocking the event loop (which would make Railway healthcheck time out).
+            try:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, lambda: sentry_sdk.flush(timeout=5))
+            except Exception:
+                pass
     else:
         logger.warning(
             "lifespan_db_checks_skipped", reason="DATABASE_URL not set in environment"
         )
     logger.info("lifespan_starting_scheduler")
-    start_scheduler()
+    try:
+        start_scheduler()
+    except Exception as sched_exc:
+        logger.critical(
+            "lifespan_scheduler_failed", error=str(sched_exc), exc_info=True
+        )
 
     # Startup catch-up: vérifie la couverture digest (pas juste l'existence).
     # Si < 90 % des users actifs ont un digest, relance la génération.
