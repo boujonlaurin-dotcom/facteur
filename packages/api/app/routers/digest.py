@@ -380,7 +380,7 @@ async def get_both_digests(
                 asyncio.shield(leader_fut),
                 timeout=DIGEST_BOTH_FOLLOWER_TIMEOUT_S,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise HTTPException(
                 status_code=503,
                 detail="digest_generation_timeout",
