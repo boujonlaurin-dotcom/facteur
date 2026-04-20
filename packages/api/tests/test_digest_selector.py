@@ -822,3 +822,102 @@ class TestGenerateReasonTrending:
 
         reason = selector._generate_reason(content, defaultdict(int), defaultdict(int), breakdown)
         assert reason == "Thème : AI"
+
+
+# ─── Tests: Sport penalty in _score_candidates ───────────────────────────────
+
+
+class TestScoreCandidatesSportPenalty:
+    """Pénalité Sport appliquée dans le scoring du digest (2 modes)."""
+
+    @pytest.fixture
+    def context(self):
+        return DigestContext(
+            user_id=uuid4(),
+            user_profile=Mock(),
+            user_interests={"tech", "science"},
+            user_interest_weights={"tech": 1.0, "science": 1.0},
+            followed_source_ids=set(),
+            custom_source_ids=set(),
+            user_prefs={},
+            user_subtopics=set(),
+            user_subtopic_weights={},
+            muted_sources=set(),
+            muted_themes=set(),
+            muted_topics=set(),
+            muted_content_types=set(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_sport_article_gets_penalty(self, selector, context):
+        """Article Sport perd DIGEST_SPORT_PENALTY points vs article neutre équivalent."""
+        from app.services.recommendation.scoring_config import ScoringWeights
+
+        sport_src = make_source(name="Sport Source", theme="sport")
+        tech_src = make_source(name="Tech Source", theme="tech")
+        now = datetime.now(timezone.utc)
+        sport_content = make_content(source=sport_src, theme="sport", published_at=now)
+        tech_content = make_content(source=tech_src, theme="tech", published_at=now)
+
+        selector.rec_service = Mock()
+        selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
+        selector.rec_service.scoring_engine = Mock()
+        selector.rec_service.scoring_engine.compute_score = Mock(return_value=100.0)
+
+        scored = await selector._score_candidates(
+            [sport_content, tech_content], context, mode="pour_vous"
+        )
+
+        by_id = {c.id: (s, bd) for c, s, bd in scored}
+        sport_score, sport_breakdown = by_id[sport_content.id]
+        tech_score, _ = by_id[tech_content.id]
+
+        assert tech_score - sport_score == pytest.approx(
+            abs(ScoringWeights.DIGEST_SPORT_PENALTY)
+        )
+        labels = [b.label for b in sport_breakdown]
+        assert "Sport (priorité réduite)" in labels
+
+    @pytest.mark.asyncio
+    async def test_sport_penalty_applies_in_serein_mode(self, selector, context):
+        """La pénalité Sport s'applique aussi en mode serein."""
+        from app.services.recommendation.scoring_config import ScoringWeights
+
+        sport_src = make_source(name="Sport Source", theme="sport")
+        now = datetime.now(timezone.utc)
+        sport_content = make_content(source=sport_src, theme="sport", published_at=now)
+
+        selector.rec_service = Mock()
+        selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
+        selector.rec_service.scoring_engine = Mock()
+        selector.rec_service.scoring_engine.compute_score = Mock(return_value=100.0)
+
+        scored = await selector._score_candidates(
+            [sport_content], context, mode="serein"
+        )
+
+        _, _, breakdown = scored[0]
+        sport_entry = next(
+            (b for b in breakdown if b.label == "Sport (priorité réduite)"), None
+        )
+        assert sport_entry is not None
+        assert sport_entry.points == ScoringWeights.DIGEST_SPORT_PENALTY
+
+    @pytest.mark.asyncio
+    async def test_sport_detected_via_topics(self, selector, context):
+        """Article non-sport en theme mais avec 'sport' dans topics est pénalisé."""
+        src = make_source(name="Mixed Source", theme="tech")
+        now = datetime.now(timezone.utc)
+        content = make_content(
+            source=src, theme="tech", topics=["sport", "football"], published_at=now
+        )
+
+        selector.rec_service = Mock()
+        selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
+        selector.rec_service.scoring_engine = Mock()
+        selector.rec_service.scoring_engine.compute_score = Mock(return_value=100.0)
+
+        scored = await selector._score_candidates([content], context, mode="pour_vous")
+        _, _, breakdown = scored[0]
+        labels = [b.label for b in breakdown]
+        assert "Sport (priorité réduite)" in labels

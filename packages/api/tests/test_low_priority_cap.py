@@ -19,6 +19,7 @@ from app.services.recommendation.filter_presets import (
     cap_low_priority_clusters,
     is_faits_divers_cluster,
     is_sport_cluster,
+    is_sport_content,
 )
 
 
@@ -26,6 +27,8 @@ from app.services.recommendation.filter_presets import (
 class _FakeContent:
     title: str | None = None
     description: str | None = None
+    theme: str | None = None
+    topics: list[str] | None = None
 
 
 @dataclass
@@ -82,6 +85,37 @@ class TestIsSportCluster:
             ],
         )
         assert not is_sport_cluster(cluster)
+
+
+class TestIsSportContent:
+    def test_theme_sport_is_sport(self):
+        c = _FakeContent(theme="sport", title="Actu diverse")
+        assert is_sport_content(c)
+
+    def test_theme_sports_plural_is_sport(self):
+        c = _FakeContent(theme="sports", title="x")
+        assert is_sport_content(c)
+
+    def test_topic_sport_in_array_is_sport(self):
+        c = _FakeContent(theme="tech", topics=["ai", "sport"], title="x")
+        assert is_sport_content(c)
+
+    def test_keyword_in_title_is_sport(self):
+        c = _FakeContent(theme="tech", title="PSG bat l'OM 3-1 en Ligue 1")
+        assert is_sport_content(c)
+
+    def test_neutral_content_is_not_sport(self):
+        c = _FakeContent(
+            theme="tech",
+            topics=["ai", "startups"],
+            title="IA générative en entreprise",
+            description="Analyse des tendances",
+        )
+        assert not is_sport_content(c)
+
+    def test_none_fields_not_sport(self):
+        c = _FakeContent(theme=None, topics=None, title=None, description=None)
+        assert not is_sport_content(c)
 
 
 class TestIsFaitsDiversCluster:

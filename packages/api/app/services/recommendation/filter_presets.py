@@ -440,6 +440,18 @@ def is_sport_cluster(cluster: TopicCluster) -> bool:
     return _match_ratio(cluster, LOW_PRIORITY_SPORT_KEYWORDS) > 0.5
 
 
+def is_sport_content(content: Content) -> bool:
+    """Article individuel de type Sport (theme, topics ou keywords titre/desc)."""
+    if content.theme and content.theme.lower() in LOW_PRIORITY_SPORT_THEMES:
+        return True
+    if content.topics and any(
+        isinstance(t, str) and t.lower() == "sport" for t in content.topics
+    ):
+        return True
+    text = f"{content.title or ''} {content.description or ''}".lower()
+    return any(kw in text for kw in LOW_PRIORITY_SPORT_KEYWORDS)
+
+
 def is_faits_divers_cluster(cluster: TopicCluster) -> bool:
     """Cluster dominé par les faits divers (>50% titres matchent)."""
     return _match_ratio(cluster, LOW_PRIORITY_FAITS_DIVERS_KEYWORDS) > 0.5

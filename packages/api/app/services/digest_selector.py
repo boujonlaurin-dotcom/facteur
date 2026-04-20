@@ -40,7 +40,10 @@ from app.models.source import Source, UserSource
 from app.models.user import UserProfile, UserSubtopic
 from app.schemas.digest import DigestScoreBreakdown
 from app.services.briefing.importance_detector import ImportanceDetector
-from app.services.recommendation.filter_presets import apply_serein_filter
+from app.services.recommendation.filter_presets import (
+    apply_serein_filter,
+    is_sport_content,
+)
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import ScoringContext
 from app.services.recommendation_service import RecommendationService
@@ -1013,6 +1016,17 @@ class DigestSelector:
                     recency_bonus = 0.0
 
                 final_score = base_score + recency_bonus
+
+                # Sport penalty (applied to both pour_vous and serein modes)
+                if is_sport_content(content):
+                    final_score += ScoringWeights.DIGEST_SPORT_PENALTY
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label="Sport (priorité réduite)",
+                            points=ScoringWeights.DIGEST_SPORT_PENALTY,
+                            is_positive=False,
+                        )
+                    )
 
                 # Capture CoreLayer contributions
                 # Theme match (3-tier: content.theme > source.theme > secondary)
