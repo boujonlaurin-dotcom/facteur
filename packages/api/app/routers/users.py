@@ -1,9 +1,11 @@
 """Routes utilisateur."""
 
 import logging
+import time
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import func
@@ -11,6 +13,7 @@ from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+_perf_logger = structlog.get_logger("streak_perf")
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
@@ -245,8 +248,15 @@ async def get_streak(
     db: AsyncSession = Depends(get_db),
 ) -> StreakResponse:
     """Récupérer le streak actuel."""
+    t0 = time.monotonic()
     service = StreakService(db)
-    return await service.get_streak(user_id)
+    result = await service.get_streak(user_id)
+    _perf_logger.info(
+        "streak_handler_duration",
+        duration_ms=round((time.monotonic() - t0) * 1000, 2),
+        user_id=user_id,
+    )
+    return result
 
 
 class PreferenceUpdateRequest(BaseModel):
