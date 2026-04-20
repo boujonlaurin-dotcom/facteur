@@ -126,6 +126,13 @@ class ScoringWeights:
     # plutôt que domination d'une seule.
     DIGEST_DIVERSITY_DIVISOR = 2
 
+    # --- DIGEST LOW-PRIORITY (Sport) ---
+
+    # Pénalité appliquée aux articles Sport dans le scoring du digest (2 modes).
+    # Alignée sur MUTED_THEME_MALUS (-40) : un Sport fort (source suivie + topic
+    # ciblé + très récent) peut encore dépasser le seuil — pas d'exclusion dure.
+    DIGEST_SPORT_PENALTY = -40.0
+
     # --- DIGEST TRENDING/IMPORTANCE (Pour vous hybride) ---
 
     # Bonus pour article trending (couvert par ≥3 sources distinctes).

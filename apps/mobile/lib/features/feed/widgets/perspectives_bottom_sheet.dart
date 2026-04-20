@@ -515,45 +515,47 @@ class _PerspectiveCard extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Title area
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-              child: IntrinsicHeight(
-                child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Bias indicator
-                  Container(
+            Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(28, 12, 12, 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          perspective.title.replaceAll(RegExp(r'\s*[-–|]\s*[^-–|]+$'), '').trim(),
+                          style: textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            color: colors.textPrimary,
+                            fontSize: (textTheme.bodyMedium?.fontSize ?? 14) + 1,
+                          ),
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.regular),
+                        size: 16,
+                        color: colors.textTertiary,
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  left: 12,
+                  top: 12,
+                  bottom: 8,
+                  child: Container(
                     width: 4,
                     decoration: BoxDecoration(
                       color: perspective.getBiasColor(colors),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  // Title
-                  Expanded(
-                    child: Text(
-                      perspective.title.replaceAll(RegExp(r'\s*[-–|]\s*[^-–|]+$'), '').trim(),
-                      style: textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                        color: colors.textPrimary,
-                        fontSize: (textTheme.bodyMedium?.fontSize ?? 14) + 1,
-                      ),
-                      maxLines: 4,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Align(
-                    alignment: Alignment.topCenter,
-                    child: Icon(
-                      PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.regular),
-                      size: 16,
-                      color: colors.textTertiary,
-                    ),
-                  ),
-                ],
-              ),
-              ),
+                ),
+              ],
             ),
 
             // Footer — source info, tappable if source found in DB
