@@ -456,11 +456,32 @@ async def get_both_digests(
             leader_fut.set_result(result)
             return result
 
-        # Use the original session for the lightweight preference read
-        service = DigestService(db)
-        serein_enabled = await service._get_user_serein_enabled(user_uuid)
+        # Post-gather DB ops — the outer `db` session has been idle during the
+        # 25-30s LLM pipeline, and Supabase/PgBouncer sometimes kills idle
+        # connections in that window. We already generated both variants in
+        # their own short-lived sessions, so here we only need the preference
+        # read + community enrichment. Make them both tolerant: if `db` is
+        # dead, roll back once (forces SQLAlchemy to check out a fresh slot)
+        # and fall back to defaults rather than 500-ing a successfully
+        # generated pair of digests.
+        try:
+            service = DigestService(db)
+            serein_enabled = await service._get_user_serein_enabled(user_uuid)
+        except Exception:
+            logger.exception(
+                "digest_both_serein_enabled_lookup_failed",
+                user_id=current_user_id,
+            )
+            try:
+                await db.rollback()
+            except Exception as rb_exc:
+                logger.debug(
+                    "digest_both_post_gather_rollback_failed",
+                    error=str(rb_exc),
+                )
+            serein_enabled = False
 
-        # Enrich both variants with community carousel
+        # Enrich both variants with community carousel (already fail-open).
         if normal:
             normal = await _enrich_community_carousel(db, user_uuid, normal)
         if serein:
