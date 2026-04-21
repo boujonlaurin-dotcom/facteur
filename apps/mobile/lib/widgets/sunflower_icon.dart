@@ -44,7 +44,7 @@ class SunflowerIcon extends StatelessWidget {
         );
       },
       child: Text(
-        '🌻',
+        isActive ? '🌻' : '🌱',
         key: ValueKey('sunflower_${isActive ? 'active' : 'inactive'}'),
         style: TextStyle(
           fontSize: size,

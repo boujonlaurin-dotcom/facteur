@@ -890,6 +890,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           newLiked
               ? 'Ajouté à Mes contenus recommandés 🌻'
               : 'Retiré de Mes contenus recommandés 🌻',
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 94),
         );
         // Refresh collections to update liked collection counts
         ref.invalidate(collectionsProvider);
@@ -1773,81 +1774,30 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           ),
                           const SizedBox(height: FacteurSpacing.space3),
                         ],
-                        // 🌻 Sunflower recommendation FAB + nudge label
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            // Animated "Recommander ?" nudge label
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 300),
-                              transitionBuilder: (child, animation) =>
-                                  FadeTransition(
-                                opacity: animation,
-                                child: SlideTransition(
-                                  position: Tween<Offset>(
-                                    begin: const Offset(0.3, 0),
-                                    end: Offset.zero,
-                                  ).animate(animation),
-                                  child: child,
-                                ),
-                              ),
-                              child: _showSunflowerNudge
-                                  ? Container(
-                                      key: const ValueKey('nudge_visible'),
-                                      margin: const EdgeInsets.only(right: 10),
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFFFF8E1),
-                                        borderRadius: BorderRadius.circular(16),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color:
-                                                Colors.black.withOpacity(0.1),
-                                            blurRadius: 8,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ],
-                                      ),
-                                      child: const Text(
-                                        'Recommander ? 🌻',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                          color: Color(0xFF795548),
-                                        ),
-                                      ),
-                                    )
-                                  : const SizedBox.shrink(
-                                      key: ValueKey('nudge_hidden'),
-                                    ),
-                            ),
-                            ScaleTransition(
-                              scale: _likeScaleAnimation,
-                              child: SizedBox(
-                                width: 50,
-                                height: 50,
-                                child: FloatingActionButton(
-                                  onPressed: _toggleLike,
-                                  backgroundColor: content.isLiked
-                                      ? colors.primary
-                                      : Colors.white,
-                                  foregroundColor: content.isLiked
-                                      ? Colors.white
-                                      : colors.textPrimary,
-                                  elevation: content.isLiked ? 4 : 2,
-                                  heroTag: 'sunflower_fab',
-                                  tooltip: 'Recommander',
-                                  child: SunflowerIcon(
-                                    isActive: content.isLiked,
-                                    size: 25,
-                                    inactiveColor: colors.textPrimary,
-                                  ),
-                                ),
+                        // 🌻 Sunflower recommendation FAB
+                        ScaleTransition(
+                          scale: _likeScaleAnimation,
+                          child: SizedBox(
+                            width: 50,
+                            height: 50,
+                            child: FloatingActionButton(
+                              onPressed: _toggleLike,
+                              backgroundColor: content.isLiked
+                                  ? colors.primary
+                                  : Colors.white,
+                              foregroundColor: content.isLiked
+                                  ? Colors.white
+                                  : colors.textPrimary,
+                              elevation: content.isLiked ? 4 : 2,
+                              heroTag: 'sunflower_fab',
+                              tooltip: 'Recommander',
+                              child: SunflowerIcon(
+                                isActive: content.isLiked,
+                                size: 25,
+                                inactiveColor: colors.textPrimary,
                               ),
                             ),
-                          ],
+                          ),
                         ),
                         const SizedBox(height: FacteurSpacing.space3),
                         // Merged Bookmark + Note FAB (long-press for collection picker)
@@ -2146,7 +2096,57 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         offset: Offset(0, offset * (_kFooterContentHeight + bottomInset + 8)),
         child: child,
       ),
-      child: footerContent,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16, bottom: 8),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.3),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              ),
+              child: _showSunflowerNudge
+                  ? Container(
+                      key: const ValueKey('nudge_visible'),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF8E1).withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Text(
+                        'Recommander ? 🌻',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF795548),
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(
+                      key: ValueKey('nudge_hidden'),
+                    ),
+            ),
+          ),
+          footerContent,
+        ],
+      ),
     );
   }
 
@@ -3594,11 +3594,13 @@ class _WinkingEyeButtonState extends State<_WinkingEyeButton>
   late final AnimationController _controller;
   late final Animation<double> _scaleY;
   final math.Random _rng = math.Random();
+  final Stopwatch _timeOnScreen = Stopwatch();
   Timer? _timer;
 
   @override
   void initState() {
     super.initState();
+    _timeOnScreen.start();
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 320),
@@ -3622,7 +3624,11 @@ class _WinkingEyeButtonState extends State<_WinkingEyeButton>
   }
 
   void _scheduleNext() {
-    final delayMs = 4000 + _rng.nextInt(11000); // 4–15 s
+    final elapsed = _timeOnScreen.elapsed.inSeconds;
+    // Multiplier grows from 1× at t=0 to 3× at t=60s, then stays at 3×.
+    final multiplier = (3.0 * (elapsed.clamp(0, 60) / 60.0)).clamp(1.0, 3.0);
+    final baseMs = 2000 + _rng.nextInt(3001); // 2–5 s
+    final delayMs = (baseMs * multiplier).round();
     _timer?.cancel();
     _timer = Timer(Duration(milliseconds: delayMs), () {
       if (mounted) _controller.forward(from: 0);
