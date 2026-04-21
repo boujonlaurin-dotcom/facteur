@@ -31,21 +31,39 @@ if [[ -z "${DATABASE_URL_RO:-}" ]]; then
 elif ! command -v psql &>/dev/null; then
   sk "psql absent — skip"
 else
-  user=$(psql "$DATABASE_URL_RO" -X -A -t -c "SELECT current_user;" 2>/dev/null)
+  # Diagnostic non-sensible sur l'URL (schéma/host/port/db, sans password).
+  safe=$(printf '%s' "$DATABASE_URL_RO" \
+         | sed -E 's#^(postgres(ql)?://)[^:]+:[^@]+@#\1***:***@#' \
+         | sed -E 's/(password=)[^& ]+/\1***/g')
+  echo "  (URL sans secret) $safe"
+
+  conn_out=$(psql "$DATABASE_URL_RO" -X -A -t -c "SELECT current_user;" 2>&1)
+  user=$(echo "$conn_out" | tail -1 | tr -d ' \r\n')
   if [[ "$user" == "claude_analytics_ro" ]]; then
     ok "connecté en tant que claude_analytics_ro"
+  elif [[ "$conn_out" == *"ERROR"* || "$conn_out" == *"FATAL"* || "$conn_out" == *"could not"* || "$conn_out" == *"timeout"* ]]; then
+    first=$(echo "$conn_out" | grep -iE "error|fatal|could not|timeout|denied" | head -1)
+    ko "connexion impossible : ${first:-$conn_out}"
   elif [[ -n "$user" ]]; then
     ko "connecté mais en tant que '$user' — devrait être claude_analytics_ro"
   else
-    ko "connexion impossible (vérifie password, sslmode, IP autorisée)"
+    ko "connexion impossible (sortie vide)"
   fi
   # Vérifie qu'au moins une table attendue est lisible
-  n=$(psql "$DATABASE_URL_RO" -X -A -t -c "SELECT COUNT(*) FROM user_profiles LIMIT 1;" 2>/dev/null)
-  [[ -n "$n" ]] && ok "SELECT sur user_profiles fonctionne" || ko "SELECT user_profiles impossible (GRANT manquant ?)"
+  sel_out=$(psql "$DATABASE_URL_RO" -X -A -t -c "SELECT COUNT(*) FROM user_profiles LIMIT 1;" 2>&1)
+  n=$(echo "$sel_out" | tail -1 | tr -d ' \r\n')
+  if [[ "$n" =~ ^[0-9]+$ ]]; then
+    ok "SELECT sur user_profiles fonctionne ($n rows)"
+  else
+    first=$(echo "$sel_out" | grep -iE "error|fatal|denied" | head -1)
+    ko "SELECT user_profiles impossible : ${first:-(sortie vide)}"
+  fi
   # Sanity : refuse un write
   w=$(psql "$DATABASE_URL_RO" -X -A -t -c "UPDATE user_profiles SET onboarding_completed = onboarding_completed WHERE false;" 2>&1)
   if echo "$w" | grep -qi "permission denied"; then
     ok "UPDATE refusé comme attendu (least-privilege OK)"
+  elif echo "$w" | grep -qiE "fatal|could not|timeout"; then
+    ko "UPDATE non testable (connexion en échec amont)"
   else
     ko "UPDATE n'est PAS refusé — le rôle a trop de droits ! Vérifie le GRANT."
   fi
@@ -67,21 +85,26 @@ else
 fi
 
 # ─── Railway ─────────────────────────────────────────────────────────────────
-hdr "Railway (RAILWAY_TOKEN)"
-if [[ -z "${RAILWAY_TOKEN:-}" ]]; then
-  sk "RAILWAY_TOKEN"
+hdr "Railway (RAILWAY_TOKEN / RAILWAY_API_TOKEN)"
+if [[ -z "${RAILWAY_TOKEN:-}" && -z "${RAILWAY_API_TOKEN:-}" ]]; then
+  sk "RAILWAY_TOKEN et RAILWAY_API_TOKEN"
 elif ! command -v railway &>/dev/null; then
   sk "CLI railway absente — lance scripts/setup-cli-tools.sh"
 else
+  # Diagnostic longueur pour détecter un copier/coller tronqué ou avec espaces.
+  tok_len=${#RAILWAY_TOKEN}
+  api_len=${#RAILWAY_API_TOKEN}
+  echo "  (longueur tokens) RAILWAY_TOKEN=${tok_len}, RAILWAY_API_TOKEN=${api_len}"
+
   w=$(railway whoami 2>&1)
-  if echo "$w" | grep -qiE "logged in|email"; then
-    ok "Railway whoami OK"
+  if echo "$w" | grep -qiE "logged in|email|@"; then
+    ok "Railway whoami OK ($(echo "$w" | head -1))"
   else
-    ko "Railway whoami échoue : $(echo "$w" | head -1)"
+    ko "Railway whoami échoue : $(echo "$w" | head -2 | tr '\n' ' ')"
   fi
   if [[ -n "${RAILWAY_PROJECT_ID:-}" ]]; then
     s=$(railway status --json 2>&1)
-    echo "$s" | grep -q "projectId" && ok "projet accessible" || ko "status échoue"
+    echo "$s" | grep -q "projectId" && ok "projet accessible" || ko "status échoue : $(echo "$s" | head -1)"
   fi
 fi
 
@@ -92,17 +115,30 @@ if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
 elif ! command -v sentry-cli &>/dev/null; then
   sk "sentry-cli absente"
 else
+  sent_len=${#SENTRY_AUTH_TOKEN}
+  echo "  (longueur token) SENTRY_AUTH_TOKEN=${sent_len}"
+
   i=$(sentry-cli info 2>&1)
   if echo "$i" | grep -qi "authenticated"; then
     ok "sentry-cli authentifié"
   else
-    ko "sentry-cli info échoue"
+    short=$(echo "$i" | head -3 | tr '\n' ' ')
+    ko "sentry-cli info échoue : ${short}"
+  fi
+  # Test API direct (indépendant du CLI)
+  api_code=$(curl -sS -o /tmp/sentry_self.json -w "%{http_code}" \
+      -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+      "https://sentry.io/api/0/" 2>/dev/null)
+  if [[ "$api_code" == "200" ]]; then
+    ok "API Sentry /api/0/ répond 200 (token OK côté API)"
+  else
+    ko "API Sentry /api/0/ HTTP $api_code"
   fi
   if [[ -n "${SENTRY_ORG:-}" && -n "${SENTRY_PROJECT:-}" ]]; then
-    r=$(curl -sf -o /dev/null -w "%{http_code}" \
+    r=$(curl -sS -o /dev/null -w "%{http_code}" \
         -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
         "https://sentry.io/api/0/projects/$SENTRY_ORG/$SENTRY_PROJECT/" 2>/dev/null)
-    [[ "$r" == "200" ]] && ok "projet Sentry accessible" || ko "projet Sentry HTTP $r"
+    [[ "$r" == "200" ]] && ok "projet Sentry accessible" || ko "projet Sentry HTTP $r (ORG='$SENTRY_ORG' PROJECT='$SENTRY_PROJECT')"
   fi
 fi
 
