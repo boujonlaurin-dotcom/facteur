@@ -118,6 +118,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final GlobalKey _articleKey = GlobalKey();
   final GlobalKey _bridgeKey = GlobalKey();
   final GlobalKey _perspectivesKey = GlobalKey();
+  final GlobalKey _firstPerspectiveCardKey = GlobalKey();
   bool _isWebViewActive = false;
   bool _ctaTapped = false;
   double _bridgeEndOffset = 0;
@@ -575,7 +576,22 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     final perspScreenY = perspBox.localToGlobal(Offset.zero).dy;
     final screenHeight = MediaQuery.of(context).size.height;
-    final reached = perspScreenY < screenHeight * 0.85;
+
+    // Show button once the user has scrolled past the first card.
+    bool reached;
+    final firstCardCtx = _firstPerspectiveCardKey.currentContext;
+    if (firstCardCtx != null) {
+      final firstCardBox = firstCardCtx.findRenderObject() as RenderBox?;
+      if (firstCardBox != null && firstCardBox.hasSize) {
+        final firstCardBottomY = firstCardBox.localToGlobal(Offset.zero).dy +
+            firstCardBox.size.height;
+        reached = firstCardBottomY < screenHeight * 0.9;
+      } else {
+        reached = perspScreenY < screenHeight * 0.85;
+      }
+    } else {
+      reached = perspScreenY < screenHeight * 0.85;
+    }
 
     if (reached != _atPerspectivesSection.value) {
       _atPerspectivesSection.value = reached;
@@ -1624,42 +1640,50 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             PerspectivesAnalysisState.idle &&
                         _perspectivesResponse != null &&
                         _perspectivesResponse!.perspectives.isNotEmpty;
-                    return AnimatedOpacity(
-                      opacity: show ? 1.0 : 0.0,
+                    return AnimatedScale(
+                      scale: show ? 1.0 : 0.9,
                       duration: const Duration(milliseconds: 200),
-                      child: IgnorePointer(
-                        ignoring: !show,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.white.withValues(alpha: 0.85),
-                                blurRadius: 0,
+                      curve: Curves.easeOut,
+                      child: AnimatedOpacity(
+                        opacity: show ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 200),
+                        child: IgnorePointer(
+                          ignoring: !show,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              color: context.facteurColors.surfaceElevated
+                                  .withValues(alpha: 0.95),
+                              border: Border.all(
+                                color: context.facteurColors.border,
                               ),
-                            ],
-                          ),
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              HapticFeedback.lightImpact();
-                              _requestPerspectivesAnalysis();
-                            },
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: context.facteurColors.primary,
-                              side: BorderSide(
-                                color: context.facteurColors.primary,
-                              ),
-                              backgroundColor:
-                                  Colors.white.withValues(alpha: 0.5),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.08),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
                             ),
-                            icon: Icon(
-                              PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
-                              size: 16,
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                HapticFeedback.lightImpact();
+                                _requestPerspectivesAnalysis();
+                              },
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: context.facteurColors.primary,
+                                side: BorderSide.none,
+                                backgroundColor: Colors.transparent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              icon: Icon(
+                                PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+                                size: 16,
+                              ),
+                              label: const Text('Lancer l\'analyse Facteur'),
                             ),
-                            label: const Text('Lancer l\'analyse Facteur'),
                           ),
                         ),
                       ),
@@ -2019,7 +2043,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             children: [
                               Center(
                                 child: Icon(
-                                  PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
+                                  PhosphorIcons.newspaper(
+                                      PhosphorIconsStyle.regular),
                                   size: 24,
                                   color: colors.textSecondary,
                                 ),
@@ -2028,7 +2053,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 right: 0,
                                 bottom: 0,
                                 child: Icon(
-                                  PhosphorIcons.arrowUp(PhosphorIconsStyle.bold),
+                                  PhosphorIcons.arrowUp(
+                                      PhosphorIconsStyle.bold),
                                   size: 8,
                                   color: colors.textSecondary,
                                 ),
@@ -2063,7 +2089,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             } else {
                               _showPerspectives(context);
                             }
-                            Future.delayed(const Duration(milliseconds: 450), () {
+                            Future.delayed(const Duration(milliseconds: 450),
+                                () {
                               if (mounted) _suppressPerspectivesCheck = false;
                             });
                           },
@@ -2845,7 +2872,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                         decoration: BoxDecoration(
                                           color: colors.warning
                                               .withValues(alpha: 0.12),
-                                          borderRadius: BorderRadius.circular(8),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
                                         ),
                                         child: Text(
                                           'Aperçu — contenu partiel',
@@ -2955,6 +2983,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                       onRequestAnalysis:
                                           _requestPerspectivesAnalysis,
                                       analysisZoneKey: _analysisZoneKey,
+                                      firstCardKey: _firstPerspectiveCardKey,
                                     )
                                   : const SizedBox.shrink(),
                         ),
@@ -3506,6 +3535,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       analysisText: _perspectivesAnalysisText,
                       onRequestAnalysis: _requestPerspectivesAnalysis,
                       analysisZoneKey: _analysisZoneKey,
+                      firstCardKey: _firstPerspectiveCardKey,
                     ),
                 ],
 
@@ -3678,7 +3708,8 @@ class _WinkingEyeButtonState extends State<_WinkingEyeButton>
         return IconButton(
           style: widget.style,
           onPressed: widget.onTap,
-          tooltip: disabled ? 'Pas d\'autres points de vue' : 'Autres points de vue',
+          tooltip:
+              disabled ? 'Pas d\'autres points de vue' : 'Autres points de vue',
           icon: SizedBox(
             width: 28,
             height: 28,
@@ -3695,7 +3726,8 @@ class _WinkingEyeButtonState extends State<_WinkingEyeButton>
                           scaleY: _scaleY.value,
                           child: Icon(
                             isWinking
-                                ? PhosphorIcons.eyeClosed(PhosphorIconsStyle.regular)
+                                ? PhosphorIcons.eyeClosed(
+                                    PhosphorIconsStyle.regular)
                                 : PhosphorIcons.eye(PhosphorIconsStyle.regular),
                             size: 22,
                             color: widget.iconColor,

@@ -1175,6 +1175,10 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
   /// Key attached to the analysis result zone so the parent can scroll to it.
   final Key? analysisZoneKey;
 
+  /// Key attached to the first perspective card so the parent can detect
+  /// when the user has scrolled past it.
+  final Key? firstCardKey;
+
   const PerspectivesInlineSection({
     super.key,
     required this.perspectives,
@@ -1191,6 +1195,7 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
     this.analysisText,
     this.onRequestAnalysis,
     this.analysisZoneKey,
+    this.firstCardKey,
   });
 
   @override
@@ -1344,7 +1349,13 @@ class _PerspectivesInlineSectionState
               ],
             ),
           ),
-          ...filtered.map(
+          if (filtered.isNotEmpty)
+            Padding(
+              key: widget.firstCardKey,
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _PerspectiveCard(perspective: filtered.first),
+            ),
+          ...filtered.skip(1).map(
             (p) => Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: _PerspectiveCard(perspective: p),
