@@ -1294,9 +1294,6 @@ class _PerspectivesInlineSectionState
                     ),
                   ],
                 ),
-                if (widget.comparisonQuality == 'low')
-                  PerspectivesWarningBadge(
-                      colors: colors, textTheme: textTheme),
                 const SizedBox(height: 16),
                 PerspectivesBiasBar(
                   colors: colors,
@@ -1307,41 +1304,43 @@ class _PerspectivesInlineSectionState
                   onSegmentTap: _handleSegmentTap,
                 ),
                 SizedBox(
-                  height: 20,
+                  height: _effectiveSegments.isNotEmpty ? 28 : 4,
                   child: _effectiveSegments.isNotEmpty
-                      ? Align(
-                          alignment: Alignment.centerRight,
-                          child: GestureDetector(
-                            onTap: () {
-                              if (widget.onClearSegments != null) {
-                                widget.onClearSegments!();
-                              } else {
-                                setState(() => _selectedSegments = {});
-                              }
-                            },
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Tout afficher',
-                                  style: textTheme.labelSmall?.copyWith(
-                                    color: colors.primary,
-                                    fontWeight: FontWeight.w600,
+                      ? Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Align(
+                            alignment: Alignment.topRight,
+                            child: GestureDetector(
+                              onTap: () {
+                                if (widget.onClearSegments != null) {
+                                  widget.onClearSegments!();
+                                } else {
+                                  setState(() => _selectedSegments = {});
+                                }
+                              },
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Tout afficher',
+                                    style: textTheme.labelSmall?.copyWith(
+                                      color: colors.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 4),
-                                Icon(
-                                  PhosphorIcons.x(PhosphorIconsStyle.bold),
-                                  size: 12,
-                                  color: colors.primary,
-                                ),
-                              ],
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    PhosphorIcons.x(PhosphorIconsStyle.bold),
+                                    size: 12,
+                                    color: colors.primary,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         )
                       : null,
                 ),
-                const SizedBox(height: 8),
               ],
             ),
           ),
@@ -1351,6 +1350,14 @@ class _PerspectivesInlineSectionState
               child: _PerspectiveCard(perspective: p),
             ),
           ),
+          if (widget.comparisonQuality == 'low')
+            Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 8),
+              child: Center(
+                child: PerspectivesWarningBadge(
+                    colors: colors, textTheme: textTheme),
+              ),
+            ),
           if (widget.analysisState != PerspectivesAnalysisState.idle)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
