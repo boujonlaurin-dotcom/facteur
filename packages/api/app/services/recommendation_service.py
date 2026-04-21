@@ -2470,9 +2470,7 @@ class RecommendationService:
                     timeout_seconds=_FEED_TWO_PHASE_TIMEOUT_S,
                 )
                 fallback_query = (
-                    query.where(
-                        Source.is_curated, Source.source_tier != "deep"
-                    )
+                    query.where(Source.is_curated, Source.source_tier != "deep")
                     .order_by(Content.published_at.desc())
                     .limit(limit_candidates)
                 )
