@@ -99,6 +99,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _footerPermanent =
       false; // true once user reaches end of displayed content
   final ValueNotifier<bool> _atPerspectivesSection = ValueNotifier(false);
+  bool _suppressPerspectivesCheck = false;
   bool _showNoteWelcome = false;
   bool _linkCopiedFab = false;
   bool _linkCopiedHeader = false;
@@ -566,6 +567,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// is visible in the viewport. Called from the scroll notification handler.
   /// Uses ValueNotifier to avoid triggering a full setState during scroll.
   void _checkAtPerspectivesSection() {
+    if (_suppressPerspectivesCheck) return;
     final ctx = _perspectivesKey.currentContext;
     if (ctx == null) return;
     final perspBox = ctx.findRenderObject() as RenderBox?;
@@ -1997,6 +1999,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         style: iconButtonStyle,
                         onPressed: () {
                           HapticFeedback.lightImpact();
+                          _suppressPerspectivesCheck = true;
                           _atPerspectivesSection.value = false;
                           if (_inAppScrollController.hasClients) {
                             _inAppScrollController.animateTo(
@@ -2005,11 +2008,33 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               curve: Curves.easeInOut,
                             );
                           }
+                          Future.delayed(const Duration(milliseconds: 450), () {
+                            if (mounted) _suppressPerspectivesCheck = false;
+                          });
                         },
-                        icon: Icon(
-                          PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
-                          size: 24,
-                          color: colors.textSecondary,
+                        icon: SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: Stack(
+                            children: [
+                              Center(
+                                child: Icon(
+                                  PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
+                                  size: 24,
+                                  color: colors.textSecondary,
+                                ),
+                              ),
+                              Positioned(
+                                right: 0,
+                                bottom: 0,
+                                child: Icon(
+                                  PhosphorIcons.arrowUp(PhosphorIconsStyle.bold),
+                                  size: 8,
+                                  color: colors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -2019,6 +2044,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     iconColor: colors.textSecondary,
                     onTap: () {
                       HapticFeedback.lightImpact();
+                      _suppressPerspectivesCheck = true;
                       _atPerspectivesSection.value = true;
                       final ctx = _perspectivesKey.currentContext;
                       if (ctx != null) {
@@ -2030,6 +2056,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       } else {
                         _showPerspectives(context);
                       }
+                      Future.delayed(const Duration(milliseconds: 450), () {
+                        if (mounted) _suppressPerspectivesCheck = false;
+                      });
                     },
                   );
                 },
@@ -3642,14 +3671,33 @@ class _WinkingEyeButtonState extends State<_WinkingEyeButton>
           style: widget.style,
           onPressed: widget.onTap,
           tooltip: 'Autres points de vue',
-          icon: Transform.scale(
-            scaleY: _scaleY.value,
-            child: Icon(
-              isWinking
-                  ? PhosphorIcons.eyeClosed(PhosphorIconsStyle.regular)
-                  : PhosphorIcons.eye(PhosphorIconsStyle.regular),
-              size: 22,
-              color: widget.iconColor,
+          icon: SizedBox(
+            width: 28,
+            height: 28,
+            child: Stack(
+              children: [
+                Center(
+                  child: Transform.scale(
+                    scaleY: _scaleY.value,
+                    child: Icon(
+                      isWinking
+                          ? PhosphorIcons.eyeClosed(PhosphorIconsStyle.regular)
+                          : PhosphorIcons.eye(PhosphorIconsStyle.regular),
+                      size: 22,
+                      color: widget.iconColor,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Icon(
+                    PhosphorIcons.arrowDown(PhosphorIconsStyle.bold),
+                    size: 8,
+                    color: widget.iconColor,
+                  ),
+                ),
+              ],
             ),
           ),
         );
