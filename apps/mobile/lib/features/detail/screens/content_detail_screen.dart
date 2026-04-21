@@ -70,6 +70,9 @@ const double _kHeaderContentHeight = 50;
 /// = vertical padding (12+12) + button row height (44).
 const double _kFooterContentHeight = 82.0;
 
+/// Bottom scroll clearance so content isn't hidden behind the FAB row.
+const double _kFabBottomClearance = 120.0;
+
 class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _fabController;
@@ -1248,7 +1251,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               CircularProgressIndicator(),
-              SizedBox(height: 16),
+              const SizedBox(height: FacteurSpacing.space4),
               Text('Recherche de perspectives...'),
             ],
           ),
@@ -1354,7 +1357,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               CircularProgressIndicator(color: colors.primary),
-              const SizedBox(height: 16),
+              const SizedBox(height: FacteurSpacing.space4),
               Text(
                 'Ouverture dans votre navigateur...',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -1404,7 +1407,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               CircularProgressIndicator(color: colors.primary),
-              const SizedBox(height: 16),
+              const SizedBox(height: FacteurSpacing.space4),
               Text(
                 'Ouverture dans votre navigateur...',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -1619,26 +1622,37 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       duration: const Duration(milliseconds: 200),
                       child: IgnorePointer(
                         ignoring: !show,
-                        child: FilledButton.icon(
-                          onPressed: () {
-                            HapticFeedback.lightImpact();
-                            _requestPerspectivesAnalysis();
-                          },
-                          style: FilledButton.styleFrom(
-                            backgroundColor: context.facteurColors.primary
-                                .withValues(alpha: 1.0),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.white.withValues(alpha: 0.85),
+                                blurRadius: 0,
+                              ),
+                            ],
+                          ),
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              HapticFeedback.lightImpact();
+                              _requestPerspectivesAnalysis();
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: context.facteurColors.primary,
+                              side: BorderSide(
+                                color: context.facteurColors.primary,
+                              ),
+                              backgroundColor:
+                                  Colors.white.withValues(alpha: 0.5),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
-                          ),
-                          icon: Icon(
-                            PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
-                            size: 16,
-                            color: Colors.white,
-                          ),
-                          label: const Text(
-                            'Lancer l\'analyse Facteur',
-                            style: TextStyle(color: Colors.white),
+                            icon: Icon(
+                              PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+                              size: 16,
+                            ),
+                            label: const Text('Lancer l\'analyse Facteur'),
                           ),
                         ),
                       ),
@@ -1709,7 +1723,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               ),
                             ],
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: FacteurSpacing.space3),
                         ],
                         // Perspectives FAB (articles only) — always just above other FABs
                         if (content.contentType == ContentType.article) ...[
@@ -1722,13 +1736,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 _perspectivesResponse!.perspectives.isEmpty,
                             onTap: () {
                               HapticFeedback.lightImpact();
-                              final ctx =
-                                  _perspectivesKey.currentContext;
+                              final ctx = _perspectivesKey.currentContext;
                               if (ctx != null) {
                                 Scrollable.ensureVisible(
                                   ctx,
-                                  duration: const Duration(
-                                      milliseconds: 400),
+                                  duration: const Duration(milliseconds: 400),
                                   curve: Curves.easeInOut,
                                 );
                               } else {
@@ -1736,7 +1748,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               }
                             },
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: FacteurSpacing.space3),
                         ],
                         // External link FAB — hidden for articles unless WebView is active
                         if (content.contentType != ContentType.article ||
@@ -1759,7 +1771,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               ),
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: FacteurSpacing.space3),
                         ],
                         // 🌻 Sunflower recommendation FAB + nudge label
                         Row(
@@ -1788,8 +1800,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                           horizontal: 12, vertical: 6),
                                       decoration: BoxDecoration(
                                         color: const Color(0xFFFFF8E1),
-                                        borderRadius:
-                                            BorderRadius.circular(16),
+                                        borderRadius: BorderRadius.circular(16),
                                         boxShadow: [
                                           BoxShadow(
                                             color:
@@ -1838,7 +1849,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: FacteurSpacing.space3),
                         // Merged Bookmark + Note FAB (long-press for collection picker)
                         GestureDetector(
                           onLongPress: () {
@@ -1879,7 +1890,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ),
                         // Note welcome tooltip — bottom of FAB column, near the bookmark button
                         if (_showNoteWelcome) ...[
-                          const SizedBox(height: 12),
+                          const SizedBox(height: FacteurSpacing.space3),
                           NoteWelcomeTooltip(
                             onDismiss: () =>
                                 setState(() => _showNoteWelcome = false),
@@ -2096,9 +2107,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           : PhosphorIcons.bookmarkSimple(
                               PhosphorIconsStyle.regular),
                       size: 24,
-                      color: content.isSaved
-                          ? Colors.white
-                          : colors.textSecondary,
+                      color:
+                          content.isSaved ? Colors.white : colors.textSecondary,
                     ),
                     tooltip: 'Sauvegarder',
                   ),
@@ -2645,7 +2655,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ),
           if (response.comparisonQuality == 'low')
             PerspectivesWarningBadge(colors: colors, textTheme: textTheme),
-          const SizedBox(height: 10),
+          const SizedBox(height: FacteurSpacing.space2),
           PerspectivesBiasBar(
             colors: colors,
             mergedDistribution: merged,
@@ -2680,10 +2690,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final widths = [1.0, 1.0, 0.92, 1.0, 0.85, 1.0, 0.95, 0.6];
     return _ShimmerSkeleton(
       children: [
-        const SizedBox(height: 16),
+        const SizedBox(height: FacteurSpacing.space4),
         for (final w in widths)
           Padding(
-            padding: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.only(bottom: FacteurSpacing.space3),
             child: FractionallySizedBox(
               alignment: Alignment.centerLeft,
               widthFactor: w,
@@ -2870,16 +2880,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           color: colors.backgroundPrimary,
                           child: _perspectivesLoading &&
                                   _perspectivesResponse == null
-                              ? const Center(
-                                  child: CircularProgressIndicator())
+                              ? const Center(child: CircularProgressIndicator())
                               : _perspectivesResponse != null
                                   ? PerspectivesInlineSection(
                                       key: _perspectivesKey,
                                       perspectives: _perspectivesResponse!
                                           .perspectives
                                           .map(
-                                            (PerspectiveData p) =>
-                                                Perspective(
+                                            (PerspectiveData p) => Perspective(
                                               title: p.title,
                                               url: p.url,
                                               sourceName: p.sourceName,
@@ -2889,28 +2897,21 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                             ),
                                           )
                                           .toList(),
-                                      biasDistribution:
-                                          _perspectivesResponse!
-                                              .biasDistribution,
-                                      keywords:
-                                          _perspectivesResponse!.keywords,
-                                      sourceBiasStance:
-                                          _perspectivesResponse!
-                                              .sourceBiasStance,
-                                      sourceName:
-                                          _content?.source.name ?? '',
+                                      biasDistribution: _perspectivesResponse!
+                                          .biasDistribution,
+                                      keywords: _perspectivesResponse!.keywords,
+                                      sourceBiasStance: _perspectivesResponse!
+                                          .sourceBiasStance,
+                                      sourceName: _content?.source.name ?? '',
                                       contentId: widget.contentId,
-                                      comparisonQuality:
-                                          _perspectivesResponse!
-                                              .comparisonQuality,
+                                      comparisonQuality: _perspectivesResponse!
+                                          .comparisonQuality,
                                       externalSelectedSegments:
                                           _perspectivesSelectedSegments,
-                                      onSegmentTap:
-                                          _onPerspectivesSegmentTap,
+                                      onSegmentTap: _onPerspectivesSegmentTap,
                                       onClearSegments: () {
                                         setState(() =>
-                                            _perspectivesSelectedSegments =
-                                                {});
+                                            _perspectivesSelectedSegments = {});
                                         WidgetsBinding.instance
                                             .addPostFrameCallback((_) {
                                           if (mounted) {
@@ -2918,10 +2919,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                           }
                                         });
                                       },
-                                      analysisState:
-                                          _perspectivesAnalysisState,
-                                      analysisText:
-                                          _perspectivesAnalysisText,
+                                      analysisState: _perspectivesAnalysisState,
+                                      analysisText: _perspectivesAnalysisText,
                                       onRequestAnalysis:
                                           _requestPerspectivesAnalysis,
                                       analysisZoneKey: _analysisZoneKey,
@@ -3140,7 +3139,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     ],
 
                     // Bottom spacing for FABs
-                    const SizedBox(height: 120),
+                    const SizedBox(height: _kFabBottomClearance),
                   ],
                 ),
               ),
@@ -3341,11 +3340,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             key: _scrollViewKey,
             controller: _inAppScrollController,
             child: Column(
-              spacing: 16,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // ── Header clearance ──────────────────────────────────────
                 SizedBox(height: headerHeight),
+                const SizedBox(height: FacteurSpacing.space2),
 
                 // ── Top section: thumbnail → chips → title → reading time ─
                 Padding(
@@ -3415,12 +3414,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ),
                 ),
 
+                const SizedBox(height: FacteurSpacing.space4),
+
                 // ── Divider: header / article ─────────────────────────────
                 Padding(
                   padding: const EdgeInsets.symmetric(
                       horizontal: FacteurSpacing.space4),
                   child: Divider(color: colors.border, height: 1),
                 ),
+                const SizedBox(height: FacteurSpacing.space4),
 
                 // ── Article section ────────────────────────────────────────
                 // Zero-height marker at the end lets _measureArticleExtent()
@@ -3435,11 +3437,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                 // ── Perspectives section ───────────────────────────────────
                 if (_perspectivesResponse != null || _perspectivesLoading) ...[
+                  const SizedBox(height: FacteurSpacing.space4),
                   Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: FacteurSpacing.space4),
                     child: Divider(color: colors.border, height: 1),
                   ),
+                  const SizedBox(height: FacteurSpacing.space4),
                   if (_perspectivesLoading && _perspectivesResponse == null)
                     const Center(child: CircularProgressIndicator())
                   else if (_perspectivesResponse != null)
@@ -3480,6 +3484,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 ],
 
                 // ── Footer clearance ───────────────────────────────────────
+                const SizedBox(height: FacteurSpacing.space4),
                 SizedBox(
                   height: _kFooterContentHeight +
                       MediaQuery.of(context).viewPadding.bottom,

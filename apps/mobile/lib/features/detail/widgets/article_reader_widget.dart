@@ -73,7 +73,7 @@ class ArticleReaderWidget extends StatelessWidget {
               'h2': Style(
                 fontSize: FontSize(20),
                 fontWeight: FontWeight.w600,
-                margin: Margins.only(bottom: 12, top: 20),
+                margin: Margins.only(bottom: 12, top: 24),
                 color: colors.textPrimary,
               ),
               'h3': Style(
@@ -145,7 +145,7 @@ class ArticleReaderWidget extends StatelessWidget {
             },
           ),
           if (footer != null) ...[
-            const SizedBox(height: 32),
+            const SizedBox(height: FacteurSpacing.space8),
             footer!,
           ],
         ],

@@ -197,7 +197,7 @@ class _NoteInputSheetState extends State<NoteInputSheet> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: FacteurSpacing.space4),
 
             // Header: title + delete button
             Row(
@@ -241,7 +241,7 @@ class _NoteInputSheetState extends State<NoteInputSheet> {
                 ],
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: FacteurSpacing.space3),
 
             // Text field
             TextField(
@@ -270,7 +270,7 @@ class _NoteInputSheetState extends State<NoteInputSheet> {
                 counterText: '',
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: FacteurSpacing.space2),
 
             // Character count + auto-save hint
             Row(
