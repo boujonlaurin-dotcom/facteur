@@ -68,11 +68,19 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
   REVOKE ALL ON TABLES FROM claude_analytics_ro;
 ```
 
-URL à mettre dans `DATABASE_URL_RO` :
+URL à mettre dans `DATABASE_URL_RO` (le mot de passe est celui que tu as
+défini à la ligne `PASSWORD` ci-dessus) :
 
-```
-postgresql://claude_analytics_ro:<pwd>@db.ykuadtelnzavrqzbfdve.supabase.co:5432/postgres?sslmode=require
-```
+- Host : `db.ykuadtelnzavrqzbfdve.supabase.co`
+- Port : `5432`
+- User : `claude_analytics_ro`
+- Database : `postgres`
+- SSL mode : `require`
+
+Assemblage : URI PostgreSQL standard (voir
+[doc officielle libpq](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING))
+en injectant les 4 valeurs ci-dessus plus le mot de passe choisi à la
+ligne `PASSWORD` du SQL.
 
 ### 2.3 Railway — Project Token read-only
 
