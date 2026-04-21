@@ -1904,8 +1904,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     const iconButtonStyle = ButtonStyle(
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.compact,
-      padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
-      minimumSize: WidgetStatePropertyAll(Size(56, 56)),
+      padding: WidgetStatePropertyAll(EdgeInsets.all(8)),
+      minimumSize: WidgetStatePropertyAll(Size(44, 44)),
       shape: WidgetStatePropertyAll(CircleBorder()),
     );
 
