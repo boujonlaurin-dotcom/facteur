@@ -18,9 +18,27 @@ echo ""
 if command -v railway &>/dev/null; then
   echo "[OK] Railway CLI déjà installé: $(railway --version 2>/dev/null)"
 else
-  echo "[...] Installation Railway CLI via script officiel..."
-  bash <(curl -fsSL https://railway.app/install.sh)
-  echo "[OK] Railway CLI installé: $(railway --version 2>/dev/null)"
+  echo "[...] Installation Railway CLI..."
+  # Tentative 1 : script officiel (peut retourner 403 selon l'origine IP — CDN geo).
+  if curl -fsSL -o /tmp/railway-install.sh https://railway.app/install.sh 2>/dev/null \
+       && bash /tmp/railway-install.sh 2>/dev/null \
+       && command -v railway &>/dev/null; then
+    :
+  elif command -v npm &>/dev/null; then
+    echo "    Script officiel indisponible (403 ou réseau) — fallback npm (@railway/cli)..."
+    # Install globale user-level si possible (évite sudo).
+    if npm config get prefix 2>/dev/null | grep -q "^/usr"; then
+      mkdir -p "$HOME/.npm-global"
+      npm config set prefix "$HOME/.npm-global"
+      export PATH="$HOME/.npm-global/bin:$PATH"
+    fi
+    npm install -g @railway/cli
+  else
+    echo "ERREUR: install Railway CLI impossible (ni script officiel, ni npm)."
+    echo "Contournement manuel : https://docs.railway.com/guides/cli"
+    exit 1
+  fi
+  echo "[OK] Railway CLI installé: $(railway --version 2>/dev/null || echo 'vérifier PATH')"
 fi
 
 # ─── Supabase CLI ─────────────────────────────────────────────────────────────
