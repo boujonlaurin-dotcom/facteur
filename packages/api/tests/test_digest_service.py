@@ -349,8 +349,18 @@ class TestFallbackYesterday:
             ),
             patch.object(service, "_build_digest_response", mock_build),
             patch.object(
-                service, "_get_user_digest_format",
-                new_callable=AsyncMock, return_value="editorial",
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="editorial",
+            ),
+            # No sibling editorial_v1 digest to clone — forces the yesterday
+            # fallback path we want to test.
+            patch.object(
+                service,
+                "_try_clone_global_editorial_digest",
+                new_callable=AsyncMock,
+                return_value=None,
             ),
         ):
             mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
@@ -466,12 +476,24 @@ class TestFallbackYesterday:
                 service, "_get_existing_digest", side_effect=fake_get_existing
             ),
             patch.object(
-                service, "_build_digest_response",
-                new_callable=AsyncMock, return_value=response,
+                service,
+                "_build_digest_response",
+                new_callable=AsyncMock,
+                return_value=response,
             ),
             patch.object(
-                service, "_get_user_digest_format",
-                new_callable=AsyncMock, return_value="editorial",
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="editorial",
+            ),
+            # No sibling editorial_v1 digest to clone — forces the yesterday
+            # fallback path so the stale-flag + bg-regen assertions apply.
+            patch.object(
+                service,
+                "_try_clone_global_editorial_digest",
+                new_callable=AsyncMock,
+                return_value=None,
             ),
             patch(
                 "app.services.digest_service._schedule_background_regen"
@@ -595,16 +617,30 @@ class TestDeferredStaleFormatDeletion:
                 service, "_get_existing_digest", side_effect=fake_get_existing
             ),
             patch.object(
-                service, "_get_user_digest_format",
-                new_callable=AsyncMock, return_value="editorial",
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="editorial",
             ),
             patch.object(
-                service, "_get_emergency_candidates",
-                new_callable=AsyncMock, return_value=[],
+                service,
+                "_get_emergency_candidates",
+                new_callable=AsyncMock,
+                return_value=[],
             ),
             patch.object(
-                service, "_build_digest_response",
-                new_callable=AsyncMock, return_value=response,
+                service,
+                "_build_digest_response",
+                new_callable=AsyncMock,
+                return_value=response,
+            ),
+            # No sibling editorial_v1 digest to clone — exercises the
+            # stale-format last-resort fallback we want to test.
+            patch.object(
+                service,
+                "_try_clone_global_editorial_digest",
+                new_callable=AsyncMock,
+                return_value=None,
             ),
         ):
             mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
@@ -707,6 +743,14 @@ class TestRenderFailureFallback:
                 return_value=[],
             ),
             patch.object(service, "_build_digest_response", side_effect=fake_build),
+            # No sibling editorial_v1 digest to clone — the render-failure
+            # flow under test must reach the selector via the regen path.
+            patch.object(
+                service,
+                "_try_clone_global_editorial_digest",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
         ):
             mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
             result = await service.get_or_create_digest(
@@ -724,8 +768,10 @@ class TestRenderFailureFallback:
         # (An exact "was/wasn't deleted" assertion depends on whether
         # generation also failed here; the key regression is the absence
         # of a re-raise, checked by reaching this line.)
-        assert result is None or result is fresh_response or hasattr(
-            result, "is_stale_fallback"
+        assert (
+            result is None
+            or result is fresh_response
+            or hasattr(result, "is_stale_fallback")
         )
 
     @pytest.mark.asyncio
@@ -787,3 +833,162 @@ class TestRenderFailureFallback:
         # pre-emptively wiping the only digest the user has.
         for call in mock_session.delete.call_args_list:
             assert call.args[0] is not corrupted
+
+
+# ─── Tests: editorial_v1 clone-from-sibling fast path for new users ───────────
+
+
+class TestCloneGlobalEditorialDigest:
+    """editorial_v1 is user-agnostic — new users should reuse a sibling's digest.
+
+    Without this fast path, a user who signs up after the 6am batch hits a
+    full on-demand LLM pipeline (3-5 min). That regularly exceeds the
+    `/digest` timeouts + mobile retry budget and surfaces as an infinite
+    loading spinner after onboarding.
+    """
+
+    @pytest.mark.asyncio
+    async def test_clone_invoked_when_editorial_format_and_no_user_digest(
+        self, service, mock_session
+    ):
+        """editorial format + no today/yesterday digest → clone path is tried."""
+        user_id = uuid4()
+        today = date.today()
+
+        cloned_digest = Mock()
+        cloned_digest.id = uuid4()
+        cloned_digest.target_date = today
+        cloned_digest.format_version = "editorial_v1"
+        cloned_digest.user_id = user_id
+
+        mock_response = Mock()
+        mock_clone = AsyncMock(return_value=cloned_digest)
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service,
+                "_get_existing_digest",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="editorial",
+            ),
+            patch.object(service, "_try_clone_global_editorial_digest", new=mock_clone),
+            patch.object(
+                service,
+                "_build_digest_response",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            result = await service.get_or_create_digest(
+                user_id=user_id, target_date=today
+            )
+
+        assert result is mock_response
+        mock_clone.assert_awaited_once_with(
+            user_id=user_id, target_date=today, is_serene=False
+        )
+
+    @pytest.mark.asyncio
+    async def test_clone_not_invoked_for_non_editorial_format(
+        self, service, mock_session
+    ):
+        """topics format → the clone shortcut must NOT run (topics_v1 is per-user)."""
+        user_id = uuid4()
+        today = date.today()
+
+        service.selector = Mock()
+        service.selector.select_for_user = AsyncMock(return_value=[])
+
+        _prefs_result = Mock()
+        _prefs_result.scalar_one_or_none = Mock(return_value=None)
+        _prefs_result.all = Mock(return_value=[])
+        mock_session.execute.return_value = _prefs_result
+
+        mock_clone = AsyncMock(return_value=None)
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service,
+                "_get_existing_digest",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="topics",
+            ),
+            patch.object(service, "_try_clone_global_editorial_digest", new=mock_clone),
+            patch.object(
+                service,
+                "_get_emergency_candidates",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch.object(service, "_build_digest_response", new_callable=AsyncMock),
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            with contextlib.suppress(Exception):
+                await service.get_or_create_digest(user_id=user_id, target_date=today)
+
+        mock_clone.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_clone_failure_falls_through_to_generation(
+        self, service, mock_session
+    ):
+        """If clone returns None, the rest of the pipeline must still run."""
+        user_id = uuid4()
+        today = date.today()
+
+        service.selector = Mock()
+        service.selector.select_for_user = AsyncMock(return_value=[])
+
+        _prefs_result = Mock()
+        _prefs_result.scalar_one_or_none = Mock(return_value=None)
+        _prefs_result.all = Mock(return_value=[])
+        mock_session.execute.return_value = _prefs_result
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service,
+                "_get_existing_digest",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="editorial",
+            ),
+            patch.object(
+                service,
+                "_try_clone_global_editorial_digest",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch.object(
+                service,
+                "_get_emergency_candidates",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch.object(service, "_build_digest_response", new_callable=AsyncMock),
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            with contextlib.suppress(Exception):
+                await service.get_or_create_digest(user_id=user_id, target_date=today)
+
+        service.selector.select_for_user.assert_awaited()
