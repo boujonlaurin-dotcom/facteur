@@ -19,10 +19,18 @@ def normalize_query(query: str) -> str:
     return re.sub(r"\s+", " ", query.strip().lower())
 
 
-def hash_query(query: str) -> str:
-    """SHA-256 hash of normalized query."""
+def _build_cache_key(query: str, content_type: str | None, expand: bool) -> str:
     normalized = normalize_query(query)
-    return hashlib.sha256(normalized.encode()).hexdigest()
+    return f"{normalized}|ct={content_type or '-'}|x={'1' if expand else '0'}"
+
+
+def hash_query(
+    query: str, content_type: str | None = None, expand: bool = False
+) -> str:
+    """SHA-256 hash of (normalized query, content_type, expand mode)."""
+    return hashlib.sha256(
+        _build_cache_key(query, content_type, expand).encode()
+    ).hexdigest()
 
 
 class SearchCache:
@@ -31,9 +39,14 @@ class SearchCache:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get(self, query: str) -> dict | None:
+    async def get(
+        self,
+        query: str,
+        content_type: str | None = None,
+        expand: bool = False,
+    ) -> dict | None:
         """Look up cached result. Returns None if miss or expired."""
-        query_hash = hash_query(query)
+        query_hash = hash_query(query, content_type, expand)
         now = datetime.now(UTC)
 
         result = await self.db.execute(
@@ -49,10 +62,16 @@ class SearchCache:
             return row[0] if isinstance(row[0], dict) else json.loads(row[0])
         return None
 
-    async def set(self, query: str, payload: dict) -> None:
+    async def set(
+        self,
+        query: str,
+        payload: dict,
+        content_type: str | None = None,
+        expand: bool = False,
+    ) -> None:
         """Insert or update cache entry with 24h TTL."""
-        query_hash = hash_query(query)
-        normalized = normalize_query(query)
+        query_hash = hash_query(query, content_type, expand)
+        raw = _build_cache_key(query, content_type, expand)
         now = datetime.now(UTC)
         expires = now + timedelta(hours=CACHE_TTL_HOURS)
 
@@ -66,7 +85,7 @@ class SearchCache:
             ),
             {
                 "hash": query_hash,
-                "raw": normalized,
+                "raw": raw,
                 "payload": json.dumps(payload),
                 "now": now,
                 "expires": expires,

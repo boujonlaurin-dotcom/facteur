@@ -22,11 +22,19 @@ class _SourceResultSkeletonState extends State<SourceResultSkeleton>
   late final Timer _dotTimer;
 
   static const _messages = [
-    'En train de parcourir le web',
-    'Recherche en cours',
-    'Analyse des sources',
+    'Exploration du catalogue',
+    'Analyse de votre recherche',
+    'Interrogation des plateformes',
+    'Scan du web',
+    'Recoupement des sources',
+    'Préparation des suggestions',
   ];
   int _messageIndex = 0;
+  int _tick = 0;
+
+  // Rotation: un dot par 800ms, message change tous les 6 ticks (~4.8s).
+  // Assez lent pour que l'utilisateur lise, assez rapide pour rester vivant.
+  static const _ticksPerMessage = 6;
 
   @override
   void initState() {
@@ -37,11 +45,12 @@ class _SourceResultSkeletonState extends State<SourceResultSkeleton>
     )..repeat(reverse: true);
     _opacity = Tween<double>(begin: 0.3, end: 0.7).animate(_controller);
 
-    _dotTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+    _dotTimer = Timer.periodic(const Duration(milliseconds: 800), (_) {
       if (!mounted) return;
       setState(() {
         _dotCount = (_dotCount % 3) + 1;
-        if (_dotCount == 1) {
+        _tick += 1;
+        if (_tick % _ticksPerMessage == 0) {
           _messageIndex = (_messageIndex + 1) % _messages.length;
         }
       });

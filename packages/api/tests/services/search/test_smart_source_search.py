@@ -5,6 +5,7 @@ import pytest
 from app.services.search.smart_source_search import (
     _classify_query,
     _compute_score,
+    _is_strong_catalog_match,
 )
 from app.services.search.cache import hash_query, normalize_query
 
@@ -154,3 +155,55 @@ class TestDedup:
         assert len(results) == 2
         assert results[0]["name"] == "A"
         assert results[1]["name"] == "C"
+
+
+# ─── Strong match predicate ──────────────────────────────────────
+
+
+class TestStrongCatalogMatch:
+    def test_exact_name(self):
+        assert _is_strong_catalog_match({"name": "Mediapart"}, "mediapart") is True
+
+    def test_case_insensitive_via_normalization(self):
+        assert _is_strong_catalog_match({"name": "MEDIAPART"}, "mediapart") is True
+
+    def test_prefix_with_trailing_word(self):
+        assert (
+            _is_strong_catalog_match(
+                {"name": "Le Monde diplomatique"}, "le monde"
+            )
+            is True
+        )
+
+    def test_word_boundary_middle(self):
+        assert (
+            _is_strong_catalog_match({"name": "Chaîne YouTube Arte"}, "arte")
+            is True
+        )
+
+    def test_substring_only_rejected(self):
+        # "le" is a substring of "lenny" but not a word — must not match.
+        assert _is_strong_catalog_match({"name": "Lenny Newsletter"}, "le") is False
+
+    def test_empty_query(self):
+        assert _is_strong_catalog_match({"name": "Mediapart"}, "") is False
+
+    def test_missing_name(self):
+        assert _is_strong_catalog_match({}, "mediapart") is False
+
+
+# ─── Cache key differentiation ──────────────────────────────────
+
+
+class TestCacheKeyDifferentiation:
+    def test_content_type_changes_hash(self):
+        assert hash_query("mediapart") != hash_query("mediapart", "article")
+
+    def test_expand_changes_hash(self):
+        assert hash_query("mediapart") != hash_query("mediapart", None, True)
+
+    def test_content_type_values_differ(self):
+        assert hash_query("fireship", "youtube") != hash_query("fireship", "article")
+
+    def test_same_params_same_hash(self):
+        assert hash_query("x", "youtube", True) == hash_query("x", "youtube", True)

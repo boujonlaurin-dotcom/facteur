@@ -27,6 +27,10 @@ class AddSourceScreen extends ConsumerStatefulWidget {
 
 class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
   String _currentQuery = '';
+  String? _selectedContentType;
+  String? _selectedLabel;
+  bool _expanded = false;
+  bool _sourceAdded = false;
   final Set<String> _addedSourceIds = {};
   late final TextEditingController _searchController;
 
@@ -38,9 +42,19 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
 
   @override
   void dispose() {
+    final query = _currentQuery.trim();
+    if (query.isNotEmpty && !_sourceAdded) {
+      ref.read(sourcesRepositoryProvider).logSearchAbandoned(query);
+    }
     _searchController.dispose();
     super.dispose();
   }
+
+  SmartSearchQuery get _searchParams => (
+        query: _currentQuery,
+        contentType: _selectedContentType,
+        expand: _expanded,
+      );
 
   // ─── Smart Search Actions ──────────────────────────────────────
 
@@ -50,12 +64,35 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     if (_searchController.text != value) {
       _searchController.text = value;
     }
-    setState(() => _currentQuery = value);
+    setState(() {
+      _currentQuery = value;
+      _expanded = false;
+    });
   }
 
   void _clearSearch() {
     _searchController.clear();
-    setState(() => _currentQuery = '');
+    setState(() {
+      _currentQuery = '';
+      _expanded = false;
+    });
+  }
+
+  void _onContentTypeToggle(String? value) {
+    setState(() {
+      _selectedContentType = value;
+      _expanded = false;
+    });
+    if (value != null) {
+      ref
+          .read(analyticsServiceProvider)
+          .trackAddSourceContentTypeFilter(value);
+    }
+  }
+
+  void _expandSearch() {
+    setState(() => _expanded = true);
+    ref.read(analyticsServiceProvider).trackAddSourceExpand(_currentQuery);
   }
 
   Future<void> _addSource(SmartSearchResult result) async {
@@ -67,13 +104,17 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
 
       if (hasCatalogId) {
         await repository.trustSource(sourceId);
-        setState(() => _addedSourceIds.add(sourceId));
+        setState(() {
+          _addedSourceIds.add(sourceId);
+          _sourceAdded = true;
+        });
       } else {
         if (result.feedUrl.isEmpty) {
           NotificationService.showError('URL du flux introuvable');
           return;
         }
         await repository.addCustomSource(result.feedUrl, name: result.name);
+        setState(() => _sourceAdded = true);
       }
 
       if (!mounted) return;
@@ -245,15 +286,25 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
       return _buildEmptyState();
     }
 
-    final searchAsync = ref.watch(smartSearchProvider(_currentQuery));
+    final searchAsync = ref.watch(smartSearchProvider(_searchParams));
 
-    return searchAsync.when(
-      loading: () => const SourceResultSkeleton(),
-      error: (error, _) => _buildErrorState(),
-      data: (results) {
-        if (results.isEmpty) return _buildNoResults();
-        return _buildResults(results);
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildFilterChips(),
+        const SizedBox(height: 12),
+        searchAsync.when(
+          loading: () => const SourceResultSkeleton(),
+          error: (error, _) => _buildErrorState(),
+          data: (response) {
+            if (response.results.isEmpty) return _buildNoResults();
+            final canExpand = !_expanded &&
+                response.layersCalled.length == 1 &&
+                response.layersCalled.first == 'catalog';
+            return _buildResults(response.results, canExpand: canExpand);
+          },
+        ),
+      ],
     );
   }
 
@@ -288,7 +339,11 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     );
   }
 
-  Widget _buildResults(List<SmartSearchResult> results) {
+  Widget _buildResults(
+    List<SmartSearchResult> results, {
+    bool canExpand = false,
+  }) {
+    final colors = context.facteurColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -303,6 +358,26 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
               onAdd: () => _addSource(result),
               onPreview: () => _previewSource(result),
             )),
+        if (canExpand) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _expandSearch,
+            icon: Icon(
+              PhosphorIcons.arrowsOutSimple(PhosphorIconsStyle.regular),
+              size: 16,
+              color: colors.primary,
+            ),
+            label: const Text('Élargir la recherche'),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Cherche aussi sur YouTube, Reddit et le web.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colors.textTertiary,
+                ),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ],
     );
   }
@@ -358,7 +433,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
             const SizedBox(height: 12),
             OutlinedButton(
               onPressed: () =>
-                  ref.invalidate(smartSearchProvider(_currentQuery)),
+                  ref.invalidate(smartSearchProvider(_searchParams)),
               child: const Text('Reessayer'),
             ),
           ],
@@ -414,15 +489,66 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     );
   }
 
-  Widget _buildSourceTypesRow() {
+  static const _contentTypeOptions =
+      <({String label, String apiValue, int iconIndex})>[
+    (label: 'Médias', apiValue: 'article', iconIndex: 0),
+    (label: 'Newsletters', apiValue: 'article', iconIndex: 1),
+    (label: 'YouTube', apiValue: 'youtube', iconIndex: 2),
+    (label: 'Reddit', apiValue: 'reddit', iconIndex: 3),
+    (label: 'Podcasts', apiValue: 'podcast', iconIndex: 4),
+  ];
+
+  IconData _iconForContentType(int idx) {
+    switch (idx) {
+      case 0:
+        return PhosphorIcons.newspaper(PhosphorIconsStyle.fill);
+      case 1:
+        return PhosphorIcons.envelope(PhosphorIconsStyle.fill);
+      case 2:
+        return PhosphorIcons.youtubeLogo(PhosphorIconsStyle.fill);
+      case 3:
+        return PhosphorIcons.redditLogo(PhosphorIconsStyle.fill);
+      case 4:
+        return PhosphorIcons.microphone(PhosphorIconsStyle.fill);
+      default:
+        return PhosphorIcons.newspaper(PhosphorIconsStyle.fill);
+    }
+  }
+
+  Widget _buildFilterChips() {
     final colors = context.facteurColors;
-    final types = <(IconData, String)>[
-      (PhosphorIcons.newspaper(PhosphorIconsStyle.fill), 'Médias'),
-      (PhosphorIcons.envelope(PhosphorIconsStyle.fill), 'Newsletters'),
-      (PhosphorIcons.youtubeLogo(PhosphorIconsStyle.fill), 'YouTube'),
-      (PhosphorIcons.redditLogo(PhosphorIconsStyle.fill), 'Reddit'),
-      (PhosphorIcons.microphone(PhosphorIconsStyle.fill), 'Podcasts'),
-    ];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _contentTypeOptions.map((t) {
+        // "Médias" et "Newsletters" mappent tous les deux sur `article` —
+        // on différencie par `_selectedLabel` pour éviter la confusion.
+        final isSelected =
+            _selectedContentType == t.apiValue && _selectedLabel == t.label;
+        return ChoiceChip(
+          label: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _iconForContentType(t.iconIndex),
+                size: 14,
+                color: isSelected ? colors.primary : colors.textSecondary,
+              ),
+              const SizedBox(width: 5),
+              Text(t.label),
+            ],
+          ),
+          selected: isSelected,
+          onSelected: (selected) {
+            setState(() => _selectedLabel = selected ? t.label : null);
+            _onContentTypeToggle(selected ? t.apiValue : null);
+          },
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildSourceTypesRow() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -434,25 +560,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
               ),
         ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: types
-              .map((t) => Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(t.$1, size: 14, color: colors.textSecondary),
-                      const SizedBox(width: 5),
-                      Text(
-                        t.$2,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: colors.textSecondary,
-                            ),
-                      ),
-                    ],
-                  ))
-              .toList(),
-        ),
+        _buildFilterChips(),
       ],
     );
   }

@@ -11,12 +11,20 @@ final sourcesRepositoryProvider = Provider<SourcesRepository>((ref) {
   return SourcesRepository(ApiClient(Supabase.instance.client));
 });
 
-final smartSearchProvider =
-    FutureProvider.family<List<SmartSearchResult>, String>((ref, query) async {
-  if (query.trim().isEmpty) return [];
+typedef SmartSearchQuery = ({String query, String? contentType, bool expand});
+
+final smartSearchProvider = FutureProvider.family<SmartSearchResponse,
+    SmartSearchQuery>((ref, params) async {
+  final trimmed = params.query.trim();
+  if (trimmed.isEmpty) {
+    return const SmartSearchResponse(queryNormalized: '', results: []);
+  }
   final repository = ref.watch(sourcesRepositoryProvider);
-  final response = await repository.smartSearch(query.trim());
-  return response.results;
+  return repository.smartSearch(
+    trimmed,
+    contentType: params.contentType,
+    expand: params.expand,
+  );
 });
 
 final trendingSourcesProvider = FutureProvider<List<Source>>((ref) async {
