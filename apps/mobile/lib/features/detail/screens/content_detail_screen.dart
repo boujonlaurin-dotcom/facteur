@@ -2039,27 +2039,34 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       ),
                     );
                   }
+                  final perspectivesEmpty = !_perspectivesLoading &&
+                      _perspectivesResponse != null &&
+                      _perspectivesResponse!.perspectives.isEmpty;
                   return _WinkingEyeButton(
                     style: iconButtonStyle,
-                    iconColor: colors.textSecondary,
-                    onTap: () {
-                      HapticFeedback.lightImpact();
-                      _suppressPerspectivesCheck = true;
-                      _atPerspectivesSection.value = true;
-                      final ctx = _perspectivesKey.currentContext;
-                      if (ctx != null) {
-                        Scrollable.ensureVisible(
-                          ctx,
-                          duration: const Duration(milliseconds: 400),
-                          curve: Curves.easeInOut,
-                        );
-                      } else {
-                        _showPerspectives(context);
-                      }
-                      Future.delayed(const Duration(milliseconds: 450), () {
-                        if (mounted) _suppressPerspectivesCheck = false;
-                      });
-                    },
+                    iconColor: perspectivesEmpty
+                        ? colors.textSecondary.withValues(alpha: 0.35)
+                        : colors.textSecondary,
+                    onTap: perspectivesEmpty
+                        ? null
+                        : () {
+                            HapticFeedback.lightImpact();
+                            _suppressPerspectivesCheck = true;
+                            _atPerspectivesSection.value = true;
+                            final ctx = _perspectivesKey.currentContext;
+                            if (ctx != null) {
+                              Scrollable.ensureVisible(
+                                ctx,
+                                duration: const Duration(milliseconds: 400),
+                                curve: Curves.easeInOut,
+                              );
+                            } else {
+                              _showPerspectives(context);
+                            }
+                            Future.delayed(const Duration(milliseconds: 450), () {
+                              if (mounted) _suppressPerspectivesCheck = false;
+                            });
+                          },
                   );
                 },
               ),
@@ -3594,7 +3601,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
 /// Eye button that winks periodically (scaleY close → open) to hint at perspectives.
 class _WinkingEyeButton extends StatefulWidget {
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final ButtonStyle? style;
   final Color iconColor;
 
@@ -3650,7 +3657,7 @@ class _WinkingEyeButtonState extends State<_WinkingEyeButton>
     final delayMs = (baseMs * multiplier).round();
     _timer?.cancel();
     _timer = Timer(Duration(milliseconds: delayMs), () {
-      if (mounted) _controller.forward(from: 0);
+      if (mounted && widget.onTap != null) _controller.forward(from: 0);
     });
   }
 
@@ -3667,26 +3674,33 @@ class _WinkingEyeButtonState extends State<_WinkingEyeButton>
       animation: _scaleY,
       builder: (context, _) {
         final isWinking = _scaleY.value < 0.5;
+        final disabled = widget.onTap == null;
         return IconButton(
           style: widget.style,
           onPressed: widget.onTap,
-          tooltip: 'Autres points de vue',
+          tooltip: disabled ? 'Pas d\'autres points de vue' : 'Autres points de vue',
           icon: SizedBox(
             width: 28,
             height: 28,
             child: Stack(
               children: [
                 Center(
-                  child: Transform.scale(
-                    scaleY: _scaleY.value,
-                    child: Icon(
-                      isWinking
-                          ? PhosphorIcons.eyeClosed(PhosphorIconsStyle.regular)
-                          : PhosphorIcons.eye(PhosphorIconsStyle.regular),
-                      size: 22,
-                      color: widget.iconColor,
-                    ),
-                  ),
+                  child: disabled
+                      ? Icon(
+                          PhosphorIcons.eyeClosed(PhosphorIconsStyle.regular),
+                          size: 22,
+                          color: widget.iconColor,
+                        )
+                      : Transform.scale(
+                          scaleY: _scaleY.value,
+                          child: Icon(
+                            isWinking
+                                ? PhosphorIcons.eyeClosed(PhosphorIconsStyle.regular)
+                                : PhosphorIcons.eye(PhosphorIconsStyle.regular),
+                            size: 22,
+                            color: widget.iconColor,
+                          ),
+                        ),
                 ),
                 Positioned(
                   right: 0,
