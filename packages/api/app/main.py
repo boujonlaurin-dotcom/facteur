@@ -64,6 +64,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import close_db, get_db, init_db, text
+from app.middleware.request_context import RequestContextMiddleware
 from app.routers import (
     admin_cohorts,
     analytics,
@@ -356,6 +357,11 @@ app = FastAPI(
     redirect_slashes=False,
 )
 
+
+# RequestContextMiddleware : pose le path/method de la requête courante dans des
+# ContextVar consommés par les listeners SQLAlchemy (long_session_checkout).
+# Ajouté avant CORS pour que CORS reste le middleware outermost (latest-added).
+app.add_middleware(RequestContextMiddleware)
 
 # Configuration CORS - MUST be added AFTER the @middleware decorator to execute FIRST
 # Note: allow_credentials=True is incompatible with allow_origins=["*"]
