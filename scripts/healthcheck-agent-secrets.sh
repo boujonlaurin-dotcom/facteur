@@ -118,22 +118,23 @@ else
   sent_len=${#SENTRY_AUTH_TOKEN}
   echo "  (longueur token) SENTRY_AUTH_TOKEN=${sent_len}"
 
-  i=$(sentry-cli info 2>&1)
-  if echo "$i" | grep -qi "authenticated"; then
-    ok "sentry-cli authentifié"
-  else
-    short=$(echo "$i" | head -3 | tr '\n' ' ')
-    ko "sentry-cli info échoue : ${short}"
-  fi
-  # Test API direct (indépendant du CLI)
+  # Test API direct (source de vérité — indépendant d'un .sentryclirc)
   api_code=$(curl -sS -o /tmp/sentry_self.json -w "%{http_code}" \
       -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
       "https://sentry.io/api/0/" 2>/dev/null)
   if [[ "$api_code" == "200" ]]; then
-    ok "API Sentry /api/0/ répond 200 (token OK côté API)"
+    ok "API Sentry /api/0/ répond 200 (token OK)"
   else
-    ko "API Sentry /api/0/ HTTP $api_code"
+    ko "API Sentry /api/0/ HTTP $api_code — token invalide / scopes manquants"
   fi
+
+  # CLI check informel : échoue silencieusement si pas de default org/project
+  # configurés, mais tant que l'API répond on considère le secret valide.
+  i=$(sentry-cli info 2>&1)
+  if echo "$i" | grep -qi "authenticated"; then
+    ok "sentry-cli authentifié (bonus)"
+  fi
+
   if [[ -n "${SENTRY_ORG:-}" && -n "${SENTRY_PROJECT:-}" ]]; then
     r=$(curl -sS -o /dev/null -w "%{http_code}" \
         -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
