@@ -146,11 +146,19 @@ class SourcesRepository {
     }
   }
 
-  Future<SmartSearchResponse> smartSearch(String query) async {
+  Future<SmartSearchResponse> smartSearch(
+    String query, {
+    String? contentType,
+    bool expand = false,
+  }) async {
     try {
       final response = await _apiClient.dio.post<Map<String, dynamic>>(
         'sources/smart-search',
-        data: {'query': query},
+        data: {
+          'query': query,
+          if (contentType != null) 'content_type': contentType,
+          if (expand) 'expand': true,
+        },
       );
       if (response.statusCode == 200 && response.data != null) {
         return SmartSearchResponse.fromJson(response.data!);

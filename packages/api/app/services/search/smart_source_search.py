@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.models.enums import SourceType
 from app.models.source import Source
 from app.models.user import UserInterest
 from app.services.rss_parser import RSSParser
@@ -30,6 +31,25 @@ _user_daily_reset_date: str = ""
 
 USER_DAILY_LIMIT = 30
 MIN_RESULTS_FOR_SHORTCIRCUIT = 3
+
+
+def _is_strong_catalog_match(result: dict, normalized_query: str) -> bool:
+    """Return True when a catalog hit clearly matches the query.
+
+    Match conditions: exact name, prefix on a word boundary, or word-boundary
+    match inside the name. Substring-only matches (e.g. "le" in "ouest-france")
+    do NOT qualify — they would trigger false short-circuits.
+    """
+    if not normalized_query:
+        return False
+    name_norm = normalize_query(result.get("name", ""))
+    if not name_norm:
+        return False
+    if name_norm == normalized_query:
+        return True
+    if name_norm.startswith(normalized_query + " "):
+        return True
+    return re.search(rf"\b{re.escape(normalized_query)}\b", name_norm) is not None
 
 
 def _check_user_rate_limit(user_id: str) -> bool:
@@ -115,8 +135,21 @@ class SmartSourceSearchService:
     async def close(self) -> None:
         await self.rss_parser.close()
 
-    async def search(self, query: str, user_id: str) -> dict:
-        """Execute the full smart search pipeline.
+    async def search(
+        self,
+        query: str,
+        user_id: str,
+        content_type: str | None = None,
+        expand: bool = False,
+    ) -> dict:
+        """Execute the smart search pipeline.
+
+        - ``content_type``: optional filter ("article" / "youtube" / "reddit" /
+          "podcast"). When set, the catalog is filtered by ``Source.type`` and
+          layers that don't produce that type are skipped (huge latency win
+          for type-scoped searches).
+        - ``expand``: when True, bypass the catalog short-circuit so the full
+          external pipeline runs (used by the "Élargir la recherche" action).
 
         Returns a dict matching SmartSearchResponse schema.
         """
@@ -139,8 +172,8 @@ class SmartSourceSearchService:
                 "error": "rate_limit_exceeded",
             }
 
-        # Cache check
-        cached = await self.cache.get(query)
+        # Cache check (keyed by query + content_type + expand)
+        cached = await self.cache.get(query, content_type, expand)
         if cached:
             elapsed = int((time.monotonic() - start) * 1000)
             cached["cache_hit"] = True
@@ -150,23 +183,39 @@ class SmartSourceSearchService:
         query_type = _classify_query(query)
         user_themes = await self._get_user_themes(user_id)
 
-        # (a) Catalog ILIKE
-        catalog_results = await self._search_catalog(normalized, user_themes)
+        # (a) Catalog ILIKE (optionally filtered by type)
+        catalog_results = await self._search_catalog(
+            normalized, user_themes, content_type
+        )
         for r in catalog_results:
             if r["url"] not in seen_urls:
                 seen_urls.add(r["url"])
                 results.append(r)
         layers_called.append("catalog")
 
-        # Short-circuit on curated catalog
-        curated_count = sum(1 for r in results if r.get("is_curated"))
-        if curated_count >= MIN_RESULTS_FOR_SHORTCIRCUIT:
+        # Aggressive short-circuit: strong name match in catalog.
+        # Users can still escape with `expand=True` ("Élargir la recherche").
+        if not expand and any(
+            _is_strong_catalog_match(r, normalized) for r in results
+        ):
             return await self._finalize(
-                normalized, results, layers_called, start, False
+                normalized, results, layers_called, start, False,
+                content_type=content_type, expand=expand,
             )
 
-        # (b) YouTube API — if signal
-        if query_type == "youtube_handle" or "youtube" in normalized:
+        # Secondary guard: enough curated matches.
+        if not expand:
+            curated_count = sum(1 for r in results if r.get("is_curated"))
+            if curated_count >= MIN_RESULTS_FOR_SHORTCIRCUIT:
+                return await self._finalize(
+                    normalized, results, layers_called, start, False,
+                    content_type=content_type, expand=expand,
+                )
+
+        # (b) YouTube API — if signal and type allows
+        if content_type in (None, "youtube") and (
+            query_type == "youtube_handle" or "youtube" in normalized
+        ):
             yt_results = await self._search_youtube(query, user_themes)
             for r in yt_results:
                 if r["url"] not in seen_urls:
@@ -174,8 +223,12 @@ class SmartSourceSearchService:
                     results.append(r)
             layers_called.append("youtube")
 
-        # (c) Reddit JSON — if signal
-        if query_type == "reddit_sub" or "reddit" in normalized or "r/" in normalized:
+        # (c) Reddit JSON — if signal and type allows
+        if content_type in (None, "reddit") and (
+            query_type == "reddit_sub"
+            or "reddit" in normalized
+            or "r/" in normalized
+        ):
             reddit_results = await self._search_reddit(query, user_themes)
             for r in reddit_results:
                 if r["url"] not in seen_urls:
@@ -183,9 +236,13 @@ class SmartSourceSearchService:
                     results.append(r)
             layers_called.append("reddit")
 
-        # (d) Brave Search
+        # (d) Brave Search — articles/podcasts only
         settings = get_settings()
-        if self.brave.is_ready and _brave_calls_month < settings.brave_monthly_cap:
+        if (
+            content_type in (None, "article", "podcast")
+            and self.brave.is_ready
+            and _brave_calls_month < settings.brave_monthly_cap
+        ):
             brave_results = await self._search_brave(normalized, user_themes)
             _brave_calls_month += 1
             for r in brave_results:
@@ -201,27 +258,33 @@ class SmartSourceSearchService:
                     cap=settings.brave_monthly_cap,
                 )
 
-        # Short-circuit if enough results
-        if len(results) >= MIN_RESULTS_FOR_SHORTCIRCUIT:
+        # Short-circuit if enough results (only when not explicitly expanding)
+        if not expand and len(results) >= MIN_RESULTS_FOR_SHORTCIRCUIT:
             return await self._finalize(
-                normalized, results, layers_called, start, False
+                normalized, results, layers_called, start, False,
+                content_type=content_type, expand=expand,
             )
 
-        # (e) Google News RSS
-        gnews_results = await self._search_google_news(normalized, user_themes)
-        for r in gnews_results:
-            if r["url"] not in seen_urls:
-                seen_urls.add(r["url"])
-                results.append(r)
-        layers_called.append("google_news")
+        # (e) Google News RSS — articles/podcasts only
+        if content_type in (None, "article", "podcast"):
+            gnews_results = await self._search_google_news(normalized, user_themes)
+            for r in gnews_results:
+                if r["url"] not in seen_urls:
+                    seen_urls.add(r["url"])
+                    results.append(r)
+            layers_called.append("google_news")
 
-        if len(results) >= MIN_RESULTS_FOR_SHORTCIRCUIT:
-            return await self._finalize(
-                normalized, results, layers_called, start, False
-            )
+            if not expand and len(results) >= MIN_RESULTS_FOR_SHORTCIRCUIT:
+                return await self._finalize(
+                    normalized, results, layers_called, start, False,
+                    content_type=content_type, expand=expand,
+                )
 
-        # (f) Mistral fallback
-        if _mistral_calls_month < settings.mistral_monthly_cap:
+        # (f) Mistral fallback — catch-all, skipped when a type filter is set
+        if (
+            content_type is None
+            and _mistral_calls_month < settings.mistral_monthly_cap
+        ):
             mistral_results = await self._search_mistral(normalized, user_themes)
             _mistral_calls_month += 1
             for r in mistral_results:
@@ -230,12 +293,20 @@ class SmartSourceSearchService:
                     results.append(r)
             layers_called.append("mistral")
 
-        return await self._finalize(normalized, results, layers_called, start, False)
+        return await self._finalize(
+            normalized, results, layers_called, start, False,
+            content_type=content_type, expand=expand,
+        )
 
     # ─── Layer implementations ────────────────────────────────────
 
-    async def _search_catalog(self, query: str, user_themes: list[str]) -> list[dict]:
-        """Search catalog via ILIKE on name and url."""
+    async def _search_catalog(
+        self,
+        query: str,
+        user_themes: list[str],
+        content_type: str | None = None,
+    ) -> list[dict]:
+        """Search catalog via ILIKE on name and url, optionally filtered by type."""
         pattern = f"%{query}%"
         stmt = (
             select(Source)
@@ -244,6 +315,8 @@ class SmartSourceSearchService:
             .order_by(Source.is_curated.desc())
             .limit(10)
         )
+        if content_type:
+            stmt = stmt.where(Source.type == SourceType(content_type))
         result = await self.db.execute(stmt)
         sources = result.scalars().all()
 
@@ -522,6 +595,8 @@ class SmartSourceSearchService:
         layers_called: list[str],
         start: float,
         cache_hit: bool,
+        content_type: str | None = None,
+        expand: bool = False,
     ) -> dict:
         """Sort, trim, cache, and return response."""
         # Sort by score descending
@@ -538,9 +613,9 @@ class SmartSourceSearchService:
             "latency_ms": elapsed,
         }
 
-        # Cache the result
+        # Cache the result (keyed by query + content_type + expand)
         try:
-            await self.cache.set(normalized, response)
+            await self.cache.set(normalized, response, content_type, expand)
         except Exception as e:
             logger.warning("smart_search.cache_set_failed", error=str(e))
 

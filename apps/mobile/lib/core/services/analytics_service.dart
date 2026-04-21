@@ -222,6 +222,17 @@ class AnalyticsService {
     await _logEvent('add_source_gem_tap', {'source_id': sourceId});
   }
 
+  Future<void> trackAddSourceContentTypeFilter(String contentType) async {
+    await _logEvent(
+      'add_source_content_type_filter',
+      {'content_type': contentType},
+    );
+  }
+
+  Future<void> trackAddSourceExpand(String query) async {
+    await _logEvent('add_source_expand', {'query': query});
+  }
+
   Future<void> trackAppFirstLaunch() async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool('has_launched_before') == true) return;

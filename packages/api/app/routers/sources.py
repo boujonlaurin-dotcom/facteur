@@ -183,7 +183,12 @@ async def smart_search(
 
     service = SmartSourceSearchService(db)
     try:
-        result = await service.search(data.query, user_id)
+        result = await service.search(
+            data.query,
+            user_id,
+            content_type=data.content_type,
+            expand=data.expand,
+        )
 
         if result.get("error") == "rate_limit_exceeded":
             raise HTTPException(

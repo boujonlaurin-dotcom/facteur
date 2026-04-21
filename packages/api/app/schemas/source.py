@@ -1,10 +1,13 @@
 """Schemas source."""
 
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import SourceType
+
+ContentTypeFilter = Literal["article", "youtube", "reddit", "podcast"]
 
 
 class SourceResponse(BaseModel):
@@ -111,6 +114,8 @@ class SmartSearchRequest(BaseModel):
     """Requête de recherche intelligente."""
 
     query: str = Field(..., min_length=1, max_length=500)
+    content_type: ContentTypeFilter | None = None
+    expand: bool = False
 
 
 class SmartSearchRecentItem(BaseModel):
