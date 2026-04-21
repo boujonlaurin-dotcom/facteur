@@ -195,12 +195,15 @@ class SmartSourceSearchService:
 
         # Aggressive short-circuit: strong name match in catalog.
         # Users can still escape with `expand=True` ("Élargir la recherche").
-        if not expand and any(
-            _is_strong_catalog_match(r, normalized) for r in results
-        ):
+        if not expand and any(_is_strong_catalog_match(r, normalized) for r in results):
             return await self._finalize(
-                normalized, results, layers_called, start, False,
-                content_type=content_type, expand=expand,
+                normalized,
+                results,
+                layers_called,
+                start,
+                False,
+                content_type=content_type,
+                expand=expand,
             )
 
         # Secondary guard: enough curated matches.
@@ -208,8 +211,13 @@ class SmartSourceSearchService:
             curated_count = sum(1 for r in results if r.get("is_curated"))
             if curated_count >= MIN_RESULTS_FOR_SHORTCIRCUIT:
                 return await self._finalize(
-                    normalized, results, layers_called, start, False,
-                    content_type=content_type, expand=expand,
+                    normalized,
+                    results,
+                    layers_called,
+                    start,
+                    False,
+                    content_type=content_type,
+                    expand=expand,
                 )
 
         # (b) YouTube API — if signal and type allows
@@ -225,9 +233,7 @@ class SmartSourceSearchService:
 
         # (c) Reddit JSON — if signal and type allows
         if content_type in (None, "reddit") and (
-            query_type == "reddit_sub"
-            or "reddit" in normalized
-            or "r/" in normalized
+            query_type == "reddit_sub" or "reddit" in normalized or "r/" in normalized
         ):
             reddit_results = await self._search_reddit(query, user_themes)
             for r in reddit_results:
@@ -261,8 +267,13 @@ class SmartSourceSearchService:
         # Short-circuit if enough results (only when not explicitly expanding)
         if not expand and len(results) >= MIN_RESULTS_FOR_SHORTCIRCUIT:
             return await self._finalize(
-                normalized, results, layers_called, start, False,
-                content_type=content_type, expand=expand,
+                normalized,
+                results,
+                layers_called,
+                start,
+                False,
+                content_type=content_type,
+                expand=expand,
             )
 
         # (e) Google News RSS — articles/podcasts only
@@ -276,15 +287,17 @@ class SmartSourceSearchService:
 
             if not expand and len(results) >= MIN_RESULTS_FOR_SHORTCIRCUIT:
                 return await self._finalize(
-                    normalized, results, layers_called, start, False,
-                    content_type=content_type, expand=expand,
+                    normalized,
+                    results,
+                    layers_called,
+                    start,
+                    False,
+                    content_type=content_type,
+                    expand=expand,
                 )
 
         # (f) Mistral fallback — catch-all, skipped when a type filter is set
-        if (
-            content_type is None
-            and _mistral_calls_month < settings.mistral_monthly_cap
-        ):
+        if content_type is None and _mistral_calls_month < settings.mistral_monthly_cap:
             mistral_results = await self._search_mistral(normalized, user_themes)
             _mistral_calls_month += 1
             for r in mistral_results:
@@ -294,8 +307,13 @@ class SmartSourceSearchService:
             layers_called.append("mistral")
 
         return await self._finalize(
-            normalized, results, layers_called, start, False,
-            content_type=content_type, expand=expand,
+            normalized,
+            results,
+            layers_called,
+            start,
+            False,
+            content_type=content_type,
+            expand=expand,
         )
 
     # ─── Layer implementations ────────────────────────────────────

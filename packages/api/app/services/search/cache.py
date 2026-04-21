@@ -19,9 +19,7 @@ def normalize_query(query: str) -> str:
     return re.sub(r"\s+", " ", query.strip().lower())
 
 
-def _build_cache_key(
-    query: str, content_type: str | None, expand: bool
-) -> str:
+def _build_cache_key(query: str, content_type: str | None, expand: bool) -> str:
     normalized = normalize_query(query)
     return f"{normalized}|ct={content_type or '-'}|x={'1' if expand else '0'}"
 
