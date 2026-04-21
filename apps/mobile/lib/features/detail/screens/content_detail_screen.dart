@@ -64,7 +64,8 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
 }
 
 /// Height of the header content area (below the status bar).
-const double _kHeaderContentHeight = 50;
+/// = top padding (16) + icon row (~34) + bottom padding (8).
+const double _kHeaderContentHeight = 58;
 
 /// Height of the footer content area (above the safe-area bottom inset).
 /// = vertical padding (12+12) + button row height (44).
@@ -2160,9 +2161,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       child: SafeArea(
         bottom: false,
         child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: FacteurSpacing.space2,
-            vertical: FacteurSpacing.space2,
+          padding: const EdgeInsets.only(
+            top: FacteurSpacing.space4,
+            bottom: FacteurSpacing.space2,
+            left: FacteurSpacing.space2,
+            right: FacteurSpacing.space2,
           ),
           child: Padding(
             padding:
@@ -3344,7 +3347,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               children: [
                 // ── Header clearance ──────────────────────────────────────
                 SizedBox(height: headerHeight),
-                const SizedBox(height: FacteurSpacing.space2),
 
                 // ── Top section: thumbnail → chips → title → reading time ─
                 Padding(
