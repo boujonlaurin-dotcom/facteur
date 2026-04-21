@@ -16,6 +16,7 @@ from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.source import Source
 from app.models.user import UserInterest
 from app.schemas.source import (
+    SearchAbandonedRequest,
     SmartSearchRecentItem,
     SmartSearchRequest,
     SmartSearchResponse,
@@ -48,7 +49,7 @@ async def _log_failed_source_attempt(
     input_text: str,
     input_type: str,
     endpoint: str,
-    error_message: str,
+    error_message: str | None = None,
 ) -> None:
     # Uses its own session so the commit survives the HTTPException that the
     # caller is about to raise. The request-scoped `get_db` dependency does
@@ -62,7 +63,7 @@ async def _log_failed_source_attempt(
                     input_text=input_text[:500],
                     input_type=input_type,
                     endpoint=endpoint,
-                    error_message=error_message[:1000],
+                    error_message=error_message[:1000] if error_message else None,
                 )
             )
             await session.commit()
@@ -223,6 +224,20 @@ async def smart_search(
         )
     finally:
         await service.close()
+
+
+@router.post("/search-abandoned", status_code=204)
+async def log_search_abandoned(
+    data: SearchAbandonedRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> None:
+    """Enregistre une recherche sans ajout de source (signal mobile)."""
+    await _log_failed_source_attempt(
+        user_id=user_id,
+        input_text=data.query,
+        input_type="keyword",
+        endpoint="smart-search",
+    )
 
 
 @router.get("/by-theme/{slug}", response_model=ThemeSourcesResponse)

@@ -192,6 +192,17 @@ class SourcesRepository {
     }
   }
 
+  Future<void> logSearchAbandoned(String query) async {
+    try {
+      await _apiClient.dio.post<dynamic>(
+        'sources/search-abandoned',
+        data: {'query': query},
+      );
+    } catch (_) {
+      // fire-and-forget
+    }
+  }
+
   Future<ThemeSourcesResponse> getSourcesByTheme(String slug) async {
     try {
       final response =

@@ -30,6 +30,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
   String? _selectedContentType;
   String? _selectedLabel;
   bool _expanded = false;
+  bool _sourceAdded = false;
   final Set<String> _addedSourceIds = {};
   late final TextEditingController _searchController;
 
@@ -41,6 +42,10 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
 
   @override
   void dispose() {
+    final query = _currentQuery.trim();
+    if (query.isNotEmpty && !_sourceAdded) {
+      ref.read(sourcesRepositoryProvider).logSearchAbandoned(query);
+    }
     _searchController.dispose();
     super.dispose();
   }
@@ -99,13 +104,17 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
 
       if (hasCatalogId) {
         await repository.trustSource(sourceId);
-        setState(() => _addedSourceIds.add(sourceId));
+        setState(() {
+          _addedSourceIds.add(sourceId);
+          _sourceAdded = true;
+        });
       } else {
         if (result.feedUrl.isEmpty) {
           NotificationService.showError('URL du flux introuvable');
           return;
         }
         await repository.addCustomSource(result.feedUrl, name: result.name);
+        setState(() => _sourceAdded = true);
       }
 
       if (!mounted) return;

@@ -152,6 +152,12 @@ class SmartSearchResponse(BaseModel):
     latency_ms: int = 0
 
 
+class SearchAbandonedRequest(BaseModel):
+    """Signal d'abandon de recherche sans ajout de source."""
+
+    query: str = Field(..., min_length=1, max_length=500)
+
+
 class ThemeSourceGroup(BaseModel):
     """Groupe de sources par catégorie dans un thème."""
 
