@@ -20,6 +20,12 @@ from app.models.user import UserProfile, UserSubtopic
 
 logger = structlog.get_logger()
 
+# Upper bound on the two-phase followed-sources query in the default feed
+# view. Above this, we rollback and fall back to a curated-only query so the
+# mobile client never sees an infinite spinner.
+# Cf. docs/bugs/bug-feed-default-hang.md
+_FEED_TWO_PHASE_TIMEOUT_S = 8.0
+
 
 @dataclass
 class InterestContext:
@@ -2443,8 +2449,33 @@ class RecommendationService:
             user_query = user_query.order_by(Content.published_at.desc()).limit(
                 limit_candidates
             )
-            user_result = await self.session.scalars(user_query)
-            candidates_list = list(user_result.all())
+            # The followed-only query on the default (unfiltered) view can
+            # hang under a bad plan when the user has many followed sources —
+            # other branches dodge it thanks to their `is_curated` narrowing.
+            # Bound the wait and degrade to the curated query on timeout so
+            # the client never gets stuck on a spinner. Cf.
+            # docs/bugs/bug-feed-default-hang.md
+            try:
+                user_result = await asyncio.wait_for(
+                    self.session.scalars(user_query),
+                    timeout=_FEED_TWO_PHASE_TIMEOUT_S,
+                )
+                candidates_list = list(user_result.all())
+            except TimeoutError:
+                await self.session.rollback()
+                logger.warning(
+                    "feed_two_phase_timeout_fallback_curated",
+                    user_id=str(user_id),
+                    followed_source_count=len(followed_source_ids),
+                    timeout_seconds=_FEED_TWO_PHASE_TIMEOUT_S,
+                )
+                fallback_query = (
+                    query.where(Source.is_curated, Source.source_tier != "deep")
+                    .order_by(Content.published_at.desc())
+                    .limit(limit_candidates)
+                )
+                fallback_result = await self.session.scalars(fallback_query)
+                candidates_list = list(fallback_result.all())
 
             logger.info(
                 "feed_candidates_followed_only",
