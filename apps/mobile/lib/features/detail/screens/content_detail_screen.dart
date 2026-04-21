@@ -64,8 +64,12 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
 }
 
 /// Height of the header content area (below the status bar).
-/// = top padding (16) + icon row (~34) + bottom padding (8).
-const double _kHeaderContentHeight = 58;
+/// = top padding (16) + icon row (~36) + bottom padding (8) + 2px safety margin.
+const double _kHeaderContentHeight = 62;
+
+/// Visual bottom of the header for overlay anchoring (progress bar, sticky headers).
+/// Slightly less than the true bottom to guarantee 1px overlap and eliminate rounding gaps.
+const double _kHeaderVisualBottom = 59;
 
 /// Height of the footer content area (above the safe-area bottom inset).
 /// = vertical padding (12+12) + button row height (44).
@@ -1537,7 +1541,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 builder: (context, offset, _) {
                   final statusBarHeight = MediaQuery.of(context).padding.top;
                   final topWhenHeaderVisible =
-                      statusBarHeight + _kHeaderContentHeight;
+                      statusBarHeight + _kHeaderVisualBottom;
                   final topWhenHeaderHidden = statusBarHeight;
                   final top = topWhenHeaderVisible -
                       offset * (topWhenHeaderVisible - topWhenHeaderHidden);
@@ -1563,10 +1567,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     builder: (context, offset, _) {
                       final statusBarHeight =
                           MediaQuery.of(context).padding.top;
-                      // Sits immediately below the reading progress bar (+2px).
                       final topWhenHeaderVisible =
-                          statusBarHeight + _kHeaderContentHeight + 2.0;
-                      final topWhenHeaderHidden = statusBarHeight + 2.0;
+                          statusBarHeight + _kHeaderVisualBottom;
+                      final topWhenHeaderHidden = statusBarHeight;
                       final top = topWhenHeaderVisible -
                           offset * (topWhenHeaderVisible - topWhenHeaderHidden);
                       return Positioned(
@@ -2594,13 +2597,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         border: Border(
           bottom: BorderSide(color: colors.border, width: 1),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Column(
