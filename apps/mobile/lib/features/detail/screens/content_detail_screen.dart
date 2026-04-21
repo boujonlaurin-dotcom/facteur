@@ -2661,7 +2661,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           bottom: BorderSide(color: colors.border, width: 1),
         ),
       ),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -2685,34 +2685,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ),
                 ),
               ),
-              // "Tout afficher" clear button when a filter is active
-              if (selected.isNotEmpty)
-                GestureDetector(
-                  onTap: () {
-                    setState(() => _perspectivesSelectedSegments = {});
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) _checkAtPerspectivesSection();
-                    });
-                  },
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Tout afficher',
-                        style: textTheme.labelSmall?.copyWith(
-                          color: colors.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        PhosphorIcons.x(PhosphorIconsStyle.bold),
-                        size: 12,
-                        color: colors.primary,
-                      ),
-                    ],
-                  ),
-                ),
             ],
           ),
           if (response.comparisonQuality == 'low')
@@ -2725,6 +2697,43 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             sourceName: _content?.source.name ?? '',
             selectedSegments: selected,
             onSegmentTap: _onPerspectivesSegmentTap,
+          ),
+          SizedBox(
+            height: selected.isNotEmpty ? 28 : 4,
+            child: selected.isNotEmpty
+                ? Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Align(
+                      alignment: Alignment.topRight,
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() => _perspectivesSelectedSegments = {});
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) _checkAtPerspectivesSection();
+                          });
+                        },
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Tout afficher',
+                              style: textTheme.labelSmall?.copyWith(
+                                color: colors.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              PhosphorIcons.x(PhosphorIconsStyle.bold),
+                              size: 12,
+                              color: colors.primary,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                : null,
           ),
         ],
       ),
