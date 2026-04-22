@@ -7,14 +7,19 @@
 #
 # Usage CI : appelé par .github/workflows/agent-secrets-healthcheck.yml
 #
-# Sortie :
-#   - Un bloc par service avec OK/FAIL/SKIP
-#   - Exit 0 si tous OK ou SKIP, exit 1 si un FAIL
+# Modes :
+#   (défaut)  : tous les checks, exit 1 si un FAIL
+#   --fast    : ne lance que les checks réseau rapides (skip psql UPDATE
+#               probe, skip CLI probes, skip longs timeouts). Sortie plus
+#               compacte. Conçu pour être appelé depuis le SessionStart hook.
 #
 # Jamais de secret imprimé dans la sortie.
 
 set -u
 pipefail_off=$-; set +e  # on veut continuer même si une check échoue
+
+FAST=0
+[[ "${1:-}" == "--fast" ]] && FAST=1
 
 pass=0; fail=0; skip=0
 
@@ -31,23 +36,43 @@ if [[ -z "${DATABASE_URL_RO:-}" ]]; then
 elif ! command -v psql &>/dev/null; then
   sk "psql absent — skip"
 else
-  user=$(psql "$DATABASE_URL_RO" -X -A -t -c "SELECT current_user;" 2>/dev/null)
+  # Diagnostic non-sensible sur l'URL (schéma/host/port/db, sans password).
+  safe=$(printf '%s' "$DATABASE_URL_RO" \
+         | sed -E 's#^(postgres(ql)?://)[^:]+:[^@]+@#\1***:***@#' \
+         | sed -E 's/(password=)[^& ]+/\1***/g')
+  echo "  (URL sans secret) $safe"
+
+  conn_out=$(psql "$DATABASE_URL_RO" -X -A -t -c "SELECT current_user;" 2>&1)
+  user=$(echo "$conn_out" | tail -1 | tr -d ' \r\n')
   if [[ "$user" == "claude_analytics_ro" ]]; then
     ok "connecté en tant que claude_analytics_ro"
+  elif [[ "$conn_out" == *"ERROR"* || "$conn_out" == *"FATAL"* || "$conn_out" == *"could not"* || "$conn_out" == *"timeout"* ]]; then
+    first=$(echo "$conn_out" | grep -iE "error|fatal|could not|timeout|denied" | head -1)
+    ko "connexion impossible : ${first:-$conn_out}"
   elif [[ -n "$user" ]]; then
     ko "connecté mais en tant que '$user' — devrait être claude_analytics_ro"
   else
-    ko "connexion impossible (vérifie password, sslmode, IP autorisée)"
+    ko "connexion impossible (sortie vide)"
   fi
-  # Vérifie qu'au moins une table attendue est lisible
-  n=$(psql "$DATABASE_URL_RO" -X -A -t -c "SELECT COUNT(*) FROM user_profiles LIMIT 1;" 2>/dev/null)
-  [[ -n "$n" ]] && ok "SELECT sur user_profiles fonctionne" || ko "SELECT user_profiles impossible (GRANT manquant ?)"
-  # Sanity : refuse un write
-  w=$(psql "$DATABASE_URL_RO" -X -A -t -c "UPDATE user_profiles SET onboarding_completed = onboarding_completed WHERE false;" 2>&1)
-  if echo "$w" | grep -qi "permission denied"; then
-    ok "UPDATE refusé comme attendu (least-privilege OK)"
-  else
-    ko "UPDATE n'est PAS refusé — le rôle a trop de droits ! Vérifie le GRANT."
+  if [[ $FAST -eq 0 ]]; then
+    # Vérifie qu'au moins une table attendue est lisible
+    sel_out=$(psql "$DATABASE_URL_RO" -X -A -t -c "SELECT COUNT(*) FROM user_profiles LIMIT 1;" 2>&1)
+    n=$(echo "$sel_out" | tail -1 | tr -d ' \r\n')
+    if [[ "$n" =~ ^[0-9]+$ ]]; then
+      ok "SELECT sur user_profiles fonctionne ($n rows)"
+    else
+      first=$(echo "$sel_out" | grep -iE "error|fatal|denied" | head -1)
+      ko "SELECT user_profiles impossible : ${first:-(sortie vide)}"
+    fi
+    # Sanity : refuse un write
+    w=$(psql "$DATABASE_URL_RO" -X -A -t -c "UPDATE user_profiles SET onboarding_completed = onboarding_completed WHERE false;" 2>&1)
+    if echo "$w" | grep -qi "permission denied"; then
+      ok "UPDATE refusé comme attendu (least-privilege OK)"
+    elif echo "$w" | grep -qiE "fatal|could not|timeout"; then
+      ko "UPDATE non testable (connexion en échec amont)"
+    else
+      ko "UPDATE n'est PAS refusé — le rôle a trop de droits ! Vérifie le GRANT."
+    fi
   fi
 fi
 
@@ -67,21 +92,40 @@ else
 fi
 
 # ─── Railway ─────────────────────────────────────────────────────────────────
-hdr "Railway (RAILWAY_TOKEN)"
-if [[ -z "${RAILWAY_TOKEN:-}" ]]; then
-  sk "RAILWAY_TOKEN"
-elif ! command -v railway &>/dev/null; then
-  sk "CLI railway absente — lance scripts/setup-cli-tools.sh"
+hdr "Railway (RAILWAY_TOKEN / RAILWAY_API_TOKEN)"
+if [[ -z "${RAILWAY_TOKEN:-}" && -z "${RAILWAY_API_TOKEN:-}" ]]; then
+  sk "RAILWAY_TOKEN et RAILWAY_API_TOKEN"
 else
-  w=$(railway whoami 2>&1)
-  if echo "$w" | grep -qiE "logged in|email"; then
-    ok "Railway whoami OK"
+  # Diagnostic longueur pour détecter un copier/coller tronqué ou avec espaces.
+  tok_len=${#RAILWAY_TOKEN}
+  api_len=${#RAILWAY_API_TOKEN}
+  echo "  (longueur tokens) RAILWAY_TOKEN=${tok_len}, RAILWAY_API_TOKEN=${api_len}"
+
+  # Test API direct — source de vérité indépendante du CLI.
+  # Railway expose GraphQL sur backboard.railway.app.
+  # Un Account Token répond sur `me { email }`, un Project Token échoue.
+  token="${RAILWAY_API_TOKEN:-$RAILWAY_TOKEN}"
+  api_resp=$(curl -sS -X POST "https://backboard.railway.app/graphql/v2" \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d '{"query":"query { me { id email } }"}' 2>&1)
+  if echo "$api_resp" | grep -q '"email"'; then
+    email=$(echo "$api_resp" | sed -nE 's/.*"email":"([^"]+)".*/\1/p')
+    ok "Railway GraphQL me{} OK (Account Token, user=${email:-inconnu})"
+  elif echo "$api_resp" | grep -qi "Not Authorized\|Unauthorized\|Problem processing request"; then
+    snippet=$(echo "$api_resp" | head -c 200)
+    ko "Railway GraphQL refuse le token (probable Project Token au lieu de Account Token) : $snippet"
   else
-    ko "Railway whoami échoue : $(echo "$w" | head -1)"
+    snippet=$(echo "$api_resp" | head -c 200)
+    ko "Railway GraphQL réponse inattendue : $snippet"
   fi
-  if [[ -n "${RAILWAY_PROJECT_ID:-}" ]]; then
-    s=$(railway status --json 2>&1)
-    echo "$s" | grep -q "projectId" && ok "projet accessible" || ko "status échoue"
+
+  # CLI check : nice-to-have (skip en mode fast)
+  if [[ $FAST -eq 0 ]] && command -v railway &>/dev/null; then
+    w=$(railway whoami 2>&1)
+    if echo "$w" | grep -qiE "logged in|email|@"; then
+      ok "railway whoami OK (bonus)"
+    fi
   fi
 fi
 
@@ -89,20 +133,34 @@ fi
 hdr "Sentry (SENTRY_AUTH_TOKEN)"
 if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
   sk "SENTRY_AUTH_TOKEN"
-elif ! command -v sentry-cli &>/dev/null; then
-  sk "sentry-cli absente"
 else
-  i=$(sentry-cli info 2>&1)
-  if echo "$i" | grep -qi "authenticated"; then
-    ok "sentry-cli authentifié"
+  sent_len=${#SENTRY_AUTH_TOKEN}
+  echo "  (longueur token) SENTRY_AUTH_TOKEN=${sent_len}"
+
+  # Test API direct (source de vérité — indépendant d'un .sentryclirc)
+  api_code=$(curl -sS -o /tmp/sentry_self.json -w "%{http_code}" \
+      -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+      "https://sentry.io/api/0/" 2>/dev/null)
+  if [[ "$api_code" == "200" ]]; then
+    ok "API Sentry /api/0/ répond 200 (token OK)"
   else
-    ko "sentry-cli info échoue"
+    ko "API Sentry /api/0/ HTTP $api_code — token invalide / scopes manquants"
   fi
+
+  # CLI check informel : échoue silencieusement si pas de default org/project
+  # configurés, mais tant que l'API répond on considère le secret valide.
+  if [[ $FAST -eq 0 ]] && command -v sentry-cli &>/dev/null; then
+    i=$(sentry-cli info 2>&1)
+    if echo "$i" | grep -qi "authenticated"; then
+      ok "sentry-cli authentifié (bonus)"
+    fi
+  fi
+
   if [[ -n "${SENTRY_ORG:-}" && -n "${SENTRY_PROJECT:-}" ]]; then
-    r=$(curl -sf -o /dev/null -w "%{http_code}" \
+    r=$(curl -sS -o /dev/null -w "%{http_code}" \
         -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
         "https://sentry.io/api/0/projects/$SENTRY_ORG/$SENTRY_PROJECT/" 2>/dev/null)
-    [[ "$r" == "200" ]] && ok "projet Sentry accessible" || ko "projet Sentry HTTP $r"
+    [[ "$r" == "200" ]] && ok "projet Sentry accessible" || ko "projet Sentry HTTP $r (ORG='$SENTRY_ORG' PROJECT='$SENTRY_PROJECT')"
   fi
 fi
 
