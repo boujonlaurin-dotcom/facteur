@@ -3533,7 +3533,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         horizontal: FacteurSpacing.space4),
                     child: Divider(color: colors.border, height: 1),
                   ),
-                  const SizedBox(height: FacteurSpacing.space4),
+                  const SizedBox(height: FacteurSpacing.space8),
                   if (_perspectivesLoading && _perspectivesResponse == null)
                     const Center(child: CircularProgressIndicator())
                   else if (_perspectivesResponse != null)
