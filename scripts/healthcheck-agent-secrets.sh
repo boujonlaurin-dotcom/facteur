@@ -88,23 +88,37 @@ fi
 hdr "Railway (RAILWAY_TOKEN / RAILWAY_API_TOKEN)"
 if [[ -z "${RAILWAY_TOKEN:-}" && -z "${RAILWAY_API_TOKEN:-}" ]]; then
   sk "RAILWAY_TOKEN et RAILWAY_API_TOKEN"
-elif ! command -v railway &>/dev/null; then
-  sk "CLI railway absente — lance scripts/setup-cli-tools.sh"
 else
   # Diagnostic longueur pour détecter un copier/coller tronqué ou avec espaces.
   tok_len=${#RAILWAY_TOKEN}
   api_len=${#RAILWAY_API_TOKEN}
   echo "  (longueur tokens) RAILWAY_TOKEN=${tok_len}, RAILWAY_API_TOKEN=${api_len}"
 
-  w=$(railway whoami 2>&1)
-  if echo "$w" | grep -qiE "logged in|email|@"; then
-    ok "Railway whoami OK ($(echo "$w" | head -1))"
+  # Test API direct — source de vérité indépendante du CLI.
+  # Railway expose GraphQL sur backboard.railway.app.
+  # Un Account Token répond sur `me { email }`, un Project Token échoue.
+  token="${RAILWAY_API_TOKEN:-$RAILWAY_TOKEN}"
+  api_resp=$(curl -sS -X POST "https://backboard.railway.app/graphql/v2" \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d '{"query":"query { me { id email } }"}' 2>&1)
+  if echo "$api_resp" | grep -q '"email"'; then
+    email=$(echo "$api_resp" | sed -nE 's/.*"email":"([^"]+)".*/\1/p')
+    ok "Railway GraphQL me{} OK (Account Token, user=${email:-inconnu})"
+  elif echo "$api_resp" | grep -qi "Not Authorized\|Unauthorized\|Problem processing request"; then
+    snippet=$(echo "$api_resp" | head -c 200)
+    ko "Railway GraphQL refuse le token (probable Project Token au lieu de Account Token) : $snippet"
   else
-    ko "Railway whoami échoue : $(echo "$w" | head -2 | tr '\n' ' ')"
+    snippet=$(echo "$api_resp" | head -c 200)
+    ko "Railway GraphQL réponse inattendue : $snippet"
   fi
-  if [[ -n "${RAILWAY_PROJECT_ID:-}" ]]; then
-    s=$(railway status --json 2>&1)
-    echo "$s" | grep -q "projectId" && ok "projet accessible" || ko "status échoue : $(echo "$s" | head -1)"
+
+  # CLI check : nice-to-have
+  if command -v railway &>/dev/null; then
+    w=$(railway whoami 2>&1)
+    if echo "$w" | grep -qiE "logged in|email|@"; then
+      ok "railway whoami OK (bonus)"
+    fi
   fi
 fi
 
