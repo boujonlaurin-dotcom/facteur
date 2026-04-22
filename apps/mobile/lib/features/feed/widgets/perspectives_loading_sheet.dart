@@ -51,7 +51,7 @@ class PerspectivesLoadingSheet extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Voir tous les points de vue',
+                    'Voir d\'autres points de vue',
                     style: textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: colors.textPrimary,

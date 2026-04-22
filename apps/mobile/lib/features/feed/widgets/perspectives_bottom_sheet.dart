@@ -261,7 +261,7 @@ class _PerspectivesBottomSheetState
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Voir tous les points de vue',
+                                  'Voir d\'autres points de vue',
                                   style: textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.bold,
                                     color: colors.textPrimary,
@@ -360,7 +360,7 @@ class _PerspectivesBottomSheetState
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Voir tous les points de vue',
+                              'Voir d\'autres points de vue',
                               style: textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: colors.textPrimary,
@@ -1289,7 +1289,7 @@ class _PerspectivesInlineSectionState
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Voir tous les points de vue',
+                        'Voir d\'autres points de vue',
                         style: textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: colors.textPrimary,
@@ -1356,11 +1356,11 @@ class _PerspectivesInlineSectionState
               child: _PerspectiveCard(perspective: filtered.first),
             ),
           ...filtered.skip(1).map(
-            (p) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _PerspectiveCard(perspective: p),
-            ),
-          ),
+                (p) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _PerspectiveCard(perspective: p),
+                ),
+              ),
           if (widget.comparisonQuality == 'low')
             Padding(
               padding: const EdgeInsets.only(top: 4, bottom: 8),
@@ -1397,7 +1397,7 @@ class _PerspectivesInlineSectionState
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Voir tous les points de vue',
+                    'Voir d\'autres points de vue',
                     style: textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: colors.textPrimary,
