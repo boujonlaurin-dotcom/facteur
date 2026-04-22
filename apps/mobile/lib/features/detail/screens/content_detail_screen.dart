@@ -2025,6 +2025,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           HapticFeedback.lightImpact();
                           _suppressPerspectivesCheck = true;
                           _atPerspectivesSection.value = false;
+                          _showStickyPerspectivesHeader.value = false;
                           if (_inAppScrollController.hasClients) {
                             _inAppScrollController.animateTo(
                               0,
