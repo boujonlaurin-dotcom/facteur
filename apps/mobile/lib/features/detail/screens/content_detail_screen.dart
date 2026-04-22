@@ -1306,12 +1306,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   void _showPerspectivesSheet(
       BuildContext context, PerspectivesResponse response) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => PerspectivesBottomSheet(
-        perspectives: response.perspectives
+    // Backend gate : pas assez d'angles distincts → forcer l'état vide
+    // dans le bottom sheet (équivalent à perspectives.isEmpty).
+    // Cf. docs/bugs/bug-comparison-clustering-too-loose.md
+    final perspectives = response.shouldDisplay
+        ? response.perspectives
             .map(
               (PerspectiveData p) => Perspective(
                 title: p.title,
@@ -1322,8 +1321,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 publishedAt: p.publishedAt,
               ),
             )
-            .toList(),
-        biasDistribution: response.biasDistribution,
+            .toList()
+        : <Perspective>[];
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => PerspectivesBottomSheet(
+        perspectives: perspectives,
+        biasDistribution:
+            response.shouldDisplay ? response.biasDistribution : const {},
         keywords: response.keywords,
         sourceBiasStance: response.sourceBiasStance,
         sourceName: _content?.source.name ?? '',
@@ -1762,9 +1770,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             biasDistribution:
                                 _perspectivesResponse?.biasDistribution ?? {},
                             isLoading: _perspectivesLoading,
+                            // shouldDisplay=false → traiter comme empty (CTA dimmed,
+                            // bottom sheet montre l'état vide). Cf. backend gate
+                            // docs/bugs/bug-comparison-clustering-too-loose.md
                             isEmpty: !_perspectivesLoading &&
                                 _perspectivesResponse != null &&
-                                _perspectivesResponse!.perspectives.isEmpty,
+                                (_perspectivesResponse!.perspectives.isEmpty ||
+                                    !_perspectivesResponse!.shouldDisplay),
                             onTap: () {
                               HapticFeedback.lightImpact();
                               final ctx = _perspectivesKey.currentContext;
