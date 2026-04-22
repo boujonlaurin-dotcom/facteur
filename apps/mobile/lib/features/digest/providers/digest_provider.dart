@@ -10,6 +10,7 @@ import '../../../core/providers/analytics_provider.dart';
 import '../../../core/services/push_notification_service.dart';
 import '../../../core/services/widget_service.dart';
 import '../../../core/ui/notification_service.dart';
+import '../../onboarding/providers/onboarding_provider.dart';
 import '../models/digest_models.dart';
 import '../repositories/digest_repository.dart';
 import 'serein_toggle_provider.dart';
@@ -650,12 +651,25 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     return processedCount / tc;
   }
 
-  /// Check if all units are processed and trigger completion.
+  /// Daily goal = what the UI displays in the progress bar. Matches the
+  /// `min(totalCount, onboarding.dailyArticleCount)` formula used in
+  /// digest_screen. Completion fires when the user hits this goal, even if
+  /// extras (pépite / coup de cœur) are still unprocessed.
+  int get goalCount {
+    final tc = totalCount;
+    if (tc == 0) return 0;
+    final userPref =
+        ref.read(onboardingProvider).answers.dailyArticleCount ?? 5;
+    return tc < userPref ? tc : userPref;
+  }
+
+  /// Check if the daily goal is reached and trigger completion.
   void _checkAndHandleCompletion() {
     final digest = state.value;
     if (digest == null || digest.isCompleted) return;
 
-    if (processedCount >= totalCount) {
+    final goal = goalCount;
+    if (goal > 0 && processedCount >= goal) {
       completeDigest();
     }
   }

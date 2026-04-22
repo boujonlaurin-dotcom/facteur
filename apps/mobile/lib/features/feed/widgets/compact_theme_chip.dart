@@ -29,31 +29,6 @@ class CompactThemeChip extends StatelessWidget {
 
   bool get _isActive => selectedSlug != null;
 
-  /// Top 3 macro-theme emojis, deduplicated by macro-theme,
-  /// sorted by highest priorityMultiplier in each group.
-  List<String> get _topEmojis {
-    // Group by macro-theme, keep best priorityMultiplier per group
-    final macroThemeBest = <String, double>{};
-    for (final topic in followedTopics) {
-      final macro = getTopicMacroTheme(topic.slugParent ?? '');
-      if (macro == null) continue;
-      final current = macroThemeBest[macro] ?? 0.0;
-      if (topic.priorityMultiplier > current) {
-        macroThemeBest[macro] = topic.priorityMultiplier;
-      }
-    }
-
-    // Sort by priorityMultiplier desc
-    final sorted = macroThemeBest.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    return sorted
-        .take(3)
-        .map((e) => getMacroThemeEmoji(e.key))
-        .where((e) => e.isNotEmpty)
-        .toList();
-  }
-
   int get _totalFollowedThemes {
     final macros = <String>{};
     for (final topic in followedTopics) {
@@ -61,23 +36,6 @@ class CompactThemeChip extends StatelessWidget {
       if (macro != null) macros.add(macro);
     }
     return macros.length;
-  }
-
-  /// Emoji for the currently selected filter.
-  String get _activeEmoji {
-    if (selectedIsTheme && selectedSlug != null) {
-      // Theme slug → find the macro-theme label via macroThemeToApiSlug reverse
-      final macroLabel = macroThemeToApiSlug.entries
-          .where((e) => e.value == selectedSlug)
-          .firstOrNull
-          ?.key;
-      if (macroLabel != null) return getMacroThemeEmoji(macroLabel);
-    }
-    if (selectedSlug != null) {
-      final macro = getTopicMacroTheme(selectedSlug!);
-      if (macro != null) return getMacroThemeEmoji(macro);
-    }
-    return '';
   }
 
   @override
@@ -95,7 +53,6 @@ class CompactThemeChip extends StatelessWidget {
       child: _isActive
           ? _ActiveChip(
               key: ValueKey('theme_active_$selectedSlug'),
-              emoji: _activeEmoji,
               name: selectedName ?? 'Thème',
               onClear: () {
                 HapticFeedback.mediumImpact();
@@ -109,9 +66,7 @@ class CompactThemeChip extends StatelessWidget {
             )
           : _InactiveChip(
               key: const ValueKey('theme_inactive'),
-              emojis: _topEmojis,
-              remainingCount:
-                  _totalFollowedThemes > 3 ? _totalFollowedThemes - 3 : 0,
+              totalCount: _totalFollowedThemes,
               onTap: () {
                 HapticFeedback.mediumImpact();
                 _openSheet(context);
@@ -132,14 +87,12 @@ class CompactThemeChip extends StatelessWidget {
 }
 
 class _InactiveChip extends StatelessWidget {
-  final List<String> emojis;
-  final int remainingCount;
+  final int totalCount;
   final VoidCallback onTap;
 
   const _InactiveChip({
     super.key,
-    required this.emojis,
-    required this.remainingCount,
+    required this.totalCount,
     required this.onTap,
   });
 
@@ -156,7 +109,7 @@ class _InactiveChip extends StatelessWidget {
       onTap: onTap,
       child: Container(
         height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           color: trackColor,
@@ -164,30 +117,19 @@ class _InactiveChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (emojis.isEmpty) ...[
-              Text(
-                'Thèmes',
-                style: TextStyle(
-                    fontSize: 11, color: muted, fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(width: 2),
-            ] else ...[
-              Opacity(
-                opacity: 0.65,
-                child: Text(
-                  emojis.join(''),
-                  style: const TextStyle(fontSize: 14, letterSpacing: 1),
-                ),
-              ),
+            Text(
+              'Mes thèmes',
+              style: TextStyle(
+                  fontSize: 11, color: muted, fontWeight: FontWeight.w500),
+            ),
+            if (totalCount > 0) ...[
               const SizedBox(width: 4),
-              if (remainingCount > 0) ...[
-                Text(
-                  '+$remainingCount',
-                  style: TextStyle(fontSize: 11, color: muted),
-                ),
-                const SizedBox(width: 2),
-              ],
+              Text(
+                '· $totalCount',
+                style: TextStyle(fontSize: 11, color: muted),
+              ),
             ],
+            const SizedBox(width: 4),
             Icon(
               PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
               size: 10,
@@ -201,14 +143,12 @@ class _InactiveChip extends StatelessWidget {
 }
 
 class _ActiveChip extends StatelessWidget {
-  final String emoji;
   final String name;
   final VoidCallback onClear;
   final VoidCallback onTap;
 
   const _ActiveChip({
     super.key,
-    required this.emoji,
     required this.name,
     required this.onClear,
     required this.onTap,
@@ -222,7 +162,7 @@ class _ActiveChip extends StatelessWidget {
       onTap: onTap,
       child: Container(
         height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.only(left: 10),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           color: primary.withOpacity(0.12),
@@ -230,9 +170,6 @@ class _ActiveChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (emoji.isNotEmpty)
-              Text(emoji, style: const TextStyle(fontSize: 14)),
-            const SizedBox(width: 4),
             Flexible(
               child: Text(
                 name,

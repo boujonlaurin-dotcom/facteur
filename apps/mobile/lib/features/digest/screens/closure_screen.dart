@@ -199,10 +199,17 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
     }
   }
 
-  void _navigateToFeed() {
-    // Replace current route (don't allow back to closure)
-    context.go(RoutePaths.feed);
+  /// Works both as a pushed route and as a modal: pop the current overlay
+  /// first (dialog or closure route), then redirect so the user can't
+  /// back-navigate to the closure view.
+  void _goAndDismiss(String path) {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+    context.go(path);
   }
+
+  void _navigateToFeed() => _goAndDismiss(RoutePaths.feed);
 
   void _onExplorerPlusPressed() {
     _navigateToFeed();
@@ -338,7 +345,7 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
               return Padding(
                 padding: const EdgeInsets.only(top: FacteurSpacing.space3),
                 child: GestureDetector(
-                  onTap: () => context.go(RoutePaths.saved),
+                  onTap: () => _goAndDismiss(RoutePaths.saved),
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 32),
                     padding: const EdgeInsets.symmetric(

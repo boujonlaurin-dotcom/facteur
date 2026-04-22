@@ -10,6 +10,7 @@ import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
+import '../providers/digest_provider.dart';
 import '../../feed/utils/article_title_layout.dart';
 import '../../feed/widgets/dismiss_banner.dart';
 import '../../feed/widgets/feed_card.dart';
@@ -127,8 +128,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   /// Footer height: border (1) + padding (4×2) + icon row (~28) = ~37
   static const double _footerHeight = 57.0;
 
-  /// Body padding top + bottom (FacteurSpacing.space3 × 2 = 24)
-  static const double _bodyPadding = 24.0;
+  /// Body padding top + bottom (denseLayout: 10 × 2 = 20)
+  static const double _bodyPadding = 20.0;
 
   /// Meta row: type icon + duration text
   static const double _metaRowHeight = 20.0;
@@ -187,7 +188,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
       }
     }
 
-    final imageHeight = hasImage ? cardWidth / (16 / 9) : 0.0;
+    final imageHeight = hasImage ? cardWidth / (3 / 2) : 0.0;
     // Badge chip above card (only outside editorial mode).
     // Estimation volontairement serrée ; tout écart résiduel est
     // absorbé par Align(center) dans _buildPageView (moitié/moitié).
@@ -345,7 +346,17 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     final isHero = topic.isUne && hasImage;
 
     return GestureDetector(
-      onTap: () => setState(() => _isExpanded = true),
+      onTap: () {
+        // Tap on compact preview = "reading" the article in the user's model.
+        // Mark as read immediately so the progress bar reflects the action,
+        // then expand. Avoid re-firing when already read/dismissed.
+        if (!article.isRead && !article.isDismissed) {
+          ref
+              .read(digestProvider.notifier)
+              .applyAction(article.contentId, 'read');
+        }
+        setState(() => _isExpanded = true);
+      },
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 4),
         decoration: BoxDecoration(
@@ -1062,6 +1073,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             alwaysShowDescription: !imageVisible,
             descriptionFontSize: 15,
             titleMaxLines: _digestTitleMaxLines,
+            denseLayout: true,
             onImageError: () => _onImageError(article.contentId),
             onTap: () => widget.onArticleTap(article),
             onSourceTap: widget.onSourceTap != null && article.source?.id != null
@@ -1107,6 +1119,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           alwaysShowDescription: !imageVisible,
           descriptionFontSize: 15,
           titleMaxLines: _digestTitleMaxLines,
+          denseLayout: true,
           onImageError: () => _onImageError(article.contentId),
           onTap: () => widget.onArticleTap(article),
           onSourceTap: widget.onSourceTap != null && article.source?.id != null

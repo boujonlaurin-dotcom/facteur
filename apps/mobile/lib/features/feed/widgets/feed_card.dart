@@ -49,6 +49,7 @@ class FeedCard extends StatefulWidget {
   /// tight, scannable layout. Digest singleton cards override to 5 so
   /// long titles can breathe on the "closure" moment of the app.
   final int titleMaxLines;
+  final bool denseLayout;
 
   const FeedCard({
     super.key,
@@ -81,6 +82,7 @@ class FeedCard extends StatefulWidget {
     this.onImageError,
     this.descriptionFontSize,
     this.titleMaxLines = 3,
+    this.denseLayout = false,
   });
 
   @override
@@ -196,11 +198,11 @@ class _FeedCardState extends State<FeedCard>
                 // 3. Footer (Source + Actions) — outside tap area
                 Container(
                   decoration: BoxDecoration(
-                    color: colors.backgroundSecondary.withOpacity(0.5),
+                    color: colors.backgroundSecondary.withOpacity(0.3),
                     border: Border(
                       top: BorderSide(
-                        color: colors.textSecondary.withOpacity(0.1),
-                        width: 1,
+                        color: colors.textSecondary.withOpacity(0.05),
+                        width: 0.5,
                       ),
                     ),
                   ),
@@ -222,9 +224,9 @@ class _FeedCardState extends State<FeedCard>
                               behavior: HitTestBehavior.opaque,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 5, vertical: 2),
+                                    horizontal: 6, vertical: 3),
                                 decoration: BoxDecoration(
-                                  color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.003)!,
+                                  color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.005)!,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Row(
@@ -252,8 +254,8 @@ class _FeedCardState extends State<FeedCard>
                                       child: Text(
                                         widget.content.source.name,
                                         style: textTheme.labelSmall?.copyWith(
-                                          color: colors.textPrimary,
-                                          fontWeight: FontWeight.w600,
+                                          color: colors.textSecondary,
+                                          fontWeight: FontWeight.w500,
                                           fontSize: 11,
                                         ),
                                         maxLines: 1,
@@ -540,9 +542,9 @@ class _FeedCardState extends State<FeedCard>
         hasImage ? math.min(3, widget.titleMaxLines) : widget.titleMaxLines;
 
     final bodyContent = Padding(
-      padding: const EdgeInsets.symmetric(
+      padding: EdgeInsets.symmetric(
         horizontal: FacteurSpacing.space3,
-        vertical: FacteurSpacing.space3,
+        vertical: widget.denseLayout ? FacteurSpacing.space2 : FacteurSpacing.space3,
       ),
       child: Column(
         mainAxisSize: widget.expandContent ? MainAxisSize.max : MainAxisSize.min,

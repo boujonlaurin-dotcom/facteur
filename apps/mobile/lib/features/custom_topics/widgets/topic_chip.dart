@@ -61,18 +61,17 @@ class TopicChip extends StatelessWidget {
           () => showArticleSheet(context, content,
               initialSection: ArticleSheetSection.topic),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
         decoration: BoxDecoration(
-          color: isFollowed
-              ? Color.lerp(colors.backgroundSecondary, Colors.black, 0.008)!
-              : Color.lerp(colors.backgroundSecondary, Colors.black, 0.003)!,
+          color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.005)!,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Text(
           topicLabel,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: colors.textTertiary,
+                color: colors.textSecondary,
                 fontWeight: FontWeight.w500,
+                fontSize: 11,
               ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
