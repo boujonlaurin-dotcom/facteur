@@ -38,6 +38,7 @@ import '../widgets/digest_briefing_section.dart';
 import '../widgets/digest_personalization_sheet.dart';
 import '../widgets/digest_welcome_modal.dart';
 import '../widgets/widget_pin_nudge.dart';
+import 'closure_screen.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
 import '../../../core/ui/notification_service.dart';
@@ -171,8 +172,38 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     });
   }
 
+  /// Show the closure screen as a modal (slides up from bottom) instead of
+  /// pushing a route, so the digest stays in place behind it.
+  void _showClosureModal(String digestId) {
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Fermer',
+      barrierColor: Colors.black.withOpacity(0.35),
+      transitionDuration: const Duration(milliseconds: 320),
+      pageBuilder: (_, __, ___) => ClosureScreen(digestId: digestId),
+      transitionBuilder: (_, animation, __, child) {
+        final curved =
+            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        );
+      },
+    );
+  }
+
   void _openArticle(DigestItem item) async {
     HapticFeedback.mediumImpact();
+
+    // Mark as read on tap, before navigation — gives immediate feedback on
+    // the progress micro-bars without waiting for the user to pop back.
+    if (!item.isRead && !item.isDismissed) {
+      ref.read(digestProvider.notifier).applyAction(item.contentId, 'read');
+    }
 
     // Premium source → open in external browser for authenticated access
     final sources = ref.read(userSourcesProvider).valueOrNull ?? [];
@@ -182,9 +213,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       final uri = Uri.tryParse(item.url);
       if (uri != null) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
-        if (!item.isRead && !item.isDismissed) {
-          ref.read(digestProvider.notifier).applyAction(item.contentId, 'read');
-        }
         return;
       }
     }
@@ -204,11 +232,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
               noteText: updated.noteText,
             );
       }
-    }
-
-    // Mark as read when returning from article (only if not already read)
-    if (!item.isRead && !item.isDismissed) {
-      ref.read(digestProvider.notifier).applyAction(item.contentId, 'read');
     }
   }
 
@@ -348,14 +371,15 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
 
     debugPrint('DigestScreen: digestAsync state = ${digestAsync.toString()}');
 
-    // Navigate to closure screen when digest is completed
+    // Open closure modal when digest completes. Rendered as a modal (not a
+    // route push) so the digest screen stays in place underneath; users
+    // dismiss via swipe-down or the in-modal CTAs.
     ref.listen(digestProvider, (previous, next) {
       next.whenData((digest) {
         if (digest != null &&
             digest.isCompleted &&
             previous?.value?.isCompleted != true) {
-          // Navigate to closure screen on completion
-          context.push('/digest/closure', extra: digest.digestId);
+          _showClosureModal(digest.digestId);
         }
       });
     });
@@ -394,7 +418,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                     child: Padding(
                       padding: EdgeInsets.symmetric(
                         horizontal: FacteurSpacing.space6,
-                        vertical: FacteurSpacing.space3,
+                        vertical: FacteurSpacing.space2,
                       ),
                       child: Stack(
                         alignment: Alignment.center,

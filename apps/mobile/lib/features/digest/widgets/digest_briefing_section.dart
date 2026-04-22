@@ -226,7 +226,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: visibleItems.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 5),
+      separatorBuilder: (context, index) => const SizedBox(height: 2),
       itemBuilder: (context, index) {
         final item = visibleItems[index];
         return _buildRankedCard(context, item, index + 1);
@@ -270,15 +270,6 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          '$processed/$denominator',
-          style: TextStyle(
-            color: color,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(width: 5),
         ...List.generate(denominator, (i) {
           final isDone = i < processed;
           return Container(
@@ -426,37 +417,34 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     final labelColor = isDark
         ? const Color(0x80FFFFFF) // white 50%
         : const Color(0x802C1E10); // dark brown 50%
-    final dotColor = isDark
-        ? const Color(0x33FFFFFF) // white 20%
-        : const Color(0x332C1E10); // dark brown 20%
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Rank label above the card
         Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 6),
+          padding: const EdgeInsets.only(left: 4, bottom: 4),
           child: Row(
             children: [
               Text(
-                'N\u00B0$rank',
+                rank.toString().padLeft(2, '0'),
                 style: TextStyle(
                   color: colors.primary.withOpacity(0.6),
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                   fontSize: 12,
-                  letterSpacing: 1.0,
+                  letterSpacing: 0.5,
                 ),
               ),
-              const SizedBox(width: 8),
-              Container(
-                width: 4,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: dotColor,
-                  shape: BoxShape.circle,
+              const SizedBox(width: 6),
+              Text(
+                '\u2014',
+                style: TextStyle(
+                  color: labelColor,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   _simplifyReason(item.reason),
@@ -502,6 +490,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               content: _convertToContent(item),
               descriptionFontSize: 15,
               titleMaxLines: 5,
+              denseLayout: true,
               onTap: () => widget.onItemTap(item),
               onSourceTap: widget.onSourceTap != null && item.source?.id != null
                   ? () => widget.onSourceTap!(item.source!.id!)
