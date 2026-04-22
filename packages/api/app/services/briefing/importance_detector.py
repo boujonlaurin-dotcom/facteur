@@ -12,8 +12,6 @@ Architecture: Ce module est DÉCOUPLÉ du ScoringEngine. Il consomme les contenu
 bruts et produit des clusters/flags d'importance utilisés par TopicSelector et Top3Selector.
 """
 
-import re
-import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
@@ -21,6 +19,14 @@ from uuid import UUID, uuid4
 import structlog
 
 from app.models.content import Content
+from app.services.text_similarity import (
+    FRENCH_STOP_WORDS,
+    jaccard_similarity as _jaccard_similarity,
+    normalize_title as _normalize_title,
+)
+
+# Re-exposé pour compat (anciennement défini ici)
+__all__ = ["FRENCH_STOP_WORDS", "ImportanceDetector", "TopicCluster"]
 
 logger = structlog.get_logger()
 
@@ -51,241 +57,6 @@ class TopicCluster:
         return len(self.source_ids) >= 2
 
 
-# Stop words français courants (à filtrer des titres).
-# IMPORTANT: Les mots sont en version SANS ACCENT car normalize_title() strip les accents.
-# Enrichi avec les mots news-génériques de StoryService.STOPWORDS pour éviter les faux clusters.
-FRENCH_STOP_WORDS = frozenset(
-    [
-        # --- Articles, pronoms, déterminants ---
-        "le",
-        "la",
-        "les",
-        "un",
-        "une",
-        "des",
-        "du",
-        "de",
-        "au",
-        "aux",
-        "ce",
-        "ces",
-        "cet",
-        "cette",
-        "mon",
-        "ton",
-        "son",
-        "ma",
-        "ta",
-        "sa",
-        "mes",
-        "tes",
-        "ses",
-        "notre",
-        "votre",
-        "leur",
-        "nos",
-        "vos",
-        "leurs",
-        "qui",
-        "que",
-        "quoi",
-        "dont",
-        "quel",
-        "quelle",
-        "quels",
-        "quelles",
-        "il",
-        "elle",
-        "ils",
-        "elles",
-        "on",
-        "nous",
-        "vous",
-        "je",
-        "tu",
-        "se",
-        "ne",
-        "pas",
-        "plus",
-        "moins",
-        "tres",
-        "aussi",
-        "tout",
-        "tous",
-        "toute",
-        "meme",
-        "autres",
-        "autre",
-        # --- Conjonctions, prépositions ---
-        "et",
-        "ou",
-        "mais",
-        "donc",
-        "or",
-        "ni",
-        "car",
-        "pour",
-        "par",
-        "avec",
-        "sans",
-        "sous",
-        "sur",
-        "dans",
-        "en",
-        "est",
-        "sont",
-        "ont",
-        "entre",
-        "apres",
-        "avant",
-        "comme",
-        "vers",
-        "chez",
-        "face",
-        "contre",
-        "selon",
-        "suite",
-        "depuis",
-        "lors",
-        "durant",
-        "pendant",
-        # --- Verbes courants ---
-        "etre",
-        "avoir",
-        "faire",
-        "fait",
-        "dit",
-        "peut",
-        "faut",
-        "doit",
-        "ete",
-        "sera",
-        "peuvent",
-        "vont",
-        "veut",
-        "alors",
-        "si",
-        "quand",
-        "comment",
-        "pourquoi",
-        "combien",
-        # --- Adverbes ---
-        "encore",
-        "toujours",
-        "jamais",
-        "souvent",
-        "bien",
-        "mal",
-        "peu",
-        "beaucoup",
-        "trop",
-        "assez",
-        "vraiment",
-        # --- Noms news-génériques (causent les faux clusters) ---
-        "monde",
-        "pays",
-        "president",
-        "gouvernement",
-        "ministre",
-        "politique",
-        "economie",
-        "societe",
-        "histoire",
-        "international",
-        "national",
-        "local",
-        # --- Adjectifs courants ---
-        "nouveau",
-        "nouvelle",
-        "nouveaux",
-        "nouvelles",
-        "grand",
-        "grande",
-        "grands",
-        "grandes",
-        "petit",
-        "petite",
-        "petits",
-        "petites",
-        "premier",
-        "premiere",
-        "dernier",
-        "derniere",
-        # --- Temporels ---
-        "annee",
-        "annees",
-        "jour",
-        "jours",
-        "fois",
-        "temps",
-        "heure",
-        "heures",
-        "minute",
-        "minutes",
-        # --- Nombres ---
-        "deux",
-        "trois",
-        "quatre",
-        "cinq",
-        # --- Personnes/lieux génériques ---
-        "personnes",
-        "gens",
-        "hommes",
-        "femmes",
-        "enfants",
-        "ville",
-        "villes",
-        "region",
-        "zone",
-        "secteur",
-        # --- Abstraits ---
-        "question",
-        "probleme",
-        "solution",
-        "projet",
-        "plan",
-        "mesure",
-        "effet",
-        "impact",
-        "consequence",
-        "resultat",
-        "cause",
-        "raison",
-        # --- Géo génériques ---
-        "europe",
-        "europeen",
-        "europeenne",
-        "americain",
-        "occidental",
-        # --- News filler ---
-        "informations",
-        "article",
-        "articles",
-        "savoir",
-        "retenir",
-        "exclusif",
-        "exclusive",
-        "urgent",
-        "breaking",
-        "video",
-        "photo",
-        "photos",
-        "images",
-        "podcast",
-        "interview",
-        "analyse",
-        "decryptage",
-        "explications",
-        "enquete",
-        "dossier",
-        "revele",
-        "montre",
-        "indique",
-        "suggere",
-        "affirme",
-        "estime",
-    ]
-)
 
 
 class ImportanceDetector:
@@ -320,64 +91,14 @@ class ImportanceDetector:
         self.min_sources_for_trending = min_sources_for_trending
 
     def normalize_title(self, title: str) -> set[str]:
-        """Normalise un titre en ensemble de tokens.
+        """Délègue à `text_similarity.normalize_title` (méthode conservée pour compat)."""
+        return _normalize_title(title)
 
-        Transformations appliquées:
-        1. Conversion en minuscules
-        2. Suppression des accents
-        3. Suppression de la ponctuation
-        4. Tokenisation par espaces
-        5. Filtrage des stop words
-        6. Filtrage des tokens < 3 caractères
-
-        Args:
-            title: Titre brut de l'article
-
-        Returns:
-            Ensemble de tokens normalisés
-        """
-        if not title:
-            return set()
-
-        # Lowercase
-        text = title.lower()
-
-        # Remove accents (NFD decomposition puis filtrage des marques diacritiques)
-        text = unicodedata.normalize("NFD", text)
-        text = "".join(c for c in text if unicodedata.category(c) != "Mn")
-
-        # Remove punctuation and numbers
-        text = re.sub(r"[^\w\s]", " ", text)
-        text = re.sub(r"\d+", "", text)
-
-        # Tokenize and filter
-        tokens = text.split()
-        tokens = [t for t in tokens if len(t) >= 3 and t not in FRENCH_STOP_WORDS]
-
-        return set(tokens)
-
-    def jaccard_similarity(self, tokens_a: set[str], tokens_b: set[str]) -> float:
-        """Calcule la similarité de Jaccard entre deux ensembles de tokens.
-
-        Similarité de Jaccard = |A ∩ B| / |A ∪ B|
-
-        Args:
-            tokens_a: Premier ensemble de tokens
-            tokens_b: Deuxième ensemble de tokens
-
-        Returns:
-            Score de similarité entre 0.0 (rien en commun) et 1.0 (identiques)
-        """
-        if not tokens_a or not tokens_b:
-            return 0.0
-
-        intersection = len(tokens_a & tokens_b)
-        union = len(tokens_a | tokens_b)
-
-        if union == 0:
-            return 0.0
-
-        return intersection / union
+    def jaccard_similarity(
+        self, tokens_a: set[str], tokens_b: set[str]
+    ) -> float:
+        """Délègue à `text_similarity.jaccard_similarity` (méthode conservée pour compat)."""
+        return _jaccard_similarity(tokens_a, tokens_b)
 
     def build_topic_clusters(
         self,

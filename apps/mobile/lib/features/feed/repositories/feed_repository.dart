@@ -885,6 +885,9 @@ class PerspectivesResponse {
   final Map<String, int> biasDistribution;
   final String sourceBiasStance;
   final String comparisonQuality;
+  // Backend gate: false → masquer le CTA Comparaison (pas assez d'angles
+  // distincts pour comparer). Voir docs/bugs/bug-comparison-clustering-too-loose.md
+  final bool shouldDisplay;
   final String? analysis;
   final bool analysisCached;
 
@@ -894,6 +897,7 @@ class PerspectivesResponse {
     required this.biasDistribution,
     this.sourceBiasStance = 'unknown',
     this.comparisonQuality = 'low',
+    this.shouldDisplay = false,
     this.analysis,
     this.analysisCached = false,
   });
@@ -923,6 +927,7 @@ class PerspectivesResponse {
       biasDistribution: biasMap,
       sourceBiasStance: (json['source_bias_stance'] as String?) ?? 'unknown',
       comparisonQuality: (json['comparison_quality'] as String?) ?? 'low',
+      shouldDisplay: (json['should_display'] as bool?) ?? false,
       analysis: json['analysis'] as String?,
       analysisCached: (json['analysis_cached'] as bool?) ?? false,
     );

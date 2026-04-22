@@ -2,6 +2,7 @@
 
 import html
 import json
+import os
 import re
 import xml.etree.ElementTree as ET
 from contextlib import asynccontextmanager
@@ -15,7 +16,22 @@ import structlog
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.services.text_similarity import jaccard_similarity, normalize_title
+
 logger = structlog.get_logger(__name__)
+
+
+# --- Post-filtre cohérence sujet (anti-clustering trop large) ---
+# Voir docs/bugs/bug-comparison-clustering-too-loose.md
+PERSPECTIVE_TITLE_JACCARD_MIN = 0.30
+PERSPECTIVE_MIN_VALID_RESULTS = 2
+PERSPECTIVE_MIN_BIAS_GROUPS = 2
+# Entités jugées suffisamment discriminantes (LOCATION exclu : trop générique)
+PERSPECTIVE_DISCRIMINANT_ENTITY_TYPES = frozenset({"PERSON", "ORG", "EVENT"})
+# Feature flag (rollback rapide en cas de régression)
+PERSPECTIVE_FILTER_ENABLED = (
+    os.environ.get("PERSPECTIVE_FILTER_ENABLED", "true").lower() == "true"
+)
 
 
 def _parse_entity_names(
@@ -424,6 +440,71 @@ class PerspectiveService:
             )
             return []
 
+    @staticmethod
+    def _topical_signals(
+        seed_tokens: set[str],
+        seed_topics: set[str],
+        seed_disc_entities: set[str],
+        cand_title: str,
+        cand_topics: list[str] | None = None,
+        cand_entities: list[str] | None = None,
+    ) -> dict:
+        """Calcule les 3 signaux de cohérence sujet seed↔candidat.
+
+        - title_jaccard: similarité Jaccard sur tokens normalisés (toujours dispo)
+        - shared_topics: nb de topics ML partagés (None si cand_topics absent)
+        - shared_entities: nb d'entités discriminantes partagées
+          (PERSON/ORG/EVENT, None si cand_entities absent)
+        """
+        cand_tokens = normalize_title(cand_title)
+        title_jaccard = jaccard_similarity(seed_tokens, cand_tokens)
+
+        shared_topics: int | None = None
+        if cand_topics is not None:
+            cand_topic_set = {t.lower() for t in cand_topics if t}
+            shared_topics = len(seed_topics & cand_topic_set)
+
+        shared_entities: int | None = None
+        if cand_entities is not None:
+            cand_disc = _parse_entity_names(
+                cand_entities, types=PERSPECTIVE_DISCRIMINANT_ENTITY_TYPES
+            )
+            cand_disc_lower = {n.lower() for n in cand_disc}
+            seed_disc_lower = {n.lower() for n in seed_disc_entities}
+            shared_entities = len(seed_disc_lower & cand_disc_lower)
+
+        return {
+            "title_jaccard": title_jaccard,
+            "shared_topics": shared_topics,
+            "shared_entities": shared_entities,
+        }
+
+    @staticmethod
+    def _is_topically_coherent(signals: dict) -> tuple[bool, str]:
+        """Décide si un candidat est on-topic.
+
+        - Si title_jaccard >= seuil → cohérent (signal fort).
+        - Sinon, si signaux complets (Layer 1 DB), accepter aussi sur :
+          shared_topics >= 1 OU shared_entities >= 2.
+        - Sinon (Layer 2/3 Google News, titre seul) → rejeter.
+
+        Retourne (is_coherent, reason). reason vide si cohérent.
+        """
+        if signals["title_jaccard"] >= PERSPECTIVE_TITLE_JACCARD_MIN:
+            return True, ""
+        # Signaux complets disponibles (Layer 1 interne) ?
+        full_signals = (
+            signals["shared_topics"] is not None
+            and signals["shared_entities"] is not None
+        )
+        if full_signals:
+            if signals["shared_topics"] and signals["shared_topics"] >= 1:
+                return True, ""
+            if signals["shared_entities"] and signals["shared_entities"] >= 2:
+                return True, ""
+            return False, "no_signal"
+        return False, "low_jaccard"
+
     async def search_internal_perspectives(
         self, content, time_window_hours: int = 72
     ) -> list[Perspective]:
@@ -472,13 +553,48 @@ class PerspectiveService:
             logger.warning("search_internal_perspectives_error", error=str(e))
             return []
 
+        # Pré-calcul des signaux du seed (une seule fois)
+        seed_tokens = normalize_title(content.title) if PERSPECTIVE_FILTER_ENABLED else set()
+        seed_topics = (
+            {t.lower() for t in (content.topics or []) if t}
+            if PERSPECTIVE_FILTER_ENABLED
+            else set()
+        )
+        seed_disc_entities = (
+            set(
+                _parse_entity_names(
+                    content.entities, types=PERSPECTIVE_DISCRIMINANT_ENTITY_TYPES
+                )
+            )
+            if PERSPECTIVE_FILTER_ENABLED
+            else set()
+        )
+
         perspectives: list[Perspective] = []
         seen_sources: set = set()
+        filtered_out = 0
+        filter_reasons: list[str] = []
 
         for row in rows:
             if row.source_id in seen_sources:
                 continue
             seen_sources.add(row.source_id)
+
+            # Post-filtre cohérence sujet
+            if PERSPECTIVE_FILTER_ENABLED:
+                signals = self._topical_signals(
+                    seed_tokens,
+                    seed_topics,
+                    seed_disc_entities,
+                    cand_title=row.title or "",
+                    cand_topics=row.topics,
+                    cand_entities=row.entities,
+                )
+                is_ok, reason = self._is_topically_coherent(signals)
+                if not is_ok:
+                    filtered_out += 1
+                    filter_reasons.append(reason)
+                    continue
 
             # Extract domain from URL
             domain = self._extract_domain(row.url)
@@ -500,7 +616,9 @@ class PerspectiveService:
         logger.info(
             "search_internal_perspectives_done",
             entity_names=entity_names,
-            count=len(perspectives),
+            kept=len(perspectives),
+            filtered_out=filtered_out,
+            filter_reasons=filter_reasons,
         )
         return perspectives
 
@@ -604,12 +722,36 @@ class PerspectiveService:
             )
         return result
 
+    def _filter_external_perspectives(
+        self,
+        seed_tokens: set[str],
+        candidates: list[Perspective],
+    ) -> tuple[list[Perspective], int]:
+        """Filtre les perspectives externes (Google News) par Jaccard titre.
+
+        Retourne (kept, filtered_out_count). No-op si filter désactivé.
+        """
+        if not PERSPECTIVE_FILTER_ENABLED:
+            return list(candidates), 0
+        kept: list[Perspective] = []
+        filtered_out = 0
+        for p in candidates:
+            sim = jaccard_similarity(seed_tokens, normalize_title(p.title or ""))
+            if sim >= PERSPECTIVE_TITLE_JACCARD_MIN:
+                kept.append(p)
+            else:
+                filtered_out += 1
+        return kept, filtered_out
+
     async def get_perspectives_hybrid(
         self, content, exclude_domain: str | None = None
     ) -> tuple[list[Perspective], list[str]]:
         """Hybrid 3-layer search: DB entities → Google News entities → fallback keywords.
 
         Returns (perspectives, keywords_used).
+
+        Toutes les couches passent par un post-filtre de cohérence sujet pour éviter
+        le clustering trop large (cf. docs/bugs/bug-comparison-clustering-too-loose.md).
         """
         exclude_url = content.url
         exclude_title = content.title
@@ -618,17 +760,23 @@ class PerspectiveService:
             seen_domains.add(exclude_domain)
         merged: list[Perspective] = []
 
-        # Layer 1: Internal DB search by shared entities
+        # Pré-calcul tokens du seed pour filtrer Layers 2/3
+        seed_tokens = normalize_title(content.title or "")
+
+        # Layer 1: Internal DB search by shared entities (post-filtre dans la méthode)
         internal = await self.search_internal_perspectives(content)
         for p in internal:
             if p.source_domain not in seen_domains:
                 seen_domains.add(p.source_domain)
                 merged.append(p)
 
-        # Layer 2: Google News with quoted entities
+        # Layer 2: Google News with quoted entities + post-filtre titre Jaccard
         entity_keywords = self.build_entity_query(content.entities, content.title)
-        google_results = await self.search_perspectives(
+        google_raw = await self.search_perspectives(
             entity_keywords, exclude_url, exclude_title, exclude_domain
+        )
+        google_results, google_filtered = self._filter_external_perspectives(
+            seed_tokens, google_raw
         )
         for p in google_results:
             if p.source_domain not in seen_domains:
@@ -637,9 +785,13 @@ class PerspectiveService:
 
         # Layer 3: Fallback if < 6 results and entity query differs from title keywords
         fallback_keywords = self.extract_keywords(content.title)
+        fallback_filtered = 0
         if len(merged) < 6 and entity_keywords != fallback_keywords:
-            fallback_results = await self.search_perspectives(
+            fallback_raw = await self.search_perspectives(
                 fallback_keywords, exclude_url, exclude_title, exclude_domain
+            )
+            fallback_results, fallback_filtered = self._filter_external_perspectives(
+                seed_tokens, fallback_raw
             )
             for p in fallback_results:
                 if p.source_domain not in seen_domains:
@@ -650,8 +802,10 @@ class PerspectiveService:
             "perspectives_hybrid_done",
             internal_count=len(internal),
             google_count=len(google_results),
+            external_filtered_out=google_filtered + fallback_filtered,
             total_merged=len(merged),
             keywords=entity_keywords,
+            filter_enabled=PERSPECTIVE_FILTER_ENABLED,
         )
 
         return merged[: self.max_results], entity_keywords

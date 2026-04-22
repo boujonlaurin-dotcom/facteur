@@ -837,6 +837,18 @@ async def get_perspectives(
         else:
             comparison_quality = "low"
 
+        # Gate UI : masquer la Comparaison si trop peu d'angles distincts
+        # (cf. docs/bugs/bug-comparison-clustering-too-loose.md)
+        from app.services.perspective_service import (
+            PERSPECTIVE_MIN_BIAS_GROUPS,
+            PERSPECTIVE_MIN_VALID_RESULTS,
+        )
+
+        should_display = (
+            count >= PERSPECTIVE_MIN_VALID_RESULTS
+            and bias_groups >= PERSPECTIVE_MIN_BIAS_GROUPS
+        )
+
         from app.models.perspective_analysis import PerspectiveAnalysis as _PA
 
         analysis_result = await db.execute(
@@ -855,6 +867,7 @@ async def get_perspectives(
             "perspectives": stored_perspectives,
             "bias_distribution": stored_bias,
             "comparison_quality": comparison_quality,
+            "should_display": should_display,
             "analysis": cached_analysis,
             "analysis_cached": cached_analysis is not None,
         }
@@ -940,11 +953,25 @@ async def get_perspectives(
     else:
         comparison_quality = "low"
 
+    # Gate UI : masquer la Comparaison si trop peu d'angles distincts
+    # (cf. docs/bugs/bug-comparison-clustering-too-loose.md)
+    from app.services.perspective_service import (
+        PERSPECTIVE_MIN_BIAS_GROUPS,
+        PERSPECTIVE_MIN_VALID_RESULTS,
+    )
+
+    should_display = (
+        count >= PERSPECTIVE_MIN_VALID_RESULTS
+        and bias_groups >= PERSPECTIVE_MIN_BIAS_GROUPS
+    )
+
     logger.info(
         "perspectives_endpoint_success",
         content_id=cache_key,
         perspectives_count=len(perspectives),
         keywords=keywords,
+        should_display=should_display,
+        comparison_quality=comparison_quality,
     )
 
     # Check if a cached Mistral analysis exists in DB
@@ -976,6 +1003,7 @@ async def get_perspectives(
         ],
         "bias_distribution": bias_distribution,
         "comparison_quality": comparison_quality,
+        "should_display": should_display,
         "analysis": cached_analysis,
         "analysis_cached": cached_analysis is not None,
     }
