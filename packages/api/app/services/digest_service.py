@@ -13,6 +13,7 @@ Safe reuse patterns:
 """
 
 import asyncio
+import contextlib
 import hashlib
 import random
 import time
@@ -480,6 +481,32 @@ class DigestService:
         # is a dead-end: the user sees yesterday's digest all day even when
         # the batch never reran for them.
         if not force_regenerate:
+            # 1b-before: Fast path for new users — editorial_v1 is globally
+            # shared (same `items` JSONB for every user who gets editorial
+            # format), so a user who signs up after the 6am batch can reuse
+            # the digest that was already generated for any other user
+            # today. Without this, new users hit the full on-demand LLM
+            # pipeline (3-5 min), which exceeds both the /digest timeouts
+            # and the mobile retry budget — the classic "spinner forever
+            # after onboarding" symptom.
+            if expected_version == "editorial_v1":
+                cloned = await self._try_clone_global_editorial_digest(
+                    user_id=user_id,
+                    target_date=target_date,
+                    is_serene=is_serene,
+                )
+                if cloned is not None:
+                    try:
+                        return await self._build_digest_response(cloned, user_id)
+                    except Exception:
+                        logger.exception(
+                            "digest_cloned_editorial_render_failed",
+                            user_id=str(user_id),
+                            cloned_from_generated_at=str(cloned.generated_at),
+                        )
+                        # Fall through to real generation — the clone was a
+                        # best-effort shortcut, never a blocker.
+
             yesterday = target_date - timedelta(days=1)
             yesterday_digest = await self._get_existing_digest(
                 user_id, yesterday, is_serene=is_serene
@@ -1211,6 +1238,108 @@ class DigestService:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def _try_clone_global_editorial_digest(
+        self,
+        user_id: UUID,
+        target_date: date,
+        is_serene: bool,
+    ) -> DailyDigest | None:
+        """Clone any other user's editorial_v1 digest for the same date+variant.
+
+        editorial_v1 is intentionally user-agnostic: the `items` JSONB is
+        produced once per (date, mode) by the editorial pipeline and is
+        identical for every user who receives editorial format. This method
+        copies an existing row to a new row for `user_id` so new users
+        signing up after the 6am batch get the digest instantly, without
+        running the LLM pipeline on-demand (which regularly exceeds the
+        /digest timeouts + mobile retry budget).
+
+        Returns:
+            The cloned `DailyDigest` (already flushed to the session) on
+            success, or `None` if no source digest exists, the clone insert
+            raced with another writer, or any other error occurred. This is
+            always a best-effort shortcut — callers fall through to real
+            generation on None.
+        """
+        try:
+            src_stmt = (
+                select(DailyDigest)
+                .where(
+                    and_(
+                        DailyDigest.user_id != user_id,
+                        DailyDigest.target_date == target_date,
+                        DailyDigest.is_serene == is_serene,
+                        DailyDigest.format_version == "editorial_v1",
+                    )
+                )
+                .order_by(DailyDigest.generated_at.desc())
+                .limit(1)
+            )
+            source = (await self.session.execute(src_stmt)).scalar_one_or_none()
+        except Exception:
+            logger.exception(
+                "digest_clone_source_lookup_failed",
+                user_id=str(user_id),
+                target_date=str(target_date),
+                is_serene=is_serene,
+            )
+            return None
+
+        if source is None:
+            return None
+
+        logger.info(
+            "digest_cloning_global_editorial",
+            user_id=str(user_id),
+            target_date=str(target_date),
+            is_serene=is_serene,
+            source_user_id=str(source.user_id),
+            source_generated_at=str(source.generated_at),
+        )
+
+        cloned = DailyDigest(
+            id=uuid4(),
+            user_id=user_id,
+            target_date=target_date,
+            items=source.items,
+            mode=source.mode or ("serein" if is_serene else "pour_vous"),
+            is_serene=is_serene,
+            format_version="editorial_v1",
+            generated_at=source.generated_at,
+        )
+        self.session.add(cloned)
+        try:
+            await self.session.flush()
+        except IntegrityError:
+            # Race: another request inserted a row for this (user, date,
+            # is_serene) between the `_get_existing_digest` check at step 1
+            # and this flush. Rollback the clone and let the caller serve
+            # the freshly-committed row on the retry path.
+            await self.session.rollback()
+            logger.warning(
+                "digest_clone_insert_race_condition",
+                user_id=str(user_id),
+                target_date=str(target_date),
+                is_serene=is_serene,
+            )
+            existing = await self._get_existing_digest(
+                user_id, target_date, is_serene=is_serene
+            )
+            return existing
+        except Exception:
+            # Any other error — log and fall through to generation.
+            logger.exception(
+                "digest_clone_flush_failed",
+                user_id=str(user_id),
+                target_date=str(target_date),
+                is_serene=is_serene,
+            )
+            with contextlib.suppress(Exception):
+                await self.session.rollback()
+            return None
+
+        return cloned
 
     async def _create_digest_record(
         self,
