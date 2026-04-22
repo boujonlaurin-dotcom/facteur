@@ -2,16 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-import '../../../config/topic_labels.dart';
-import '../../custom_topics/models/topic_models.dart';
 import 'interest_filter_sheet.dart';
 
-/// Compact pill chip showing emojis of top 3 followed macro-themes.
-///
-/// Inactive: 🔬🌍💰 +N ▾
-/// Active:   🔬 ThemeName ✕
 class CompactThemeChip extends StatelessWidget {
-  final List<UserTopicProfile> followedTopics;
   final String? selectedSlug;
   final String? selectedName;
   final bool selectedIsTheme;
@@ -20,7 +13,6 @@ class CompactThemeChip extends StatelessWidget {
 
   const CompactThemeChip({
     super.key,
-    required this.followedTopics,
     this.selectedSlug,
     this.selectedName,
     this.selectedIsTheme = false,
@@ -28,15 +20,6 @@ class CompactThemeChip extends StatelessWidget {
   });
 
   bool get _isActive => selectedSlug != null;
-
-  int get _totalFollowedThemes {
-    final macros = <String>{};
-    for (final topic in followedTopics) {
-      final macro = getTopicMacroTheme(topic.slugParent ?? '');
-      if (macro != null) macros.add(macro);
-    }
-    return macros.length;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +49,6 @@ class CompactThemeChip extends StatelessWidget {
             )
           : _InactiveChip(
               key: const ValueKey('theme_inactive'),
-              totalCount: _totalFollowedThemes,
               onTap: () {
                 HapticFeedback.mediumImpact();
                 _openSheet(context);
@@ -87,12 +69,10 @@ class CompactThemeChip extends StatelessWidget {
 }
 
 class _InactiveChip extends StatelessWidget {
-  final int totalCount;
   final VoidCallback onTap;
 
   const _InactiveChip({
     super.key,
-    required this.totalCount,
     required this.onTap,
   });
 
@@ -118,17 +98,10 @@ class _InactiveChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Mes thèmes',
+              'Thèmes',
               style: TextStyle(
-                  fontSize: 11, color: muted, fontWeight: FontWeight.w500),
+                  fontSize: 12, color: muted, fontWeight: FontWeight.w500),
             ),
-            if (totalCount > 0) ...[
-              const SizedBox(width: 4),
-              Text(
-                '· $totalCount',
-                style: TextStyle(fontSize: 11, color: muted),
-              ),
-            ],
             const SizedBox(width: 4),
             Icon(
               PhosphorIcons.caretDown(PhosphorIconsStyle.bold),

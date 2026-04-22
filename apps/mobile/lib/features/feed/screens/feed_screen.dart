@@ -393,8 +393,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
             ?.logoUrl
         : null;
 
-    final customTopics = ref.watch(customTopicsProvider).valueOrNull ?? [];
-
     return Row(
       children: [
         Flexible(
@@ -416,7 +414,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
         const SizedBox(width: 8),
         Flexible(
           child: CompactThemeChip(
-            followedTopics: customTopics,
             selectedSlug: notifier.selectedTopic ??
                 notifier.selectedTheme ??
                 notifier.selectedEntity,
