@@ -21,7 +21,11 @@ import structlog
 from app.models.content import Content
 from app.services.text_similarity import (
     FRENCH_STOP_WORDS,
+)
+from app.services.text_similarity import (
     jaccard_similarity as _jaccard_similarity,
+)
+from app.services.text_similarity import (
     normalize_title as _normalize_title,
 )
 
