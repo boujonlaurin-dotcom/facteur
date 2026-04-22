@@ -3,7 +3,7 @@
 **Date** : 2026-04-22
 **Branche** : `claude/fix-digest-viewpoints-9QcL6`
 **Sévérité** : P1 — décrédibilise la promesse "Pas de recul / Prendre du recul"
-**Statut** : Plan à valider
+**Statut** : Plan validé — Axes 1 et 3 implémentés dans ce PR, Axe 2 reporté (voir §6)
 
 ---
 
@@ -38,30 +38,22 @@ La cause **A** suffit à bloquer ~90 % des cas observés : si on impose qu'un "p
 
 ---
 
-## 3. Plan d'implémentation (proposé)
+## 3. Plan d'implémentation — scope retenu pour ce PR
 
-Trois axes, livrables indépendants, priorités dans l'ordre (A seul résout la plupart des cas).
+Axes 1 + 3 implémentés dans ce PR. Axe 2 reporté (voir §6).
 
-### Axe 1 — Time-gate dans le pool deep (fix A)
+### Axe 1 — Time-gate dans le pool deep (fix A) — ✅ DANS CE PR
 
 `editorial/deep_matcher.py::_load_deep_articles` :
 
-- Ajouter un paramètre `min_age_hours` (par défaut dans `EditorialConfig.pipeline.deep_min_age_hours = 24`).
-- Requête : `Content.published_at <= now - min_age_hours`.
+- Ajouter un paramètre de configuration `deep_min_age_hours` (défaut **24 h**, valeur sûre choisie pour capital confiance utilisateurs).
+- Requête : `Content.published_at <= now - deep_min_age_hours`.
 - Exposer la valeur dans `config/editorial_config.yaml` pour réglage opérateur.
 - Garder la limite haute à 3000 sans filtre d'ancienneté supérieure (des analyses de fond peuvent être pertinentes plusieurs mois après).
 
-Trade-off : on perd la fenêtre "décryptage du jour même" d'une source deep qui publie très vite après un évènement. C'est acceptable et conforme à la promesse produit ("prendre du recul" ≠ "autre dépêche sur le même évènement").
+Trade-off assumé : on perd la fenêtre "décryptage du jour même" d'une source deep qui publierait très vite après un évènement. Conforme à la promesse produit ("prendre du recul" ≠ "autre dépêche sur le même évènement").
 
-### Axe 2 — Rejet des quasi-doublons (fix C)
-
-`editorial/deep_matcher.py::_prefilter` :
-
-- Après scoring, **exclure** tout candidat dont le Jaccard de titre (pas label+angle, uniquement `article.title` vs les titres du `cluster.contents`) dépasse `DEEP_TITLE_SIMILARITY_MAX = 0.6`.
-- Fournir `cluster_titles` via `match_for_topics` (en sus de `cluster_entities`).
-- Logger `deep_matcher.near_duplicate_rejected` pour surveillance.
-
-### Axe 3 — Renforcement du prompt LLM (fix D)
+### Axe 3 — Renforcement du prompt LLM (fix D) — ✅ DANS CE PR
 
 `config/editorial_prompts.yaml::deep_matching.system` : ajouter une règle de rejet explicite :
 
@@ -71,26 +63,37 @@ Trade-off : on perd la fenêtre "décryptage du jour même" d'une source deep qu
 
 Pas de changement de température / modèle.
 
-### Axe 4 (optionnel, à discuter) — Signal de type "analyse" côté source
-
-Marquer un sous-ensemble de flux comme `source_subtier = "analysis"` (ex : "La Croix — Analyses", "The Conversation", "Alternatives Économiques"). Restreindre le pool deep à ce sous-ensemble **si** `subtier == "analysis"` est disponible, sinon fallback sur `source_tier == "deep"`.
-
-Hors scope du présent fix — demande une migration DB + audit des sources. Seulement mentionné pour mémoire.
-
 ---
 
 ## 4. Fichiers modifiés (pour référence)
 
-- `packages/api/app/services/editorial/deep_matcher.py` (Axes 1 + 2)
-- `packages/api/app/services/editorial/config.py` + `config/editorial_config.yaml` (Axe 1 — param `deep_min_age_hours`)
-- `config/editorial_prompts.yaml` (Axe 3)
-- Tests : `packages/api/tests/editorial/test_deep_matcher.py` — cas time-gate, cas near-duplicate, cas LLM rejette correctement.
+- `packages/api/app/services/editorial/deep_matcher.py` (Axe 1 — time-gate)
+- `packages/api/app/services/editorial/config.py` (Axe 1 — nouveau champ `deep_min_age_hours`)
+- `packages/api/config/editorial_config.yaml` (Axe 1 — valeur par défaut)
+- `packages/api/config/editorial_prompts.yaml` (Axe 3 — prompt deep_matching)
+- `packages/api/tests/editorial/test_deep_matcher.py` (couverture time-gate)
 
 ---
 
-## 5. Questions à valider
+## 5. Décisions actées
 
-1. **Axe 1** : valeur par défaut de `deep_min_age_hours` — 24 h (sûr mais filtre aussi les décryptages rapides légitimes) ou 12 h (moins restrictif) ?
-2. **Axe 2** : seuil `DEEP_TITLE_SIMILARITY_MAX` — 0.6 (strict) ou 0.5 (très strict) ? Un seuil trop bas peut rejeter de vraies analyses qui réutilisent des mots-clés du sujet.
-3. **Axe 4** : d'accord pour l'écarter de ce fix (demande un chantier dédié) ?
-4. **Périmètre PR** : Axes 1 + 3 suffisent-ils pour ce tour, Axe 2 en PR suivant ? Ou tout en un seul PR ?
+- **`deep_min_age_hours = 24`** choisi (vs 12 h) : priorité capital confiance utilisateurs. On préfère moins de "Pas de recul" affichés mais de qualité irréprochable.
+- **1 seul PR combiné** avec Bug #1 Axe 2 (cf. `bug-digest-perspective-undercount.md`).
+
+---
+
+## 6. Reporté au post-merge (follow-up)
+
+### Follow-up PR (après merge des deux PR en parallèle — la nôtre et celle "Post-filtre de cohérence sujet + masquage UI" de l'agent parallèle)
+
+- **Axe 2 — Rejet Jaccard des quasi-doublons** (`deep_matcher.py::_prefilter`) :
+  - Exclure les candidats dont le Jaccard de titre vs les titres du `cluster.contents` dépasse `DEEP_TITLE_SIMILARITY_MAX = 0.6`.
+  - Réutiliser `services/text_similarity.py` (extrait par la PR in-reader) pour ne pas dupliquer Jaccard/normalize_title.
+  - Harmoniser avec les constantes `PERSPECTIVE_*` pour cohérence digest ↔ in-reader.
+  - À évaluer après observabilité : si le time-gate 24 h + prompt strict suffisent en prod (taux de quasi-doublons proche de zéro), l'Axe 2 peut rester optionnel.
+
+- **Axe 4 — Signal `source_subtier = "analysis"`** (hors scope long terme) :
+  - Marquer un sous-ensemble de flux comme "analyse pure" (La Croix — Analyses, The Conversation, Alternatives Économiques, etc.).
+  - Migration DB + audit des sources requis. Chantier dédié, pas prioritaire tant que Axes 1 + 3 donnent satisfaction.
+
+- **Surveillance post-merge** : observer `deep_matcher.llm_rejections` (taux de rejet doit augmenter avec le prompt durci) et ajouter un log `deep_matcher.time_gate_excluded` pour mesurer combien de candidats sont écartés par la règle d'ancienneté.

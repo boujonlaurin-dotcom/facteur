@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from sqlalchemy import select
@@ -89,7 +90,11 @@ class DeepMatcher:
             logger.warning("deep_matcher.no_deep_articles")
             return {t.topic_id: None for t in selected_topics}
 
-        logger.info("deep_matcher.pool_loaded", count=len(deep_articles))
+        logger.info(
+            "deep_matcher.pool_loaded",
+            count=len(deep_articles),
+            min_age_hours=self._config.pipeline.deep_min_age_hours,
+        )
 
         # Skip topics flagged as having no meaningful deep angle — we refuse
         # to force a "Pas de recul" on purely eventful / people / faits-divers
@@ -206,12 +211,18 @@ class DeepMatcher:
         return fallback_matches
 
     async def _load_deep_articles(self) -> list[Content]:
-        """Load all articles from deep sources (no time limit).
+        """Load deep-tier articles older than ``deep_min_age_hours``.
 
         Ouvre une session courte dédiée : la requête dure <1s et les
         objets Content restent utilisables hors session (expire_on_commit=False,
         selectinload sur `source`). Cf. bug-infinite-load-requests.md (P1).
+
+        Le filtre d'ancienneté minimale exclut les dépêches du même matin,
+        qui, même publiées par une source deep, ne constituent pas un vrai
+        "pas de recul". Cf. bug-digest-pas-de-recul-same-event.md.
         """
+        min_age_hours = max(self._config.pipeline.deep_min_age_hours, 0)
+        max_published_at = datetime.now(UTC) - timedelta(hours=min_age_hours)
         stmt = (
             select(Content)
             .join(Content.source)
@@ -219,6 +230,7 @@ class DeepMatcher:
             .where(
                 Source.source_tier == "deep",
                 Content.is_paid.is_(False),
+                Content.published_at <= max_published_at,
             )
             .order_by(Content.published_at.desc())
             .limit(3000)  # Safety cap

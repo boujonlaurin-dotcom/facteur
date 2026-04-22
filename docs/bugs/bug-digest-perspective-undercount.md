@@ -3,7 +3,7 @@
 **Date** : 2026-04-22
 **Branche** : `claude/fix-digest-viewpoints-9QcL6`
 **Sévérité** : P1 — dégrade la promesse produit ("comparaison de points de vue")
-**Statut** : Plan à valider
+**Statut** : Plan validé — scope réduit pour éviter conflit avec la PR in-reader en parallèle (voir §6)
 
 ---
 
@@ -41,51 +41,54 @@ La cause **A** explique le mieux le cas "Fuite ANTS" (les autres sources étaien
 
 ---
 
-## 3. Plan d'implémentation (proposé)
+## 3. Plan d'implémentation — scope retenu pour ce PR
 
-Trois axes indépendants, livrables séparément si besoin.
+**Un seul axe est implémenté dans ce PR** : Axe 2 (filet de sécurité). Les Axes 1 et 3 sont reportés (voir §6).
 
-### Axe 1 — Boost clustering via entités nommées (fix A)
-
-`briefing/importance_detector.py::build_topic_clusters` : ajouter un **matching par entités nommées** en complément du Jaccard de titres.
-
-- Pour chaque article, récupérer les entités `PERSON`/`ORG`/`EVENT` (déjà stockées dans `Content.entities`).
-- Règle de fusion additive : si deux clusters partagent ≥ 2 entités nommées ET que leur Jaccard titre ≥ 0.25 (seuil dégradé), alors fusionner.
-- Conserver le seuil par défaut `0.4` pour la voie "titre seul" (pas de régression sur les sujets sans entités).
-
-Pas de changement de `TOPIC_CLUSTER_MAX_TOKENS`.
-
-### Axe 2 — Filet de sécurité `perspective_count` (fix D)
+### Axe 2 — Filet de sécurité `perspective_count` (fix D) — ✅ DANS CE PR
 
 `editorial/pipeline.py::_process_perspectives` :
 
-- Si `known_perspectives` finit vide **mais** `cluster.source_ids` a ≥ 1 élément, garder au moins la source représentative dans `perspective_articles` (avec `bias_stance = "unknown"`) et fixer `perspective_count = len(cluster.source_ids)`. La barre de biais reste masquée côté mobile quand `bias_distribution` est toute à 0, mais le `DivergenceAnalysisBlock` s'affiche si `divergence_analysis` ou `bias_highlights` est non-nul.
-- Alternative moins invasive : baisser le plancher `analyze_divergences` de `>= 3` à `>= 2` pour récupérer les cas "Frandroid + 1 autre". Permet au moins d'afficher un texte de contexte.
+- Si `known_perspectives` finit vide **mais** `cluster.source_ids` a ≥ 1 élément, garder au moins la source représentative dans `perspective_articles` (avec `bias_stance = "unknown"`) et fixer `perspective_count = len(cluster.source_ids)`.
+- `divergence_analysis` reste `None` (le plancher `>= 3 merged_perspectives` est maintenu — pas de texte LLM quand on n'a pas la matière).
+- Côté mobile, `DivergenceAnalysisBlock` reste masqué tant que `divergence_analysis` est `null`, mais le compteur de sources du footer card reflète correctement le cluster réel au lieu de tomber à 1 quand la source principale est `bias = unknown`.
 
-À arbitrer ensemble (voir section 5).
-
-### Axe 3 — Re-enrichissement paresseux côté endpoint (fix B)
-
-`routers/contents.py::_load_stored_perspectives_for_representative` : si `len(stored) < 3`, **ignorer le snapshot** et basculer sur le live path (`get_perspectives_hybrid` + merge cluster). Le coût LLM reste nul (l'analyse de divergence n'est pas refaite ici), on consomme uniquement un appel Google News déjà caché en amont par le TTLCache `_perspectives_cache` (2 h).
-
-Cela rend la bottom-sheet cohérente avec ce que l'utilisateur voit **au moment où il clique**, sans refaire la digest. Effet secondaire : le count affiché dans la bottom-sheet peut dépasser le count de la card — assumé, le header card reste le snapshot du matin.
-
-Pool `_get_global_candidates` (cause C) : on ne touche pas dans ce PR, sauf si le volume RSS explose (à surveiller via logs `topic_clustering_complete.total_contents`).
+Choix motivé : option "honnête" (on ne ment pas sur le nombre de sources) plutôt que de forcer une analyse de biais sur un échantillon de 2.
 
 ---
 
-## 4. Fichiers modifiés (pour référence)
+## 4. Fichiers modifiés dans ce PR
 
-- `packages/api/app/services/briefing/importance_detector.py` (Axe 1)
 - `packages/api/app/services/editorial/pipeline.py` (Axe 2)
-- `packages/api/app/routers/contents.py` (Axe 3)
-- Tests : `packages/api/tests/briefing/test_importance_detector.py`, `tests/editorial/test_pipeline.py`, `tests/contents/test_perspectives_endpoint.py`
+- `packages/api/tests/editorial/test_pipeline.py` (couverture filet de sécurité)
 
 ---
 
-## 5. Questions à valider
+## 5. Décisions actées
 
-1. **Axe 1** : ok pour élargir les fusions via entités (peut augmenter légèrement le taux de faux positifs sur des sujets qui partagent "Macron" mais pas l'évènement) ?
-2. **Axe 2** : préférence "garder la source seule avec bias unknown" ou "baisser plancher analyse à ≥ 2" ? Impact UX différent.
-3. **Axe 3** : ok pour laisser la bottom-sheet diverger du header card quand la couverture évolue entre 08 h et la lecture ?
-4. **Périmètre** : 3 axes dans 1 PR, ou séparer Axe 1 (clustering) des Axes 2/3 (affichage) ?
+- **Option retenue pour Axe 2** : garder la source du cluster avec `bias_stance = "unknown"` quand aucun biais n'est connu. Pas de bascule du plancher `analyze_divergences` à `>= 2` (l'analyse LLM reste réservée aux sujets avec ≥ 3 sources à biais connu).
+- **1 seul PR combiné** avec Bug #2 (cf. `bug-digest-pas-de-recul-same-event.md`).
+
+---
+
+## 6. Reporté au post-merge (follow-up)
+
+Ces deux axes sont volontairement écartés de ce PR pour éviter une dette de maintenance avec la PR **"Post-filtre de cohérence sujet + masquage UI"** (agent parallèle) qui :
+- Extrait `normalize_title` + `jaccard_similarity` dans `services/text_similarity.py`.
+- Ajoute un post-filtre `is_topically_coherent` dans `perspective_service.get_perspectives_hybrid`.
+- Introduit `should_display` et constantes `PERSPECTIVE_TITLE_JACCARD_MIN=0.30`, `PERSPECTIVE_MIN_VALID_RESULTS=2`, `PERSPECTIVE_MIN_BIAS_GROUPS=2`.
+- Touche `routers/contents.py:626-638` (en conflit direct avec notre Axe 3).
+
+### Follow-up PR (après merge des deux PR)
+
+- **Axe 1 — Boost clustering via entités nommées** (`briefing/importance_detector.py::build_topic_clusters`) :
+  - Réutiliser `services/text_similarity.py` (extrait par l'autre PR) au lieu de ré-implémenter Jaccard/normalize_title.
+  - Harmoniser les constantes de seuil avec `PERSPECTIVE_TITLE_JACCARD_MIN` pour que clustering digest et post-filtre in-reader parlent le même langage.
+  - Règle : fusion additive si ≥ 2 entités `PERSON`/`ORG`/`EVENT` partagées ET Jaccard titre ≥ 0.25.
+  - Garde le seuil 0.4 sur la voie "titre seul" pour ne pas régresser sur les sujets sans entités.
+
+- **Axe 3 — Re-enrichissement paresseux côté endpoint** (`routers/contents.py::_load_stored_perspectives_for_representative`) :
+  - Réévaluer après merge : si le post-filtre + `should_display` de l'autre PR gèrent déjà correctement l'UX (bottom-sheet vide proprement quand couverture insuffisante), l'Axe 3 devient largement redondant.
+  - Décision à trancher à ce moment-là : garder uniquement la bascule live quand `len(stored) < 3`, **ou** supprimer complètement (si `should_display` suffit).
+
+- **Surveillance post-merge** : log `topic_clustering_complete.total_contents` et `editorial_pipeline.perspectives_composition` pour identifier si le pool `_get_global_candidates = 200` est devenu trop étroit. Si oui, ticket dédié pour passer à 500.
