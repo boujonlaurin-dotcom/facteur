@@ -91,7 +91,7 @@ class ArticleEntitiesSheet extends ConsumerWidget {
                     mutedTopics.contains(entity.text.toLowerCase());
 
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.only(bottom: FacteurSpacing.space3),
                   child: Row(
                     children: [
                       // Entity name
@@ -110,7 +110,7 @@ class ArticleEntitiesSheet extends ConsumerWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               if (entity.label.isNotEmpty) ...[
-                                const SizedBox(height: 2),
+                                const SizedBox(height: FacteurSpacing.space1),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 6,

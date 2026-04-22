@@ -304,6 +304,7 @@ class FacteurSpacing {
   static const double space4 = 16;
   static const double space6 = 24;
   static const double space8 = 32;
+  static const double space16 = 64;
 }
 
 class FacteurRadius {

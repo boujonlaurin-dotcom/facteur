@@ -26,6 +26,7 @@ class NotificationService {
     Duration duration = const Duration(seconds: 3),
     IconData? icon,
     BuildContext? context,
+    EdgeInsets? margin,
   }) {
     final state = messengerKey.currentState;
     if (state == null) return;
@@ -79,7 +80,7 @@ class NotificationService {
         behavior: SnackBarBehavior.floating,
         elevation: 4,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        margin: margin ?? const EdgeInsets.fromLTRB(16, 0, 16, 12),
         duration: duration,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),

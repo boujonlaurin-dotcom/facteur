@@ -136,7 +136,8 @@ class PerspectivesBottomSheet extends ConsumerStatefulWidget {
       _PerspectivesBottomSheetState();
 }
 
-class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomSheet> {
+class _PerspectivesBottomSheetState
+    extends ConsumerState<PerspectivesBottomSheet> {
   PerspectivesAnalysisState _analysisState = PerspectivesAnalysisState.idle;
   String? _analysisText;
   Set<String> _selectedSegments = {};
@@ -154,15 +155,18 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
 
   List<Perspective> get _sortedPerspectives {
     final sorted = [...widget.perspectives];
-    sorted.sort((a, b) =>
-        _groupOrder.indexOf(a.biasGroup).compareTo(_groupOrder.indexOf(b.biasGroup)));
+    sorted.sort((a, b) => _groupOrder
+        .indexOf(a.biasGroup)
+        .compareTo(_groupOrder.indexOf(b.biasGroup)));
     return sorted;
   }
 
   List<Perspective> get _filteredPerspectives {
     final sorted = _sortedPerspectives;
     if (_selectedSegments.isEmpty) return sorted;
-    return sorted.where((p) => _selectedSegments.contains(p.biasGroup)).toList();
+    return sorted
+        .where((p) => _selectedSegments.contains(p.biasGroup))
+        .toList();
   }
 
   void _onSegmentTapInternal(String key) {
@@ -194,8 +198,9 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
 
       setState(() {
         _analysisText = result;
-        _analysisState =
-            result != null ? PerspectivesAnalysisState.done : PerspectivesAnalysisState.error;
+        _analysisState = result != null
+            ? PerspectivesAnalysisState.done
+            : PerspectivesAnalysisState.error;
       });
     } catch (e) {
       if (!mounted) return;
@@ -210,7 +215,8 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
     final filtered = _filteredPerspectives;
 
     return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.92),
+      constraints:
+          BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.92),
       decoration: BoxDecoration(
         color: colors.backgroundPrimary,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
@@ -255,25 +261,30 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Voir tous les points de vue',
+                                  'Voir d\'autres points de vue',
                                   style: textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.bold,
                                     color: colors.textPrimary,
-                                    fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 1,
+                                    fontSize:
+                                        (textTheme.titleMedium?.fontSize ??
+                                                16) +
+                                            1,
                                   ),
                                 ),
                               ),
                               IconButton(
                                 padding: EdgeInsets.zero,
                                 visualDensity: VisualDensity.compact,
-                                icon: Icon(PhosphorIcons.x(PhosphorIconsStyle.bold)),
+                                icon: Icon(
+                                    PhosphorIcons.x(PhosphorIconsStyle.bold)),
                                 onPressed: () => Navigator.pop(context),
                                 color: colors.textSecondary,
                               ),
                             ],
                           ),
                           if (widget.comparisonQuality == 'low')
-                            PerspectivesWarningBadge(colors: colors, textTheme: textTheme),
+                            PerspectivesWarningBadge(
+                                colors: colors, textTheme: textTheme),
                           const SizedBox(height: 16),
                           PerspectivesBiasBar(
                             colors: colors,
@@ -289,20 +300,23 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                                 ? Align(
                                     alignment: Alignment.centerRight,
                                     child: GestureDetector(
-                                      onTap: () => setState(() => _selectedSegments = {}),
+                                      onTap: () => setState(
+                                          () => _selectedSegments = {}),
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Text(
                                             'Tout afficher',
-                                            style: textTheme.labelSmall?.copyWith(
+                                            style:
+                                                textTheme.labelSmall?.copyWith(
                                               color: colors.primary,
                                               fontWeight: FontWeight.w600,
                                             ),
                                           ),
                                           const SizedBox(width: 4),
                                           Icon(
-                                            PhosphorIcons.x(PhosphorIconsStyle.bold),
+                                            PhosphorIcons.x(
+                                                PhosphorIconsStyle.bold),
                                             size: 12,
                                             color: colors.primary,
                                           ),
@@ -316,15 +330,12 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                         ],
                       ),
                     ),
-                    if (filtered.isEmpty)
-                      PerspectivesEmptyState(colors: colors, textTheme: textTheme)
-                    else
-                      ...filtered.map(
-                        (p) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: _PerspectiveCard(perspective: p),
-                        ),
+                    ...filtered.map(
+                      (p) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _PerspectiveCard(perspective: p),
                       ),
+                    ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                       child: PerspectivesAnalysisZone(
@@ -349,18 +360,20 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Voir tous les points de vue',
+                              'Voir d\'autres points de vue',
                               style: textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: colors.textPrimary,
-                                fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 1,
+                                fontSize:
+                                    (textTheme.titleMedium?.fontSize ?? 16) + 1,
                               ),
                             ),
                           ),
                           IconButton(
                             padding: EdgeInsets.zero,
                             visualDensity: VisualDensity.compact,
-                            icon: Icon(PhosphorIcons.x(PhosphorIconsStyle.bold)),
+                            icon:
+                                Icon(PhosphorIcons.x(PhosphorIconsStyle.bold)),
                             onPressed: () => Navigator.pop(context),
                             color: colors.textSecondary,
                           ),
@@ -368,7 +381,8 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                       ),
                     ),
                     const SizedBox(height: 16),
-                    PerspectivesEmptyState(colors: colors, textTheme: textTheme),
+                    PerspectivesEmptyState(
+                        colors: colors, textTheme: textTheme),
                   ],
                 ],
               ),
@@ -524,11 +538,14 @@ class _PerspectiveCard extends ConsumerWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          perspective.title.replaceAll(RegExp(r'\s*[-–|]\s*[^-–|]+$'), '').trim(),
+                          perspective.title
+                              .replaceAll(RegExp(r'\s*[-–|]\s*[^-–|]+$'), '')
+                              .trim(),
                           style: textTheme.bodyMedium?.copyWith(
                             fontWeight: FontWeight.w500,
                             color: colors.textPrimary,
-                            fontSize: (textTheme.bodyMedium?.fontSize ?? 14) + 1,
+                            fontSize:
+                                (textTheme.bodyMedium?.fontSize ?? 14) + 1,
                           ),
                           maxLines: 4,
                           overflow: TextOverflow.ellipsis,
@@ -536,7 +553,8 @@ class _PerspectiveCard extends ConsumerWidget {
                       ),
                       const SizedBox(width: 8),
                       Icon(
-                        PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.regular),
+                        PhosphorIcons.arrowSquareOut(
+                            PhosphorIconsStyle.regular),
                         size: 16,
                         color: colors.textTertiary,
                       ),
@@ -622,7 +640,8 @@ class _PerspectiveCard extends ConsumerWidget {
                         style: textTheme.labelMedium?.copyWith(
                           color: colors.textPrimary,
                           fontWeight: FontWeight.w600,
-                          fontSize: (textTheme.labelMedium?.fontSize ?? 12) - 0.5,
+                          fontSize:
+                              (textTheme.labelMedium?.fontSize ?? 12) - 0.5,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -670,7 +689,6 @@ class _PerspectiveCard extends ConsumerWidget {
     );
   }
 }
-
 
 class PerspectivesWarningBadge extends StatelessWidget {
   final FacteurColors colors;
@@ -721,7 +739,7 @@ class PerspectivesEmptyState extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 32),
+        padding: EdgeInsets.zero,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -730,19 +748,27 @@ class PerspectivesEmptyState extends StatelessWidget {
               size: 48,
               color: colors.textSecondary.withValues(alpha: 0.5),
             ),
-            const SizedBox(height: 16),
-            Text(
-              'Sujet peu couvert',
-              style: textTheme.titleSmall?.copyWith(
-                color: colors.textSecondary,
-                fontWeight: FontWeight.w600,
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                'Sujet peu couvert',
+                style: textTheme.titleSmall?.copyWith(
+                  color: colors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              'Ce sujet est peu couvert par les médias.\nEssaie la comparaison sur un autre article !',
-              style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
-              textAlign: TextAlign.center,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                "Ce sujet n'a pas encore été repris par d'autres médias.",
+                style:
+                    textTheme.bodySmall?.copyWith(color: colors.textTertiary),
+                textAlign: TextAlign.center,
+              ),
             ),
           ],
         ),
@@ -799,7 +825,8 @@ class PerspectivesBiasBar extends StatelessWidget {
           children: List.generate(segments.length, (i) {
             final seg = segments[i];
             final count = mergedDistribution[seg.$1] ?? 0;
-            final isActive = selectedSegments.isEmpty || selectedSegments.contains(seg.$1);
+            final isActive =
+                selectedSegments.isEmpty || selectedSegments.contains(seg.$1);
             return Expanded(
               flex: flexValues[i],
               child: GestureDetector(
@@ -811,9 +838,11 @@ class PerspectivesBiasBar extends StatelessWidget {
                     children: [
                       Center(
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: seg.$3.withValues(alpha: count > 0 ? 0.15 : 0.05),
+                            color: seg.$3
+                                .withValues(alpha: count > 0 ? 0.15 : 0.05),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: FittedBox(
@@ -839,7 +868,9 @@ class PerspectivesBiasBar extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: count > 0
                               ? seg.$3.withValues(
-                                  alpha: count == 1 ? 0.55 : (count == 2 ? 0.8 : 1.0))
+                                  alpha: count == 1
+                                      ? 0.55
+                                      : (count == 2 ? 0.8 : 1.0))
                               : seg.$3.withValues(alpha: 0.25),
                           borderRadius: BorderRadius.circular(6),
                           border: count > 0
@@ -870,7 +901,8 @@ class PerspectivesBiasBar extends StatelessWidget {
 
               final markerX = constraints.maxWidth * offsetFraction;
               final sourceColor = segments[sourceIndex].$3;
-              final displayName = sourceName.isNotEmpty ? sourceName : segments[sourceIndex].$2;
+              final displayName =
+                  sourceName.isNotEmpty ? sourceName : segments[sourceIndex].$2;
 
               return SizedBox(
                 height: 28,
@@ -882,11 +914,13 @@ class PerspectivesBiasBar extends StatelessWidget {
                       top: 0,
                       child: CustomPaint(
                         size: const Size(14, 8),
-                        painter: PerspectivesTrianglePainter(color: sourceColor),
+                        painter:
+                            PerspectivesTrianglePainter(color: sourceColor),
                       ),
                     ),
                     Positioned(
-                      left: (markerX - 50).clamp(0.0, constraints.maxWidth - 100),
+                      left:
+                          (markerX - 50).clamp(0.0, constraints.maxWidth - 100),
                       top: 10,
                       child: SizedBox(
                         width: 100,
@@ -933,7 +967,8 @@ class PerspectivesAnalysisZone extends StatefulWidget {
   });
 
   @override
-  State<PerspectivesAnalysisZone> createState() => PerspectivesAnalysisZoneState();
+  State<PerspectivesAnalysisZone> createState() =>
+      PerspectivesAnalysisZoneState();
 }
 
 class PerspectivesAnalysisZoneState extends State<PerspectivesAnalysisZone> {
@@ -944,7 +979,7 @@ class PerspectivesAnalysisZoneState extends State<PerspectivesAnalysisZone> {
     if (widget.state == PerspectivesAnalysisState.idle) {
       return _buildAnalysisCta();
     }
-    
+
     return AnimatedSize(
       key: widget.zoneKey,
       duration: const Duration(milliseconds: 300),
@@ -976,7 +1011,8 @@ class PerspectivesAnalysisZoneState extends State<PerspectivesAnalysisZone> {
         ),
         style: OutlinedButton.styleFrom(
           side: BorderSide(color: widget.colors.primary.withValues(alpha: 0.4)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
         ),
       ),
@@ -1013,13 +1049,15 @@ class PerspectivesAnalysisZoneState extends State<PerspectivesAnalysisZone> {
       decoration: BoxDecoration(
         color: widget.colors.primary.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: widget.colors.primary.withValues(alpha: 0.15)),
+        border:
+            Border.all(color: widget.colors.primary.withValues(alpha: 0.15)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           GestureDetector(
-            onTap: () => setState(() => _isAnalysisExpanded = !_isAnalysisExpanded),
+            onTap: () =>
+                setState(() => _isAnalysisExpanded = !_isAnalysisExpanded),
             behavior: HitTestBehavior.opaque,
             child: Row(
               children: [
@@ -1137,6 +1175,10 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
   /// Key attached to the analysis result zone so the parent can scroll to it.
   final Key? analysisZoneKey;
 
+  /// Key attached to the first perspective card so the parent can detect
+  /// when the user has scrolled past it.
+  final Key? firstCardKey;
+
   const PerspectivesInlineSection({
     super.key,
     required this.perspectives,
@@ -1153,6 +1195,7 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
     this.analysisText,
     this.onRequestAnalysis,
     this.analysisZoneKey,
+    this.firstCardKey,
   });
 
   @override
@@ -1160,7 +1203,8 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
       _PerspectivesInlineSectionState();
 }
 
-class _PerspectivesInlineSectionState extends ConsumerState<PerspectivesInlineSection> {
+class _PerspectivesInlineSectionState
+    extends ConsumerState<PerspectivesInlineSection> {
   Set<String> _selectedSegments = {};
 
   Set<String> get _effectiveSegments =>
@@ -1179,15 +1223,18 @@ class _PerspectivesInlineSectionState extends ConsumerState<PerspectivesInlineSe
 
   List<Perspective> get _sortedPerspectives {
     final sorted = [...widget.perspectives];
-    sorted.sort((a, b) =>
-        _groupOrder.indexOf(a.biasGroup).compareTo(_groupOrder.indexOf(b.biasGroup)));
+    sorted.sort((a, b) => _groupOrder
+        .indexOf(a.biasGroup)
+        .compareTo(_groupOrder.indexOf(b.biasGroup)));
     return sorted;
   }
 
   List<Perspective> get _filteredPerspectives {
     final sorted = _sortedPerspectives;
     if (_effectiveSegments.isEmpty) return sorted;
-    return sorted.where((p) => _effectiveSegments.contains(p.biasGroup)).toList();
+    return sorted
+        .where((p) => _effectiveSegments.contains(p.biasGroup))
+        .toList();
   }
 
   void _onSegmentTapInternal(String key) {
@@ -1242,7 +1289,7 @@ class _PerspectivesInlineSectionState extends ConsumerState<PerspectivesInlineSe
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Voir tous les points de vue',
+                        'Voir d\'autres points de vue',
                         style: textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: colors.textPrimary,
@@ -1252,8 +1299,6 @@ class _PerspectivesInlineSectionState extends ConsumerState<PerspectivesInlineSe
                     ),
                   ],
                 ),
-                if (widget.comparisonQuality == 'low')
-                  PerspectivesWarningBadge(colors: colors, textTheme: textTheme),
                 const SizedBox(height: 16),
                 PerspectivesBiasBar(
                   colors: colors,
@@ -1264,51 +1309,64 @@ class _PerspectivesInlineSectionState extends ConsumerState<PerspectivesInlineSe
                   onSegmentTap: _handleSegmentTap,
                 ),
                 SizedBox(
-                  height: 20,
+                  height: _effectiveSegments.isNotEmpty ? 28 : 4,
                   child: _effectiveSegments.isNotEmpty
-                      ? Align(
-                          alignment: Alignment.centerRight,
-                          child: GestureDetector(
-                            onTap: () {
-                              if (widget.onClearSegments != null) {
-                                widget.onClearSegments!();
-                              } else {
-                                setState(() => _selectedSegments = {});
-                              }
-                            },
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Tout afficher',
-                                  style: textTheme.labelSmall?.copyWith(
-                                    color: colors.primary,
-                                    fontWeight: FontWeight.w600,
+                      ? Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Align(
+                            alignment: Alignment.topRight,
+                            child: GestureDetector(
+                              onTap: () {
+                                if (widget.onClearSegments != null) {
+                                  widget.onClearSegments!();
+                                } else {
+                                  setState(() => _selectedSegments = {});
+                                }
+                              },
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Tout afficher',
+                                    style: textTheme.labelSmall?.copyWith(
+                                      color: colors.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 4),
-                                Icon(
-                                  PhosphorIcons.x(PhosphorIconsStyle.bold),
-                                  size: 12,
-                                  color: colors.primary,
-                                ),
-                              ],
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    PhosphorIcons.x(PhosphorIconsStyle.bold),
+                                    size: 12,
+                                    color: colors.primary,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         )
                       : null,
                 ),
-                const SizedBox(height: 8),
               ],
             ),
           ),
-          if (filtered.isEmpty)
-            PerspectivesEmptyState(colors: colors, textTheme: textTheme)
-          else
-            ...filtered.map(
-              (p) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _PerspectiveCard(perspective: p),
+          if (filtered.isNotEmpty)
+            Padding(
+              key: widget.firstCardKey,
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _PerspectiveCard(perspective: filtered.first),
+            ),
+          ...filtered.skip(1).map(
+                (p) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _PerspectiveCard(perspective: p),
+                ),
+              ),
+          if (widget.comparisonQuality == 'low')
+            Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 8),
+              child: Center(
+                child: PerspectivesWarningBadge(
+                    colors: colors, textTheme: textTheme),
               ),
             ),
           if (widget.analysisState != PerspectivesAnalysisState.idle)
@@ -1339,7 +1397,7 @@ class _PerspectivesInlineSectionState extends ConsumerState<PerspectivesInlineSe
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Voir tous les points de vue',
+                    'Voir d\'autres points de vue',
                     style: textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: colors.textPrimary,

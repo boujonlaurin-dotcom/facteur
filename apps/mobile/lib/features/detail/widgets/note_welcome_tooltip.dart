@@ -74,8 +74,8 @@ class _NoteWelcomeTooltipState extends State<NoteWelcomeTooltip>
         child: FadeTransition(
           opacity: _opacity,
           child: Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            margin: const EdgeInsets.only(bottom: FacteurSpacing.space3),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: FacteurSpacing.space2),
             decoration: BoxDecoration(
               color: colors.surfaceElevated,
               borderRadius: BorderRadius.circular(12),
