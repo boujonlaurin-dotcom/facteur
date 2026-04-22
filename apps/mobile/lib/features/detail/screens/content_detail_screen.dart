@@ -2053,11 +2053,36 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               Positioned(
                                 right: 0,
                                 bottom: 0,
-                                child: Icon(
-                                  PhosphorIcons.arrowUp(
-                                      PhosphorIconsStyle.bold),
-                                  size: 8,
-                                  color: colors.textSecondary,
+                                child: Stack(
+                                  children: [
+                                    Text(
+                                      String.fromCharCode(PhosphorIcons.arrowUp(
+                                              PhosphorIconsStyle.bold)
+                                          .codePoint),
+                                      style: TextStyle(
+                                        fontFamily: PhosphorIcons.arrowUp(
+                                                PhosphorIconsStyle.bold)
+                                            .fontFamily,
+                                        package: PhosphorIcons.arrowUp(
+                                                PhosphorIconsStyle.bold)
+                                            .fontPackage,
+                                        fontSize: 8,
+                                        height: 1.0,
+                                        foreground: Paint()
+                                          ..style = PaintingStyle.stroke
+                                          ..strokeWidth = 4.0
+                                          ..strokeJoin = StrokeJoin.round
+                                          ..strokeCap = StrokeCap.round
+                                          ..color = colors.backgroundPrimary,
+                                      ),
+                                    ),
+                                    Icon(
+                                      PhosphorIcons.arrowUp(
+                                          PhosphorIconsStyle.bold),
+                                      size: 8,
+                                      color: colors.textSecondary.withValues(alpha: 0.5),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -2145,7 +2170,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   onPressed: _toggleLike,
                   icon: SunflowerIcon(
                     isActive: content.isLiked,
-                    size: 24,
+                    size: 20,
                     inactiveColor: colors.textSecondary,
                   ),
                   tooltip: 'Recommander',
@@ -3747,10 +3772,35 @@ class _WinkingEyeButtonState extends State<_WinkingEyeButton>
                 Positioned(
                   right: 0,
                   bottom: 0,
-                  child: Icon(
-                    PhosphorIcons.arrowDown(PhosphorIconsStyle.bold),
-                    size: 8,
-                    color: widget.iconColor,
+                  child: Stack(
+                    children: [
+                      Text(
+                        String.fromCharCode(
+                            PhosphorIcons.arrowDown(PhosphorIconsStyle.bold)
+                                .codePoint),
+                        style: TextStyle(
+                          fontFamily:
+                              PhosphorIcons.arrowDown(PhosphorIconsStyle.bold)
+                                  .fontFamily,
+                          package:
+                              PhosphorIcons.arrowDown(PhosphorIconsStyle.bold)
+                                  .fontPackage,
+                          fontSize: 8,
+                          height: 1.0,
+                          foreground: Paint()
+                            ..style = PaintingStyle.stroke
+                            ..strokeWidth = 4.0
+                            ..strokeJoin = StrokeJoin.round
+                            ..strokeCap = StrokeCap.round
+                            ..color = context.facteurColors.backgroundPrimary,
+                        ),
+                      ),
+                      Icon(
+                        PhosphorIcons.arrowDown(PhosphorIconsStyle.bold),
+                        size: 8,
+                        color: widget.iconColor.withValues(alpha: 0.5),
+                      ),
+                    ],
                   ),
                 ),
               ],
