@@ -7,14 +7,19 @@
 #
 # Usage CI : appelé par .github/workflows/agent-secrets-healthcheck.yml
 #
-# Sortie :
-#   - Un bloc par service avec OK/FAIL/SKIP
-#   - Exit 0 si tous OK ou SKIP, exit 1 si un FAIL
+# Modes :
+#   (défaut)  : tous les checks, exit 1 si un FAIL
+#   --fast    : ne lance que les checks réseau rapides (skip psql UPDATE
+#               probe, skip CLI probes, skip longs timeouts). Sortie plus
+#               compacte. Conçu pour être appelé depuis le SessionStart hook.
 #
 # Jamais de secret imprimé dans la sortie.
 
 set -u
 pipefail_off=$-; set +e  # on veut continuer même si une check échoue
+
+FAST=0
+[[ "${1:-}" == "--fast" ]] && FAST=1
 
 pass=0; fail=0; skip=0
 
@@ -49,23 +54,25 @@ else
   else
     ko "connexion impossible (sortie vide)"
   fi
-  # Vérifie qu'au moins une table attendue est lisible
-  sel_out=$(psql "$DATABASE_URL_RO" -X -A -t -c "SELECT COUNT(*) FROM user_profiles LIMIT 1;" 2>&1)
-  n=$(echo "$sel_out" | tail -1 | tr -d ' \r\n')
-  if [[ "$n" =~ ^[0-9]+$ ]]; then
-    ok "SELECT sur user_profiles fonctionne ($n rows)"
-  else
-    first=$(echo "$sel_out" | grep -iE "error|fatal|denied" | head -1)
-    ko "SELECT user_profiles impossible : ${first:-(sortie vide)}"
-  fi
-  # Sanity : refuse un write
-  w=$(psql "$DATABASE_URL_RO" -X -A -t -c "UPDATE user_profiles SET onboarding_completed = onboarding_completed WHERE false;" 2>&1)
-  if echo "$w" | grep -qi "permission denied"; then
-    ok "UPDATE refusé comme attendu (least-privilege OK)"
-  elif echo "$w" | grep -qiE "fatal|could not|timeout"; then
-    ko "UPDATE non testable (connexion en échec amont)"
-  else
-    ko "UPDATE n'est PAS refusé — le rôle a trop de droits ! Vérifie le GRANT."
+  if [[ $FAST -eq 0 ]]; then
+    # Vérifie qu'au moins une table attendue est lisible
+    sel_out=$(psql "$DATABASE_URL_RO" -X -A -t -c "SELECT COUNT(*) FROM user_profiles LIMIT 1;" 2>&1)
+    n=$(echo "$sel_out" | tail -1 | tr -d ' \r\n')
+    if [[ "$n" =~ ^[0-9]+$ ]]; then
+      ok "SELECT sur user_profiles fonctionne ($n rows)"
+    else
+      first=$(echo "$sel_out" | grep -iE "error|fatal|denied" | head -1)
+      ko "SELECT user_profiles impossible : ${first:-(sortie vide)}"
+    fi
+    # Sanity : refuse un write
+    w=$(psql "$DATABASE_URL_RO" -X -A -t -c "UPDATE user_profiles SET onboarding_completed = onboarding_completed WHERE false;" 2>&1)
+    if echo "$w" | grep -qi "permission denied"; then
+      ok "UPDATE refusé comme attendu (least-privilege OK)"
+    elif echo "$w" | grep -qiE "fatal|could not|timeout"; then
+      ko "UPDATE non testable (connexion en échec amont)"
+    else
+      ko "UPDATE n'est PAS refusé — le rôle a trop de droits ! Vérifie le GRANT."
+    fi
   fi
 fi
 
@@ -113,8 +120,8 @@ else
     ko "Railway GraphQL réponse inattendue : $snippet"
   fi
 
-  # CLI check : nice-to-have
-  if command -v railway &>/dev/null; then
+  # CLI check : nice-to-have (skip en mode fast)
+  if [[ $FAST -eq 0 ]] && command -v railway &>/dev/null; then
     w=$(railway whoami 2>&1)
     if echo "$w" | grep -qiE "logged in|email|@"; then
       ok "railway whoami OK (bonus)"
@@ -126,8 +133,6 @@ fi
 hdr "Sentry (SENTRY_AUTH_TOKEN)"
 if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
   sk "SENTRY_AUTH_TOKEN"
-elif ! command -v sentry-cli &>/dev/null; then
-  sk "sentry-cli absente"
 else
   sent_len=${#SENTRY_AUTH_TOKEN}
   echo "  (longueur token) SENTRY_AUTH_TOKEN=${sent_len}"
@@ -144,9 +149,11 @@ else
 
   # CLI check informel : échoue silencieusement si pas de default org/project
   # configurés, mais tant que l'API répond on considère le secret valide.
-  i=$(sentry-cli info 2>&1)
-  if echo "$i" | grep -qi "authenticated"; then
-    ok "sentry-cli authentifié (bonus)"
+  if [[ $FAST -eq 0 ]] && command -v sentry-cli &>/dev/null; then
+    i=$(sentry-cli info 2>&1)
+    if echo "$i" | grep -qi "authenticated"; then
+      ok "sentry-cli authentifié (bonus)"
+    fi
   fi
 
   if [[ -n "${SENTRY_ORG:-}" && -n "${SENTRY_PROJECT:-}" ]]; then

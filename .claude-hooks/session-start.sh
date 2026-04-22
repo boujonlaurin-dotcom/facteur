@@ -142,4 +142,25 @@ if ! command -v railway &>/dev/null \
   bash scripts/setup-cli-tools.sh 2>&1 | tail -20 || true
 fi
 
+# =============================================================================
+# Connectivité des services (secrets d'agent) — en mode fast.
+# Tous les messages commencent par [secrets] pour que l'agent scanne vite.
+# Non-bloquant : même si un service est DOWN, la session démarre.
+# =============================================================================
+if [ -f scripts/healthcheck-agent-secrets.sh ]; then
+  # N'exécute le healthcheck que si au moins un secret est présent — inutile
+  # de spammer "SKIP" partout pour des contributeurs externes qui n'ont pas
+  # accès aux secrets d'infra.
+  if [ -n "${DATABASE_URL_RO:-}${SUPABASE_ACCESS_TOKEN:-}${RAILWAY_TOKEN:-}${SENTRY_AUTH_TOKEN:-}${POSTHOG_PERSONAL_API_KEY:-}" ]; then
+    echo "[secrets] vérification connectivité (--fast)..."
+    # Préfixe chaque ligne pour scan facile par l'agent, tronque le bruit visuel.
+    bash scripts/healthcheck-agent-secrets.sh --fast 2>&1 \
+      | grep -E '\[(OK|FAIL|SKIP)\]|Résumé' \
+      | sed 's/^/[secrets] /' \
+      || true
+  else
+    echo "[secrets] aucune variable d'infra définie (normal pour contributeur sans accès)"
+  fi
+fi
+
 exit 0  # Toujours non-bloquant
