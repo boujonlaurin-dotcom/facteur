@@ -554,7 +554,9 @@ class PerspectiveService:
             return []
 
         # Pré-calcul des signaux du seed (une seule fois)
-        seed_tokens = normalize_title(content.title) if PERSPECTIVE_FILTER_ENABLED else set()
+        seed_tokens = (
+            normalize_title(content.title) if PERSPECTIVE_FILTER_ENABLED else set()
+        )
         seed_topics = (
             {t.lower() for t in (content.topics or []) if t}
             if PERSPECTIVE_FILTER_ENABLED

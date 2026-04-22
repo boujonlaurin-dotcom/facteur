@@ -61,8 +61,6 @@ class TopicCluster:
         return len(self.source_ids) >= 2
 
 
-
-
 class ImportanceDetector:
     """Détecte les contenus objectivement importants.
 
@@ -98,9 +96,7 @@ class ImportanceDetector:
         """Délègue à `text_similarity.normalize_title` (méthode conservée pour compat)."""
         return _normalize_title(title)
 
-    def jaccard_similarity(
-        self, tokens_a: set[str], tokens_b: set[str]
-    ) -> float:
+    def jaccard_similarity(self, tokens_a: set[str], tokens_b: set[str]) -> float:
         """Délègue à `text_similarity.jaccard_similarity` (méthode conservée pour compat)."""
         return _jaccard_similarity(tokens_a, tokens_b)
 
