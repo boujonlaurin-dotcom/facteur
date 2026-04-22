@@ -36,6 +36,7 @@ import '../providers/digest_provider.dart';
 import '../providers/serein_toggle_provider.dart';
 import '../widgets/digest_briefing_section.dart';
 import '../widgets/digest_personalization_sheet.dart';
+import '../widgets/digest_sticky_header.dart';
 import '../widgets/digest_welcome_modal.dart';
 import '../widgets/widget_pin_nudge.dart';
 import 'closure_screen.dart';
@@ -371,6 +372,22 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
 
     debugPrint('DigestScreen: digestAsync state = ${digestAsync.toString()}');
 
+    // Sticky header metrics (computed once so the sliver list stays pure).
+    final stickyDigest = digestAsync.valueOrNull;
+    final hasStickyContent = stickyDigest != null &&
+        !(stickyDigest.items.isEmpty && stickyDigest.topics.isEmpty) &&
+        !stickyDigest.isCompleted;
+    int stickyProcessed = 0;
+    int stickyDenominator = 0;
+    if (hasStickyContent) {
+      final notifier = ref.read(digestProvider.notifier);
+      stickyProcessed = notifier.processedCount;
+      final total = notifier.totalCount;
+      final userPref =
+          ref.watch(onboardingProvider).answers.dailyArticleCount ?? 5;
+      stickyDenominator = total < userPref ? total : userPref;
+    }
+
     // Open closure modal when digest completes. Rendered as a modal (not a
     // route push) so the digest screen stays in place underneath; users
     // dismiss via swipe-down or the in-modal CTAs.
@@ -661,6 +678,16 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                     ),
                   ),
 
+                  // Sticky header: title + Serein chip + progress dots (+ transient X/Y)
+                  if (hasStickyContent)
+                    SliverPersistentHeader(
+                      pinned: true,
+                      delegate: DigestStickyHeaderDelegate(
+                        processedCount: stickyProcessed,
+                        dailyGoal: stickyDenominator,
+                      ),
+                    ),
+
                   // Digest Briefing Section
                   SliverToBoxAdapter(
                     child: Padding(
@@ -672,17 +699,10 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                             return _buildEmptyState(colors);
                           }
 
-                          final notifier = ref.read(digestProvider.notifier);
-                          final total = notifier.totalCount;
-                          final userPref = ref.watch(onboardingProvider).answers.dailyArticleCount ?? 5;
-                          final denominator = total < userPref ? total : userPref;
-
                           return DigestBriefingSection(
                             digest: digest,
                             items: digest.items,
                             topics: digest.usesTopics ? digest.topics : null,
-                            processedCount: notifier.processedCount,
-                            dailyGoal: denominator,
                             onItemTap: _openArticle,
                             onLike: _handleLike,
                             onSave: _handleSave,

@@ -17,7 +17,6 @@ import 'coup_de_coeur_block.dart';
 import 'pepite_block.dart';
 import 'quote_block.dart';
 import 'section_divider.dart';
-import 'serein_toggle_chip.dart';
 import 'topic_section.dart';
 import 'transition_text.dart';
 
@@ -44,8 +43,6 @@ class DigestBriefingSection extends StatefulWidget {
   final String? headerText;
   final String? closureText;
   final String? ctaText;
-  final int processedCount;
-  final int dailyGoal;
   final List<CommunityCarouselItem> communityCarousel;
   final void Function(CommunityCarouselItem)? onCommunityArticleTap;
 
@@ -71,8 +68,6 @@ class DigestBriefingSection extends StatefulWidget {
     this.headerText,
     this.closureText,
     this.ctaText,
-    this.processedCount = 0,
-    this.dailyGoal = 5,
     this.communityCarousel = const [],
     this.onCommunityArticleTap,
   });
@@ -157,44 +152,11 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
   Widget build(BuildContext context) {
     if (widget.items.isEmpty && !_usesTopics) return const SizedBox.shrink();
 
-    final colors = context.facteurColors;
-
     return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 8),
+      padding: const EdgeInsets.only(top: 4, bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: title (left) | serein toggle (right)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Text(
-                    "L'Essentiel du jour",
-                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
-                      color: colors.textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const SereinToggleChip(),
-              ],
-            ),
-          ),
-          // Compact progress counter below title
-          if (widget.dailyGoal > 0)
-            Padding(
-              padding: const EdgeInsets.only(left: 14, top: 6),
-              child: _buildCompactCounter(colors),
-            ),
-          const SizedBox(height: 10),
           // Content area with crossfade on serein toggle
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
@@ -261,33 +223,6 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
   }
 
   /// Editorial layout: prose + DigestCards + pépite + coup de cœur + closure
-  Widget _buildCompactCounter(FacteurColors colors) {
-    final processed = widget.processedCount;
-    final denominator = widget.dailyGoal;
-    final isComplete = processed >= denominator;
-    final color = isComplete ? colors.success : colors.primary;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ...List.generate(denominator, (i) {
-          final isDone = i < processed;
-          return Container(
-            width: 8,
-            height: 2,
-            margin: EdgeInsets.only(right: i < denominator - 1 ? 2 : 0),
-            decoration: BoxDecoration(
-              color: isDone
-                  ? (isComplete ? colors.success : color)
-                  : colors.textTertiary.withOpacity(0.25),
-              borderRadius: BorderRadius.circular(1.25),
-            ),
-          );
-        }),
-      ],
-    );
-  }
-
   Widget _buildEditorialLayout() {
     final isSerene = widget.isSerein;
     final sections = <Widget>[];
