@@ -97,9 +97,19 @@ bash docs/qa/scripts/verify_<task>.sh
 
 - [Navigation Matrix](docs/agent-brain/navigation-matrix.md) — workflows par type de tâche
 - [Safety Guardrails](docs/agent-brain/safety-guardrails.md) — guardrails + safety protocols
+- [Investigation Playbook](docs/agent-brain/investigation-playbook.md) — outils par scénario prod (bug, usage, migration, logs, sécurité)
+- [Claude Access Setup](docs/infra/claude-access-setup.md) — secrets + accès multi-services (Supabase/Railway/Sentry/PostHog)
 - [PRD](docs/prd.md) / [Architecture](docs/architecture.md) / [Front-end Spec](docs/front-end-spec.md)
 - Agents BMAD : `.bmad-core/agents/` (dev, po, architect, qa)
 - Scripts QA : `docs/qa/scripts/`
+
+### Santé des accès agents
+
+Le hook `SessionStart` lance un healthcheck `--fast` au démarrage. Scanne les lignes `[secrets]` dans les premiers messages de la session ; un `[FAIL]` doit être traité avant toute investigation prod. Healthcheck complet :
+
+```bash
+bash scripts/healthcheck-agent-secrets.sh
+```
 ## 🧪 Validation Feature via Chrome (Agent QA)
 
 Après la phase VERIFY de l'agent dev et la validation du PO (Laurin), une étape de **validation web automatisée** peut être déclenchée pour les features touchant l'UI.
