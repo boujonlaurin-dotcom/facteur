@@ -9,7 +9,6 @@ Tests:
 - Job trigger parameters
 """
 
-import signal
 from unittest.mock import AsyncMock, Mock, patch, MagicMock
 
 import pytest
@@ -238,50 +237,25 @@ class TestDigestJobConfiguration:
             assert str(trigger.fields[6]) == '30', \
                 f"Expected minute=30, got {trigger.fields[6]}"
 
-    def test_scheduler_includes_scheduled_restart_job(self):
-        """Scheduled restart exists at 01h/09h/17h Paris to mitigate SQLAlchemy
-        session leak. Cf. docs/bugs/bug-infinite-load-requests.md (P0).
+    def test_scheduled_restart_job_is_not_registered(self):
+        """Regression guard: `scheduled_restart` was a temporary SIGTERM-based
+        mitigation for a SQLAlchemy pool leak. Railway's `restartPolicyType:
+        ALWAYS` now handles process recycling. The job must NOT be re-added.
         """
         with patch('app.workers.scheduler.AsyncIOScheduler') as mock_scheduler_class:
             mock_scheduler = Mock()
             mock_scheduler_class.return_value = mock_scheduler
 
-            captured_jobs = {}
+            job_ids = []
             def capture_add_job(*args, **kwargs):
-                job_id = kwargs.get('id')
-                if job_id:
-                    captured_jobs[job_id] = kwargs
+                job_ids.append(kwargs.get('id'))
 
             mock_scheduler.add_job = capture_add_job
 
             start_scheduler()
 
-            assert 'scheduled_restart' in captured_jobs, \
-                f"scheduled_restart job missing. Jobs: {list(captured_jobs.keys())}"
-
-            job = captured_jobs['scheduled_restart']
-            trigger = job['trigger']
-            assert isinstance(trigger, CronTrigger)
-            # hour field should express "1,9,17"
-            assert str(trigger.fields[5]) == '1,9,17', \
-                f"Expected hour=1,9,17 got {trigger.fields[5]}"
-            assert str(trigger.fields[6]) == '0', \
-                f"Expected minute=0 got {trigger.fields[6]}"
-            assert job.get('coalesce') is True
-            # misfire: don't retry on Railway startup (startup already resets pool)
-            assert job.get('misfire_grace_time') == 60
-
-    def test_scheduled_restart_sends_sigterm(self):
-        """_scheduled_restart sends SIGTERM to own PID so Railway restarts
-        the container while letting uvicorn drain in-flight requests.
-        """
-        import asyncio
-        from app.workers.scheduler import _scheduled_restart
-
-        with patch('app.workers.scheduler.os.kill') as mock_kill, \
-             patch('app.workers.scheduler.os.getpid', return_value=12345):
-            asyncio.run(_scheduled_restart())
-            mock_kill.assert_called_once_with(12345, signal.SIGTERM)
+            assert 'scheduled_restart' not in job_ids, \
+                f"scheduled_restart job should not be registered. Jobs: {job_ids}"
 
 
 class TestDigestWatchdogCoverage:
