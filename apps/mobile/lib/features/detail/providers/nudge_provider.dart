@@ -1,21 +1,19 @@
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/nudge_service.dart';
 
 /// Manages the 🌻 "Recommander ?" nudge display logic.
 ///
-/// Simple session-scoped singleton — no Riverpod provider needed since
-/// the state is only read/written from ContentDetailScreen.
+/// Persistence (cooldown date) is delegated to the unified [NudgeService];
+/// the in-session "article-count" gate stays here because it's runtime state
+/// that shouldn't survive app restarts.
 ///
 /// Rules:
 /// - Show after >30s of reading an article
 /// - Skip the first 2 articles read in the session
 /// - Max 1 nudge per session
-/// - Max 1 nudge every 3 days (persisted via SharedPreferences)
+/// - Max 1 nudge every 3 days (cooldown enforced by NudgeRegistry)
 /// - Don't show if article is already sunflowered
 class NudgeTracker {
-  static const _lastNudgeDateKey = 'sunflower_last_nudge_date';
-  static const _nudgeCooldownDays = 3;
-
-  // Session-scoped counters (reset on app restart)
   static int _articlesOpenedInSession = 0;
   static bool _nudgeShownThisSession = false;
 
@@ -31,33 +29,18 @@ class NudgeTracker {
     if (isAlreadySunflowered) return false;
     if (_nudgeShownThisSession) return false;
     if (_articlesOpenedInSession <= 2) return false;
-
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final lastNudgeDateStr = prefs.getString(_lastNudgeDateKey);
-      if (lastNudgeDateStr != null) {
-        final lastDate = DateTime.tryParse(lastNudgeDateStr);
-        if (lastDate != null) {
-          final daysSince = DateTime.now().difference(lastDate).inDays;
-          if (daysSince < _nudgeCooldownDays) return false;
-        }
-      }
+      return NudgeService().canShow(NudgeIds.sunflowerRecommend);
     } catch (_) {
       return false;
     }
-
-    return true;
   }
 
   /// Mark nudge as shown (persists date for cooldown)
   static Future<void> markNudgeShown() async {
     _nudgeShownThisSession = true;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        _lastNudgeDateKey,
-        DateTime.now().toIso8601String(),
-      );
+      await NudgeService().markShown(NudgeIds.sunflowerRecommend);
     } catch (_) {
       // Best-effort persistence
     }
