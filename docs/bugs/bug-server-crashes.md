@@ -58,6 +58,7 @@ Le 09:00 tombe ~1h après la fin du batch digest (6h→7h30 watchdog→8h top3),
 - Railway relance le container après n'importe quel exit (y compris code 0 post-SIGTERM).
 - Couvre aussi tout futur exit propre mal géré (OOM adjacent, uvicorn qui quit sur un shutdown path mal câblé, etc.).
 - `maxRetries=10` + `healthcheckTimeout=120s` → borne une boucle de crash infini. Si l'app ne se stabilise pas sur 10 tentatives, Railway marque le déploiement `UNHEALTHY` et alerte.
+- **Note** : Railway ne reset pas le compteur `maxRetries` après une période de stabilité (pas de `restartPolicyMaxRetriesWindow`). Un crash unique après plusieurs heures d'uptime décompte quand même dans les 10. Si ce comportement pose problème à terme, Phase 2 peut introduire un liveness check DB externe.
 
 **Risque** : très faible. `ALWAYS` est la policy par défaut pour les services HTTP sur Railway. Réversible en 1 ligne.
 
@@ -80,7 +81,7 @@ Tests : on remplace `test_scheduler_includes_scheduled_restart_job` et `test_sch
 ## Phase 2 (à décider après 48h observation post-merge)
 
 Si symptôme résiduel persiste (indisponibilités qui ne correspondent pas à une fenêtre SIGTERM) → traiter séparément. Hypothèses candidates :
-- Pool saturé par digest 6h + top3 8h (`pool_size=5, max_overflow=5, concurrency_limit=10` → aucune marge pour trafic utilisateur).
+- Pool saturé par digest 6h + top3 8h (`pool_size=10, max_overflow=10, concurrency_limit=10` → aucune marge pour trafic utilisateur).
 - `BackgroundTasks` de `sync_source` qui retient des sessions longtemps.
 
 Voir plan complet : `/Users/laurinboujon/.claude/plans/system-instruction-you-are-working-lovely-lake.md` (ordonnancement F2.1 décalage top3, F2.2 réduction concurrency, F3.1 worker dédié).
