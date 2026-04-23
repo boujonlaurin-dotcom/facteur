@@ -1,8 +1,5 @@
 """Scheduler pour les jobs background."""
 
-import os
-import signal
-
 import pytz
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -93,38 +90,6 @@ async def _digest_watchdog() -> None:
         logger.exception("digest_watchdog_failed")
 
 
-async def _scheduled_restart() -> None:
-    """Restart périodique pour purger la fuite de sessions SQLAlchemy.
-
-    Cf. docs/bugs/bug-infinite-load-requests.md. Probe `pg_stat_activity`
-    a révélé que des sessions SQLAlchemy restent "idle in transaction" avec
-    des ages jusqu'à 2h — handlers cancellés par timeout dont le
-    `session.close()` échoue silencieusement. Le pool (20 max) se remplit
-    au fil des heures → `pool_timeout=30s` pour toute nouvelle requête →
-    symptôme "tout charge à l'infini".
-
-    Solution permanente (P1/P2) : scoper les sessions par unité de travail
-    atomique, sortir les I/O externes des `with session:`. En attendant,
-    un restart programmé toutes les ~8h vide le pool côté Python + force
-    Postgres à libérer les transactions orphelines via la fermeture TCP.
-
-    Horaires choisis (01h / 09h / 17h Paris) pour éviter les fenêtres des
-    autres jobs planifiés (03h cleanup, 06h digest, 07h30 watchdog, 08h top3).
-    SIGTERM permet à FastAPI/uvicorn de drainer les requêtes en cours avant
-    shutdown ; Railway relance le container immédiatement.
-
-    À retirer dès que le fix architectural (P1/P2 du bug doc) est déployé
-    et validé pendant ≥ 48h sans retour à saturation du pool.
-    """
-    logger.warning(
-        "scheduled_restart_initiated",
-        reason="sqlalchemy_pool_leak_mitigation",
-        pid=os.getpid(),
-        hint="Remove once bug-infinite-load-requests P1/P2 fixes deployed.",
-    )
-    os.kill(os.getpid(), signal.SIGTERM)
-
-
 def start_scheduler() -> None:
     """Démarre le scheduler."""
     global scheduler
@@ -182,30 +147,12 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
-    # Restart programmé (mitigation fuite pool SQLAlchemy).
-    # 3 slots à 8h d'intervalle, placés loin des autres crons :
-    #   01h00 (entre 22h et 03h cleanup)
-    #   09h00 (après watchdog 07h30 et top3 08h00)
-    #   17h00 (milieu d'après-midi, trafic bas)
-    # misfire_grace_time=60 : si Railway est down au moment du trigger, on
-    # ne retente pas au redémarrage (un startup fait déjà un pool frais).
-    scheduler.add_job(
-        _scheduled_restart,
-        trigger=CronTrigger(hour="1,9,17", minute=0, timezone=_PARIS_TZ),
-        id="scheduled_restart",
-        name="Scheduled Restart (pool leak mitigation)",
-        replace_existing=True,
-        misfire_grace_time=60,
-        coalesce=True,
-    )
-
     scheduler.start()
     logger.info(
         "Scheduler started",
         rss_interval_minutes=settings.rss_sync_interval_minutes,
         digest_cron="06:00 Europe/Paris",
         watchdog_cron="07:30 Europe/Paris",
-        scheduled_restart_cron="01:00, 09:00, 17:00 Europe/Paris",
     )
 
 
