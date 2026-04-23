@@ -6,6 +6,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/auth/utils/auth_error_messages.dart';
+import '../nudges/nudge_ids.dart';
+import '../nudges/nudge_service.dart';
 
 /// État d'authentification
 class AuthState {
@@ -31,6 +33,13 @@ class AuthState {
   /// Cf. docs/bugs/bug-feed-403-auth-recovery.md.
   final DateTime? lastTokenRefreshAt;
 
+  /// Whether the user has already seen the post-onboarding Welcome Tour.
+  ///
+  /// Loaded at app boot from the unified NudgeService. Used by the GoRouter
+  /// redirect to gate `/welcome-tour` synchronously for both new users
+  /// (post-onboarding) and existing users (first boot after deploy).
+  final bool welcomeTourSeen;
+
   const AuthState({
     this.user,
     this.isLoading = false,
@@ -40,6 +49,7 @@ class AuthState {
     this.forceUnconfirmed = false,
     this.sessionExpired = false,
     this.lastTokenRefreshAt,
+    this.welcomeTourSeen = true,
   });
 
   bool get isAuthenticated => user != null;
@@ -79,6 +89,7 @@ class AuthState {
     bool? forceUnconfirmed,
     bool? sessionExpired,
     DateTime? lastTokenRefreshAt,
+    bool? welcomeTourSeen,
   }) {
     return AuthState(
       user: user ?? this.user,
@@ -91,6 +102,7 @@ class AuthState {
       forceUnconfirmed: forceUnconfirmed ?? this.forceUnconfirmed,
       sessionExpired: sessionExpired ?? this.sessionExpired,
       lastTokenRefreshAt: lastTokenRefreshAt ?? this.lastTokenRefreshAt,
+      welcomeTourSeen: welcomeTourSeen ?? this.welcomeTourSeen,
     );
   }
 }
@@ -216,6 +228,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
 
       if (session != null) {
         await _checkOnboardingStatus();
+        await _loadWelcomeTourSeen();
         _startProactiveRefreshTimer();
       }
 
@@ -278,6 +291,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         // Check onboarding on first sign-in (new user appearing)
         if (isNewSignIn) {
           _checkOnboardingStatus();
+          _loadWelcomeTourSeen();
         }
         _startProactiveRefreshTimer();
       } else {
@@ -421,6 +435,35 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   /// Force le rafraîchissement du statut onboarding depuis la DB
   Future<void> refreshOnboardingStatus() async {
     await _checkOnboardingStatus();
+  }
+
+  /// Charge l'état "tour vu" depuis le NudgeService.
+  ///
+  /// Appelé à l'init (session restaurée) et lors d'un nouveau sign-in.
+  /// Le champ `welcomeTourSeen` gate le redirect GoRouter vers `/welcome-tour`
+  /// pour les users existants (nouveau PR2) comme pour les nouveaux.
+  Future<void> _loadWelcomeTourSeen() async {
+    try {
+      final seen = await NudgeService().isSeen(NudgeIds.welcomeTour);
+      if (state.welcomeTourSeen != seen) {
+        state = state.copyWith(welcomeTourSeen: seen);
+      }
+    } catch (e) {
+      debugPrint('AuthState: _loadWelcomeTourSeen error: $e');
+    }
+  }
+
+  /// Marque le Welcome Tour comme vu (persistence + state).
+  ///
+  /// Appelé par `WelcomeTourScreen` à la fin du tour ou sur skip.
+  Future<void> markWelcomeTourSeen() async {
+    if (state.welcomeTourSeen) return;
+    state = state.copyWith(welcomeTourSeen: true);
+    try {
+      await NudgeService().markSeen(NudgeIds.welcomeTour);
+    } catch (e) {
+      debugPrint('AuthState: markWelcomeTourSeen persistence error: $e');
+    }
   }
 
   Future<void> signInWithEmail(

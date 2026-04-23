@@ -1,101 +1,112 @@
-# QA Handoff — Perf & UX de "Ajout de source custom"
+# QA Handoff — Welcome Tour (Story 16.1 PR2)
 
-> Feature branch : `boujonlaurin-dotcom/add-source-perf`
-> Bug doc : `docs/bugs/bug-add-source-search-perf.md`
+> Feature branch : `boujonlaurin-dotcom/welcome-tour`
+> Story : `docs/stories/core/16.1.welcome-tour-nudges.md`
 
 ## Feature développée
 
-Trois correctifs groupés sur l'écran d'ajout de source custom :
-1. **Perf** : short-circuit agressif du pipeline de recherche quand le nom matche fort en DB (catalog seul → <500 ms attendus).
-2. **Filtres** : les 5 badges (Médias, Newsletters, YouTube, Reddit, Podcasts) deviennent des `ChoiceChip`s cliquables. Sélection = filtre par type côté backend + skip des layers externes non pertinents.
-3. **Élargir la recherche** : bouton qui apparaît sous les résultats quand seul le catalog a répondu → relance le pipeline complet (`expand: true`).
-4. **Skeleton** : messages plus lents (800 ms/dot, ~4.8 s/message) et plus variés (6 messages) pour une sensation moins "fake".
+Tour de bienvenue 3 écrans animés (Essentiel / Ton flux / Personnalisation) déclenché pour **tous les utilisateurs** (nouveaux + existants) une fois après onboarding. Gated par le redirect GoRouter via `AuthState.welcomeTourSeen`, persisté par le NudgeService unifié (PR1 #468).
+
+## PR associée
+À remplir après `gh pr create`.
 
 ## Écrans impactés
 
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Ajouter une source | `/sources/add` | Modifié |
+| Welcome Tour (PageView 3 pages) | `/welcome-tour` | **Nouveau** |
+| Router redirect | (routes.dart) | Modifié (gate `welcomeTourSeen`) |
+| Conclusion onboarding | `/onboarding/conclusion` | Non touché (le redirect intercepte) |
+| Digest | `/digest` | Non touché |
 
 ## Scénarios de test
 
-### Scénario 1 : Recherche rapide d'une source curated (happy path perf)
+### Scénario 1 : Nouveau user — onboarding → tour → digest
 **Parcours** :
-1. Ouvrir "Ajouter une source".
-2. Taper "Mediapart" dans le champ de recherche et valider.
+1. Fresh install, créer un compte, confirmer l'email
+2. Compléter les 15 étapes d'onboarding
+3. Observer la `ConclusionAnimationScreen` (loading animation)
+4. Elle navigue vers `/digest?first=true` mais le redirect intercepte → `/welcome-tour`
+5. Swipe entre les 3 pages (ou tap "Suivant")
+6. Tap "Commencer" sur la 3ᵉ page
 
 **Résultat attendu** :
-- Les résultats s'affichent en moins de 500 ms.
-- La source "Mediapart" est dans les résultats.
-- Un bouton **"Élargir la recherche"** apparaît en bas des résultats.
-- Sous le bouton, le texte « Cherche aussi sur YouTube, Reddit et le web. » est visible.
+- Les 3 pages s'affichent dans l'ordre Essentiel → Ton flux → Personnalisation
+- Les dots en bas indiquent la progression
+- Chaque page a une illustration animée (soleil + cartes / cartes défilantes / chips + slider)
+- Après "Commencer" → arrive sur `/digest?first=true`
+- Le `DigestWelcomeModal` existant s'affiche
 
-### Scénario 2 : Élargir la recherche
+### Scénario 2 : User existant — 1ʳᵉ relance post-deploy
 **Parcours** :
-1. Après le scénario 1, taper le bouton "Élargir la recherche".
+1. User déjà onboardé avant ce PR (cache `onboarding_completed=true`, pas de `nudge.welcome_tour.seen`)
+2. Relancer l'app → splash → auth check
+3. Router redirect : `!needsOnboarding && !welcomeTourSeen` → `/welcome-tour`
 
 **Résultat attendu** :
-- Le skeleton réapparaît brièvement.
-- De nouveaux résultats externes s'ajoutent (YouTube / Brave / GoogleNews).
-- Le bouton "Élargir la recherche" disparaît après cette relance.
+- Le tour s'affiche à la place du `/digest`
+- Même comportement qu'au scénario 1 pour la suite
 
-### Scénario 3 : Filtrer par YouTube
+### Scénario 3 : Skip depuis la page 1
 **Parcours** :
-1. Clear la recherche précédente.
-2. Sélectionner la chip **YouTube**.
-3. Taper "fireship" et valider.
+1. Arriver sur `/welcome-tour` (via scénario 1 ou 2)
+2. Tap "Passer" en haut à droite
 
 **Résultat attendu** :
-- Seuls des résultats de type YouTube remontent.
-- La latence doit être réduite (Brave/Google/Mistral sont skippés).
+- Navigue directement vers `/digest` (sans `?first=true` → pas de welcome modal)
+- `markSeen(welcome_tour)` persiste le flag
 
-### Scénario 4 : Médias et Newsletters = même filtre
+### Scénario 4 : Re-relance après tour vu
 **Parcours** :
-1. Taper "substack" et valider.
-2. Sélectionner chip **Médias** → noter les résultats.
-3. Sélectionner chip **Newsletters** → noter les résultats.
+1. Après scénarios 1, 2 ou 3, tuer l'app
+2. Rouvrir l'app
 
 **Résultat attendu** :
-- Les deux filtres donnent exactement les mêmes résultats (tous deux mappent sur `type=article`).
-- Chaque chip est visuellement sélectionnée distinctement (on voit laquelle est active).
+- Pas de re-affichage du tour
+- Arrivée directe sur `/digest` (default authenticated route)
+- Deep link `/welcome-tour` forcé → le redirect renvoie vers `/digest`
 
-### Scénario 5 : Skeleton crédible (messages rotating)
+### Scénario 5 : Retour back-button pendant le tour
 **Parcours** :
-1. Taper une requête qui va vraiment prendre plusieurs secondes (ex. "xyzzyq1234" qui force tous les layers).
-2. Observer le skeleton pendant >10 s.
+1. Être sur le tour (n'importe quelle page)
+2. Appuyer sur le bouton back Android / geste back iOS
 
 **Résultat attendu** :
-- Les dots animent toutes les 800 ms.
-- Les messages changent toutes les ~4.8 s (pas toutes les 1.5 s comme avant).
-- Les 6 messages suivants défilent : "Exploration du catalogue", "Analyse de votre recherche", "Interrogation des plateformes", "Scan du web", "Recoupement des sources", "Préparation des suggestions".
+- Le back est bloqué par `PopScope(canPop: false)` — le user ne peut pas quitter le tour sans "Passer" ou "Commencer"
 
-### Scénario 6 : Filtre persiste après clear
+### Scénario 6 : Interruption mid-tour (crash/force quit)
 **Parcours** :
-1. Sélectionner chip "Reddit".
-2. Taper "r/france", valider.
-3. Cliquer sur le bouton clear du champ de recherche.
+1. Arriver sur le tour, swipe à la page 2
+2. Force-quit l'app
+3. Relancer
 
 **Résultat attendu** :
-- Le champ est vide.
-- La chip "Reddit" reste sélectionnée (volontaire : le filtre persiste pour la prochaine recherche).
+- Le tour réapparaît à la page 1 (état éphémère pas persisté — par design)
+- Pas de crash ni de deadlock
 
-## Critères d'acceptation
+## Critères d'acceptation (story 16.1)
 
-- [ ] Recherche d'une source curated <500 ms (vs 2-5 s avant).
-- [ ] Bouton "Élargir la recherche" visible uniquement si `layers_called == ["catalog"]`.
-- [ ] Les 5 chips sont cliquables et mutuellement exclusives.
-- [ ] Médias et Newsletters filtrent tous deux sur `article`.
-- [ ] Skeleton affiche 6 messages uniques avec rotation lente (~4.8 s/message).
-- [ ] Aucune régression sur l'ajout effectif d'une source (flow `trustSource` / `addCustomSource`).
+- [ ] AC-1 : Après onboarding, 3 pages Essentiel → Ton flux → Personnalisation
+- [ ] AC-2 : Bouton "Passer" top-right dismiss le tour (mark seen + go digest)
+- [ ] AC-3 : "Commencer" sur dernière page → `/digest?first=true` → `DigestWelcomeModal` s'affiche
+- [ ] AC-4 : Flag persisté → relance de l'app ne re-affiche pas le tour
+- [ ] AC-5 : User existant (pré-PR2) voit le tour **une fois** au prochain boot
 
 ## Zones de risque
 
-- **Changement de family key du `smartSearchProvider`** : de `String` vers un record `({String query, String? contentType, bool expand})`. Vérifier qu'il n'y a pas d'erreur Riverpod au runtime (refresh, invalidate).
-- **Cache backend** : la clé inclut désormais `content_type` + `expand`. Les anciennes entrées en DB sont orphelines mais ne causent pas d'erreur — elles expirent en 24 h.
-- **Short-circuit agressif** : surveiller qu'un match "substring seulement" (ex. "le" dans "lenny") ne déclenche PAS le short-circuit (tests unitaires couverts).
+- **Timing du redirect** : le chargement de `welcomeTourSeen` est async dans `_init()`. Avant qu'il charge, `welcomeTourSeen=true` par défaut → pas de redirect. Cela évite un flash du tour avant que la vraie valeur soit lue. À tester : latence réseau lente au boot, vérifier que le tour apparaît bien après le chargement.
+- **Clash avec `DigestWelcomeModal`** : le modal existant (nudge `digest_welcome`) est déclenché par `/digest?first=true`. Si un user existant n'a jamais vu le modal non plus, il verra tour → digest → modal. C'est l'expérience voulue.
+- **iOS gesture-back** : à vérifier que `PopScope` bloque aussi le swipe-from-left edge natif iOS.
+- **Dark mode** : vérifier que les illustrations (soleil, cartes, chips) sont lisibles dans les deux thèmes.
 
 ## Dépendances
 
-- Endpoint modifié : `POST /sources/smart-search` — nouveaux params optionnels `content_type` (article/youtube/reddit/podcast) et `expand` (bool).
-- Réponse schema inchangée — `layers_called` reste le signal principal côté client.
-- Table `source_search_cache` — aucune migration nécessaire, seule la clé de hash change.
+- Aucune nouvelle dépendance backend.
+- Utilise `NudgeService` / `NudgeRegistry` (PR1 mergée #468).
+- Route `/welcome-tour` hors `ShellRoute` (pas de bottom nav pendant le tour).
+
+## Notes
+
+- Tests unitaires PR1 (24 tests) : toujours verts.
+- Widget tests PR2 (3 tests, `test/features/welcome_tour/tour_pages_test.dart`) : les 3 pages rendent titre + subtitle sans crash.
+- Test pré-existant `router_redirection_test.dart::Router should redirect to EmailConfirmationScreen` échoue **sur main** déjà — non lié à PR2.
