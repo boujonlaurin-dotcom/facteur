@@ -150,7 +150,13 @@ def start_scheduler() -> None:
     scheduler.start()
     logger.info(
         "Scheduler started",
-        jobs=["rss_sync", "daily_top3", "daily_digest", "digest_watchdog", "storage_cleanup"],
+        jobs=[
+            "rss_sync",
+            "daily_top3",
+            "daily_digest",
+            "digest_watchdog",
+            "storage_cleanup",
+        ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,
         digest_cron="06:00 Europe/Paris",
         watchdog_cron="07:30 Europe/Paris",
