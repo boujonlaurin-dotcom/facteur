@@ -649,6 +649,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       setState(() {
         _isWebViewActive = true;
       });
+
+      // Smart-arrival : libère l'écran pour que l'utilisateur puisse interagir
+      // avec une éventuelle modale (cookies, paywall) qui verrouille souvent
+      // body { overflow: hidden } — sans scroll, le ScrollBridge JS ne peut
+      // rien signaler, donc on doit cacher proactivement les overlays.
+      _scrollStopTimer?.cancel(); // sinon le timer hérité du scroll CTA réaffiche le footer
+      _animateHeaderTo(1.0);
+      _animateFooterTo(1.0);
+
+      // Header revient après 2 s pour permettre la navigation back.
+      Timer(const Duration(seconds: 2), () {
+        if (mounted && _isWebViewActive) _animateHeaderTo(0.0);
+      });
     }
   }
 
@@ -2002,7 +2015,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ],
                         Expanded(
                           child: Text(
-                            'Lire sur ${content.source.name}',
+                            _ctaTapped
+                                ? 'Ouvrir via navigateur'
+                                : 'Lire sur ${content.source.name}',
                             style: textTheme.labelMedium?.copyWith(
                               fontWeight: FontWeight.w600,
                               color: colors.textPrimary,
@@ -2013,7 +2028,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ),
                         const SizedBox(width: 4),
                         Icon(
-                          PhosphorIcons.arrowRight(PhosphorIconsStyle.regular),
+                          _ctaTapped
+                              ? PhosphorIcons.arrowUpRight(
+                                  PhosphorIconsStyle.regular)
+                              : PhosphorIcons.arrowRight(
+                                  PhosphorIconsStyle.regular),
                           size: 16,
                           color: colors.textSecondary,
                         ),
@@ -2038,8 +2057,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           _suppressPerspectivesCheck = true;
                           _atPerspectivesSection.value = false;
                           _showStickyPerspectivesHeader.value = false;
-                          if (_inAppScrollController.hasClients) {
-                            _inAppScrollController.animateTo(
+                          final ScrollController activeController =
+                              _scrollController.hasClients
+                                  ? _scrollController
+                                  : _inAppScrollController;
+                          if (activeController.hasClients) {
+                            activeController.animateTo(
                               0,
                               duration: const Duration(milliseconds: 400),
                               curve: Curves.easeInOut,
@@ -2966,8 +2989,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               const SizedBox(height: FacteurSpacing.space4),
                             ],
                           ),
-                          footer: SizedBox(
-                              height: _kFooterContentHeight + bottomInset),
+                          footer: (_perspectivesResponse != null ||
+                                  _perspectivesLoading)
+                              ? null
+                              : SizedBox(
+                                  height:
+                                      _kFooterContentHeight + bottomInset),
                         ),
                       ),
 
@@ -2976,11 +3003,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           _perspectivesLoading) ...[
                         Container(
                           color: colors.backgroundPrimary,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: FacteurSpacing.space4),
-                            child: Divider(color: colors.border, height: 1),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: FacteurSpacing.space4,
+                            vertical: FacteurSpacing.space6,
                           ),
+                          child: Divider(color: colors.border, height: 1),
                         ),
                         Container(
                           color: colors.backgroundPrimary,
@@ -3034,6 +3061,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                     )
                                   : const SizedBox.shrink(),
                         ),
+                        SizedBox(
+                            height: _kFooterContentHeight + bottomInset),
                       ],
 
                       // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation.
