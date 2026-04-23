@@ -4,9 +4,10 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/nudge_service.dart';
 
 /// Provider to track if user has seen the digest welcome
 final digestWelcomeShownProvider = StateProvider<bool>((ref) => false);
@@ -28,17 +29,8 @@ class DigestWelcomeModal extends ConsumerStatefulWidget {
   ConsumerState<DigestWelcomeModal> createState() => _DigestWelcomeModalState();
 
   /// Check if welcome should be shown and mark as shown
-  static Future<bool> shouldShowWelcome() async {
-    final prefs = await SharedPreferences.getInstance();
-    final hasSeenWelcome = prefs.getBool('has_seen_digest_welcome') ?? false;
-
-    if (!hasSeenWelcome) {
-      await prefs.setBool('has_seen_digest_welcome', true);
-      return true;
-    }
-
-    return false;
-  }
+  static Future<bool> shouldShowWelcome() =>
+      NudgeService().consumeFirstShow(NudgeIds.digestWelcome);
 }
 
 class _DigestWelcomeModalState extends ConsumerState<DigestWelcomeModal>

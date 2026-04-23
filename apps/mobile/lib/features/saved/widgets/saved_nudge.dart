@@ -2,23 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/nudge_service.dart';
 import '../providers/saved_summary_provider.dart';
 
-/// Clé pour persister le dismiss du nudge (24h cooldown).
-const _dismissKey = 'saved_nudge_dismissed_at';
-
 /// Provider qui vérifie si le nudge a été dismiss récemment (< 24h).
+///
+/// Persistence is delegated to the unified [NudgeService] (cooldown = 24h,
+/// declared in [NudgeRegistry]); we expose a simple boolean for the UI.
 final savedNudgeDismissedProvider = FutureProvider<bool>((ref) async {
-  final prefs = await SharedPreferences.getInstance();
-  final dismissedAt = prefs.getInt(_dismissKey);
-  if (dismissedAt == null) return false;
-  final elapsed =
-      DateTime.now().millisecondsSinceEpoch - dismissedAt;
-  return elapsed < const Duration(hours: 24).inMilliseconds;
+  return !await NudgeService().canShow(NudgeIds.savedUnread);
 });
 
 /// Nudge contextuel "articles sauvegardés non lus" affiché dans le feed.
@@ -122,8 +118,7 @@ class SavedNudge extends ConsumerWidget {
   }
 
   Future<void> _dismiss(WidgetRef ref) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_dismissKey, DateTime.now().millisecondsSinceEpoch);
+    await NudgeService().markShown(NudgeIds.savedUnread);
     ref.invalidate(savedNudgeDismissedProvider);
     ref.invalidate(savedSummaryProvider);
   }

@@ -2,9 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/nudge_service.dart';
 import '../../../core/services/widget_service.dart';
 
 /// Bottom sheet nudging the user to pin the Facteur widget on their home screen.
@@ -12,20 +13,15 @@ import '../../../core/services/widget_service.dart';
 /// Shown once after onboarding (Android only). Uses SharedPreferences
 /// to track whether the nudge has already been displayed.
 class WidgetPinNudge {
-  static const _prefKey = 'has_seen_widget_pin_nudge';
-
   /// Returns true if the nudge should be shown (Android + never shown before).
   static Future<bool> shouldShow() async {
     if (!Platform.isAndroid) return false;
-    final prefs = await SharedPreferences.getInstance();
-    return !(prefs.getBool(_prefKey) ?? false);
+    return NudgeService().canShow(NudgeIds.widgetPinAndroid);
   }
 
   /// Mark the nudge as shown so it won't appear again.
-  static Future<void> markShown() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_prefKey, true);
-  }
+  static Future<void> markShown() =>
+      NudgeService().markSeen(NudgeIds.widgetPinAndroid);
 
   /// Show the bottom sheet. Call after welcome modal dismissal.
   static Future<void> show(BuildContext context) async {

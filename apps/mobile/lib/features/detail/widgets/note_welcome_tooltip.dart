@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/nudge_service.dart';
 
 /// One-time tooltip shown near the note FAB on first article open.
 /// Educates the user about the note feature.
@@ -12,15 +13,8 @@ class NoteWelcomeTooltip extends StatefulWidget {
   const NoteWelcomeTooltip({super.key, required this.onDismiss});
 
   /// Returns true if the welcome tooltip should be shown (first time only).
-  static Future<bool> shouldShow() async {
-    final prefs = await SharedPreferences.getInstance();
-    final hasSeen = prefs.getBool('has_seen_note_welcome') ?? false;
-    if (!hasSeen) {
-      await prefs.setBool('has_seen_note_welcome', true);
-      return true;
-    }
-    return false;
-  }
+  static Future<bool> shouldShow() =>
+      NudgeService().consumeFirstShow(NudgeIds.noteWelcome);
 
   @override
   State<NoteWelcomeTooltip> createState() => _NoteWelcomeTooltipState();
