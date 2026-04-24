@@ -54,9 +54,12 @@ else
 fi
 
 # ─── 2. Install deps API ──────────────────────────────────────────────────────
-echo "[2/6] Install dépendances API (editable + dev)…"
+# Source de vérité = requirements.txt (utilisé aussi par le Dockerfile prod).
+# requirements-dev.txt ajoute les outils de test/lint non embarqués en prod.
+echo "[2/6] Install dépendances API (requirements.txt + requirements-dev.txt)…"
 packages/api/.venv/bin/pip install -q --upgrade pip
-packages/api/.venv/bin/pip install -q -e "packages/api[dev]"
+packages/api/.venv/bin/pip install -q -r packages/api/requirements.txt
+packages/api/.venv/bin/pip install -q -r packages/api/requirements-dev.txt
 
 # ─── 3. Docker test DB ────────────────────────────────────────────────────────
 # Assure que .env existe (docker-compose le lit pour POSTGRES_TEST_*)

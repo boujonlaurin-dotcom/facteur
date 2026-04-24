@@ -1,48 +1,6 @@
-[project]
-name = "facteur-api"
-version = "1.0.0"
-description = "Backend API pour Facteur"
-readme = "README.md"
-requires-python = ">=3.12"
-dependencies = [
-    "fastapi>=0.109.0",
-    "uvicorn[standard]>=0.27.0",
-    "pydantic>=2.6.0",
-    "pydantic-settings>=2.1.0",
-    "sqlalchemy[asyncio]>=2.0.25",
-    "greenlet>=3.0.0",
-    "asyncpg>=0.29.0",
-    "python-jose[cryptography]>=3.3.0",
-    "passlib[bcrypt]>=1.7.4",
-    "httpx>=0.26.0",
-    "feedparser>=6.0.10",
-    "apscheduler>=3.10.4",
-    "structlog>=24.1.0",
-    "sentry-sdk[fastapi]>=1.40.0",
-    "posthog>=3.7.0",
-    "python-multipart>=0.0.6",
-    "alembic>=1.13.1",
-    # ML Classification (Story 4.1d)
-    "transformers>=4.38.0",
-    "torch>=2.2.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "pytest-cov>=4.1.0",
-    "httpx>=0.26.0",
-    "ruff>=0.2.0",
-    "mypy>=1.8.0",
-]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["app"]
+# Dépendances runtime : packages/api/requirements.txt (utilisé par le Dockerfile prod).
+# Dépendances dev   : packages/api/requirements-dev.txt (tests, lint, types).
+# Ce fichier ne contient que la config des outils (ruff, mypy, pytest).
 
 [tool.ruff]
 target-version = "py312"
