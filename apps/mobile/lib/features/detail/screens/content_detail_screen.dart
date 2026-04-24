@@ -1059,16 +1059,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       if (_content != null) {
         final duration = DateTime.now().difference(_startTime).inSeconds;
 
+        final supabase = Supabase.instance.client;
+        final apiClient = ApiClient(supabase);
+        final repository = FeedRepository(apiClient);
+
         // Persist reading progress via status endpoint
         if (progressPct > 0) {
-          final supabase = Supabase.instance.client;
-          final apiClient = ApiClient(supabase);
-          final repository = FeedRepository(apiClient);
           repository.updateContentStatusWithProgress(
             _content!.id,
             progressPct,
           );
         }
+
+        // Accumulate reading time on user_content_status for recommendation signal.
+        repository.updateContentStatusWithTimeSpent(
+          _content!.id,
+          duration,
+        );
 
         // Track article read duration
         ref.read(analyticsServiceProvider).trackArticleRead(

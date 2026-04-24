@@ -106,6 +106,12 @@ class ContentService:
             conflict_set["reading_progress"] = func.greatest(
                 UserContentStatus.reading_progress, update_data.reading_progress
             )
+        # time_spent_seconds accumulates across sessions instead of being overwritten.
+        if update_data.time_spent_seconds is not None:
+            conflict_set["time_spent_seconds"] = (
+                func.coalesce(UserContentStatus.time_spent_seconds, 0)
+                + update_data.time_spent_seconds
+            )
 
         # Upsert statement
         stmt = (
@@ -140,6 +146,16 @@ class ContentService:
 
             await self._adjust_subtopic_weights(
                 user_id, content_id, ScoringWeights.READ_TOPIC_BOOST
+            )
+
+            # Implicit digest completion: if ≥80% of today's digest is now
+            # consumed, insert a digest_completions row (idempotent). This
+            # backstops the closure_screen explicit path when users never
+            # reach the "terminer mon digest" CTA.
+            from app.services.digest_service import DigestService
+
+            await DigestService(self.session).maybe_record_implicit_completion(
+                user_id, content_id
             )
 
         return updated_status
