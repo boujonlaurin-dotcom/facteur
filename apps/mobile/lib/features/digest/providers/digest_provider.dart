@@ -40,6 +40,12 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   /// fresh content generated in the background.
   Timer? _staleFallbackRefetchTimer;
 
+  /// Per-item reading timer: records the timestamp at which each digest item
+  /// was first opened (action `read`). Read again when the user performs a
+  /// follow-up action (save, like, dismiss) to compute `time_spent_seconds`
+  /// for the analytics event. Capped at 1800s per item.
+  final DigestItemReadingTimers _readingTimers = DigestItemReadingTimers();
+
   /// Number of consecutive stale-fallback refetch attempts that still came
   /// back stale. Capped by [_staleFallbackMaxAttempts] so a broken backend
   /// can't cause an indefinite polling loop on the mobile client.
@@ -380,6 +386,12 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       return;
     }
 
+    // Start the per-item reading timer on first open so follow-up actions
+    // (save/like/dismiss) can report an accurate time_spent_seconds.
+    if (action == 'read') {
+      _readingTimers.start(contentId);
+    }
+
     // Optimistic update — apply to flat items
     final updatedItems = currentDigest.items.map((item) {
       if (item.contentId == contentId) {
@@ -705,6 +717,8 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         return;
     }
 
+    final timeSpentSeconds = _readingTimers.consume(item.contentId, action);
+
     try {
       ref.read(analyticsServiceProvider).trackContentInteraction(
             action: analyticsAction,
@@ -713,7 +727,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
             sourceId: item.source?.id ?? '',
             topics: item.topics,
             position: position,
-            timeSpentSeconds: 0,
+            timeSpentSeconds: timeSpentSeconds,
           );
     } catch (e) {
       // Fail silently — analytics should never block user actions
@@ -870,5 +884,29 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     } else {
       _sereinDigest = updated;
     }
+  }
+}
+
+/// Tracks the per-item reading timer so digest follow-up actions
+/// (save/like/dismiss) can report an accurate `time_spent_seconds` to the
+/// analytics pipeline. Start on first `read`, consume on subsequent action.
+/// `read` itself is the open event and always reports 0 — the article viewer
+/// captures the actual reading duration.
+class DigestItemReadingTimers {
+  final Map<String, DateTime> _openedAt = {};
+
+  static const int maxSeconds = 1800;
+
+  void start(String contentId, {DateTime? now}) {
+    _openedAt[contentId] = now ?? DateTime.now();
+  }
+
+  int consume(String contentId, String action, {DateTime? now}) {
+    if (action == 'read') return 0;
+    final openedAt = _openedAt.remove(contentId);
+    if (openedAt == null) return 0;
+    final elapsed = (now ?? DateTime.now()).difference(openedAt).inSeconds;
+    if (elapsed <= 0) return 0;
+    return elapsed > maxSeconds ? maxSeconds : elapsed;
   }
 }

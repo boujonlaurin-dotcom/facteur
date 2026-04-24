@@ -833,6 +833,23 @@ class FeedRepository {
     }
   }
 
+  /// Fire-and-forget: accumulate time spent on an article.
+  /// Backend accumulates across sessions (see ContentService.update_content_status).
+  /// Cap client-side at 1800s to guard against forgotten background tabs.
+  Future<void> updateContentStatusWithTimeSpent(
+      String contentId, int timeSpentSeconds) async {
+    if (timeSpentSeconds <= 0) return;
+    final capped = timeSpentSeconds > 1800 ? 1800 : timeSpentSeconds;
+    try {
+      await _apiClient.dio.post<void>(
+        'contents/$contentId/status',
+        data: {'time_spent_seconds': capped},
+      );
+    } catch (e) {
+      print('FeedRepository: [ERROR] updateContentStatusWithTimeSpent: $e');
+    }
+  }
+
   Future<void> updateContentStatus(
       String contentId, ContentStatus status) async {
     try {

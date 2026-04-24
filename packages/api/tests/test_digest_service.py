@@ -267,8 +267,18 @@ class TestCompleteDigest:
             await service.complete_digest(digest_id=uuid4(), user_id=uuid4())
 
     @pytest.mark.asyncio
-    async def test_complete_adds_completion_record(self, service, mock_session):
-        """Completing a digest adds a DigestCompletion to the session."""
+    async def test_complete_upserts_completion_record(self, service, mock_session):
+        """Completing a digest issues an idempotent pg_insert on digest_completions.
+
+        The upsert path tolerates a pre-existing row from the implicit
+        threshold writer (`maybe_record_implicit_completion`) — the explicit
+        flow then enriches it with articles_saved / dismissed / closure_time.
+        """
+        from sqlalchemy.dialects import postgresql
+        from sqlalchemy.dialects.postgresql import Insert as PgInsert
+
+        from app.models.digest_completion import DigestCompletion
+
         digest_id = uuid4()
         user_id = uuid4()
 
@@ -300,14 +310,23 @@ class TestCompleteDigest:
                 digest_id=digest_id, user_id=user_id, closure_time_seconds=60
             )
 
-        # Verify session.add was called with a DigestCompletion instance
-        mock_session.add.assert_called_once()
-        added_obj = mock_session.add.call_args[0][0]
-        from app.models.digest_completion import DigestCompletion
+        # No ORM add: the upsert is dispatched via session.execute.
+        mock_session.add.assert_not_called()
 
-        assert isinstance(added_obj, DigestCompletion)
-        assert added_obj.user_id == user_id
-        assert added_obj.target_date == date.today()
+        executed_stmts = [c.args[0] for c in mock_session.execute.await_args_list]
+        upserts = [
+            s
+            for s in executed_stmts
+            if isinstance(s, PgInsert)
+            and s.table.name == DigestCompletion.__tablename__
+        ]
+        assert len(upserts) == 1
+
+        compiled = str(
+            upserts[0].compile(dialect=postgresql.dialect())
+        ).lower()
+        assert "on conflict" in compiled
+        assert "do update" in compiled
 
 
 # ─── Tests: get_or_create_digest fallback J-1 ────────────────────────────────

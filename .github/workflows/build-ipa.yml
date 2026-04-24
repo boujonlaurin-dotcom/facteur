@@ -52,6 +52,8 @@ jobs:
             --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
             --dart-define="SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" \
             --dart-define="REVENUECAT_IOS_KEY=${{ secrets.REVENUECAT_IOS_KEY }}" \
+            --dart-define="POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}" \
+            --dart-define="POSTHOG_HOST=${{ vars.POSTHOG_HOST || 'https://eu.i.posthog.com' }}" \
             --dart-define="APP_RELEASE_TAG=${{ steps.version.outputs.version }}"
 
       - name: Create unsigned IPA from xcarchive
