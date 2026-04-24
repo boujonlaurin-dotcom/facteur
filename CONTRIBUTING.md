@@ -16,7 +16,6 @@ Avant de commencer, assurez-vous d'avoir installé les outils suivants :
   brew bundle
   gitleaks git --no-banner       # scan initial de sécurité (no account required)
   pyenv install 3.12             # installer Python 3.12 (⚠️ ne pas utiliser 3.13+)
-  pyenv local 3.12               # définir la version locale du projet
   ```
 - **Environnement Python (venv)** : L'utilisation de l'environnement virtuel est **indispensable** pour exécuter les scripts du projet et éviter les erreurs de modules manquants ou de commande `python` introuvable.
 
