@@ -11,11 +11,10 @@ Avant de commencer, assurez-vous d'avoir installé les outils suivants :
 - **Git** : Pour la gestion de version.
 - **Flutter (dernière version stable)** : Pour l'application mobile.
 - **Un compte Supabase** : Pour la base de données et l'authentification.
-- **CLI tools** (pyenv, Railway, Supabase, Sentry, ggshield) : Installés en une commande depuis la racine du repo :
+- **CLI tools** (pyenv, Railway, Supabase, Sentry, gitleaks) : Installés en une commande depuis la racine du repo :
   ```bash
   brew bundle
-  ggshield auth login            # authentification GitGuardian
-  ggshield secret scan repo .    # scan initial de sécurité
+  gitleaks git --no-banner       # scan initial de sécurité (no account required)
   pyenv install 3.12             # installer Python 3.12 (⚠️ ne pas utiliser 3.13+)
   pyenv local 3.12               # définir la version locale du projet
   ```

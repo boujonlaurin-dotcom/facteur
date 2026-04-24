@@ -5,7 +5,7 @@ Facteur est une application mobile (Flutter) et une API (FastAPI) permettant de 
 ## 🚀 Démarrage Rapide
 
 ```bash
-brew bundle          # installe Railway CLI, Supabase CLI, Sentry CLI, ggshield
+brew bundle          # installe Railway CLI, Supabase CLI, Sentry CLI, gitleaks
 make bootstrap       # installe les dépendances Python, Flutter et la DB de test
 ```
 
