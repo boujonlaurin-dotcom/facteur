@@ -1,112 +1,123 @@
-# QA Handoff — Welcome Tour (Story 16.1 PR2)
+# QA Handoff — Well-Informed NPS (Story 14.3)
 
-> Feature branch : `boujonlaurin-dotcom/welcome-tour`
-> Story : `docs/stories/core/16.1.welcome-tour-nudges.md`
+> Feature branch : `boujonlaurin-dotcom/sprint2-feature-events`
+> Story : `docs/stories/core/14.3.well-informed-self-report.story.md`
+> Plan : `/Users/laurinboujon/.claude/plans/system-instruction-you-are-working-lively-river.md`
 
 ## Feature développée
 
-Tour de bienvenue 3 écrans animés (Essentiel / Ton flux / Personnalisation) déclenché pour **tous les utilisateurs** (nouveaux + existants) une fois après onboarding. Gated par le redirect GoRouter via `AuthState.welcomeTourSeen`, persisté par le NudgeService unifié (PR1 #468).
+Prompt inline NPS-style (1-10) dans le scroll du digest, demandant *"À quel point te sens-tu bien informé·e en ce moment ?"*. Skip autorisé via icône `x` (cooldown 5j), soumission d'une note impose un cooldown 14j. Données persistées dans `user_well_informed_ratings` + 3 events PostHog (shown / skipped / submitted).
 
 ## PR associée
-À remplir après `gh pr create`.
+
+À remplir après `gh pr create --base main`.
 
 ## Écrans impactés
 
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Welcome Tour (PageView 3 pages) | `/welcome-tour` | **Nouveau** |
-| Router redirect | (routes.dart) | Modifié (gate `welcomeTourSeen`) |
-| Conclusion onboarding | `/onboarding/conclusion` | Non touché (le redirect intercepte) |
-| Digest | `/digest` | Non touché |
+| Digest (sliver inline inséré) | `/digest` | **Modifié** (nouveau sliver entre success banner et briefing) |
+| `WellInformedPrompt` widget | — | **Nouveau** |
 
 ## Scénarios de test
 
-### Scénario 1 : Nouveau user — onboarding → tour → digest
+### Scénario 1 : Happy path — première soumission
 **Parcours** :
-1. Fresh install, créer un compte, confirmer l'email
-2. Compléter les 15 étapes d'onboarding
-3. Observer la `ConclusionAnimationScreen` (loading animation)
-4. Elle navigue vers `/digest?first=true` mais le redirect intercepte → `/welcome-tour`
-5. Swipe entre les 3 pages (ou tap "Suivant")
-6. Tap "Commencer" sur la 3ᵉ page
-
+1. Fresh install, compléter onboarding + welcome tour.
+2. Attendre 24h+ (contrainte `kGlobalNonCriticalCooldown` du NudgeCoordinator) OU clear le nudge state côté test.
+3. Ouvrir `/digest` → scroll léger pour atteindre la carte (placée sous le success banner, avant la briefing section).
+4. Vérifier visuellement : question, helper text 1=/10=, 10 pills 1..10, croix discrete en haut-droite, texte italique explicatif en bas.
+5. Tap sur le pill **7**.
 **Résultat attendu** :
-- Les 3 pages s'affichent dans l'ordre Essentiel → Ton flux → Personnalisation
-- Les dots en bas indiquent la progression
-- Chaque page a une illustration animée (soleil + cartes / cartes défilantes / chips + slider)
-- Après "Commencer" → arrive sur `/digest?first=true`
-- Le `DigestWelcomeModal` existant s'affiche
+- La carte disparaît instantanément (fade out via invalidation provider).
+- Vibration tactile medium-impact.
+- `POST /api/well-informed/ratings` → 201 avec body `{score: 7, context: "digest_inline"}`.
+- Event PostHog `well_informed_score_submitted` avec `score=7, context="digest_inline"` émis.
+- Event analytics backend `well_informed_score_submitted` stocké dans `analytics_events`.
+- Row dans `user_well_informed_ratings` (vérifier via Supabase SQL Editor).
+- La carte ne réapparaît pas lors des ouvertures `/digest` suivantes pendant 14 jours.
 
-### Scénario 2 : User existant — 1ʳᵉ relance post-deploy
+### Scénario 2 : Skip — cooldown court 5j
 **Parcours** :
-1. User déjà onboardé avant ce PR (cache `onboarding_completed=true`, pas de `nudge.welcome_tour.seen`)
-2. Relancer l'app → splash → auth check
-3. Router redirect : `!needsOnboarding && !welcomeTourSeen` → `/welcome-tour`
-
+1. Fresh state (comme scénario 1, après cooldown global 24h).
+2. Ouvrir `/digest`, repérer la carte.
+3. Tap sur l'icône `x` en haut-droite.
 **Résultat attendu** :
-- Le tour s'affiche à la place du `/digest`
-- Même comportement qu'au scénario 1 pour la suite
+- La carte disparaît.
+- Vibration tactile light-impact.
+- Aucun POST `/api/well-informed/ratings` émis (vérifier Network inspector Chrome DevTools).
+- Event `well_informed_prompt_skipped` émis vers analytics + PostHog.
+- Aucune row insérée dans `user_well_informed_ratings`.
+- La carte réapparaît après 5 jours (simuler en forçant `nudge.well_informed_poll.lastShown` 6 jours dans le passé via SharedPreferences).
+- Avant les 5 jours, la carte ne revient pas.
 
-### Scénario 3 : Skip depuis la page 1
+### Scénario 3 : Bornes 1 et 10
 **Parcours** :
-1. Arriver sur `/welcome-tour` (via scénario 1 ou 2)
-2. Tap "Passer" en haut à droite
-
+1. Fresh state → tap sur le pill **1**. Reset state. Tap sur le pill **10**.
 **Résultat attendu** :
-- Navigue directement vers `/digest` (sans `?first=true` → pas de welcome modal)
-- `markSeen(welcome_tour)` persiste le flag
+- Les deux valeurs sont acceptées (201 API).
+- `user_well_informed_ratings` contient une row avec `score=1` et une avec `score=10`.
+- Aucune erreur de validation.
 
-### Scénario 4 : Re-relance après tour vu
+### Scénario 4 : Validation API — score hors bornes
+**Parcours (test API direct, pas UI)** :
+1. `curl -X POST .../api/well-informed/ratings -H 'Authorization: Bearer $JWT' -d '{"score": 0}'`
+2. Idem avec `score: 11`, `score: -5`.
+**Résultat attendu** : HTTP 422 (Unprocessable Entity) avec détail Pydantic mentionnant la contrainte `ge=1, le=10`.
+
+### Scénario 5 : Cooldown long domine le court
 **Parcours** :
-1. Après scénarios 1, 2 ou 3, tuer l'app
-2. Rouvrir l'app
+1. Skip le prompt → attendre 6 jours (simulé).
+2. La carte reparaît → tap sur un score (soumission).
+3. Simuler 10 jours plus tard : la carte doit **encore être cachée** (car submit → 14j > 10j).
+**Résultat attendu** : cohérent avec la règle "après submit, 14j obligatoire même si le nudge cooldown 5j est écoulé".
 
-**Résultat attendu** :
-- Pas de re-affichage du tour
-- Arrivée directe sur `/digest` (default authenticated route)
-- Deep link `/welcome-tour` forcé → le redirect renvoie vers `/digest`
-
-### Scénario 5 : Retour back-button pendant le tour
+### Scénario 6 : Fail silencieux réseau
 **Parcours** :
-1. Être sur le tour (n'importe quelle page)
-2. Appuyer sur le bouton back Android / geste back iOS
-
+1. Désactiver le réseau (offline mode ou kill API).
+2. Tap un score.
 **Résultat attendu** :
-- Le back est bloqué par `PopScope(canPop: false)` — le user ne peut pas quitter le tour sans "Passer" ou "Commencer"
+- La carte disparaît quand même (meilleure UX que de laisser bloqué).
+- Aucune erreur visible à l'utilisateur (repository catch silencieux).
+- `well_informed_poll_last_submitted_at_ms` est mis à jour en SharedPreferences → cooldown 14j avance, même sans row en DB.
+- Event PostHog `well_informed_score_submitted` parti (PostHog a son propre buffer).
 
-### Scénario 6 : Interruption mid-tour (crash/force quit)
-**Parcours** :
-1. Arriver sur le tour, swipe à la page 2
-2. Force-quit l'app
-3. Relancer
+## Critères d'acceptation
 
-**Résultat attendu** :
-- Le tour réapparaît à la page 1 (état éphémère pas persisté — par design)
-- Pas de crash ni de deadlock
-
-## Critères d'acceptation (story 16.1)
-
-- [ ] AC-1 : Après onboarding, 3 pages Essentiel → Ton flux → Personnalisation
-- [ ] AC-2 : Bouton "Passer" top-right dismiss le tour (mark seen + go digest)
-- [ ] AC-3 : "Commencer" sur dernière page → `/digest?first=true` → `DigestWelcomeModal` s'affiche
-- [ ] AC-4 : Flag persisté → relance de l'app ne re-affiche pas le tour
-- [ ] AC-5 : User existant (pré-PR2) voit le tour **une fois** au prochain boot
+- [ ] La carte s'affiche dans le scroll du digest après 24h+ d'install (nudge global cooldown).
+- [ ] Tap sur un pill 1-10 : carte disparaît, row en DB, event PostHog, cooldown 14j respecté.
+- [ ] Tap sur `x` : carte disparaît, event skipped, cooldown 5j respecté.
+- [ ] Bornes 1 et 10 acceptées ; 0 et 11 rejetés (422).
+- [ ] Aucune régression visible sur les tests existants backend + mobile (hook `stop-verify-tests.sh` passe).
+- [ ] `flutter analyze` sur mes fichiers : 0 issue.
+- [ ] Migration Alembic `wi01` applique proprement (1 head unique).
 
 ## Zones de risque
 
-- **Timing du redirect** : le chargement de `welcomeTourSeen` est async dans `_init()`. Avant qu'il charge, `welcomeTourSeen=true` par défaut → pas de redirect. Cela évite un flash du tour avant que la vraie valeur soit lue. À tester : latence réseau lente au boot, vérifier que le tour apparaît bien après le chargement.
-- **Clash avec `DigestWelcomeModal`** : le modal existant (nudge `digest_welcome`) est déclenché par `/digest?first=true`. Si un user existant n'a jamais vu le modal non plus, il verra tour → digest → modal. C'est l'expérience voulue.
-- **iOS gesture-back** : à vérifier que `PopScope` bloque aussi le swipe-from-left edge natif iOS.
-- **Dark mode** : vérifier que les illustrations (soleil, cartes, chips) sont lisibles dans les deux thèmes.
+- **Double prefix routers** : le router `analytics` avait `prefix="/analytics"` combiné à `include_router(prefix="/api/analytics")` → double prefix `/api/analytics/analytics/events`. Mon router `well_informed` évite ce piège (prefix uniquement dans `include_router`). Route finale : `/api/well-informed/ratings`.
+- **Nudge budget session** : priority `low` → consomme le budget `kSessionNonCriticalBudget = 1`. Si un autre low/normal nudge a déjà été affiché dans la session, le prompt ne s'affichera PAS ce jour-là (attendu, pas bug).
+- **SharedPreferences key collision** : `well_informed_poll_last_submitted_at_ms` est notre clé custom. Ne pas la confondre avec `nudge.well_informed_poll.lastShown` (gérée par NudgeStorage, sert au cooldown 5j des skips).
+- **Timezone** : `submitted_at` est en UTC côté backend (SQLAlchemy DateTime(timezone=True) + now()). Pas de bug de décalage.
 
 ## Dépendances
 
-- Aucune nouvelle dépendance backend.
-- Utilise `NudgeService` / `NudgeRegistry` (PR1 mergée #468).
-- Route `/welcome-tour` hors `ShellRoute` (pas de bottom nav pendant le tour).
+- **Backend** : nouvelle table `user_well_informed_ratings` (migration `wi01`). Dépend de `lp02` (déjà mergée en 14.2).
+- **Mobile** : dépend du module unifié `core/nudges/` (shipped en PR #468, déjà sur main).
+- **PostHog** : project `Default project` (id 129581), org Facteur. Les nouveaux events apparaîtront automatiquement dans l'event explorer.
 
-## Notes
+## Commandes rapides de vérification
 
-- Tests unitaires PR1 (24 tests) : toujours verts.
-- Widget tests PR2 (3 tests, `test/features/welcome_tour/tour_pages_test.dart`) : les 3 pages rendent titre + subtitle sans crash.
-- Test pré-existant `router_redirection_test.dart::Router should redirect to EmailConfirmationScreen` échoue **sur main** déjà — non lié à PR2.
+```bash
+# Backend — tests unitaires ciblés
+cd packages/api && PYTHONPATH=. pytest tests/test_well_informed_service.py -v
+
+# Mobile — tests ciblés
+cd apps/mobile && flutter test test/features/well_informed/ test/core/services/analytics_service_sprint2_test.dart
+
+# Migration Alembic
+cd packages/api && alembic heads  # → wi01 (head unique)
+cd packages/api && alembic upgrade head
+
+# Query DB
+psql -c "SELECT score, COUNT(*) FROM user_well_informed_ratings GROUP BY score ORDER BY score;"
+```

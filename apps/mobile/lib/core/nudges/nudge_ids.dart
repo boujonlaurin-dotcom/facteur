@@ -23,4 +23,7 @@ class NudgeIds {
   static const articleSaveNotes = 'article_save_notes';
   static const perspectivesCta = 'perspectives_cta';
   static const articleReadOnSite = 'article_read_on_site';
+
+  // Story 14.3 — self-reported "well-informed" score (NPS-style).
+  static const wellInformedPoll = 'well_informed_poll';
 }
