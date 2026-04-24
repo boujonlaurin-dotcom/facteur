@@ -50,6 +50,14 @@ class FeedCard extends StatefulWidget {
   /// long titles can breathe on the "closure" moment of the app.
   final int titleMaxLines;
   final bool denseLayout;
+  /// Optional GlobalKey attached to the first long-pressable badge (topic
+  /// chip preferred, source badge fallback). Used by `NudgeHost` to position
+  /// a spotlight for `feed_badge_longpress`. Pass only from the first feed
+  /// card on screen.
+  final GlobalKey? badgeAnchorKey;
+  /// Optional GlobalKey attached to the card outer. Used by `NudgeHost` for
+  /// the `feed_preview_longpress` spotlight.
+  final GlobalKey? cardAnchorKey;
 
   const FeedCard({
     super.key,
@@ -83,6 +91,8 @@ class FeedCard extends StatefulWidget {
     this.descriptionFontSize,
     this.titleMaxLines = 3,
     this.denseLayout = false,
+    this.badgeAnchorKey,
+    this.cardAnchorKey,
   });
 
   @override
@@ -122,7 +132,7 @@ class _FeedCardState extends State<FeedCard>
     final isVideo = widget.content.contentType == ContentType.youtube || widget.content.contentType == ContentType.video;
 
     final hasBeenRead = isConsumed || widget.content.readingProgress > 0;
-    return Opacity(
+    final card = Opacity(
       opacity: hasBeenRead ? 0.6 : 1.0,
       child: Stack(
         fit: widget.expandContent ? StackFit.expand : StackFit.loose,
@@ -218,7 +228,13 @@ class _FeedCardState extends State<FeedCard>
                             // Source Logo + Name (tappable for source detail — Epic 12)
                             Flexible(
                             child: _FooterBadgeNudge(
-                              child: GestureDetector(
+                              child: KeyedSubtree(
+                                // Fallback anchor for feed_badge_longpress when
+                                // the card has no topic chip.
+                                key: widget.topicChipWidget == null
+                                    ? widget.badgeAnchorKey
+                                    : null,
+                                child: GestureDetector(
                               onTap: widget.onSourceTap,
                               onLongPress: widget.onSourceLongPress,
                               behavior: HitTestBehavior.opaque,
@@ -266,6 +282,7 @@ class _FeedCardState extends State<FeedCard>
                                 ),
                               ),
                             ),
+                            ), // KeyedSubtree
                             ), // _FooterBadgeNudge
                             ),
 
@@ -450,9 +467,17 @@ class _FeedCardState extends State<FeedCard>
                             if (widget.topicChipWidget != null)
                               Flexible(
                                 child: _FooterBadgeNudge(
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                                    child: widget.topicChipWidget!,
+                                  child: KeyedSubtree(
+                                    // Nudge anchor attaches to topic chip when
+                                    // present (priority target for
+                                    // feed_badge_longpress spotlight).
+                                    key: widget.topicChipWidget != null
+                                        ? widget.badgeAnchorKey
+                                        : null,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                                      child: widget.topicChipWidget!,
+                                    ),
                                   ),
                                 ),
                               )
@@ -530,6 +555,10 @@ class _FeedCardState extends State<FeedCard>
         ],
       ),
     );
+    if (widget.cardAnchorKey != null) {
+      return KeyedSubtree(key: widget.cardAnchorKey!, child: card);
+    }
+    return card;
   }
 
   Widget _buildBody(

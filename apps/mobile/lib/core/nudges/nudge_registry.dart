@@ -43,14 +43,6 @@ class NudgeRegistry {
       legacySeenKey: 'has_seen_widget_pin_nudge',
     ),
     const Nudge(
-      id: NudgeIds.noteWelcome,
-      surface: NudgeSurface.article,
-      placement: NudgePlacement.tooltip,
-      priority: NudgePriority.normal,
-      frequency: NudgeFrequency.once,
-      legacySeenKey: 'has_seen_note_welcome',
-    ),
-    const Nudge(
       id: NudgeIds.sunflowerRecommend,
       surface: NudgeSurface.article,
       placement: NudgePlacement.inlineBanner,
@@ -114,6 +106,7 @@ class NudgeRegistry {
       placement: NudgePlacement.tooltip,
       priority: NudgePriority.normal,
       frequency: NudgeFrequency.once,
+      legacySeenKey: 'has_seen_note_welcome',
     ),
     const Nudge(
       id: NudgeIds.perspectivesCta,

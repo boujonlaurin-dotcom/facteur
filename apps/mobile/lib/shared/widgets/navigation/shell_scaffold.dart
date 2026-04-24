@@ -7,6 +7,7 @@ import 'package:facteur/core/ui/notification_service.dart';
 import 'package:facteur/core/providers/navigation_providers.dart';
 import '../../../config/theme.dart';
 import '../../../config/routes.dart';
+import '../../../core/nudges/widgets/nudge_host.dart';
 import '../../../features/welcome_tour/widgets/welcome_tour_host.dart';
 
 /// Scaffold avec bottom navigation pour les écrans principaux
@@ -27,6 +28,7 @@ class ShellScaffold extends StatelessWidget {
           bottomNavigationBar: const _BottomNavBar(),
         ),
         const WelcomeTourHost(),
+        const NudgeHost(),
       ],
     );
   }

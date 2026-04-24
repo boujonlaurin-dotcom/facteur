@@ -6,10 +6,17 @@ import 'package:facteur/core/nudges/nudge_ids.dart';
 import 'package:facteur/core/nudges/nudge_service.dart';
 import 'package:facteur/core/nudges/nudge_storage.dart';
 
-NudgeCoordinator _makeCoordinator({DateTime Function()? clock}) {
+NudgeCoordinator _makeCoordinator({
+  DateTime Function()? clock,
+  Future<bool> Function()? isEnabled,
+}) {
   final storage = NudgeStorage();
   final service = NudgeService(storage: storage, clock: clock);
-  return NudgeCoordinator(service: service, clock: clock);
+  return NudgeCoordinator(
+    service: service,
+    clock: clock,
+    isEnabled: isEnabled,
+  );
 }
 
 void main() {
@@ -48,30 +55,30 @@ void main() {
   group('NudgeCoordinator — priority & queue', () {
     test('higher priority nudge preempts active lower-priority one', () async {
       final c = _makeCoordinator();
-      await c.request(NudgeIds.noteWelcome); // normal
-      expect(c.activeId, NudgeIds.noteWelcome);
+      await c.request(NudgeIds.articleSaveNotes); // normal
+      expect(c.activeId, NudgeIds.articleSaveNotes);
       await c.request(NudgeIds.digestWelcome); // high
       expect(c.activeId, NudgeIds.digestWelcome);
       // noteWelcome should have been pushed back to the queue.
-      expect(c.queuedIds, contains(NudgeIds.noteWelcome));
+      expect(c.queuedIds, contains(NudgeIds.articleSaveNotes));
     });
 
     test('lower priority request queues behind active', () async {
       final c = _makeCoordinator();
       await c.request(NudgeIds.digestWelcome); // high
-      await c.request(NudgeIds.noteWelcome); // normal
+      await c.request(NudgeIds.articleSaveNotes); // normal
       expect(c.activeId, NudgeIds.digestWelcome);
-      expect(c.queuedIds.first, NudgeIds.noteWelcome);
+      expect(c.queuedIds.first, NudgeIds.articleSaveNotes);
     });
 
     test('queue is sorted by priority after additions', () async {
       final c = _makeCoordinator();
       await c.request(NudgeIds.widgetPinAndroid); // high -> active
       await c.request(NudgeIds.articleReadOnSite); // low
-      await c.request(NudgeIds.noteWelcome); // normal
+      await c.request(NudgeIds.articleSaveNotes); // normal
       // Queue should be: [normal, low] (normal is higher than low).
       expect(c.queuedIds, [
-        NudgeIds.noteWelcome,
+        NudgeIds.articleSaveNotes,
         NudgeIds.articleReadOnSite,
       ]);
     });
@@ -103,13 +110,13 @@ void main() {
       await c.request(NudgeIds.widgetPinAndroid); // high
       await c.dismiss(markSeen: true);
       // Normal nudge must still be eligible afterwards.
-      final active = await c.request(NudgeIds.noteWelcome); // normal
-      expect(active, NudgeIds.noteWelcome);
+      final active = await c.request(NudgeIds.articleSaveNotes); // normal
+      expect(active, NudgeIds.articleSaveNotes);
     });
 
     test('second non-critical nudge blocked by session budget', () async {
       final c = _makeCoordinator();
-      await c.request(NudgeIds.noteWelcome); // normal
+      await c.request(NudgeIds.articleSaveNotes); // normal
       await c.dismiss(markSeen: true);
       final active = await c.request(NudgeIds.prioritySliderExplainer);
       expect(active, isNull);
@@ -118,7 +125,7 @@ void main() {
     test('24h cooldown blocks a 2nd non-critical within the same session',
         () async {
       final c = _makeCoordinator();
-      await c.request(NudgeIds.noteWelcome); // normal, consumes budget + cooldown
+      await c.request(NudgeIds.articleSaveNotes); // normal, consumes budget + cooldown
       await c.dismiss(markSeen: true);
       final blocked = await c.request(NudgeIds.prioritySliderExplainer);
       expect(blocked, isNull);
@@ -127,7 +134,7 @@ void main() {
     test('a fresh session has no in-memory cooldown (persistence is per-id)',
         () async {
       final c1 = _makeCoordinator();
-      await c1.request(NudgeIds.noteWelcome);
+      await c1.request(NudgeIds.articleSaveNotes);
       await c1.dismiss(markSeen: true);
       // A new coordinator has a clean in-memory budget and cooldown.
       // prioritySliderExplainer has its own per-id state (never shown).
@@ -172,6 +179,47 @@ void main() {
       c.resetSession();
       final reopened = await c.request(NudgeIds.sunflowerRecommend);
       expect(reopened, NudgeIds.sunflowerRecommend);
+    });
+  });
+
+  group('NudgeCoordinator — kill switch', () {
+    test('disabled: non-critical nudges are rejected', () async {
+      final c = _makeCoordinator(isEnabled: () async => false);
+      final active = await c.request(NudgeIds.digestWelcome); // high
+      expect(active, isNull);
+    });
+
+    test('disabled: critical nudge still activates', () async {
+      final c = _makeCoordinator(isEnabled: () async => false);
+      final active = await c.request(NudgeIds.welcomeTour); // critical
+      expect(active, NudgeIds.welcomeTour);
+    });
+
+    test('enabled flag flip allows a previously rejected nudge', () async {
+      var enabled = false;
+      final c = _makeCoordinator(isEnabled: () async => enabled);
+      expect(await c.request(NudgeIds.digestWelcome), isNull);
+      enabled = true;
+      expect(await c.request(NudgeIds.digestWelcome), NudgeIds.digestWelcome);
+    });
+  });
+
+  group('NudgeCoordinator — markConverted', () {
+    test('markConverted dismisses + marks seen + does not re-show', () async {
+      final c = _makeCoordinator();
+      await c.request(NudgeIds.digestWelcome);
+      final result = await c.markConverted(NudgeIds.digestWelcome);
+      expect(result, isNull);
+      final again = await c.request(NudgeIds.digestWelcome);
+      expect(again, isNull);
+    });
+
+    test('markConverted is a no-op when id does not match active', () async {
+      final c = _makeCoordinator();
+      await c.request(NudgeIds.digestWelcome);
+      final result = await c.markConverted(NudgeIds.articleSaveNotes);
+      expect(result, NudgeIds.digestWelcome);
+      expect(c.activeId, NudgeIds.digestWelcome);
     });
   });
 }
