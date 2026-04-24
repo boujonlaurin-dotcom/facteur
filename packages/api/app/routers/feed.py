@@ -5,10 +5,9 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, Query, Response
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import async_session_maker, get_db
+from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.content import UserContentStatus
 from app.models.enums import ContentType, FeedFilterMode
@@ -32,12 +31,7 @@ from app.schemas.feed import (
     TopicOverflowInfo,
     TrendingTopicResponse,
 )
-from app.schemas.learning import (
-    LearningCheckpointResponse,
-    proposal_to_response,
-)
 from app.services.feed_cache import FEED_CACHE
-from app.services.learning_service import LearningService
 from app.services.recommendation.french_stopwords import FRENCH_STOP_WORDS
 from app.services.recommendation_service import RecommendationService
 
@@ -322,40 +316,6 @@ async def _compute_feed(
         )
 
     # Epic 13: Learning Checkpoint — include proposals on first page only.
-    # Round 2 fix (bug-infinite-load-requests.md) : commit+release la session
-    # `db` AVANT l'appel Learning, et faire tourner Learning sur une session
-    # courte via `async_session_maker`. Sans ça, le feed hot path tient `db`
-    # pendant SELECT + UPDATE Learning, ce qui en pic d'usage monopolise le
-    # pool DB.
-    checkpoint_data = None
-    if offset == 0 and not saved_only:
-        # Libère la connexion DB avant l'appel Learning — s'il y avait des
-        # writes pending (hydrate_user_status), ils sont persistés ; sur
-        # erreur DB (exceptionnelle à ce stade), on trace mais on continue.
-        try:
-            await db.commit()
-        except SQLAlchemyError:
-            logger.warning("feed_precommit_failed", exc_info=True)
-            # Round 6 — commit échoué = session dirty. Sans rollback explicite,
-            # le commit final de get_db lève PendingRollbackError au return.
-            try:
-                await db.rollback()
-            except Exception as rb_exc:
-                logger.debug("feed_precommit_rollback_failed", error=str(rb_exc))
-
-        try:
-            learning_service = LearningService(
-                db=None, session_maker=async_session_maker
-            )
-            proposals = await learning_service.get_pending_proposals(user_uuid)
-            if len(proposals) >= 2:
-                checkpoint_data = LearningCheckpointResponse(
-                    proposals=[proposal_to_response(p) for p in proposals],
-                    total_pending=len(proposals),
-                )
-        except Exception as e:
-            logger.warning("learning_checkpoint_error", error=str(e))
-
     return FeedResponse(
         items=feed_items,
         pagination=PaginationMeta(
@@ -370,7 +330,6 @@ async def _compute_feed(
         keyword_overflow=keyword_overflow_data,
         entity_overflow=entity_overflow_data,
         carousels=carousels_data,
-        learning_checkpoint=checkpoint_data,
     )
 
 

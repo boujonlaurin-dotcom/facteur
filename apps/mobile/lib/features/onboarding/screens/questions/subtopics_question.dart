@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/theme.dart';
+import '../../../../core/providers/analytics_provider.dart';
 import '../../../custom_topics/models/topic_models.dart';
 import '../../../custom_topics/providers/custom_topics_provider.dart';
 import '../../providers/onboarding_provider.dart';
@@ -53,6 +56,25 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
         }
       }
     }
+
+    // Sprint 2 PR1 — fire subtopic_suggestion_shown once per unique slug
+    // presented across the selected themes.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final analytics = ref.read(analyticsServiceProvider);
+      final seen = <String>{};
+      for (final themeSlug in answers.themes ?? const <String>[]) {
+        final subs = AvailableSubtopics.byTheme[themeSlug] ?? const [];
+        for (final sub in subs) {
+          if (seen.add(sub.slug)) {
+            unawaited(analytics.trackSubtopicSuggestionShown(
+              subtopicSlug: sub.slug,
+              origin: 'onboarding',
+            ));
+          }
+        }
+      }
+    });
   }
 
   @override
@@ -64,13 +86,27 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
 
   void _toggleSubtopic(String slug) {
     HapticFeedback.selectionClick();
+    final wasSelected = _selectedSubtopics.contains(slug);
     setState(() {
-      if (_selectedSubtopics.contains(slug)) {
+      if (wasSelected) {
         _selectedSubtopics.remove(slug);
       } else {
         _selectedSubtopics.add(slug);
       }
     });
+    // Sprint 2 PR1 — fire subtopic_added / subtopic_removed.
+    final analytics = ref.read(analyticsServiceProvider);
+    if (wasSelected) {
+      unawaited(analytics.trackSubtopicRemoved(
+        subtopicSlug: slug,
+        origin: 'onboarding',
+      ));
+    } else {
+      unawaited(analytics.trackSubtopicAdded(
+        subtopicSlug: slug,
+        origin: 'onboarding',
+      ));
+    }
   }
 
   void _toggleEntity(String entityName) {
