@@ -8,7 +8,6 @@ import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/splash_screen.dart';
 import '../features/onboarding/screens/onboarding_screen.dart';
 import '../features/onboarding/screens/conclusion_animation_screen.dart';
-import '../features/welcome_tour/screens/welcome_tour_screen.dart';
 import '../features/feed/screens/feed_screen.dart';
 import '../features/feed/models/content_model.dart';
 import '../features/auth/screens/email_confirmation_screen.dart';
@@ -43,7 +42,6 @@ class RouteNames {
   static const String login = 'login';
   static const String onboarding = 'onboarding';
   static const String onboardingConclusion = 'onboarding-conclusion';
-  static const String welcomeTour = 'welcome-tour';
   static const String digest = 'digest';
   static const String digestClosure = 'digest-closure';
   static const String feed = 'feed';
@@ -74,7 +72,6 @@ class RoutePaths {
   static const String login = '/login';
   static const String onboarding = '/onboarding';
   static const String onboardingConclusion = '/onboarding/conclusion';
-  static const String welcomeTour = '/welcome-tour';
   static const String digest = '/digest';
   static const String digestClosure = '/digest/closure';
   static const String feed = '/feed';
@@ -136,7 +133,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           matchedLocation == RoutePaths.myInterests &&
               state.uri.queryParameters['serein'] == '1';
       final isOnDigest = matchedLocation == RoutePaths.digest;
-      final isOnWelcomeTour = matchedLocation == RoutePaths.welcomeTour;
 
       // 1. Les utilisateurs non connectés
       if (!isLoggedIn) {
@@ -175,24 +171,9 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // 5. Onboarding : empêcher d'y retourner si fini
       if (!authState.needsOnboarding && isOnOnboarding) {
-        // After onboarding completion, hand off to the welcome tour gate below.
-        return authState.welcomeTourSeen
-            ? RoutePaths.digest
-            : RoutePaths.welcomeTour;
-      }
-
-      // 6. Welcome Tour gate : intercepte tout user authentifié + onboardé qui
-      // n'a pas encore vu le tour. Couvre le flow nouveau user (post-onboarding
-      // → /digest → redirect) ET existant (1ʳᵉ relance post-deploy → /digest →
-      // redirect). Laisse passer si déjà sur /welcome-tour.
-      if (!authState.needsOnboarding &&
-          !authState.welcomeTourSeen &&
-          !isOnWelcomeTour) {
-        return RoutePaths.welcomeTour;
-      }
-
-      // 7. Bloquer /welcome-tour si déjà vu (deep link, back nav, etc.).
-      if (authState.welcomeTourSeen && isOnWelcomeTour) {
+        // Post-onboarding goes to /digest. The Welcome Tour v2 is triggered
+        // by WelcomeTourHost (overlay coachmark over /digest, /feed, /settings)
+        // when authState.welcomeTourSeen is false — no dedicated route.
         return RoutePaths.digest;
       }
 
@@ -244,13 +225,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: RoutePaths.onboardingConclusion,
         name: RouteNames.onboardingConclusion,
         builder: (context, state) => const ConclusionAnimationScreen(),
-      ),
-
-      // Welcome Tour (3 animated pages, outside ShellRoute → no bottom nav)
-      GoRoute(
-        path: RoutePaths.welcomeTour,
-        name: RouteNames.welcomeTour,
-        builder: (context, state) => const WelcomeTourScreen(),
       ),
 
       // Shell avec bottom navigation

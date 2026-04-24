@@ -77,6 +77,9 @@ dependencies:
   # Viewport tracking (Story 4.5b: feed refresh viewport-aware)
   visibility_detector: ^0.4.0+2
 
+  # Spotlight coachmark (Story 16.1 Welcome Tour v2)
+  tutorial_coach_mark: ^1.2.12
+
   # Auto Update (Android APK)
   package_info_plus: ^8.0.0
   path_provider: ^2.1.2

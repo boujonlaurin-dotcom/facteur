@@ -288,10 +288,15 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       );
 
       if (user != null) {
-        // Check onboarding on first sign-in (new user appearing)
+        // Check onboarding on first sign-in (new user appearing).
+        // Sequential await: `welcomeTourSeen` must settle AFTER `needsOnboarding`
+        // so the `WelcomeTourHost` doesn't race — starting the tour in the
+        // brief window where the shell is mounted before the onboarding
+        // redirect kicks in. Without the sequence, switching accounts on the
+        // same device could flash the tour and then strand its controller
+        // with `active=true` during onboarding.
         if (isNewSignIn) {
-          _checkOnboardingStatus();
-          _loadWelcomeTourSeen();
+          _loadSessionProfile();
         }
         _startProactiveRefreshTimer();
       } else {
@@ -375,6 +380,18 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     super.dispose();
   }
 
+  /// Loads onboarding status and welcome-tour-seen flag in sequence.
+  ///
+  /// Sequential ordering is load-bearing: `WelcomeTourHost` listens to both
+  /// flags, and if `welcomeTourSeen=false` settles before `needsOnboarding=true`
+  /// the host will start the tour in the shell before the onboarding redirect
+  /// takes effect — leaving the tour's state machine stuck when the host
+  /// unmounts.
+  Future<void> _loadSessionProfile() async {
+    await _checkOnboardingStatus();
+    await _loadWelcomeTourSeen();
+  }
+
   Future<void> _checkOnboardingStatus() async {
     if (state.user == null) return;
 
@@ -437,14 +454,17 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     await _checkOnboardingStatus();
   }
 
-  /// Charge l'état "tour vu" depuis le NudgeService.
+  /// Charge l'état "tour vu" pour l'utilisateur courant depuis NudgeService.
   ///
+  /// La clé est scopée par `user.id` (cf. [NudgeStorage.isSeenForUser]) pour
+  /// que deux comptes sur le même device voient le tour indépendamment.
   /// Appelé à l'init (session restaurée) et lors d'un nouveau sign-in.
-  /// Le champ `welcomeTourSeen` gate le redirect GoRouter vers `/welcome-tour`
-  /// pour les users existants (nouveau PR2) comme pour les nouveaux.
   Future<void> _loadWelcomeTourSeen() async {
+    final userId = state.user?.id;
+    if (userId == null) return;
     try {
-      final seen = await NudgeService().isSeen(NudgeIds.welcomeTour);
+      final seen =
+          await NudgeService().isSeenForUser(NudgeIds.welcomeTour, userId);
       if (state.welcomeTourSeen != seen) {
         state = state.copyWith(welcomeTourSeen: seen);
       }
@@ -453,14 +473,16 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     }
   }
 
-  /// Marque le Welcome Tour comme vu (persistence + state).
+  /// Marque le Welcome Tour comme vu pour l'utilisateur courant.
   ///
-  /// Appelé par `WelcomeTourScreen` à la fin du tour ou sur skip.
+  /// Appelé par le `WelcomeTourController` à la fin du tour ou sur skip.
   Future<void> markWelcomeTourSeen() async {
     if (state.welcomeTourSeen) return;
+    final userId = state.user?.id;
     state = state.copyWith(welcomeTourSeen: true);
+    if (userId == null) return;
     try {
-      await NudgeService().markSeen(NudgeIds.welcomeTour);
+      await NudgeService().markSeenForUser(NudgeIds.welcomeTour, userId);
     } catch (e) {
       debugPrint('AuthState: markWelcomeTourSeen persistence error: $e');
     }

@@ -7,6 +7,7 @@ import 'package:facteur/core/ui/notification_service.dart';
 import 'package:facteur/core/providers/navigation_providers.dart';
 import '../../../config/theme.dart';
 import '../../../config/routes.dart';
+import '../../../features/welcome_tour/widgets/welcome_tour_host.dart';
 
 /// Scaffold avec bottom navigation pour les écrans principaux
 class ShellScaffold extends StatelessWidget {
@@ -19,9 +20,14 @@ class ShellScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: child,
-      bottomNavigationBar: const _BottomNavBar(),
+    return Stack(
+      children: [
+        Scaffold(
+          body: child,
+          bottomNavigationBar: const _BottomNavBar(),
+        ),
+        const WelcomeTourHost(),
+      ],
     );
   }
 }
@@ -117,18 +123,21 @@ class _BottomNavBar extends ConsumerWidget {
             children: [
               // Tab 0: Essentiel (Digest)
               _NavItem(
+                key: bottomNavDigestKey,
                 label: 'Essentiel',
                 isSelected: selectedIndex == 0,
                 onTap: () => _onItemTapped(context, ref, 0, selectedIndex),
               ),
               // Tab 1: Mon flux (Feed) — Epic 12
               _NavItem(
+                key: bottomNavFeedKey,
                 label: 'Mon flux',
                 isSelected: selectedIndex == 1,
                 onTap: () => _onItemTapped(context, ref, 1, selectedIndex),
               ),
               // Tab 2: Paramètres (Settings)
               _NavItem(
+                key: bottomNavSettingsKey,
                 label: 'Paramètres',
                 isSelected: selectedIndex == 2,
                 onTap: () => _onItemTapped(context, ref, 2, selectedIndex),
@@ -147,6 +156,7 @@ class _NavItem extends StatelessWidget {
   final VoidCallback onTap;
 
   const _NavItem({
+    super.key,
     required this.label,
     required this.isSelected,
     required this.onTap,

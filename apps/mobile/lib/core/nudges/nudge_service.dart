@@ -48,6 +48,19 @@ class NudgeService {
     await _storage.recordShown(nudge, at: _clock());
   }
 
+  /// User-scoped variant: use for nudges whose "seen" semantics are per-user
+  /// (welcome tour, account-specific intros), not per-device.
+  Future<bool> isSeenForUser(String id, String userId) async {
+    final nudge = NudgeRegistry.get(id);
+    return _storage.isSeenForUser(nudge, userId);
+  }
+
+  Future<void> markSeenForUser(String id, String userId) async {
+    final nudge = NudgeRegistry.get(id);
+    await _storage.markSeenForUser(nudge, userId);
+    await _storage.recordShown(nudge, at: _clock());
+  }
+
   Future<void> markShown(String id, {DateTime? at}) async {
     final nudge = NudgeRegistry.get(id);
     await _storage.recordShown(nudge, at: at ?? _clock());
