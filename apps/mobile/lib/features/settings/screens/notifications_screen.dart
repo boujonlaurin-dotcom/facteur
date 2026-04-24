@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../providers/notifications_settings_provider.dart';
 
 /// Écran de gestion des préférences de notifications
@@ -44,9 +47,21 @@ class NotificationsScreen extends ConsumerWidget {
                     subtitle: 'Recevoir des alertes sur votre appareil',
                     value: settings.pushEnabled,
                     onChanged: (value) {
+                      final previous = settings.pushEnabled;
                       ref
                           .read(notificationsSettingsProvider.notifier)
                           .setPushEnabled(value);
+                      // Sprint 2 PR1 — fire optimistically on the tap; the
+                      // actual setPushEnabled may bail if OS permission is
+                      // denied, but the intent-to-change is the metric we
+                      // want (engagement with the toggle).
+                      unawaited(
+                        ref.read(analyticsServiceProvider).trackPreferenceChanged(
+                              key: 'notifications_push_enabled',
+                              oldValue: previous,
+                              newValue: value,
+                            ),
+                      );
                     },
                   ),
                   Divider(

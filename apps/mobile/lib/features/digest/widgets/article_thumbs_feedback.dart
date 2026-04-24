@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../providers/digest_provider.dart';
 
 /// Discreet thumbs-up / thumbs-down feedback row for a digest article.
@@ -114,6 +115,21 @@ class _ArticleThumbsFeedbackState extends ConsumerState<ArticleThumbsFeedback> {
       sentiment: sentiment,
       reasons: reasons,
       comment: comment,
+    );
+
+    // Sprint 2 PR1 — mirror the submission as an analytics event so we can
+    // compute the article_feedback rate without reading the article_feedback
+    // table directly.
+    unawaited(
+      ref.read(analyticsServiceProvider).trackArticleFeedbackSubmitted(
+        contentId: widget.contentId,
+        feedbackType: sentiment == 'positive' ? 'thumbs_up' : 'thumbs_down',
+        origin: 'digest',
+        extra: {
+          if (reasons.isNotEmpty) 'reasons': reasons,
+          if (comment != null) 'has_comment': true,
+        },
+      ),
     );
   }
 

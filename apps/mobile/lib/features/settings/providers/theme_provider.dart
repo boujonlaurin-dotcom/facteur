@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+import '../../../core/providers/analytics_provider.dart';
 
 part 'theme_provider.g.dart';
 
@@ -24,9 +28,18 @@ class ThemeNotifier extends _$ThemeNotifier {
 
   /// Change le mode et persiste le choix
   void setThemeMode(ThemeMode mode) {
+    final previous = state;
     state = mode;
     final box = Hive.box(_boxName);
     box.put(_keyThemeMode, mode.toString());
+    // Sprint 2 PR1 — emit preference_changed for the theme toggle.
+    if (previous != mode) {
+      unawaited(ref.read(analyticsServiceProvider).trackPreferenceChanged(
+            key: 'theme_mode',
+            oldValue: previous.name,
+            newValue: mode.name,
+          ));
+    }
   }
 
   /// Helper pour parser la string persistée

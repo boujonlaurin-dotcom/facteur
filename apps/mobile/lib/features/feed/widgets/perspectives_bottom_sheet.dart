@@ -4,6 +4,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../../widgets/design/facteur_card.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
@@ -141,8 +142,45 @@ class _PerspectivesBottomSheetState
   PerspectivesAnalysisState _analysisState = PerspectivesAnalysisState.idle;
   String? _analysisText;
   Set<String> _selectedSegments = {};
+  // Sprint 2 PR1 — perspective comparison events.
+  DateTime? _openedAt;
+  final Set<String> _viewedPerspectiveIds = <String>{};
 
   static const _groupOrder = ['gauche', 'centre', 'droite'];
+
+  @override
+  void initState() {
+    super.initState();
+    _openedAt = DateTime.now();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(analyticsServiceProvider).trackPerspectiveComparisonOpened(
+            contentId: widget.contentId,
+            sourcesCount: widget.perspectives.length,
+          );
+    });
+  }
+
+  @override
+  void dispose() {
+    final opened = _openedAt;
+    final elapsed =
+        opened != null ? DateTime.now().difference(opened).inSeconds : 0;
+    ref.read(analyticsServiceProvider).trackPerspectiveComparisonClosed(
+          contentId: widget.contentId,
+          viewedArticles: _viewedPerspectiveIds.length,
+          openedSeconds: elapsed,
+        );
+    super.dispose();
+  }
+
+  void _onPerspectiveViewed(String perspectiveId) {
+    if (!_viewedPerspectiveIds.add(perspectiveId)) return;
+    ref.read(analyticsServiceProvider).trackPerspectiveArticleViewed(
+          contentId: widget.contentId,
+          perspectiveArticleId: perspectiveId,
+        );
+  }
 
   Map<String, int> get _mergedDistribution {
     final dist = widget.biasDistribution;
@@ -333,7 +371,10 @@ class _PerspectivesBottomSheetState
                     ...filtered.map(
                       (p) => Padding(
                         padding: const EdgeInsets.only(bottom: 8),
-                        child: _PerspectiveCard(perspective: p),
+                        child: _PerspectiveCard(
+                          perspective: p,
+                          onView: _onPerspectiveViewed,
+                        ),
                       ),
                     ),
                     Padding(
@@ -472,8 +513,12 @@ class PerspectivesTrianglePainter extends CustomPainter {
 
 class _PerspectiveCard extends ConsumerWidget {
   final Perspective perspective;
+  // Sprint 2 PR1 — optional hook fired with a stable perspective id
+  // before the external URL is launched, so the parent sheet can emit
+  // perspective_article_viewed and keep track of unique views.
+  final void Function(String perspectiveId)? onView;
 
-  const _PerspectiveCard({required this.perspective});
+  const _PerspectiveCard({required this.perspective, this.onView});
 
   /// Find matching Source from user sources by domain
   Source? _findSource(List<Source> sources) {
@@ -522,6 +567,10 @@ class _PerspectiveCard extends ConsumerWidget {
         padding: EdgeInsets.zero,
         borderRadius: FacteurRadius.small,
         onTap: () async {
+          final perspectiveId = perspective.sourceDomain.isNotEmpty
+              ? perspective.sourceDomain
+              : perspective.url;
+          onView?.call(perspectiveId);
           final uri = Uri.parse(perspective.url);
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         },

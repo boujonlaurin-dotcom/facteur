@@ -85,6 +85,7 @@ from app.routers import (
     users,
     waitlist,
     webhooks,
+    well_informed,
 )
 from app.workers.scheduler import start_scheduler, stop_scheduler
 
@@ -406,6 +407,11 @@ app.include_router(
 app.include_router(app_update.router, prefix="/api/app", tags=["AppUpdate"])
 app.include_router(waitlist.router, prefix="/api/waitlist", tags=["Waitlist"])
 app.include_router(admin_cohorts.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(
+    well_informed.router,
+    prefix="/api/well-informed",
+    tags=["WellInformed"],
+)
 
 
 @app.exception_handler(Exception)

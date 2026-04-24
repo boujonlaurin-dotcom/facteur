@@ -12,7 +12,7 @@ from app.models.digest_generation_state import DigestGenerationState
 from app.models.editorial_highlights_history import EditorialHighlightsHistory
 from app.models.enums import ContentStatus, ContentType, SourceType
 from app.models.failed_source_attempt import FailedSourceAttempt
-from app.models.learning import UserEntityPreference, UserLearningProposal
+from app.models.learning import UserEntityPreference
 from app.models.perspective_analysis import PerspectiveAnalysis
 from app.models.progress import TopicQuiz, UserTopicProgress
 from app.models.serene_report import SereneReport
@@ -23,6 +23,7 @@ from app.models.user_personalization import UserPersonalization
 from app.models.user_topic_profile import UserTopicProfile
 from app.models.waitlist import WaitlistEntry
 from app.models.waitlist_survey import WaitlistSurveyResponse
+from app.models.well_informed_rating import UserWellInformedRating
 
 __all__ = [
     # Enums
@@ -74,7 +75,8 @@ __all__ = [
     "WaitlistSurveyResponse",
     # Serene Feedback
     "SereneReport",
-    # Learning Checkpoint (Epic 13)
-    "UserLearningProposal",
+    # Entity Preferences (follow/mute on named entities)
     "UserEntityPreference",
+    # Self-reported "well-informed" score (Story 14.3)
+    "UserWellInformedRating",
 ]
