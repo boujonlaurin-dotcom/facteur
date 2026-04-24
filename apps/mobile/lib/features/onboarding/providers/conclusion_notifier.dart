@@ -64,8 +64,10 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
       _apiCompleted = true;
       _checkCompletion();
     } catch (e) {
-      // Tous les retries ont échoué → montrer l'erreur
+      // Tous les retries ont échoué → sauvegarder localement pour re-sync
+      // automatique au prochain lancement, puis afficher le fallback.
       _minAnimationTimer?.cancel();
+      await _saveProfileLocallyDegraded();
       state = ConclusionError(e.toString());
     }
   }
@@ -199,20 +201,9 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
     await startConclusion();
   }
 
-  /// Mode dégradé : continuer sans sauvegarder
-  Future<void> continueAnyway() async {
-    // Marquer comme complété localement uniquement (mode dégradé)
-    await _saveProfileLocallyDegraded();
-
-    // Marquer l'onboarding comme finalisé
-    _ref.read(onboardingProvider.notifier).finalizeOnboarding();
-
-    state = const ConclusionSuccess();
-
-    debugPrint('Mode dégradé activé : onboarding complété localement uniquement');
-  }
-
-  /// Sauvegarde en mode dégradé (local uniquement)
+  /// Sauvegarde en mode dégradé (local uniquement).
+  /// Appelée automatiquement quand tous les retries API échouent — pose le flag
+  /// `pending_sync` que le bootstrap re-traitera au prochain lancement authentifié.
   Future<void> _saveProfileLocallyDegraded() async {
     try {
       final answers = _ref.read(onboardingProvider).answers;

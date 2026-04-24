@@ -174,12 +174,18 @@ class OnboardingState {
   final bool isTransitioning;
   final bool showReaction;
 
+  /// Thèmes personnalisés dont la sauvegarde API a échoué pendant Subtopics.
+  /// Affiché en fin de parcours pour informer l'utilisateur qu'il pourra
+  /// les ré-ajouter depuis Mes Intérêts.
+  final List<String> failedCustomTopics;
+
   const OnboardingState({
     this.currentSection = OnboardingSection.overview,
     this.currentQuestionIndex = 0,
     this.answers = const OnboardingAnswers(),
     this.isTransitioning = false,
     this.showReaction = false,
+    this.failedCustomTopics = const [],
   });
 
   /// Nombre total de questions dans la Section 1
@@ -240,6 +246,7 @@ class OnboardingState {
     OnboardingAnswers? answers,
     bool? isTransitioning,
     bool? showReaction,
+    List<String>? failedCustomTopics,
   }) {
     return OnboardingState(
       currentSection: currentSection ?? this.currentSection,
@@ -247,6 +254,7 @@ class OnboardingState {
       answers: answers ?? this.answers,
       isTransitioning: isTransitioning ?? this.isTransitioning,
       showReaction: showReaction ?? this.showReaction,
+      failedCustomTopics: failedCustomTopics ?? this.failedCustomTopics,
     );
   }
 }
@@ -624,6 +632,20 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     // Cette méthode est appelée avant la transition vers l'animation finale
     // Les données seront envoyées à l'API dans l'écran d'animation
     _saveAnswers();
+  }
+
+  /// Enregistre les noms des thèmes personnalisés dont la création API a échoué
+  /// pendant Subtopics. Non-bloquant — affiché en résumé après la conclusion.
+  void recordFailedCustomTopics(List<String> names) {
+    if (names.isEmpty) return;
+    state = state.copyWith(
+      failedCustomTopics: [...state.failedCustomTopics, ...names],
+    );
+  }
+
+  /// Reset la liste des échecs (après affichage du résumé post-onboarding).
+  void clearFailedCustomTopics() {
+    state = state.copyWith(failedCustomTopics: const []);
   }
 
   /// BYPASS TEMPORAIRE POUR TEST (A supprimer plus tard)

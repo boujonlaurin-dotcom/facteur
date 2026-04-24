@@ -110,41 +110,59 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
   }
 
   Future<void> _continue() async {
-    // Collect custom topics + entities to save via API BEFORE navigating
+    // Collect custom topics + entities to save via API BEFORE navigating.
+    // Non-bloquant : les échecs sont loggués et résumés en fin d'onboarding,
+    // jamais opposés à la progression utilisateur.
     final notifier = ref.read(customTopicsProvider.notifier);
-    final futures = <Future<dynamic>>[];
+    final attempts = <_TopicAttempt>[];
 
     for (final entry in _customTopics.entries) {
       for (final topicName in entry.value) {
-        futures.add(
-          notifier
+        attempts.add(_TopicAttempt(
+          name: topicName,
+          future: notifier
               .followTopic(topicName, slugParent: entry.key)
-              .catchError((_) => null),
-        );
+              .then<Object?>((v) => v)
+              .catchError((Object e, StackTrace st) {
+            debugPrint(
+              '[ONBOARDING_TELEMETRY] event=custom_topic_failed '
+              'name="$topicName" theme=${entry.key} error=$e',
+            );
+            return null;
+          }),
+        ));
       }
     }
     for (final entityName in _selectedEntities) {
-      futures.add(
-        notifier.followTopic(entityName).catchError((_) => null),
-      );
+      attempts.add(_TopicAttempt(
+        name: entityName,
+        future: notifier
+            .followTopic(entityName)
+            .then<Object?>((v) => v)
+            .catchError((Object e, StackTrace st) {
+          debugPrint(
+            '[ONBOARDING_TELEMETRY] event=custom_entity_failed '
+            'name="$entityName" error=$e',
+          );
+          return null;
+        }),
+      ));
     }
 
-    if (futures.isNotEmpty) {
+    if (attempts.isNotEmpty) {
       setState(() => _saving = true);
-      final results = await Future.wait(futures);
-      final failed = results.where((r) => r == null).length;
+      final results = await Future.wait(attempts.map((a) => a.future));
+      final failedNames = <String>[
+        for (var i = 0; i < attempts.length; i++)
+          if (results[i] == null) attempts[i].name,
+      ];
 
-      if (mounted && failed > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              failed == results.length
-                  ? 'Impossible de sauvegarder les sujets personnalisés'
-                  : '$failed sujet(s) n\'ont pas pu être sauvegardés',
-            ),
-            duration: const Duration(seconds: 3),
-          ),
-        );
+      if (failedNames.isNotEmpty) {
+        // Stocke dans l'état — la bottom sheet de synthèse s'affichera
+        // après la conclusion, à la place du snackbar éphémère.
+        ref
+            .read(onboardingProvider.notifier)
+            .recordFailedCustomTopics(failedNames);
       }
     }
 
@@ -539,6 +557,12 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
       ),
     );
   }
+}
+
+class _TopicAttempt {
+  final String name;
+  final Future<Object?> future;
+  const _TopicAttempt({required this.name, required this.future});
 }
 
 class _EntityChip extends StatelessWidget {

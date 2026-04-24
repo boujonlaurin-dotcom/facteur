@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'config/theme.dart';
 import 'config/routes.dart';
 import 'features/feed/providers/feed_preload_provider.dart';
+import 'features/onboarding/providers/onboarding_sync_provider.dart';
 import 'features/settings/providers/theme_provider.dart';
 
 import 'core/ui/notification_service.dart';
@@ -22,6 +23,10 @@ class FacteurApp extends ConsumerWidget {
     // watches auth state and kicks off `feedProvider.future` in the
     // background so the Feed tab renders instantly on first tap.
     ref.watch(feedPreloadProvider);
+
+    // Active la re-sync automatique de l'onboarding quand la session devient
+    // authentifiée (best-effort, silencieux) — voir onboarding_sync_provider.dart.
+    ref.watch(onboardingSyncProvider);
 
     return MaterialApp.router(
       title: 'Facteur',

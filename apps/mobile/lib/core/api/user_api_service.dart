@@ -76,19 +76,26 @@ class UserApiService {
     return UserProfile.fromJson(data);
   }
 
-  /// Formate les réponses pour l'API (camelCase → snake_case)
+  /// Formate les réponses pour l'API (camelCase → snake_case).
+  ///
+  /// Défense en profondeur : applique des défauts neutres si l'état mobile
+  /// est incomplet (reprise partielle, bug de navigation). Évite un 422
+  /// Pydantic côté backend qui détruirait la progression utilisateur.
   Map<String, dynamic> _formatAnswersForApi(OnboardingAnswers answers) {
+    final objective = (answers.objectives?.isNotEmpty ?? false)
+        ? answers.objectives!.join(',')
+        : 'culture';
     return {
-      'objective': answers.objectives?.join(','),
+      'objective': objective,
       'age_range': answers.ageRange,
       'gender': answers.gender,
-      'approach': answers.approach,
+      'approach': answers.approach ?? 'detailed',
       'perspective': answers.perspective,
-      'response_style': answers.responseStyle,
+      'response_style': answers.responseStyle ?? 'nuanced',
       'content_recency': answers.contentRecency ?? 'recent',
-      'gamification_enabled': answers.gamificationEnabled,
-      'weekly_goal': answers.dailyArticleCount,
-      'digest_mode': answers.digestMode,
+      'gamification_enabled': answers.gamificationEnabled ?? true,
+      'weekly_goal': answers.dailyArticleCount ?? 5,
+      'digest_mode': answers.digestMode ?? 'pour_vous',
       'themes': answers.themes,
       'subtopics': answers.subtopics,
       'preferred_sources': answers.preferredSources,
