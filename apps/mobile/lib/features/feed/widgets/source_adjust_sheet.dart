@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/auth/auth_state.dart';
 import '../../../core/nudges/nudge_coordinator.dart';
 import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/widgets/nudge_inline_banner.dart';
@@ -62,6 +63,10 @@ class _SourceAdjustSheetState extends ConsumerState<SourceAdjustSheet> {
   }
 
   Future<void> _requestExplainerNudge() async {
+    // Gate on welcome_tour: never surface catalogue nudges while the tour
+    // hasn't finished. The coordinator also enforces this via prerequisites,
+    // but this early-return avoids a wasted roundtrip for the common case.
+    if (!ref.read(authStateProvider).welcomeTourSeen) return;
     final coordinator = ref.read(nudgeCoordinatorProvider);
     final active =
         await coordinator.request(NudgeIds.prioritySliderExplainer);

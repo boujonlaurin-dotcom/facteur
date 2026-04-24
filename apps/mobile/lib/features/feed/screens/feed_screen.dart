@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../config/routes.dart';
+import '../../../core/auth/auth_state.dart';
 import '../../../core/nudges/nudge_coordinator.dart';
 import '../../../core/nudges/nudge_counters.dart';
 import '../../../core/nudges/nudge_ids.dart';
@@ -139,6 +140,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   }
 
   Future<void> _recordFeedOpenAndMaybeNudge() async {
+    // Gate everything on welcome_tour having been seen. During the tour the
+    // shell navigates to /feed to show step 2, triggering this initState —
+    // we don't want that to count as a "natural" feed visit.
+    if (!ref.read(authStateProvider).welcomeTourSeen) return;
     final opens = await NudgeCounters.increment(NudgeCounters.feedOpenCount);
     final taps = await NudgeCounters.get(NudgeCounters.feedCardTapCount);
     if (!mounted) return;
@@ -161,6 +166,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   }
 
   Future<void> _onFeedCardTapped() async {
+    if (!ref.read(authStateProvider).welcomeTourSeen) return;
     await NudgeCounters.increment(NudgeCounters.feedCardTapCount);
   }
 

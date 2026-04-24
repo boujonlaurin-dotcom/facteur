@@ -28,7 +28,12 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    // Seed welcome_tour so the catalogue nudges used by these tests are
+    // eligible. The `no events emitted when request is rejected` test
+    // overrides the prefs inline to exercise a different rejection reason.
+    SharedPreferences.setMockInitialValues({
+      'nudge.welcome_tour.seen': true,
+    });
   });
 
   test('request → dismiss emits shown + dismissed with outcome', () async {

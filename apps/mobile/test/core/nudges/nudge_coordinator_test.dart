@@ -23,7 +23,12 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    // Seed welcome_tour as seen by default: the PR3 catalogue nudges declare
+    // it as a prerequisite, and most tests here exercise those nudges. Tests
+    // that specifically verify the gate override this in a nested setUp.
+    SharedPreferences.setMockInitialValues({
+      'nudge.welcome_tour.seen': true,
+    });
   });
 
   group('NudgeCoordinator — single request', () {
@@ -85,6 +90,12 @@ void main() {
   });
 
   group('NudgeCoordinator — prerequisites', () {
+    setUp(() {
+      // Override the top-level seed — these tests exercise the prereq gate
+      // directly, so they need a fresh store.
+      SharedPreferences.setMockInitialValues({});
+    });
+
     test('nudge with unmet prerequisite is rejected', () async {
       final c = _makeCoordinator();
       // feedBadgeLongpress requires welcomeTour to be seen.
@@ -190,6 +201,9 @@ void main() {
     });
 
     test('disabled: critical nudge still activates', () async {
+      // welcome_tour can't re-activate if already seen; the outer setUp
+      // seeds that flag, so reset here.
+      SharedPreferences.setMockInitialValues({});
       final c = _makeCoordinator(isEnabled: () async => false);
       final active = await c.request(NudgeIds.welcomeTour); // critical
       expect(active, NudgeIds.welcomeTour);
@@ -201,6 +215,39 @@ void main() {
       expect(await c.request(NudgeIds.digestWelcome), isNull);
       enabled = true;
       expect(await c.request(NudgeIds.digestWelcome), NudgeIds.digestWelcome);
+    });
+  });
+
+  group('NudgeCoordinator — catalogue nudges gated on welcome_tour', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+    });
+
+    const catalogueIds = [
+      NudgeIds.prioritySliderExplainer,
+      NudgeIds.articleSaveNotes,
+      NudgeIds.articleReadOnSite,
+      NudgeIds.perspectivesCta,
+      NudgeIds.feedBadgeLongpress,
+      NudgeIds.feedPreviewLongpress,
+    ];
+
+    for (final id in catalogueIds) {
+      test('$id is rejected when welcome_tour not seen', () async {
+        final c = _makeCoordinator();
+        expect(await c.request(id), isNull);
+      });
+    }
+
+    test('priority_slider_explainer unlocked once welcome_tour is seen',
+        () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('nudge.welcome_tour.seen', true);
+      final c = _makeCoordinator();
+      expect(
+        await c.request(NudgeIds.prioritySliderExplainer),
+        NudgeIds.prioritySliderExplainer,
+      );
     });
   });
 

@@ -31,6 +31,7 @@ import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
 import '../widgets/youtube_player_widget.dart';
 import '../widgets/note_input_sheet.dart';
+import '../../../core/auth/auth_state.dart';
 import '../../../core/nudges/nudge_coordinator.dart';
 import '../../../core/nudges/nudge_counters.dart';
 import '../../../core/nudges/nudge_ids.dart';
@@ -323,15 +324,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }
     });
 
-    // First-time save+notes nudge, routed via NudgeCoordinator (respects
-    // kill switch + queue + legacy `has_seen_note_welcome` key).
-    _requestSaveNotesNudge();
+    // All feature nudges are gated on welcome_tour being seen — we don't want
+    // them surfacing during (or piggybacking on) the onboarding tour flow.
+    if (ref.read(authStateProvider).welcomeTourSeen) {
+      // First-time save+notes nudge, routed via NudgeCoordinator (respects
+      // kill switch + queue + legacy `has_seen_note_welcome` key).
+      _requestSaveNotesNudge();
 
-    // Persist article open count for triggers (read_on_site 4th article,
-    // feed_preview_longpress ≥2 articles opened).
-    NudgeCounters.increment(NudgeCounters.articleOpenCount).then((count) {
-      if (mounted) _articleOpenCount = count;
-    });
+      // Persist article open count for triggers (read_on_site 4th article,
+      // feed_preview_longpress ≥2 articles opened).
+      NudgeCounters.increment(NudgeCounters.articleOpenCount).then((count) {
+        if (mounted) _articleOpenCount = count;
+      });
+    }
 
     // 🌻 Nudge: record article open and start 30s timer
     NudgeTracker.recordArticleOpen();
@@ -1098,6 +1103,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   void _maybeTriggerPerspectivesCta() {
     if (_perspectivesCtaTriggered) return;
+    if (!ref.read(authStateProvider).welcomeTourSeen) return;
     final response = _perspectivesResponse;
     if (response == null) return;
     if (response.perspectives.isEmpty || !response.shouldDisplay) return;

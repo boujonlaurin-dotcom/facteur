@@ -99,6 +99,7 @@ class NudgeRegistry {
       placement: NudgePlacement.inlineBanner,
       priority: NudgePriority.normal,
       frequency: NudgeFrequency.once,
+      prerequisites: [NudgeIds.welcomeTour],
     ),
     const Nudge(
       id: NudgeIds.articleSaveNotes,
@@ -107,6 +108,7 @@ class NudgeRegistry {
       priority: NudgePriority.normal,
       frequency: NudgeFrequency.once,
       legacySeenKey: 'has_seen_note_welcome',
+      prerequisites: [NudgeIds.welcomeTour],
     ),
     const Nudge(
       id: NudgeIds.perspectivesCta,
@@ -114,6 +116,7 @@ class NudgeRegistry {
       placement: NudgePlacement.hintAnimation,
       priority: NudgePriority.low,
       frequency: NudgeFrequency.once,
+      prerequisites: [NudgeIds.welcomeTour],
     ),
     const Nudge(
       id: NudgeIds.articleReadOnSite,
@@ -121,6 +124,7 @@ class NudgeRegistry {
       placement: NudgePlacement.inlineBanner,
       priority: NudgePriority.low,
       frequency: NudgeFrequency.once,
+      prerequisites: [NudgeIds.welcomeTour],
     ),
   ];
 }
