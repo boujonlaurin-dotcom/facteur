@@ -24,6 +24,8 @@ class NudgeStorage {
 
   String _seenKey(String id) => '$_seenPrefix$id$_seenSuffix';
   String _lastShownKey(String id) => '$_seenPrefix$id$_lastShownSuffix';
+  String _userSeenKey(String id, String userId) =>
+      '$_seenPrefix$id$_seenSuffix.$userId';
 
   Future<bool> isSeen(Nudge nudge) async {
     final prefs = await _prefs();
@@ -43,6 +45,26 @@ class NudgeStorage {
     if (legacy != null) {
       await prefs.setBool(legacy, true);
     }
+  }
+
+  /// User-scoped variant for nudges whose "seen" semantics are per-user, not
+  /// per-device (e.g., the welcome tour that introduces the app — a second
+  /// account on the same device must see it independently).
+  ///
+  /// Does NOT honor the device-scoped legacy key as a block: we can't know
+  /// which user marked it seen, and blocking new users would reproduce the
+  /// bug this API exists to fix. The user who saw the tour in v1 may see it
+  /// once more on their next boot; after [markSeenForUser] they won't again.
+  Future<bool> isSeenForUser(Nudge nudge, String userId) async {
+    final prefs = await _prefs();
+    final userScoped = prefs.getBool(_userSeenKey(nudge.id, userId));
+    return userScoped ?? false;
+  }
+
+  Future<void> markSeenForUser(Nudge nudge, String userId) async {
+    final prefs = await _prefs();
+    await prefs.setBool(_userSeenKey(nudge.id, userId), true);
+    await prefs.setBool(_seenKey(nudge.id), true);
   }
 
   Future<DateTime?> lastShown(Nudge nudge) async {
