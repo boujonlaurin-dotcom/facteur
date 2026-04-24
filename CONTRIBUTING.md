@@ -9,15 +9,17 @@ Ce guide s'adresse aux développeurs (même débutants) souhaitant contribuer au
 Avant de commencer, assurez-vous d'avoir installé les outils suivants :
 
 - **Git** : Pour la gestion de version.
-- **Python 3.12** : (⚠️ Ne pas utiliser 3.13+ pour le moment). [pyenv](https://github.com/pyenv/pyenv) est recommandé pour gérer les versions.
-- **Environnement Python (venv)** : L'utilisation de l'environnement virtuel est **indispensable** pour exécuter les scripts du projet et éviter les erreurs de modules manquants ou de commande `python` introuvable.
 - **Flutter (dernière version stable)** : Pour l'application mobile.
-- **Railway CLI** (optionnel) : Pour la gestion du déploiement.
 - **Un compte Supabase** : Pour la base de données et l'authentification.
-- **GitGuardian (ggshield)** : Outil de sécurité pour prévenir la fuite de secrets.
-  1. Installation : `brew install ggshield`
-  2. Authentification : `ggshield auth login`
-  3. Scan initial : `ggshield secret scan repo .`
+- **CLI tools** (pyenv, Railway, Supabase, Sentry, ggshield) : Installés en une commande depuis la racine du repo :
+  ```bash
+  brew bundle
+  ggshield auth login            # authentification GitGuardian
+  ggshield secret scan repo .    # scan initial de sécurité
+  pyenv install 3.12             # installer Python 3.12 (⚠️ ne pas utiliser 3.13+)
+  pyenv local 3.12               # définir la version locale du projet
+  ```
+- **Environnement Python (venv)** : L'utilisation de l'environnement virtuel est **indispensable** pour exécuter les scripts du projet et éviter les erreurs de modules manquants ou de commande `python` introuvable.
 
 > [!TIP]
 > Si la commande `python` n'est pas trouvée, essayez `python3` ou assurez-vous que votre environnement virtuel est bien activé.
