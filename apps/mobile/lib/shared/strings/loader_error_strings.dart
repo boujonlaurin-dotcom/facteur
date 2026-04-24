@@ -69,3 +69,20 @@ class LaurinFallbackStrings {
 
   static const String mailSubject = 'Facteur — petit souci de chargement';
 }
+
+/// Messages spécifiques au fallback de fin d'onboarding.
+class OnboardingFallbackStrings {
+  OnboardingFallbackStrings._();
+
+  static const String title = 'On n\'a pas pu enregistrer vos réponses.';
+  static const String subtitle =
+      'L\'équipe travaille à corriger ça. Vous pourrez refaire le questionnaire plus tard — rien n\'est perdu.';
+
+  /// Résumé affiché en SnackBar quand certains thèmes personnalisés ont échoué.
+  static String failedCustomTopicsMessage(List<String> names) {
+    if (names.isEmpty) return '';
+    final preview = names.take(3).join(', ');
+    final extra = names.length > 3 ? ' et ${names.length - 3} autre(s)' : '';
+    return 'Certains sujets personnalisés n\'ont pas pu être sauvés ($preview$extra). Tu pourras les réajouter depuis Mes Intérêts.';
+  }
+}

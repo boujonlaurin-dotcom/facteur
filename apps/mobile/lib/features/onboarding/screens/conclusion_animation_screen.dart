@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../../config/theme.dart';
 import '../../../config/routes.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../shared/strings/loader_error_strings.dart';
+import '../../../shared/widgets/states/laurin_fallback_view.dart';
 import '../providers/conclusion_notifier.dart';
 import '../providers/onboarding_provider.dart';
 import '../widgets/animated_message_text.dart';
@@ -53,7 +55,12 @@ class _ConclusionAnimationScreenState
           ConclusionLoading() => const _LoadingView(),
           ConclusionSuccess() =>
             const _LoadingView(), // Garde l'animation pendant la transition
-          ConclusionError(:final message) => _ErrorView(errorMessage: message),
+          ConclusionError() => LaurinFallbackView(
+              title: OnboardingFallbackStrings.title,
+              subtitle: OnboardingFallbackStrings.subtitle,
+              onRetry: () =>
+                  ref.read(conclusionNotifierProvider.notifier).retry(),
+            ),
         },
       ),
     );
@@ -63,8 +70,36 @@ class _ConclusionAnimationScreenState
     // Marquer l'onboarding comme terminé dans l'auth state
     await ref.read(authStateProvider.notifier).setOnboardingCompleted();
 
+    // Capture la liste des customs échoués AVANT clearSavedData pour pouvoir
+    // afficher le résumé utilisateur ("tu pourras les réajouter").
+    final failedCustomTopics =
+        List<String>.from(ref.read(onboardingProvider).failedCustomTopics);
+
     // Effacer les données locales temporaires
     ref.read(onboardingProvider.notifier).clearSavedData();
+    ref.read(onboardingProvider.notifier).clearFailedCustomTopics();
+
+    if (mounted && failedCustomTopics.isNotEmpty) {
+      // Dialog bloquant au lieu d'une SnackBar : les bottom sheets suivants
+      // (thème, notifications) poseraient un barrier qui masquerait la
+      // SnackBar. Le dialog garantit que l'utilisateur voit l'info.
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          content: Text(
+            OnboardingFallbackStrings.failedCustomTopicsMessage(
+              failedCustomTopics,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
 
     // Proposer le choix du thème avant de naviguer
     if (mounted) {
@@ -111,103 +146,3 @@ class _LoadingView extends StatelessWidget {
   }
 }
 
-/// Vue d'erreur avec options de retry
-class _ErrorView extends ConsumerWidget {
-  final String errorMessage;
-
-  const _ErrorView({required this.errorMessage});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.facteurColors;
-
-    return Padding(
-      padding: const EdgeInsets.all(FacteurSpacing.space6),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Spacer(flex: 2),
-
-          // Emoji d'erreur
-          const Text('⚠️', style: TextStyle(fontSize: 64)),
-
-          const SizedBox(height: FacteurSpacing.space6),
-
-          // Titre
-          Text(
-            'Oups, un problème est survenu',
-            style: Theme.of(context).textTheme.displayMedium,
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space4),
-
-          // Message d'erreur
-          Text(
-            'Impossible de sauvegarder ton profil',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyLarge?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.center,
-          ),
-
-          if (errorMessage.isNotEmpty) ...[
-            const SizedBox(height: FacteurSpacing.space3),
-            Container(
-              padding: const EdgeInsets.all(FacteurSpacing.space3),
-              decoration: BoxDecoration(
-                color: colors.surface,
-                borderRadius: BorderRadius.circular(FacteurRadius.small),
-              ),
-              child: Text(
-                errorMessage,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: colors.textTertiary),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ],
-
-          const Spacer(flex: 3),
-
-          // Bouton réessayer
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                ref.read(conclusionNotifierProvider.notifier).retry();
-              },
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                backgroundColor: colors.primary,
-              ),
-              child: const Text(
-                'Réessayer',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: FacteurSpacing.space3),
-
-          // Bouton continuer quand même
-          TextButton(
-            onPressed: () {
-              ref.read(conclusionNotifierProvider.notifier).continueAnyway();
-            },
-            child: Text(
-              'Continuer quand même',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.textSecondary,
-                    decoration: TextDecoration.underline,
-                  ),
-            ),
-          ),
-
-          const SizedBox(height: FacteurSpacing.space4),
-        ],
-      ),
-    );
-  }
-}
