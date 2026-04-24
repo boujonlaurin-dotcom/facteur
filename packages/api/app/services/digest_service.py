@@ -1286,9 +1286,7 @@ class DigestService:
                         )
                     )
                 )
-                consumed_count = (
-                    await self.session.execute(count_stmt)
-                ).scalar_one()
+                consumed_count = (await self.session.execute(count_stmt)).scalar_one()
 
                 if consumed_count / len(content_ids) < threshold:
                     continue
