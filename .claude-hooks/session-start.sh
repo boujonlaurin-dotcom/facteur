@@ -25,7 +25,8 @@ check_cli sentry-cli
 
 if [ ${#missing[@]} -gt 0 ]; then
   echo "[session-start] MISSING CLIs: ${missing[*]}"
-  echo "[session-start] → Run: brew bundle --file=${REPO_ROOT}/Brewfile"
+  echo "[session-start] → macOS (Homebrew): brew bundle --file=${REPO_ROOT}/Brewfile"
+  echo "[session-start] → Linux / no Homebrew: bash ${REPO_ROOT}/scripts/setup-cli-tools.sh"
 fi
 
 # =============================================================================
