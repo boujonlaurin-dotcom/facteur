@@ -36,7 +36,10 @@ from app.schemas.source import (
     UpdateSourceWeightRequest,
 )
 from app.services.feed_cache import FEED_CACHE
-from app.services.search.smart_source_search import SmartSourceSearchService
+from app.services.search.smart_source_search import (
+    SmartSourceSearchService,
+    mark_search_abandoned,
+)
 from app.services.source_service import SourceService
 from app.services.sources_cache import SOURCES_CACHE
 from app.utils.db_retry import retry_db_op
@@ -181,8 +184,14 @@ THEME_LABELS = {
 }
 
 
-def _source_to_response(s: Source) -> SourceResponse:
-    """Convert Source model to SourceResponse (minimal, no user context)."""
+def _source_to_response(
+    s: Source, *, trusted_ids: set[UUID] | None = None
+) -> SourceResponse:
+    """Convert Source model to SourceResponse.
+
+    `trusted_ids` lets callers flag sources already followed by the current
+    user (used by the theme suggestions screen to show "déjà suivie").
+    """
     return SourceResponse(
         id=s.id,
         name=s.name,
@@ -193,6 +202,7 @@ def _source_to_response(s: Source) -> SourceResponse:
         logo_url=s.logo_url,
         is_curated=s.is_curated,
         is_custom=not s.is_curated,
+        is_trusted=trusted_ids is not None and s.id in trusted_ids,
         content_count=0,
         bias_stance=getattr(s.bias_stance, "value", "unknown"),
         reliability_score=getattr(s.reliability_score, "value", "unknown"),
@@ -268,7 +278,12 @@ async def log_search_abandoned(
     data: SearchAbandonedRequest,
     user_id: str = Depends(get_current_user_id),
 ) -> None:
-    """Enregistre une recherche sans ajout de source (signal mobile)."""
+    """Enregistre une recherche sans ajout de source (signal mobile).
+
+    Marque le dernier `source_search_logs` correspondant comme abandonné, et
+    conserve l'insert legacy dans `failed_source_attempts` pour rétrocompat.
+    """
+    await mark_search_abandoned(user_id, data.query)
     await _log_failed_source_attempt(
         user_id=user_id,
         input_text=data.query,
@@ -287,6 +302,11 @@ async def get_sources_by_theme(
     """Sources par thème : Curées → Candidates → Communauté."""
     from app.models.source import UserSource
 
+    # Sources déjà suivies par l'utilisateur (pour flag is_trusted dans la réponse)
+    trusted_stmt = select(UserSource.source_id).where(UserSource.user_id == user_id)
+    trusted_result = await db.execute(trusted_stmt)
+    trusted_ids: set[UUID] = {row[0] for row in trusted_result.all()}
+
     groups: list[ThemeSourceGroup] = []
     total = 0
 
@@ -301,7 +321,9 @@ async def get_sources_by_theme(
     )
     result = await db.execute(stmt_curated)
     curated_sources = result.scalars().all()
-    curated_responses = [_source_to_response(s) for s in curated_sources]
+    curated_responses = [
+        _source_to_response(s, trusted_ids=trusted_ids) for s in curated_sources
+    ]
     if curated_responses:
         groups.append(ThemeSourceGroup(label="Curées", sources=curated_responses))
         total += len(curated_responses)
@@ -320,7 +342,9 @@ async def get_sources_by_theme(
         )
         result = await db.execute(stmt_candidates)
         candidate_sources = result.scalars().all()
-        candidate_responses = [_source_to_response(s) for s in candidate_sources]
+        candidate_responses = [
+            _source_to_response(s, trusted_ids=trusted_ids) for s in candidate_sources
+        ]
         if candidate_responses:
             groups.append(
                 ThemeSourceGroup(label="Candidates", sources=candidate_responses)
@@ -350,7 +374,8 @@ async def get_sources_by_theme(
             result = await db.execute(stmt_community)
             community_rows = result.all()
             community_responses = [
-                _source_to_response(row[0]) for row in community_rows
+                _source_to_response(row[0], trusted_ids=trusted_ids)
+                for row in community_rows
             ]
             if community_responses:
                 groups.append(

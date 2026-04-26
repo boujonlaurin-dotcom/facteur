@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+import unicodedata
 from datetime import UTC, datetime, timedelta
 
 import structlog
@@ -15,8 +16,15 @@ CACHE_TTL_HOURS = 24
 
 
 def normalize_query(query: str) -> str:
-    """Normalize query for cache key: lowercase, strip, collapse whitespace."""
-    return re.sub(r"\s+", " ", query.strip().lower())
+    """Normalize query for cache key + matching.
+
+    Strips accents (so "arret" matches "Arrêt"), lowercases, collapses
+    whitespace. Mirrors the Postgres `unaccent(lower(...))` we apply on the
+    catalog side so both ends compare equally-normalized strings.
+    """
+    stripped = unicodedata.normalize("NFKD", query)
+    no_accents = "".join(c for c in stripped if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", no_accents.strip().lower())
 
 
 def _build_cache_key(query: str, content_type: str | None, expand: bool) -> str:

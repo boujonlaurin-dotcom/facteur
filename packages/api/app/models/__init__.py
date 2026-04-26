@@ -12,11 +12,13 @@ from app.models.digest_generation_state import DigestGenerationState
 from app.models.editorial_highlights_history import EditorialHighlightsHistory
 from app.models.enums import ContentStatus, ContentType, SourceType
 from app.models.failed_source_attempt import FailedSourceAttempt
+from app.models.host_feed_resolution import HostFeedResolution
 from app.models.learning import UserEntityPreference
 from app.models.perspective_analysis import PerspectiveAnalysis
 from app.models.progress import TopicQuiz, UserTopicProgress
 from app.models.serene_report import SereneReport
 from app.models.source import Source, UserSource
+from app.models.source_search_log import SourceSearchLog
 from app.models.subscription import UserSubscription
 from app.models.user import UserInterest, UserPreference, UserProfile, UserStreak
 from app.models.user_personalization import UserPersonalization
@@ -64,6 +66,8 @@ __all__ = [
     "CollectionItem",
     # Source Attempt Tracking (Epic 12)
     "FailedSourceAttempt",
+    "HostFeedResolution",
+    "SourceSearchLog",
     # Perspective Analysis Cache
     "PerspectiveAnalysis",
     # Custom Topics (Epic 11)

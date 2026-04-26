@@ -287,6 +287,13 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     }
 
     final searchAsync = ref.watch(smartSearchProvider(_searchParams));
+    final followedIds = ref
+            .watch(userSourcesProvider)
+            .valueOrNull
+            ?.where((s) => s.isTrusted)
+            .map((s) => s.id)
+            .toSet() ??
+        const <String>{};
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -301,7 +308,11 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
             final canExpand = !_expanded &&
                 response.layersCalled.length == 1 &&
                 response.layersCalled.first == 'catalog';
-            return _buildResults(response.results, canExpand: canExpand);
+            return _buildResults(
+              response.results,
+              canExpand: canExpand,
+              followedIds: followedIds,
+            );
           },
         ),
       ],
@@ -342,6 +353,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
   Widget _buildResults(
     List<SmartSearchResult> results, {
     bool canExpand = false,
+    Set<String> followedIds = const <String>{},
   }) {
     final colors = context.facteurColors;
     return Column(
@@ -352,12 +364,17 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 12),
-        ...results.map((result) => SourceResultCard(
-              result: result,
-              isAdded: _addedSourceIds.contains(result.sourceId),
-              onAdd: () => _addSource(result),
-              onPreview: () => _previewSource(result),
-            )),
+        ...results.map((result) {
+          final id = result.sourceId;
+          final isAdded = _addedSourceIds.contains(id) ||
+              (id != null && followedIds.contains(id));
+          return SourceResultCard(
+            result: result,
+            isAdded: isAdded,
+            onAdd: () => _addSource(result),
+            onPreview: () => _previewSource(result),
+          );
+        }),
         if (canExpand) ...[
           const SizedBox(height: 8),
           OutlinedButton.icon(
