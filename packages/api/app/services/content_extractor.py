@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 import structlog
 import trafilatura
+import urllib3
 from readability import Document as ReadabilityDocument
 from trafilatura.settings import use_config
 
@@ -141,8 +142,16 @@ class ContentExtractor:
                 content_quality=quality,
             )
 
+        except (OSError, urllib3.exceptions.HTTPError) as exc:
+            logger.warning(
+                "content_extractor_fetch_failed",
+                url=url,
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
+            return ExtractedContent()
         except Exception:
-            logger.exception("content_extractor_error", url=url)
+            logger.error("content_extractor_error", url=url, exc_info=True)
             return ExtractedContent()
 
     def _extract_with_readability(self, html_source: str) -> tuple[str, str] | None:

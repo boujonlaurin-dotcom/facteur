@@ -21,6 +21,12 @@ async def sync_all_sources() -> dict:
         try:
             return await service.sync_all_sources()
         finally:
+            # Libère la connexion Supavisor même si SyncService a entamé une
+            # tx implicite sur la session outer (sinon → idle in transaction).
+            try:
+                await session.rollback()
+            except Exception:
+                logger.warning("rss_sync outer rollback failed", exc_info=True)
             await service.close()
 
 
@@ -62,4 +68,8 @@ async def sync_source(source_id: str) -> bool:
             )
             return False
         finally:
+            try:
+                await session.rollback()
+            except Exception:
+                logger.warning("sync_source outer rollback failed", exc_info=True)
             await service.close()
