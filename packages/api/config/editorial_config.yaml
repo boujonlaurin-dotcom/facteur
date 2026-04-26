@@ -12,6 +12,11 @@ pipeline:
   # strict et sans override déterministe, on préfère un pool réduit de
   # candidats pertinents plutôt qu'une liste longue polluée.
   deep_jaccard_threshold: 0.08
+  # Ancienneté minimale d'un article "deep" pour être éligible comme
+  # "Pas de recul". 24 h garantit qu'une dépêche du même matin (même si
+  # publiée par une source deep) ne sera pas promue en mise en perspective.
+  # Cf. docs/bugs/bug-digest-pas-de-recul-same-event.md.
+  deep_min_age_hours: 24
 
 cost:
   max_llm_calls_per_batch: 10   # Safety cap LLM calls

@@ -22,6 +22,12 @@ class PipelineConfig:
     deep_required: bool = False
     actu_max_age_hours: int = 24
     deep_jaccard_threshold: float = 0.10
+    # Minimum age (hours) for an article to be eligible as a "Pas de recul"
+    # candidate. Enforces that a deep-tier article published on the same
+    # morning as the hot news is excluded — "prendre du recul" should mean
+    # stepping back, not another same-day dispatch from a deep source.
+    # See docs/bugs/bug-digest-pas-de-recul-same-event.md.
+    deep_min_age_hours: int = 24
 
 
 @dataclass(frozen=True)

@@ -77,6 +77,69 @@ class TestLoadDeepArticles:
         session.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_time_gate_filters_recent_articles(self):
+        """Time-gate: deep articles younger than deep_min_age_hours are
+        excluded from the pool. Guards against same-day "dispatch masquerading
+        as pas de recul" — cf. bug-digest-pas-de-recul-same-event.md.
+        """
+        session = _mock_session_with_articles([])
+        llm = MagicMock()
+        llm.is_ready = False
+
+        config = EditorialConfig(
+            pipeline=PipelineConfig(deep_min_age_hours=24),
+            deep_matching_prompt=PromptConfig(system=""),
+        )
+        matcher = DeepMatcher(session, llm, config)
+        before = datetime.now(UTC)
+        await matcher._load_deep_articles()
+        after = datetime.now(UTC)
+
+        stmt = session.execute.await_args.args[0]
+        sql_text = str(stmt.compile(compile_kwargs={"literal_binds": False}))
+        assert "published_at <=" in sql_text.lower()
+
+        # Introspect the bound parameter to confirm the cutoff is ~24h in the past
+        from datetime import timedelta
+
+        params = stmt.compile().params
+        cutoff_value = None
+        for v in params.values():
+            if isinstance(v, datetime):
+                cutoff_value = v
+                break
+        assert cutoff_value is not None, "expected a datetime param (published_at cutoff)"
+        expected_min = before - timedelta(hours=24)
+        expected_max = after - timedelta(hours=24)
+        assert expected_min <= cutoff_value <= expected_max
+
+    @pytest.mark.asyncio
+    async def test_time_gate_disabled_when_zero_hours(self):
+        """deep_min_age_hours=0 effectively disables the gate (cutoff = now)."""
+        session = _mock_session_with_articles([])
+        llm = MagicMock()
+        llm.is_ready = False
+
+        config = EditorialConfig(
+            pipeline=PipelineConfig(deep_min_age_hours=0),
+            deep_matching_prompt=PromptConfig(system=""),
+        )
+        matcher = DeepMatcher(session, llm, config)
+        before = datetime.now(UTC)
+        await matcher._load_deep_articles()
+
+        stmt = session.execute.await_args.args[0]
+        params = stmt.compile().params
+        cutoff_value = next(v for v in params.values() if isinstance(v, datetime))
+        # Cutoff should be very close to "now" (within a second)
+        assert (cutoff_value - before).total_seconds() < 1.5
+
+    def test_default_deep_min_age_hours_is_24(self):
+        """Default config value — documents the chosen safe threshold."""
+        config = PipelineConfig()
+        assert config.deep_min_age_hours == 24
+
+    @pytest.mark.asyncio
     async def test_uses_session_maker_and_does_not_touch_injected_session(self):
         """P1 fix — when session_maker is provided, each DB op opens a
         short-lived session. The injected `session` must NOT be used, so
