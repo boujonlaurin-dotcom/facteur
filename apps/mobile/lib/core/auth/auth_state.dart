@@ -11,6 +11,7 @@ import '../../features/auth/utils/auth_error_messages.dart';
 import '../nudges/nudge_ids.dart';
 import '../nudges/nudge_service.dart';
 import '../services/posthog_service.dart';
+import '../services/widget_service.dart';
 import 'session_refresher.dart';
 
 /// État d'authentification
@@ -357,6 +358,10 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     if (Hive.isBoxOpen('feed_cache')) {
       await Hive.box<String>('feed_cache').clear();
     }
+
+    // Wipe the home-screen widget so the next account on the same device
+    // never briefly sees the previous user's digest.
+    await WidgetService.clear();
 
     state = const AuthState();
   }

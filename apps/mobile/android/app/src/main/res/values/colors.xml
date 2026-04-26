@@ -1,4 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#E07A5F</color>
+
+    <!-- Facteur palette (widget) -->
+    <color name="facteur_background">#FDFBF7</color>
+    <color name="facteur_card">#FFFFFF</color>
+    <color name="facteur_text_primary">#2C2A29</color>
+    <color name="facteur_text_secondary">#5D5B5A</color>
+    <color name="facteur_text_tertiary">#959392</color>
+    <color name="facteur_accent">#D35400</color>
+    <color name="facteur_border">#E5E1D9</color>
+    <color name="facteur_a_la_une_bg">#D35400</color>
+    <color name="facteur_stale_banner_bg">#FCEBD3</color>
 </resources>

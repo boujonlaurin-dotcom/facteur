@@ -78,7 +78,11 @@ flutter run -d ios
 → Vérifie que Chrome est ouvert, ou lance `flutter devices`
 
 ### "CocoaPods not installed" (pour iOS)
-→ Installe CocoaPods : `sudo gem install cocoapods`
+→ CocoaPods est installé par `brew bundle` (cf. [CONTRIBUTING.md](../../CONTRIBUTING.md#-1-prérequis)).
+Si `pod --version` reste introuvable après l'install, force le link (conflit fréquent avec un binaire `xcodeproj` standalone) :
+```bash
+brew link --overwrite cocoapods
+```
 
 ## 📝 Prochaines étapes
 

@@ -55,6 +55,9 @@ dependencies:
   # Home Screen Widget
   home_widget: ^0.7.0
 
+  # Deep Links (widget tap → in-app routing)
+  app_links: ^6.3.2
+
   # Push Notifications (local, no FCM)
   flutter_local_notifications: ^20.0.0
   timezone: ^0.10.0
