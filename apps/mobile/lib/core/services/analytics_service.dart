@@ -427,6 +427,65 @@ class AnalyticsService {
     await _capturePostHog('well_informed_score_submitted', props);
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // Home-screen widget — refonte instrumentation
+  // ──────────────────────────────────────────────────────────────
+
+  Future<void> trackWidgetPinNudgeShown() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('widget_pin_nudge_shown', props);
+    await _capturePostHog('widget_pin_nudge_shown', props);
+  }
+
+  Future<void> trackWidgetPinRequested() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('widget_pin_requested', props);
+    await _capturePostHog('widget_pin_requested', props);
+  }
+
+  Future<void> trackWidgetPinDismissed() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('widget_pin_dismissed', props);
+    await _capturePostHog('widget_pin_dismissed', props);
+  }
+
+  /// target: 'digest' | 'article' | 'feed'.
+  /// Fired whenever a `io.supabase.facteur://` widget URI lands in the app.
+  Future<void> trackWidgetAppOpened({
+    required String target,
+    String? articleId,
+    int? position,
+    String? topicId,
+  }) async {
+    final props = <String, dynamic>{
+      'session_id': _sessionId,
+      'target': target,
+      'article_id': articleId,
+      'position': position,
+      'topic_id': topicId,
+    };
+    await _logEvent('widget_app_opened', props);
+    await _capturePostHog('widget_app_opened', props);
+  }
+
+  /// Fired when the widget URI specifically asked for an article reader,
+  /// to power the widget→reader CTR funnel without mixing with `digest`/`feed`
+  /// taps.
+  Future<void> trackWidgetArticleOpened({
+    required String articleId,
+    int? position,
+    String? topicId,
+  }) async {
+    final props = <String, dynamic>{
+      'session_id': _sessionId,
+      'article_id': articleId,
+      'position': position,
+      'topic_id': topicId,
+    };
+    await _logEvent('widget_article_opened', props);
+    await _capturePostHog('widget_article_opened', props);
+  }
+
   Future<void> trackAppFirstLaunch() async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool('has_launched_before') == true) return;
