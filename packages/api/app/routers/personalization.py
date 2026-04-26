@@ -24,6 +24,7 @@ from app.schemas.learning import (
 )
 from app.services.feed_cache import FEED_CACHE
 from app.services.learning_service import LearningService
+from app.services.sources_cache import SOURCES_CACHE
 from app.services.user_service import UserService
 
 logger = structlog.get_logger()
@@ -145,6 +146,7 @@ async def mute_source(
 
         await db.commit()
         FEED_CACHE.invalidate(user_uuid)
+        SOURCES_CACHE.invalidate(user_uuid)
         return {
             "message": "Source mutée avec succès",
             "source_id": str(request.source_id),
@@ -357,6 +359,7 @@ async def unmute_source(
         result.muted_sources = new_list
         await db.commit()
         FEED_CACHE.invalidate(user_uuid)
+        SOURCES_CACHE.invalidate(user_uuid)
 
     return {"message": "Source démuée avec succès", "source_id": str(source_id)}
 

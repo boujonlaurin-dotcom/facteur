@@ -5,6 +5,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
@@ -218,7 +219,10 @@ class _SavedAllScreenState extends ConsumerState<SavedAllScreen> {
                 },
                 loading: () => Center(
                     child: CircularProgressIndicator(color: colors.primary)),
-                error: (err, stack) => Center(child: Text('Erreur: $err')),
+                error: (err, stack) => FriendlyErrorView(
+                  error: err,
+                  onRetry: () => ref.read(savedFeedProvider.notifier).refresh(),
+                ),
               ),
             ),
           ],
