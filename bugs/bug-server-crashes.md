@@ -1,6 +1,6 @@
 # Bug — Crashs serveur récurrents (restart manuel Railway requis)
 
-**Statut** : FIX Phase 1 en cours
+**Statut** : FIX Phase 1 vraiment appliquée le 2026-04-26 (PR #465 avait édité `railway.json` déprécié — sans effet sur le déploiement, qui lit `railway.toml` depuis PR #368)
 **Branche** : `boujonlaurin-dotcom/fix-server-crashes`
 **Sévérité** : 🔴 P0 — plusieurs restarts manuels/jour
 **Rapporté** : 2026-04-23 (Laurin)
@@ -42,7 +42,7 @@ Le 09:00 tombe ~1h après la fin du batch digest (6h→7h30 watchdog→8h top3),
 
 ## Fix Phase 1
 
-### F1.1 — `railway.json` → `restartPolicyType: ALWAYS`
+### F1.1 — `railway.toml` → `restartPolicyType: ALWAYS`
 
 ```diff
  "deploy": {
@@ -92,7 +92,8 @@ Voir plan complet : `/Users/laurinboujon/.claude/plans/system-instruction-you-ar
 
 | Fichier | Changement |
 |---------|------------|
-| `railway.json` | `ON_FAILURE` → `ALWAYS` + `restartPolicyMaxRetries: 10` |
+| `railway.toml` | `ON_FAILURE` → `ALWAYS` + `restartPolicyMaxRetries: 10` (correction 2026-04-26 : PR #465 avait visé `railway.json` déprécié) |
+| `railway.json` | Supprimé (orphelin depuis PR #368, source de la confusion PR #465) |
 | `packages/api/app/workers/scheduler.py` | Retrait `_scheduled_restart` + job + imports `os`/`signal` |
 | `packages/api/tests/workers/test_scheduler.py` | Tests remplacés par garde de non-régression |
 | `docs/bugs/bug-server-crashes.md` | Ce document |
