@@ -37,6 +37,7 @@ import '../providers/digest_provider.dart';
 import '../providers/serein_toggle_provider.dart';
 import '../../well_informed/providers/well_informed_prompt_provider.dart';
 import '../../well_informed/widgets/well_informed_prompt.dart';
+import '../../../core/services/widget_service.dart';
 import '../widgets/digest_briefing_section.dart';
 import '../widgets/digest_personalization_sheet.dart';
 import '../widgets/digest_welcome_modal.dart';
@@ -85,6 +86,10 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
   void initState() {
     super.initState();
     _checkNotifBannerDismissed();
+    // Seed the home-screen widget with a placeholder if it has never been
+    // populated. The next successful digest fetch overwrites it; this only
+    // matters for users who pinned the widget before opening the app.
+    WidgetService.initWidgetIfNeeded();
     // Note: _checkFirstTimeWelcome moved to didChangeDependencies()
     // because GoRouterState.of(context) requires mounted context
   }
@@ -172,7 +177,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     // After a short delay, nudge to pin the Android home screen widget
     Future.delayed(const Duration(milliseconds: 800), () {
       if (mounted) {
-        WidgetPinNudge.show(context);
+        WidgetPinNudge.show(context, ref);
       }
     });
   }

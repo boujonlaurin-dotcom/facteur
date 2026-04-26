@@ -1,11 +1,15 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/nudge_service.dart';
+import '../../../core/providers/analytics_provider.dart';
+import '../../../core/services/analytics_service.dart';
 import '../../../core/services/widget_service.dart';
 
 /// Bottom sheet nudging the user to pin the Facteur widget on their home screen.
@@ -24,7 +28,7 @@ class WidgetPinNudge {
       NudgeService().markSeen(NudgeIds.widgetPinAndroid);
 
   /// Show the bottom sheet. Call after welcome modal dismissal.
-  static Future<void> show(BuildContext context) async {
+  static Future<void> show(BuildContext context, WidgetRef ref) async {
     final shouldDisplay = await shouldShow();
     if (!shouldDisplay || !context.mounted) return;
 
@@ -32,16 +36,23 @@ class WidgetPinNudge {
 
     if (!context.mounted) return;
 
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const _WidgetPinSheet(),
+    final analytics = ref.read(analyticsServiceProvider);
+    unawaited(analytics.trackWidgetPinNudgeShown());
+
+    unawaited(
+      showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _WidgetPinSheet(analytics: analytics),
+      ),
     );
   }
 }
 
 class _WidgetPinSheet extends StatelessWidget {
-  const _WidgetPinSheet();
+  const _WidgetPinSheet({required this.analytics});
+
+  final AnalyticsService analytics;
 
   @override
   Widget build(BuildContext context) {
@@ -113,6 +124,7 @@ class _WidgetPinSheet extends StatelessWidget {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () async {
+                unawaited(analytics.trackWidgetPinRequested());
                 Navigator.pop(context);
                 await WidgetService.requestPinWidget();
               },
@@ -137,7 +149,10 @@ class _WidgetPinSheet extends StatelessWidget {
 
           // Skip
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              unawaited(analytics.trackWidgetPinDismissed());
+              Navigator.pop(context);
+            },
             child: Text(
               'Plus tard',
               style: TextStyle(
