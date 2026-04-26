@@ -15,6 +15,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../config/routes.dart';
+import '../../../core/auth/auth_state.dart';
+import '../../../core/nudges/nudge_coordinator.dart';
+import '../../../core/nudges/nudge_counters.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/widgets/feed_nudge_anchors.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../providers/feed_provider.dart';
@@ -145,6 +150,38 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     super.initState();
     _scrollController.addListener(_onScroll);
     _showChronoMigrationToast();
+    _recordFeedOpenAndMaybeNudge();
+  }
+
+  Future<void> _recordFeedOpenAndMaybeNudge() async {
+    // Gate everything on welcome_tour having been seen. During the tour the
+    // shell navigates to /feed to show step 2, triggering this initState —
+    // we don't want that to count as a "natural" feed visit.
+    if (!ref.read(authStateProvider).welcomeTourSeen) return;
+    final opens = await NudgeCounters.increment(NudgeCounters.feedOpenCount);
+    final taps = await NudgeCounters.get(NudgeCounters.feedCardTapCount);
+    if (!mounted) return;
+    // feed_badge_longpress: 2nd feed open with ≥1 card tap previously.
+    if (opens >= 2 && taps >= 1) {
+      unawaited(
+          ref.read(nudgeCoordinatorProvider).request(NudgeIds.feedBadgeLongpress));
+    }
+    // feed_preview_longpress: 3rd feed open with ≥2 articles opened.
+    if (opens >= 3) {
+      final articleOpens =
+          await NudgeCounters.get(NudgeCounters.articleOpenCount);
+      if (!mounted) return;
+      if (articleOpens >= 2) {
+        unawaited(ref
+            .read(nudgeCoordinatorProvider)
+            .request(NudgeIds.feedPreviewLongpress));
+      }
+    }
+  }
+
+  Future<void> _onFeedCardTapped() async {
+    if (!ref.read(authStateProvider).welcomeTourSeen) return;
+    await NudgeCounters.increment(NudgeCounters.feedCardTapCount);
   }
 
   // Epic 12: One-shot toast explaining the new chronological default
@@ -1006,12 +1043,26 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                     child: FeedCard(
                                       content: content,
                                       titleMaxLines: 5,
-                                      onTap: () => _showArticleModal(content),
-                                      onLongPressStart: (_) =>
-                                          ArticlePreviewOverlay.show(
-                                        context,
-                                        content,
-                                      ),
+                                      badgeAnchorKey: contentIndex == 0
+                                          ? feedFirstBadgeKey
+                                          : null,
+                                      cardAnchorKey: contentIndex == 0
+                                          ? feedFirstCardKey
+                                          : null,
+                                      onTap: () {
+                                        _onFeedCardTapped();
+                                        _showArticleModal(content);
+                                      },
+                                      onLongPressStart: (_) {
+                                        ref
+                                            .read(nudgeCoordinatorProvider)
+                                            .markConverted(
+                                                NudgeIds.feedPreviewLongpress);
+                                        ArticlePreviewOverlay.show(
+                                          context,
+                                          content,
+                                        );
+                                      },
                                       onLongPressMoveUpdate: (details) =>
                                           ArticlePreviewOverlay.updateScroll(
                                         details.localOffsetFromOrigin.dy,
@@ -1080,6 +1131,18 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                 _scrollToTop();
                                               }
                                             : null,
+                                        onLongPress: () {
+                                          ref
+                                              .read(nudgeCoordinatorProvider)
+                                              .markConverted(
+                                                  NudgeIds.feedBadgeLongpress);
+                                          TopicChip.showArticleSheet(
+                                            context,
+                                            content,
+                                            initialSection:
+                                                ArticleSheetSection.topic,
+                                          );
+                                        },
                                       ),
                                       // DEADCODE: Bloc masqué temporairement (cluster/overflow chips)
                                       /*
@@ -1126,9 +1189,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                         ref.read(feedProvider.notifier).setSource(content.source.id);
                                         _scrollToTop();
                                       },
-                                      onSourceLongPress: () =>
-                                          TopicChip.showArticleSheet(context, content,
-                                              initialSection: ArticleSheetSection.source),
+                                      onSourceLongPress: () {
+                                        ref
+                                            .read(nudgeCoordinatorProvider)
+                                            .markConverted(
+                                                NudgeIds.feedBadgeLongpress);
+                                        TopicChip.showArticleSheet(
+                                            context, content,
+                                            initialSection:
+                                                ArticleSheetSection.source);
+                                      },
                                       isSerene: ref.watch(sereinToggleProvider).enabled,
                                       onReportNotSerene: () async {
                                         HapticFeedback.lightImpact();

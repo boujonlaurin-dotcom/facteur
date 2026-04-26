@@ -10,7 +10,6 @@ class NudgeIds {
   // Existing (migrated from scattered SharedPreferences keys).
   static const digestWelcome = 'digest_welcome';
   static const widgetPinAndroid = 'widget_pin_android';
-  static const noteWelcome = 'note_welcome';
   static const sunflowerRecommend = 'sunflower_recommend';
   static const savedUnread = 'saved_unread';
 

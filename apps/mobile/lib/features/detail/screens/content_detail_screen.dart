@@ -31,7 +31,12 @@ import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
 import '../widgets/youtube_player_widget.dart';
 import '../widgets/note_input_sheet.dart';
-import '../widgets/note_welcome_tooltip.dart';
+import '../../../core/auth/auth_state.dart';
+import '../../../core/nudges/nudge_coordinator.dart';
+import '../../../core/nudges/nudge_counters.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/widgets/article_save_notes_tooltip.dart';
+import '../../../core/nudges/widgets/nudge_inline_banner.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/widgets/editorial_badge.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
@@ -100,7 +105,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       false; // true once user reaches end of displayed content
   final ValueNotifier<bool> _atPerspectivesSection = ValueNotifier(false);
   bool _suppressPerspectivesCheck = false;
-  bool _showNoteWelcome = false;
+  bool _showSaveNotesNudge = false;
+  bool _showReadOnSiteNudge = false;
+  int _articleOpenCount = 0;
+  bool _readOnSiteNudgeRequested = false;
+
+  AnimationController? _perspectivesPulseController;
+  Animation<double>? _perspectivesPulseScale;
+  bool _perspectivesCtaTriggered = false;
   bool _linkCopiedFab = false;
   bool _linkCopiedHeader = false;
   Timer? _linkCopiedFabTimer;
@@ -312,12 +324,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }
     });
 
-    // Check if note welcome tooltip should be shown (first time only)
-    NoteWelcomeTooltip.shouldShow().then((show) {
-      if (mounted && show) {
-        setState(() => _showNoteWelcome = true);
-      }
-    });
+    // All feature nudges are gated on welcome_tour being seen — we don't want
+    // them surfacing during (or piggybacking on) the onboarding tour flow.
+    if (ref.read(authStateProvider).welcomeTourSeen) {
+      // First-time save+notes nudge, routed via NudgeCoordinator (respects
+      // kill switch + queue + legacy `has_seen_note_welcome` key).
+      _requestSaveNotesNudge();
+
+      // Persist article open count for triggers (read_on_site 4th article,
+      // feed_preview_longpress ≥2 articles opened).
+      NudgeCounters.increment(NudgeCounters.articleOpenCount).then((count) {
+        if (mounted) _articleOpenCount = count;
+      });
+    }
 
     // 🌻 Nudge: record article open and start 30s timer
     NudgeTracker.recordArticleOpen();
@@ -492,6 +511,40 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _readingProgress.value = progress;
     if (progress > _maxReadingProgress) {
       _maxReadingProgress = progress;
+    }
+    _maybeRequestReadOnSiteNudge(progress);
+  }
+
+  void _maybeRequestReadOnSiteNudge(double progress) {
+    if (_readOnSiteNudgeRequested) return;
+    if (_showReadOnSiteNudge) return;
+    if (progress < 0.5) return;
+    if (_articleOpenCount < 4) return;
+    _readOnSiteNudgeRequested = true;
+    _requestReadOnSiteNudge();
+  }
+
+  Future<void> _requestReadOnSiteNudge() async {
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    final active = await coordinator.request(NudgeIds.articleReadOnSite);
+    if (!mounted) return;
+    if (active == NudgeIds.articleReadOnSite) {
+      setState(() => _showReadOnSiteNudge = true);
+    }
+  }
+
+  Future<void> _dismissReadOnSiteNudge({required bool converted}) async {
+    if (!_showReadOnSiteNudge) return;
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    if (coordinator.activeId == NudgeIds.articleReadOnSite) {
+      if (converted) {
+        await coordinator.markConverted(NudgeIds.articleReadOnSite);
+      } else {
+        await coordinator.dismiss(markSeen: true);
+      }
+    }
+    if (mounted) {
+      setState(() => _showReadOnSiteNudge = false);
     }
   }
 
@@ -1048,6 +1101,73 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
+  void _maybeTriggerPerspectivesCta() {
+    if (_perspectivesCtaTriggered) return;
+    if (!ref.read(authStateProvider).welcomeTourSeen) return;
+    final response = _perspectivesResponse;
+    if (response == null) return;
+    if (response.perspectives.isEmpty || !response.shouldDisplay) return;
+    _perspectivesCtaTriggered = true;
+    NudgeCounters.increment(NudgeCounters.articleWithPerspectivesCount)
+        .then((count) async {
+      if (!mounted) return;
+      if (count < 2) return;
+      final coordinator = ref.read(nudgeCoordinatorProvider);
+      final active = await coordinator.request(NudgeIds.perspectivesCta);
+      if (!mounted) return;
+      if (active != NudgeIds.perspectivesCta) return;
+      _playPerspectivesPulse();
+    });
+  }
+
+  Widget _wrapWithPerspectivesPulse(Widget child) {
+    final scale = _perspectivesPulseScale;
+    if (scale == null) return child;
+    return ScaleTransition(scale: scale, child: child);
+  }
+
+  void _playPerspectivesPulse() {
+    _perspectivesPulseController ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _perspectivesPulseScale ??= TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0), weight: 50),
+    ]).animate(CurvedAnimation(
+      parent: _perspectivesPulseController!,
+      curve: Curves.easeOutCubic,
+    ));
+    _perspectivesPulseController!.forward(from: 0).whenComplete(() async {
+      if (!mounted) return;
+      final coordinator = ref.read(nudgeCoordinatorProvider);
+      if (coordinator.activeId == NudgeIds.perspectivesCta) {
+        await coordinator.dismiss(markSeen: true);
+      }
+    });
+    setState(() {});
+  }
+
+  Future<void> _requestSaveNotesNudge() async {
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    final active = await coordinator.request(NudgeIds.articleSaveNotes);
+    if (!mounted) return;
+    if (active == NudgeIds.articleSaveNotes) {
+      setState(() => _showSaveNotesNudge = true);
+    }
+  }
+
+  Future<void> _dismissSaveNotesNudge() async {
+    if (!_showSaveNotesNudge) return;
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    if (coordinator.activeId == NudgeIds.articleSaveNotes) {
+      await coordinator.dismiss(markSeen: true);
+    }
+    if (mounted) {
+      setState(() => _showSaveNotesNudge = false);
+    }
+  }
+
   @override
   void dispose() {
     // Capture max progress reached before disposing ValueNotifier
@@ -1101,6 +1221,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _likeBounceController.dispose();
     _fabReappearController.dispose();
     _shareFabController.dispose();
+    _perspectivesPulseController?.dispose();
     _exitAnimController.dispose();
     _headerAutoController.dispose();
     _footerAutoController.dispose();
@@ -1216,6 +1337,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           _perspectivesResponse = response;
           _perspectivesLoading = false;
         });
+        _maybeTriggerPerspectivesCta();
       }
     } catch (e) {
       debugPrint('Error pre-fetching perspectives: $e');
@@ -1786,30 +1908,39 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ],
                         // Perspectives FAB (articles only) — always just above other FABs
                         if (content.contentType == ContentType.article) ...[
-                          PerspectivesPill(
-                            biasDistribution:
-                                _perspectivesResponse?.biasDistribution ?? {},
-                            isLoading: _perspectivesLoading,
-                            // shouldDisplay=false → traiter comme empty (CTA dimmed,
-                            // bottom sheet montre l'état vide). Cf. backend gate
-                            // docs/bugs/bug-comparison-clustering-too-loose.md
-                            isEmpty: !_perspectivesLoading &&
-                                _perspectivesResponse != null &&
-                                (_perspectivesResponse!.perspectives.isEmpty ||
-                                    !_perspectivesResponse!.shouldDisplay),
-                            onTap: () {
-                              HapticFeedback.lightImpact();
-                              final ctx = _perspectivesKey.currentContext;
-                              if (ctx != null) {
-                                Scrollable.ensureVisible(
-                                  ctx,
-                                  duration: const Duration(milliseconds: 400),
-                                  curve: Curves.easeInOut,
-                                );
-                              } else {
-                                _showPerspectives(context);
-                              }
-                            },
+                          _wrapWithPerspectivesPulse(
+                            PerspectivesPill(
+                              biasDistribution:
+                                  _perspectivesResponse?.biasDistribution ?? {},
+                              isLoading: _perspectivesLoading,
+                              // shouldDisplay=false → traiter comme empty (CTA dimmed,
+                              // bottom sheet montre l'état vide). Cf. backend gate
+                              // docs/bugs/bug-comparison-clustering-too-loose.md
+                              isEmpty: !_perspectivesLoading &&
+                                  _perspectivesResponse != null &&
+                                  (_perspectivesResponse!.perspectives.isEmpty ||
+                                      !_perspectivesResponse!.shouldDisplay),
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                final coordinator =
+                                    ref.read(nudgeCoordinatorProvider);
+                                if (coordinator.activeId ==
+                                    NudgeIds.perspectivesCta) {
+                                  coordinator.markConverted(
+                                      NudgeIds.perspectivesCta);
+                                }
+                                final ctx = _perspectivesKey.currentContext;
+                                if (ctx != null) {
+                                  Scrollable.ensureVisible(
+                                    ctx,
+                                    duration: const Duration(milliseconds: 400),
+                                    curve: Curves.easeInOut,
+                                  );
+                                } else {
+                                  _showPerspectives(context);
+                                }
+                              },
+                            ),
                           ),
                           const SizedBox(height: FacteurSpacing.space3),
                         ],
@@ -1900,12 +2031,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             ),
                           ),
                         ),
-                        // Note welcome tooltip — bottom of FAB column, near the bookmark button
-                        if (_showNoteWelcome) ...[
+                        // Save+notes nudge — bottom of FAB column, near bookmark
+                        if (_showSaveNotesNudge) ...[
                           const SizedBox(height: FacteurSpacing.space3),
-                          NoteWelcomeTooltip(
-                            onDismiss: () =>
-                                setState(() => _showNoteWelcome = false),
+                          ArticleSaveNotesTooltip(
+                            onDismiss: _dismissSaveNotesNudge,
                           ),
                         ],
                       ],
@@ -3569,6 +3699,25 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     articleWidget,
+                    if (_showReadOnSiteNudge) ...[
+                      const SizedBox(height: FacteurSpacing.space4),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: FacteurSpacing.space4),
+                        child: NudgeInlineBanner(
+                          body:
+                              "Préférez l'expérience du site original ? Ouvrez l'article dans votre navigateur.",
+                          icon: PhosphorIcons.arrowSquareOut(),
+                          actionLabel: 'Ouvrir',
+                          onAction: () {
+                            _dismissReadOnSiteNudge(converted: true);
+                            _openOriginalUrl();
+                          },
+                          onDismiss: () =>
+                              _dismissReadOnSiteNudge(converted: false),
+                        ),
+                      ),
+                    ],
                     SizedBox(key: _articleEndKey, height: 0),
                   ],
                 ),

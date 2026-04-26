@@ -43,14 +43,6 @@ class NudgeRegistry {
       legacySeenKey: 'has_seen_widget_pin_nudge',
     ),
     const Nudge(
-      id: NudgeIds.noteWelcome,
-      surface: NudgeSurface.article,
-      placement: NudgePlacement.tooltip,
-      priority: NudgePriority.normal,
-      frequency: NudgeFrequency.once,
-      legacySeenKey: 'has_seen_note_welcome',
-    ),
-    const Nudge(
       id: NudgeIds.sunflowerRecommend,
       surface: NudgeSurface.article,
       placement: NudgePlacement.inlineBanner,
@@ -107,6 +99,7 @@ class NudgeRegistry {
       placement: NudgePlacement.inlineBanner,
       priority: NudgePriority.normal,
       frequency: NudgeFrequency.once,
+      prerequisites: [NudgeIds.welcomeTour],
     ),
     const Nudge(
       id: NudgeIds.articleSaveNotes,
@@ -114,6 +107,8 @@ class NudgeRegistry {
       placement: NudgePlacement.tooltip,
       priority: NudgePriority.normal,
       frequency: NudgeFrequency.once,
+      legacySeenKey: 'has_seen_note_welcome',
+      prerequisites: [NudgeIds.welcomeTour],
     ),
     const Nudge(
       id: NudgeIds.perspectivesCta,
@@ -121,6 +116,7 @@ class NudgeRegistry {
       placement: NudgePlacement.hintAnimation,
       priority: NudgePriority.low,
       frequency: NudgeFrequency.once,
+      prerequisites: [NudgeIds.welcomeTour],
     ),
     const Nudge(
       id: NudgeIds.articleReadOnSite,
@@ -128,6 +124,7 @@ class NudgeRegistry {
       placement: NudgePlacement.inlineBanner,
       priority: NudgePriority.low,
       frequency: NudgeFrequency.once,
+      prerequisites: [NudgeIds.welcomeTour],
     ),
 
     // Story 14.3 — well-informed NPS. Cooldown porté à 5j (skip) ; le

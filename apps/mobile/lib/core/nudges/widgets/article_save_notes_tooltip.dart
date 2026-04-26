@@ -2,29 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
-import '../../../core/nudges/nudge_ids.dart';
-import '../../../core/nudges/nudge_service.dart';
 
-/// One-time tooltip shown near the note FAB on first article open.
-/// Educates the user about the note feature.
-class NoteWelcomeTooltip extends StatefulWidget {
+/// Tooltip léger affiché dans la colonne FAB de l'article, à côté du bouton
+/// Sauvegarder. Remplace l'ancien `NoteWelcomeTooltip`.
+///
+/// Style compact (pas un full-banner) parce qu'il vit dans une colonne de FABs
+/// étroite. Animation fade+slide à l'apparition, fade au dismiss.
+class ArticleSaveNotesTooltip extends StatefulWidget {
+  const ArticleSaveNotesTooltip({super.key, required this.onDismiss});
+
   final VoidCallback onDismiss;
 
-  const NoteWelcomeTooltip({super.key, required this.onDismiss});
-
-  /// Returns true if the welcome tooltip should be shown (first time only).
-  static Future<bool> shouldShow() =>
-      NudgeService().consumeFirstShow(NudgeIds.noteWelcome);
-
   @override
-  State<NoteWelcomeTooltip> createState() => _NoteWelcomeTooltipState();
+  State<ArticleSaveNotesTooltip> createState() =>
+      _ArticleSaveNotesTooltipState();
 }
 
-class _NoteWelcomeTooltipState extends State<NoteWelcomeTooltip>
+class _ArticleSaveNotesTooltipState extends State<ArticleSaveNotesTooltip>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _opacity;
-  late Animation<Offset> _slide;
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<Offset> _slide;
 
   @override
   void initState() {
@@ -59,7 +57,6 @@ class _NoteWelcomeTooltipState extends State<NoteWelcomeTooltip>
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-
     return GestureDetector(
       onTap: _dismiss,
       behavior: HitTestBehavior.opaque,
@@ -68,8 +65,10 @@ class _NoteWelcomeTooltipState extends State<NoteWelcomeTooltip>
         child: FadeTransition(
           opacity: _opacity,
           child: Container(
-            margin: const EdgeInsets.only(bottom: FacteurSpacing.space3),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: FacteurSpacing.space2),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: FacteurSpacing.space2,
+            ),
             decoration: BoxDecoration(
               color: colors.surfaceElevated,
               borderRadius: BorderRadius.circular(12),
@@ -92,12 +91,8 @@ class _NoteWelcomeTooltipState extends State<NoteWelcomeTooltip>
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
-                    'Approprie toi l\'info. Ajoute une note !',
-                    style: TextStyle(
-                      color: colors.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
+                    'Sauvegardez cet article et ajoutez-y des notes personnelles.',
+                    style: FacteurTypography.bodyMedium(colors.textPrimary),
                   ),
                 ),
               ],

@@ -5,6 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/auth/auth_state.dart';
+import '../../../core/nudges/nudge_coordinator.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/widgets/nudge_inline_banner.dart';
 import '../../../widgets/design/priority_slider.dart';
 import '../../custom_topics/providers/algorithm_profile_provider.dart';
 import '../../sources/models/source_model.dart';
@@ -49,11 +53,38 @@ class SourceAdjustSheet extends ConsumerStatefulWidget {
 class _SourceAdjustSheetState extends ConsumerState<SourceAdjustSheet> {
   late double _currentMultiplier;
   bool _isMuting = false;
+  bool _showPriorityExplainer = false;
 
   @override
   void initState() {
     super.initState();
     _currentMultiplier = widget.source.priorityMultiplier;
+    _requestExplainerNudge();
+  }
+
+  Future<void> _requestExplainerNudge() async {
+    // Gate on welcome_tour: never surface catalogue nudges while the tour
+    // hasn't finished. The coordinator also enforces this via prerequisites,
+    // but this early-return avoids a wasted roundtrip for the common case.
+    if (!ref.read(authStateProvider).welcomeTourSeen) return;
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    final active =
+        await coordinator.request(NudgeIds.prioritySliderExplainer);
+    if (!mounted) return;
+    if (active == NudgeIds.prioritySliderExplainer) {
+      setState(() => _showPriorityExplainer = true);
+    }
+  }
+
+  Future<void> _dismissExplainer() async {
+    if (!_showPriorityExplainer) return;
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    if (coordinator.activeId == NudgeIds.prioritySliderExplainer) {
+      await coordinator.dismiss(markSeen: true);
+    }
+    if (mounted) {
+      setState(() => _showPriorityExplainer = false);
+    }
   }
 
   Future<void> _onSliderChanged(double newValue) async {
@@ -178,6 +209,16 @@ class _SourceAdjustSheetState extends ConsumerState<SourceAdjustSheet> {
             ],
           ),
           const SizedBox(height: 24),
+
+          if (_showPriorityExplainer) ...[
+            NudgeInlineBanner(
+              body:
+                  "Glissez pour ajuster l'importance de cette thématique dans votre digest — de minimale à essentielle.",
+              icon: PhosphorIcons.slidersHorizontal(PhosphorIconsStyle.regular),
+              onDismiss: _dismissExplainer,
+            ),
+            const SizedBox(height: FacteurSpacing.space3),
+          ],
 
           // Frequency label + slider
           Row(

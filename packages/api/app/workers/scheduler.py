@@ -41,50 +41,59 @@ async def _digest_watchdog() -> None:
 
     try:
         async with async_session_maker() as session:
-            today = today_paris()
+            try:
+                today = today_paris()
 
-            total_users = await session.scalar(
-                select(func.count()).select_from(UserProfile)
-            )
-            if not total_users:
-                logger.info("digest_watchdog_no_users")
-                return
-
-            # Expected coverage = 2 digests per user (normal + serein).
-            # Count distinct (user_id, is_serene) pairs via a GROUP BY
-            # subquery rather than string-concat casts — clearer intent,
-            # no implicit bool→text coercion, portable across backends.
-            expected_pairs = total_users * 2
-            pair_subq = (
-                select(DailyDigest.user_id, DailyDigest.is_serene)
-                .where(DailyDigest.target_date == today)
-                .group_by(DailyDigest.user_id, DailyDigest.is_serene)
-                .subquery()
-            )
-            pair_count = (
-                await session.scalar(select(func.count()).select_from(pair_subq)) or 0
-            )
-
-            coverage = pair_count / expected_pairs if expected_pairs else 0
-            logger.info(
-                "digest_watchdog_check",
-                target_date=str(today),
-                total_users=total_users,
-                expected_pairs=expected_pairs,
-                pair_count=pair_count,
-                coverage_pct=round(coverage * 100, 1),
-            )
-
-            if coverage < 0.90:
-                logger.warning(
-                    "digest_watchdog_low_coverage_triggering_generation",
-                    coverage_pct=round(coverage * 100, 1),
-                    missing=expected_pairs - pair_count,
+                total_users = await session.scalar(
+                    select(func.count()).select_from(UserProfile)
                 )
-                await run_digest_generation(target_date=today)
-                logger.info("digest_watchdog_generation_completed")
-            else:
-                logger.info("digest_watchdog_coverage_ok")
+                if not total_users:
+                    logger.info("digest_watchdog_no_users")
+                    return
+
+                # Expected coverage = 2 digests per user (normal + serein).
+                # Count distinct (user_id, is_serene) pairs via a GROUP BY
+                # subquery rather than string-concat casts — clearer intent,
+                # no implicit bool→text coercion, portable across backends.
+                expected_pairs = total_users * 2
+                pair_subq = (
+                    select(DailyDigest.user_id, DailyDigest.is_serene)
+                    .where(DailyDigest.target_date == today)
+                    .group_by(DailyDigest.user_id, DailyDigest.is_serene)
+                    .subquery()
+                )
+                pair_count = (
+                    await session.scalar(select(func.count()).select_from(pair_subq))
+                    or 0
+                )
+
+                coverage = pair_count / expected_pairs if expected_pairs else 0
+                logger.info(
+                    "digest_watchdog_check",
+                    target_date=str(today),
+                    total_users=total_users,
+                    expected_pairs=expected_pairs,
+                    pair_count=pair_count,
+                    coverage_pct=round(coverage * 100, 1),
+                )
+
+                if coverage < 0.90:
+                    logger.warning(
+                        "digest_watchdog_low_coverage_triggering_generation",
+                        coverage_pct=round(coverage * 100, 1),
+                        missing=expected_pairs - pair_count,
+                    )
+                    await run_digest_generation(target_date=today)
+                    logger.info("digest_watchdog_generation_completed")
+                else:
+                    logger.info("digest_watchdog_coverage_ok")
+            finally:
+                try:
+                    await session.rollback()
+                except Exception:
+                    logger.warning(
+                        "digest_watchdog outer rollback failed", exc_info=True
+                    )
 
     except Exception:
         logger.exception("digest_watchdog_failed")
