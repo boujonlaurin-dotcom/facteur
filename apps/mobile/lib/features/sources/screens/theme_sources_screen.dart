@@ -5,6 +5,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../core/ui/notification_service.dart';
+import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
 import '../widgets/source_detail_modal.dart';
@@ -157,32 +158,10 @@ class _ThemeSourcesScreenState extends ConsumerState<ThemeSourcesScreen> {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(PhosphorIcons.warningCircle(PhosphorIconsStyle.regular),
-                    size: 48, color: colors.error),
-                const SizedBox(height: 16),
-                Text(
-                  'Impossible de charger les sources.',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(color: colors.textSecondary),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                OutlinedButton(
-                  onPressed: () =>
-                      ref.invalidate(sourcesByThemeProvider(widget.themeSlug)),
-                  child: const Text('Reessayer'),
-                ),
-              ],
-            ),
-          ),
+        error: (error, _) => FriendlyErrorView(
+          error: error,
+          onRetry: () =>
+              ref.invalidate(sourcesByThemeProvider(widget.themeSlug)),
         ),
       ),
     );

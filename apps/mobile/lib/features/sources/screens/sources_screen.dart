@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../../shared/widgets/states/friendly_error_view.dart';
+import '../../../shared/widgets/states/laurin_fallback_view.dart';
 
 import '../../custom_topics/providers/algorithm_profile_provider.dart';
 import '../../settings/providers/paid_content_provider.dart';
@@ -29,6 +31,10 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   bool _customExpanded = true;
   bool _curatedExpanded = true;
   bool _mutedExpanded = true;
+
+  // Compteur d'échecs consécutifs : bascule entre FriendlyErrorView et
+  // LaurinFallbackView après 2 échecs (pattern de feed_screen.dart).
+  int _consecutiveErrorCount = 0;
 
   static const _themeFilters = <({String? key, String label})>[
     (key: null, label: 'Toutes'),
@@ -80,6 +86,17 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final sourcesAsync = ref.watch(userSourcesProvider);
+
+    // Synchronise le compteur d'échecs consécutifs avec l'état du provider —
+    // mêmes règles que feed_screen.dart : incrémente sur 1ère AsyncError,
+    // reset sur succès. Évite de muter l'int dans le builder (warning Flutter).
+    ref.listen(userSourcesProvider, (previous, next) {
+      if (next is AsyncError && previous is! AsyncError) {
+        if (mounted) setState(() => _consecutiveErrorCount++);
+      } else if (next is AsyncData && _consecutiveErrorCount != 0) {
+        if (mounted) setState(() => _consecutiveErrorCount = 0);
+      }
+    });
 
     return Scaffold(
       appBar: _isSearching
@@ -143,9 +160,26 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                 ),
               ],
             ),
-      body: sourcesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, stack) => Center(child: Text('Erreur: $err')),
+      body: RefreshIndicator(
+        onRefresh: () => ref.refresh(userSourcesProvider.future),
+        color: colors.primary,
+        child: sourcesAsync.when(
+        loading: () => _scrollableCenter(
+          const Center(child: CircularProgressIndicator()),
+        ),
+        error: (err, stack) => _scrollableCenter(
+          _consecutiveErrorCount >= 2
+              ? LaurinFallbackView(
+                  onRetry: () {
+                    setState(() => _consecutiveErrorCount = 0);
+                    ref.invalidate(userSourcesProvider);
+                  },
+                )
+              : FriendlyErrorView(
+                  error: err,
+                  onRetry: () => ref.invalidate(userSourcesProvider),
+                ),
+        ),
         data: (sources) {
           // Sort alphabetically
           var allSources = sources.toList()
@@ -161,8 +195,8 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
           }
 
           if (allSources.isEmpty && _searchQuery.isEmpty) {
-            return Center(
-              child: Text(
+            return _scrollableCenter(
+              Text(
                 'Aucune source disponible',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       color: colors.textSecondary,
@@ -199,8 +233,8 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
           final noResults = filteredSources.isEmpty && _hasActiveFilter;
 
           if (noResults) {
-            return Center(
-              child: Column(
+            return _scrollableCenter(
+              Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
@@ -235,6 +269,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            physics: const AlwaysScrollableScrollPhysics(),
             children: [
               if (premiumSources.isNotEmpty)
                 _buildCollapsibleSection(
@@ -284,6 +319,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
             ],
           );
         },
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.go('/settings/sources/add'),
@@ -291,6 +327,21 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
         label: const Text('Ajouter une source'),
         backgroundColor: colors.primary,
         foregroundColor: colors.surface,
+      ),
+    );
+  }
+
+  /// Wraps a non-scrollable child (loading, error, empty state) so it can
+  /// participate in [RefreshIndicator] — pull-to-refresh requires a scrollable
+  /// descendant with [AlwaysScrollableScrollPhysics].
+  Widget _scrollableCenter(Widget child) {
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Center(child: child),
+        ),
       ),
     );
   }

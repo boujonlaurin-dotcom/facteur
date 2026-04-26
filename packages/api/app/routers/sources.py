@@ -8,6 +8,7 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker, get_db
@@ -37,6 +38,8 @@ from app.schemas.source import (
 from app.services.feed_cache import FEED_CACHE
 from app.services.search.smart_source_search import SmartSourceSearchService
 from app.services.source_service import SourceService
+from app.services.sources_cache import SOURCES_CACHE
+from app.utils.db_retry import retry_db_op
 
 logger = structlog.get_logger()
 
@@ -101,11 +104,45 @@ async def get_sources(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> SourceCatalogResponse:
-    """Récupérer toutes les sources (curées + custom)."""
-    service = SourceService(db)
-    sources = await service.get_all_sources(user_id)
+    """Récupérer toutes les sources (curées + custom).
 
-    return sources
+    Resilient read : per-user 30 s cache + retry on transient DB errors
+    (PYTHON-4 / PYTHON-26 — pool pressure). Returns 503 ``sources_unavailable``
+    on persistent failure so the mobile FriendlyErrorView can render the
+    "Petit souci de serveur" copy instead of a raw DioException.
+    """
+    user_uuid = UUID(user_id)
+
+    cached = SOURCES_CACHE.get(user_uuid)
+    if cached is not None:
+        return cached
+
+    async with SOURCES_CACHE.lock(user_uuid):
+        cached = SOURCES_CACHE.get(user_uuid)
+        if cached is not None:
+            return cached
+
+        service = SourceService(db)
+        try:
+            sources = await retry_db_op(
+                lambda: service.get_all_sources(user_id),
+                session=db,
+                op_name="sources.get_all",
+            )
+        except (SQLAlchemyError, DBAPIError) as e:
+            logger.error(
+                "sources_endpoint_db_error",
+                user_id=user_id,
+                exc_type=type(e).__name__,
+                error=str(e)[:300],
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="sources_unavailable",
+            )
+
+        SOURCES_CACHE.put(user_uuid, sources)
+        return sources
 
 
 @router.get("/catalog", response_model=list[SourceResponse])
@@ -375,6 +412,7 @@ async def add_source(
         source = await service.add_custom_source(user_id, str(data.url), data.name)
         await db.commit()
         FEED_CACHE.invalidate(UUID(user_id))
+        SOURCES_CACHE.invalidate(UUID(user_id))
 
         # Trigger immediate sync in background after request returns (and DB commits)
         from app.workers.rss_sync import sync_source
@@ -417,6 +455,7 @@ async def delete_source(
 
     await db.commit()
     FEED_CACHE.invalidate(UUID(user_id))
+    SOURCES_CACHE.invalidate(UUID(user_id))
     return {"status": "deleted"}
 
 
@@ -492,6 +531,7 @@ async def update_source_weight(
 
     await db.commit()
     FEED_CACHE.invalidate(UUID(user_id))
+    SOURCES_CACHE.invalidate(UUID(user_id))
     return result
 
 
@@ -516,6 +556,7 @@ async def update_source_subscription(
 
     await db.commit()
     FEED_CACHE.invalidate(UUID(user_id))
+    SOURCES_CACHE.invalidate(UUID(user_id))
     return result
 
 
@@ -537,6 +578,7 @@ async def trust_source(
 
     await db.commit()
     FEED_CACHE.invalidate(UUID(user_id))
+    SOURCES_CACHE.invalidate(UUID(user_id))
     return {"status": "trusted"}
 
 
@@ -558,4 +600,5 @@ async def untrust_source(
 
     await db.commit()
     FEED_CACHE.invalidate(UUID(user_id))
+    SOURCES_CACHE.invalidate(UUID(user_id))
     return {"status": "untrusted"}

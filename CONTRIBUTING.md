@@ -8,19 +8,47 @@ Ce guide s'adresse aux développeurs (même débutants) souhaitant contribuer au
 
 Avant de commencer, assurez-vous d'avoir installé les outils suivants :
 
-- **Git** : Pour la gestion de version.
-- **Python 3.12** : (⚠️ Ne pas utiliser 3.13+ pour le moment). [pyenv](https://github.com/pyenv/pyenv) est recommandé pour gérer les versions.
-- **Environnement Python (venv)** : L'utilisation de l'environnement virtuel est **indispensable** pour exécuter les scripts du projet et éviter les erreurs de modules manquants ou de commande `python` introuvable.
-- **Flutter (dernière version stable)** : Pour l'application mobile.
-- **Railway CLI** (optionnel) : Pour la gestion du déploiement.
-- **Un compte Supabase** : Pour la base de données et l'authentification.
-- **GitGuardian (ggshield)** : Outil de sécurité pour prévenir la fuite de secrets.
-  1. Installation : `brew install ggshield`
-  2. Authentification : `ggshield auth login`
-  3. Scan initial : `ggshield secret scan repo .`
+- **Git** : pour la gestion de version.
+- **Docker Desktop** : pour la DB Postgres de test (lancée par `make bootstrap`).
+- **Un compte Supabase** : pour la base de données et l'authentification.
+- **CLI tools via Brewfile** (pyenv, Flutter, Railway, Supabase, Sentry, gitleaks) — une seule commande depuis la racine du repo :
+  ```bash
+  brew bundle
+  gitleaks git --no-banner       # scan initial de sécurité (no account required)
+  ```
+- **Python 3.12** (⚠️ 3.13+ casse pydantic — cf [CLAUDE.md](CLAUDE.md#contraintes-techniques-locked)) :
+  ```bash
+  pyenv install 3.12             # pyenv a été installé par brew bundle
+  pyenv global 3.12              # ou `pyenv local 3.12` depuis la racine du repo
+  ```
 
-> [!TIP]
-> Si la commande `python` n'est pas trouvée, essayez `python3` ou assurez-vous que votre environnement virtuel est bien activé.
+  > [!IMPORTANT]
+  > **Activer pyenv dans votre shell** — sinon `python3.12` restera introuvable même après l'install. Ajoutez une fois à `~/.zshrc` (ou `~/.bashrc`) :
+  > ```bash
+  > cat >> ~/.zshrc << 'EOF'
+  >
+  > # pyenv
+  > export PYENV_ROOT="$HOME/.pyenv"
+  > [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+  > eval "$(pyenv init - zsh)"
+  > EOF
+  > source ~/.zshrc
+  > ```
+  >
+  > Vérifier :
+  > ```bash
+  > python3.12 --version         # doit afficher Python 3.12.x
+  > ```
+
+  > [!TIP]
+  > Le venv Python sera créé automatiquement par `make bootstrap` dans `packages/api/.venv`. Pas besoin de créer un venv manuellement.
+
+Une fois ces prérequis en place :
+
+```bash
+make bootstrap       # venv + deps API + DB test + migrations + flutter pub get
+make doctor          # vérifie l'état de chaque composant (✅/❌)
+```
 
 ---
 
@@ -73,53 +101,46 @@ fi
 
 ## 🐍 3. Setup Backend (API FastAPI)
 
-Le backend se trouve dans `packages/api`.
+Le backend se trouve dans `packages/api`. `make bootstrap` (§1) a déjà :
 
-1. **Environnement virtuel** :
-   ```bash
-   cd packages/api
-   python3 -m venv venv
-   source venv/bin/activate  # Mac/Linux
-   # .\venv\Scripts\activate # Windows
-   ```
-   > [!IMPORTANT]
-   > Une fois activé, votre terminal affichera `(venv)`. Vous pouvez alors utiliser simplement la commande `python`.
+- créé le venv `packages/api/.venv` en Python 3.12
+- installé les deps (`pip install -e "packages/api[dev]"`)
+- démarré la DB Postgres de test (Docker, port 54322)
+- appliqué les migrations Alembic
 
-2. **Installation** :
-   ```bash
-   pip install -r requirements.txt
-   ```
+**Variables d'environnement** :
 
-3. **Variables d'environnement** :
-   Copiez le fichier d'exemple et remplissez-le avec vos clés Supabase :
-   ```bash
-   cp .env.example .env
-   ```
+```bash
+cp packages/api/.env.example packages/api/.env
+# puis remplir SUPABASE_*, DATABASE_URL, etc. (cf §5)
+```
 
-4. **Lancement** :
-   ```bash
-   uvicorn app.main:app --reload
-   ```
+**Lancement de l'API** :
+
+```bash
+cd packages/api
+source .venv/bin/activate
+uvicorn app.main:app --reload --port 8080
+```
+
+> [!TIP]
+> Dans Cursor / VS Code, les launch configs (`iOS Simulator — Local API`, `Chrome — Local API`, …) démarrent l'API automatiquement via la task `Start Backend API`. Pas besoin de terminal séparé.
 
 ---
 
 ## 📱 4. Setup Mobile (Flutter)
 
-L'application mobile se trouve dans `apps/mobile`.
+L'application mobile se trouve dans `apps/mobile`. `make bootstrap` a déjà fait `flutter pub get`.
 
-1. **Installation des packages** :
-   ```bash
-   cd apps/mobile
-   flutter pub get
-   ```
+**Lancement** : utilise les launch configs VS Code (cf [README.md](README.md#-setup-ide-cursor--vs-code)) — elles injectent les `--dart-define` requis. En CLI :
 
-2. **Lancement** :
-   Vous devez fournir vos clés Supabase via les `--dart-define` :
-   ```bash
-   flutter run -d chrome \
-     --dart-define=SUPABASE_URL=VOTRE_URL \
-     --dart-define=SUPABASE_ANON_KEY=VOTRE_CLE
-   ```
+```bash
+cd apps/mobile
+flutter run -d iphone \
+  --dart-define=API_BASE_URL=http://localhost:8080/api/ \
+  --dart-define=SUPABASE_URL=VOTRE_URL \
+  --dart-define=SUPABASE_ANON_KEY=VOTRE_CLE
+```
 
 ---
 
@@ -169,7 +190,7 @@ Pour "curer" une source existante ou en ajouter une nouvelle au catalogue offici
 3. **Lancer le script d'import** :
    Depuis la racine du projet :
    ```bash
-   packages/api/venv/bin/python packages/api/scripts/import_sources.py --file sources/sources_candidates.csv
+   packages/api/.venv/bin/python packages/api/scripts/import_sources.py --file sources/sources_candidates.csv
    ```
    > Le script détectera que la source existe déjà et mettra à jour son statut `is_curated` en base de données.
 

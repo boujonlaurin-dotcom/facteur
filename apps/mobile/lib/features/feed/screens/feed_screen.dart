@@ -114,6 +114,20 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     ref.read(feedProvider.notifier).removeFromState(contentId);
   }
 
+  // Sprint 2 PR1 — fire article_feedback_submitted when the user picks a
+  // dismiss reason from the inline feedback row. Kept separate from the
+  // reason→action side effect so the event is recorded even if a sheet
+  // open fails.
+  void _trackFeedbackSubmit(String contentId, String feedbackType) {
+    unawaited(
+      ref.read(analyticsServiceProvider).trackArticleFeedbackSubmitted(
+            contentId: contentId,
+            feedbackType: feedbackType,
+            origin: 'feed',
+          ),
+    );
+  }
+
   // Compteur d'échecs consécutifs pour basculer entre FriendlyErrorView et
   // LaurinFallbackView (UX uniquement, pas de modif provider).
   int _consecutiveErrorCount = 0;
@@ -936,6 +950,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       },
                                       child: FeedbackInline(
                                         onSelectSource: () async {
+                                          _trackFeedbackSubmit(
+                                              content.id, 'less_source');
                                           await TopicChip.showArticleSheet(
                                             context,
                                             content,
@@ -946,6 +962,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           _resolveFeedback(content.id);
                                         },
                                         onSelectTopic: () async {
+                                          _trackFeedbackSubmit(
+                                              content.id, 'less_topic');
                                           await TopicChip.showArticleSheet(
                                             context,
                                             content,
@@ -955,8 +973,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           );
                                           _resolveFeedback(content.id);
                                         },
-                                        onSelectAlreadySeen: () =>
-                                            _resolveFeedback(content.id),
+                                        onSelectAlreadySeen: () {
+                                          _trackFeedbackSubmit(
+                                              content.id, 'already_seen');
+                                          _resolveFeedback(content.id);
+                                        },
                                         onUndo: () {
                                           // Re-surface la carte : annule
                                           // le hide côté backend et retire

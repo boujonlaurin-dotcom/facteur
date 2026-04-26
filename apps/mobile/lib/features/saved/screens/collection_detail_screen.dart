@@ -7,6 +7,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/ui/notification_service.dart';
+import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
@@ -264,7 +265,11 @@ class _CollectionDetailScreenState
         },
         loading: () =>
             Center(child: CircularProgressIndicator(color: colors.primary)),
-        error: (err, _) => Center(child: Text('Erreur: $err')),
+        error: (err, _) => FriendlyErrorView(
+          error: err,
+          onRetry: () =>
+              ref.invalidate(collectionDetailProvider(widget.collectionId)),
+        ),
       ),
     );
   }

@@ -126,5 +126,16 @@ class NudgeRegistry {
       frequency: NudgeFrequency.once,
       prerequisites: [NudgeIds.welcomeTour],
     ),
+
+    // Story 14.3 — well-informed NPS. Cooldown porté à 5j (skip) ; le
+    // provider impose en plus un cooldown 14j après une vraie soumission.
+    const Nudge(
+      id: NudgeIds.wellInformedPoll,
+      surface: NudgeSurface.digest,
+      placement: NudgePlacement.inlineBanner,
+      priority: NudgePriority.low,
+      frequency: NudgeFrequency.cooldown,
+      cooldown: Duration(days: 5),
+    ),
   ];
 }

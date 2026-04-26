@@ -13,6 +13,7 @@ import '../../../shared/widgets/loaders/loading_view.dart';
 import '../../../shared/widgets/mode_accent.dart';
 import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../../../shared/widgets/states/laurin_fallback_view.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../../widgets/design/facteur_logo.dart';
 import '../../feed/models/content_model.dart';
@@ -34,6 +35,9 @@ import '../providers/digest_format_provider.dart';
 import '../providers/community_carousel_provider.dart';
 import '../providers/digest_provider.dart';
 import '../providers/serein_toggle_provider.dart';
+import '../../well_informed/providers/well_informed_prompt_provider.dart';
+import '../../well_informed/widgets/well_informed_prompt.dart';
+import '../../../core/services/widget_service.dart';
 import '../widgets/digest_briefing_section.dart';
 import '../widgets/digest_personalization_sheet.dart';
 import '../widgets/digest_welcome_modal.dart';
@@ -59,6 +63,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
   bool _hasCheckedUpdate = false;
   int _consecutiveErrorCount = 0;
   final ScrollController _scrollController = ScrollController();
+  // Sprint 2 PR1 — dedupe digest_opened + digest_item_viewed per digest_id.
+  String? _trackedDigestId;
 
   @override
   void dispose() {
@@ -80,6 +86,10 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
   void initState() {
     super.initState();
     _checkNotifBannerDismissed();
+    // Seed the home-screen widget with a placeholder if it has never been
+    // populated. The next successful digest fetch overwrites it; this only
+    // matters for users who pinned the widget before opening the app.
+    WidgetService.initWidgetIfNeeded();
     // Note: _checkFirstTimeWelcome moved to didChangeDependencies()
     // because GoRouterState.of(context) requires mounted context
   }
@@ -167,7 +177,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     // After a short delay, nudge to pin the Android home screen widget
     Future.delayed(const Duration(milliseconds: 800), () {
       if (mounted) {
-        WidgetPinNudge.show(context);
+        WidgetPinNudge.show(context, ref);
       }
     });
   }
@@ -332,6 +342,36 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
           ref
               .read(digestFormatProvider.notifier)
               .initFromDigestResponse(digest.formatVersion);
+        }
+      });
+    });
+
+    // Sprint 2 PR1 — fire digest_opened + digest_item_viewed once per digest.
+    // Semantics: "items rendered in the list" — digest is short (≤ 7 items
+    // typically) so presentation ≈ visibility without per-card VisibilityDetector
+    // wiring across the editorial/ranked/topics layouts.
+    ref.listen(digestProvider, (previous, next) {
+      next.whenData((digest) {
+        if (digest == null) return;
+        if (_trackedDigestId == digest.digestId) return;
+        _trackedDigestId = digest.digestId;
+        final analytics = ref.read(analyticsServiceProvider);
+        final dateIso = digest.targetDate.toIso8601String().substring(0, 10);
+        unawaited(
+          analytics.trackDigestOpened(
+            digestDate: dateIso,
+            itemsCount: digest.items.length,
+          ),
+        );
+        for (var i = 0; i < digest.items.length; i++) {
+          final item = digest.items[i];
+          unawaited(
+            analytics.trackDigestItemViewed(
+              digestDate: dateIso,
+              contentId: item.contentId,
+              position: i,
+            ),
+          );
         }
       });
     });
@@ -657,6 +697,24 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                           );
                         }
                         return const SizedBox.shrink();
+                      },
+                    ),
+                  ),
+
+                  // Story 14.3 — Well-informed self-report inline prompt.
+                  // Cooldown & gating dans wellInformedShouldShowProvider :
+                  // 14j après soumission, 5j après skip.
+                  SliverToBoxAdapter(
+                    child: Consumer(
+                      builder: (context, ref, _) {
+                        final shouldShow =
+                            ref.watch(wellInformedShouldShowProvider);
+                        return shouldShow.maybeWhen(
+                          data: (show) => show
+                              ? const WellInformedPrompt()
+                              : const SizedBox.shrink(),
+                          orElse: () => const SizedBox.shrink(),
+                        );
                       },
                     ),
                   ),
