@@ -34,9 +34,7 @@ class SourceSearchLog(Base):
         ARRAY(String), nullable=False, default=list
     )
     result_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    top_results: Mapped[list[dict]] = mapped_column(
-        JSONB, nullable=False, default=list
-    )
+    top_results: Mapped[list[dict]] = mapped_column(JSONB, nullable=False, default=list)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cache_hit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     abandoned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
