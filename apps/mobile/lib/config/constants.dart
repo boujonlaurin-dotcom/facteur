@@ -244,6 +244,28 @@ class PostHogConstants {
   static bool get isEnabled => apiKey.isNotEmpty;
 }
 
+/// Configuration Sentry (cf. docs/bugs/bug-android-disconnect-race.md — P5).
+class SentryConstants {
+  SentryConstants._();
+
+  static const String dsn = String.fromEnvironment(
+    'SENTRY_DSN',
+    defaultValue: '',
+  );
+
+  static const String environment = String.fromEnvironment(
+    'SENTRY_ENVIRONMENT',
+    defaultValue: 'production',
+  );
+
+  static const String release = String.fromEnvironment(
+    'APP_RELEASE_TAG',
+    defaultValue: '',
+  );
+
+  static bool get isEnabled => dsn.isNotEmpty;
+}
+
 /// Liens externes
 class ExternalLinks {
   ExternalLinks._();

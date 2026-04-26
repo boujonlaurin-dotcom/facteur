@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:home_widget/home_widget.dart';
@@ -21,6 +22,31 @@ import 'core/utils/fr_compact_messages.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Sentry init — wrappe le reste du bootstrap pour capturer toute exception
+  // pendant l'init. Si DSN absent (dev local sans clé), l'init est skip.
+  // Cf. docs/bugs/bug-android-disconnect-race.md (P5 — instrumentation).
+  if (SentryConstants.isEnabled) {
+    await SentryFlutter.init(
+      (options) {
+        options.dsn = SentryConstants.dsn;
+        options.environment = SentryConstants.environment;
+        if (SentryConstants.release.isNotEmpty) {
+          options.release = SentryConstants.release;
+        }
+        // Sample 100% des erreurs, pas de perf tracing pour le moment.
+        options.tracesSampleRate = 0.0;
+        // Ne pas envoyer les PII par défaut.
+        options.sendDefaultPii = false;
+      },
+      appRunner: _bootstrap,
+    );
+  } else {
+    await _bootstrap();
+  }
+}
+
+Future<void> _bootstrap() async {
 
   // Initialiser timeago
   timeago.setLocaleMessages('fr', fr_messages.FrMessages());
@@ -174,7 +200,10 @@ Future<void> main() async {
     if (hasSession) {
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
-        await posthog.identify(userId: user.id);
+        await posthog.identify(
+          userId: user.id,
+          properties: _userIdentifyProperties(user),
+        );
       }
     }
     Supabase.instance.client.auth.onAuthStateChange.listen((data) {
@@ -184,7 +213,10 @@ Future<void> main() async {
         case AuthChangeEvent.userUpdated:
           final user = data.session?.user;
           if (user != null) {
-            posthog.identify(userId: user.id);
+            posthog.identify(
+              userId: user.id,
+              properties: _userIdentifyProperties(user),
+            );
           }
           break;
         case AuthChangeEvent.signedOut:
@@ -206,6 +238,21 @@ Future<void> main() async {
   debugPrint('Main: Calling runApp...');
   runApp(const ProviderScope(child: FacteurApp()));
   debugPrint('Main: runApp called.');
+}
+
+/// User properties pushed à chaque `$identify` PostHog. Permet de filtrer
+/// dashboard et insights par email/provider sans devoir matcher manuellement
+/// les distinct_id Supabase.
+Map<String, Object> _userIdentifyProperties(User user) {
+  final props = <String, Object>{};
+  if (user.email != null && user.email!.isNotEmpty) {
+    props['email'] = user.email!;
+  }
+  final providers = user.appMetadata['providers'];
+  if (providers is List) {
+    props['auth_providers'] = providers.join(',');
+  }
+  return props;
 }
 
 /// Background callback for home widget interactions (required by home_widget).
