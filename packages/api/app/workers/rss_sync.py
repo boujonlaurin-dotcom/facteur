@@ -16,12 +16,14 @@ async def sync_all_sources() -> dict:
     """
     logger.info("Executing periodic RSS sync job")
 
-    async with async_session_maker() as session:
-        service = SyncService(session, session_maker=async_session_maker)
-        try:
-            return await service.sync_all_sources()
-        finally:
-            await service.close()
+    # No outer session: SyncService opens short-lived sessions per query via
+    # session_maker. Holding an outer session would let Supabase PgBouncer
+    # kill the idle checked-out connection during gather().
+    service = SyncService(session=None, session_maker=async_session_maker)
+    try:
+        return await service.sync_all_sources()
+    finally:
+        await service.close()
 
 
 async def sync_source(source_id: str) -> bool:

@@ -24,7 +24,9 @@ logger = structlog.get_logger()
 
 
 class SyncService:
-    def __init__(self, session: AsyncSession, session_maker=None):
+    def __init__(
+        self, session: AsyncSession | None = None, session_maker=None
+    ):
         self.session = session
         self.session_maker = session_maker
         self.client = httpx.AsyncClient(
@@ -65,20 +67,24 @@ class SyncService:
         """Synchronise toutes les sources actives avec une limite de concomitance."""
         logger.info("Starting sync of all sources")
 
-        # Sync curated sources + user custom sources only (not indexed candidates)
+        # Sync curated sources + user custom sources only (not indexed candidates).
+        # Use a SHORT session for the source-list query so the connection is
+        # released before the long-running gather() below — otherwise Supabase
+        # PgBouncer kills the idle checked-out connection (~5 min limit) and
+        # the session __aexit__ rollback fails with "server closed connection".
         custom_source_ids = (
             select(UserSource.source_id)
             .where(UserSource.is_custom)
             .distinct()
             .scalar_subquery()
         )
-        result = await self.session.execute(
-            select(Source).where(
-                Source.is_active,
-                (Source.is_curated) | (Source.id.in_(custom_source_ids)),
-            )
+        stmt = select(Source).where(
+            Source.is_active,
+            (Source.is_curated) | (Source.id.in_(custom_source_ids)),
         )
-        sources = result.scalars().all()
+        async with self._short_session() as session:
+            result = await session.execute(stmt)
+            sources = list(result.scalars().all())
 
         logger.info(f"Found {len(sources)} active sources to sync")
 
