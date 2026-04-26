@@ -91,7 +91,9 @@ async def _digest_watchdog() -> None:
                 try:
                     await session.rollback()
                 except Exception:
-                    logger.warning("digest_watchdog outer rollback failed", exc_info=True)
+                    logger.warning(
+                        "digest_watchdog outer rollback failed", exc_info=True
+                    )
 
     except Exception:
         logger.exception("digest_watchdog_failed")
