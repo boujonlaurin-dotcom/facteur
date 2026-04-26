@@ -1,123 +1,135 @@
-# QA Handoff — Well-Informed NPS (Story 14.3)
+# QA Handoff — PR3 Catalogue Feature Nudges (Story 16.1)
 
-> Feature branch : `boujonlaurin-dotcom/sprint2-feature-events`
-> Story : `docs/stories/core/14.3.well-informed-self-report.story.md`
-> Plan : `/Users/laurinboujon/.claude/plans/system-instruction-you-are-working-lively-river.md`
+**Branche** : `boujonlaurin-dotcom/nudge-catalogue`
+**Base** : `main` (rebasée sur `9b29a44a`)
+**Scope** : 6 feature nudges + kill switch Supabase + télémétrie PostHog
 
-## Feature développée
+---
 
-Prompt inline NPS-style (1-10) dans le scroll du digest, demandant *"À quel point te sens-tu bien informé·e en ce moment ?"*. Skip autorisé via icône `x` (cooldown 5j), soumission d'une note impose un cooldown 14j. Données persistées dans `user_well_informed_ratings` + 3 events PostHog (shown / skipped / submitted).
+## ⚠️ Avant de tester — action manuelle requise
 
-## PR associée
+Le MCP Supabase est en read-only. **Appliquer manuellement** le SQL suivant via l'éditeur SQL Supabase avant tout test du kill switch :
 
-À remplir après `gh pr create --base main`.
+Fichier : `.context/nudges-pr3-app-config.sql`
 
-## Écrans impactés
-
-| Écran | Route | Modifié / Nouveau |
-|-------|-------|-------------------|
-| Digest (sliver inline inséré) | `/digest` | **Modifié** (nouveau sliver entre success banner et briefing) |
-| `WellInformedPrompt` widget | — | **Nouveau** |
-
-## Scénarios de test
-
-### Scénario 1 : Happy path — première soumission
-**Parcours** :
-1. Fresh install, compléter onboarding + welcome tour.
-2. Attendre 24h+ (contrainte `kGlobalNonCriticalCooldown` du NudgeCoordinator) OU clear le nudge state côté test.
-3. Ouvrir `/digest` → scroll léger pour atteindre la carte (placée sous le success banner, avant la briefing section).
-4. Vérifier visuellement : question, helper text 1=/10=, 10 pills 1..10, croix discrete en haut-droite, texte italique explicatif en bas.
-5. Tap sur le pill **7**.
-**Résultat attendu** :
-- La carte disparaît instantanément (fade out via invalidation provider).
-- Vibration tactile medium-impact.
-- `POST /api/well-informed/ratings` → 201 avec body `{score: 7, context: "digest_inline"}`.
-- Event PostHog `well_informed_score_submitted` avec `score=7, context="digest_inline"` émis.
-- Event analytics backend `well_informed_score_submitted` stocké dans `analytics_events`.
-- Row dans `user_well_informed_ratings` (vérifier via Supabase SQL Editor).
-- La carte ne réapparaît pas lors des ouvertures `/digest` suivantes pendant 14 jours.
-
-### Scénario 2 : Skip — cooldown court 5j
-**Parcours** :
-1. Fresh state (comme scénario 1, après cooldown global 24h).
-2. Ouvrir `/digest`, repérer la carte.
-3. Tap sur l'icône `x` en haut-droite.
-**Résultat attendu** :
-- La carte disparaît.
-- Vibration tactile light-impact.
-- Aucun POST `/api/well-informed/ratings` émis (vérifier Network inspector Chrome DevTools).
-- Event `well_informed_prompt_skipped` émis vers analytics + PostHog.
-- Aucune row insérée dans `user_well_informed_ratings`.
-- La carte réapparaît après 5 jours (simuler en forçant `nudge.well_informed_poll.lastShown` 6 jours dans le passé via SharedPreferences).
-- Avant les 5 jours, la carte ne revient pas.
-
-### Scénario 3 : Bornes 1 et 10
-**Parcours** :
-1. Fresh state → tap sur le pill **1**. Reset state. Tap sur le pill **10**.
-**Résultat attendu** :
-- Les deux valeurs sont acceptées (201 API).
-- `user_well_informed_ratings` contient une row avec `score=1` et une avec `score=10`.
-- Aucune erreur de validation.
-
-### Scénario 4 : Validation API — score hors bornes
-**Parcours (test API direct, pas UI)** :
-1. `curl -X POST .../api/well-informed/ratings -H 'Authorization: Bearer $JWT' -d '{"score": 0}'`
-2. Idem avec `score: 11`, `score: -5`.
-**Résultat attendu** : HTTP 422 (Unprocessable Entity) avec détail Pydantic mentionnant la contrainte `ge=1, le=10`.
-
-### Scénario 5 : Cooldown long domine le court
-**Parcours** :
-1. Skip le prompt → attendre 6 jours (simulé).
-2. La carte reparaît → tap sur un score (soumission).
-3. Simuler 10 jours plus tard : la carte doit **encore être cachée** (car submit → 14j > 10j).
-**Résultat attendu** : cohérent avec la règle "après submit, 14j obligatoire même si le nudge cooldown 5j est écoulé".
-
-### Scénario 6 : Fail silencieux réseau
-**Parcours** :
-1. Désactiver le réseau (offline mode ou kill API).
-2. Tap un score.
-**Résultat attendu** :
-- La carte disparaît quand même (meilleure UX que de laisser bloqué).
-- Aucune erreur visible à l'utilisateur (repository catch silencieux).
-- `well_informed_poll_last_submitted_at_ms` est mis à jour en SharedPreferences → cooldown 14j avance, même sans row en DB.
-- Event PostHog `well_informed_score_submitted` parti (PostHog a son propre buffer).
-
-## Critères d'acceptation
-
-- [ ] La carte s'affiche dans le scroll du digest après 24h+ d'install (nudge global cooldown).
-- [ ] Tap sur un pill 1-10 : carte disparaît, row en DB, event PostHog, cooldown 14j respecté.
-- [ ] Tap sur `x` : carte disparaît, event skipped, cooldown 5j respecté.
-- [ ] Bornes 1 et 10 acceptées ; 0 et 11 rejetés (422).
-- [ ] Aucune régression visible sur les tests existants backend + mobile (hook `stop-verify-tests.sh` passe).
-- [ ] `flutter analyze` sur mes fichiers : 0 issue.
-- [ ] Migration Alembic `wi01` applique proprement (1 head unique).
-
-## Zones de risque
-
-- **Double prefix routers** : le router `analytics` avait `prefix="/analytics"` combiné à `include_router(prefix="/api/analytics")` → double prefix `/api/analytics/analytics/events`. Mon router `well_informed` évite ce piège (prefix uniquement dans `include_router`). Route finale : `/api/well-informed/ratings`.
-- **Nudge budget session** : priority `low` → consomme le budget `kSessionNonCriticalBudget = 1`. Si un autre low/normal nudge a déjà été affiché dans la session, le prompt ne s'affichera PAS ce jour-là (attendu, pas bug).
-- **SharedPreferences key collision** : `well_informed_poll_last_submitted_at_ms` est notre clé custom. Ne pas la confondre avec `nudge.well_informed_poll.lastShown` (gérée par NudgeStorage, sert au cooldown 5j des skips).
-- **Timezone** : `submitted_at` est en UTC côté backend (SQLAlchemy DateTime(timezone=True) + now()). Pas de bug de décalage.
-
-## Dépendances
-
-- **Backend** : nouvelle table `user_well_informed_ratings` (migration `wi01`). Dépend de `lp02` (déjà mergée en 14.2).
-- **Mobile** : dépend du module unifié `core/nudges/` (shipped en PR #468, déjà sur main).
-- **PostHog** : project `Default project` (id 129581), org Facteur. Les nouveaux events apparaîtront automatiquement dans l'event explorer.
-
-## Commandes rapides de vérification
-
-```bash
-# Backend — tests unitaires ciblés
-cd packages/api && PYTHONPATH=. pytest tests/test_well_informed_service.py -v
-
-# Mobile — tests ciblés
-cd apps/mobile && flutter test test/features/well_informed/ test/core/services/analytics_service_sprint2_test.dart
-
-# Migration Alembic
-cd packages/api && alembic heads  # → wi01 (head unique)
-cd packages/api && alembic upgrade head
-
-# Query DB
-psql -c "SELECT score, COUNT(*) FROM user_well_informed_ratings GROUP BY score ORDER BY score;"
+```sql
+create table if not exists public.app_config (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.app_config enable row level security;
+create policy "app_config readable by authenticated"
+  on public.app_config for select to authenticated using (true);
+insert into public.app_config(key, value)
+  values ('nudges_enabled', 'true'::jsonb)
+  on conflict (key) do nothing;
 ```
+
+Vérification : `select * from public.app_config;` doit retourner `nudges_enabled = true`.
+
+---
+
+## Écrans et surfaces touchés
+
+| Nudge                          | Surface                                 | Placement      | Trigger                                                      |
+|--------------------------------|-----------------------------------------|----------------|--------------------------------------------------------------|
+| `priority_slider_explainer`    | Sheet priorité source (long-press src)  | Inline banner  | 1ʳᵉ ouverture de la sheet                                    |
+| `article_save_notes`           | Détail article (colonne FAB bookmark)   | Tooltip        | 1ʳᵉ ouverture article (legacy `has_seen_note_welcome` lu)    |
+| `article_read_on_site`         | Détail article (fin d'article)          | Inline banner  | 4ᵉ article ouvert + scroll ≥ 50%                             |
+| `feed_badge_longpress`         | Feed — 1ʳᵉ carte                        | Spotlight      | 2ᵉ ouverture Feed + ≥ 1 tap carte (prereq: welcome_tour vu)  |
+| `feed_preview_longpress`       | Feed — 1ʳᵉ carte                        | Spotlight      | 3ᵉ ouverture Feed + ≥ 2 articles ouverts (prereq: badge vu)  |
+| `perspectives_cta`             | Détail article (PerspectivesPill)       | Pulse 1×       | 2ᵉ article avec perspectives non-vides                       |
+
+---
+
+## Scénarios de validation (Chrome mobile viewport 390×844)
+
+### Scénario 1 — priority_slider_explainer
+1. Login compte test (reset prefs si besoin).
+2. Feed → long-press badge source d'une carte → sheet priorité s'ouvre.
+3. **Vérifier** : banner inline DM Sans au-dessus du slider avec copie « Glissez pour ajuster l'importance… ».
+4. Tap le `X` → banner disparaît.
+5. Fermer sheet, rouvrir → banner n'apparaît plus.
+
+### Scénario 2 — article_save_notes (migration legacy)
+1. Ouvrir 1ᵉʳ article.
+2. **Vérifier** : tooltip DM Sans apparaît près du bookmark FAB avec « Sauvegardez cet article et ajoutez-y des notes personnelles. »
+3. Tap sur le tooltip → disparition.
+4. Rouvrir un autre article → pas de tooltip.
+5. **Régression legacy** : pour un user qui avait `has_seen_note_welcome=true` avant PR3, vérifier qu'il ne voit PAS le tooltip (`NudgeStorage.isSeen()` lit la legacy key).
+
+### Scénario 3 — article_read_on_site
+1. Reset prefs (ou compte neuf).
+2. Ouvrir 4 articles différents (peu importe le scroll sur les 3 premiers).
+3. Sur le 4ᵉ article, scroller jusqu'à ≥50%.
+4. **Vérifier** : banner inline apparaît en fin d'article avec « Préférez l'expérience du site original ? » + bouton « Ouvrir ».
+5. Tap « Ouvrir » → navigateur externe s'ouvre, banner disparaît.
+6. Rouvrir 4 autres articles → banner n'apparaît plus (markSeen).
+
+### Scénario 4 — feed_badge_longpress
+1. Reset prefs, compte avec welcome_tour déjà vu.
+2. Ouvrir Feed (1ʳᵉ fois) → aucun nudge.
+3. Tap sur une carte (ouvrir un article). Revenir au Feed (2ᵉ ouverture).
+4. **Vérifier** : spotlight overlay sur la 1ʳᵉ balise (topic chip en priorité) avec bulle « Appuyez longuement sur une balise… ».
+5. Long-press la balise pointée → conversion détectée, spotlight disparaît, sheet d'édition topic s'ouvre.
+6. Rouvrir Feed → spotlight n'apparaît plus.
+
+### Scénario 5 — feed_preview_longpress
+1. Après avoir vu et dismiss `feed_badge_longpress` (prereq).
+2. Ouvrir 2 articles de plus (total articleOpenCount ≥ 2).
+3. Retourner au Feed (3ᵉ ouverture).
+4. **Vérifier** : spotlight sur la 1ʳᵉ carte entière avec bulle « Appuyez longuement sur une carte pour un aperçu rapide… ».
+5. Long-press la carte → aperçu article s'ouvre, spotlight disparaît.
+
+### Scénario 6 — perspectives_cta
+1. Ouvrir 1 article qui a des perspectives (non-vides, shouldDisplay=true) → aucun pulse.
+2. Ouvrir 2ᵉ article avec perspectives.
+3. **Vérifier** : pulse 1× (1.0 → 1.08 → 1.0, ~600ms) sur le bouton Perspectives flottant. Pas de boucle.
+4. Tap le bouton Perspectives → scroll vers la section, conversion émise.
+5. Rouvrir d'autres articles → plus de pulse.
+
+### Scénario 7 — kill switch (nécessite accès dashboard Supabase)
+1. Dans Supabase : `update public.app_config set value='false'::jsonb where key='nudges_enabled';`
+2. Restart l'app.
+3. **Vérifier** : aucun des 6 nudges n'apparaît. Le welcome tour reste inchangé (priority=critical).
+4. Remettre à `true` + restart → les nudges non-vus peuvent à nouveau apparaître.
+
+### Scénario 8 — queue + session budget (AC-15)
+1. Scénario combiné : provoquer 2 nudges non-critical la même session.
+2. **Vérifier** : seul le 1ᵉʳ s'affiche, le 2ᵉ est bloqué par le budget 1/session.
+3. Cooldown global 24 h : après dismiss d'un nudge non-critical, un autre non-critical ne doit pas s'afficher.
+
+---
+
+## Télémétrie PostHog à vérifier
+
+Dans PostHog, filtrer sur events `nudge_shown` et `nudge_dismissed`. Properties attendues :
+
+```json
+{
+  "nudge_id": "article_save_notes",
+  "surface": "article",
+  "placement": "tooltip",
+  "priority": "normal",
+  "outcome": "dismissed"
+}
+```
+
+Confirmer qu'un `nudge_shown` est émis à chaque apparition, et qu'un `nudge_dismissed` avec `outcome=converted` est émis sur tap CTA (read_on_site "Ouvrir", perspectives pill tap, long-press badge, long-press card).
+
+---
+
+## Cas limites à re-vérifier
+
+- **Feed vide** : user dont Feed retourne 0 articles → `feed_badge_longpress` doit pouvoir s'afficher quand le feed se remplit ensuite.
+- **Article sans topic chip** : `feed_badge_longpress` cible le badge source en fallback.
+- **Article sans perspectives** : `perspectives_cta` ne doit jamais se déclencher.
+- **Scroll scroll-to-site actif** (articles avec `hasInAppContent`) : `article_read_on_site` s'affiche quand même à ≥50%.
+
+---
+
+## Rollback
+
+- Kill switch immédiat : `update public.app_config set value='false'::jsonb where key='nudges_enabled';` — effet au prochain boot client (fallback `true` si row absente).
+- Full rollback code : revert du merge commit.
