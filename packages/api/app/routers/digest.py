@@ -10,6 +10,7 @@ Safe reuse of existing services through DigestService.
 """
 
 import asyncio
+import contextlib
 import time
 from datetime import date, timedelta
 from uuid import UUID
@@ -192,10 +193,8 @@ async def _enrich_community_carousel(
             await asyncio.wait_for(db.rollback(), timeout=2.0)
         except (TimeoutError, Exception) as rb_exc:
             logger.debug("community_carousel_rollback_failed", error=str(rb_exc))
-            try:
+            with contextlib.suppress(Exception):
                 await asyncio.wait_for(db.invalidate(), timeout=1.0)
-            except Exception:
-                pass
 
     return digest
 
@@ -495,10 +494,8 @@ async def get_both_digests(
                         "digest_both_post_gather_rollback_failed",
                         error=str(rb_exc),
                     )
-                    try:
+                    with contextlib.suppress(Exception):
                         await asyncio.wait_for(db.invalidate(), timeout=1.0)
-                    except Exception:
-                        pass
                 enabled = False
 
             n, s = normal, serein
