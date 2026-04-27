@@ -8,6 +8,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/nudge_service.dart';
+import '../../../core/web/web_perf.dart';
 
 /// Provider to track if user has seen the digest welcome
 final digestWelcomeShownProvider = StateProvider<bool>((ref) => false);
@@ -97,10 +98,11 @@ class _DigestWelcomeModalState extends ConsumerState<DigestWelcomeModal>
       onTap: _dismiss,
       child: FadeTransition(
         opacity: _backdropAnimation,
-        child: BackdropFilter(
+        child: webBlurFallback(
           filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          fallbackColor: Colors.black.withOpacity(0.7),
           child: Container(
-            color: Colors.black.withOpacity(0.55),
+            color: kWebPerf ? null : Colors.black.withOpacity(0.55),
             child: Center(
               child: GestureDetector(
                 onTap: () {}, // Prevent tap through

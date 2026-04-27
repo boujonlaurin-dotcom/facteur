@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 
@@ -20,6 +21,26 @@ class FacteurLoader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tint = color ?? context.facteurColors.primary;
+    if (kIsWeb) {
+      // Lottie repaints every frame — kills Safari iOS scroll/idle perf.
+      // Static spinner is enough for the temporary web build.
+      final dim = width < height ? width : height;
+      final stroke = (dim / 14).clamp(2.0, 4.0).toDouble();
+      return SizedBox(
+        width: width,
+        height: height,
+        child: Center(
+          child: SizedBox(
+            width: dim * 0.5,
+            height: dim * 0.5,
+            child: CircularProgressIndicator(
+              strokeWidth: stroke,
+              valueColor: AlwaysStoppedAnimation<Color>(tint),
+            ),
+          ),
+        ),
+      );
+    }
     return SizedBox(
       width: width,
       height: height,

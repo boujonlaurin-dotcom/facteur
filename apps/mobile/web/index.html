@@ -45,8 +45,6 @@
     /* Prevent browser native pull-to-refresh so Flutter's RefreshIndicator works */
     html, body { overscroll-behavior-y: contain; }
   </style>
-  <!-- Use HTML renderer to avoid CORS issues with external images (CanvasKit blocks cross-origin images) -->
-  <script>window.flutterWebRenderer = "html";</script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
