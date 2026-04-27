@@ -15,11 +15,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../config/routes.dart';
-import '../../../core/auth/auth_state.dart';
 import '../../../core/nudges/nudge_coordinator.dart';
 import '../../../core/nudges/nudge_counters.dart';
 import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/widgets/feed_nudge_anchors.dart';
+import '../../welcome_tour/controllers/welcome_tour_controller.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../providers/feed_provider.dart';
@@ -154,10 +154,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   }
 
   Future<void> _recordFeedOpenAndMaybeNudge() async {
-    // Gate everything on welcome_tour having been seen. During the tour the
-    // shell navigates to /feed to show step 2, triggering this initState —
-    // we don't want that to count as a "natural" feed visit.
-    if (!ref.read(authStateProvider).welcomeTourSeen) return;
+    // The shell navigates to /feed during welcome_tour step 2 — don't count
+    // that as a "natural" visit and don't request a spotlight that would
+    // overlap the tour overlay. Whether the tour has been seen at all is
+    // already enforced by the registry prerequisite (read device-scoped, so
+    // PR2 v1 legacy users who never re-saw the user-scoped tour still pass).
+    if (ref.read(welcomeTourControllerProvider).active) return;
     final opens = await NudgeCounters.increment(NudgeCounters.feedOpenCount);
     final taps = await NudgeCounters.get(NudgeCounters.feedCardTapCount);
     if (!mounted) return;
@@ -180,7 +182,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   }
 
   Future<void> _onFeedCardTapped() async {
-    if (!ref.read(authStateProvider).welcomeTourSeen) return;
+    if (ref.read(welcomeTourControllerProvider).active) return;
     await NudgeCounters.increment(NudgeCounters.feedCardTapCount);
   }
 
