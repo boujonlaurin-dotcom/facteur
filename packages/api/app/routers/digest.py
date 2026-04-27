@@ -10,6 +10,7 @@ Safe reuse of existing services through DigestService.
 """
 
 import asyncio
+import contextlib
 import time
 from datetime import date, timedelta
 from uuid import UUID
@@ -67,6 +68,15 @@ DIGEST_GENERATE_TIMEOUT_S = 60.0  # force=True peut prendre plus
 _digest_both_inflight: dict[UUID, asyncio.Future] = {}
 _digest_both_inflight_lock = asyncio.Lock()
 DIGEST_BOTH_FOLLOWER_TIMEOUT_S = 35.0
+
+# Hard ceiling on the post-gather block (serein_enabled + 2 community
+# enrichments) on the outer `db` session. After the 25-30s LLM gather, the
+# outer connection has been idle and Supabase/PgBouncer may have killed it.
+# Without this bound, a fail-open `db.rollback()` on a dead conn can hang
+# indefinitely (statement_timeout doesn't cover ROLLBACK), which leaks the
+# session for hours and starves the singleflight slot — producing the
+# infinite-loading symptom observed in prod (long_session_checkout=7231s).
+DIGEST_BOTH_POST_GATHER_TIMEOUT_S = 5.0
 
 
 class ActionRequest(BaseModel):
@@ -175,10 +185,16 @@ async def _enrich_community_carousel(
         logger.exception("community_carousel_enrichment_failed")
         # Round 6 — mirror D3 (PR #437 community.py). Handler is fail-open so
         # get_db never sees the raise and cannot rollback a dirty session.
+        # Bound the rollback: on a Supabase-killed connection, asyncpg can
+        # hang indefinitely waiting for a server ACK that never comes
+        # (statement_timeout doesn't apply to ROLLBACK). On timeout, force
+        # invalidate so the dead conn is dropped from the pool.
         try:
-            await db.rollback()
-        except Exception as rb_exc:
+            await asyncio.wait_for(db.rollback(), timeout=2.0)
+        except (TimeoutError, Exception) as rb_exc:
             logger.debug("community_carousel_rollback_failed", error=str(rb_exc))
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(db.invalidate(), timeout=1.0)
 
     return digest
 
@@ -456,36 +472,52 @@ async def get_both_digests(
             leader_fut.set_result(result)
             return result
 
-        # Post-gather DB ops — the outer `db` session has been idle during the
-        # 25-30s LLM pipeline, and Supabase/PgBouncer sometimes kills idle
-        # connections in that window. We already generated both variants in
-        # their own short-lived sessions, so here we only need the preference
-        # read + community enrichment. Make them both tolerant: if `db` is
-        # dead, roll back once (forces SQLAlchemy to check out a fresh slot)
-        # and fall back to defaults rather than 500-ing a successfully
-        # generated pair of digests.
-        try:
-            service = DigestService(db)
-            serein_enabled = await service._get_user_serein_enabled(user_uuid)
-        except Exception:
-            logger.exception(
-                "digest_both_serein_enabled_lookup_failed",
-                user_id=current_user_id,
-            )
+        # Post-gather DB ops — bounded by DIGEST_BOTH_POST_GATHER_TIMEOUT_S.
+        # On timeout, return the digests with serein_enabled=False and empty
+        # community carousels rather than holding the singleflight slot while
+        # a dead-connection rollback hangs.
+        async def _post_gather_enrich() -> tuple[
+            DigestResponse | None, DigestResponse | None, bool
+        ]:
+            svc = DigestService(db)
             try:
-                await db.rollback()
-            except Exception as rb_exc:
-                logger.debug(
-                    "digest_both_post_gather_rollback_failed",
-                    error=str(rb_exc),
+                enabled = await svc._get_user_serein_enabled(user_uuid)
+            except Exception:
+                logger.exception(
+                    "digest_both_serein_enabled_lookup_failed",
+                    user_id=current_user_id,
                 )
-            serein_enabled = False
+                try:
+                    await asyncio.wait_for(db.rollback(), timeout=2.0)
+                except (TimeoutError, Exception) as rb_exc:
+                    logger.debug(
+                        "digest_both_post_gather_rollback_failed",
+                        error=str(rb_exc),
+                    )
+                    with contextlib.suppress(Exception):
+                        await asyncio.wait_for(db.invalidate(), timeout=1.0)
+                enabled = False
 
-        # Enrich both variants with community carousel (already fail-open).
-        if normal:
-            normal = await _enrich_community_carousel(db, user_uuid, normal)
-        if serein:
-            serein = await _enrich_community_carousel(db, user_uuid, serein)
+            n, s = normal, serein
+            if n:
+                n = await _enrich_community_carousel(db, user_uuid, n)
+            if s:
+                s = await _enrich_community_carousel(db, user_uuid, s)
+            return n, s, enabled
+
+        try:
+            normal, serein, serein_enabled = await asyncio.wait_for(
+                _post_gather_enrich(),
+                timeout=DIGEST_BOTH_POST_GATHER_TIMEOUT_S,
+            )
+        except TimeoutError:
+            logger.warning(
+                "digest_both_post_gather_timeout",
+                user_id=current_user_id,
+                timeout_s=DIGEST_BOTH_POST_GATHER_TIMEOUT_S,
+                hint="Outer db hang detected — returning digests without enrichment.",
+            )
+            serein_enabled = False
 
         result = DualDigestResponse(
             normal=normal,
