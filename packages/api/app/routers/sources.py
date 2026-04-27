@@ -1,5 +1,6 @@
 """Routes sources."""
 
+import contextlib
 import time
 from collections import defaultdict
 from urllib.parse import urlparse
@@ -229,7 +230,19 @@ async def smart_search(
             detail="Too many requests (max 10/minute)",
         )
 
-    service = SmartSourceSearchService(db)
+    async def _release_db() -> None:
+        # Hand the request-scoped session back to the pool before the service
+        # enters its slow external phase (LLM/Brave/GoogleNews). FastAPI's
+        # `get_db` dependency wraps `close()` in a finally — calling it here
+        # is safe because AsyncSession.close() is idempotent.
+        try:
+            await db.commit()
+        except Exception:
+            with contextlib.suppress(Exception):
+                await db.rollback()
+        await db.close()
+
+    service = SmartSourceSearchService(db, on_phase1_done=_release_db)
     try:
         result = await service.search(
             data.query,

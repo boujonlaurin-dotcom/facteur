@@ -3,6 +3,7 @@
 import asyncio
 import re
 import time
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 from uuid import UUID
@@ -19,7 +20,11 @@ from app.models.source import Source
 from app.models.source_search_log import SourceSearchLog
 from app.models.user import UserInterest
 from app.services.rss_parser import RSSParser
-from app.services.search.cache import SearchCache, normalize_query
+from app.services.search.cache import (
+    normalize_query,
+    search_cache_get,
+    search_cache_set,
+)
 from app.services.search.providers.brave import BraveSearchProvider
 from app.services.search.providers.denylist import (
     is_listicle_host,
@@ -268,13 +273,39 @@ def _compute_score(
 class SmartSourceSearchService:
     """Orchestrates the multi-layer smart search pipeline."""
 
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(
+        self,
+        db: AsyncSession,
+        on_phase1_done: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         self.db = db
-        self.cache = SearchCache(db)
+        self._on_phase1_done = on_phase1_done
+        self._session_released = False
         self.rss_parser = RSSParser()
         self.brave = BraveSearchProvider()
         self.reddit = RedditSearchProvider()
         self.google_news = GoogleNewsProvider()
+
+    async def _release_session(self) -> None:
+        """Release the request-scoped DB session before slow externals.
+
+        Mirrors the digest hot-path pattern (PR #485): the injected session
+        is held only for the short phase-1 reads (cache lookup, catalog ILIKE,
+        user_themes), then handed back to the pool before LLM/HTTP work so it
+        doesn't sit idle for ~30s.
+        """
+        if self._session_released:
+            return
+        self._session_released = True
+        if self._on_phase1_done is not None:
+            try:
+                await self._on_phase1_done()
+            except Exception as exc:
+                logger.warning(
+                    "smart_search.release_session_failed",
+                    error=str(exc),
+                    exc_type=type(exc).__name__,
+                )
 
     async def close(self) -> None:
         await self.rss_parser.close()
@@ -317,8 +348,9 @@ class SmartSourceSearchService:
             }
 
         # Cache check (keyed by query + content_type + expand)
-        cached = await self.cache.get(query, content_type, expand)
+        cached = await search_cache_get(self.db, query, content_type, expand)
         if cached:
+            await self._release_session()
             elapsed = int((time.monotonic() - start) * 1000)
             cached["cache_hit"] = True
             cached["latency_ms"] = elapsed
@@ -385,6 +417,10 @@ class SmartSourceSearchService:
                     content_type=content_type,
                     expand=expand,
                 )
+
+        # All phase-1 reads done — release the injected session before any
+        # slow external HTTP call (LLM/Brave/GoogleNews). Mirrors PR #485.
+        await self._release_session()
 
         # (b) YouTube API — if signal and type allows
         if content_type in (None, "youtube") and (
@@ -1129,6 +1165,9 @@ class SmartSourceSearchService:
         dropped here — the user added this guard explicitly because returning
         article-style results without feeds is the bug we're fixing.
         """
+        # Idempotent: ensures phase-1 short-circuit paths also release the
+        # injected session before the cache write + log insert.
+        await self._release_session()
         results = [r for r in results if r.get("feed_url")]
         # Drop the internal `_similarity` debug field before serializing.
         for r in results:
@@ -1147,10 +1186,9 @@ class SmartSourceSearchService:
             "latency_ms": elapsed,
         }
 
-        try:
-            await self.cache.set(normalized, response, content_type, expand)
-        except Exception as e:
-            logger.warning("smart_search.cache_set_failed", error=str(e))
+        # search_cache_set opens its own short-lived session — never reuses
+        # the request-scoped one (which has been released by now).
+        await search_cache_set(normalized, response, content_type, expand)
 
         await _record_search_log(
             user_id=user_id,
