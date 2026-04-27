@@ -48,6 +48,11 @@ structlog.configure(
     logger_factory=structlog.PrintLoggerFactory(),
 )
 logger = structlog.get_logger()
+# Boot probe : confirme en prod que les warnings structlog atteignent stdout
+# JSON (Railway logs / Sentry). Si absent du 1er log post-deploy, le pipeline
+# est cassé et les signaux pool (long_session_checkout, db_pool_pressure_high)
+# ne remontent pas non plus.
+logger.warning("startup_logger_check", level="warning_emitted")
 
 db_url = os.environ.get("DATABASE_URL")
 logger.info(
@@ -552,6 +557,7 @@ async def pool_metrics() -> dict[str, Any]:
                 usage_pct=round(usage_pct * 100, 1),
             )
 
+    logger.info("pool_metrics_probed", **metrics)
     return metrics
 
 

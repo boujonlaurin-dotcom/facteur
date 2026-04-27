@@ -32,3 +32,17 @@ async def test_pool_endpoint_returns_metrics():
     # Usage pct is only computed when size is known (QueuePool); in tests we
     # use NullPool which has no size, so it may be None.
     assert body.get("size") is None or isinstance(body["size"], int)
+
+
+def test_prod_pool_kwargs_capacity():
+    """Locks the production pool capacity at 25+25=50 with fail-fast timeout.
+
+    Supabase Pooler is 60 conns shared — bumping these without leaving
+    headroom for the in-process scheduler will starve other clients.
+    """
+    from app.database import PROD_POOL_KWARGS
+
+    assert PROD_POOL_KWARGS["pool_size"] == 25
+    assert PROD_POOL_KWARGS["max_overflow"] == 25
+    assert PROD_POOL_KWARGS["pool_timeout"] == 10
+    assert PROD_POOL_KWARGS["pool_recycle"] == 180

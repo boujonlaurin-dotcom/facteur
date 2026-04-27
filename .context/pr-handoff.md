@@ -1,40 +1,39 @@
-# PR #465 — fix(infra): crashs serveur matinaux — restart policy ALWAYS + retrait mitigation SIGTERM
+# PR — bump DB pool 20→50 + restore stdout observability
 
-## Quoi
+## Why
+Prod (Railway, Supabase Pooler partagé 60 conn) sature dès ~6 requêtes feed concurrentes :
+- `pool_size=10 + max_overflow=10 = 20` → toute requête au-delà attend `pool_timeout=30s` puis timeout.
+- Sentry IDs : QueuePool TimeoutError (cf. `queue.QueuePool` dans Sentry, `db_pool_pressure_high`).
 
-Railway était configuré en `restartPolicyType: ON_FAILURE`. Le job cron `_scheduled_restart` émettait un SIGTERM 3×/jour (01h/09h/17h Paris) comme mitigation temporaire d'une fuite de sessions SQLAlchemy — uvicorn drainait proprement (exit 0) → Railway ne relançait pas → l'app était down jusqu'au restart manuel. Ce PR passe Railway en `ALWAYS` et retire le job SIGTERM devenu obsolète.
+En parallèle, les listeners d'observabilité existants (`long_session_checkout` `database.py`, `db_pool_pressure_high` `main.py`) émettent bien des `structlog.warning(...)` mais **n'apparaissent jamais dans Railway logs des 7 derniers jours** (audit). Avant de poser un kill-switch GH Action ou tout monitoring externe, il faut s'assurer que le pipeline stdout fonctionne.
 
-## Pourquoi
+## What
 
-`_scheduled_restart` était une mitigation P0 documentée dans `bug-infinite-load-requests.md` avec la note explicite « À retirer dès que les fixes P1/P2 sont déployés et validés ≥ 48h ». Ces fixes (sessions scoped, RSS timeout, pool isolation) sont en prod. La mitigation avait survécu à sa raison d'être et causait 3 pannes manuelles/jour.
+### `packages/api/app/database.py`
+- Capacité prod consolidée dans `PROD_POOL_KWARGS` (importable depuis tests).
+- `pool_size=25`, `max_overflow=25` → 50 conns max → ~16 requêtes feed concurrentes.
+- `pool_timeout=30 → 10s` : un slot bloqué cède vite au lieu de masquer la saturation.
+- Marge : 60 (Supabase) - 50 (app) = 10 conns pour le scheduler in-process.
+- `pool_recycle=180`, `pool_pre_ping=True` inchangés.
 
-## Fichiers modifiés
+### `packages/api/app/main.py`
+- Boot probe `logger.warning("startup_logger_check", level="warning_emitted")` juste après `structlog.configure`. Si absent du 1er log post-deploy → pipeline stdout cassé, on sait avant de chercher pourquoi `db_pool_pressure_high` ne sort pas. Confirme aussi que `LoggingIntegration` Sentry (filtre `logging.ERROR`) ne capture pas les warnings structlog.
+- `/api/health/pool` : `logger.info("pool_metrics_probed", **metrics)` avant return — base pour mesurer la fréquence de ping du futur kill-switch GH Action.
 
-- **Config** : `railway.json` — `ON_FAILURE` → `ALWAYS` + `restartPolicyMaxRetries: 10`
-- **Backend** : `packages/api/app/workers/scheduler.py` — retrait de `_scheduled_restart()`, son `add_job` (01h/09h/17h), et les imports `os`/`signal`
-- **Tests** : `packages/api/tests/workers/test_scheduler.py` — 2 tests qui vérifiaient l'existence du job remplacés par un test de garde qui vérifie son absence (`test_scheduled_restart_job_is_not_registered`)
-- **Docs** : `docs/bugs/bug-server-crashes.md` — nouveau bug doc (diagnostic + plan Phase 2 si nécessaire)
+### `packages/api/tests/test_health_pool.py`
+- `test_prod_pool_kwargs_capacity` lock 25/25/10/180 — toute modif future déclenche revue.
 
-## Zones à risque
+## Risques & mitigations
+- **Saturation Supabase Pooler** : 50 conns app + éventuels workers pourraient frôler 60. Marge 10 explicite ; si plusieurs réplicas Railway → revoir avant scale horizontal.
+- **pool_timeout=10s** : plus agressif. Si symptôme "tout charge à l'infini" disparaît au profit de 5xx visibles → succès attendu (visibilité).
 
-- **Retrait de la mitigation pool** : si P1/P2 n'est pas aussi stable qu'estimé, le pool peut re-saturer sans garde-fou. Signal clair : Sentry `QueuePool limit reached` → revert.
-- **`ALWAYS` policy** : Railway relancera sur tout exit 0, y compris un futur shutdown intentionnel mal câblé. Borné par `maxRetries: 10`.
+## Critères d'acceptation
+- [x] `pytest -v tests/test_health_pool.py` vert (2/2)
+- [ ] Au boot prod : `db_pool_config pool_type=AsyncAdaptedQueuePool` + `startup_logger_check` visibles dans `railway logs`
+- [ ] `curl /api/health/pool` retourne `size=25`
+- [ ] 50 requêtes parallèles → 0 timeout pool
 
-## Points d'attention pour le reviewer
-
-1. **Hypothèse P1/P2 stable** : l'investigation est basée sur l'analyse statique du code (pas d'accès live à Sentry/Railway logs dans cette session). On pose que les fixes pool tiennent, mais le monitoring post-deploy est critique.
-2. **`ALWAYS` ne couvre pas les hangs** : si le process reste vivant mais figé (pool saturé sans crash), Railway ne redémarre toujours pas — ce cas nécessiterait un monitor externe ou un liveness check DB. Documenté en Phase 2 du bug doc.
-3. **Tests non exécutés localement** : pas de venv dans ce workspace. Validation AST OK, pytest à confirmer en CI.
-
-## Ce qui N'A PAS changé (mais pourrait sembler affecté)
-
-- **`_digest_watchdog`** (7h30 Paris) : non touché.
-- **`bug-infinite-load-requests.md`** : les références à `_scheduled_restart` qu'il contient sont historiques, pas du code actif.
-- **Pool config** (`database.py:43-44`) : `pool_size=10, max_overflow=10` (total 20 conns) inchangé — Phase 2 adressera si contention résiduelle.
-
-## Comment tester
-
-1. **Après deploy** — logs Railway au prochain créneau 09h00 Paris : ne plus voir `scheduled_restart_initiated`. Container doit rester up.
-2. **Logs startup** : chercher le log `Scheduler started` avec le champ `jobs=["rss_sync", "daily_top3", "daily_digest", "digest_watchdog", "storage_cleanup"]`. Plus de `scheduled_restart_cron`.
-3. **Stabilité 48h** : zéro restart manuel requis. Si Sentry `QueuePool limit reached` → `git revert 7144c98f`.
-4. **CI** : `cd packages/api && pytest tests/workers/test_scheduler.py -v` — notamment `test_scheduled_restart_job_is_not_registered`.
+## Pas inclus
+- Pas de migration Alembic.
+- Pas de changement mobile.
+- Kill-switch GH Action séparé (hand-off #3).

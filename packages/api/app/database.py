@@ -38,6 +38,15 @@ _is_railway = "railway" in (settings.database_url or "").lower()
 _is_supabase = "supabase" in (settings.database_url or "").lower()
 _use_queue_pool = _is_railway or _is_supabase
 
+# Exposé pour les tests : capacité prod et fail-fast timeout. Toute modif ici
+# impacte la pression sur le Supabase Pooler (60 conn partagées).
+PROD_POOL_KWARGS = {
+    "pool_size": 25,
+    "max_overflow": 25,
+    "pool_timeout": 10,
+    "pool_recycle": 180,
+}
+
 if _use_queue_pool:
     # Railway/Supabase: Use AsyncAdaptedQueuePool for proper connection pooling
     # This handles connection drops better than NullPool
@@ -50,16 +59,12 @@ if _use_queue_pool:
         pool_pre_ping=True,
         # Use AsyncAdaptedQueuePool for proper connection management
         poolclass=AsyncAdaptedQueuePool,
-        # Pool size optimized for Supabase PgBouncer (60 connection limit shared)
-        # Feed endpoint uses ~3 connections per request (2 batched parallel sessions + 1 main)
-        # pool_size=10 + max_overflow=10 = 20 max → supports ~6 concurrent feed requests
-        pool_size=10,
-        max_overflow=10,
-        # Connection timeout - increased to prevent pool exhaustion
-        pool_timeout=30,
-        # Recycle connections frequently to prevent Supabase from killing them
-        # Supabase PgBouncer idle timeout is ~5 minutes, recycle at 3 minutes
-        pool_recycle=180,
+        # Supabase Pooler 60 connection limit shared. App: 25+25=50 max →
+        # ~16 concurrent feed requests (~3 conns/req). Margin 10 left for the
+        # in-process scheduler. pool_timeout=10s : fail fast for visibility
+        # instead of 30s silent stalls. pool_recycle=180s : Supabase PgBouncer
+        # idle timeout is ~5 min, recycle before that.
+        **PROD_POOL_KWARGS,
         # Connect args for PgBouncer compatibility
         connect_args={
             "prepare_threshold": None,  # Disable prepared statements for PgBouncer transaction mode
