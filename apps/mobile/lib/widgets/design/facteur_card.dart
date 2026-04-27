@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/core/web/web_perf.dart';
 
 class FacteurCard extends StatefulWidget {
   final Widget child;
@@ -81,25 +82,26 @@ class _FacteurCardState extends State<FacteurCard>
     final cardColor = widget.backgroundColor ?? context.facteurColors.surface;
 
     final Widget cardContent = Container(
-      clipBehavior: Clip.antiAlias,
+      // Clip.antiAlias is expensive under CanvasKit on Safari — use hardEdge on web.
+      clipBehavior: kWebPerf ? Clip.hardEdge : Clip.antiAlias,
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius:
             BorderRadius.circular(widget.borderRadius ?? FacteurRadius.medium),
-        boxShadow: widget.boxShadow ?? [
+        boxShadow: webShadows(widget.boxShadow ?? [
           BoxShadow(
             color: Colors.black.withOpacity(0.1),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
-        ],
+        ]),
       ),
       padding: widget.padding ?? const EdgeInsets.all(FacteurSpacing.space4),
       child: widget.child,
     );
 
     if (widget.onTap == null && widget.onLongPressStart == null) {
-      return cardContent;
+      return webRepaintBoundary(child: cardContent);
     }
 
     return GestureDetector(
@@ -120,9 +122,11 @@ class _FacteurCardState extends State<FacteurCard>
           : null,
       onLongPressMoveUpdate: widget.onLongPressMoveUpdate,
       onLongPressEnd: widget.onLongPressEnd,
-      child: ScaleTransition(
-        scale: _scaleAnimation,
-        child: cardContent,
+      child: webRepaintBoundary(
+        child: ScaleTransition(
+          scale: _scaleAnimation,
+          child: cardContent,
+        ),
       ),
     );
   }

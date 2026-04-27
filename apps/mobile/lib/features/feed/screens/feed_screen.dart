@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../config/routes.dart';
+import '../../../core/web/web_perf.dart';
 import '../../../core/nudges/nudge_coordinator.dart';
 import '../../../core/nudges/nudge_counters.dart';
 import '../../../core/nudges/nudge_ids.dart';
@@ -1325,11 +1326,15 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     duration: const Duration(milliseconds: 180),
                     curve: Curves.easeOut,
                     child: ClipRect(
-                      child: BackdropFilter(
+                      child: webBlurFallback(
                         filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                        fallbackColor: colors.backgroundPrimary
+                            .withValues(alpha: 0.96),
                         child: Container(
-                          color: colors.backgroundPrimary
-                              .withValues(alpha: 0.88),
+                          color: kWebPerf
+                              ? null
+                              : colors.backgroundPrimary
+                                  .withValues(alpha: 0.88),
                           padding: EdgeInsets.fromLTRB(
                             16,
                             MediaQuery.of(context).padding.top + 10,
