@@ -31,8 +31,10 @@ from app.schemas.user import OnboardingResponse, UserProfileResponse
 
 
 @pytest.mark.asyncio
-async def test_digest_returns_202_when_service_returns_none_and_schedules_regen():
-    """Single-variant endpoint must return 202 + schedule regen, not 503."""
+async def test_digest_returns_202_when_resolver_returns_none():
+    """`GET /api/digest` must return 202 + preparing body when the read-only
+    resolver finds nothing renderable. Resolver is responsible for scheduling
+    its own regen (covered by `test_digest_readonly_hotpath::test_step5*`)."""
     from app.database import get_db
     from app.dependencies import get_current_user_id
 
@@ -45,6 +47,9 @@ async def test_digest_returns_202_when_service_returns_none_and_schedules_regen(
         async def scalar(self, *args, **kwargs):
             return None
 
+        async def execute(self, *args, **kwargs):
+            return None
+
     async def _fake_db():
         yield _FakeDB()
 
@@ -52,16 +57,10 @@ async def test_digest_returns_202_when_service_returns_none_and_schedules_regen(
     app.dependency_overrides[get_db] = _fake_db
 
     try:
-        with (
-            patch(
-                "app.routers.digest.is_generation_running", return_value=False
-            ),
-            patch(
-                "app.routers.digest.DigestService.get_or_create_digest",
-                new=AsyncMock(return_value=None),
-            ),
-            patch("app.routers.digest.schedule_digest_regen") as mock_regen,
-        ):
+        with patch(
+            "app.routers.digest.read_digest_or_fallback",
+            new=AsyncMock(return_value=None),
+        ) as mock_resolver:
             transport = ASGITransport(app=app)
             async with AsyncClient(
                 transport=transport, base_url="http://test", timeout=5.0
@@ -77,13 +76,14 @@ async def test_digest_returns_202_when_service_returns_none_and_schedules_regen(
     )
     body = resp.json()
     assert body.get("status") == "preparing", body
-    mock_regen.assert_called_once()
+    mock_resolver.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_digest_both_returns_202_when_both_variants_none():
-    """Dual endpoint must not return 200 with null variants — the mobile
-    client mishandles that as a permanent failure."""
+    """`GET /api/digest/both` must return 202 (not 200 with null variants)
+    when neither variant has anything to serve. Resolver is called twice
+    (once per variant)."""
     from app.database import get_db
     from app.dependencies import get_current_user_id
 
@@ -96,6 +96,9 @@ async def test_digest_both_returns_202_when_both_variants_none():
         async def scalar(self, *args, **kwargs):
             return None
 
+        async def execute(self, *args, **kwargs):
+            return None
+
     async def _fake_db():
         yield _FakeDB()
 
@@ -103,16 +106,10 @@ async def test_digest_both_returns_202_when_both_variants_none():
     app.dependency_overrides[get_db] = _fake_db
 
     try:
-        with (
-            patch(
-                "app.routers.digest.is_generation_running", return_value=False
-            ),
-            patch(
-                "app.routers.digest.DigestService.get_or_create_digest",
-                new=AsyncMock(return_value=None),
-            ),
-            patch("app.routers.digest.schedule_digest_regen") as mock_regen,
-        ):
+        with patch(
+            "app.routers.digest.read_digest_or_fallback",
+            new=AsyncMock(return_value=None),
+        ) as mock_resolver:
             transport = ASGITransport(app=app)
             async with AsyncClient(
                 transport=transport, base_url="http://test", timeout=5.0
@@ -127,9 +124,9 @@ async def test_digest_both_returns_202_when_both_variants_none():
     )
     body = resp.json()
     assert body.get("status") == "preparing", body
-    # Both variants scheduled for regen (normal + serein)
-    assert mock_regen.call_count == 2, (
-        f"Expected 2 regen calls (normal + serein), got {mock_regen.call_count}"
+    assert mock_resolver.await_count == 2, (
+        "Resolver should be called once per variant (normal + serene), "
+        f"got {mock_resolver.await_count}"
     )
 
 
@@ -152,14 +149,20 @@ async def test_onboarding_schedules_initial_digest_generation():
                     class _S:
                         def all(self_inner2):
                             return []
+
                     return _S()
+
             return _R()
+
         async def flush(self):
             return None
+
         def add(self, *args, **kwargs):
             return None
+
         async def scalar(self, *args, **kwargs):
             return None
+
         async def commit(self):
             return None
 
