@@ -302,6 +302,150 @@ def _select_daily_quote(user_id: str, target_date: str) -> dict | None:
     return rng.choice(quotes)
 
 
+# Format versions that the read-only hot path is willing to render. flat_v1
+# is legacy/expendable — never served from /digest or /digest/both.
+_READABLE_FORMATS: tuple[str, ...] = ("editorial_v1", "topics_v1")
+_HOTPATH_FALLBACK_DAYS = 7
+
+
+async def read_digest_or_fallback(
+    session: AsyncSession,
+    user_id: UUID,
+    target_date: date,
+    is_serene: bool,
+) -> DigestResponse | None:
+    """Read-only resolver for ``GET /digest`` and ``GET /digest/both``.
+
+    Walks a 5-step fallback chain that NEVER calls the LLM pipeline. Schedules
+    a background regeneration as a side-effect when serving stale content or
+    returning ``None``. Returns ``None`` when nothing is renderable — the
+    caller is expected to translate that into a 202 ``preparing`` response.
+
+    The chain (see docs/maintenance/maintenance-digest-readonly-hotpath.md):
+
+    1. Today's own ``editorial_v1`` digest for this user.
+    2. Any other user's ``editorial_v1`` digest for today (clone, since
+       editorial output is user-agnostic).
+    3. Yesterday's ``editorial_v1``/``topics_v1`` digest for this user.
+    4. Most recent digest within the last ``_HOTPATH_FALLBACK_DAYS`` days for
+       this user.
+    5. Nothing → schedule regen, return None.
+
+    Steps 3 and 4 set ``response.is_stale_fallback = True`` so the mobile
+    client (already wired since #422) auto-refetches silently when the
+    background regen lands.
+    """
+    svc = DigestService(session)
+
+    # 1. Today's own digest in a readable format.
+    own_today = await svc._get_existing_digest(
+        user_id, target_date, is_serene=is_serene
+    )
+    if own_today is not None and own_today.format_version in _READABLE_FORMATS:
+        try:
+            return await svc._build_digest_response(own_today, user_id)
+        except Exception:
+            logger.exception(
+                "digest_hotpath_own_today_render_failed",
+                user_id=str(user_id),
+                digest_id=str(own_today.id),
+                format_version=own_today.format_version,
+            )
+
+    # 2. Clone any other user's editorial_v1 digest for today.
+    cloned = await svc._try_clone_global_editorial_digest(
+        user_id=user_id, target_date=target_date, is_serene=is_serene
+    )
+    if cloned is not None:
+        try:
+            return await svc._build_digest_response(cloned, user_id)
+        except Exception:
+            logger.exception(
+                "digest_hotpath_clone_render_failed",
+                user_id=str(user_id),
+                cloned_from_generated_at=str(cloned.generated_at),
+            )
+
+    # 3. Yesterday's digest for this user in a readable format.
+    yesterday = target_date - timedelta(days=1)
+    yesterday_digest = await svc._get_existing_digest(
+        user_id, yesterday, is_serene=is_serene
+    )
+    if (
+        yesterday_digest is not None
+        and yesterday_digest.format_version in _READABLE_FORMATS
+    ):
+        _schedule_background_regen(
+            user_id=user_id, target_date=target_date, is_serene=is_serene
+        )
+        try:
+            response = await svc._build_digest_response(yesterday_digest, user_id)
+            response.is_stale_fallback = True
+            logger.warning(
+                "digest_hotpath_serving_yesterday",
+                user_id=str(user_id),
+                yesterday_date=str(yesterday),
+                format_version=yesterday_digest.format_version,
+            )
+            return response
+        except Exception:
+            logger.exception(
+                "digest_hotpath_yesterday_render_failed",
+                user_id=str(user_id),
+                format_version=yesterday_digest.format_version,
+            )
+
+    # 4. Last 7 days fallback for this user.
+    cutoff = target_date - timedelta(days=_HOTPATH_FALLBACK_DAYS)
+    older_stmt = (
+        select(DailyDigest)
+        .where(
+            and_(
+                DailyDigest.user_id == user_id,
+                DailyDigest.target_date >= cutoff,
+                DailyDigest.target_date < target_date,
+                DailyDigest.is_serene == is_serene,
+                DailyDigest.format_version.in_(_READABLE_FORMATS),
+            )
+        )
+        .order_by(DailyDigest.target_date.desc())
+        .limit(1)
+    )
+    older = (await session.execute(older_stmt)).scalar_one_or_none()
+    if older is not None:
+        _schedule_background_regen(
+            user_id=user_id, target_date=target_date, is_serene=is_serene
+        )
+        try:
+            response = await svc._build_digest_response(older, user_id)
+            response.is_stale_fallback = True
+            logger.warning(
+                "digest_hotpath_serving_older",
+                user_id=str(user_id),
+                stale_date=str(older.target_date),
+                format_version=older.format_version,
+            )
+            return response
+        except Exception:
+            logger.exception(
+                "digest_hotpath_older_render_failed",
+                user_id=str(user_id),
+                stale_date=str(older.target_date),
+            )
+
+    # 5. Nothing renderable — schedule regen and tell the caller to 202.
+    _schedule_background_regen(
+        user_id=user_id, target_date=target_date, is_serene=is_serene
+    )
+    logger.info(
+        "digest_hotpath_no_renderable_returning_202",
+        user_id=str(user_id),
+        target_date=str(target_date),
+        is_serene=is_serene,
+    )
+    return None
+
+
 @dataclass
 class EmergencyItem:
     """Dummy DigestItem wrapper for emergency fallback."""
