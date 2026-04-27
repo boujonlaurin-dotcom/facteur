@@ -89,27 +89,34 @@ class DigestService:
         hours_lookback: int = 168,
         force_regenerate: bool = False,
         is_serene: bool = False,
+        allow_generation: bool = True,
     ) -> DigestResponse | None:
         """Retrieves or generates today's digest for a user.
 
-        Flow:
-        1. Ensure user profile exists (creates if missing)
-        2. Check if digest already exists for user + date
-        3. If exists and force_regenerate=False, return existing
-        4. If force_regenerate=True, delete existing and regenerate
-        5. Generate new digest using DigestSelector
-        6. Store in database and return
+        When `allow_generation=True` (default, used by cron and POST /generate):
+        - Existing digest with stale format → delete + regenerate inline (LLM calls).
+        - No digest for today → run full DigestSelector pipeline inline.
+
+        When `allow_generation=False` (used by GET endpoints — request-path safe):
+        - Existing digest is served as-is, even if format_version is stale. A
+          background task is scheduled to regenerate for the next request.
+        - No digest for today → fall back to the most recent existing digest
+          (up to 7 days back). Background regeneration is scheduled.
+        - If nothing is in cache at all → return None. The router converts this
+          to 202 Accepted; the mobile retries on a backoff. This guarantees the
+          GET path NEVER blocks on heavy LLM/DB work.
 
         Args:
             user_id: UUID of the user
             target_date: Date for digest (defaults to today)
             hours_lookback: Hours to look back for content (default: 168h/7 days)
-                Extended window ensures user's followed sources are prioritized
-                even if articles are older.
             force_regenerate: If True, delete existing digest and regenerate
+            is_serene: True for the serene variant
+            allow_generation: If False, never run heavy generation in this call.
 
         Returns:
-            DigestResponse with 7 items, or None if generation failed
+            DigestResponse with items, or None if no cache exists and generation
+            is disallowed.
         """
         start_time = time.time()
 
@@ -117,7 +124,10 @@ class DigestService:
             target_date = date.today()
 
         logger.info(
-            "digest_get_or_create", user_id=str(user_id), target_date=str(target_date)
+            "digest_get_or_create",
+            user_id=str(user_id),
+            target_date=str(target_date),
+            allow_generation=allow_generation,
         )
 
         # 0. Ensure user profile exists
@@ -149,7 +159,12 @@ class DigestService:
             "flat": "flat_v1",
         }.get(expected_format, "editorial_v1")
 
-        if existing_digest and existing_digest.format_version != expected_version:
+        format_mismatch = (
+            existing_digest is not None
+            and existing_digest.format_version != expected_version
+        )
+
+        if format_mismatch and allow_generation:
             logger.info(
                 "digest_format_mismatch_regenerating",
                 user_id=str(user_id),
@@ -160,9 +175,19 @@ class DigestService:
             await self.session.delete(existing_digest)
             await self.session.flush()
             existing_digest = None
+        elif format_mismatch and not allow_generation:
+            # GET path: serve the stale cache, schedule regen in background.
+            logger.info(
+                "digest_format_mismatch_background_regen",
+                user_id=str(user_id),
+                digest_id=str(existing_digest.id),
+                cached=existing_digest.format_version,
+                expected=expected_version,
+            )
+            self._schedule_background_regen(user_id, target_date, is_serene)
 
         if existing_digest:
-            if force_regenerate:
+            if force_regenerate and allow_generation:
                 # Delete existing digest and regenerate
                 logger.info(
                     "digest_force_regenerating",
@@ -184,22 +209,44 @@ class DigestService:
                     return await self._build_digest_response(existing_digest, user_id)
                 except Exception:
                     # Existing digest is corrupt (format mismatch, missing content, etc.)
-                    # Delete and regenerate instead of returning 503
-                    logger.exception(
-                        "digest_existing_corrupt_regenerating",
-                        user_id=str(user_id),
-                        digest_id=str(existing_digest.id),
-                        format_version=existing_digest.format_version,
-                    )
-                    await self.session.delete(existing_digest)
-                    await self.session.flush()
-        # 1b. No digest for today — try serving yesterday's digest instantly
-        if not force_regenerate:
+                    if allow_generation:
+                        logger.exception(
+                            "digest_existing_corrupt_regenerating",
+                            user_id=str(user_id),
+                            digest_id=str(existing_digest.id),
+                            format_version=existing_digest.format_version,
+                        )
+                        await self.session.delete(existing_digest)
+                        await self.session.flush()
+                    else:
+                        # GET path: schedule background regen and try fallback below.
+                        logger.exception(
+                            "digest_existing_corrupt_background_regen",
+                            user_id=str(user_id),
+                            digest_id=str(existing_digest.id),
+                            format_version=existing_digest.format_version,
+                        )
+                        self._schedule_background_regen(
+                            user_id, target_date, is_serene
+                        )
+        # 1b. No digest for today — try serving the most recent existing digest.
+        # GET path falls back up to 7 days; cron/force path falls back to yesterday only.
+        if not (force_regenerate and allow_generation):
+            fallback_lookback = 7 if not allow_generation else 1
             yesterday = target_date - timedelta(days=1)
-            yesterday_digest = await self._get_existing_digest(
-                user_id, yesterday, is_serene=is_serene
+            yesterday_digest = await self._get_most_recent_digest(
+                user_id,
+                before_date=target_date,
+                is_serene=is_serene,
+                lookback_days=fallback_lookback,
             )
-            if yesterday_digest and yesterday_digest.format_version != expected_version:
+            # In the cron/POST path, skip stale-format fallbacks (we'll regen anyway).
+            # In the GET path, serve the stale cache and schedule a background regen.
+            if (
+                yesterday_digest
+                and yesterday_digest.format_version != expected_version
+                and allow_generation
+            ):
                 logger.info(
                     "digest_yesterday_stale_skipping",
                     user_id=str(user_id),
@@ -209,10 +256,14 @@ class DigestService:
                 yesterday_digest = None
             if yesterday_digest:
                 logger.info(
-                    "digest_serving_yesterday_while_generating",
+                    "digest_serving_fallback",
                     user_id=str(user_id),
+                    fallback_date=str(yesterday_digest.target_date),
                     yesterday_date=str(yesterday),
+                    allow_generation=allow_generation,
                 )
+                if not allow_generation:
+                    self._schedule_background_regen(user_id, target_date, is_serene)
                 return await self._build_digest_response(yesterday_digest, user_id)
 
         logger.info(
@@ -220,6 +271,17 @@ class DigestService:
             user_id=str(user_id),
             duration_ms=round(existing_time * 1000, 2),
         )
+
+        # GET path with no cache at all → schedule background generation, return None.
+        # The router converts None → 202 Accepted; the mobile retries on backoff.
+        if not allow_generation:
+            self._schedule_background_regen(user_id, target_date, is_serene)
+            logger.info(
+                "digest_no_cache_returning_none",
+                user_id=str(user_id),
+                target_date=str(target_date),
+            )
+            return None
 
         # 2. Determine effective mode from is_serene toggle
         effective_mode = "serein" if is_serene else "pour_vous"
@@ -805,6 +867,89 @@ class DigestService:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def _get_most_recent_digest(
+        self,
+        user_id: UUID,
+        before_date: date,
+        is_serene: bool = False,
+        lookback_days: int = 7,
+    ) -> DailyDigest | None:
+        """Return the most recent digest strictly before `before_date` within the
+        lookback window. Used as a fallback when today's digest is missing so
+        the GET path can return cached content immediately instead of blocking.
+        """
+        oldest = before_date - timedelta(days=lookback_days)
+        stmt = (
+            select(DailyDigest)
+            .where(
+                and_(
+                    DailyDigest.user_id == user_id,
+                    DailyDigest.is_serene == is_serene,
+                    DailyDigest.target_date < before_date,
+                    DailyDigest.target_date >= oldest,
+                )
+            )
+            .order_by(DailyDigest.target_date.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    def _schedule_background_regen(
+        self, user_id: UUID, target_date: date, is_serene: bool
+    ) -> None:
+        """Schedule a non-blocking digest regeneration on its own session.
+
+        Called from the GET path when the cache is missing or stale: we serve
+        whatever is available immediately and let a background task refresh
+        the cache for the next request. Failures are logged but never bubble
+        up to the user-facing request.
+        """
+        import asyncio
+
+        from app.database import async_session_maker
+
+        async def _run() -> None:
+            try:
+                async with async_session_maker() as bg_session:
+                    bg_service = DigestService(bg_session)
+                    await bg_service.get_or_create_digest(
+                        user_id,
+                        target_date,
+                        is_serene=is_serene,
+                        force_regenerate=True,
+                        allow_generation=True,
+                    )
+                    await bg_session.commit()
+                logger.info(
+                    "digest_background_regen_completed",
+                    user_id=str(user_id),
+                    target_date=str(target_date),
+                    is_serene=is_serene,
+                )
+            except Exception:
+                logger.exception(
+                    "digest_background_regen_failed",
+                    user_id=str(user_id),
+                    target_date=str(target_date),
+                    is_serene=is_serene,
+                )
+
+        try:
+            asyncio.create_task(_run())
+            logger.info(
+                "digest_background_regen_scheduled",
+                user_id=str(user_id),
+                target_date=str(target_date),
+                is_serene=is_serene,
+            )
+        except RuntimeError:
+            logger.warning(
+                "digest_background_regen_no_loop",
+                user_id=str(user_id),
+                target_date=str(target_date),
+            )
 
     async def _create_digest_record(
         self,

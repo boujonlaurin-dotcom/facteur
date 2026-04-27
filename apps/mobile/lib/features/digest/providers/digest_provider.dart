@@ -67,11 +67,13 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     return await _loadBothDigests();
   }
 
-  static const _digestMaxRetries = 3;
+  // Backend GET /digest/both never blocks on heavy generation: it serves
+  // cached content immediately or returns 202 with a background regen scheduled.
+  // We only need a short retry window for the 202 case (first cache miss).
+  static const _digestMaxRetries = 2;
   static const _digestRetryDelays = [
-    Duration(seconds: 5),
-    Duration(seconds: 10),
-    Duration(seconds: 15),
+    Duration(seconds: 3),
+    Duration(seconds: 6),
   ];
 
   Future<DigestResponse?> _loadBothDigests({DateTime? date}) async {
@@ -80,7 +82,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     for (var attempt = 0; attempt <= _digestMaxRetries; attempt++) {
       try {
         final dual = await repository.fetchBothDigests(date: date).timeout(
-              const Duration(seconds: 45),
+              const Duration(seconds: 15),
               onTimeout: () => throw TimeoutException(
                 'Le chargement a pris trop de temps. Verifiez votre connexion et reessayez.',
               ),

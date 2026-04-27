@@ -331,21 +331,27 @@ class TestFallbackYesterday:
         mock_yesterday_digest.format_version = "topics_v1"
 
         mock_response = Mock()
-
-        # _get_existing_digest returns None for today, a digest for yesterday
-        async def fake_get_existing(uid, d, is_serene=False):
-            if d == today:
-                return None
-            if d == yesterday:
-                return mock_yesterday_digest
-            return None
-
         mock_build = AsyncMock(return_value=mock_response)
 
         with (
             patch("app.services.user_service.UserService") as mock_user_svc_cls,
             patch.object(
-                service, "_get_existing_digest", side_effect=fake_get_existing
+                service,
+                "_get_existing_digest",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch.object(
+                service,
+                "_get_most_recent_digest",
+                new_callable=AsyncMock,
+                return_value=mock_yesterday_digest,
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="topics",
             ),
             patch.object(service, "_build_digest_response", mock_build),
         ):
@@ -409,6 +415,12 @@ class TestFallbackYesterday:
             ),
             patch.object(
                 service,
+                "_get_most_recent_digest",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch.object(
+                service,
                 "_get_user_digest_format",
                 new_callable=AsyncMock,
                 return_value="topics",
@@ -423,3 +435,156 @@ class TestFallbackYesterday:
 
         # _build_digest_response should NOT have been called (no yesterday digest to serve)
         mock_build.assert_not_awaited()
+
+
+class TestAllowGenerationFalse:
+    """Tests for the GET-path-safe `allow_generation=False` mode."""
+
+    @pytest.mark.asyncio
+    async def test_serves_stale_format_cache_without_regenerating(
+        self, service, mock_session
+    ):
+        """When allow_generation=False and the cached digest has a stale
+        format_version, return it as-is and schedule a background regen
+        instead of deleting + regenerating in the request path."""
+        user_id = uuid4()
+        today = date.today()
+
+        cached = Mock()
+        cached.id = uuid4()
+        cached.target_date = today
+        cached.format_version = "topics_v1"  # stale: user expects editorial_v1
+
+        mock_response = Mock()
+        scheduled = Mock()
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service,
+                "_get_existing_digest",
+                new_callable=AsyncMock,
+                return_value=cached,
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="editorial",
+            ),
+            patch.object(
+                service,
+                "_build_digest_response",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+            patch.object(service, "_schedule_background_regen", scheduled),
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            result = await service.get_or_create_digest(
+                user_id=user_id, target_date=today, allow_generation=False
+            )
+
+        assert result is mock_response
+        scheduled.assert_called_once_with(user_id, today, False)
+        # Ensure we did NOT delete the cached digest
+        mock_session.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_cache_at_all(self, service, mock_session):
+        """When allow_generation=False and nothing is cached (today or recent),
+        return None so the router can convert to 202 Accepted."""
+        user_id = uuid4()
+        today = date.today()
+        scheduled = Mock()
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service,
+                "_get_existing_digest",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch.object(
+                service,
+                "_get_most_recent_digest",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="editorial",
+            ),
+            patch.object(service, "_schedule_background_regen", scheduled),
+            patch.object(
+                service,
+                "selector",
+                Mock(select_for_user=AsyncMock(return_value=[])),
+            ),
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            result = await service.get_or_create_digest(
+                user_id=user_id, target_date=today, allow_generation=False
+            )
+
+        assert result is None
+        scheduled.assert_called_once_with(user_id, today, False)
+        # Ensure heavy generation was NOT triggered
+        service.selector.select_for_user.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_falls_back_up_to_seven_days_in_get_path(
+        self, service, mock_session
+    ):
+        """When today is missing but a digest exists 5 days ago, the GET path
+        (allow_generation=False) should serve that stale digest immediately."""
+        user_id = uuid4()
+        today = date.today()
+        five_days_ago = today - timedelta(days=5)
+
+        cached = Mock()
+        cached.id = uuid4()
+        cached.target_date = five_days_ago
+        cached.format_version = "editorial_v1"
+
+        mock_response = Mock()
+        scheduled = Mock()
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service,
+                "_get_existing_digest",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch.object(
+                service,
+                "_get_most_recent_digest",
+                new_callable=AsyncMock,
+                return_value=cached,
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="editorial",
+            ),
+            patch.object(
+                service,
+                "_build_digest_response",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+            patch.object(service, "_schedule_background_regen", scheduled),
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            result = await service.get_or_create_digest(
+                user_id=user_id, target_date=today, allow_generation=False
+            )
+
+        assert result is mock_response
+        scheduled.assert_called_once_with(user_id, today, False)

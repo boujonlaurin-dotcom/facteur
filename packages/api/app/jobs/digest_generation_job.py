@@ -51,7 +51,7 @@ class DigestGenerationJob:
     def __init__(
         self,
         batch_size: int = 100,
-        concurrency_limit: int = 10,
+        concurrency_limit: int = 5,
         hours_lookback: int = 48,
     ):
         self.batch_size = batch_size
@@ -432,7 +432,7 @@ class DigestGenerationJob:
 async def run_digest_generation(
     target_date: datetime.date | None = None,
     batch_size: int = 100,
-    concurrency_limit: int = 10,
+    concurrency_limit: int = 5,
 ) -> dict[str, Any]:
     """Fonction principale pour exécuter la génération des digests.
 

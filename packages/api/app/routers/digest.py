@@ -9,12 +9,13 @@ Follows existing FastAPI patterns from feed.py and personalization.py.
 Safe reuse of existing services through DigestService.
 """
 
+import asyncio
 import time
 from datetime import date
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,6 +45,7 @@ class ActionRequest(BaseModel):
 
 @router.get("", response_model=DigestResponse)
 async def get_digest(
+    response: Response,
     target_date: date | None = Query(
         None, description="Date for digest (default: today)"
     ),
@@ -54,26 +56,14 @@ async def get_digest(
     """
     Get today's digest for the current user.
 
-    Returns the daily digest containing 5 curated articles.
-    If digest doesn't exist yet, it will be generated on-demand.
-
-    Each item includes:
-    - Content metadata (title, url, thumbnail, etc.)
-    - Source information
-    - Selection reason
-    - User's current action state (is_read, is_saved, is_dismissed)
+    Read-only endpoint: never triggers heavy generation in the request path.
+    If today's digest is missing, the most recent cached digest (up to 7 days
+    back) is returned instead, while a background task regenerates today's
+    digest for the next request. If nothing is cached at all, returns 202 to
+    let the mobile retry on a backoff.
 
     Query Parameters:
     - target_date: Optional specific date (YYYY-MM-DD format). Defaults to today.
-
-    Response:
-    - digest_id: Unique identifier for this digest
-    - user_id: User ID
-    - target_date: Date of the digest
-    - generated_at: When the digest was generated
-    - items: Array of 5 digest items
-    - is_completed: Whether user has completed this digest
-    - completed_at: Completion timestamp (if completed)
     """
     service = DigestService(db)
     user_uuid = UUID(current_user_id)
@@ -81,7 +71,7 @@ async def get_digest(
 
     try:
         digest = await service.get_or_create_digest(
-            user_uuid, target_date, is_serene=serein
+            user_uuid, target_date, is_serene=serein, allow_generation=False
         )
     except Exception:
         elapsed = time.monotonic() - start
@@ -98,13 +88,15 @@ async def get_digest(
     elapsed = time.monotonic() - start
 
     if not digest:
-        logger.warning(
-            "digest_generation_returned_none",
+        logger.info(
+            "digest_preparing_background",
             user_id=current_user_id,
             elapsed_ms=round(elapsed * 1000, 1),
         )
+        response.status_code = 202
         raise HTTPException(
-            status_code=503, detail="Digest generation failed. Please try again later."
+            status_code=202,
+            detail="Votre briefing est en cours de préparation. Réessayez dans quelques secondes.",
         )
 
     logger.info(
@@ -128,16 +120,49 @@ async def get_both_digests(
     """
     Get both digest variants (normal + serene) for instant toggle.
 
-    Returns both digests in a single response so the mobile app
-    can switch between them without a network round-trip.
+    Read-only endpoint: serves cached content only. Both variants are fetched
+    in parallel; if either is missing, the most recent cached one is returned
+    while a background task refreshes the cache. Returns 202 if neither
+    variant is cached at all.
     """
     service = DigestService(db)
     user_uuid = UUID(current_user_id)
+    start = time.monotonic()
 
-    normal = await service.get_or_create_digest(user_uuid, target_date, is_serene=False)
-    serein = await service.get_or_create_digest(user_uuid, target_date, is_serene=True)
-    serein_enabled = await service._get_user_serein_enabled(user_uuid)
+    normal, serein, serein_enabled = await asyncio.gather(
+        service.get_or_create_digest(
+            user_uuid, target_date, is_serene=False, allow_generation=False
+        ),
+        service.get_or_create_digest(
+            user_uuid, target_date, is_serene=True, allow_generation=False
+        ),
+        service._get_user_serein_enabled(user_uuid),
+    )
 
+    elapsed = time.monotonic() - start
+    if normal is None and serein is None:
+        logger.info(
+            "digest_both_preparing_background",
+            user_id=current_user_id,
+            elapsed_ms=round(elapsed * 1000, 1),
+        )
+        raise HTTPException(
+            status_code=202,
+            detail="Votre briefing est en cours de préparation. Réessayez dans quelques secondes.",
+        )
+
+    # If only one variant is missing, mirror the available one so the mobile
+    # has something to show. The background task will fix it for next time.
+    if normal is None:
+        normal = serein
+    if serein is None:
+        serein = normal
+
+    logger.info(
+        "digest_both_retrieved",
+        user_id=current_user_id,
+        elapsed_ms=round(elapsed * 1000, 1),
+    )
     return DualDigestResponse(
         normal=normal,
         serein=serein,
