@@ -117,16 +117,44 @@ def _get_alembic_head() -> str:
         return "unknown"
 
 
-# Drop trafilatura HTTP noise (not 200 / download error) saturating Sentry quota.
+# Drop predictable RSS fetch noise saturating Sentry quota (sources rate-limit
+# our crawler — expected, not actionable). Metric preserved via Railway log.
+_RSS_NOISE_LOGGERS = (
+    "trafilatura",
+    "feedparser",
+    "app.workers.rss_sync",
+    "app.services.rss_parser",
+)
+_RSS_NOISE_PATTERNS = (
+    "not a 200 response",
+    "download error",
+    "403 client error",
+    "404 client error",
+    "read timed out",
+    "connection reset",
+)
+
+
+def _extract_event_message(event: dict) -> str:
+    msg = (event.get("logentry") or {}).get("message") or event.get("message") or ""
+    for exc in (event.get("exception") or {}).get("values") or []:
+        val = exc.get("value") or ""
+        if val:
+            msg = f"{msg} {val}"
+    return msg
+
+
 def _sentry_before_send(event: dict, hint: dict) -> dict | None:
     logger_name = event.get("logger") or ""
-    if not logger_name.startswith("trafilatura"):
+    if not logger_name.startswith(_RSS_NOISE_LOGGERS):
         return event
-    message = (
-        event.get("logentry", {}).get("message", "") or event.get("message", "") or ""
-    )
-    message_lower = message.lower()
-    if "not a 200 response" in message_lower or "download error:" in message_lower:
+    message_lower = _extract_event_message(event).lower()
+    if any(pat in message_lower for pat in _RSS_NOISE_PATTERNS):
+        logger.info(
+            "rss_fetch_dropped_from_sentry",
+            sentry_logger=logger_name,
+            reason_excerpt=message_lower[:200],
+        )
         return None
     return event
 
