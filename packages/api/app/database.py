@@ -228,6 +228,30 @@ async def safe_async_session(
             )
             yield session
         finally:
+            # Ordre CRITIQUE — vu en prod 2026-04-28 (Sentry PYTHON-2X
+            # `DetachedInstanceError UserPersonalization`, 260+ events
+            # post #493) : `session.rollback()` expire tous les objets
+            # ORM persistants par défaut. Sites qui retournent un objet
+            # ORM hors du context block (ex `_batch_personalization` →
+            # `pz`, accédé ensuite via `pz.muted_sources`) tombent en
+            # DetachedInstanceError dès que rollback() s'exécute en
+            # finally → /api/feed 500 → "Petit souci !" mobile.
+            #
+            # Fix : `expunge_all()` AVANT rollback. Détache les objets
+            # de la session — ils gardent leurs attributs déjà chargés
+            # (les lazy relationships restent inaccessibles, comme avec
+            # tout objet détaché classique). rollback() opère ensuite
+            # sur une session vide d'objets persistants → pas d'expiry,
+            # mais le ROLLBACK SQL est bien envoyé pour fermer la tx
+            # côté Supavisor.
+            try:
+                session.expunge_all()
+            except Exception as exc:
+                logger.debug(
+                    "session_expunge_failed_in_finally",
+                    error=str(exc),
+                    exc_type=type(exc).__name__,
+                )
             try:
                 await session.rollback()
             except Exception as exc:
