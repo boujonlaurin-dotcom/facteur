@@ -44,18 +44,142 @@ _HIGHLIGHTS_ROTATION_DAYS = 3
 # Used to gate pépite candidates: the LLM otherwise loves anglophone niche
 # tech/science articles, which then ship to French users.
 _FR_MARKERS = frozenset(
-    "le la les un une des du de au aux et ou mais donc car ni or "
-    "que qui dont où ce cette ces son sa ses leur leurs notre nos votre vos "
-    "dans pour avec sans sur sous entre vers chez par "
-    "est sont était étaient être été a ont avait avaient "
-    "pas plus moins très bien aussi encore déjà alors "
-    "il elle ils elles nous vous on ne se".split()
+    [
+        "le",
+        "la",
+        "les",
+        "un",
+        "une",
+        "des",
+        "du",
+        "de",
+        "au",
+        "aux",
+        "et",
+        "ou",
+        "mais",
+        "donc",
+        "car",
+        "ni",
+        "or",
+        "que",
+        "qui",
+        "dont",
+        "où",
+        "ce",
+        "cette",
+        "ces",
+        "son",
+        "sa",
+        "ses",
+        "leur",
+        "leurs",
+        "notre",
+        "nos",
+        "votre",
+        "vos",
+        "dans",
+        "pour",
+        "avec",
+        "sans",
+        "sur",
+        "sous",
+        "entre",
+        "vers",
+        "chez",
+        "par",
+        "est",
+        "sont",
+        "était",
+        "étaient",
+        "être",
+        "été",
+        "a",
+        "ont",
+        "avait",
+        "avaient",
+        "pas",
+        "plus",
+        "moins",
+        "très",
+        "bien",
+        "aussi",
+        "encore",
+        "déjà",
+        "alors",
+        "il",
+        "elle",
+        "ils",
+        "elles",
+        "nous",
+        "vous",
+        "on",
+        "ne",
+        "se",
+    ]
 )
 _EN_MARKERS = frozenset(
-    "the a an of and or but to in on at for with from by as is are was were "
-    "be been being has have had do does did this that these those it its "
-    "he she they we you his her their our your not no yes also more most "
-    "than then when where which who whom while".split()
+    [
+        "the",
+        "a",
+        "an",
+        "of",
+        "and",
+        "or",
+        "but",
+        "to",
+        "in",
+        "on",
+        "at",
+        "for",
+        "with",
+        "from",
+        "by",
+        "as",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "has",
+        "have",
+        "had",
+        "do",
+        "does",
+        "did",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "he",
+        "she",
+        "they",
+        "we",
+        "you",
+        "his",
+        "her",
+        "their",
+        "our",
+        "your",
+        "not",
+        "no",
+        "yes",
+        "also",
+        "more",
+        "most",
+        "than",
+        "then",
+        "when",
+        "where",
+        "which",
+        "who",
+        "whom",
+        "while",
+    ]
 )
 
 
@@ -318,7 +442,9 @@ class EditorialWriterService:
         # we still bail rather than fall back to anglophone content.
         pre_lang_count = len(eligible)
         eligible = [
-            c for c in eligible if _looks_french(f"{c.title or ''} {c.description or ''}")
+            c
+            for c in eligible
+            if _looks_french(f"{c.title or ''} {c.description or ''}")
         ]
         logger.info(
             "editorial_writer.pepite_language_filter",
