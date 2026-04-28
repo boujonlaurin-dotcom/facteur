@@ -713,20 +713,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       // Reset permanent-footer latch acquired during the CTA reveal scroll
       // so subsequent WebView scroll deltas can hide/show header & footer.
       _footerPermanent.value = false;
-      _footerOffset.value = 0.0;
 
       // Smart-arrival : libère l'écran pour que l'utilisateur puisse interagir
       // avec une éventuelle modale (cookies, paywall) qui verrouille souvent
       // body { overflow: hidden } — sans scroll, le ScrollBridge JS ne peut
       // rien signaler, donc on doit cacher proactivement les overlays.
-      _scrollStopTimer?.cancel(); // sinon le timer hérité du scroll CTA réaffiche le footer
+      // Header & footer restent cachés par défaut en mode WebView et ne
+      // réapparaissent qu'au scroll vers le haut (via _onScrollDelta).
+      _scrollStopTimer?.cancel();
+      _inactivityTimer?.cancel();
       _animateHeaderTo(1.0);
       _animateFooterTo(1.0);
-
-      // Header revient après 2 s pour permettre la navigation back.
-      Timer(const Duration(seconds: 2), () {
-        if (mounted && _isWebViewActive) _animateHeaderTo(0.0);
-      });
     }
   }
 
@@ -799,13 +796,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             (_footerOffset.value + footerShift).clamp(0.0, 1.0);
       }
     }
-    // FABs + footer reappear after 2.5s of scroll inactivity
+    // FABs + footer reappear after 2.5s of scroll inactivity.
+    // Skip the footer reappear in WebView mode — overlays must stay hidden
+    // until the user explicitly scrolls up to maximise reading space.
     _scrollStopTimer?.cancel();
     _scrollStopTimer = Timer(const Duration(milliseconds: 2000), () {
       if (mounted) {
         _fabOpacity.value = 1.0;
         _fabReappearController.forward(from: 0);
-        _animateFooterTo(0.0);
+        if (!_isWebViewActive) _animateFooterTo(0.0);
       }
     });
     // Auto-hide header after 3s of inactivity (no scroll), but only if not at top
