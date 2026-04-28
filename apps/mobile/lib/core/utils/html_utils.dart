@@ -85,6 +85,8 @@ String sanitizeArticleHtml(String html) {
   // Strip empty paragraphs and divs (run twice to catch newly-emptied containers)
   content = content.replaceAll(RegExp(r'<(p|div)[^>]*>\s*</(p|div)>'), '');
   content = content.replaceAll(RegExp(r'<(p|div)[^>]*>\s*</(p|div)>'), '');
+  // Strip trailing <br> tags to prevent extra line-height whitespace at article end
+  content = content.replaceAll(RegExp(r'(\s*<br\s*/?\s*>)+\s*$'), '');
   // Strip trailing "Lire aussi" link blocks (lists where all items are just links)
   content = content.replaceAll(
       RegExp(
