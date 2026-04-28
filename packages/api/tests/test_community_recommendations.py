@@ -66,12 +66,13 @@ async def test_get_recent_recommendations_empty():
 
 
 @pytest.mark.asyncio
-async def test_get_community_carousels_non_duplication():
-    """Digest carousel excludes articles already in Feed carousel."""
+async def test_get_community_carousels_independent():
+    """Feed and Digest carousels are built independently — overlap is allowed
+    because they live on separate screens, and excluding feed_ids used to
+    silently empty the Digest carousel whenever the like pool was small."""
     session = AsyncMock()
     service = CommunityRecommendationService(session)
 
-    # Mock feed results
     content1 = MagicMock()
     content1.id = uuid4()
     content2 = MagicMock()
@@ -81,24 +82,25 @@ async def test_get_community_carousels_non_duplication():
         {"content": content1, "sunflower_count": 3, "score": 1.5},
         {"content": content2, "sunflower_count": 2, "score": 1.0},
     ]
+    digest_items = [
+        {"content": content1, "sunflower_count": 3},
+        {"content": content2, "sunflower_count": 2},
+    ]
 
-    # Mock: first call returns feed items, second call returns digest items
     async def mock_get_top(limit=8, exclude_ids=None):
         return feed_items
 
     async def mock_get_recent(limit=8, exclude_ids=None):
-        # Verify feed IDs are excluded
-        assert exclude_ids is not None
-        assert content1.id in exclude_ids
-        assert content2.id in exclude_ids
-        return []
+        # No exclusion — feed and digest may overlap.
+        assert exclude_ids is None
+        return digest_items
 
     service.get_top_recommendations = mock_get_top
     service.get_recent_recommendations = mock_get_recent
 
     feed, digest = await service.get_community_carousels()
     assert len(feed) == 2
-    assert len(digest) == 0
+    assert len(digest) == 2
 
 
 def test_sunflower_count_badge_logic():

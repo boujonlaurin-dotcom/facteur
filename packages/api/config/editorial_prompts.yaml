@@ -315,6 +315,12 @@ pepite:
     Selectionne la "pepite du jour" pour le digest Facteur :
     un article surprenant, original ou meconnu qui merite d'etre decouvert.
 
+    LANGUE — REGLE ABSOLUE :
+    L'article selectionne DOIT etre redige en francais. Tout article dont le
+    titre ou le contenu est en anglais (ou toute autre langue) est INELIGIBLE,
+    meme s'il est plus surprenant. Si AUCUN candidat n'est en francais,
+    reponds {{"selected_content_id": null, "mini_editorial": null}}.
+
     La pepite doit etre DIFFERENTE des 5 sujets principaux du digest.
     Elle apporte un angle inattendu, une decouverte, un sujet de niche interessant.
 
