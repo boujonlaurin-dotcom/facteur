@@ -10,7 +10,7 @@ import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import async_session_maker
+from app.database import safe_async_session
 
 logger = structlog.get_logger()
 
@@ -84,7 +84,7 @@ async def search_cache_set(
     expires = now + timedelta(hours=CACHE_TTL_HOURS)
 
     try:
-        async with async_session_maker() as session:
+        async with safe_async_session() as session:
             await session.execute(
                 text(
                     "INSERT INTO source_search_cache "

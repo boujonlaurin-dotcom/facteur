@@ -13,7 +13,7 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.database import async_session_maker
+from app.database import safe_async_session
 from app.models.enums import SourceType
 from app.models.host_feed_resolution import HostFeedResolution
 from app.models.source import Source
@@ -147,7 +147,7 @@ async def _record_search_log(
         for r in results[:5]
     ]
     try:
-        async with async_session_maker() as session:
+        async with safe_async_session() as session:
             session.add(
                 SourceSearchLog(
                     user_id=UUID(user_id),
@@ -175,7 +175,7 @@ async def mark_search_abandoned(user_id: str, query: str) -> None:
     """Flag the most recent matching search log as abandoned."""
     normalized = normalize_query(query)
     try:
-        async with async_session_maker() as session:
+        async with safe_async_session() as session:
             await session.execute(
                 text(
                     """
@@ -754,29 +754,26 @@ class SmartSourceSearchService:
             return await self._try_detect_feed(url)
 
         try:
-            async with async_session_maker() as session:
-                try:
-                    row = await session.execute(
-                        select(HostFeedResolution).where(
-                            HostFeedResolution.host == key,
-                            HostFeedResolution.expires_at > datetime.now(UTC),
-                        )
+            async with safe_async_session() as session:
+                row = await session.execute(
+                    select(HostFeedResolution).where(
+                        HostFeedResolution.host == key,
+                        HostFeedResolution.expires_at > datetime.now(UTC),
                     )
-                    cached = row.scalar_one_or_none()
-                    if cached is not None:
-                        if cached.feed_url:
-                            return {
-                                "feed_url": cached.feed_url,
-                                "name": cached.title,
-                                "type": cached.type,
-                                "favicon_url": cached.logo_url,
-                                "description": cached.description,
-                                "recent_items": [],
-                            }
-                        # Negative cache hit — host known to have no feed.
-                        return None
-                finally:
-                    await session.rollback()  # hotfix 2026-04-28 idle-in-tx
+                )
+                cached = row.scalar_one_or_none()
+                if cached is not None:
+                    if cached.feed_url:
+                        return {
+                            "feed_url": cached.feed_url,
+                            "name": cached.title,
+                            "type": cached.type,
+                            "favicon_url": cached.logo_url,
+                            "description": cached.description,
+                            "recent_items": [],
+                        }
+                    # Negative cache hit — host known to have no feed.
+                    return None
         except Exception as exc:
             logger.debug("host_feed_cache.lookup_failed", host=key, error=str(exc))
 
@@ -793,7 +790,7 @@ class SmartSourceSearchService:
         now = datetime.now(UTC)
         expires = now + timedelta(days=ttl_days)
         try:
-            async with async_session_maker() as session:
+            async with safe_async_session() as session:
                 await session.execute(
                     text(
                         """

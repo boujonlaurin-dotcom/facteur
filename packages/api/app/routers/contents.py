@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import async_session_maker, get_db
+from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
 from app.models.content import Content
 from app.models.enums import ContentType
@@ -108,7 +108,7 @@ async def get_content_detail(
                     )
 
                 # Persist enrichment via a short-lived session.
-                async with async_session_maker() as write_session:
+                async with safe_async_session() as write_session:
                     stmt = select(Content).where(Content.id == content_id)
                     db_content = await write_session.scalar(stmt)
                     if db_content:
@@ -137,7 +137,7 @@ async def get_content_detail(
                 # Courte session dédiée — n'emprunte pas `db` qui est déjà
                 # committée (connexion rendue au pool).
                 try:
-                    async with async_session_maker() as fallback_session:
+                    async with safe_async_session() as fallback_session:
                         stmt = select(Content).where(Content.id == content_id)
                         db_content = await fallback_session.scalar(stmt)
                         if db_content:

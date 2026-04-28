@@ -281,7 +281,7 @@ class TestDigestWatchdogCoverage:
 
         with (
             patch(
-                "app.database.async_session_maker",
+                "app.database.safe_async_session",
                 side_effect=lambda: fake_sm(),
             ),
             patch(
@@ -309,7 +309,7 @@ class TestDigestWatchdogCoverage:
 
         with (
             patch(
-                "app.database.async_session_maker",
+                "app.database.safe_async_session",
                 side_effect=lambda: fake_sm(),
             ),
             patch(
@@ -335,7 +335,7 @@ class TestDigestWatchdogCoverage:
 
         with (
             patch(
-                "app.database.async_session_maker",
+                "app.database.safe_async_session",
                 side_effect=lambda: fake_sm(),
             ),
             patch(

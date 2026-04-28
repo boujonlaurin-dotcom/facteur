@@ -34,13 +34,13 @@ async def _digest_watchdog() -> None:
     """
     from sqlalchemy import func, select
 
-    from app.database import async_session_maker
+    from app.database import safe_async_session
     from app.models.daily_digest import DailyDigest
     from app.models.user import UserProfile
     from app.utils.time import today_paris
 
     try:
-        async with async_session_maker() as session:
+        async with safe_async_session() as session:
             try:
                 today = today_paris()
 
@@ -97,6 +97,55 @@ async def _digest_watchdog() -> None:
 
     except Exception:
         logger.exception("digest_watchdog_failed")
+
+
+async def _zombie_session_sweeper() -> None:
+    """Defensive belt : kill les sessions Supavisor `idle in transaction` > 5 min.
+
+    Hot fix incident 2026-04-28. Le timeout Postgres
+    `idle_in_transaction_session_timeout=60000ms` (cf. database.py
+    connect_args) devrait déjà couvrir, mais ce sweeper sert de
+    monitoring + filet de secours si une connexion contourne le SET
+    (ex: pooler config drift, connexion ouverte avant un hot reload).
+
+    Log :
+    - `zombie_session_sweeper_clean` (debug) : aucun zombie détecté.
+    - `zombie_session_sweeper_killed` (warning) : zombies tués →
+      investigate, c'est qu'un `safe_async_session` est manqué quelque part.
+    """
+    from sqlalchemy import text
+
+    from app.database import safe_async_session
+
+    try:
+        async with safe_async_session() as session:
+            result = await session.execute(
+                text(
+                    """
+                    SELECT
+                        pg_terminate_backend(pid) AS terminated,
+                        pid,
+                        EXTRACT(EPOCH FROM (now() - state_change))::int AS idle_seconds
+                    FROM pg_stat_activity
+                    WHERE state = 'idle in transaction'
+                      AND application_name = 'Supavisor'
+                      AND state_change < now() - interval '5 minutes'
+                      AND pid <> pg_backend_pid()
+                    """
+                )
+            )
+            killed = result.fetchall()
+            if killed:
+                logger.warning(
+                    "zombie_session_sweeper_killed",
+                    count=len(killed),
+                    pids=[r[1] for r in killed],
+                    max_idle_s=max(r[2] for r in killed),
+                )
+            else:
+                logger.debug("zombie_session_sweeper_clean")
+    except Exception:
+        logger.exception("zombie_session_sweeper_failed")
 
 
 def start_scheduler() -> None:
@@ -156,6 +205,17 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
+    # Zombie session sweeper — kill Supavisor sessions stuck in
+    # `idle in transaction` > 5 min (filet de sécurité par-dessus le
+    # timeout Postgres + le rollback() en finally de safe_async_session).
+    scheduler.add_job(
+        _zombie_session_sweeper,
+        trigger=IntervalTrigger(minutes=5),
+        id="zombie_session_sweeper",
+        name="Zombie session sweeper (idle in tx > 5min)",
+        replace_existing=True,
+    )
+
     scheduler.start()
     logger.info(
         "Scheduler started",
@@ -165,6 +225,7 @@ def start_scheduler() -> None:
             "daily_digest",
             "digest_watchdog",
             "storage_cleanup",
+            "zombie_session_sweeper",
         ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,
         digest_cron="06:00 Europe/Paris",

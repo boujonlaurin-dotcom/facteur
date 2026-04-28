@@ -196,7 +196,7 @@ class RecommendationService:
 
         from sqlalchemy.orm import joinedload
 
-        from app.database import async_session_maker
+        from app.database import safe_async_session
         from app.models.daily_digest import DailyDigest
         from app.models.user_personalization import UserPersonalization
 
@@ -229,17 +229,12 @@ class RecommendationService:
             return profile, sources, subtopics
 
         async def _batch_personalization():
-            async with async_session_maker() as s:
-                try:
-                    pz = await s.scalar(personalization_stmt)
-                    digest = await s.scalar(digest_stmt)
-                    # Epic 13: Load muted entities (defensive — tolère schema drift)
-                    muted_entities = await _load_muted_entities_safe(s, user_id)
-                    return pz, digest, muted_entities
-                finally:
-                    # Hotfix 2026-04-28 : libère la transaction Postgres-side
-                    # même sur close() implicite — sinon "idle in transaction".
-                    await s.rollback()
+            async with safe_async_session() as s:
+                pz = await s.scalar(personalization_stmt)
+                digest = await s.scalar(digest_stmt)
+                # Epic 13: Load muted entities (defensive — tolère schema drift)
+                muted_entities = await _load_muted_entities_safe(s, user_id)
+                return pz, digest, muted_entities
 
         # gather() préserve le parallélisme : self.session et la short
         # session de _batch_personalization sont des sessions distinctes,
@@ -519,13 +514,8 @@ class RecommendationService:
             custom_topics_stmt = select(UserTopicProfile).where(
                 UserTopicProfile.user_id == user_id
             )
-            async with async_session_maker() as s:
-                try:
-                    user_custom_topics = list(
-                        (await s.scalars(custom_topics_stmt)).all()
-                    )
-                finally:
-                    await s.rollback()  # hotfix 2026-04-28 idle-in-tx
+            async with safe_async_session() as s:
+                user_custom_topics = list((await s.scalars(custom_topics_stmt)).all())
             self.user_custom_topics = user_custom_topics
 
             ct_slugs: set[str] = set()
@@ -639,35 +629,29 @@ class RecommendationService:
         )
 
         async def _batch_scoring_context():
-            async with async_session_maker() as s:
-                try:
-                    affinity_rows = (await s.execute(source_affinity_stmt)).all()
-                    custom_rows = (await s.scalars(custom_topics_stmt)).all()
-                    return self._normalize_affinity(affinity_rows), list(custom_rows)
-                finally:
-                    await s.rollback()  # hotfix 2026-04-28 idle-in-tx
+            async with safe_async_session() as s:
+                affinity_rows = (await s.execute(source_affinity_stmt)).all()
+                custom_rows = (await s.scalars(custom_topics_stmt)).all()
+                return self._normalize_affinity(affinity_rows), list(custom_rows)
 
         async def _batch_impressions():
             if not impression_ids:
                 return {}
-            async with async_session_maker() as s:
-                try:
-                    stmt = select(
-                        UserContentStatus.content_id,
-                        UserContentStatus.last_impressed_at,
-                        UserContentStatus.manually_impressed,
-                    ).where(
-                        UserContentStatus.user_id == user_id,
-                        UserContentStatus.content_id.in_(impression_ids),
-                        UserContentStatus.last_impressed_at.isnot(None),
-                    )
-                    rows = (await s.execute(stmt)).all()
-                    return {
-                        row.content_id: (row.last_impressed_at, row.manually_impressed)
-                        for row in rows
-                    }
-                finally:
-                    await s.rollback()  # hotfix 2026-04-28 idle-in-tx
+            async with safe_async_session() as s:
+                stmt = select(
+                    UserContentStatus.content_id,
+                    UserContentStatus.last_impressed_at,
+                    UserContentStatus.manually_impressed,
+                ).where(
+                    UserContentStatus.user_id == user_id,
+                    UserContentStatus.content_id.in_(impression_ids),
+                    UserContentStatus.last_impressed_at.isnot(None),
+                )
+                rows = (await s.execute(stmt)).all()
+                return {
+                    row.content_id: (row.last_impressed_at, row.manually_impressed)
+                    for row in rows
+                }
 
         (
             (source_affinity_scores, user_custom_topics),
