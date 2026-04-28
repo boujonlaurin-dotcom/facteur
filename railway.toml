@@ -3,7 +3,10 @@ builder = "DOCKERFILE"
 dockerfilePath = "packages/api/Dockerfile"
 
 [deploy]
+# TEMP : revert to liveness probe pendant qu'on scelle les fuites idle-in-tx.
+# Issue suivi : ré-armer /api/health/ready quand pg_stat_activity reste propre 24h.
+# Voir incident 2026-04-28 + PR #490.
 healthcheckPath = "/api/health"
 healthcheckTimeout = 120
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 3
+restartPolicyType = "ALWAYS"
+restartPolicyMaxRetries = 10

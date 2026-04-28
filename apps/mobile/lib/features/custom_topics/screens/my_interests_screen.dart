@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
+import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/widgets/serein_toggle_chip.dart';
 import '../../feed/repositories/personalization_repository.dart';
@@ -116,15 +117,9 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
       ),
       body: topicsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(FacteurSpacing.space4),
-            child: Text(
-              'Impossible de charger vos intérêts.',
-              style: textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
-              textAlign: TextAlign.center,
-            ),
-          ),
+        error: (e, _) => FriendlyErrorView(
+          error: e,
+          onRetry: () => ref.invalidate(customTopicsProvider),
         ),
         data: (topics) {
           // Muted topics grouped by macro-theme

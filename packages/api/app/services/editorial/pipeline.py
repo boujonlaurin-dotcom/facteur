@@ -408,15 +408,46 @@ class EditorialPipelineService:
             known_perspectives = [
                 p for p in merged_perspectives if p.bias_stance != "unknown"
             ]
-            subject.perspective_count = len(known_perspectives)
-            subject.bias_distribution = compute_bias_distribution(known_perspectives)
-            subject.bias_highlights = compute_bias_highlights(subject.bias_distribution)
+
+            # Safety net: if every merged perspective has an unknown bias
+            # (source not in DOMAIN_BIAS_MAP nor resolvable via DB), fall
+            # back to counting the cluster sources themselves. Otherwise
+            # the card footer would show a single logo even when the digest
+            # actually grouped several outlets together. The bias
+            # distribution stays all-zero so the spectrum bar and divergence
+            # analysis remain hidden — we only lift the raw source counter.
+            # Cf. docs/bugs/bug-digest-perspective-undercount.md (Axe 2).
+            if not known_perspectives and cluster_perspectives:
+                subject.perspective_count = len(cluster_perspectives)
+                subject.bias_distribution = compute_bias_distribution([])
+                subject.bias_highlights = None
+                logger.info(
+                    "editorial_pipeline.perspective_count_safety_net",
+                    topic_id=subject.topic_id,
+                    cluster_sources=len(cluster_perspectives),
+                )
+            else:
+                subject.perspective_count = len(known_perspectives)
+                subject.bias_distribution = compute_bias_distribution(
+                    known_perspectives
+                )
+                subject.bias_highlights = compute_bias_highlights(
+                    subject.bias_distribution
+                )
 
             # Persist the full known-bias merged list so the
             # /contents/{id}/perspectives endpoint can return the exact same
             # snapshot — otherwise the bottom sheet re-runs Google News at
             # call time and shows different media than the CTA logos that
             # come from this pipeline run.
+            # When the safety net above kicked in (no known bias), persist
+            # the cluster perspectives as-is (bias_stance=unknown) so the
+            # endpoint doesn't bail out to the live path — it already has
+            # the full cluster list to return, and the mobile footer logos
+            # stay coherent with the digest-time cluster.
+            snapshot_perspectives = (
+                known_perspectives if known_perspectives else cluster_perspectives
+            )
             subject.perspective_articles = [
                 {
                     "title": p.title,
@@ -427,7 +458,7 @@ class EditorialPipelineService:
                     "published_at": p.published_at,
                     "description": p.description,
                 }
-                for p in known_perspectives
+                for p in snapshot_perspectives
             ]
 
             # Axe C — observability: log the composition so we can verify in
@@ -445,10 +476,14 @@ class EditorialPipelineService:
 
             # Build perspective_sources — max 6, deduplicated by domain.
             # Use known_perspectives so the CTA logos match the bottom sheet
-            # (which also filters out unknown bias).
+            # (which also filters out unknown bias). When the safety net
+            # above fell back to cluster sources (no known bias), feed the
+            # same list here so the footer renders logos for each outlet
+            # in the cluster, consistent with perspective_count.
+            sources_pool = known_perspectives or cluster_perspectives
             seen_domains: set[str] = set()
             unique_perspectives = []
-            for p in known_perspectives:
+            for p in sources_pool:
                 if p.source_domain not in seen_domains:
                     seen_domains.add(p.source_domain)
                     unique_perspectives.append(p)

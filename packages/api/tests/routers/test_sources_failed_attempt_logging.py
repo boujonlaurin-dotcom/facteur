@@ -7,7 +7,7 @@ HTTPException raised right after the `db.add(attempt)` — every
 FailedSourceAttempt insert in the previous implementation was
 silently discarded.
 
-The fix uses its own short-lived session via `async_session_maker`
+The fix uses its own short-lived session via `safe_async_session`
 so the commit survives the handler's HTTPException.
 """
 
@@ -33,7 +33,7 @@ async def test_log_failed_source_attempt_uses_fresh_session_and_commits():
 
     mock_session_maker = MagicMock(return_value=mock_cm)
 
-    with patch.object(sources_mod, "async_session_maker", mock_session_maker):
+    with patch.object(sources_mod, "safe_async_session", mock_session_maker):
         await sources_mod._log_failed_source_attempt(
             user_id=str(uuid4()),
             input_text="https://example.com/",
@@ -55,7 +55,7 @@ async def test_log_failed_source_attempt_swallows_errors():
 
     broken_session_maker = MagicMock(side_effect=RuntimeError("DB down"))
 
-    with patch.object(sources_mod, "async_session_maker", broken_session_maker):
+    with patch.object(sources_mod, "safe_async_session", broken_session_maker):
         # Must not raise
         await sources_mod._log_failed_source_attempt(
             user_id=str(uuid4()),
@@ -85,7 +85,7 @@ async def test_log_failed_source_attempt_truncates_long_inputs():
     mock_cm.__aexit__ = AsyncMock(return_value=None)
 
     with patch.object(
-        sources_mod, "async_session_maker", MagicMock(return_value=mock_cm)
+        sources_mod, "safe_async_session", MagicMock(return_value=mock_cm)
     ):
         await sources_mod._log_failed_source_attempt(
             user_id=str(uuid4()),

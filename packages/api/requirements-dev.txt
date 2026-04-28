@@ -1,0 +1,9 @@
+# Facteur API - Dev dependencies (tests, lint, types)
+# Installed in addition to requirements.txt by scripts/dev-bootstrap.sh.
+# NOT installed in the prod Docker image.
+
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+ruff>=0.2.0
+mypy>=1.8.0

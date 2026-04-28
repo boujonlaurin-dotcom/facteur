@@ -4,7 +4,7 @@ from datetime import datetime
 import structlog
 from sqlalchemy import select
 
-from app.database import async_session_maker
+from app.database import safe_async_session
 from app.models.user import UserProfile
 from app.services.briefing_service import BriefingService
 
@@ -31,24 +31,37 @@ async def generate_daily_top3_job(trigger_manual: bool = False):
         # contribuait à saturer le pool Supabase (connexions check-outées
         # sans rollback propre).
         # 1. Global context : session courte dédiée.
-        async with async_session_maker() as ctx_session:
-            briefing_service_ctx = BriefingService(ctx_session)
-            logger.info("daily_top3_building_context")
-            global_context = await briefing_service_ctx._build_global_context()
+        async with safe_async_session() as ctx_session:
+            try:
+                briefing_service_ctx = BriefingService(ctx_session)
+                logger.info("daily_top3_building_context")
+                global_context = await briefing_service_ctx._build_global_context()
 
-            une_ids = global_context.get("une_ids", set())
-            trending_ids = global_context.get("trending_ids", set())
+                une_ids = global_context.get("une_ids", set())
+                trending_ids = global_context.get("trending_ids", set())
 
-            logger.info(
-                "daily_top3_context_ready",
-                une_count=len(une_ids),
-                trending_count=len(trending_ids),
-            )
+                logger.info(
+                    "daily_top3_context_ready",
+                    une_count=len(une_ids),
+                    trending_count=len(trending_ids),
+                )
 
-            # 2. Get Users Eligible (même session courte — lecture seule)
-            stmt = select(UserProfile.user_id).where(UserProfile.onboarding_completed)
-            result = await ctx_session.execute(stmt)
-            user_ids = list(result.scalars().all())
+                # 2. Get Users Eligible (même session courte — lecture seule)
+                stmt = select(UserProfile.user_id).where(
+                    UserProfile.onboarding_completed
+                )
+                result = await ctx_session.execute(stmt)
+                user_ids = list(result.scalars().all())
+            finally:
+                # Libère la connexion Supavisor : sans ROLLBACK explicite, les
+                # SELECTs ci-dessus laissent la session "idle in transaction"
+                # côté pooler externe.
+                try:
+                    await ctx_session.rollback()
+                except Exception:
+                    logger.warning(
+                        "daily_top3 ctx_session rollback failed", exc_info=True
+                    )
 
         total_users = len(user_ids)
         logger.info("daily_top3_users_found", count=total_users)
@@ -59,7 +72,7 @@ async def generate_daily_top3_job(trigger_manual: bool = False):
 
         for user_id in user_ids:
             try:
-                async with async_session_maker() as user_session:
+                async with safe_async_session() as user_session:
                     try:
                         briefing_service = BriefingService(user_session)
                         await briefing_service.generate_briefing_for_user(

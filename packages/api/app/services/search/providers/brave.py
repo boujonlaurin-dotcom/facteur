@@ -37,9 +37,18 @@ class BraveSearchProvider:
                 resp = await client.get(
                     BRAVE_SEARCH_URL,
                     params={
-                        "q": f"{query} RSS feed site blog",
+                        # Send the bare query — appending "RSS feed site blog"
+                        # systematically pulled in SEO listicles ("Top 60 best
+                        # political RSS feeds…") instead of real sources.
+                        "q": query,
                         "count": str(count),
                         "safesearch": "moderate",
+                        "result_filter": "web",
+                        # Bias the index toward French content. Without this,
+                        # "politis" ranks Politis Cyprus above Politis.fr.
+                        "country": "fr",
+                        "search_lang": "fr",
+                        "ui_lang": "fr-FR",
                     },
                     headers={
                         "Accept": "application/json",

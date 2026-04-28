@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/constants.dart';
+import '../auth/session_refresher.dart';
 import 'retry_interceptor.dart';
 
 /// Client API basé sur Dio avec authentification automatique
@@ -75,31 +76,42 @@ class ApiClient {
           final statusCode = error.response?.statusCode;
 
           if (statusCode == 401) {
-            // Attempt token refresh before signing out
+            // Single-flight refresh via SessionRefresher : si plusieurs
+            // requêtes parallèles reçoivent 401 (typique au resume après
+            // background), un seul refresh est envoyé au SDK Supabase. Évite
+            // la race "double-refresh" sur les refresh tokens single-use
+            // (cf. docs/bugs/bug-android-disconnect-race.md).
+            Session? refreshedSession;
             try {
-              final refreshed = await _supabase.auth
-                  .refreshSession()
-                  .timeout(const Duration(seconds: 5));
-              if (refreshed.session != null) {
-                // Retry the original request with the new token
+              refreshedSession = await SessionRefresher.instance
+                  .refresh(timeout: const Duration(seconds: 5));
+            } catch (_) {
+              // Refresh failed — recheck currentSession avant de logout :
+              // un autre acteur (SDK auto-refresh) a peut-être obtenu une
+              // session valide entre-temps.
+              refreshedSession = _supabase.auth.currentSession;
+            }
+
+            if (refreshedSession != null) {
+              try {
                 final opts = error.requestOptions;
                 opts.headers['Authorization'] =
-                    'Bearer ${refreshed.session!.accessToken}';
+                    'Bearer ${refreshedSession.accessToken}';
                 final response = await _dio.fetch<dynamic>(opts);
-                // Une requête qui passe après un refresh 401 prouve que
-                // l'user est à nouveau opérationnel côté backend — symétrique
-                // au path 403, on clear un éventuel `forceUnconfirmed` stale.
                 onAuthRecovered?.call();
                 return handler.resolve(response);
+              } catch (retryErr) {
+                // Le retry a échoué pour une autre raison — laisser bubble.
+                _logError(error);
+                return handler.next(error);
               }
-            } catch (_) {
-              // Refresh failed — fall through to onAuthError
             }
-            // Refresh failed or returned no session — signal logout
+
+            // Vraiment plus de session valide → signal logout
             if (onAuthError != null) {
               // ignore: avoid_print
               print(
-                  '⛔️ ApiClient: 401 after refresh attempt. Triggering onAuthError.');
+                  '⛔️ ApiClient: 401 after refresh attempt — no valid session. Triggering onAuthError.');
               onAuthError!(401);
             }
           } else if (statusCode == 403) {
@@ -117,39 +129,10 @@ class ApiClient {
             final isEmailNotConfirmed = detail == _emailNotConfirmedDetail;
 
             if (isEmailNotConfirmed) {
+              Session? refreshedSession;
               try {
-                final refreshed = await _supabase.auth
-                    .refreshSession()
-                    .timeout(const Duration(seconds: 5));
-                if (refreshed.session != null) {
-                  final opts = error.requestOptions;
-                  opts.headers['Authorization'] =
-                      'Bearer ${refreshed.session!.accessToken}';
-                  try {
-                    final response = await _dio.fetch<dynamic>(opts);
-                    // ignore: avoid_print
-                    print(
-                        '✅ ApiClient: 403 recovered via refresh+retry (stale JWT).');
-                    onAuthRecovered?.call();
-                    return handler.resolve(response);
-                  } on DioException catch (retryErr) {
-                    // Toujours 403 après refresh → l'email est réellement non
-                    // confirmé : seule voie qui déclenche `onAuthError(403)`.
-                    if (retryErr.response?.statusCode == 403 &&
-                        onAuthError != null) {
-                      // ignore: avoid_print
-                      print(
-                          '⛔️ ApiClient: 403 persists after refresh. Triggering onAuthError(403).');
-                      onAuthError!(403);
-                    }
-                    _logError(retryErr);
-                    return handler.next(retryErr);
-                  }
-                } else {
-                  // ignore: avoid_print
-                  print(
-                      '⚠️ ApiClient: 403 — refresh returned null session. Letting original 403 bubble (no lockdown).');
-                }
+                refreshedSession = await SessionRefresher.instance
+                    .refresh(timeout: const Duration(seconds: 5));
               } catch (e) {
                 // Refresh timeout ou AuthException — on ne verrouille PAS l'app
                 // sur un échec transitoire. Le 403 original bubble au caller
@@ -157,6 +140,32 @@ class ApiClient {
                 // ignore: avoid_print
                 print(
                     '⚠️ ApiClient: 403 refresh failed (${e.runtimeType}), not triggering onAuthError — bubbling original 403.');
+              }
+
+              if (refreshedSession != null) {
+                final opts = error.requestOptions;
+                opts.headers['Authorization'] =
+                    'Bearer ${refreshedSession.accessToken}';
+                try {
+                  final response = await _dio.fetch<dynamic>(opts);
+                  // ignore: avoid_print
+                  print(
+                      '✅ ApiClient: 403 recovered via refresh+retry (stale JWT).');
+                  onAuthRecovered?.call();
+                  return handler.resolve(response);
+                } on DioException catch (retryErr) {
+                  // Toujours 403 après refresh → l'email est réellement non
+                  // confirmé : seule voie qui déclenche `onAuthError(403)`.
+                  if (retryErr.response?.statusCode == 403 &&
+                      onAuthError != null) {
+                    // ignore: avoid_print
+                    print(
+                        '⛔️ ApiClient: 403 persists after refresh. Triggering onAuthError(403).');
+                    onAuthError!(403);
+                  }
+                  _logError(retryErr);
+                  return handler.next(retryErr);
+                }
               }
             }
             // Aucun fallthrough vers onAuthError(403) ici : les 403 transients

@@ -83,6 +83,12 @@ git commit -m "fix: <description courte>
 Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
 ```
 
+> **Astuce** : dès que la tâche dépasse le commit simple, lance **`/go`**
+> (voir [.claude/commands/go.md](.claude/commands/go.md)). Elle fait
+> VERIFY (pytest + flutter + Playwright + scripts QA) → SIMPLIFY → push +
+> PR vers `main` automatiquement. Obligatoire pour toute tâche où tu
+> escalades vers [CLAUDE.md](CLAUDE.md).
+
 ### 5. Cleanup (après merge)
 
 ```bash
@@ -136,6 +142,7 @@ git worktree remove ../fix/<nom>
 - Story/Bug Doc OBLIGATOIRE
 - Hooks de sécurité complets
 - Safety Protocols pour zones à risque
+- **`/go`** pour enchaîner VERIFY → SIMPLIFY → PR en fin de tâche
 
 ---
 

@@ -49,8 +49,17 @@ deep_matching:
     - Aucun candidat ne partage au moins une entite nommee (personne,
       organisation, pays, concept) ou un champ lexical structurel avec
       le sujet.
+    - Le candidat est une **actualite du meme evenement** : meme fait,
+      meme jour, memes protagonistes, meme cadrage factuel — meme s'il
+      est publie par une source de fond. Un "pas de recul" n'est PAS
+      une autre depeche qui reprend les memes elements, c'est une mise
+      en perspective qui ajoute un eclairage historique, structurel,
+      comparatiste ou analytique.
+    - Le candidat n'apporte **aucun eclairage supplementaire** au-dela
+      du compte-rendu factuel deja couvert par l'actualite chaude.
     - Tu hesites. En cas de doute, renvoie `null`. Mieux vaut pas de
-      "pas de recul" qu'un article hors-sujet qui decredibilise le digest.
+      "pas de recul" qu'un article hors-sujet ou redondant qui
+      decredibilise le digest.
 
     Criteres si tu choisis (cumulatifs) :
     - Pertinence systemique (PAS evenementiel — on cherche de l'analyse)

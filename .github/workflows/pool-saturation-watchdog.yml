@@ -1,0 +1,120 @@
+name: Pool saturation watchdog
+
+# v1 = mode dry-run. Si saturation confirmée (2 probes à 30 s d'intervalle,
+# usage_pct > 90 ou status=saturated), on n'effectue PAS le redeploy Railway :
+# on ouvre une issue GitHub. Après 24 h sans faux positif, une PR de suivi
+# remplacera la branche dry-run par la mutation `serviceInstanceRedeploy`.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      force_saturated_for_test:
+        description: "Simuler une saturation pour tester la branche dry-run"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: pool-watchdog
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      API_URL: ${{ vars.API_URL }}
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
+      RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+      FORCE_SATURATED: ${{ github.event.inputs.force_saturated_for_test }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Probe pool & confirm saturation
+        run: |
+          set -euo pipefail
+
+          if [ -z "${API_URL:-}" ]; then
+            echo "::error::vars.API_URL non configuré"
+            exit 1
+          fi
+
+          if [ "${FORCE_SATURATED:-false}" = "true" ]; then
+            METRICS='{"status":"saturated","usage_pct":99,"size":50,"checked_out":50,"overflow":0,"_simulated":true}'
+            METRICS2="$METRICS"
+            echo "::warning::Mode test forcé — saturation simulée"
+          else
+            METRICS=$(curl -fsS --max-time 10 "$API_URL/api/health/pool")
+          fi
+          echo "Probe #1: $METRICS"
+
+          STATUS=$(echo "$METRICS" | jq -r '.status // "unknown"')
+          USAGE=$(echo "$METRICS" | jq -r '.usage_pct // 0')
+
+          HIGH=0
+          if [ "$STATUS" = "saturated" ]; then HIGH=1; fi
+          if [ "$(echo "$USAGE > 90" | bc -l)" = "1" ]; then HIGH=1; fi
+
+          if [ "$HIGH" != "1" ]; then
+            echo "Pool OK (status=$STATUS, usage=${USAGE}%)"
+            exit 0
+          fi
+
+          echo "Pression élevée (status=$STATUS, usage=${USAGE}%) — 2e probe dans 30 s..."
+          sleep 30
+
+          if [ "${FORCE_SATURATED:-false}" != "true" ]; then
+            METRICS2=$(curl -fsS --max-time 10 "$API_URL/api/health/pool")
+          fi
+          echo "Probe #2: $METRICS2"
+
+          STATUS2=$(echo "$METRICS2" | jq -r '.status // "unknown"')
+          USAGE2=$(echo "$METRICS2" | jq -r '.usage_pct // 0')
+
+          CONFIRMED=0
+          if [ "$STATUS2" = "saturated" ]; then CONFIRMED=1; fi
+          if [ "$(echo "$USAGE2 > 90" | bc -l)" = "1" ]; then CONFIRMED=1; fi
+
+          if [ "$CONFIRMED" != "1" ]; then
+            echo "Pression retombée (status=$STATUS2, usage=${USAGE2}%) — pas d'action."
+            exit 0
+          fi
+
+          echo "WOULD REDEPLOY — saturation confirmée (status=$STATUS2, usage=${USAGE2}%)"
+
+          # Vérifie que les secrets/vars Railway sont prêts pour la PR #2
+          # (on n'appelle pas l'API en v1 dry-run).
+          for v in RAILWAY_API_TOKEN RAILWAY_SERVICE_ID RAILWAY_ENVIRONMENT_ID; do
+            if [ -z "${!v:-}" ]; then
+              echo "::warning::$v non configuré — bloquera l'activation en PR #2"
+            fi
+          done
+
+          BODY=$(printf '%s\n' \
+            "Pool saturation confirmée par 2 probes consécutives." \
+            "" \
+            "**Probe #1** (\`/api/health/pool\`):" \
+            '```json' \
+            "$METRICS" \
+            '```' \
+            "" \
+            "**Probe #2** (+30 s):" \
+            '```json' \
+            "$METRICS2" \
+            '```' \
+            "" \
+            "- Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "- Mode: **dry-run** — aucun redeploy effectué." \
+            "" \
+            "Investiguer la cause (leak ? pic de trafic ?) avant d'activer le mode actif (PR de suivi).")
+
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "[watchdog] pool saturation confirmée — would redeploy" \
+            --body "$BODY" \
+            --label "infra,watchdog" || \
+              echo "::warning::gh issue create a échoué (labels manquants ?)"

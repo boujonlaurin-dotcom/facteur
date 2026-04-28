@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../../widgets/design/priority_slider.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
+import '../providers/sources_providers.dart';
 import '../../../widgets/design/facteur_button.dart';
 
-class SourceDetailModal extends StatelessWidget {
+class SourceDetailModal extends ConsumerWidget {
   final Source source;
   final VoidCallback onToggleTrust;
   final VoidCallback? onToggleMute;
@@ -30,8 +32,17 @@ class SourceDetailModal extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
+    // Read live source from provider so priority slider / trust state stay in sync
+    // when the user toggles via the modal itself.
+    final liveSource = ref
+            .watch(userSourcesProvider)
+            .valueOrNull
+            ?.where((s) => s.id == source.id)
+            .firstOrNull ??
+        source;
+    final displaySource = liveSource;
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -148,7 +159,7 @@ class SourceDetailModal extends StatelessWidget {
             ),
           ),
           // Epic 12: Priority slider (only for trusted/followed sources)
-          if (onPriorityChanged != null && source.isTrusted) ...[
+          if (onPriorityChanged != null && displaySource.isTrusted) ...[
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -180,7 +191,7 @@ class SourceDetailModal extends StatelessWidget {
                       const Spacer(),
                       PrioritySlider(
                         key: ValueKey(source.id),
-                        currentMultiplier: source.priorityMultiplier,
+                        currentMultiplier: displaySource.priorityMultiplier,
                         onChanged: onPriorityChanged!,
                         usageWeight: usageWeight,
                       ),
@@ -221,7 +232,7 @@ class SourceDetailModal extends StatelessWidget {
           const SizedBox(height: 24),
 
           // Action Buttons
-          if (source.isMuted) ...[
+          if (displaySource.isMuted) ...[
             // Muted state: follow (auto-unmutes via backend) + unmute
             FacteurButton(
               onPressed: () {
@@ -258,13 +269,13 @@ class SourceDetailModal extends StatelessWidget {
                 onToggleTrust();
                 Navigator.pop(context);
               },
-              label: source.isTrusted
+              label: displaySource.isTrusted
                   ? 'Ne plus suivre'
                   : 'Ajouter comme source de confiance',
-              type: !source.isTrusted
+              type: !displaySource.isTrusted
                   ? FacteurButtonType.primary
                   : FacteurButtonType.secondary,
-              icon: source.isTrusted
+              icon: displaySource.isTrusted
                   ? PhosphorIcons.check()
                   : PhosphorIcons.shieldCheck(),
             ),
@@ -275,11 +286,11 @@ class SourceDetailModal extends StatelessWidget {
                   onToggleSubscription!();
                   Navigator.pop(context);
                 },
-                label: source.hasSubscription
+                label: displaySource.hasSubscription
                     ? 'Ne plus marquer comme Premium'
                     : 'J\'ai un abonnement',
                 type: FacteurButtonType.secondary,
-                icon: source.hasSubscription
+                icon: displaySource.hasSubscription
                     ? PhosphorIcons.star(PhosphorIconsStyle.regular)
                     : PhosphorIcons.star(PhosphorIconsStyle.fill),
               ),

@@ -832,27 +832,55 @@ class RSSParser:
             "/arc/outboundfeeds/rss/?outputType=xml",  # Arc Publishing
             "/feed/all/rss.xml",  # Courrier International-style
         ]
-        suffix_tried = 0
-        for suffix in common_suffixes:
+        # Probe suffixes in parallel — sequentially we burned ~5s on slow
+        # publishers because each suffix waits on the previous response.
+        # Bound to 4 concurrent probes per host to stay polite, return the
+        # first valid feed and cancel the rest.
+        suffix_sem = asyncio.Semaphore(4)
+        suffix_tried = {"n": 0}
+
+        async def _probe_suffix(suffix: str):
             try_url = url.rstrip("/") + suffix
-            logger.info("Trying common RSS suffix", try_url=try_url)
-            try:
-                resp = await self.client.get(try_url)
-                suffix_tried += 1
-                if resp.status_code == 403:
-                    continue
-                if resp.status_code == 200 and self._is_feed_content_type(resp):
-                    suffix_feed = await loop.run_in_executor(
+            async with suffix_sem:
+                try:
+                    resp = await self.client.get(try_url)
+                except Exception:
+                    return None
+                suffix_tried["n"] += 1
+                if resp.status_code != 200 or not self._is_feed_content_type(resp):
+                    return None
+                try:
+                    parsed = await loop.run_in_executor(
                         None, feedparser.parse, resp.text
                     )
-                    if not suffix_feed.bozo and len(suffix_feed.entries) > 0:
-                        logger.info("Found valid feed via suffix", url=try_url)
-                        return await self._format_response(try_url, suffix_feed)
-            except Exception:
-                continue
+                except Exception:
+                    return None
+                if parsed.bozo or len(parsed.entries) == 0:
+                    return None
+                return try_url, parsed
+
+        suffix_tasks = [asyncio.create_task(_probe_suffix(s)) for s in common_suffixes]
+        suffix_winner: tuple[str, object] | None = None
+        try:
+            for fut in asyncio.as_completed(suffix_tasks):
+                result = await fut
+                if result is not None:
+                    suffix_winner = result
+                    break
+        finally:
+            for t in suffix_tasks:
+                if not t.done():
+                    t.cancel()
+            # Drain cancelled tasks so their exceptions don't leak.
+            await asyncio.gather(*suffix_tasks, return_exceptions=True)
+
+        if suffix_winner is not None:
+            try_url, suffix_feed = suffix_winner
+            logger.info("Found valid feed via suffix", url=try_url)
+            return await self._format_response(try_url, suffix_feed)
 
         detection_log.append(
-            f"suffix_fallback=tried_{suffix_tried}_of_{len(common_suffixes)}"
+            f"suffix_fallback=tried_{suffix_tried['n']}_of_{len(common_suffixes)}"
         )
 
         # ── Stage 5: Feed index page follow (Pattern A) ───────────
