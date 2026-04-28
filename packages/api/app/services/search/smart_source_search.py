@@ -755,25 +755,28 @@ class SmartSourceSearchService:
 
         try:
             async with async_session_maker() as session:
-                row = await session.execute(
-                    select(HostFeedResolution).where(
-                        HostFeedResolution.host == key,
-                        HostFeedResolution.expires_at > datetime.now(UTC),
+                try:
+                    row = await session.execute(
+                        select(HostFeedResolution).where(
+                            HostFeedResolution.host == key,
+                            HostFeedResolution.expires_at > datetime.now(UTC),
+                        )
                     )
-                )
-                cached = row.scalar_one_or_none()
-                if cached is not None:
-                    if cached.feed_url:
-                        return {
-                            "feed_url": cached.feed_url,
-                            "name": cached.title,
-                            "type": cached.type,
-                            "favicon_url": cached.logo_url,
-                            "description": cached.description,
-                            "recent_items": [],
-                        }
-                    # Negative cache hit — host known to have no feed.
-                    return None
+                    cached = row.scalar_one_or_none()
+                    if cached is not None:
+                        if cached.feed_url:
+                            return {
+                                "feed_url": cached.feed_url,
+                                "name": cached.title,
+                                "type": cached.type,
+                                "favicon_url": cached.logo_url,
+                                "description": cached.description,
+                                "recent_items": [],
+                            }
+                        # Negative cache hit — host known to have no feed.
+                        return None
+                finally:
+                    await session.rollback()  # hotfix 2026-04-28 idle-in-tx
         except Exception as exc:
             logger.debug("host_feed_cache.lookup_failed", host=key, error=str(exc))
 

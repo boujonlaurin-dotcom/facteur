@@ -230,11 +230,16 @@ class RecommendationService:
 
         async def _batch_personalization():
             async with async_session_maker() as s:
-                pz = await s.scalar(personalization_stmt)
-                digest = await s.scalar(digest_stmt)
-                # Epic 13: Load muted entities (defensive — tolère schema drift)
-                muted_entities = await _load_muted_entities_safe(s, user_id)
-                return pz, digest, muted_entities
+                try:
+                    pz = await s.scalar(personalization_stmt)
+                    digest = await s.scalar(digest_stmt)
+                    # Epic 13: Load muted entities (defensive — tolère schema drift)
+                    muted_entities = await _load_muted_entities_safe(s, user_id)
+                    return pz, digest, muted_entities
+                finally:
+                    # Hotfix 2026-04-28 : libère la transaction Postgres-side
+                    # même sur close() implicite — sinon "idle in transaction".
+                    await s.rollback()
 
         # gather() préserve le parallélisme : self.session et la short
         # session de _batch_personalization sont des sessions distinctes,
@@ -515,7 +520,12 @@ class RecommendationService:
                 UserTopicProfile.user_id == user_id
             )
             async with async_session_maker() as s:
-                user_custom_topics = list((await s.scalars(custom_topics_stmt)).all())
+                try:
+                    user_custom_topics = list(
+                        (await s.scalars(custom_topics_stmt)).all()
+                    )
+                finally:
+                    await s.rollback()  # hotfix 2026-04-28 idle-in-tx
             self.user_custom_topics = user_custom_topics
 
             ct_slugs: set[str] = set()
@@ -630,28 +640,34 @@ class RecommendationService:
 
         async def _batch_scoring_context():
             async with async_session_maker() as s:
-                affinity_rows = (await s.execute(source_affinity_stmt)).all()
-                custom_rows = (await s.scalars(custom_topics_stmt)).all()
-                return self._normalize_affinity(affinity_rows), list(custom_rows)
+                try:
+                    affinity_rows = (await s.execute(source_affinity_stmt)).all()
+                    custom_rows = (await s.scalars(custom_topics_stmt)).all()
+                    return self._normalize_affinity(affinity_rows), list(custom_rows)
+                finally:
+                    await s.rollback()  # hotfix 2026-04-28 idle-in-tx
 
         async def _batch_impressions():
             if not impression_ids:
                 return {}
             async with async_session_maker() as s:
-                stmt = select(
-                    UserContentStatus.content_id,
-                    UserContentStatus.last_impressed_at,
-                    UserContentStatus.manually_impressed,
-                ).where(
-                    UserContentStatus.user_id == user_id,
-                    UserContentStatus.content_id.in_(impression_ids),
-                    UserContentStatus.last_impressed_at.isnot(None),
-                )
-                rows = (await s.execute(stmt)).all()
-                return {
-                    row.content_id: (row.last_impressed_at, row.manually_impressed)
-                    for row in rows
-                }
+                try:
+                    stmt = select(
+                        UserContentStatus.content_id,
+                        UserContentStatus.last_impressed_at,
+                        UserContentStatus.manually_impressed,
+                    ).where(
+                        UserContentStatus.user_id == user_id,
+                        UserContentStatus.content_id.in_(impression_ids),
+                        UserContentStatus.last_impressed_at.isnot(None),
+                    )
+                    rows = (await s.execute(stmt)).all()
+                    return {
+                        row.content_id: (row.last_impressed_at, row.manually_impressed)
+                        for row in rows
+                    }
+                finally:
+                    await s.rollback()  # hotfix 2026-04-28 idle-in-tx
 
         (
             (source_affinity_scores, user_custom_topics),
