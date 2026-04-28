@@ -56,10 +56,6 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/facteur_widget_info" />
         </receiver>
-        <service
-            android:name=".FacteurWidgetService"
-            android:permission="android.permission.BIND_REMOTEVIEWS"
-            android:exported="false" />
 
         <!-- Required for flutter_local_notifications scheduled notifications -->
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
