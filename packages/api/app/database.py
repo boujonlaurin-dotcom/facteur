@@ -146,17 +146,76 @@ async_session_maker = async_sessionmaker(
 )
 
 
+# Defaults pushed via SET LOCAL au début de CHAQUE session (helper +
+# get_db). Pourquoi SET LOCAL et pas connect_args : Supavisor en mode
+# transaction pooling ne propage PAS les options libpq startup
+# (`-c idle_in_transaction_session_timeout=...`) au backend Postgres
+# — vérifié en prod le 2026-04-28 par `SHOW idle_in_transaction_session_timeout`
+# qui renvoie `0` malgré le connect_args. SET LOCAL est une commande
+# SQL classique, donc transitée transparente par Supavisor → s'applique
+# bien à la tx en cours.
+#
+# Les valeurs : statement_timeout=30s laisse aux endpoints LLM/IO le
+# temps de respirer. idle_in_tx_timeout=10s est agressif : si une
+# coroutine est cancellée entre `execute()` et `rollback()`, Postgres
+# ferme la tx au bout de 10s même si l'app n'envoie rien. C'est ce qui
+# casse le pattern `wait_event=ClientRead` → zombie indéfini observé
+# sur le hot path /api/feed.
+_DEFAULT_STATEMENT_TIMEOUT_MS = 30_000
+_DEFAULT_IDLE_IN_TX_TIMEOUT_MS = 10_000
+
+
+async def _push_session_timeouts(
+    session: AsyncSession,
+    statement_timeout_ms: int,
+    idle_in_tx_timeout_ms: int,
+) -> None:
+    """Pousse `SET LOCAL` au début de la tx pour cap server-side.
+
+    Les `SET LOCAL` ne s'appliquent qu'à la transaction en cours →
+    n'écrasent pas les valeurs des autres sessions du pool. Best-effort :
+    si le SET échoue (DB down, pooler en panique), on laisse passer pour
+    ne pas bloquer la requête utilisateur — `handle_error` se chargera
+    de la connexion morte.
+    """
+    try:
+        await session.execute(
+            text(f"SET LOCAL statement_timeout = {statement_timeout_ms}")
+        )
+        await session.execute(
+            text(
+                f"SET LOCAL idle_in_transaction_session_timeout = {idle_in_tx_timeout_ms}"
+            )
+        )
+    except Exception as exc:
+        logger.debug(
+            "session_set_local_timeouts_failed",
+            error=str(exc),
+            exc_type=type(exc).__name__,
+        )
+
+
 @asynccontextmanager
-async def safe_async_session():
-    """Session ad-hoc avec rollback() garanti en finally.
+async def safe_async_session(
+    *,
+    statement_timeout_ms: int = _DEFAULT_STATEMENT_TIMEOUT_MS,
+    idle_in_tx_timeout_ms: int = _DEFAULT_IDLE_IN_TX_TIMEOUT_MS,
+):
+    """Session ad-hoc avec rollback() garanti + timeouts SET LOCAL.
 
     Hot fix incident 2026-04-28 (zombies `idle in transaction` côté
-    Supavisor) : tout `async with safe_async_session()` direct laisse
+    Supavisor) : tout `async with async_session_maker()` direct laisse
     une transaction implicite ouverte au retour (SQLAlchemy ne rollback
     pas automatiquement à la sortie du context si aucune exception). Le
     pooler Supabase voit alors un slot `idle in transaction`
     indéfiniment ; à 16+ zombies sur 60 slots l'app reçoit des
     connexions inutilisables.
+
+    En complément du rollback() finally — qui ne s'exécute pas si la
+    coroutine est tuée pendant un `await execute()` — on pousse aussi
+    `SET LOCAL idle_in_transaction_session_timeout` côté Postgres pour
+    que le serveur ferme la tx au bout de N secondes, indépendamment du
+    code app et du pooler.
 
     Use ce helper pour TOUS les sites qui n'utilisent pas Depends(get_db).
     Le rollback() en finally est idempotent : après commit() explicite il
@@ -164,6 +223,9 @@ async def safe_async_session():
     """
     async with async_session_maker() as session:
         try:
+            await _push_session_timeouts(
+                session, statement_timeout_ms, idle_in_tx_timeout_ms
+            )
             yield session
         finally:
             try:

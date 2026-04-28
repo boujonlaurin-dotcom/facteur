@@ -229,7 +229,9 @@ class RecommendationService:
             return profile, sources, subtopics
 
         async def _batch_personalization():
-            async with safe_async_session() as s:
+            async with safe_async_session(
+                statement_timeout_ms=8_000, idle_in_tx_timeout_ms=5_000
+            ) as s:
                 pz = await s.scalar(personalization_stmt)
                 digest = await s.scalar(digest_stmt)
                 # Epic 13: Load muted entities (defensive — tolère schema drift)
@@ -514,7 +516,9 @@ class RecommendationService:
             custom_topics_stmt = select(UserTopicProfile).where(
                 UserTopicProfile.user_id == user_id
             )
-            async with safe_async_session() as s:
+            async with safe_async_session(
+                statement_timeout_ms=8_000, idle_in_tx_timeout_ms=5_000
+            ) as s:
                 user_custom_topics = list((await s.scalars(custom_topics_stmt)).all())
             self.user_custom_topics = user_custom_topics
 
@@ -629,7 +633,9 @@ class RecommendationService:
         )
 
         async def _batch_scoring_context():
-            async with safe_async_session() as s:
+            async with safe_async_session(
+                statement_timeout_ms=8_000, idle_in_tx_timeout_ms=5_000
+            ) as s:
                 affinity_rows = (await s.execute(source_affinity_stmt)).all()
                 custom_rows = (await s.scalars(custom_topics_stmt)).all()
                 return self._normalize_affinity(affinity_rows), list(custom_rows)
@@ -637,7 +643,9 @@ class RecommendationService:
         async def _batch_impressions():
             if not impression_ids:
                 return {}
-            async with safe_async_session() as s:
+            async with safe_async_session(
+                statement_timeout_ms=8_000, idle_in_tx_timeout_ms=5_000
+            ) as s:
                 stmt = select(
                     UserContentStatus.content_id,
                     UserContentStatus.last_impressed_at,
