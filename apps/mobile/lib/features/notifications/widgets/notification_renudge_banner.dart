@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../settings/providers/notifications_settings_provider.dart';
 import '../providers/notification_renudge_provider.dart';
@@ -19,10 +20,37 @@ class NotificationRenudgeBanner extends ConsumerStatefulWidget {
 
 class _NotificationRenudgeBannerState
     extends ConsumerState<NotificationRenudgeBanner> {
+  /// Tracking analytics au premier affichage (ne consomme pas le cap).
   bool _trackedShown = false;
+
+  /// Dismiss session-only : tant que l'écran vit, on ne ré-affiche pas après
+  /// un *Pas maintenant*. Au cold start suivant, le cap dur (`renudgeShownCount`
+  /// persisté) prend le relais.
+  bool _dismissedThisSession = false;
+
+  Future<void> _onConfirm() async {
+    final notifier = ref.read(notificationsSettingsProvider.notifier);
+    await notifier.recordRenudgeShown();
+    ref.read(analyticsServiceProvider).trackRenudgeConfirmed();
+    if (!mounted) return;
+    await showNotificationActivationModal(
+      context,
+      ref,
+      trigger: ActivationTrigger.renudge,
+    );
+  }
+
+  Future<void> _onDismiss() async {
+    final notifier = ref.read(notificationsSettingsProvider.notifier);
+    await notifier.recordRenudgeShown();
+    ref.read(analyticsServiceProvider).trackRenudgeDismissed();
+    if (!mounted) return;
+    setState(() => _dismissedThisSession = true);
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_dismissedThisSession) return const SizedBox.shrink();
     final shouldShow = ref.watch(notificationRenudgeShouldShowProvider);
     if (!shouldShow) return const SizedBox.shrink();
 
@@ -31,7 +59,10 @@ class _NotificationRenudgeBannerState
       final count =
           ref.read(notificationsSettingsProvider).renudgeShownCount + 1;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref.read(notificationsSettingsProvider.notifier).recordRenudgeShown();
+        if (!mounted) return;
+        // Marque le slot nudge comme consommé pour la session : aucun autre
+        // nudge (well-informed, etc.) ne s'affichera jusqu'au prochain boot.
+        ref.read(nudgeConsumedThisSessionProvider.notifier).state = true;
         ref
             .read(analyticsServiceProvider)
             .trackRenudgeShown(displayCount: count);
@@ -71,16 +102,7 @@ class _NotificationRenudgeBannerState
             children: [
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () async {
-                    ref
-                        .read(analyticsServiceProvider)
-                        .trackRenudgeConfirmed();
-                    await showNotificationActivationModal(
-                      context,
-                      ref,
-                      trigger: ActivationTrigger.renudge,
-                    );
-                  },
+                  onPressed: _onConfirm,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: colors.primary,
                     shape: RoundedRectangleBorder(
@@ -93,10 +115,7 @@ class _NotificationRenudgeBannerState
               ),
               const SizedBox(width: FacteurSpacing.space2),
               TextButton(
-                onPressed: () {
-                  ref.read(analyticsServiceProvider).trackRenudgeDismissed();
-                  setState(() {}); // banner se ferme via le compteur déjà MAJ
-                },
+                onPressed: _onDismiss,
                 child: Text(
                   'Pas maintenant',
                   style: theme.textTheme.bodyMedium

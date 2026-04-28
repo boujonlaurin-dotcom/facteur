@@ -21,6 +21,11 @@ class NotificationsSettings {
   final int renudgeShownCount;
   final bool emailDigestEnabled;
 
+  /// True dès que la phase load Hive + sync backend (succès OU échec) est
+  /// terminée. Tant que false, ne pas déclencher la modal d'activation
+  /// (sinon les utilisateurs déjà onboardés voient la modal flasher).
+  final bool synced;
+
   const NotificationsSettings({
     this.pushEnabled = false,
     this.preset = NotifPreset.minimaliste,
@@ -31,6 +36,7 @@ class NotificationsSettings {
     this.lastRenudgeAt,
     this.renudgeShownCount = 0,
     this.emailDigestEnabled = false,
+    this.synced = false,
   });
 
   NotificationsSettings copyWith({
@@ -43,6 +49,7 @@ class NotificationsSettings {
     DateTime? lastRenudgeAt,
     int? renudgeShownCount,
     bool? emailDigestEnabled,
+    bool? synced,
   }) {
     return NotificationsSettings(
       pushEnabled: pushEnabled ?? this.pushEnabled,
@@ -54,6 +61,7 @@ class NotificationsSettings {
       lastRenudgeAt: lastRenudgeAt ?? this.lastRenudgeAt,
       renudgeShownCount: renudgeShownCount ?? this.renudgeShownCount,
       emailDigestEnabled: emailDigestEnabled ?? this.emailDigestEnabled,
+      synced: synced ?? this.synced,
     );
   }
 }
@@ -64,8 +72,16 @@ class NotificationsSettingsNotifier
     extends StateNotifier<NotificationsSettings> {
   NotificationsSettingsNotifier(this._ref)
       : super(const NotificationsSettings()) {
-    _loadFromHive();
-    unawaited(_syncFromBackend());
+    unawaited(_bootstrap());
+  }
+
+  Future<void> _bootstrap() async {
+    await _loadFromHive();
+    try {
+      await _syncFromBackend();
+    } finally {
+      if (mounted) state = state.copyWith(synced: true);
+    }
   }
 
   final Ref _ref;
@@ -218,11 +234,14 @@ class NotificationsSettingsNotifier
     required NotifTimeSlot timeSlot,
     required bool osGranted,
   }) async {
+    final now = DateTime.now().toUtc();
     await _commit(state.copyWith(
       pushEnabled: osGranted,
       preset: preset,
       timeSlot: timeSlot,
       modalSeen: true,
+      refusalCount: osGranted ? state.refusalCount : state.refusalCount + 1,
+      lastRefusalAt: osGranted ? state.lastRefusalAt : now,
     ));
   }
 

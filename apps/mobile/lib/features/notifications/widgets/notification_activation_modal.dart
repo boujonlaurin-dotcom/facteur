@@ -12,16 +12,26 @@ import 'time_slot_selector.dart';
 /// Trigger d'affichage de la modal — utilisé pour l'event tracking.
 enum ActivationTrigger { onboarding, update, renudge }
 
-/// Affiche la modal d'activation full-screen.
+/// Affiche la modal d'activation comme dialogue flottant translucide
+/// (pattern aligné sur `digest_welcome_modal.dart`).
 Future<void> showNotificationActivationModal(
   BuildContext context,
   WidgetRef ref, {
   required ActivationTrigger trigger,
 }) {
-  return Navigator.of(context, rootNavigator: true).push(
-    MaterialPageRoute<void>(
-      fullscreenDialog: true,
-      builder: (_) => NotificationActivationModal(trigger: trigger),
+  return showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    barrierColor: Colors.black54,
+    useRootNavigator: true,
+    builder: (_) => Dialog(
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: FacteurSpacing.space4,
+        vertical: FacteurSpacing.space6,
+      ),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: NotificationActivationModal(trigger: trigger),
     ),
   );
 }
@@ -111,39 +121,66 @@ class _NotificationActivationModalState
     final colors = context.facteurColors;
     final theme = Theme.of(context);
 
-    return Scaffold(
-      backgroundColor: colors.backgroundPrimary,
-      body: SafeArea(
+    return Material(
+      color: colors.backgroundPrimary,
+      borderRadius: BorderRadius.circular(FacteurRadius.xl),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(FacteurSpacing.space6),
+          padding: const EdgeInsets.fromLTRB(
+            FacteurSpacing.space4,
+            FacteurSpacing.space6,
+            FacteurSpacing.space4,
+            FacteurSpacing.space4,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(height: FacteurSpacing.space4),
               Text(
-                'Choisis ton rythme',
-                style: theme.textTheme.displaySmall,
+                "Mieux s'informer, à son rythme",
+                style: theme.textTheme.displaySmall
+                    ?.copyWith(fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: FacteurSpacing.space3),
+              const SizedBox(height: FacteurSpacing.space2),
               Text(
-                "Tu veux éviter le trop-plein d'informations ?\n"
-                "Voici comment Facteur t'y aide quotidiennement, en douceur.",
+                "Fatigué·e d'avoir trop d'infos ?",
                 style: theme.textTheme.bodyMedium
                     ?.copyWith(color: colors.textSecondary),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: FacteurSpacing.space6),
+              const SizedBox(height: FacteurSpacing.space4),
+              _BulletPoint(
+                text: "Un message par jour, à l'heure que tu préfères.",
+              ),
+              const SizedBox(height: FacteurSpacing.space2),
+              _BulletPoint(
+                text:
+                    "Pas de breaking news, zéro tactique pour te faire scroller.",
+              ),
+              const SizedBox(height: FacteurSpacing.space2),
+              _BulletPoint(
+                text:
+                    "L'essentiel filtré pour toi, quand tu es prêt·e à le recevoir.",
+              ),
+              const SizedBox(height: FacteurSpacing.space4),
               Text(
-                "Un message par jour, à l'heure que tu préfères.\n"
-                "Zéro breaking news. Pas de tactique pour te faire scroller.\n"
-                "On filtre l'essentiel pour toi, au moment où tu es prêt·e à le recevoir.",
-                style: theme.textTheme.bodyMedium,
+                "Un exemple de ce que Facteur peut t'envoyer :",
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.textSecondary,
+                  fontStyle: FontStyle.italic,
+                ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: FacteurSpacing.space6),
+              const SizedBox(height: FacteurSpacing.space2),
               _NotificationPreview(timeSlot: _timeSlot),
               const SizedBox(height: FacteurSpacing.space6),
+              const _SectionHeader(label: 'Définis ton rythme'),
+              const SizedBox(height: FacteurSpacing.space3),
               PresetSelector(
                 value: _preset,
                 onChanged: (p) {
@@ -153,7 +190,9 @@ class _NotificationActivationModalState
                       .trackModalNotifPresetChanged(preset: p);
                 },
               ),
-              const SizedBox(height: FacteurSpacing.space6),
+              const SizedBox(height: FacteurSpacing.space4),
+              const _SectionHeader(label: 'À quel moment ?'),
+              const SizedBox(height: FacteurSpacing.space3),
               TimeSlotSelector(
                 value: _timeSlot,
                 onChanged: (s) {
@@ -171,8 +210,7 @@ class _NotificationActivationModalState
                   style: ElevatedButton.styleFrom(
                     backgroundColor: colors.primary,
                     shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(FacteurRadius.large),
+                      borderRadius: BorderRadius.circular(FacteurRadius.large),
                     ),
                   ),
                   child: const Text(
@@ -198,6 +236,53 @@ class _NotificationActivationModalState
   }
 }
 
+/// Bullet line "✓ texte" — alternative légère à un paragraphe bloc pour
+/// rendre lisible le pitch de la modal.
+class _BulletPoint extends StatelessWidget {
+  final String text;
+  const _BulletPoint({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.check_rounded, size: 18, color: colors.primary),
+        const SizedBox(width: FacteurSpacing.space2),
+        Expanded(
+          child: Text(
+            text,
+            style: theme.textTheme.bodyMedium,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Mini-titre de section (bodySmall bold, secondaire) pour introduire le
+/// `PresetSelector` et le `TimeSlotSelector`.
+class _SectionHeader extends StatelessWidget {
+  final String label;
+  const _SectionHeader({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final theme = Theme.of(context);
+    return Text(
+      label,
+      style: theme.textTheme.bodySmall?.copyWith(
+        color: colors.textSecondary,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.4,
+      ),
+    );
+  }
+}
+
 /// Preview live de la notification (placeholder visuel — l'icône Facteur
 /// sera fournie par le design ; en attendant on utilise l'emoji 🧑‍✈️).
 class _NotificationPreview extends StatelessWidget {
@@ -209,8 +294,7 @@ class _NotificationPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final theme = Theme.of(context);
-    final timeLabel =
-        timeSlot == NotifTimeSlot.morning ? '07:30' : '19:00';
+    final timeLabel = timeSlot == NotifTimeSlot.morning ? '07:30' : '19:00';
 
     return Semantics(
       label:

@@ -23,8 +23,7 @@ class PresetSelector extends StatelessWidget {
           icon: '🌱',
           label: 'Minimaliste',
           tagline: "L'essentiel, une fois par jour.",
-          description:
-              "Une notification quotidienne, à l'heure choisie. Rien d'autre.",
+          description: "Un message quotidien. Jamais plus !",
           selected: value == NotifPreset.minimaliste,
           onTap: () => onChanged(NotifPreset.minimaliste),
         ),
@@ -32,9 +31,9 @@ class PresetSelector extends StatelessWidget {
         _PresetTile(
           icon: '🔭',
           label: 'Curieux',
-          tagline: "L'essentiel + ce que la commu recommande.",
+          tagline: "L'essentiel & des recos de pépites.",
           description:
-              "Notification quotidienne + 1 pépite par semaine recommandée par les Fact·eur·isses (vendredi 18:00).",
+              "Message quotidien + 1 pépite recommandée par les Fact·eur·isses.",
           selected: value == NotifPreset.curieux,
           onTap: () => onChanged(NotifPreset.curieux),
         ),
@@ -72,9 +71,7 @@ class _PresetTile extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(FacteurSpacing.space4),
           decoration: BoxDecoration(
-            color: selected
-                ? colors.primary.withOpacity(0.08)
-                : colors.surface,
+            color: selected ? colors.primary.withOpacity(0.08) : colors.surface,
             border: Border.all(
               color: selected ? colors.primary : colors.surfaceElevated,
               width: selected ? 2 : 1,

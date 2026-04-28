@@ -8,6 +8,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -73,10 +74,23 @@ async def _get_or_create(
     if row:
         return row
 
-    row = UserNotificationPreferences(user_id=user_id)
-    db.add(row)
+    # Race-safe : si une requête concurrente a déjà inséré la row, ON CONFLICT
+    # DO NOTHING évite la unique-violation puis on re-SELECT (résultat garanti
+    # non-null grâce à la PK user_id).
+    stmt = (
+        pg_insert(UserNotificationPreferences)
+        .values(user_id=user_id)
+        .on_conflict_do_nothing(index_elements=["user_id"])
+    )
+    await db.execute(stmt)
     await db.commit()
-    await db.refresh(row)
+
+    row = await db.scalar(
+        select(UserNotificationPreferences).where(
+            UserNotificationPreferences.user_id == user_id
+        )
+    )
+    assert row is not None
     return row
 
 
