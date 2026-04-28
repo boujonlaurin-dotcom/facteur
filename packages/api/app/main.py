@@ -272,9 +272,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
             async with _STARTUP_CATCHUP_LOCK:
                 try:
-                    from datetime import datetime
-                    from zoneinfo import ZoneInfo
-
                     from sqlalchemy import func
                     from sqlalchemy import select as sa_select
 
@@ -282,11 +279,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     from app.jobs.digest_generation_job import run_digest_generation
                     from app.models.daily_digest import DailyDigest
                     from app.models.user import UserProfile
+                    from app.utils.time import now_paris
+                    from app.workers.scheduler import DIGEST_CRON_HOUR_PARIS
 
                     await asyncio.sleep(60)
 
+                    # Avant l'heure du cron, on laisse le scheduler générer à
+                    # 06:00 Paris : un deploy Railway entre 00:00 et 06:00
+                    # déclencherait sinon une génération à minuit avec un RSS
+                    # pas encore rafraîchi → digest pauvre.
+                    now = now_paris()
+                    if now.hour < DIGEST_CRON_HOUR_PARIS:
+                        logger.info(
+                            "digest_startup_catchup_too_early",
+                            now_paris=str(now),
+                            target_date=str(now.date()),
+                            cron_hour=DIGEST_CRON_HOUR_PARIS,
+                        )
+                        return
+
                     async with safe_async_session() as session:
-                        today = datetime.now(ZoneInfo("Europe/Paris")).date()
+                        today = now.date()
 
                         total_users = await session.scalar(
                             sa_select(func.count()).select_from(UserProfile)

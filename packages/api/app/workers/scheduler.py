@@ -17,6 +17,12 @@ settings = get_settings()
 
 _PARIS_TZ = pytz.timezone("Europe/Paris")
 
+# Hour (Paris) at which the daily digest cron fires. Imported by the
+# startup catchup in app/main.py so it never generates earlier than the
+# scheduled cron — avoids midnight regenerations on late-evening Railway
+# deploys (RSS not yet refreshed → poor digest content).
+DIGEST_CRON_HOUR_PARIS = 6
+
 scheduler: AsyncIOScheduler | None = None
 
 
@@ -177,7 +183,7 @@ def start_scheduler() -> None:
     # coalesce=True: pas de double exécution si plusieurs triggers rattrapés.
     scheduler.add_job(
         run_digest_generation,
-        trigger=CronTrigger(hour=6, minute=0, timezone=_PARIS_TZ),
+        trigger=CronTrigger(hour=DIGEST_CRON_HOUR_PARIS, minute=0, timezone=_PARIS_TZ),
         id="daily_digest",
         name="Daily Digest Generation",
         replace_existing=True,
