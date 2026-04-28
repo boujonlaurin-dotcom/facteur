@@ -5,14 +5,14 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/widget_root_bg"
-    android:padding="14dp">
+    android:padding="16dp">
 
     <!-- Header: Facteur wordmark + streak end-aligned -->
     <RelativeLayout
         android:id="@+id/widget_header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="2dp">
+        android:layout_marginBottom="4dp">
 
         <TextView
             android:id="@+id/app_name"
@@ -45,7 +45,8 @@
         android:layout_marginBottom="10dp"
         android:gravity="center"
         android:text="L'Essentiel du jour"
-        android:textSize="12sp"
+        android:textSize="13sp"
+        android:fontFamily="sans-serif"
         android:textColor="@color/facteur_text_secondary" />
 
     <!-- Stale banner (shown when articles_updated_at > 36h) -->

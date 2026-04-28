@@ -2,7 +2,13 @@ package com.example.facteur
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.RectF
 import android.net.Uri
 import android.util.Log
 import android.view.View
@@ -56,12 +62,13 @@ class FacteurWidgetRemoteViewsFactory(
     override fun onDataSetChanged() {
         rows.clear()
         try {
-            val data = HomeWidgetPlugin.getData(context) ?: run {
-                rows.add(placeholderRow("Ouvre Facteur pour charger ton essentiel"))
-                return
-            }
-            val json = data.getString("articles_json", null)
-            if (json.isNullOrBlank() || json == "[]") {
+            val data = HomeWidgetPlugin.getData(context)
+            val json = data?.getString("articles_json", null)
+            Log.d(
+                TAG,
+                "onDataSetChanged: data=${data != null} json.len=${json?.length ?: -1}",
+            )
+            if (data == null || json.isNullOrBlank() || json == "[]") {
                 rows.add(placeholderRow("Ouvre Facteur pour charger ton essentiel"))
                 return
             }
@@ -73,8 +80,9 @@ class FacteurWidgetRemoteViewsFactory(
             if (rows.isEmpty()) {
                 rows.add(placeholderRow("Ouvre Facteur pour charger ton essentiel"))
             }
+            Log.d(TAG, "onDataSetChanged: rows=${rows.size}")
         } catch (e: Exception) {
-            Log.w(TAG, "onDataSetChanged failed: ${e.message}")
+            Log.w(TAG, "onDataSetChanged failed", e)
             rows.clear()
             rows.add(placeholderRow("Ouvre Facteur pour charger ton essentiel"))
         }
@@ -84,9 +92,16 @@ class FacteurWidgetRemoteViewsFactory(
         rows.clear()
     }
 
-    override fun getCount(): Int = rows.size
+    override fun getCount(): Int = if (rows.isEmpty()) 1 else rows.size
 
-    override fun getViewAt(position: Int): RemoteViews {
+    override fun getViewAt(position: Int): RemoteViews = try {
+        buildViewAt(position)
+    } catch (e: Exception) {
+        Log.w(TAG, "getViewAt($position) failed", e)
+        placeholderViews("Ouvre Facteur pour charger ton essentiel")
+    }
+
+    private fun buildViewAt(position: Int): RemoteViews {
         val row = rows.getOrNull(position) ?: return placeholderViews(
             "Ouvre Facteur pour charger ton essentiel"
         )
@@ -105,8 +120,8 @@ class FacteurWidgetRemoteViewsFactory(
         )
         rv.setTextViewText(R.id.row_title, row.title)
 
-        // Thumbnail
-        val thumb = loadBitmap(row.thumbnailPath)
+        // Thumbnail (rounded 8dp corners)
+        val thumb = loadBitmap(row.thumbnailPath)?.let { roundCorners(it, 8f) }
         if (thumb != null) {
             rv.setImageViewBitmap(R.id.row_thumbnail, thumb)
             rv.setViewVisibility(R.id.row_thumbnail, View.VISIBLE)
@@ -213,7 +228,20 @@ class FacteurWidgetRemoteViewsFactory(
         return rv
     }
 
-    private fun loadBitmap(path: String?): android.graphics.Bitmap? {
+    private fun roundCorners(src: Bitmap, radiusDp: Float): Bitmap {
+        val density = context.resources.displayMetrics.density
+        val r = radiusDp * density
+        val output = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(output)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val rect = RectF(0f, 0f, src.width.toFloat(), src.height.toFloat())
+        canvas.drawRoundRect(rect, r, r, paint)
+        paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+        canvas.drawBitmap(src, 0f, 0f, paint)
+        return output
+    }
+
+    private fun loadBitmap(path: String?): Bitmap? {
         if (path.isNullOrBlank()) return null
         return try {
             val file = File(path)
