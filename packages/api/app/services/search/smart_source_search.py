@@ -13,7 +13,7 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.database import async_session_maker
+from app.database import safe_async_session
 from app.models.enums import SourceType
 from app.models.host_feed_resolution import HostFeedResolution
 from app.models.source import Source
@@ -147,7 +147,7 @@ async def _record_search_log(
         for r in results[:5]
     ]
     try:
-        async with async_session_maker() as session:
+        async with safe_async_session() as session:
             session.add(
                 SourceSearchLog(
                     user_id=UUID(user_id),
@@ -175,7 +175,7 @@ async def mark_search_abandoned(user_id: str, query: str) -> None:
     """Flag the most recent matching search log as abandoned."""
     normalized = normalize_query(query)
     try:
-        async with async_session_maker() as session:
+        async with safe_async_session() as session:
             await session.execute(
                 text(
                     """
@@ -754,7 +754,7 @@ class SmartSourceSearchService:
             return await self._try_detect_feed(url)
 
         try:
-            async with async_session_maker() as session:
+            async with safe_async_session() as session:
                 row = await session.execute(
                     select(HostFeedResolution).where(
                         HostFeedResolution.host == key,
@@ -790,7 +790,7 @@ class SmartSourceSearchService:
         now = datetime.now(UTC)
         expires = now + timedelta(days=ttl_days)
         try:
-            async with async_session_maker() as session:
+            async with safe_async_session() as session:
                 await session.execute(
                     text(
                         """

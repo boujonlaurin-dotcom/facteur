@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import async_session_maker, get_db
+from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
 from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.source import Source
@@ -63,7 +63,7 @@ async def _log_failed_source_attempt(
     # rollback-on-BaseException (database.py:257) which would otherwise erase
     # the insert.
     try:
-        async with async_session_maker() as session:
+        async with safe_async_session() as session:
             session.add(
                 FailedSourceAttempt(
                     user_id=UUID(user_id),

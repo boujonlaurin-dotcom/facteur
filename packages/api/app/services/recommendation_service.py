@@ -196,7 +196,7 @@ class RecommendationService:
 
         from sqlalchemy.orm import joinedload
 
-        from app.database import async_session_maker
+        from app.database import safe_async_session
         from app.models.daily_digest import DailyDigest
         from app.models.user_personalization import UserPersonalization
 
@@ -229,7 +229,7 @@ class RecommendationService:
             return profile, sources, subtopics
 
         async def _batch_personalization():
-            async with async_session_maker() as s:
+            async with safe_async_session() as s:
                 pz = await s.scalar(personalization_stmt)
                 digest = await s.scalar(digest_stmt)
                 # Epic 13: Load muted entities (defensive — tolère schema drift)
@@ -514,7 +514,7 @@ class RecommendationService:
             custom_topics_stmt = select(UserTopicProfile).where(
                 UserTopicProfile.user_id == user_id
             )
-            async with async_session_maker() as s:
+            async with safe_async_session() as s:
                 user_custom_topics = list((await s.scalars(custom_topics_stmt)).all())
             self.user_custom_topics = user_custom_topics
 
@@ -629,7 +629,7 @@ class RecommendationService:
         )
 
         async def _batch_scoring_context():
-            async with async_session_maker() as s:
+            async with safe_async_session() as s:
                 affinity_rows = (await s.execute(source_affinity_stmt)).all()
                 custom_rows = (await s.scalars(custom_topics_stmt)).all()
                 return self._normalize_affinity(affinity_rows), list(custom_rows)
@@ -637,7 +637,7 @@ class RecommendationService:
         async def _batch_impressions():
             if not impression_ids:
                 return {}
-            async with async_session_maker() as s:
+            async with safe_async_session() as s:
                 stmt = select(
                     UserContentStatus.content_id,
                     UserContentStatus.last_impressed_at,

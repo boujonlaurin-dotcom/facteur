@@ -111,7 +111,7 @@ def _schedule_background_regen(
 
     async def _regen() -> None:
         # Local import to avoid circulars
-        from app.database import async_session_maker
+        from app.database import safe_async_session
         from app.services.digest_generation_state_service import (
             mark_failed as _state_mark_failed,
         )
@@ -133,7 +133,7 @@ def _schedule_background_regen(
             return
 
         try:
-            async with async_session_maker() as bg_session:
+            async with safe_async_session() as bg_session:
                 bg_svc = DigestService(bg_session)
                 try:
                     # Check if a modern-format digest already exists.
@@ -179,7 +179,7 @@ def _schedule_background_regen(
                     # Record the failure in a fresh session so rollback
                     # doesn't wipe the observability row.
                     try:
-                        async with async_session_maker() as err_session:
+                        async with safe_async_session() as err_session:
                             await _state_mark_failed(
                                 err_session,
                                 user_id,

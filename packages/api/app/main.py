@@ -278,14 +278,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     from sqlalchemy import func
                     from sqlalchemy import select as sa_select
 
-                    from app.database import async_session_maker
+                    from app.database import safe_async_session
                     from app.jobs.digest_generation_job import run_digest_generation
                     from app.models.daily_digest import DailyDigest
                     from app.models.user import UserProfile
 
                     await asyncio.sleep(60)
 
-                    async with async_session_maker() as session:
+                    async with safe_async_session() as session:
                         today = datetime.now(ZoneInfo("Europe/Paris")).date()
 
                         total_users = await session.scalar(

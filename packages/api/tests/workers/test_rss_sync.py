@@ -6,7 +6,7 @@ import pytest
 
 
 def _make_session_cm():
-    """Build a mock async_session_maker() that tracks rollback/commit on the
+    """Build a mock safe_async_session() that tracks rollback/commit on the
     session yielded to the worker.
     """
     session = AsyncMock()
@@ -32,7 +32,7 @@ async def test_sync_all_sources_releases_outer_session():
     maker, session = _make_session_cm()
 
     with patch(
-        "app.workers.rss_sync.async_session_maker", maker
+        "app.workers.rss_sync.safe_async_session", maker
     ), patch("app.workers.rss_sync.SyncService") as MockService:
         instance = MockService.return_value
         instance.sync_all_sources = AsyncMock(
@@ -59,7 +59,7 @@ async def test_sync_source_releases_outer_session_on_not_found():
     session.execute = AsyncMock(return_value=exec_result)
 
     with patch(
-        "app.workers.rss_sync.async_session_maker", maker
+        "app.workers.rss_sync.safe_async_session", maker
     ), patch("app.workers.rss_sync.SyncService") as MockService:
         instance = MockService.return_value
         instance.process_source = AsyncMock()

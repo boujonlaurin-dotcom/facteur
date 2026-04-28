@@ -1,6 +1,7 @@
 """Configuration de la base de données avec SQLAlchemy async."""
 
 import time
+from contextlib import asynccontextmanager
 
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -77,7 +78,17 @@ if _use_queue_pool:
             # rare où le middleware request-budget ne peut pas annuler
             # la task parce qu'elle est bloquée sur un I/O bas niveau.
             # Note libpq syntax : "-c statement_timeout=30000" (millisecondes).
-            "options": "-c statement_timeout=30000",
+            #
+            # Hot fix idle-in-tx zombies (incident 2026-04-28) :
+            # `idle_in_transaction_session_timeout=60000` → Postgres tue
+            # automatiquement toute transaction restée idle plus de 60 s.
+            # Filet de sécurité serveur indépendant du code app, au cas où
+            # un site ad-hoc oublie le rollback() en finally (cf.
+            # `safe_async_session` plus bas pour la couche app).
+            "options": (
+                "-c statement_timeout=30000 "
+                "-c idle_in_transaction_session_timeout=60000"
+            ),
         },
     )
 else:
@@ -133,6 +144,36 @@ async_session_maker = async_sessionmaker(
     autocommit=False,
     autoflush=False,
 )
+
+
+@asynccontextmanager
+async def safe_async_session():
+    """Session ad-hoc avec rollback() garanti en finally.
+
+    Hot fix incident 2026-04-28 (zombies `idle in transaction` côté
+    Supavisor) : tout `async with safe_async_session()` direct laisse
+    une transaction implicite ouverte au retour (SQLAlchemy ne rollback
+    pas automatiquement à la sortie du context si aucune exception). Le
+    pooler Supabase voit alors un slot `idle in transaction`
+    indéfiniment ; à 16+ zombies sur 60 slots l'app reçoit des
+    connexions inutilisables.
+
+    Use ce helper pour TOUS les sites qui n'utilisent pas Depends(get_db).
+    Le rollback() en finally est idempotent : après commit() explicite il
+    ne fait rien, mais protège les chemins read-only et les exceptions.
+    """
+    async with async_session_maker() as session:
+        try:
+            yield session
+        finally:
+            try:
+                await session.rollback()
+            except Exception as exc:
+                logger.debug(
+                    "session_rollback_failed_in_finally",
+                    error=str(exc),
+                    exc_type=type(exc).__name__,
+                )
 
 
 # Round 3 fix (docs/bugs/bug-infinite-load-requests.md — Sentry PYTHON-4/5/6) :
@@ -273,7 +314,7 @@ async def get_db() -> AsyncSession:
     originale du handler. Sinon Starlette/Sentry capturent une cascade confuse
     de PendingRollbackError au lieu de la vraie cause.
     """
-    async with async_session_maker() as session:
+    async with safe_async_session() as session:
         try:
             yield session
             await session.commit()

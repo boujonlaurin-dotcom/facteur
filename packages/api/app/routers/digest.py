@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import async_session_maker, get_db
+from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
 from app.models.daily_digest import DailyDigest
 from app.schemas.digest import (
@@ -451,7 +451,7 @@ async def generate_digest(
     # Cf. bug-infinite-load-requests.md (P1) — la pipeline éditoriale doit
     # pouvoir ouvrir ses propres sessions courtes hors de la session FastAPI
     # pour libérer la connexion au pool pendant 3-5 min de travail LLM.
-    service = DigestService(db, session_maker=async_session_maker)
+    service = DigestService(db, session_maker=safe_async_session)
     user_uuid = UUID(current_user_id)
 
     # Round 2 fix (item 4) : wait_for sur la génération — même motif que
