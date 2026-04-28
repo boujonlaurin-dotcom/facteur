@@ -304,7 +304,7 @@ class _NotificationPreview extends StatelessWidget {
 
     return Semantics(
       label:
-          "Aperçu de la notification : Facteur, $timeLabel, Facteur passé ! Ton récap du jour t'attend.",
+          "Aperçu de la notification : Facteur, $timeLabel, Le facteur est passé ! Ton récap du jour t'attend.",
       child: Container(
         padding: const EdgeInsets.all(FacteurSpacing.space4),
         decoration: BoxDecoration(
@@ -345,7 +345,8 @@ class _NotificationPreview extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 2),
-                  const Text("Facteur passé ! Ton récap du jour t'attend."),
+                  const Text(
+                      "Le facteur est passé ! Ton récap du jour t'attend."),
                 ],
               ),
             ),

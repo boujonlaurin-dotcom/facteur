@@ -123,16 +123,16 @@ class PushNotificationService {
   // --- Copy variants -------------------------------------------------------
 
   /// Variante A — défaut, sans teaser éditorial.
-  static const String defaultTitle = 'Facteur passé !';
+  static const String defaultTitle = 'Le facteur est passé !';
   static const String defaultBody = "Ton récap du jour t'attend.";
 
   /// Variante C — déclenchée manuellement par l'éditorial (hors v1).
-  static const String calmTitle = 'Facteur passé !';
+  static const String calmTitle = 'Le facteur est passé !';
   static const String calmBody =
       "Rien d'important dans l'actu aujourd'hui. Belle journée !";
 
   /// Pépite communauté hebdo (vendredi 18:00, préset Curieux).
-  static const String communityTitle = 'Facteur passé !';
+  static const String communityTitle = 'Le facteur est passé !';
   static const String communityBody =
       "Les Fact·eur·isses adorent cet article. Jette-y un œil quand tu as 2 min !";
 
@@ -152,9 +152,8 @@ class PushNotificationService {
           return (title: defaultTitle, body: defaultBody);
         }
         final trimmed = teaser.trim();
-        final clipped = trimmed.length > 60
-            ? '${trimmed.substring(0, 57)}…'
-            : trimmed;
+        final clipped =
+            trimmed.length > 60 ? '${trimmed.substring(0, 57)}…' : trimmed;
         return (
           title: 'Je suis passé.',
           body: 'À la une : $clipped',
@@ -190,8 +189,7 @@ class PushNotificationService {
     final androidDetails = AndroidNotificationDetails(
       'digest_channel',
       'Digest quotidien',
-      channelDescription:
-          'Notification quotidienne quand ton récap est prêt',
+      channelDescription: 'Notification quotidienne quand ton récap est prêt',
       importance: Importance.high,
       priority: Priority.high,
       icon: '@drawable/ic_stat_facteur',
@@ -246,8 +244,7 @@ class PushNotificationService {
     final androidDetails = AndroidNotificationDetails(
       'community_channel',
       'Pépite communauté',
-      channelDescription:
-          'Recommandation hebdomadaire des Fact·eur·isses',
+      channelDescription: 'Recommandation hebdomadaire des Fact·eur·isses',
       importance: Importance.high,
       priority: Priority.high,
       icon: '@drawable/ic_stat_facteur',
@@ -270,7 +267,8 @@ class PushNotificationService {
       ),
       androidScheduleMode: scheduleMode,
       matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
-      payload: articleId != null ? 'route:/article/$articleId' : 'route:/digest',
+      payload:
+          articleId != null ? 'route:/article/$articleId' : 'route:/digest',
     );
 
     debugPrint(
