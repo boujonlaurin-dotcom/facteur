@@ -57,7 +57,7 @@ class PushNotificationService {
     // est un fallback v1 — remplacer par @drawable/ic_stat_facteur dès que l'asset
     // dédié est fourni (cf plan §3 Icône notif).
     const androidSettings =
-        AndroidInitializationSettings('@drawable/ic_launcher_foreground');
+        AndroidInitializationSettings('@drawable/ic_stat_facteur');
 
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
@@ -194,7 +194,7 @@ class PushNotificationService {
           'Notification quotidienne quand ton récap est prêt',
       importance: Importance.high,
       priority: Priority.high,
-      icon: '@drawable/ic_launcher_foreground',
+      icon: '@drawable/ic_stat_facteur',
       largeIcon: const DrawableResourceAndroidBitmap('facteur_avatar'),
       styleInformation: BigTextStyleInformation(
         copy.body,
@@ -250,7 +250,7 @@ class PushNotificationService {
           'Recommandation hebdomadaire des Fact·eur·isses',
       importance: Importance.high,
       priority: Priority.high,
-      icon: '@drawable/ic_launcher_foreground',
+      icon: '@drawable/ic_stat_facteur',
       largeIcon: const DrawableResourceAndroidBitmap('facteur_avatar'),
       styleInformation: BigTextStyleInformation(
         communityBody,

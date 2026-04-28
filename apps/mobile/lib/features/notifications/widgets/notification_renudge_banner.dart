@@ -89,14 +89,11 @@ class _NotificationRenudgeBannerState
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.asset(
-                  'assets/notifications/facteur_avatar.png',
-                  width: 56,
-                  height: 56,
-                  fit: BoxFit.cover,
-                ),
+              Image.asset(
+                'assets/notifications/facteur_bike.png',
+                width: 72,
+                height: 72,
+                fit: BoxFit.contain,
               ),
               const SizedBox(width: FacteurSpacing.space3),
               Expanded(

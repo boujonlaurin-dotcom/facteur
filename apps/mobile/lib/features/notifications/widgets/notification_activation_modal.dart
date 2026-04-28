@@ -149,8 +149,8 @@ class _NotificationActivationModalState
               const SizedBox(height: FacteurSpacing.space3),
               Center(
                 child: Image.asset(
-                  'assets/notifications/facteur_avatar.png',
-                  height: 96,
+                  'assets/notifications/facteur_bike.png',
+                  height: 140,
                   fit: BoxFit.contain,
                 ),
               ),
@@ -220,7 +220,7 @@ class _NotificationActivationModalState
                     ),
                   ),
                   child: const Text(
-                    'Activer mon Facteur journalier',
+                    'Activer ton Facteur',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
