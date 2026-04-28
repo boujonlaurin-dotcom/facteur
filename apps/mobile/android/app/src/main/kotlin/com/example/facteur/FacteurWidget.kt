@@ -38,10 +38,10 @@ class FacteurWidget : AppWidgetProvider() {
         for (appWidgetId in appWidgetIds) {
             try {
                 val views = RemoteViews(context.packageName, R.layout.facteur_widget)
-                val data = HomeWidgetPlugin.getData(context)
+                val prefs = HomeWidgetPlugin.getData(context)
 
                 // Header — streak
-                val streak = data?.getString("streak", "0")?.toIntOrNull() ?: 0
+                val streak = prefs?.getString("streak", "0")?.toIntOrNull() ?: 0
                 if (streak > 0) {
                     views.setTextViewText(R.id.streak_text, "🔥 ${streak}j")
                 } else {
@@ -49,7 +49,7 @@ class FacteurWidget : AppWidgetProvider() {
                 }
 
                 // Subtitle reflects digest progress when known
-                val subtitle = when (data?.getString("digest_status", "none")) {
+                val subtitle = when (prefs?.getString("digest_status", "none")) {
                     "completed" -> "Essentiel du jour complété ✓"
                     "in_progress" -> "Continue ton essentiel"
                     "available" -> "L'Essentiel du jour"
@@ -58,7 +58,7 @@ class FacteurWidget : AppWidgetProvider() {
                 views.setTextViewText(R.id.subtitle, subtitle)
 
                 // Stale banner
-                val updatedAt = data?.getString("articles_updated_at", "0")
+                val updatedAt = prefs?.getString("articles_updated_at", "0")
                     ?.toLongOrNull() ?: 0L
                 val isStale = updatedAt > 0 &&
                     (System.currentTimeMillis() - updatedAt) > STALE_THRESHOLD_MS
