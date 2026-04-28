@@ -83,3 +83,68 @@ async def test_safe_async_session_swallows_rollback_failure():
             assert session is mock_session
 
     mock_session.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_safe_async_session_expunges_before_rollback_no_detached_error():
+    """Régression critique 2026-04-28 PYTHON-2X (260+ events) :
+    `await session.rollback()` en finally expirait tous les objets ORM
+    persistants. Sites qui retournent un objet hors du `async with`
+    (ex `_batch_personalization` → UserPersonalization) avaient
+    `DetachedInstanceError` au prochain accès attribut → /api/feed 500.
+
+    Fix : `expunge_all()` AVANT rollback. Garantit que :
+    1. expunge_all est appelé (détache les objets, pas d'expiry par
+       rollback ensuite).
+    2. expunge_all est appelé AVANT rollback (ordre critique — l'inverse
+       expirerait avant de détacher).
+    3. rollback est toujours appelé (zombie defense intacte).
+    """
+    from unittest.mock import MagicMock
+
+    call_order: list[str] = []
+    mock_session = AsyncMock()
+    mock_session.expunge_all = MagicMock(
+        side_effect=lambda: call_order.append("expunge")
+    )
+
+    async def _track_rollback():
+        call_order.append("rollback")
+
+    mock_session.rollback = AsyncMock(side_effect=_track_rollback)
+
+    fake_factory_cm = AsyncMock()
+    fake_factory_cm.__aenter__.return_value = mock_session
+    fake_factory_cm.__aexit__.return_value = None
+
+    with patch.object(database, "async_session_maker", return_value=fake_factory_cm):
+        async with database.safe_async_session() as session:
+            assert session is mock_session
+
+    mock_session.expunge_all.assert_called_once()
+    mock_session.rollback.assert_awaited_once()
+    # Ordre : expunge AVANT rollback. Sinon rollback expire ce qui reste
+    # attaché → DetachedInstanceError à l'accès .relationship downstream.
+    assert call_order == ["expunge", "rollback"], call_order
+
+
+@pytest.mark.asyncio
+async def test_safe_async_session_swallows_expunge_failure():
+    """expunge_all() ne doit jamais bloquer le rollback derrière —
+    sinon une session corrompue empêcherait le ROLLBACK SQL d'être
+    envoyé → retour à zero des zombies.
+    """
+    from unittest.mock import MagicMock
+
+    mock_session = AsyncMock()
+    mock_session.expunge_all = MagicMock(side_effect=RuntimeError("session corrupted"))
+    fake_factory_cm = AsyncMock()
+    fake_factory_cm.__aenter__.return_value = mock_session
+    fake_factory_cm.__aexit__.return_value = None
+
+    with patch.object(database, "async_session_maker", return_value=fake_factory_cm):
+        async with database.safe_async_session() as session:
+            assert session is mock_session
+
+    # rollback DOIT être appelé même si expunge a planté.
+    mock_session.rollback.assert_awaited_once()
