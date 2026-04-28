@@ -39,6 +39,10 @@ class FacteurWidget : AppWidgetProvider() {
             try {
                 val views = RemoteViews(context.packageName, R.layout.facteur_widget)
                 val prefs = HomeWidgetPlugin.getData(context)
+                Log.d(
+                    TAG,
+                    "onUpdate: id=$appWidgetId data=${prefs != null} json.len=${prefs?.getString("articles_json", null)?.length ?: -1}",
+                )
 
                 // Header — streak
                 val streak = prefs?.getString("streak", "0")?.toIntOrNull() ?: 0
