@@ -1,101 +1,63 @@
-# QA Handoff — Perf & UX de "Ajout de source custom"
+# QA Handoff — Recherche de sources (qualité + observabilité)
 
-> Feature branch : `boujonlaurin-dotcom/add-source-perf`
-> Bug doc : `docs/bugs/bug-add-source-search-perf.md`
+> Branche : `boujonlaurin-dotcom/source-search-fix` → cible `main`
+> Bug doc : `docs/bugs/bug-source-search-quality.md`
+> Diag : `.context/source-search-diag.md`
 
 ## Feature développée
 
-Trois correctifs groupés sur l'écran d'ajout de source custom :
-1. **Perf** : short-circuit agressif du pipeline de recherche quand le nom matche fort en DB (catalog seul → <500 ms attendus).
-2. **Filtres** : les 5 badges (Médias, Newsletters, YouTube, Reddit, Podcasts) deviennent des `ChoiceChip`s cliquables. Sélection = filtre par type côté backend + skip des layers externes non pertinents.
-3. **Élargir la recherche** : bouton qui apparaît sous les résultats quand seul le catalog a répondu → relance le pipeline complet (`expand: true`).
-4. **Skeleton** : messages plus lents (800 ms/dot, ~4.8 s/message) et plus variés (6 messages) pour une sensation moins "fake".
+Refonte du pipeline `POST /sources/smart-search` : drop strict des résultats sans feed RSS détecté, filtre listicle/denylist, fallback root host, catalog accent-insensible + fuzzy `pg_trgm`, court-circuit dès 1 hit curated, log universel dans nouvelle table `source_search_logs`.
+
+## Pré-requis QA — migration manuelle Supabase
+
+À exécuter dans Supabase Studio Editor SQL **avant déploiement Railway** :
+
+```sql
+CREATE EXTENSION IF NOT EXISTS unaccent;
+-- Puis le DDL de ssq01_create_source_search_logs (cf. alembic/versions)
+```
 
 ## Écrans impactés
 
-| Écran | Route | Modifié / Nouveau |
-|-------|-------|-------------------|
-| Ajouter une source | `/sources/add` | Modifié |
+| Écran | Route mobile | Statut |
+|-------|--------------|--------|
+| Ajouter une source | `add_source_screen.dart` | Modifié (logique backend uniquement) |
 
 ## Scénarios de test
 
-### Scénario 1 : Recherche rapide d'une source curated (happy path perf)
-**Parcours** :
-1. Ouvrir "Ajouter une source".
-2. Taper "Mediapart" dans le champ de recherche et valider.
+### S1 — Source curated mainstream (happy path)
+Taper `mediapart`. Attendu : Mediapart en tête, `layers_called == ["catalog"]`, latence < 500 ms, zéro listicle.
 
-**Résultat attendu** :
-- Les résultats s'affichent en moins de 500 ms.
-- La source "Mediapart" est dans les résultats.
-- Un bouton **"Élargir la recherche"** apparaît en bas des résultats.
-- Sous le bouton, le texte « Cherche aussi sur YouTube, Reddit et le web. » est visible.
+### S2 — Accent / typo
+Taper `arret sur images` (sans accent), puis `mediapar`. Attendu : `Arrêt sur Images` et `Mediapart` apparaissent — `unaccent + pg_trgm` doivent matcher.
 
-### Scénario 2 : Élargir la recherche
-**Parcours** :
-1. Après le scénario 1, taper le bouton "Élargir la recherche".
+### S2-bis — Sources FR indépendantes hors catalog (pipeline externe)
+Taper successivement `politis`, `disclose`, `le media`, `frustration magazine`, `mediacites`.
+Attendu pour chacun : la pipeline externe (Brave + Google News + root-host fallback) doit retrouver le site officiel et résoudre son feed RSS. Pas de listicle. Premier résultat = la source attendue (politis.fr, disclose.ngo, lemediatv.fr, frustrationmagazine.fr, mediacites.fr).
 
-**Résultat attendu** :
-- Le skeleton réapparaît brièvement.
-- De nouveaux résultats externes s'ajoutent (YouTube / Brave / GoogleNews).
-- Le bouton "Élargir la recherche" disparaît après cette relance.
+### S3 — Requête thématique large (anti-listicle)
+Taper `political news`. Attendu : **zéro** résultat type "60 Best…" / "Top 100…". Si rien n'est trouvable, liste vide + CTA "Élargir la recherche" plutôt que des articles SEO.
 
-### Scénario 3 : Filtrer par YouTube
-**Parcours** :
-1. Clear la recherche précédente.
-2. Sélectionner la chip **YouTube**.
-3. Taper "fireship" et valider.
+### S4 — YouTube handle
+Taper `@HugoDecrypte`. Attendu : chaîne résolue (layer `youtube`), feed présent.
 
-**Résultat attendu** :
-- Seuls des résultats de type YouTube remontent.
-- La latence doit être réduite (Brave/Google/Mistral sont skippés).
+### S5 — Élargir la recherche
+Taper `mediapart` puis tap sur "Élargir la recherche". Attendu : pipeline complet, mais toujours aucun résultat sans `feed_url`.
 
-### Scénario 4 : Médias et Newsletters = même filtre
-**Parcours** :
-1. Taper "substack" et valider.
-2. Sélectionner chip **Médias** → noter les résultats.
-3. Sélectionner chip **Newsletters** → noter les résultats.
-
-**Résultat attendu** :
-- Les deux filtres donnent exactement les mêmes résultats (tous deux mappent sur `type=article`).
-- Chaque chip est visuellement sélectionnée distinctement (on voit laquelle est active).
-
-### Scénario 5 : Skeleton crédible (messages rotating)
-**Parcours** :
-1. Taper une requête qui va vraiment prendre plusieurs secondes (ex. "xyzzyq1234" qui force tous les layers).
-2. Observer le skeleton pendant >10 s.
-
-**Résultat attendu** :
-- Les dots animent toutes les 800 ms.
-- Les messages changent toutes les ~4.8 s (pas toutes les 1.5 s comme avant).
-- Les 6 messages suivants défilent : "Exploration du catalogue", "Analyse de votre recherche", "Interrogation des plateformes", "Scan du web", "Recoupement des sources", "Préparation des suggestions".
-
-### Scénario 6 : Filtre persiste après clear
-**Parcours** :
-1. Sélectionner chip "Reddit".
-2. Taper "r/france", valider.
-3. Cliquer sur le bouton clear du champ de recherche.
-
-**Résultat attendu** :
-- Le champ est vide.
-- La chip "Reddit" reste sélectionnée (volontaire : le filtre persiste pour la prochaine recherche).
+### S6 — Observabilité
+SQL :
+```sql
+SELECT query_raw, layers_called, result_count, cache_hit, abandoned, latency_ms
+FROM source_search_logs
+ORDER BY created_at DESC LIMIT 10;
+```
+Attendu : une ligne par recherche jouée, `top_results` rempli, `cache_hit` cohérent. Si l'utilisateur ferme l'écran sans ajouter, la dernière ligne a `abandoned = true`.
 
 ## Critères d'acceptation
 
-- [ ] Recherche d'une source curated <500 ms (vs 2-5 s avant).
-- [ ] Bouton "Élargir la recherche" visible uniquement si `layers_called == ["catalog"]`.
-- [ ] Les 5 chips sont cliquables et mutuellement exclusives.
-- [ ] Médias et Newsletters filtrent tous deux sur `article`.
-- [ ] Skeleton affiche 6 messages uniques avec rotation lente (~4.8 s/message).
-- [ ] Aucune régression sur l'ajout effectif d'une source (flow `trustSource` / `addCustomSource`).
-
-## Zones de risque
-
-- **Changement de family key du `smartSearchProvider`** : de `String` vers un record `({String query, String? contentType, bool expand})`. Vérifier qu'il n'y a pas d'erreur Riverpod au runtime (refresh, invalidate).
-- **Cache backend** : la clé inclut désormais `content_type` + `expand`. Les anciennes entrées en DB sont orphelines mais ne causent pas d'erreur — elles expirent en 24 h.
-- **Short-circuit agressif** : surveiller qu'un match "substring seulement" (ex. "le" dans "lenny") ne déclenche PAS le short-circuit (tests unitaires couverts).
-
-## Dépendances
-
-- Endpoint modifié : `POST /sources/smart-search` — nouveaux params optionnels `content_type` (article/youtube/reddit/podcast) et `expand` (bool).
-- Réponse schema inchangée — `layers_called` reste le signal principal côté client.
-- Table `source_search_cache` — aucune migration nécessaire, seule la clé de hash change.
+- [ ] Aucun résultat affiché sans `feed_url`
+- [ ] Aucun listicle/aggregator dans le top 5 sur 5 requêtes thématiques (`political news`, `actualité écologie`, `tech europe`, `crypto news`, `climate`)
+- [ ] Catalog ILIKE accent-insensible : `arret sur images` matche `Arrêt sur Images`
+- [ ] Court-circuit catalog observable (`layers_called == ["catalog"]`, latence < 500 ms) sur 6 sources curated connues
+- [ ] Table `source_search_logs` se remplit en prod
+- [ ] `failed_source_attempts` continue à recevoir les abandons (rétrocompat)

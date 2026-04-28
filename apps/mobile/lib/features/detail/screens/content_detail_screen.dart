@@ -31,7 +31,11 @@ import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
 import '../widgets/youtube_player_widget.dart';
 import '../widgets/note_input_sheet.dart';
-import '../widgets/note_welcome_tooltip.dart';
+import '../../../core/nudges/nudge_coordinator.dart';
+import '../../../core/nudges/nudge_counters.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/widgets/article_save_notes_tooltip.dart';
+import '../../../core/nudges/widgets/nudge_inline_banner.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/widgets/editorial_badge.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
@@ -100,7 +104,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       false; // true once user reaches end of displayed content
   final ValueNotifier<bool> _atPerspectivesSection = ValueNotifier(false);
   bool _suppressPerspectivesCheck = false;
-  bool _showNoteWelcome = false;
+  bool _showSaveNotesNudge = false;
+  bool _showReadOnSiteNudge = false;
+  int _articleOpenCount = 0;
+  bool _readOnSiteNudgeRequested = false;
+
+  AnimationController? _perspectivesPulseController;
+  Animation<double>? _perspectivesPulseScale;
+  bool _perspectivesCtaTriggered = false;
   bool _linkCopiedFab = false;
   bool _linkCopiedHeader = false;
   Timer? _linkCopiedFabTimer;
@@ -315,11 +326,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }
     });
 
-    // Check if note welcome tooltip should be shown (first time only)
-    NoteWelcomeTooltip.shouldShow().then((show) {
-      if (mounted && show) {
-        setState(() => _showNoteWelcome = true);
-      }
+    // First-time save+notes nudge — gating is enforced by the coordinator's
+    // prereq on welcome_tour (device-scoped key, legacy fallback honored).
+    // The article screen can't be reached during the tour (overlay blocks
+    // taps), so no extra "tour active" guard needed here.
+    _requestSaveNotesNudge();
+
+    // Persist article open count for triggers (read_on_site 4th article,
+    // feed_preview_longpress ≥2 articles opened).
+    NudgeCounters.increment(NudgeCounters.articleOpenCount).then((count) {
+      if (mounted) _articleOpenCount = count;
     });
 
     // 🌻 Nudge: record article open and start 30s timer
@@ -496,6 +512,40 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (progress > _maxReadingProgress) {
       _maxReadingProgress = progress;
     }
+    _maybeRequestReadOnSiteNudge(progress);
+  }
+
+  void _maybeRequestReadOnSiteNudge(double progress) {
+    if (_readOnSiteNudgeRequested) return;
+    if (_showReadOnSiteNudge) return;
+    if (progress < 0.5) return;
+    if (_articleOpenCount < 4) return;
+    _readOnSiteNudgeRequested = true;
+    _requestReadOnSiteNudge();
+  }
+
+  Future<void> _requestReadOnSiteNudge() async {
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    final active = await coordinator.request(NudgeIds.articleReadOnSite);
+    if (!mounted) return;
+    if (active == NudgeIds.articleReadOnSite) {
+      setState(() => _showReadOnSiteNudge = true);
+    }
+  }
+
+  Future<void> _dismissReadOnSiteNudge({required bool converted}) async {
+    if (!_showReadOnSiteNudge) return;
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    if (coordinator.activeId == NudgeIds.articleReadOnSite) {
+      if (converted) {
+        await coordinator.markConverted(NudgeIds.articleReadOnSite);
+      } else {
+        await coordinator.dismiss(markSeen: true);
+      }
+    }
+    if (mounted) {
+      setState(() => _showReadOnSiteNudge = false);
+    }
   }
 
   /// Show header + footer when user reaches the bottom of the article (progress ≥ 98%).
@@ -659,6 +709,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (shouldActivate && !_isWebViewActive) {
       setState(() {
         _isWebViewActive = true;
+      });
+
+      // Smart-arrival : libère l'écran pour que l'utilisateur puisse interagir
+      // avec une éventuelle modale (cookies, paywall) qui verrouille souvent
+      // body { overflow: hidden } — sans scroll, le ScrollBridge JS ne peut
+      // rien signaler, donc on doit cacher proactivement les overlays.
+      _scrollStopTimer?.cancel(); // sinon le timer hérité du scroll CTA réaffiche le footer
+      _animateHeaderTo(1.0);
+      _animateFooterTo(1.0);
+
+      // Header revient après 2 s pour permettre la navigation back.
+      Timer(const Duration(seconds: 2), () {
+        if (mounted && _isWebViewActive) _animateHeaderTo(0.0);
       });
     }
   }
@@ -1046,6 +1109,72 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
+  void _maybeTriggerPerspectivesCta() {
+    if (_perspectivesCtaTriggered) return;
+    final response = _perspectivesResponse;
+    if (response == null) return;
+    if (response.perspectives.isEmpty || !response.shouldDisplay) return;
+    _perspectivesCtaTriggered = true;
+    NudgeCounters.increment(NudgeCounters.articleWithPerspectivesCount)
+        .then((count) async {
+      if (!mounted) return;
+      if (count < 2) return;
+      final coordinator = ref.read(nudgeCoordinatorProvider);
+      final active = await coordinator.request(NudgeIds.perspectivesCta);
+      if (!mounted) return;
+      if (active != NudgeIds.perspectivesCta) return;
+      _playPerspectivesPulse();
+    });
+  }
+
+  Widget _wrapWithPerspectivesPulse(Widget child) {
+    final scale = _perspectivesPulseScale;
+    if (scale == null) return child;
+    return ScaleTransition(scale: scale, child: child);
+  }
+
+  void _playPerspectivesPulse() {
+    _perspectivesPulseController ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _perspectivesPulseScale ??= TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0), weight: 50),
+    ]).animate(CurvedAnimation(
+      parent: _perspectivesPulseController!,
+      curve: Curves.easeOutCubic,
+    ));
+    _perspectivesPulseController!.forward(from: 0).whenComplete(() async {
+      if (!mounted) return;
+      final coordinator = ref.read(nudgeCoordinatorProvider);
+      if (coordinator.activeId == NudgeIds.perspectivesCta) {
+        await coordinator.dismiss(markSeen: true);
+      }
+    });
+    setState(() {});
+  }
+
+  Future<void> _requestSaveNotesNudge() async {
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    final active = await coordinator.request(NudgeIds.articleSaveNotes);
+    if (!mounted) return;
+    if (active == NudgeIds.articleSaveNotes) {
+      setState(() => _showSaveNotesNudge = true);
+    }
+  }
+
+  Future<void> _dismissSaveNotesNudge() async {
+    if (!_showSaveNotesNudge) return;
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    if (coordinator.activeId == NudgeIds.articleSaveNotes) {
+      await coordinator.dismiss(markSeen: true);
+    }
+    if (mounted) {
+      setState(() => _showSaveNotesNudge = false);
+    }
+  }
+
   @override
   void dispose() {
     // Capture max progress reached before disposing ValueNotifier
@@ -1057,16 +1186,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       if (_content != null) {
         final duration = DateTime.now().difference(_startTime).inSeconds;
 
+        final supabase = Supabase.instance.client;
+        final apiClient = ApiClient(supabase);
+        final repository = FeedRepository(apiClient);
+
         // Persist reading progress via status endpoint
         if (progressPct > 0) {
-          final supabase = Supabase.instance.client;
-          final apiClient = ApiClient(supabase);
-          final repository = FeedRepository(apiClient);
           repository.updateContentStatusWithProgress(
             _content!.id,
             progressPct,
           );
         }
+
+        // Accumulate reading time on user_content_status for recommendation signal.
+        repository.updateContentStatusWithTimeSpent(
+          _content!.id,
+          duration,
+        );
 
         // Track article read duration
         ref.read(analyticsServiceProvider).trackArticleRead(
@@ -1092,6 +1228,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _likeBounceController.dispose();
     _fabReappearController.dispose();
     _shareFabController.dispose();
+    _perspectivesPulseController?.dispose();
     _exitAnimController.dispose();
     _headerAutoController.dispose();
     _footerAutoController.dispose();
@@ -1207,6 +1344,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           _perspectivesResponse = response;
           _perspectivesLoading = false;
         });
+        _maybeTriggerPerspectivesCta();
       }
     } catch (e) {
       debugPrint('Error pre-fetching perspectives: $e');
@@ -1786,30 +1924,39 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ],
                         // Perspectives FAB (articles only) — always just above other FABs
                         if (content.contentType == ContentType.article) ...[
-                          PerspectivesPill(
-                            biasDistribution:
-                                _perspectivesResponse?.biasDistribution ?? {},
-                            isLoading: _perspectivesLoading,
-                            // shouldDisplay=false → traiter comme empty (CTA dimmed,
-                            // bottom sheet montre l'état vide). Cf. backend gate
-                            // docs/bugs/bug-comparison-clustering-too-loose.md
-                            isEmpty: !_perspectivesLoading &&
-                                _perspectivesResponse != null &&
-                                (_perspectivesResponse!.perspectives.isEmpty ||
-                                    !_perspectivesResponse!.shouldDisplay),
-                            onTap: () {
-                              HapticFeedback.lightImpact();
-                              final ctx = _perspectivesKey.currentContext;
-                              if (ctx != null) {
-                                Scrollable.ensureVisible(
-                                  ctx,
-                                  duration: const Duration(milliseconds: 400),
-                                  curve: Curves.easeInOut,
-                                );
-                              } else {
-                                _showPerspectives(context);
-                              }
-                            },
+                          _wrapWithPerspectivesPulse(
+                            PerspectivesPill(
+                              biasDistribution:
+                                  _perspectivesResponse?.biasDistribution ?? {},
+                              isLoading: _perspectivesLoading,
+                              // shouldDisplay=false → traiter comme empty (CTA dimmed,
+                              // bottom sheet montre l'état vide). Cf. backend gate
+                              // docs/bugs/bug-comparison-clustering-too-loose.md
+                              isEmpty: !_perspectivesLoading &&
+                                  _perspectivesResponse != null &&
+                                  (_perspectivesResponse!.perspectives.isEmpty ||
+                                      !_perspectivesResponse!.shouldDisplay),
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                final coordinator =
+                                    ref.read(nudgeCoordinatorProvider);
+                                if (coordinator.activeId ==
+                                    NudgeIds.perspectivesCta) {
+                                  coordinator.markConverted(
+                                      NudgeIds.perspectivesCta);
+                                }
+                                final ctx = _perspectivesKey.currentContext;
+                                if (ctx != null) {
+                                  Scrollable.ensureVisible(
+                                    ctx,
+                                    duration: const Duration(milliseconds: 400),
+                                    curve: Curves.easeInOut,
+                                  );
+                                } else {
+                                  _showPerspectives(context);
+                                }
+                              },
+                            ),
                           ),
                           const SizedBox(height: FacteurSpacing.space3),
                         ],
@@ -1900,12 +2047,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             ),
                           ),
                         ),
-                        // Note welcome tooltip — bottom of FAB column, near the bookmark button
-                        if (_showNoteWelcome) ...[
+                        // Save+notes nudge — bottom of FAB column, near bookmark
+                        if (_showSaveNotesNudge) ...[
                           const SizedBox(height: FacteurSpacing.space3),
-                          NoteWelcomeTooltip(
-                            onDismiss: () =>
-                                setState(() => _showNoteWelcome = false),
+                          ArticleSaveNotesTooltip(
+                            onDismiss: _dismissSaveNotesNudge,
                           ),
                         ],
                       ],
@@ -2110,8 +2256,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           _suppressPerspectivesCheck = true;
                           _atPerspectivesSection.value = false;
                           _showStickyPerspectivesHeader.value = false;
-                          if (_inAppScrollController.hasClients) {
-                            _inAppScrollController.animateTo(
+                          final ScrollController activeController =
+                              _scrollController.hasClients
+                                  ? _scrollController
+                                  : _inAppScrollController;
+                          if (activeController.hasClients) {
+                            activeController.animateTo(
                               0,
                               duration: const Duration(milliseconds: 400),
                               curve: Curves.easeInOut,
@@ -3061,8 +3211,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               const SizedBox(height: FacteurSpacing.space4),
                             ],
                           ),
-                          footer: SizedBox(
-                              height: _kFooterContentHeight + bottomInset),
+                          footer: (_perspectivesResponse != null ||
+                                  _perspectivesLoading)
+                              ? null
+                              : SizedBox(
+                                  height:
+                                      _kFooterContentHeight + bottomInset),
                         ),
                       ),
 
@@ -3072,11 +3226,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         Container(
                           key: _perspectivesDividerKey,
                           color: colors.backgroundPrimary,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: FacteurSpacing.space4),
-                            child: Divider(color: colors.border, height: 1),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: FacteurSpacing.space4,
+                            vertical: FacteurSpacing.space6,
                           ),
+                          child: Divider(color: colors.border, height: 1),
                         ),
                         Container(
                           color: colors.backgroundPrimary,
@@ -3155,6 +3309,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                     )
                                   : const SizedBox.shrink(),
                         ),
+                        SizedBox(
+                            height: _kFooterContentHeight + bottomInset),
                       ],
 
                       // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation.
@@ -3654,6 +3810,25 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     articleWidget,
+                    if (_showReadOnSiteNudge) ...[
+                      const SizedBox(height: FacteurSpacing.space4),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: FacteurSpacing.space4),
+                        child: NudgeInlineBanner(
+                          body:
+                              "Préférez l'expérience du site original ? Ouvrez l'article dans votre navigateur.",
+                          icon: PhosphorIcons.arrowSquareOut(),
+                          actionLabel: 'Ouvrir',
+                          onAction: () {
+                            _dismissReadOnSiteNudge(converted: true);
+                            _openOriginalUrl();
+                          },
+                          onDismiss: () =>
+                              _dismissReadOnSiteNudge(converted: false),
+                        ),
+                      ),
+                    ],
                     SizedBox(key: _articleEndKey, height: 0),
                   ],
                 ),

@@ -294,6 +294,21 @@ class FacteurTypography {
         letterSpacing: 0.5,
         color: color,
       );
+
+  static TextStyle editorialTitle(Color color) => GoogleFonts.courierPrime(
+        fontSize: 20,
+        fontWeight: FontWeight.w700,
+        height: 1.25,
+        letterSpacing: 0.3,
+        color: color,
+      );
+
+  static TextStyle serifTitle(Color color) => GoogleFonts.fraunces(
+        fontSize: 20,
+        fontWeight: FontWeight.w700,
+        height: 1.25,
+        color: color,
+      );
 }
 
 class FacteurSpacing {

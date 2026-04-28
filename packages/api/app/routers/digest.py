@@ -1,15 +1,20 @@
 """Router for digest API endpoints (Epic 10).
 
 Provides REST API for the digest-first mobile app:
-- GET /api/digest - Get today's digest (retrieve or generate)
+- GET /api/digest - Get today's digest (read-only; generation runs nightly)
+- GET /api/digest/both - Get both variants for instant toggle (read-only)
+- POST /api/digest/generate - Force-generate (admin/debug only)
 - POST /api/digest/{digest_id}/action - Apply action to digest item
 - POST /api/digest/{digest_id}/complete - Record digest completion
 
-Follows existing FastAPI patterns from feed.py and personalization.py.
-Safe reuse of existing services through DigestService.
+GET endpoints are strictly read-only at request time — they never call the
+LLM pipeline. Generation runs in the nightly cron, the 07:30 watchdog, or the
+fire-and-forget background regen scheduled when stale content is served.
+See docs/maintenance/maintenance-digest-readonly-hotpath.md.
 """
 
 import asyncio
+import contextlib
 import time
 from datetime import date, timedelta
 from uuid import UUID
@@ -21,7 +26,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import async_session_maker, get_db
+from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
 from app.models.daily_digest import DailyDigest
 from app.schemas.digest import (
@@ -35,38 +40,25 @@ from app.schemas.digest import (
 from app.services.community_recommendation_service import (
     CommunityRecommendationService,
 )
-from app.services.digest_service import DigestService, schedule_digest_regen
-from app.services.generation_state import is_generation_running
+from app.services.digest_service import DigestService, read_digest_or_fallback
 from app.utils.time import today_paris
 
 logger = structlog.get_logger()
 
 router = APIRouter()
 
-# Timeouts for /digest/both — exported as module-level constants so they can
-# be monkeypatched in tests. Cf. docs/bugs/bug-infinite-load-requests.md.
-# Each variant gets its own bound, and an outer bound protects against a hang
-# that slips past the inner one (e.g. a blocking DB fetch outside the inner
-# wait_for scope).
-DIGEST_BOTH_VARIANT_TIMEOUT_S = 25.0
-DIGEST_BOTH_GATHER_TIMEOUT_S = 30.0
+# Timeout for POST /api/digest/generate (admin/debug). force=True can take
+# longer than a normal generation, so this bound is generous.
+DIGEST_GENERATE_TIMEOUT_S = 60.0
 
-# Timeout for /api/digest (single variant) and /api/digest/generate. Même
-# motif que /digest/both : sans wait_for, la pipeline éditoriale
-# (6-10 appels LLM séquentiels, 30 s chacun max) peut hang 3-5 min avant
-# d'être coupée par pool_timeout/request_budget. Round 2 fix.
-DIGEST_SINGLE_TIMEOUT_S = 30.0
-DIGEST_GENERATE_TIMEOUT_S = 60.0  # force=True peut prendre plus
-
-# Singleflight per user_uuid for /digest/both. Hotfix P0 2026-04-20: mobile
-# spammait 4 requêtes concurrentes → chacune ouvrait 2 sessions DB (gather) →
-# pool saturé en boucle. Les followers rejoignent le future du leader au lieu
-# de relancer leur propre gather.
-# Follower timeout > DIGEST_BOTH_GATHER_TIMEOUT_S + marge pour laisser le
-# leader propager son 503 avant que le follower raise lui-même.
-_digest_both_inflight: dict[UUID, asyncio.Future] = {}
-_digest_both_inflight_lock = asyncio.Lock()
-DIGEST_BOTH_FOLLOWER_TIMEOUT_S = 35.0
+# Hard ceiling on the post-gather block (serein_enabled + 2 community
+# enrichments) on the outer `db` session. After the 25-30s LLM gather, the
+# outer connection has been idle and Supabase/PgBouncer may have killed it.
+# Without this bound, a fail-open `db.rollback()` on a dead conn can hang
+# indefinitely (statement_timeout doesn't cover ROLLBACK), which leaks the
+# session for hours and starves the singleflight slot — producing the
+# infinite-loading symptom observed in prod (long_session_checkout=7231s).
+DIGEST_BOTH_POST_GATHER_TIMEOUT_S = 5.0
 
 
 class ActionRequest(BaseModel):
@@ -175,12 +167,28 @@ async def _enrich_community_carousel(
         logger.exception("community_carousel_enrichment_failed")
         # Round 6 — mirror D3 (PR #437 community.py). Handler is fail-open so
         # get_db never sees the raise and cannot rollback a dirty session.
+        # Bound the rollback: on a Supabase-killed connection, asyncpg can
+        # hang indefinitely waiting for a server ACK that never comes
+        # (statement_timeout doesn't apply to ROLLBACK). On timeout, force
+        # invalidate so the dead conn is dropped from the pool.
         try:
-            await db.rollback()
-        except Exception as rb_exc:
+            await asyncio.wait_for(db.rollback(), timeout=2.0)
+        except (TimeoutError, Exception) as rb_exc:
             logger.debug("community_carousel_rollback_failed", error=str(rb_exc))
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(db.invalidate(), timeout=1.0)
 
     return digest
+
+
+def _preparing_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "preparing",
+            "message": "Votre briefing est en cours de préparation...",
+        },
+    )
 
 
 @router.get("", response_model=DigestResponse)
@@ -192,128 +200,32 @@ async def get_digest(
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
+    """Get today's digest for the current user (read-only).
+
+    The digest is generated by the nightly cron. This endpoint never calls
+    the LLM pipeline at request time — it walks a fallback chain (own today
+    → clone today → yesterday → last 7 days) and returns 202 ``preparing``
+    only as a last resort, after scheduling a background regeneration.
     """
-    Get today's digest for the current user.
-
-    Returns the daily digest containing 5 curated articles.
-    If digest doesn't exist yet, it will be generated on-demand.
-
-    Each item includes:
-    - Content metadata (title, url, thumbnail, etc.)
-    - Source information
-    - Selection reason
-    - User's current action state (is_read, is_saved, is_dismissed)
-
-    Query Parameters:
-    - target_date: Optional specific date (YYYY-MM-DD format). Defaults to today.
-
-    Response:
-    - digest_id: Unique identifier for this digest
-    - user_id: User ID
-    - target_date: Date of the digest
-    - generated_at: When the digest was generated
-    - items: Array of 5 digest items
-    - is_completed: Whether user has completed this digest
-    - completed_at: Completion timestamp (if completed)
-    """
-    # `session_maker` permet à la pipeline éditoriale d'ouvrir ses propres
-    # sessions courtes pendant le travail LLM (3-5 min). Sans ça, la session
-    # de `Depends(get_db)` reste idle-in-transaction pendant tout le LLM et
-    # épuise le pool. Cf. docs/bugs/bug-infinite-load-requests.md (P1).
-    service = DigestService(db, session_maker=async_session_maker)
     user_uuid = UUID(current_user_id)
+    effective_date = target_date or today_paris()
     start = time.monotonic()
 
-    # If batch generation is running and no digest exists yet, return 202
-    # so the mobile app retries with backoff instead of blocking for 30s+
-    if is_generation_running():
-        effective_date = target_date or today_paris()
-        existing = await db.scalar(
-            select(DailyDigest.id).where(
-                DailyDigest.user_id == user_uuid,
-                DailyDigest.target_date == effective_date,
-                DailyDigest.is_serene == serein,
-            )
-        )
-        if not existing:
-            logger.info(
-                "digest_202_batch_running",
-                user_id=current_user_id,
-                target_date=str(effective_date),
-            )
-            return JSONResponse(
-                status_code=202,
-                content={
-                    "status": "preparing",
-                    "message": "Votre briefing est en cours de préparation...",
-                },
-            )
+    digest = await read_digest_or_fallback(
+        db, user_uuid, effective_date, is_serene=serein
+    )
+    if digest is None:
+        return _preparing_response()
 
-    try:
-        digest = await asyncio.wait_for(
-            service.get_or_create_digest(user_uuid, target_date, is_serene=serein),
-            timeout=DIGEST_SINGLE_TIMEOUT_S,
-        )
-    except TimeoutError:
-        elapsed = time.monotonic() - start
-        logger.warning(
-            "digest_single_timeout",
-            user_id=current_user_id,
-            timeout_s=DIGEST_SINGLE_TIMEOUT_S,
-            elapsed_ms=round(elapsed * 1000, 1),
-            hint="Pipeline hang detected — session released via task cancel.",
-        )
-        raise HTTPException(
-            status_code=503,
-            detail="digest_generation_timeout",
-        )
-    except Exception:
-        elapsed = time.monotonic() - start
-        logger.exception(
-            "digest_endpoint_unhandled_error",
-            user_id=current_user_id,
-            elapsed_ms=round(elapsed * 1000, 1),
-        )
-        raise HTTPException(
-            status_code=503,
-            detail="Digest generation encountered an unexpected error. Please try again later.",
-        )
-
-    elapsed = time.monotonic() - start
-
-    if not digest:
-        # Generation returned no content (new user with empty history, sources
-        # without recent articles, etc.). Instead of 503 — which makes the
-        # mobile app bail out after 3 retries — schedule a background regen
-        # and return 202 so the client keeps polling on the same contract as
-        # the "batch running" branch above. This is what unblocks the
-        # infinite-loading loop for users who just finished onboarding.
-        effective_date = target_date or today_paris()
-        logger.warning(
-            "digest_generation_returned_none_scheduled_regen",
-            user_id=current_user_id,
-            target_date=str(effective_date),
-            is_serene=serein,
-            elapsed_ms=round(elapsed * 1000, 1),
-        )
-        schedule_digest_regen(user_uuid, effective_date, serein)
-        return JSONResponse(
-            status_code=202,
-            content={
-                "status": "preparing",
-                "message": "Votre briefing est en cours de préparation...",
-            },
-        )
-
-    # Enrich with community carousel
     digest = await _enrich_community_carousel(db, user_uuid, digest)
 
     logger.info(
         "digest_retrieved",
         user_id=current_user_id,
-        elapsed_ms=round(elapsed * 1000, 1),
+        elapsed_ms=round((time.monotonic() - start) * 1000, 1),
         items_count=len(digest.items),
         is_completed=digest.is_completed,
+        is_stale_fallback=digest.is_stale_fallback,
         community_carousel_count=len(digest.community_carousel),
     )
     return digest
@@ -327,179 +239,49 @@ async def get_both_digests(
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
-    """
-    Get both digest variants (normal + serene) for instant toggle.
+    """Get both digest variants (normal + serene) for instant toggle (read-only).
 
-    Returns both digests in a single response so the mobile app
-    can switch between them without a network round-trip.
+    Returns both variants in a single response so the mobile app can switch
+    between them without a network round-trip. Like ``/digest``, this is
+    strictly read-only at request time — generation runs in the nightly cron.
     """
     user_uuid = UUID(current_user_id)
+    effective_date = target_date or today_paris()
+    start = time.monotonic()
 
-    # If batch generation is running and no digest exists yet, return 202
-    if is_generation_running():
-        effective_date = target_date or today_paris()
-        existing = await db.scalar(
-            select(DailyDigest.id).where(
-                DailyDigest.user_id == user_uuid,
-                DailyDigest.target_date == effective_date,
-                DailyDigest.is_serene.is_(False),
-            )
-        )
-        if not existing:
-            logger.info(
-                "digest_202_batch_running_both",
-                user_id=current_user_id,
-                target_date=str(effective_date),
-            )
-            return JSONResponse(
-                status_code=202,
-                content={
-                    "status": "preparing",
-                    "message": "Votre briefing est en cours de préparation...",
-                },
-            )
+    normal = await read_digest_or_fallback(
+        db, user_uuid, effective_date, is_serene=False
+    )
+    serein_resp = await read_digest_or_fallback(
+        db, user_uuid, effective_date, is_serene=True
+    )
 
-    # Singleflight per user_uuid: si une requête est déjà en vol pour ce user,
-    # les suivantes attendent son résultat au lieu de spawner leurs propres
-    # sessions DB. Protège le pool sous rafale mobile (4 requêtes concurrentes
-    # × 2 sessions gather = 8 slots par user sans dédup).
-    async with _digest_both_inflight_lock:
-        inflight_fut = _digest_both_inflight.get(user_uuid)
-        if inflight_fut is not None and not inflight_fut.done():
-            leader_fut: asyncio.Future = inflight_fut
-            leader_role = False
-        else:
-            leader_fut = asyncio.get_event_loop().create_future()
-            _digest_both_inflight[user_uuid] = leader_fut
-            leader_role = True
+    if normal is None and serein_resp is None:
+        return _preparing_response()
 
-    if not leader_role:
-        logger.info("digest_both_singleflight_join", user_id=current_user_id)
-        try:
-            return await asyncio.wait_for(
-                asyncio.shield(leader_fut),
-                timeout=DIGEST_BOTH_FOLLOWER_TIMEOUT_S,
-            )
-        except TimeoutError:
-            raise HTTPException(
-                status_code=503,
-                detail="digest_generation_timeout",
-            )
+    service = DigestService(db)
+    serein_enabled = await service._get_user_serein_enabled(user_uuid)
 
-    try:
-        # Generate both variants in parallel with separate DB sessions
-        # to avoid SQLAlchemy session conflicts and halve on-demand latency.
-        #
-        # BUG FIX (bug-infinite-load-requests.md) — each variant is bounded by
-        # DIGEST_BOTH_VARIANT_TIMEOUT_S; the whole gather is bounded by
-        # DIGEST_BOTH_GATHER_TIMEOUT_S. Without these, a slow upstream (Mistral
-        # LLM, Google News RSS, Supabase) hangs the request forever, holds 2 DB
-        # sessions, and rapidly exhausts the pool — making *every* other endpoint
-        # appear to "load indefinitely".
-        async def _gen_variant(is_serene: bool) -> DigestResponse | None:
-            async with async_session_maker() as session:
-                svc = DigestService(session, session_maker=async_session_maker)
-                return await asyncio.wait_for(
-                    svc.get_or_create_digest(
-                        user_uuid, target_date, is_serene=is_serene
-                    ),
-                    timeout=DIGEST_BOTH_VARIANT_TIMEOUT_S,
-                )
+    if normal is not None:
+        normal = await _enrich_community_carousel(db, user_uuid, normal)
+    if serein_resp is not None:
+        serein_resp = await _enrich_community_carousel(db, user_uuid, serein_resp)
 
-        try:
-            normal, serein = await asyncio.wait_for(
-                asyncio.gather(
-                    _gen_variant(False),
-                    _gen_variant(True),
-                ),
-                timeout=DIGEST_BOTH_GATHER_TIMEOUT_S,
-            )
-        except TimeoutError:
-            logger.warning(
-                "digest_both_timeout",
-                user_id=current_user_id,
-                variant_timeout_s=DIGEST_BOTH_VARIANT_TIMEOUT_S,
-                gather_timeout_s=DIGEST_BOTH_GATHER_TIMEOUT_S,
-                hint="Upstream hang detected — sessions released to protect pool.",
-            )
-            raise HTTPException(
-                status_code=503,
-                detail="digest_generation_timeout",
-            )
+    logger.info(
+        "digest_both_retrieved",
+        user_id=current_user_id,
+        elapsed_ms=round((time.monotonic() - start) * 1000, 1),
+        normal_present=normal is not None,
+        serein_present=serein_resp is not None,
+        normal_stale=normal.is_stale_fallback if normal else None,
+        serein_stale=serein_resp.is_stale_fallback if serein_resp else None,
+    )
 
-        # If either variant is missing, don't return a 200 with null fields (the
-        # mobile client mishandles null variants as a permanent failure). Schedule
-        # regen for the specific missing variant(s) and ask the client to retry
-        # on the same 202 contract as the batch-running branch. Both-None and
-        # partial-None converge on the same response so the mobile side stays
-        # on a single polling contract.
-        if normal is None or serein is None:
-            effective_date = target_date or today_paris()
-            logger.warning(
-                "digest_both_returned_none_scheduled_regen",
-                user_id=current_user_id,
-                target_date=str(effective_date),
-                normal_missing=normal is None,
-                serein_missing=serein is None,
-            )
-            if normal is None:
-                schedule_digest_regen(user_uuid, effective_date, is_serene=False)
-            if serein is None:
-                schedule_digest_regen(user_uuid, effective_date, is_serene=True)
-            result: DualDigestResponse | JSONResponse = JSONResponse(
-                status_code=202,
-                content={
-                    "status": "preparing",
-                    "message": "Votre briefing est en cours de préparation...",
-                },
-            )
-            leader_fut.set_result(result)
-            return result
-
-        # Post-gather DB ops — the outer `db` session has been idle during the
-        # 25-30s LLM pipeline, and Supabase/PgBouncer sometimes kills idle
-        # connections in that window. We already generated both variants in
-        # their own short-lived sessions, so here we only need the preference
-        # read + community enrichment. Make them both tolerant: if `db` is
-        # dead, roll back once (forces SQLAlchemy to check out a fresh slot)
-        # and fall back to defaults rather than 500-ing a successfully
-        # generated pair of digests.
-        try:
-            service = DigestService(db)
-            serein_enabled = await service._get_user_serein_enabled(user_uuid)
-        except Exception:
-            logger.exception(
-                "digest_both_serein_enabled_lookup_failed",
-                user_id=current_user_id,
-            )
-            try:
-                await db.rollback()
-            except Exception as rb_exc:
-                logger.debug(
-                    "digest_both_post_gather_rollback_failed",
-                    error=str(rb_exc),
-                )
-            serein_enabled = False
-
-        # Enrich both variants with community carousel (already fail-open).
-        if normal:
-            normal = await _enrich_community_carousel(db, user_uuid, normal)
-        if serein:
-            serein = await _enrich_community_carousel(db, user_uuid, serein)
-
-        result = DualDigestResponse(
-            normal=normal,
-            serein=serein,
-            serein_enabled=serein_enabled,
-        )
-        leader_fut.set_result(result)
-        return result
-    except BaseException as exc:
-        if not leader_fut.done():
-            leader_fut.set_exception(exc)
-        raise
-    finally:
-        _digest_both_inflight.pop(user_uuid, None)
+    return DualDigestResponse(
+        normal=normal,
+        serein=serein_resp,
+        serein_enabled=serein_enabled,
+    )
 
 
 @router.post("/{digest_id}/action", response_model=DigestActionResponse)
@@ -669,7 +451,7 @@ async def generate_digest(
     # Cf. bug-infinite-load-requests.md (P1) — la pipeline éditoriale doit
     # pouvoir ouvrir ses propres sessions courtes hors de la session FastAPI
     # pour libérer la connexion au pool pendant 3-5 min de travail LLM.
-    service = DigestService(db, session_maker=async_session_maker)
+    service = DigestService(db, session_maker=safe_async_session)
     user_uuid = UUID(current_user_id)
 
     # Round 2 fix (item 4) : wait_for sur la génération — même motif que

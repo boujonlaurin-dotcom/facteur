@@ -450,3 +450,106 @@ class TestPerspectiveCountAlignment:
 
         # Pivot = most recent content of the cluster.
         assert subject.representative_content_id == newer.id
+
+    @pytest.mark.asyncio
+    async def test_safety_net_counts_cluster_sources_when_all_bias_unknown(
+        self, mock_dependencies
+    ):
+        """Safety net (Axe 2, bug-digest-perspective-undercount):
+        when every merged perspective has bias_stance="unknown" but the
+        cluster actually grouped several outlets, ``perspective_count``
+        must fall back to the cluster source count instead of collapsing
+        to 0. bias_distribution stays all-zero so the spectrum bar and
+        LLM analysis remain hidden (we don't fake a bias signal).
+        """
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        # Two cluster articles, different outlets, both with bias unknown.
+        outlet_a_id = uuid4()
+        outlet_b_id = uuid4()
+        article_a = _make_content_mock(title="outlet A")
+        article_a.source_id = outlet_a_id
+        article_a.source.url = "https://www.outlet-a.fr/"
+        article_a.url = "https://www.outlet-a.fr/story"
+        article_a.published_at = datetime(2026, 4, 22, 6, tzinfo=UTC)
+
+        article_b = _make_content_mock(title="outlet B")
+        article_b.source_id = outlet_b_id
+        article_b.source.url = "https://www.outlet-b.fr/"
+        article_b.url = "https://www.outlet-b.fr/story"
+        article_b.published_at = datetime(2026, 4, 22, 7, tzinfo=UTC)
+
+        cluster = _make_cluster_mock(
+            cluster_id="c1",
+            label="Breaking news",
+            contents=[article_a, article_b],
+            source_ids={outlet_a_id, outlet_b_id},
+        )
+
+        # Every resolved bias is unknown (neither outlet in DOMAIN_BIAS_MAP,
+        # no DB match). Also pass through Google News articles unknown.
+        mock_dependencies["perspective"].resolve_bias = AsyncMock(return_value="unknown")
+        mock_dependencies["perspective"].get_perspectives_hybrid = AsyncMock(
+            return_value=([], [])
+        )
+        # Explicit cluster perspectives — 2 outlets, both bias=unknown.
+        # Without this override, MagicMock returns a non-awaitable sentinel
+        # and the pipeline's try/except swallows it as [], which would
+        # short-circuit the safety net we want to exercise.
+        mock_dependencies["perspective"].build_cluster_perspectives = AsyncMock(
+            return_value=[
+                _StubPerspective("unknown", "Outlet A", "outlet-a.fr"),
+                _StubPerspective("unknown", "Outlet B", "outlet-b.fr"),
+            ]
+        )
+
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            return_value=MagicMock(all=MagicMock(return_value=[]))
+        )
+        svc = EditorialPipelineService(session)
+
+        with patch(
+            "app.services.editorial.pipeline.ImportanceDetector"
+        ) as mock_detector_cls:
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = [cluster]
+            mock_detector_cls.return_value = mock_detector
+
+            mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
+                topic_id="c1",
+                label="Breaking news",
+                selection_reason="Traité par 2 sources",
+                deep_angle="D",
+                source_count=2,
+            )
+            mock_dependencies["curation"].select_topics.return_value = []
+            mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
+            mock_dependencies["actu"].match_global.side_effect = (
+                lambda subjects, clusters, excluded_source_ids=None, excluded_content_ids=None: subjects
+            )
+
+            result = await svc.compute_global_context([article_a, article_b])
+
+        assert result is not None
+        subject = result.subjects[0]
+
+        # Safety net: count reflects the 2 cluster outlets, not 0.
+        assert subject.perspective_count == 2
+        # No known bias → distribution all zero (spectrum bar hidden mobile-side).
+        assert subject.bias_distribution == {
+            "left": 0,
+            "center-left": 0,
+            "center": 0,
+            "center-right": 0,
+            "right": 0,
+        }
+        assert subject.bias_highlights is None
+        # Stored snapshot must still carry the cluster outlets so
+        # /contents/{id}/perspectives can return them instead of bailing
+        # to the live path.
+        assert subject.perspective_articles is not None
+        assert len(subject.perspective_articles) == 2
+        # Footer logos — one per outlet, matching the count.
+        assert subject.perspective_sources is not None
+        assert len(subject.perspective_sources) == 2

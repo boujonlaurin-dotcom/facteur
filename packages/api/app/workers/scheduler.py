@@ -1,8 +1,5 @@
 """Scheduler pour les jobs background."""
 
-import os
-import signal
-
 import pytz
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -37,92 +34,118 @@ async def _digest_watchdog() -> None:
     """
     from sqlalchemy import func, select
 
-    from app.database import async_session_maker
+    from app.database import safe_async_session
     from app.models.daily_digest import DailyDigest
     from app.models.user import UserProfile
     from app.utils.time import today_paris
 
     try:
-        async with async_session_maker() as session:
-            today = today_paris()
+        async with safe_async_session() as session:
+            try:
+                today = today_paris()
 
-            total_users = await session.scalar(
-                select(func.count()).select_from(UserProfile)
-            )
-            if not total_users:
-                logger.info("digest_watchdog_no_users")
-                return
-
-            # Expected coverage = 2 digests per user (normal + serein).
-            # Count distinct (user_id, is_serene) pairs via a GROUP BY
-            # subquery rather than string-concat casts — clearer intent,
-            # no implicit bool→text coercion, portable across backends.
-            expected_pairs = total_users * 2
-            pair_subq = (
-                select(DailyDigest.user_id, DailyDigest.is_serene)
-                .where(DailyDigest.target_date == today)
-                .group_by(DailyDigest.user_id, DailyDigest.is_serene)
-                .subquery()
-            )
-            pair_count = (
-                await session.scalar(select(func.count()).select_from(pair_subq)) or 0
-            )
-
-            coverage = pair_count / expected_pairs if expected_pairs else 0
-            logger.info(
-                "digest_watchdog_check",
-                target_date=str(today),
-                total_users=total_users,
-                expected_pairs=expected_pairs,
-                pair_count=pair_count,
-                coverage_pct=round(coverage * 100, 1),
-            )
-
-            if coverage < 0.90:
-                logger.warning(
-                    "digest_watchdog_low_coverage_triggering_generation",
-                    coverage_pct=round(coverage * 100, 1),
-                    missing=expected_pairs - pair_count,
+                total_users = await session.scalar(
+                    select(func.count()).select_from(UserProfile)
                 )
-                await run_digest_generation(target_date=today)
-                logger.info("digest_watchdog_generation_completed")
-            else:
-                logger.info("digest_watchdog_coverage_ok")
+                if not total_users:
+                    logger.info("digest_watchdog_no_users")
+                    return
+
+                # Expected coverage = 2 digests per user (normal + serein).
+                # Count distinct (user_id, is_serene) pairs via a GROUP BY
+                # subquery rather than string-concat casts — clearer intent,
+                # no implicit bool→text coercion, portable across backends.
+                expected_pairs = total_users * 2
+                pair_subq = (
+                    select(DailyDigest.user_id, DailyDigest.is_serene)
+                    .where(DailyDigest.target_date == today)
+                    .group_by(DailyDigest.user_id, DailyDigest.is_serene)
+                    .subquery()
+                )
+                pair_count = (
+                    await session.scalar(select(func.count()).select_from(pair_subq))
+                    or 0
+                )
+
+                coverage = pair_count / expected_pairs if expected_pairs else 0
+                logger.info(
+                    "digest_watchdog_check",
+                    target_date=str(today),
+                    total_users=total_users,
+                    expected_pairs=expected_pairs,
+                    pair_count=pair_count,
+                    coverage_pct=round(coverage * 100, 1),
+                )
+
+                if coverage < 0.90:
+                    logger.warning(
+                        "digest_watchdog_low_coverage_triggering_generation",
+                        coverage_pct=round(coverage * 100, 1),
+                        missing=expected_pairs - pair_count,
+                    )
+                    await run_digest_generation(target_date=today)
+                    logger.info("digest_watchdog_generation_completed")
+                else:
+                    logger.info("digest_watchdog_coverage_ok")
+            finally:
+                try:
+                    await session.rollback()
+                except Exception:
+                    logger.warning(
+                        "digest_watchdog outer rollback failed", exc_info=True
+                    )
 
     except Exception:
         logger.exception("digest_watchdog_failed")
 
 
-async def _scheduled_restart() -> None:
-    """Restart périodique pour purger la fuite de sessions SQLAlchemy.
+async def _zombie_session_sweeper() -> None:
+    """Defensive belt : kill les sessions Supavisor `idle in transaction` > 5 min.
 
-    Cf. docs/bugs/bug-infinite-load-requests.md. Probe `pg_stat_activity`
-    a révélé que des sessions SQLAlchemy restent "idle in transaction" avec
-    des ages jusqu'à 2h — handlers cancellés par timeout dont le
-    `session.close()` échoue silencieusement. Le pool (20 max) se remplit
-    au fil des heures → `pool_timeout=30s` pour toute nouvelle requête →
-    symptôme "tout charge à l'infini".
+    Hot fix incident 2026-04-28. Le timeout Postgres
+    `idle_in_transaction_session_timeout=60000ms` (cf. database.py
+    connect_args) devrait déjà couvrir, mais ce sweeper sert de
+    monitoring + filet de secours si une connexion contourne le SET
+    (ex: pooler config drift, connexion ouverte avant un hot reload).
 
-    Solution permanente (P1/P2) : scoper les sessions par unité de travail
-    atomique, sortir les I/O externes des `with session:`. En attendant,
-    un restart programmé toutes les ~8h vide le pool côté Python + force
-    Postgres à libérer les transactions orphelines via la fermeture TCP.
-
-    Horaires choisis (01h / 09h / 17h Paris) pour éviter les fenêtres des
-    autres jobs planifiés (03h cleanup, 06h digest, 07h30 watchdog, 08h top3).
-    SIGTERM permet à FastAPI/uvicorn de drainer les requêtes en cours avant
-    shutdown ; Railway relance le container immédiatement.
-
-    À retirer dès que le fix architectural (P1/P2 du bug doc) est déployé
-    et validé pendant ≥ 48h sans retour à saturation du pool.
+    Log :
+    - `zombie_session_sweeper_clean` (debug) : aucun zombie détecté.
+    - `zombie_session_sweeper_killed` (warning) : zombies tués →
+      investigate, c'est qu'un `safe_async_session` est manqué quelque part.
     """
-    logger.warning(
-        "scheduled_restart_initiated",
-        reason="sqlalchemy_pool_leak_mitigation",
-        pid=os.getpid(),
-        hint="Remove once bug-infinite-load-requests P1/P2 fixes deployed.",
-    )
-    os.kill(os.getpid(), signal.SIGTERM)
+    from sqlalchemy import text
+
+    from app.database import safe_async_session
+
+    try:
+        async with safe_async_session() as session:
+            result = await session.execute(
+                text(
+                    """
+                    SELECT
+                        pg_terminate_backend(pid) AS terminated,
+                        pid,
+                        EXTRACT(EPOCH FROM (now() - state_change))::int AS idle_seconds
+                    FROM pg_stat_activity
+                    WHERE state = 'idle in transaction'
+                      AND application_name = 'Supavisor'
+                      AND state_change < now() - interval '5 minutes'
+                      AND pid <> pg_backend_pid()
+                    """
+                )
+            )
+            killed = result.fetchall()
+            if killed:
+                logger.warning(
+                    "zombie_session_sweeper_killed",
+                    count=len(killed),
+                    pids=[r[1] for r in killed],
+                    max_idle_s=max(r[2] for r in killed),
+                )
+            else:
+                logger.debug("zombie_session_sweeper_clean")
+    except Exception:
+        logger.exception("zombie_session_sweeper_failed")
 
 
 def start_scheduler() -> None:
@@ -182,30 +205,33 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
-    # Restart programmé (mitigation fuite pool SQLAlchemy).
-    # 3 slots à 8h d'intervalle, placés loin des autres crons :
-    #   01h00 (entre 22h et 03h cleanup)
-    #   09h00 (après watchdog 07h30 et top3 08h00)
-    #   17h00 (milieu d'après-midi, trafic bas)
-    # misfire_grace_time=60 : si Railway est down au moment du trigger, on
-    # ne retente pas au redémarrage (un startup fait déjà un pool frais).
+    # Zombie session sweeper — kill Supavisor sessions stuck in
+    # `idle in transaction` > 5 min (filet de sécurité par-dessus le
+    # timeout Postgres + le rollback() en finally de safe_async_session).
     scheduler.add_job(
-        _scheduled_restart,
-        trigger=CronTrigger(hour="1,9,17", minute=0, timezone=_PARIS_TZ),
-        id="scheduled_restart",
-        name="Scheduled Restart (pool leak mitigation)",
+        _zombie_session_sweeper,
+        trigger=IntervalTrigger(minutes=5),
+        id="zombie_session_sweeper",
+        name="Zombie session sweeper (idle in tx > 5min)",
         replace_existing=True,
-        misfire_grace_time=60,
-        coalesce=True,
     )
 
     scheduler.start()
     logger.info(
         "Scheduler started",
+        jobs=[
+            "rss_sync",
+            "daily_top3",
+            "daily_digest",
+            "digest_watchdog",
+            "storage_cleanup",
+            "zombie_session_sweeper",
+        ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,
         digest_cron="06:00 Europe/Paris",
         watchdog_cron="07:30 Europe/Paris",
-        scheduled_restart_cron="01:00, 09:00, 17:00 Europe/Paris",
+        top3_cron="08:00 Europe/Paris",
+        cleanup_cron="03:00 Europe/Paris",
     )
 
 

@@ -24,7 +24,7 @@ from uuid import UUID, uuid4
 
 import structlog
 import yaml
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -111,7 +111,7 @@ def _schedule_background_regen(
 
     async def _regen() -> None:
         # Local import to avoid circulars
-        from app.database import async_session_maker
+        from app.database import safe_async_session
         from app.services.digest_generation_state_service import (
             mark_failed as _state_mark_failed,
         )
@@ -133,7 +133,7 @@ def _schedule_background_regen(
             return
 
         try:
-            async with async_session_maker() as bg_session:
+            async with safe_async_session() as bg_session:
                 bg_svc = DigestService(bg_session)
                 try:
                     # Check if a modern-format digest already exists.
@@ -179,7 +179,7 @@ def _schedule_background_regen(
                     # Record the failure in a fresh session so rollback
                     # doesn't wipe the observability row.
                     try:
-                        async with async_session_maker() as err_session:
+                        async with safe_async_session() as err_session:
                             await _state_mark_failed(
                                 err_session,
                                 user_id,
@@ -300,6 +300,150 @@ def _select_daily_quote(user_id: str, target_date: str) -> dict | None:
     seed = int(hashlib.sha256(f"{user_id}:{target_date}".encode()).hexdigest(), 16)
     rng = random.Random(seed)
     return rng.choice(quotes)
+
+
+# Format versions that the read-only hot path is willing to render. flat_v1
+# is legacy/expendable — never served from /digest or /digest/both.
+_READABLE_FORMATS: tuple[str, ...] = ("editorial_v1", "topics_v1")
+_HOTPATH_FALLBACK_DAYS = 7
+
+
+async def read_digest_or_fallback(
+    session: AsyncSession,
+    user_id: UUID,
+    target_date: date,
+    is_serene: bool,
+) -> DigestResponse | None:
+    """Read-only resolver for ``GET /digest`` and ``GET /digest/both``.
+
+    Walks a 5-step fallback chain that NEVER calls the LLM pipeline. Schedules
+    a background regeneration as a side-effect when serving stale content or
+    returning ``None``. Returns ``None`` when nothing is renderable — the
+    caller is expected to translate that into a 202 ``preparing`` response.
+
+    The chain (see docs/maintenance/maintenance-digest-readonly-hotpath.md):
+
+    1. Today's own ``editorial_v1`` digest for this user.
+    2. Any other user's ``editorial_v1`` digest for today (clone, since
+       editorial output is user-agnostic).
+    3. Yesterday's ``editorial_v1``/``topics_v1`` digest for this user.
+    4. Most recent digest within the last ``_HOTPATH_FALLBACK_DAYS`` days for
+       this user.
+    5. Nothing → schedule regen, return None.
+
+    Steps 3 and 4 set ``response.is_stale_fallback = True`` so the mobile
+    client (already wired since #422) auto-refetches silently when the
+    background regen lands.
+    """
+    svc = DigestService(session)
+
+    # 1. Today's own digest in a readable format.
+    own_today = await svc._get_existing_digest(
+        user_id, target_date, is_serene=is_serene
+    )
+    if own_today is not None and own_today.format_version in _READABLE_FORMATS:
+        try:
+            return await svc._build_digest_response(own_today, user_id)
+        except Exception:
+            logger.exception(
+                "digest_hotpath_own_today_render_failed",
+                user_id=str(user_id),
+                digest_id=str(own_today.id),
+                format_version=own_today.format_version,
+            )
+
+    # 2. Clone any other user's editorial_v1 digest for today.
+    cloned = await svc._try_clone_global_editorial_digest(
+        user_id=user_id, target_date=target_date, is_serene=is_serene
+    )
+    if cloned is not None:
+        try:
+            return await svc._build_digest_response(cloned, user_id)
+        except Exception:
+            logger.exception(
+                "digest_hotpath_clone_render_failed",
+                user_id=str(user_id),
+                cloned_from_generated_at=str(cloned.generated_at),
+            )
+
+    # 3. Yesterday's digest for this user in a readable format.
+    yesterday = target_date - timedelta(days=1)
+    yesterday_digest = await svc._get_existing_digest(
+        user_id, yesterday, is_serene=is_serene
+    )
+    if (
+        yesterday_digest is not None
+        and yesterday_digest.format_version in _READABLE_FORMATS
+    ):
+        _schedule_background_regen(
+            user_id=user_id, target_date=target_date, is_serene=is_serene
+        )
+        try:
+            response = await svc._build_digest_response(yesterday_digest, user_id)
+            response.is_stale_fallback = True
+            logger.warning(
+                "digest_hotpath_serving_yesterday",
+                user_id=str(user_id),
+                yesterday_date=str(yesterday),
+                format_version=yesterday_digest.format_version,
+            )
+            return response
+        except Exception:
+            logger.exception(
+                "digest_hotpath_yesterday_render_failed",
+                user_id=str(user_id),
+                format_version=yesterday_digest.format_version,
+            )
+
+    # 4. Last 7 days fallback for this user.
+    cutoff = target_date - timedelta(days=_HOTPATH_FALLBACK_DAYS)
+    older_stmt = (
+        select(DailyDigest)
+        .where(
+            and_(
+                DailyDigest.user_id == user_id,
+                DailyDigest.target_date >= cutoff,
+                DailyDigest.target_date < target_date,
+                DailyDigest.is_serene == is_serene,
+                DailyDigest.format_version.in_(_READABLE_FORMATS),
+            )
+        )
+        .order_by(DailyDigest.target_date.desc())
+        .limit(1)
+    )
+    older = (await session.execute(older_stmt)).scalar_one_or_none()
+    if older is not None:
+        _schedule_background_regen(
+            user_id=user_id, target_date=target_date, is_serene=is_serene
+        )
+        try:
+            response = await svc._build_digest_response(older, user_id)
+            response.is_stale_fallback = True
+            logger.warning(
+                "digest_hotpath_serving_older",
+                user_id=str(user_id),
+                stale_date=str(older.target_date),
+                format_version=older.format_version,
+            )
+            return response
+        except Exception:
+            logger.exception(
+                "digest_hotpath_older_render_failed",
+                user_id=str(user_id),
+                stale_date=str(older.target_date),
+            )
+
+    # 5. Nothing renderable — schedule regen and tell the caller to 202.
+    _schedule_background_regen(
+        user_id=user_id, target_date=target_date, is_serene=is_serene
+    )
+    logger.info(
+        "digest_hotpath_no_renderable_returning_202",
+        user_id=str(user_id),
+        target_date=str(target_date),
+        is_serene=is_serene,
+    )
+    return None
 
 
 @dataclass
@@ -1195,20 +1339,36 @@ class DigestService:
         # Get action stats from content statuses
         stats = await self._get_digest_action_stats(user_id, digest)
 
-        # Create completion record
-        completion = DigestCompletion(
-            id=uuid4(),
-            user_id=user_id,
-            target_date=digest.target_date,
-            completed_at=datetime.utcnow(),
-            articles_read=stats["read"],
-            articles_saved=stats["saved"],
-            articles_dismissed=stats["dismissed"],
-            closure_time_seconds=closure_time_seconds,
+        # Upsert completion record. The implicit path
+        # (`maybe_record_implicit_completion`) may have already inserted a
+        # minimal row once the user crossed the 80% threshold — in that case
+        # we enrich it here with the full stats from the explicit flow.
+        completed_at = datetime.utcnow()
+        upsert_stmt = (
+            pg_insert(DigestCompletion)
+            .values(
+                user_id=user_id,
+                target_date=digest.target_date,
+                completed_at=completed_at,
+                articles_read=stats["read"],
+                articles_saved=stats["saved"],
+                articles_dismissed=stats["dismissed"],
+                closure_time_seconds=closure_time_seconds,
+            )
+            .on_conflict_do_update(
+                index_elements=["user_id", "target_date"],
+                set_={
+                    "completed_at": completed_at,
+                    "articles_read": stats["read"],
+                    "articles_saved": stats["saved"],
+                    "articles_dismissed": stats["dismissed"],
+                    "closure_time_seconds": closure_time_seconds,
+                },
+            )
         )
-        self.session.add(completion)
+        await self.session.execute(upsert_stmt)
 
-        # Update closure streak
+        # Update closure streak (idempotent same-day via last_closure_date).
         streak_update = await self._update_closure_streak(user_id)
 
         await self.session.flush()
@@ -1216,7 +1376,7 @@ class DigestService:
         return {
             "success": True,
             "digest_id": digest_id,
-            "completed_at": completion.completed_at,
+            "completed_at": completed_at,
             "articles_read": stats["read"],
             "articles_saved": stats["saved"],
             "articles_dismissed": stats["dismissed"],
@@ -1224,6 +1384,96 @@ class DigestService:
             "closure_streak": streak_update["current"],
             "streak_message": streak_update.get("message"),
         }
+
+    async def maybe_record_implicit_completion(
+        self,
+        user_id: UUID,
+        content_id: UUID,
+        threshold: float = 0.8,
+    ) -> bool:
+        """Record a digest_completions row implicitly when the user has
+        consumed ≥`threshold` of today's digest items.
+
+        Mirrors the closure_screen POST `/digest/{id}/complete` path so that
+        users who never reach the explicit "terminer mon digest" CTA still
+        appear in the engagement funnel. Idempotent via the UNIQUE constraint
+        on (user_id, target_date) → `ON CONFLICT DO NOTHING`.
+
+        Returns True when a completion was attempted (threshold met), False
+        otherwise. Callers can treat any exception as non-fatal — the helper
+        swallows errors so it never blocks the main content-status flow.
+        """
+        try:
+            today = today_paris()
+            stmt = select(DailyDigest).where(
+                and_(
+                    DailyDigest.user_id == user_id,
+                    DailyDigest.target_date == today,
+                )
+            )
+            result = await self.session.execute(stmt)
+            digests = list(result.scalars().all())
+
+            for digest in digests:
+                content_ids = self._extract_digest_content_ids(digest)
+                if not content_ids or content_id not in content_ids:
+                    continue
+
+                count_stmt = (
+                    select(func.count())
+                    .select_from(UserContentStatus)
+                    .where(
+                        and_(
+                            UserContentStatus.user_id == user_id,
+                            UserContentStatus.content_id.in_(content_ids),
+                            UserContentStatus.status == ContentStatus.CONSUMED,
+                        )
+                    )
+                )
+                consumed_count = (await self.session.execute(count_stmt)).scalar_one()
+
+                if consumed_count / len(content_ids) < threshold:
+                    continue
+
+                insert_stmt = (
+                    pg_insert(DigestCompletion)
+                    .values(
+                        user_id=user_id,
+                        target_date=digest.target_date,
+                        completed_at=datetime.utcnow(),
+                        articles_read=consumed_count,
+                    )
+                    .on_conflict_do_nothing(
+                        index_elements=["user_id", "target_date"],
+                    )
+                    .returning(DigestCompletion.id)
+                )
+                inserted_id = (
+                    await self.session.execute(insert_stmt)
+                ).scalar_one_or_none()
+                logger.info(
+                    "digest_completion_implicit",
+                    user_id=str(user_id),
+                    target_date=str(digest.target_date),
+                    consumed_count=consumed_count,
+                    total=len(content_ids),
+                    inserted=inserted_id is not None,
+                )
+                # Keep the closure streak in sync when we actually inserted a
+                # new row — `_update_closure_streak` is itself same-day
+                # idempotent, but skipping the call when we no-opped on
+                # conflict avoids an unnecessary UserStreak read/write.
+                if inserted_id is not None:
+                    await self._update_closure_streak(user_id)
+                return True
+        except Exception as exc:  # noqa: BLE001 — never break the caller
+            logger.warning(
+                "digest_completion_implicit_failed",
+                user_id=str(user_id),
+                content_id=str(content_id),
+                error=str(exc),
+            )
+        return False
 
     async def _get_existing_digest(
         self, user_id: UUID, target_date: date, is_serene: bool = False
@@ -2594,19 +2844,23 @@ class DigestService:
             source_id=str(content.source_id),
         )
 
-    async def _get_digest_action_stats(
-        self, user_id: UUID, digest: DailyDigest
-    ) -> dict[str, int]:
-        """Count actions taken on digest items."""
-        # Handle both flat and topics_v1 formats
+    @staticmethod
+    def _extract_digest_content_ids(digest: DailyDigest) -> list[UUID]:
+        """Return the flat list of content UUIDs in a digest, regardless of
+        storage format (`flat_v1` list vs `topics_v1`/`editorial_v1` dict)."""
         if isinstance(digest.items, dict) and digest.items.get("format") == "topics_v1":
-            content_ids = [
+            return [
                 UUID(a["content_id"])
                 for t in digest.items["topics"]
                 for a in t["articles"]
             ]
-        else:
-            content_ids = [UUID(item["content_id"]) for item in digest.items]
+        return [UUID(item["content_id"]) for item in digest.items]
+
+    async def _get_digest_action_stats(
+        self, user_id: UUID, digest: DailyDigest
+    ) -> dict[str, int]:
+        """Count actions taken on digest items."""
+        content_ids = self._extract_digest_content_ids(digest)
 
         # Get all statuses for these content items
         stmt = select(UserContentStatus).where(

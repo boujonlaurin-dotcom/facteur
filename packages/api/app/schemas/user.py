@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class UserProfileCreate(BaseModel):
@@ -59,21 +59,29 @@ class UserInterestResponse(BaseModel):
 
 
 class OnboardingAnswers(BaseModel):
-    """Réponses du questionnaire d'onboarding."""
+    """Réponses du questionnaire d'onboarding.
+
+    Tolérant aux nulls: un client qui envoie un état partiel (ex. bug mobile
+    ou reprise d'onboarding interrompue) ne doit pas subir un 422 bloquant.
+    Les défauts appliqués ici permettent au service de toujours persister
+    quelque chose — les préférences à None sont ensuite skippées en base.
+    """
 
     # Section 1 - Overview
-    objective: str = Field(..., description="Objectif : learn, culture, professional")
+    objective: str | None = Field(
+        None, description="Objectif : learn, culture, professional"
+    )
     age_range: str | None = Field(
         None, description="Tranche d'âge (removed in onboarding v3)"
     )
     gender: str | None = None
-    approach: str = Field(..., description="direct ou detailed")
+    approach: str | None = Field(None, description="direct ou detailed")
 
     # Section 2 - App Preferences
     perspective: str | None = Field(
         None, description="big_picture ou detail_oriented (removed in onboarding v3)"
     )
-    response_style: str = Field(..., description="decisive ou nuanced")
+    response_style: str | None = Field(None, description="decisive ou nuanced")
     content_recency: str | None = Field(
         None, description="recent ou evergreen (deprecated)"
     )
@@ -84,6 +92,11 @@ class OnboardingAnswers(BaseModel):
     digest_mode: str | None = Field(
         "pour_vous", description="pour_vous, serein, perspective"
     )
+
+    @field_validator("gamification_enabled", mode="before")
+    @classmethod
+    def _default_gamification(cls, v: bool | None) -> bool:
+        return True if v is None else v
 
     # Section 3 - Source Preferences
     preferred_sources: list[str] | None = Field(

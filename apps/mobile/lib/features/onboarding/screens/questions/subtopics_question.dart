@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/theme.dart';
+import '../../../../core/providers/analytics_provider.dart';
 import '../../../custom_topics/models/topic_models.dart';
 import '../../../custom_topics/providers/custom_topics_provider.dart';
 import '../../providers/onboarding_provider.dart';
@@ -53,6 +56,25 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
         }
       }
     }
+
+    // Sprint 2 PR1 — fire subtopic_suggestion_shown once per unique slug
+    // presented across the selected themes.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final analytics = ref.read(analyticsServiceProvider);
+      final seen = <String>{};
+      for (final themeSlug in answers.themes ?? const <String>[]) {
+        final subs = AvailableSubtopics.byTheme[themeSlug] ?? const [];
+        for (final sub in subs) {
+          if (seen.add(sub.slug)) {
+            unawaited(analytics.trackSubtopicSuggestionShown(
+              subtopicSlug: sub.slug,
+              origin: 'onboarding',
+            ));
+          }
+        }
+      }
+    });
   }
 
   @override
@@ -64,13 +86,27 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
 
   void _toggleSubtopic(String slug) {
     HapticFeedback.selectionClick();
+    final wasSelected = _selectedSubtopics.contains(slug);
     setState(() {
-      if (_selectedSubtopics.contains(slug)) {
+      if (wasSelected) {
         _selectedSubtopics.remove(slug);
       } else {
         _selectedSubtopics.add(slug);
       }
     });
+    // Sprint 2 PR1 — fire subtopic_added / subtopic_removed.
+    final analytics = ref.read(analyticsServiceProvider);
+    if (wasSelected) {
+      unawaited(analytics.trackSubtopicRemoved(
+        subtopicSlug: slug,
+        origin: 'onboarding',
+      ));
+    } else {
+      unawaited(analytics.trackSubtopicAdded(
+        subtopicSlug: slug,
+        origin: 'onboarding',
+      ));
+    }
   }
 
   void _toggleEntity(String entityName) {
@@ -110,41 +146,59 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
   }
 
   Future<void> _continue() async {
-    // Collect custom topics + entities to save via API BEFORE navigating
+    // Collect custom topics + entities to save via API BEFORE navigating.
+    // Non-bloquant : les échecs sont loggués et résumés en fin d'onboarding,
+    // jamais opposés à la progression utilisateur.
     final notifier = ref.read(customTopicsProvider.notifier);
-    final futures = <Future<dynamic>>[];
+    final attempts = <_TopicAttempt>[];
 
     for (final entry in _customTopics.entries) {
       for (final topicName in entry.value) {
-        futures.add(
-          notifier
+        attempts.add(_TopicAttempt(
+          name: topicName,
+          future: notifier
               .followTopic(topicName, slugParent: entry.key)
-              .catchError((_) => null),
-        );
+              .then<Object?>((v) => v)
+              .catchError((Object e, StackTrace st) {
+            debugPrint(
+              '[ONBOARDING_TELEMETRY] event=custom_topic_failed '
+              'name="$topicName" theme=${entry.key} error=$e',
+            );
+            return null;
+          }),
+        ));
       }
     }
     for (final entityName in _selectedEntities) {
-      futures.add(
-        notifier.followTopic(entityName).catchError((_) => null),
-      );
+      attempts.add(_TopicAttempt(
+        name: entityName,
+        future: notifier
+            .followTopic(entityName)
+            .then<Object?>((v) => v)
+            .catchError((Object e, StackTrace st) {
+          debugPrint(
+            '[ONBOARDING_TELEMETRY] event=custom_entity_failed '
+            'name="$entityName" error=$e',
+          );
+          return null;
+        }),
+      ));
     }
 
-    if (futures.isNotEmpty) {
+    if (attempts.isNotEmpty) {
       setState(() => _saving = true);
-      final results = await Future.wait(futures);
-      final failed = results.where((r) => r == null).length;
+      final results = await Future.wait(attempts.map((a) => a.future));
+      final failedNames = <String>[
+        for (var i = 0; i < attempts.length; i++)
+          if (results[i] == null) attempts[i].name,
+      ];
 
-      if (mounted && failed > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              failed == results.length
-                  ? 'Impossible de sauvegarder les sujets personnalisés'
-                  : '$failed sujet(s) n\'ont pas pu être sauvegardés',
-            ),
-            duration: const Duration(seconds: 3),
-          ),
-        );
+      if (failedNames.isNotEmpty) {
+        // Stocke dans l'état — la bottom sheet de synthèse s'affichera
+        // après la conclusion, à la place du snackbar éphémère.
+        ref
+            .read(onboardingProvider.notifier)
+            .recordFailedCustomTopics(failedNames);
       }
     }
 
@@ -539,6 +593,12 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
       ),
     );
   }
+}
+
+class _TopicAttempt {
+  final String name;
+  final Future<Object?> future;
+  const _TopicAttempt({required this.name, required this.future});
 }
 
 class _EntityChip extends StatelessWidget {

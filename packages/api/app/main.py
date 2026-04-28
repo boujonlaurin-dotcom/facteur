@@ -48,6 +48,11 @@ structlog.configure(
     logger_factory=structlog.PrintLoggerFactory(),
 )
 logger = structlog.get_logger()
+# Boot probe : confirme en prod que les warnings structlog atteignent stdout
+# JSON (Railway logs / Sentry). Si absent du 1er log post-deploy, le pipeline
+# est cassé et les signaux pool (long_session_checkout, db_pool_pressure_high)
+# ne remontent pas non plus.
+logger.warning("startup_logger_check", level="warning_emitted")
 
 db_url = os.environ.get("DATABASE_URL")
 logger.info(
@@ -76,6 +81,7 @@ from app.routers import (
     custom_topics,
     digest,
     feed,
+    images,
     internal,
     personalization,
     progress,
@@ -85,6 +91,7 @@ from app.routers import (
     users,
     waitlist,
     webhooks,
+    well_informed,
 )
 from app.workers.scheduler import start_scheduler, stop_scheduler
 
@@ -110,16 +117,44 @@ def _get_alembic_head() -> str:
         return "unknown"
 
 
-# Drop trafilatura HTTP noise (not 200 / download error) saturating Sentry quota.
+# Drop predictable RSS fetch noise saturating Sentry quota (sources rate-limit
+# our crawler — expected, not actionable). Metric preserved via Railway log.
+_RSS_NOISE_LOGGERS = (
+    "trafilatura",
+    "feedparser",
+    "app.workers.rss_sync",
+    "app.services.rss_parser",
+)
+_RSS_NOISE_PATTERNS = (
+    "not a 200 response",
+    "download error",
+    "403 client error",
+    "404 client error",
+    "read timed out",
+    "connection reset",
+)
+
+
+def _extract_event_message(event: dict) -> str:
+    msg = (event.get("logentry") or {}).get("message") or event.get("message") or ""
+    for exc in (event.get("exception") or {}).get("values") or []:
+        val = exc.get("value") or ""
+        if val:
+            msg = f"{msg} {val}"
+    return msg
+
+
 def _sentry_before_send(event: dict, hint: dict) -> dict | None:
     logger_name = event.get("logger") or ""
-    if not logger_name.startswith("trafilatura"):
+    if not logger_name.startswith(_RSS_NOISE_LOGGERS):
         return event
-    message = (
-        event.get("logentry", {}).get("message", "") or event.get("message", "") or ""
-    )
-    message_lower = message.lower()
-    if "not a 200 response" in message_lower or "download error:" in message_lower:
+    message_lower = _extract_event_message(event).lower()
+    if any(pat in message_lower for pat in _RSS_NOISE_PATTERNS):
+        logger.info(
+            "rss_fetch_dropped_from_sentry",
+            sentry_logger=logger_name,
+            reason_excerpt=message_lower[:200],
+        )
         return None
     return event
 
@@ -243,14 +278,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     from sqlalchemy import func
                     from sqlalchemy import select as sa_select
 
-                    from app.database import async_session_maker
+                    from app.database import safe_async_session
                     from app.jobs.digest_generation_job import run_digest_generation
                     from app.models.daily_digest import DailyDigest
                     from app.models.user import UserProfile
 
                     await asyncio.sleep(60)
 
-                    async with async_session_maker() as session:
+                    async with safe_async_session() as session:
                         today = datetime.now(ZoneInfo("Europe/Paris")).date()
 
                         total_users = await session.scalar(
@@ -382,6 +417,7 @@ app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(feed.router, prefix="/api/feed", tags=["Feed"])
 app.include_router(digest.router, prefix="/api/digest", tags=["Digest"])
 app.include_router(contents.router, prefix="/api/contents", tags=["Contents"])
+app.include_router(images.router, prefix="/api/images", tags=["Images"])
 app.include_router(sources.router, prefix="/api/sources", tags=["Sources"])
 app.include_router(
     subscription.router, prefix="/api/subscription", tags=["Subscription"]
@@ -406,6 +442,11 @@ app.include_router(
 app.include_router(app_update.router, prefix="/api/app", tags=["AppUpdate"])
 app.include_router(waitlist.router, prefix="/api/waitlist", tags=["Waitlist"])
 app.include_router(admin_cohorts.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(
+    well_informed.router,
+    prefix="/api/well-informed",
+    tags=["WellInformed"],
+)
 
 
 @app.exception_handler(Exception)
@@ -544,6 +585,7 @@ async def pool_metrics() -> dict[str, Any]:
                 usage_pct=round(usage_pct * 100, 1),
             )
 
+    logger.info("pool_metrics_probed", **metrics)
     return metrics
 
 

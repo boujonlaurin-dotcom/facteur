@@ -171,7 +171,10 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // 5. Onboarding : empêcher d'y retourner si fini
       if (!authState.needsOnboarding && isOnOnboarding) {
-        return RoutePaths.digest; // Go to digest after onboarding completion
+        // Post-onboarding goes to /digest. The Welcome Tour v2 is triggered
+        // by WelcomeTourHost (overlay coachmark over /digest, /feed, /settings)
+        // when authState.welcomeTourSeen is false — no dedicated route.
+        return RoutePaths.digest;
       }
 
       // Allow staying on digest (default authenticated route)

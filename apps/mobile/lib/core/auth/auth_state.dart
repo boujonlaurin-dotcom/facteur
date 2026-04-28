@@ -5,7 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:sentry_flutter/sentry_flutter.dart';
+
 import '../../features/auth/utils/auth_error_messages.dart';
+import '../nudges/nudge_ids.dart';
+import '../nudges/nudge_service.dart';
+import '../services/posthog_service.dart';
+import '../services/widget_service.dart';
+import 'session_refresher.dart';
 
 /// État d'authentification
 class AuthState {
@@ -31,6 +38,13 @@ class AuthState {
   /// Cf. docs/bugs/bug-feed-403-auth-recovery.md.
   final DateTime? lastTokenRefreshAt;
 
+  /// Whether the user has already seen the post-onboarding Welcome Tour.
+  ///
+  /// Loaded at app boot from the unified NudgeService. Used by the GoRouter
+  /// redirect to gate `/welcome-tour` synchronously for both new users
+  /// (post-onboarding) and existing users (first boot after deploy).
+  final bool welcomeTourSeen;
+
   const AuthState({
     this.user,
     this.isLoading = false,
@@ -40,6 +54,7 @@ class AuthState {
     this.forceUnconfirmed = false,
     this.sessionExpired = false,
     this.lastTokenRefreshAt,
+    this.welcomeTourSeen = true,
   });
 
   bool get isAuthenticated => user != null;
@@ -79,6 +94,7 @@ class AuthState {
     bool? forceUnconfirmed,
     bool? sessionExpired,
     DateTime? lastTokenRefreshAt,
+    bool? welcomeTourSeen,
   }) {
     return AuthState(
       user: user ?? this.user,
@@ -91,6 +107,7 @@ class AuthState {
       forceUnconfirmed: forceUnconfirmed ?? this.forceUnconfirmed,
       sessionExpired: sessionExpired ?? this.sessionExpired,
       lastTokenRefreshAt: lastTokenRefreshAt ?? this.lastTokenRefreshAt,
+      welcomeTourSeen: welcomeTourSeen ?? this.welcomeTourSeen,
     );
   }
 }
@@ -103,7 +120,6 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   }
 
   final _supabase = Supabase.instance.client;
-  Timer? _refreshTimer;
 
   /// Timestamp of the last forceUnconfirmed set. Used to debounce
   /// repeated 403s and avoid redirect loops.
@@ -152,19 +168,31 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       // 4. Refresh bloquant : rafraîchir le token AVANT de set l'état authentifié.
       // Le token d'accès Supabase expire après 1h. Si l'app est relancée après,
       // le token stocké est mort. On le rafraîchit ici pour éviter des 401 immédiats.
+      // Single-flight via SessionRefresher pour éviter la race "double-refresh"
+      // (cf. docs/bugs/bug-android-disconnect-race.md).
       if (session != null) {
         debugPrint(
             'AuthStateNotifier: Session found, attempting blocking refresh...');
         try {
-          final response = await _supabase.auth
-              .refreshSession()
-              .timeout(const Duration(seconds: 8));
-          session = response.session;
-          debugPrint('AuthStateNotifier: ✅ Session refreshed successfully.');
+          final refreshed = await SessionRefresher.instance.refresh();
+          if (refreshed != null) {
+            session = refreshed;
+            debugPrint('AuthStateNotifier: ✅ Session refreshed successfully.');
+          }
         } on AuthException catch (e) {
           debugPrint(
               'AuthStateNotifier: Refresh failed (AuthException): ${e.message}');
-          // Refresh token expiré → clear session, afficher message friendly
+          // Si SessionRefresher a propagé une AuthException, c'est qu'il a déjà
+          // vérifié que `currentSession` est null/expirée. La session est morte.
+          unawaited(PostHogService().capture(
+            event: 'auth_session_expired',
+            properties: {'reason': 'init_refresh_failed'},
+          ));
+          unawaited(Sentry.captureException(
+            e,
+            withScope: (scope) =>
+                scope.setTag('auth_event', 'init_refresh_failed'),
+          ));
           session = null;
           await _supabase.auth.signOut().timeout(
             const Duration(seconds: 3),
@@ -216,7 +244,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
 
       if (session != null) {
         await _checkOnboardingStatus();
-        _startProactiveRefreshTimer();
+        await _loadWelcomeTourSeen();
       }
 
       // 7. Écouter les changements futurs
@@ -274,40 +302,38 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         lastTokenRefreshAt: isTokenRefresh ? DateTime.now() : null,
       );
 
-      if (user != null) {
-        // Check onboarding on first sign-in (new user appearing)
-        if (isNewSignIn) {
-          _checkOnboardingStatus();
-        }
-        _startProactiveRefreshTimer();
-      } else {
-        _refreshTimer?.cancel();
+      if (user != null && isNewSignIn) {
+        // Check onboarding on first sign-in (new user appearing).
+        // Sequential await: `welcomeTourSeen` must settle AFTER `needsOnboarding`
+        // so the `WelcomeTourHost` doesn't race — starting the tour in the
+        // brief window where the shell is mounted before the onboarding
+        // redirect kicks in. Without the sequence, switching accounts on the
+        // same device could flash the tour and then strand its controller
+        // with `active=true` during onboarding.
+        _loadSessionProfile();
       }
     });
   }
 
-  /// Timer proactif : rafraîchit la session toutes les 45 min pour éviter
-  /// que le token d'accès (1h TTL) n'expire pendant l'utilisation.
-  void _startProactiveRefreshTimer() {
-    _refreshTimer?.cancel();
-    _refreshTimer = Timer.periodic(
-      const Duration(minutes: 45),
-      (_) {
-        if (state.isAuthenticated) {
-          debugPrint(
-              'AuthStateNotifier: Proactive timer refresh (45 min)...');
-          refreshUser();
-        } else {
-          _refreshTimer?.cancel();
-        }
-      },
-    );
-  }
-
   /// Gère l'expiration de session (refresh token expiré ou 401 irrécupérable).
   /// Déconnecte proprement et affiche un message friendly sur l'écran de login.
-  Future<void> handleSessionExpired() async {
-    _refreshTimer?.cancel();
+  ///
+  /// `reason` : tag d'instrumentation pour identifier dans PostHog/Sentry quel
+  /// chemin a déclenché la déconnexion (refresh_failed, 401_after_refresh,
+  /// init_refresh_failed, etc.). Cf. docs/bugs/bug-android-disconnect-race.md.
+  Future<void> handleSessionExpired({String reason = 'unknown'}) async {
+    debugPrint(
+        'AuthStateNotifier: handleSessionExpired (reason=$reason). TRACE:');
+    debugPrint(StackTrace.current.toString());
+    unawaited(PostHogService().capture(
+      event: 'auth_session_expired',
+      properties: {'reason': reason},
+    ));
+    unawaited(Sentry.captureMessage(
+      'auth_session_expired',
+      level: SentryLevel.warning,
+      withScope: (scope) => scope.setTag('reason', reason),
+    ));
     await _supabase.auth.signOut().timeout(
       const Duration(seconds: 3),
       onTimeout: () {},
@@ -318,7 +344,6 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   Future<void> signOut() async {
     debugPrint('AuthStateNotifier: signOut() explicitly called. TRACE:');
     debugPrint(StackTrace.current.toString());
-    _refreshTimer?.cancel();
     await _supabase.auth.signOut();
     final box = await Hive.openBox<dynamic>('auth_prefs');
     await box.delete('remember_me'); // Reset preference on sign out
@@ -334,31 +359,57 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       await Hive.box<String>('feed_cache').clear();
     }
 
+    // Wipe the home-screen widget so the next account on the same device
+    // never briefly sees the previous user's digest.
+    await WidgetService.clear();
+
     state = const AuthState();
   }
 
   @override
   // ignore: avoid_renaming_method_parameters
   void didChangeAppLifecycleState(AppLifecycleState appState) {
-    if (appState == AppLifecycleState.resumed) {
-      // Reset loading state in case user cancelled an OAuth flow
-      if (state.isLoading) {
-        state = state.copyWith(isLoading: false);
-      }
-      if (state.isAuthenticated) {
-        debugPrint(
-            'AuthStateNotifier: App resumed. Proactively refreshing session...');
-        refreshUser();
-        _startProactiveRefreshTimer();
-      }
+    if (appState != AppLifecycleState.resumed) return;
+    // Reset loading state in case user cancelled an OAuth flow
+    if (state.isLoading) {
+      state = state.copyWith(isLoading: false);
     }
+    if (!state.isAuthenticated) return;
+
+    // Au resume après background prolongé (typique : nuit complète sur Android),
+    // l'access token JWT (TTL 1h) est expiré. On refresh AVANT que l'UI
+    // déclenche des requêtes pour éviter une cascade de 401 → refresh
+    // concurrents (cf. docs/bugs/bug-android-disconnect-race.md).
+    //
+    // SessionRefresher garantit le single-flight : si l'ApiClient interceptor
+    // (sur 401) tape entre-temps, il piggyback sur cette future au lieu de
+    // déclencher un 2ème refresh.
+    debugPrint(
+        'AuthStateNotifier: App resumed. Refreshing session (single-flight)...');
+    SessionRefresher.instance
+        .refresh()
+        .then((_) => debugPrint('AuthStateNotifier: Resume refresh done.'))
+        .catchError((Object e) {
+      debugPrint('AuthStateNotifier: Resume refresh failed: $e');
+    });
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// Loads onboarding status and welcome-tour-seen flag in sequence.
+  ///
+  /// Sequential ordering is load-bearing: `WelcomeTourHost` listens to both
+  /// flags, and if `welcomeTourSeen=false` settles before `needsOnboarding=true`
+  /// the host will start the tour in the shell before the onboarding redirect
+  /// takes effect — leaving the tour's state machine stuck when the host
+  /// unmounts.
+  Future<void> _loadSessionProfile() async {
+    await _checkOnboardingStatus();
+    await _loadWelcomeTourSeen();
   }
 
   Future<void> _checkOnboardingStatus() async {
@@ -421,6 +472,40 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   /// Force le rafraîchissement du statut onboarding depuis la DB
   Future<void> refreshOnboardingStatus() async {
     await _checkOnboardingStatus();
+  }
+
+  /// Charge l'état "tour vu" pour l'utilisateur courant depuis NudgeService.
+  ///
+  /// La clé est scopée par `user.id` (cf. [NudgeStorage.isSeenForUser]) pour
+  /// que deux comptes sur le même device voient le tour indépendamment.
+  /// Appelé à l'init (session restaurée) et lors d'un nouveau sign-in.
+  Future<void> _loadWelcomeTourSeen() async {
+    final userId = state.user?.id;
+    if (userId == null) return;
+    try {
+      final seen =
+          await NudgeService().isSeenForUser(NudgeIds.welcomeTour, userId);
+      if (state.welcomeTourSeen != seen) {
+        state = state.copyWith(welcomeTourSeen: seen);
+      }
+    } catch (e) {
+      debugPrint('AuthState: _loadWelcomeTourSeen error: $e');
+    }
+  }
+
+  /// Marque le Welcome Tour comme vu pour l'utilisateur courant.
+  ///
+  /// Appelé par le `WelcomeTourController` à la fin du tour ou sur skip.
+  Future<void> markWelcomeTourSeen() async {
+    if (state.welcomeTourSeen) return;
+    final userId = state.user?.id;
+    state = state.copyWith(welcomeTourSeen: true);
+    if (userId == null) return;
+    try {
+      await NudgeService().markSeenForUser(NudgeIds.welcomeTour, userId);
+    } catch (e) {
+      debugPrint('AuthState: markWelcomeTourSeen persistence error: $e');
+    }
   }
 
   Future<void> signInWithEmail(
@@ -646,13 +731,15 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     }
   }
 
-  /// Rafraîchit les informations de l'utilisateur depuis Supabase
-  /// Utile pour vérifier si l'email a été confirmé
+  /// Rafraîchit les informations de l'utilisateur depuis Supabase via le
+  /// `SessionRefresher` (single-flight). Sur AuthException, recheck
+  /// `currentSession` avant de déconnecter — un refresh concurrent a peut-être
+  /// déjà obtenu une session valide. Cf. docs/bugs/bug-android-disconnect-race.md.
   Future<void> refreshUser() async {
     try {
       debugPrint('AuthStateNotifier: Refreshing user session...');
-      final response = await _supabase.auth.refreshSession();
-      final user = response.user;
+      final session = await SessionRefresher.instance.refresh();
+      final user = session?.user;
 
       if (user != null) {
         final isNowConfirmed = user.emailConfirmedAt != null ||
@@ -672,7 +759,18 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     } on AuthException catch (e) {
       debugPrint(
           'AuthStateNotifier: Refresh failed (AuthException): ${e.message}');
-      // Détecter si le refresh token est expiré/invalide.
+      // Recheck via le SDK : un refresh concurrent (le SDK lui-même ou un
+      // autre call site via SessionRefresher) a peut-être déjà obtenu une
+      // session valide pendant que cet appel échouait.
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      final currentSession = _supabase.auth.currentSession;
+      if (currentSession != null && !currentSession.isExpired) {
+        debugPrint(
+            'AuthStateNotifier: Concurrent refresh recovered session — not signing out.');
+        return;
+      }
+
+      // Détecter si le refresh token est vraiment expiré/invalide.
       // IMPORTANT: Ne matcher que des messages spécifiques à l'expiration
       // de session. "invalid" seul est trop large et cause des déconnexions
       // intempestives sur des erreurs transitoires.
@@ -686,13 +784,14 @@ class AuthStateNotifier extends StateNotifier<AuthState>
           msg.contains('user not found')) {
         debugPrint(
             'AuthStateNotifier: Refresh token expired. Ending session.');
-        await handleSessionExpired();
+        await handleSessionExpired(reason: 'refresh_token_expired');
       }
     } catch (e) {
-      // Erreur réseau ou autre — ne rien faire, le timer réessaiera
+      // Erreur réseau ou autre — ne rien faire, le SDK auto-refresh réessaiera
       debugPrint('AuthStateNotifier ERROR: Failed to refresh user: $e');
     }
   }
+
 
   /// Marque l'utilisateur comme non confirmé (suite à un 403 Backend).
   ///

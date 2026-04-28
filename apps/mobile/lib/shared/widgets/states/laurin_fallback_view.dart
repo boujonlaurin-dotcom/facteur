@@ -11,10 +11,20 @@ import '../buttons/secondary_button.dart';
 
 /// Fallback affiché après plusieurs échecs consécutifs : message rassurant et
 /// option de prévenir Laurin (mail / WhatsApp + presse-papier).
+///
+/// [title] / [subtitle] permettent d'adapter le message selon le contexte
+/// (digest, onboarding, etc.) sans dupliquer le widget.
 class LaurinFallbackView extends StatelessWidget {
   final VoidCallback onRetry;
+  final String? title;
+  final String? subtitle;
 
-  const LaurinFallbackView({super.key, required this.onRetry});
+  const LaurinFallbackView({
+    super.key,
+    required this.onRetry,
+    this.title,
+    this.subtitle,
+  });
 
   Future<void> _copyToClipboard(BuildContext context) async {
     await Clipboard.setData(
@@ -77,13 +87,13 @@ class LaurinFallbackView extends StatelessWidget {
               ),
               const SizedBox(height: FacteurSpacing.space4),
               Text(
-                LaurinFallbackStrings.title,
+                title ?? LaurinFallbackStrings.title,
                 textAlign: TextAlign.center,
                 style: FacteurTypography.displayMedium(colors.textPrimary),
               ),
               const SizedBox(height: FacteurSpacing.space2),
               Text(
-                LaurinFallbackStrings.subtitle,
+                subtitle ?? LaurinFallbackStrings.subtitle,
                 textAlign: TextAlign.center,
                 style: FacteurTypography.bodyMedium(colors.textSecondary),
               ),

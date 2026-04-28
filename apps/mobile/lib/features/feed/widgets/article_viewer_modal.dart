@@ -115,6 +115,10 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
           widget.content.source.id,
           duration,
         );
+    // Accumulate reading time on user_content_status for recommendation signal.
+    ref
+        .read(feedRepositoryProvider)
+        .updateContentStatusWithTimeSpent(widget.content.id, duration);
     super.dispose();
   }
 

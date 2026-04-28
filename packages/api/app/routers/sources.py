@@ -1,5 +1,6 @@
 """Routes sources."""
 
+import contextlib
 import time
 from collections import defaultdict
 from urllib.parse import urlparse
@@ -8,9 +9,10 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import async_session_maker, get_db
+from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
 from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.source import Source
@@ -35,8 +37,13 @@ from app.schemas.source import (
     UpdateSourceWeightRequest,
 )
 from app.services.feed_cache import FEED_CACHE
-from app.services.search.smart_source_search import SmartSourceSearchService
+from app.services.search.smart_source_search import (
+    SmartSourceSearchService,
+    mark_search_abandoned,
+)
 from app.services.source_service import SourceService
+from app.services.sources_cache import SOURCES_CACHE
+from app.utils.db_retry import retry_db_op
 
 logger = structlog.get_logger()
 
@@ -56,7 +63,7 @@ async def _log_failed_source_attempt(
     # rollback-on-BaseException (database.py:257) which would otherwise erase
     # the insert.
     try:
-        async with async_session_maker() as session:
+        async with safe_async_session() as session:
             session.add(
                 FailedSourceAttempt(
                     user_id=UUID(user_id),
@@ -101,11 +108,45 @@ async def get_sources(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> SourceCatalogResponse:
-    """Récupérer toutes les sources (curées + custom)."""
-    service = SourceService(db)
-    sources = await service.get_all_sources(user_id)
+    """Récupérer toutes les sources (curées + custom).
 
-    return sources
+    Resilient read : per-user 30 s cache + retry on transient DB errors
+    (PYTHON-4 / PYTHON-26 — pool pressure). Returns 503 ``sources_unavailable``
+    on persistent failure so the mobile FriendlyErrorView can render the
+    "Petit souci de serveur" copy instead of a raw DioException.
+    """
+    user_uuid = UUID(user_id)
+
+    cached = SOURCES_CACHE.get(user_uuid)
+    if cached is not None:
+        return cached
+
+    async with SOURCES_CACHE.lock(user_uuid):
+        cached = SOURCES_CACHE.get(user_uuid)
+        if cached is not None:
+            return cached
+
+        service = SourceService(db)
+        try:
+            sources = await retry_db_op(
+                lambda: service.get_all_sources(user_id),
+                session=db,
+                op_name="sources.get_all",
+            )
+        except (SQLAlchemyError, DBAPIError) as e:
+            logger.error(
+                "sources_endpoint_db_error",
+                user_id=user_id,
+                exc_type=type(e).__name__,
+                error=str(e)[:300],
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="sources_unavailable",
+            )
+
+        SOURCES_CACHE.put(user_uuid, sources)
+        return sources
 
 
 @router.get("/catalog", response_model=list[SourceResponse])
@@ -144,8 +185,14 @@ THEME_LABELS = {
 }
 
 
-def _source_to_response(s: Source) -> SourceResponse:
-    """Convert Source model to SourceResponse (minimal, no user context)."""
+def _source_to_response(
+    s: Source, *, trusted_ids: set[UUID] | None = None
+) -> SourceResponse:
+    """Convert Source model to SourceResponse.
+
+    `trusted_ids` lets callers flag sources already followed by the current
+    user (used by the theme suggestions screen to show "déjà suivie").
+    """
     return SourceResponse(
         id=s.id,
         name=s.name,
@@ -156,6 +203,7 @@ def _source_to_response(s: Source) -> SourceResponse:
         logo_url=s.logo_url,
         is_curated=s.is_curated,
         is_custom=not s.is_curated,
+        is_trusted=trusted_ids is not None and s.id in trusted_ids,
         content_count=0,
         bias_stance=getattr(s.bias_stance, "value", "unknown"),
         reliability_score=getattr(s.reliability_score, "value", "unknown"),
@@ -182,7 +230,19 @@ async def smart_search(
             detail="Too many requests (max 10/minute)",
         )
 
-    service = SmartSourceSearchService(db)
+    async def _release_db() -> None:
+        # Hand the request-scoped session back to the pool before the service
+        # enters its slow external phase (LLM/Brave/GoogleNews). FastAPI's
+        # `get_db` dependency wraps `close()` in a finally — calling it here
+        # is safe because AsyncSession.close() is idempotent.
+        try:
+            await db.commit()
+        except Exception:
+            with contextlib.suppress(Exception):
+                await db.rollback()
+        await db.close()
+
+    service = SmartSourceSearchService(db, on_phase1_done=_release_db)
     try:
         result = await service.search(
             data.query,
@@ -231,7 +291,12 @@ async def log_search_abandoned(
     data: SearchAbandonedRequest,
     user_id: str = Depends(get_current_user_id),
 ) -> None:
-    """Enregistre une recherche sans ajout de source (signal mobile)."""
+    """Enregistre une recherche sans ajout de source (signal mobile).
+
+    Marque le dernier `source_search_logs` correspondant comme abandonné, et
+    conserve l'insert legacy dans `failed_source_attempts` pour rétrocompat.
+    """
+    await mark_search_abandoned(user_id, data.query)
     await _log_failed_source_attempt(
         user_id=user_id,
         input_text=data.query,
@@ -250,6 +315,11 @@ async def get_sources_by_theme(
     """Sources par thème : Curées → Candidates → Communauté."""
     from app.models.source import UserSource
 
+    # Sources déjà suivies par l'utilisateur (pour flag is_trusted dans la réponse)
+    trusted_stmt = select(UserSource.source_id).where(UserSource.user_id == user_id)
+    trusted_result = await db.execute(trusted_stmt)
+    trusted_ids: set[UUID] = {row[0] for row in trusted_result.all()}
+
     groups: list[ThemeSourceGroup] = []
     total = 0
 
@@ -264,7 +334,9 @@ async def get_sources_by_theme(
     )
     result = await db.execute(stmt_curated)
     curated_sources = result.scalars().all()
-    curated_responses = [_source_to_response(s) for s in curated_sources]
+    curated_responses = [
+        _source_to_response(s, trusted_ids=trusted_ids) for s in curated_sources
+    ]
     if curated_responses:
         groups.append(ThemeSourceGroup(label="Curées", sources=curated_responses))
         total += len(curated_responses)
@@ -283,7 +355,9 @@ async def get_sources_by_theme(
         )
         result = await db.execute(stmt_candidates)
         candidate_sources = result.scalars().all()
-        candidate_responses = [_source_to_response(s) for s in candidate_sources]
+        candidate_responses = [
+            _source_to_response(s, trusted_ids=trusted_ids) for s in candidate_sources
+        ]
         if candidate_responses:
             groups.append(
                 ThemeSourceGroup(label="Candidates", sources=candidate_responses)
@@ -313,7 +387,8 @@ async def get_sources_by_theme(
             result = await db.execute(stmt_community)
             community_rows = result.all()
             community_responses = [
-                _source_to_response(row[0]) for row in community_rows
+                _source_to_response(row[0], trusted_ids=trusted_ids)
+                for row in community_rows
             ]
             if community_responses:
                 groups.append(
@@ -375,6 +450,7 @@ async def add_source(
         source = await service.add_custom_source(user_id, str(data.url), data.name)
         await db.commit()
         FEED_CACHE.invalidate(UUID(user_id))
+        SOURCES_CACHE.invalidate(UUID(user_id))
 
         # Trigger immediate sync in background after request returns (and DB commits)
         from app.workers.rss_sync import sync_source
@@ -417,6 +493,7 @@ async def delete_source(
 
     await db.commit()
     FEED_CACHE.invalidate(UUID(user_id))
+    SOURCES_CACHE.invalidate(UUID(user_id))
     return {"status": "deleted"}
 
 
@@ -492,6 +569,7 @@ async def update_source_weight(
 
     await db.commit()
     FEED_CACHE.invalidate(UUID(user_id))
+    SOURCES_CACHE.invalidate(UUID(user_id))
     return result
 
 
@@ -516,6 +594,7 @@ async def update_source_subscription(
 
     await db.commit()
     FEED_CACHE.invalidate(UUID(user_id))
+    SOURCES_CACHE.invalidate(UUID(user_id))
     return result
 
 
@@ -537,6 +616,7 @@ async def trust_source(
 
     await db.commit()
     FEED_CACHE.invalidate(UUID(user_id))
+    SOURCES_CACHE.invalidate(UUID(user_id))
     return {"status": "trusted"}
 
 
@@ -558,4 +638,5 @@ async def untrust_source(
 
     await db.commit()
     FEED_CACHE.invalidate(UUID(user_id))
+    SOURCES_CACHE.invalidate(UUID(user_id))
     return {"status": "untrusted"}

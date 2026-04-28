@@ -15,6 +15,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../config/routes.dart';
+import '../../../core/web/web_perf.dart';
+import '../../../core/nudges/nudge_coordinator.dart';
+import '../../../core/nudges/nudge_counters.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/widgets/feed_nudge_anchors.dart';
+import '../../welcome_tour/controllers/welcome_tour_controller.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../providers/feed_provider.dart';
@@ -109,6 +115,20 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     ref.read(feedProvider.notifier).removeFromState(contentId);
   }
 
+  // Sprint 2 PR1 — fire article_feedback_submitted when the user picks a
+  // dismiss reason from the inline feedback row. Kept separate from the
+  // reason→action side effect so the event is recorded even if a sheet
+  // open fails.
+  void _trackFeedbackSubmit(String contentId, String feedbackType) {
+    unawaited(
+      ref.read(analyticsServiceProvider).trackArticleFeedbackSubmitted(
+            contentId: contentId,
+            feedbackType: feedbackType,
+            origin: 'feed',
+          ),
+    );
+  }
+
   // Compteur d'échecs consécutifs pour basculer entre FriendlyErrorView et
   // LaurinFallbackView (UX uniquement, pas de modif provider).
   int _consecutiveErrorCount = 0;
@@ -131,6 +151,40 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     super.initState();
     _scrollController.addListener(_onScroll);
     _showChronoMigrationToast();
+    _recordFeedOpenAndMaybeNudge();
+  }
+
+  Future<void> _recordFeedOpenAndMaybeNudge() async {
+    // The shell navigates to /feed during welcome_tour step 2 — don't count
+    // that as a "natural" visit and don't request a spotlight that would
+    // overlap the tour overlay. Whether the tour has been seen at all is
+    // already enforced by the registry prerequisite (read device-scoped, so
+    // PR2 v1 legacy users who never re-saw the user-scoped tour still pass).
+    if (ref.read(welcomeTourControllerProvider).active) return;
+    final opens = await NudgeCounters.increment(NudgeCounters.feedOpenCount);
+    final taps = await NudgeCounters.get(NudgeCounters.feedCardTapCount);
+    if (!mounted) return;
+    // feed_badge_longpress: 2nd feed open with ≥1 card tap previously.
+    if (opens >= 2 && taps >= 1) {
+      unawaited(
+          ref.read(nudgeCoordinatorProvider).request(NudgeIds.feedBadgeLongpress));
+    }
+    // feed_preview_longpress: 3rd feed open with ≥2 articles opened.
+    if (opens >= 3) {
+      final articleOpens =
+          await NudgeCounters.get(NudgeCounters.articleOpenCount);
+      if (!mounted) return;
+      if (articleOpens >= 2) {
+        unawaited(ref
+            .read(nudgeCoordinatorProvider)
+            .request(NudgeIds.feedPreviewLongpress));
+      }
+    }
+  }
+
+  Future<void> _onFeedCardTapped() async {
+    if (ref.read(welcomeTourControllerProvider).active) return;
+    await NudgeCounters.increment(NudgeCounters.feedCardTapCount);
   }
 
   // Epic 12: One-shot toast explaining the new chronological default
@@ -899,6 +953,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       },
                                       child: FeedbackInline(
                                         onSelectSource: () async {
+                                          _trackFeedbackSubmit(
+                                              content.id, 'less_source');
                                           await TopicChip.showArticleSheet(
                                             context,
                                             content,
@@ -909,6 +965,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           _resolveFeedback(content.id);
                                         },
                                         onSelectTopic: () async {
+                                          _trackFeedbackSubmit(
+                                              content.id, 'less_topic');
                                           await TopicChip.showArticleSheet(
                                             context,
                                             content,
@@ -918,8 +976,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           );
                                           _resolveFeedback(content.id);
                                         },
-                                        onSelectAlreadySeen: () =>
-                                            _resolveFeedback(content.id),
+                                        onSelectAlreadySeen: () {
+                                          _trackFeedbackSubmit(
+                                              content.id, 'already_seen');
+                                          _resolveFeedback(content.id);
+                                        },
                                         onUndo: () {
                                           // Re-surface la carte : annule
                                           // le hide côté backend et retire
@@ -985,12 +1046,26 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                     child: FeedCard(
                                       content: content,
                                       titleMaxLines: 5,
-                                      onTap: () => _showArticleModal(content),
-                                      onLongPressStart: (_) =>
-                                          ArticlePreviewOverlay.show(
-                                        context,
-                                        content,
-                                      ),
+                                      badgeAnchorKey: contentIndex == 0
+                                          ? feedFirstBadgeKey
+                                          : null,
+                                      cardAnchorKey: contentIndex == 0
+                                          ? feedFirstCardKey
+                                          : null,
+                                      onTap: () {
+                                        _onFeedCardTapped();
+                                        _showArticleModal(content);
+                                      },
+                                      onLongPressStart: (_) {
+                                        ref
+                                            .read(nudgeCoordinatorProvider)
+                                            .markConverted(
+                                                NudgeIds.feedPreviewLongpress);
+                                        ArticlePreviewOverlay.show(
+                                          context,
+                                          content,
+                                        );
+                                      },
                                       onLongPressMoveUpdate: (details) =>
                                           ArticlePreviewOverlay.updateScroll(
                                         details.localOffsetFromOrigin.dy,
@@ -1059,6 +1134,18 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                 _scrollToTop();
                                               }
                                             : null,
+                                        onLongPress: () {
+                                          ref
+                                              .read(nudgeCoordinatorProvider)
+                                              .markConverted(
+                                                  NudgeIds.feedBadgeLongpress);
+                                          TopicChip.showArticleSheet(
+                                            context,
+                                            content,
+                                            initialSection:
+                                                ArticleSheetSection.topic,
+                                          );
+                                        },
                                       ),
                                       // DEADCODE: Bloc masqué temporairement (cluster/overflow chips)
                                       /*
@@ -1105,9 +1192,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                         ref.read(feedProvider.notifier).setSource(content.source.id);
                                         _scrollToTop();
                                       },
-                                      onSourceLongPress: () =>
-                                          TopicChip.showArticleSheet(context, content,
-                                              initialSection: ArticleSheetSection.source),
+                                      onSourceLongPress: () {
+                                        ref
+                                            .read(nudgeCoordinatorProvider)
+                                            .markConverted(
+                                                NudgeIds.feedBadgeLongpress);
+                                        TopicChip.showArticleSheet(
+                                            context, content,
+                                            initialSection:
+                                                ArticleSheetSection.source);
+                                      },
                                       isSerene: ref.watch(sereinToggleProvider).enabled,
                                       onReportNotSerene: () async {
                                         HapticFeedback.lightImpact();
@@ -1232,11 +1326,15 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     duration: const Duration(milliseconds: 180),
                     curve: Curves.easeOut,
                     child: ClipRect(
-                      child: BackdropFilter(
+                      child: webBlurFallback(
                         filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                        fallbackColor: colors.backgroundPrimary
+                            .withValues(alpha: 0.96),
                         child: Container(
-                          color: colors.backgroundPrimary
-                              .withValues(alpha: 0.88),
+                          color: kWebPerf
+                              ? null
+                              : colors.backgroundPrimary
+                                  .withValues(alpha: 0.88),
                           padding: EdgeInsets.fromLTRB(
                             16,
                             MediaQuery.of(context).padding.top + 10,
