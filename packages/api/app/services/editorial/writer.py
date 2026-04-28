@@ -39,6 +39,166 @@ logger = structlog.get_logger()
 _HIGHLIGHTS_ROTATION_DAYS = 3
 
 
+# Lightweight FR heuristic — Content has no `language` column, so we score the
+# title+description against high-frequency French and English stopwords.
+# Used to gate pépite candidates: the LLM otherwise loves anglophone niche
+# tech/science articles, which then ship to French users.
+_FR_MARKERS = frozenset(
+    [
+        "le",
+        "la",
+        "les",
+        "un",
+        "une",
+        "des",
+        "du",
+        "de",
+        "au",
+        "aux",
+        "et",
+        "ou",
+        "mais",
+        "donc",
+        "car",
+        "ni",
+        "or",
+        "que",
+        "qui",
+        "dont",
+        "où",
+        "ce",
+        "cette",
+        "ces",
+        "son",
+        "sa",
+        "ses",
+        "leur",
+        "leurs",
+        "notre",
+        "nos",
+        "votre",
+        "vos",
+        "dans",
+        "pour",
+        "avec",
+        "sans",
+        "sur",
+        "sous",
+        "entre",
+        "vers",
+        "chez",
+        "par",
+        "est",
+        "sont",
+        "était",
+        "étaient",
+        "être",
+        "été",
+        "a",
+        "ont",
+        "avait",
+        "avaient",
+        "pas",
+        "plus",
+        "moins",
+        "très",
+        "bien",
+        "aussi",
+        "encore",
+        "déjà",
+        "alors",
+        "il",
+        "elle",
+        "ils",
+        "elles",
+        "nous",
+        "vous",
+        "on",
+        "ne",
+        "se",
+    ]
+)
+_EN_MARKERS = frozenset(
+    [
+        "the",
+        "a",
+        "an",
+        "of",
+        "and",
+        "or",
+        "but",
+        "to",
+        "in",
+        "on",
+        "at",
+        "for",
+        "with",
+        "from",
+        "by",
+        "as",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "has",
+        "have",
+        "had",
+        "do",
+        "does",
+        "did",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "he",
+        "she",
+        "they",
+        "we",
+        "you",
+        "his",
+        "her",
+        "their",
+        "our",
+        "your",
+        "not",
+        "no",
+        "yes",
+        "also",
+        "more",
+        "most",
+        "than",
+        "then",
+        "when",
+        "where",
+        "which",
+        "who",
+        "whom",
+        "while",
+    ]
+)
+
+
+def _looks_french(text: str | None) -> bool:
+    """Return True if the text looks French (more FR markers than EN)."""
+    if not text:
+        return False
+    tokens = [t for t in text.lower().split() if t]
+    if not tokens:
+        return False
+    fr_hits = sum(1 for t in tokens if t.strip(".,;:!?\"'()[]") in _FR_MARKERS)
+    en_hits = sum(1 for t in tokens if t.strip(".,;:!?\"'()[]") in _EN_MARKERS)
+    if fr_hits == 0 and en_hits == 0:
+        # Too short / no stopwords: be conservative — assume non-French so we
+        # don't ship "Apple announces …" as the pépite.
+        return False
+    return fr_hits >= en_hits and fr_hits >= 1
+
+
 class EditorialWriterService:
     """ÉTAPE 4-5-6 — LLM editorial writing + pépite + coup de coeur."""
 
@@ -275,6 +435,22 @@ class EditorialWriterService:
             and c.id not in recent_pepites
             and c.published_at is not None
         ]
+
+        # Language gate — Pépite must always be a French article. Content has
+        # no language column, so we score title + description with a stopword
+        # heuristic (see _looks_french). If filtering wipes the pool entirely,
+        # we still bail rather than fall back to anglophone content.
+        pre_lang_count = len(eligible)
+        eligible = [
+            c
+            for c in eligible
+            if _looks_french(f"{c.title or ''} {c.description or ''}")
+        ]
+        logger.info(
+            "editorial_writer.pepite_language_filter",
+            before=pre_lang_count,
+            after=len(eligible),
+        )
 
         # Sort by recency, take top 30 (up from 15) to give the LLM more
         # choices after the rotation filter removes recent picks.
