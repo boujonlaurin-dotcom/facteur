@@ -100,8 +100,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _showFab = false;
   bool _showShareFab = false;
   bool _isShortArticle = false;
-  bool _footerPermanent =
-      false; // true once user reaches end of displayed content
+  // true once user reaches end of displayed content
+  final ValueNotifier<bool> _footerPermanent = ValueNotifier<bool>(false);
   final ValueNotifier<bool> _atPerspectivesSection = ValueNotifier(false);
   bool _suppressPerspectivesCheck = false;
   bool _showSaveNotesNudge = false;
@@ -571,7 +571,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (!_scrollController.hasClients) return;
     if (_scrollController.position.maxScrollExtent < 50) {
       _isShortArticle = true;
-      _footerPermanent = true;
+      _footerPermanent.value = true;
     }
   }
 
@@ -657,8 +657,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (reached != _atPerspectivesSection.value) {
       _atPerspectivesSection.value = reached;
       // Footer becomes sticky as soon as the perspectives section is reached.
-      if (reached && !_footerPermanent) {
-        _footerPermanent = true;
+      if (reached && !_footerPermanent.value) {
+        _footerPermanent.value = true;
         _animateFooterTo(0.0);
       }
     }
@@ -710,6 +710,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       setState(() {
         _isWebViewActive = true;
       });
+      // Reset permanent-footer latch acquired during the CTA reveal scroll
+      // so subsequent WebView scroll deltas can hide/show header & footer.
+      _footerPermanent.value = false;
+      _footerOffset.value = 0.0;
 
       // Smart-arrival : libère l'écran pour que l'utilisateur puisse interagir
       // avec une éventuelle modale (cookies, paywall) qui verrouille souvent
@@ -787,7 +791,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
       // Footer mirrors header: hides on scroll-down, shows on scroll-up.
       // Skipped once the user has reached the end of the displayed content.
-      if (!_footerPermanent) {
+      if (!_footerPermanent.value) {
         final bottomInset = MediaQuery.of(context).viewPadding.bottom;
         final footerHeight = _kFooterContentHeight + bottomInset;
         final footerShift = delta / footerHeight;
@@ -1236,6 +1240,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _fabOpacity.dispose();
     _headerOffset.dispose();
     _footerOffset.dispose();
+    _footerPermanent.dispose();
     _readingProgress.removeListener(_onReadingProgressNudge);
     _readingProgress.removeListener(_onShareFabProgress);
     _readingProgress.dispose();
@@ -1619,7 +1624,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 if (notification is ScrollUpdateNotification) {
                   final delta = notification.scrollDelta ?? 0.0;
                   final metrics = notification.metrics;
-                  if (metrics.pixels <= 0) {
+                  if (metrics.pixels <= 0 && !_isWebViewActive) {
                     _atPerspectivesSection.value = false;
                     _showStickyPerspectivesHeader.value = false;
                     _headerOffset.value = 0.0;
@@ -1631,7 +1636,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   if (!_isShortArticle &&
                       metrics.maxScrollExtent < 50) {
                     _isShortArticle = true;
-                    _footerPermanent = true;
+                    _footerPermanent.value = true;
                     _headerOffset.value = 0.0;
                   }
                   _onScrollDelta(delta);
@@ -1641,8 +1646,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     final rawProgress =
                         metrics.pixels / metrics.maxScrollExtent;
                     // Footer becomes permanent at end of ALL content (incl. perspectives)
-                    if (!_footerPermanent && rawProgress >= 0.98) {
-                      _footerPermanent = true;
+                    if (!_footerPermanent.value && rawProgress >= 0.98) {
+                      _footerPermanent.value = true;
                       _animateFooterTo(0.0);
                     }
                     // Progress bar uses article-only extent so perspectives don't dilute it
@@ -2138,8 +2143,66 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               Expanded(
                 child: SizedBox(
                   height: 53,
-                  child: _isPartialContent
-                      ? FilledButton(
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _footerPermanent,
+                    builder: (context, permanent, _) {
+                      final isWebViewMode = _ctaTapped || _isWebViewActive;
+                      // Primary orange ONLY when the user has reached the
+                      // bottom of the article (footer locked permanent) AND
+                      // the WebView hasn't been revealed yet.
+                      final usePrimary = permanent && !isWebViewMode;
+
+                      final label = isWebViewMode
+                          ? 'Lire via Navigateur'
+                          : 'Lire sur ${content.source.name}';
+                      final showLogo = !isWebViewMode &&
+                          content.source.logoUrl != null;
+                      final iconData = isWebViewMode
+                          ? PhosphorIcons.arrowUpRight(
+                              PhosphorIconsStyle.regular)
+                          : PhosphorIcons.arrowRight(
+                              PhosphorIconsStyle.regular);
+
+                      final children = <Widget>[
+                        if (showLogo) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: CachedNetworkImage(
+                              imageUrl: content.source.logoUrl!,
+                              width: 28,
+                              height: 28,
+                              fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) =>
+                                  const SizedBox.shrink(),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Expanded(
+                          child: Text(
+                            label,
+                            style: textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: usePrimary
+                                  ? Colors.white
+                                  : colors.textPrimary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.left,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          iconData,
+                          size: 16,
+                          color: usePrimary
+                              ? Colors.white.withValues(alpha: 0.8)
+                              : colors.textSecondary,
+                        ),
+                      ];
+
+                      if (usePrimary) {
+                        return FilledButton(
                           onPressed: _onReadOnSiteTap,
                           style: FilledButton.styleFrom(
                             backgroundColor: colors.primary,
@@ -2150,94 +2213,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             padding:
                                 const EdgeInsets.symmetric(horizontal: 12),
                           ),
-                          child: Row(
-                            children: [
-                              if (content.source.logoUrl != null) ...[
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: CachedNetworkImage(
-                                    imageUrl: content.source.logoUrl!,
-                                    width: 28,
-                                    height: 28,
-                                    fit: BoxFit.cover,
-                                    errorWidget: (_, __, ___) =>
-                                        const SizedBox.shrink(),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                              ],
-                              Expanded(
-                                child: Text(
-                                  'Lire sur ${content.source.name}',
-                                  style: textTheme.labelMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.left,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                PhosphorIcons.arrowRight(
-                                    PhosphorIconsStyle.regular),
-                                size: 16,
-                                color: Colors.white.withValues(alpha: 0.8),
-                              ),
-                            ],
+                          child: Row(children: children),
+                        );
+                      }
+
+                      return OutlinedButton(
+                        onPressed: _onReadOnSiteTap,
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor:
+                              Colors.white.withValues(alpha: 0.5),
+                          foregroundColor: colors.textPrimary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                        )
-                      : OutlinedButton(
-                          onPressed: _onReadOnSiteTap,
-                          style: OutlinedButton.styleFrom(
-                            backgroundColor:
-                                Colors.white.withValues(alpha: 0.5),
-                            foregroundColor: colors.textPrimary,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            side: BorderSide(
-                                color: colors.border.withValues(alpha: 0.5)),
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 12),
-                          ),
-                          child: Row(
-                            children: [
-                              if (content.source.logoUrl != null) ...[
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: CachedNetworkImage(
-                                    imageUrl: content.source.logoUrl!,
-                                    width: 28,
-                                    height: 28,
-                                    fit: BoxFit.cover,
-                                    errorWidget: (_, __, ___) =>
-                                        const SizedBox.shrink(),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                              ],
-                              Expanded(
-                                child: Text(
-                                  'Lire sur ${content.source.name}',
-                                  style: textTheme.labelMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: colors.textPrimary,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.left,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                PhosphorIcons.arrowRight(
-                                    PhosphorIconsStyle.regular),
-                                size: 16,
-                                color: colors.textSecondary,
-                              ),
-                            ],
-                          ),
+                          side: BorderSide(
+                              color: colors.border.withValues(alpha: 0.5)),
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 12),
                         ),
+                        child: Row(children: children),
+                      );
+                    },
+                  ),
                 ),
               ),
               const SizedBox(width: 4),
