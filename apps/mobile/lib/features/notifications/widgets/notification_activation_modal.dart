@@ -156,7 +156,7 @@ class _NotificationActivationModalState
               ),
               const SizedBox(height: FacteurSpacing.space3),
               Text(
-                "Fatigué·e d'avoir trop d'infos ?",
+                "Du mal à suivre l'essentiel ?",
                 style: theme.textTheme.bodyMedium
                     ?.copyWith(color: colors.textSecondary),
                 textAlign: TextAlign.center,
@@ -167,17 +167,15 @@ class _NotificationActivationModalState
               ),
               const SizedBox(height: FacteurSpacing.space2),
               _BulletPoint(
-                text:
-                    "Pas de breaking news, zéro tactique pour te faire scroller.",
+                text: "Pas de breaking news, pas de scroll inutile.",
               ),
               const SizedBox(height: FacteurSpacing.space2),
               _BulletPoint(
-                text:
-                    "L'essentiel filtré pour toi, quand tu es prêt·e à le recevoir.",
+                text: "L'essentiel filtré pour toi, quand tu veux le recevoir.",
               ),
               const SizedBox(height: FacteurSpacing.space4),
               Text(
-                "Un exemple de ce que Facteur peut t'envoyer :",
+                "Un exemple de ce que Facteur t'envoie :",
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: colors.textSecondary,
                   fontStyle: FontStyle.italic,
