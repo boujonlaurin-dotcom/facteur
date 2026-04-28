@@ -35,14 +35,16 @@ async def test_pool_endpoint_returns_metrics():
 
 
 def test_prod_pool_kwargs_capacity():
-    """Locks the production pool capacity at 25+25=50 with fail-fast timeout.
+    """Locks the production pool capacity at 10+10=20 with 30s timeout.
 
-    Supabase Pooler is 60 conns shared — bumping these without leaving
-    headroom for the in-process scheduler will starve other clients.
+    Revert post-incident 2026-04-28 : le bump 25/25/10s a déclenché un
+    thundering herd au pic matinal (pool_timeout=10s + retries Dio mobile).
+    Supabase Pooler partage 60 conns — on garde 20 max app + marge scheduler
+    et autres clients.
     """
     from app.database import PROD_POOL_KWARGS
 
-    assert PROD_POOL_KWARGS["pool_size"] == 25
-    assert PROD_POOL_KWARGS["max_overflow"] == 25
-    assert PROD_POOL_KWARGS["pool_timeout"] == 10
+    assert PROD_POOL_KWARGS["pool_size"] == 10
+    assert PROD_POOL_KWARGS["max_overflow"] == 10
+    assert PROD_POOL_KWARGS["pool_timeout"] == 30
     assert PROD_POOL_KWARGS["pool_recycle"] == 180
