@@ -779,8 +779,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
     // In video readers the header stays visible at all times (only native
     // fullscreen covers it, which is handled by the system).
-    // For short articles that don't need scrolling, keep header visible.
-    if (!isVideo && !_isShortArticle) {
+    // For short articles that don't need scrolling, keep header visible —
+    // EXCEPT in WebView mode where scroll comes from the JS bridge and the
+    // user expects hide-on-scroll regardless of how short the in-app stub was.
+    if (!isVideo && (!_isShortArticle || _isWebViewActive)) {
       final headerHeight =
           MediaQuery.of(context).padding.top + _kHeaderContentHeight;
       final shift = delta / headerHeight;
@@ -809,7 +811,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
     // Auto-hide header after 3s of inactivity (no scroll), but only if not at top
     _inactivityTimer?.cancel();
-    if (!isVideo && !_isShortArticle) {
+    if (!isVideo && (!_isShortArticle || _isWebViewActive)) {
       _inactivityTimer = Timer(const Duration(seconds: 3), () {
         if (mounted && _webScrollY > 0 && _headerOffset.value < 1.0) {
           _animateHeaderTo(1.0);
@@ -1644,8 +1646,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   if (metrics.maxScrollExtent > 0) {
                     final rawProgress =
                         metrics.pixels / metrics.maxScrollExtent;
-                    // Footer becomes permanent at end of ALL content (incl. perspectives)
-                    if (!_footerPermanent.value && rawProgress >= 0.98) {
+                    // Footer becomes permanent at end of ALL content (incl.
+                    // perspectives) for native in-app reading. Skip for
+                    // scroll-to-site (CTA tapped) where reaching the end means
+                    // revealing the WebView, not finishing reading — locking
+                    // the footer there would freeze it visible during the
+                    // entire WebView session.
+                    if (!_footerPermanent.value &&
+                        !_ctaTapped &&
+                        rawProgress >= 0.98) {
                       _footerPermanent.value = true;
                       _animateFooterTo(0.0);
                     }
