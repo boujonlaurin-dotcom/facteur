@@ -73,13 +73,13 @@ class ArticleReaderWidget extends StatelessWidget {
               'h2': Style(
                 fontSize: FontSize(20),
                 fontWeight: FontWeight.w600,
-                margin: Margins.only(bottom: 12, top: 24),
+                margin: Margins.only(bottom: 16, top: 24),
                 color: colors.textPrimary,
               ),
               'h3': Style(
                 fontSize: FontSize(18),
                 fontWeight: FontWeight.w500,
-                margin: Margins.only(bottom: 8, top: 16),
+                margin: Margins.only(bottom: 16, top: 16),
                 color: colors.textPrimary,
               ),
               'a': Style(

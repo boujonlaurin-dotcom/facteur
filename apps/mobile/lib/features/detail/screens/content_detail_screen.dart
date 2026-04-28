@@ -129,6 +129,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final GlobalKey _articleKey = GlobalKey();
   final GlobalKey _bridgeKey = GlobalKey();
   final GlobalKey _perspectivesKey = GlobalKey();
+  final GlobalKey _perspectivesDividerKey = GlobalKey();
   final GlobalKey _firstPerspectiveCardKey = GlobalKey();
   bool _isWebViewActive = false;
   bool _ctaTapped = false;
@@ -194,6 +195,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   // Perspectives sticky section header state
   Set<String> _perspectivesSelectedSegments = {};
+  bool _perspectivesExpanded = true;
   final ValueNotifier<bool> _showStickyPerspectivesHeader =
       ValueNotifier(false);
 
@@ -201,6 +203,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void initState() {
     super.initState();
     _content = widget.content;
+    _perspectivesExpanded = !_isPartialContent;
     _startTime = DateTime.now();
     if (_content != null) {
       _isConsumed = _content!.status == ContentStatus.consumed;
@@ -617,12 +620,20 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Updates [_atPerspectivesSection] based on whether the perspectives widget
   /// is visible in the viewport. Called from the scroll notification handler.
   /// Uses ValueNotifier to avoid triggering a full setState during scroll.
-  void _checkAtPerspectivesSection() {
-    if (_suppressPerspectivesCheck) return;
+  void _checkAtPerspectivesSection({bool force = false}) {
+    if (_suppressPerspectivesCheck && !force) return;
     final ctx = _perspectivesKey.currentContext;
-    if (ctx == null) return;
+    if (ctx == null) {
+      if (_atPerspectivesSection.value) _atPerspectivesSection.value = false;
+      if (_showStickyPerspectivesHeader.value) _showStickyPerspectivesHeader.value = false;
+      return;
+    }
     final perspBox = ctx.findRenderObject() as RenderBox?;
-    if (perspBox == null || !perspBox.hasSize) return;
+    if (perspBox == null || !perspBox.hasSize) {
+      if (_atPerspectivesSection.value) _atPerspectivesSection.value = false;
+      if (_showStickyPerspectivesHeader.value) _showStickyPerspectivesHeader.value = false;
+      return;
+    }
 
     final perspScreenY = perspBox.localToGlobal(Offset.zero).dy;
     final screenHeight = MediaQuery.of(context).size.height;
@@ -680,7 +691,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Re-check sticky visibility after the section has rebuilt (filtering may
     // shrink the section back into view with no scroll event).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _checkAtPerspectivesSection();
+      if (mounted) _checkAtPerspectivesSection(force: true);
     });
   }
 
@@ -1607,10 +1618,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               onNotification: (notification) {
                 if (notification is ScrollUpdateNotification) {
                   final delta = notification.scrollDelta ?? 0.0;
+                  final metrics = notification.metrics;
+                  if (metrics.pixels <= 0) {
+                    _atPerspectivesSection.value = false;
+                    _showStickyPerspectivesHeader.value = false;
+                    _headerOffset.value = 0.0;
+                    _footerOffset.value = 0.0;
+                  }
+                  
                   // Sync short-article flag from live scroll metrics (catches cases
                   // where the postFrameCallback hasn't fired yet).
                   if (!_isShortArticle &&
-                      notification.metrics.maxScrollExtent < 50) {
+                      metrics.maxScrollExtent < 50) {
                     _isShortArticle = true;
                     _footerPermanent = true;
                     _headerOffset.value = 0.0;
@@ -1618,7 +1637,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   _onScrollDelta(delta);
                   _checkAtPerspectivesSection();
                   // Track reading progress from any scrollable (including in-app reader)
-                  final metrics = notification.metrics;
                   if (metrics.maxScrollExtent > 0) {
                     final rawProgress =
                         metrics.pixels / metrics.maxScrollExtent;
@@ -1782,6 +1800,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   valueListenable: _atPerspectivesSection,
                   builder: (context, atPersp, _) {
                     final show = atPersp &&
+                        !_suppressPerspectivesCheck &&
+                        _perspectivesExpanded &&
                         _perspectivesAnalysisState ==
                             PerspectivesAnalysisState.idle &&
                         _perspectivesResponse != null &&
@@ -2118,60 +2138,106 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               Expanded(
                 child: SizedBox(
                   height: 53,
-                  child: OutlinedButton(
-                    onPressed: _onReadOnSiteTap,
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor: Colors.white.withValues(alpha: 0.5),
-                      foregroundColor: colors.textPrimary,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      side: BorderSide(
-                          color: colors.border.withValues(alpha: 0.5)),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                    ),
-                    child: Row(
-                      children: [
-                        if (content.source.logoUrl != null) ...[
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: CachedNetworkImage(
-                              imageUrl: content.source.logoUrl!,
-                              width: 28,
-                              height: 28,
-                              fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) =>
-                                  const SizedBox.shrink(),
+                  child: _isPartialContent
+                      ? FilledButton(
+                          onPressed: _onReadOnSiteTap,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: colors.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
                             ),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 12),
                           ),
-                          const SizedBox(width: 6),
-                        ],
-                        Expanded(
-                          child: Text(
-                            _ctaTapped
-                                ? 'Ouvrir via navigateur'
-                                : 'Lire sur ${content.source.name}',
-                            style: textTheme.labelMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: colors.textPrimary,
+                          child: Row(
+                            children: [
+                              if (content.source.logoUrl != null) ...[
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: CachedNetworkImage(
+                                    imageUrl: content.source.logoUrl!,
+                                    width: 28,
+                                    height: 28,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, __, ___) =>
+                                        const SizedBox.shrink(),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                              Expanded(
+                                child: Text(
+                                  'Lire sur ${content.source.name}',
+                                  style: textTheme.labelMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.left,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                PhosphorIcons.arrowRight(
+                                    PhosphorIconsStyle.regular),
+                                size: 16,
+                                color: Colors.white.withValues(alpha: 0.8),
+                              ),
+                            ],
+                          ),
+                        )
+                      : OutlinedButton(
+                          onPressed: _onReadOnSiteTap,
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor:
+                                Colors.white.withValues(alpha: 0.5),
+                            foregroundColor: colors.textPrimary,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
                             ),
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.left,
+                            side: BorderSide(
+                                color: colors.border.withValues(alpha: 0.5)),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                          child: Row(
+                            children: [
+                              if (content.source.logoUrl != null) ...[
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: CachedNetworkImage(
+                                    imageUrl: content.source.logoUrl!,
+                                    width: 28,
+                                    height: 28,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, __, ___) =>
+                                        const SizedBox.shrink(),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                              Expanded(
+                                child: Text(
+                                  'Lire sur ${content.source.name}',
+                                  style: textTheme.labelMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: colors.textPrimary,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.left,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                PhosphorIcons.arrowRight(
+                                    PhosphorIconsStyle.regular),
+                                size: 16,
+                                color: colors.textSecondary,
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          _ctaTapped
-                              ? PhosphorIcons.arrowUpRight(
-                                  PhosphorIconsStyle.regular)
-                              : PhosphorIcons.arrowRight(
-                                  PhosphorIconsStyle.regular),
-                          size: 16,
-                          color: colors.textSecondary,
-                        ),
-                      ],
-                    ),
-                  ),
                 ),
               ),
               const SizedBox(width: 4),
@@ -2272,20 +2338,42 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         : () {
                             HapticFeedback.lightImpact();
                             _suppressPerspectivesCheck = true;
-                            _atPerspectivesSection.value = true;
-                            final ctx = _perspectivesKey.currentContext;
-                            if (ctx != null) {
-                              Scrollable.ensureVisible(
-                                ctx,
-                                duration: const Duration(milliseconds: 400),
-                                curve: Curves.easeInOut,
-                              );
-                            } else {
-                              _showPerspectives(context);
-                            }
-                            Future.delayed(const Duration(milliseconds: 450),
-                                () {
-                              if (mounted) _suppressPerspectivesCheck = false;
+                            setState(() => _perspectivesExpanded = true);
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!mounted) return;
+                              final ctx =
+                                  _perspectivesDividerKey.currentContext;
+                              if (ctx != null) {
+                                Scrollable.ensureVisible(
+                                  ctx,
+                                  alignment: 0.0,
+                                  duration: const Duration(milliseconds: 400),
+                                  curve: Curves.easeInOut,
+                                );
+                                // Re-trigger scroll after AnimatedSize expands
+                                // to handle maxScrollExtent changes.
+                                Future.delayed(
+                                    const Duration(milliseconds: 250), () {
+                                  if (!mounted) return;
+                                  final currentCtx =
+                                      _perspectivesDividerKey.currentContext;
+                                  if (currentCtx != null) {
+                                    Scrollable.ensureVisible(
+                                      currentCtx,
+                                      alignment: 0.0,
+                                      duration:
+                                          const Duration(milliseconds: 250),
+                                      curve: Curves.easeOut,
+                                    );
+                                  }
+                                });
+                              } else {
+                                _showPerspectives(context);
+                              }
+                              Future.delayed(
+                                  const Duration(milliseconds: 550), () {
+                                if (mounted) _suppressPerspectivesCheck = false;
+                              });
                             });
                           },
                   );
@@ -2876,6 +2964,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   style: textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: colors.textPrimary,
+                    fontSize: 18,
                   ),
                 ),
               ),
@@ -3135,6 +3224,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       if (_perspectivesResponse != null ||
                           _perspectivesLoading) ...[
                         Container(
+                          key: _perspectivesDividerKey,
                           color: colors.backgroundPrimary,
                           padding: const EdgeInsets.symmetric(
                             horizontal: FacteurSpacing.space4,
@@ -3181,7 +3271,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                         WidgetsBinding.instance
                                             .addPostFrameCallback((_) {
                                           if (mounted) {
-                                            _checkAtPerspectivesSection();
+                                            _checkAtPerspectivesSection(
+                                                force: true);
                                           }
                                         });
                                       },
@@ -3191,6 +3282,30 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                           _requestPerspectivesAnalysis,
                                       analysisZoneKey: _analysisZoneKey,
                                       firstCardKey: _firstPerspectiveCardKey,
+                                      isExpanded: _perspectivesExpanded,
+                                      onToggle: () {
+                                        setState(() {
+                                          _perspectivesExpanded =
+                                              !_perspectivesExpanded;
+                                          _suppressPerspectivesCheck = true;
+                                        });
+                                        WidgetsBinding.instance
+                                            .addPostFrameCallback((_) {
+                                          if (mounted) {
+                                            _checkAtPerspectivesSection(
+                                                force: true);
+                                            Future.delayed(
+                                                const Duration(
+                                                    milliseconds: 200), () {
+                                              if (mounted) {
+                                                setState(() =>
+                                                    _suppressPerspectivesCheck =
+                                                        false);
+                                              }
+                                            });
+                                          }
+                                        });
+                                      },
                                     )
                                   : const SizedBox.shrink(),
                         ),
@@ -3722,6 +3837,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 if (_perspectivesResponse != null || _perspectivesLoading) ...[
                   const SizedBox(height: FacteurSpacing.space4),
                   Padding(
+                    key: _perspectivesDividerKey,
                     padding: const EdgeInsets.symmetric(
                         horizontal: FacteurSpacing.space4),
                     child: Divider(color: colors.border, height: 1),
@@ -3756,7 +3872,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       onClearSegments: () {
                         setState(() => _perspectivesSelectedSegments = {});
                         WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) _checkAtPerspectivesSection();
+                          if (mounted) _checkAtPerspectivesSection(force: true);
                         });
                       },
                       analysisState: _perspectivesAnalysisState,
@@ -3764,6 +3880,25 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       onRequestAnalysis: _requestPerspectivesAnalysis,
                       analysisZoneKey: _analysisZoneKey,
                       firstCardKey: _firstPerspectiveCardKey,
+                      isExpanded: _perspectivesExpanded,
+                      onToggle: () {
+                        setState(() {
+                          _perspectivesExpanded = !_perspectivesExpanded;
+                          _suppressPerspectivesCheck = true;
+                        });
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) {
+                            _checkAtPerspectivesSection(force: true);
+                            Future.delayed(const Duration(milliseconds: 200),
+                                () {
+                              if (mounted) {
+                                setState(() =>
+                                    _suppressPerspectivesCheck = false);
+                              }
+                            });
+                          }
+                        });
+                      },
                     ),
                 ],
 
@@ -3841,13 +3976,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         const SizedBox(height: FacteurSpacing.space2),
         if (content.entities.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space4,
-              vertical: 6,
-            ),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 4,
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: _FadeScrollRow(
               children: _buildArticleTagWidgets(context, content),
             ),
           ),
@@ -4154,33 +4284,36 @@ class _FadeScrollRowState extends State<_FadeScrollRow> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: _atStart || !_pointerDown,
-      child: Listener(
-        onPointerDown: (_) => setState(() => _pointerDown = true),
-        onPointerUp: (_) => setState(() => _pointerDown = false),
-        onPointerCancel: (_) => setState(() => _pointerDown = false),
-        child: ShaderMask(
-          shaderCallback: (bounds) => LinearGradient(
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-            colors: [
-              _atStart ? Colors.white : Colors.transparent,
-              Colors.white,
-              Colors.white,
-              _atEnd ? Colors.white : Colors.transparent,
-            ],
-            stops: const [0.0, 0.12, 0.82, 1.0],
-          ).createShader(bounds),
-          blendMode: BlendMode.dstIn,
-          child: NotificationListener<ScrollNotification>(
-            onNotification: (_) => true,
-            child: SingleChildScrollView(
-              controller: _controller,
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                spacing: 6,
-                children: widget.children,
+    return SizedBox(
+      width: double.infinity,
+      child: PopScope(
+        canPop: _atStart || !_pointerDown,
+        child: Listener(
+          onPointerDown: (_) => setState(() => _pointerDown = true),
+          onPointerUp: (_) => setState(() => _pointerDown = false),
+          onPointerCancel: (_) => setState(() => _pointerDown = false),
+          child: ShaderMask(
+            shaderCallback: (bounds) => LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [
+                _atStart ? Colors.white : Colors.transparent,
+                Colors.white,
+                Colors.white,
+                _atEnd ? Colors.white : Colors.transparent,
+              ],
+              stops: const [0.0, 0.12, 0.82, 1.0],
+            ).createShader(bounds),
+            blendMode: BlendMode.dstIn,
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (_) => true,
+              child: SingleChildScrollView(
+                controller: _controller,
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  spacing: 6,
+                  children: widget.children,
+                ),
               ),
             ),
           ),
