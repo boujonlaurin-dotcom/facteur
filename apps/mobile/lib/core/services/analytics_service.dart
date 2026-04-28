@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:facteur/core/api/api_client.dart';
+import 'package:facteur/core/api/notification_preferences_api_service.dart';
 import 'package:facteur/core/services/posthog_service.dart';
+import 'package:facteur/features/notifications/widgets/notification_activation_modal.dart';
 
 class AnalyticsService {
   final ApiClient? _apiClient;
@@ -484,6 +486,101 @@ class AnalyticsService {
     };
     await _logEvent('widget_article_opened', props);
     await _capturePostHog('widget_article_opened', props);
+  }
+
+  // ── Notifications activation events (brief §7) ──────────────────────
+
+  Future<void> trackModalNotifShown({required ActivationTrigger trigger}) async {
+    final props = <String, dynamic>{'trigger': trigger.name};
+    await _logEvent('modal_notif_shown', props);
+    await _capturePostHog('modal_notif_shown', props);
+  }
+
+  Future<void> trackModalNotifPresetChanged({required NotifPreset preset}) async {
+    final props = <String, dynamic>{'preset': preset.wire};
+    await _logEvent('modal_notif_preset_changed', props);
+    await _capturePostHog('modal_notif_preset_changed', props);
+  }
+
+  Future<void> trackModalNotifTimeChanged({required NotifTimeSlot timeSlot}) async {
+    final props = <String, dynamic>{'time': timeSlot.wire};
+    await _logEvent('modal_notif_time_changed', props);
+    await _capturePostHog('modal_notif_time_changed', props);
+  }
+
+  Future<void> trackModalNotifConfirmed({
+    required NotifPreset preset,
+    required NotifTimeSlot timeSlot,
+    required bool osPermissionGranted,
+  }) async {
+    final props = <String, dynamic>{
+      'preset': preset.wire,
+      'time': timeSlot.wire,
+      'os_permission_granted': osPermissionGranted,
+    };
+    await _logEvent('modal_notif_confirmed', props);
+    await _capturePostHog('modal_notif_confirmed', props);
+  }
+
+  Future<void> trackModalNotifDismissed() async {
+    await _logEvent('modal_notif_dismissed', {});
+    await _capturePostHog('modal_notif_dismissed', {});
+  }
+
+  Future<void> trackRenudgeShown({required int displayCount}) async {
+    final props = <String, dynamic>{'display_count': displayCount};
+    await _logEvent('renudge_shown', props);
+    await _capturePostHog('renudge_shown', props);
+  }
+
+  Future<void> trackRenudgeConfirmed() async {
+    await _logEvent('renudge_confirmed', {});
+    await _capturePostHog('renudge_confirmed', {});
+  }
+
+  Future<void> trackRenudgeDismissed() async {
+    await _logEvent('renudge_dismissed', {});
+    await _capturePostHog('renudge_dismissed', {});
+  }
+
+  Future<void> trackNotifScheduled({
+    required String type, // daily_a / daily_b / daily_empty / community
+    required String time,
+  }) async {
+    final props = <String, dynamic>{'type': type, 'time': time};
+    await _logEvent('notif_scheduled', props);
+    await _capturePostHog('notif_scheduled', props);
+  }
+
+  Future<void> trackNotifOpened({
+    required String type,
+    int? timeToOpenSeconds,
+  }) async {
+    final props = <String, dynamic>{
+      'type': type,
+      'time_to_open': timeToOpenSeconds,
+    };
+    await _logEvent('notif_opened', props);
+    await _capturePostHog('notif_opened', props);
+  }
+
+  Future<void> trackNotifSettingsChanged({
+    required NotifPreset fromPreset,
+    required NotifPreset toPreset,
+  }) async {
+    final props = <String, dynamic>{
+      'from_preset': fromPreset.wire,
+      'to_preset': toPreset.wire,
+    };
+    await _logEvent('notif_settings_changed', props);
+    await _capturePostHog('notif_settings_changed', props);
+  }
+
+  Future<void> trackNotifDisabled({required String source}) async {
+    // source: 'in_app' or 'os_settings'
+    final props = <String, dynamic>{'source': source};
+    await _logEvent('notif_disabled', props);
+    await _capturePostHog('notif_disabled', props);
   }
 
   Future<void> trackAppFirstLaunch() async {

@@ -2,8 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
@@ -11,6 +9,7 @@ import '../../../core/services/push_notification_service.dart';
 import '../../../core/services/widget_service.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
+import '../../settings/providers/notifications_settings_provider.dart';
 import '../models/digest_models.dart';
 import '../repositories/digest_repository.dart';
 import 'serein_toggle_provider.dart';
@@ -141,7 +140,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         // Push to home screen widget
         _syncWidget();
         // Update notification with dynamic topic keywords
-        _updateNotificationWithTopics();
+        unawaited(_updateNotificationWithTopics());
         // If either variant was served as yesterday's stale fallback while
         // fresh content is being generated in background, schedule a silent
         // auto-refetch so the user sees today's digest without pulling.
@@ -191,7 +190,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
           _normalDigest = digest;
           _cachedDate = _todayDateString;
           ref.read(sereinToggleProvider.notifier).initFromApi(false);
-          _updateNotificationWithTopics();
+          unawaited(_updateNotificationWithTopics());
           _maybeScheduleStaleFallbackRefetch();
           return digest;
         } catch (_) {
@@ -281,30 +280,32 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   ///
   /// If the user has Serein mode enabled, a calmer notification copy is used
   /// to avoid triggering anxiety before reading.
-  void _updateNotificationWithTopics() {
+  Future<void> _updateNotificationWithTopics() async {
     try {
-      final box = Hive.box<dynamic>('settings');
-      final pushEnabled =
-          box.get('push_notifications_enabled', defaultValue: true) as bool;
-      if (!pushEnabled) return;
+      final settings = ref.read(notificationsSettingsProvider);
+      if (!settings.pushEnabled) return;
 
       final digest = _normalDigest;
       if (digest == null) return;
 
-      final topicLabels = digest.topics
-          .map((t) => t.label)
-          .where((l) => l.isNotEmpty)
-          .toList();
-
       final isSerein = ref.read(sereinToggleProvider).enabled;
-      final body = PushNotificationService.buildNotificationBody(
-        topicLabels,
-        serein: isSerein,
+      final firstTopic = digest.topics
+          .map((t) => t.label)
+          .firstWhere((l) => l.isNotEmpty, orElse: () => '');
+
+      // Variante C (jour calme) hors v1 — Serein + variante A pour rester
+      // cohérent avec le brief §6.1 (variante C = override manuel uniquement).
+      final variant = (!isSerein && firstTopic.isNotEmpty)
+          ? NotifVariant.variantB
+          : NotifVariant.variantA;
+
+      await PushNotificationService().scheduleDailyDigestNotification(
+        timeSlot: settings.timeSlot,
+        variant: variant,
+        teaser: variant == NotifVariant.variantB ? firstTopic : null,
       );
-      PushNotificationService().scheduleDailyDigestNotification(body: body);
       debugPrint(
-        'DigestNotifier: Updated notification with ${topicLabels.length} topics'
-        ' (serein: $isSerein)',
+        'DigestNotifier: Re-scheduled (variant: $variant, slot: ${settings.timeSlot})',
       );
     } catch (e, stack) {
       debugPrint('DigestNotifier: Failed to update notification: $e\n$stack');

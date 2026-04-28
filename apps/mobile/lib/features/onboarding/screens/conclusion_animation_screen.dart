@@ -11,7 +11,7 @@ import '../providers/conclusion_notifier.dart';
 import '../providers/onboarding_provider.dart';
 import '../widgets/animated_message_text.dart';
 import '../widgets/minimal_loader.dart';
-import '../widgets/notification_permission_bottom_sheet.dart';
+import '../../notifications/widgets/notification_activation_modal.dart';
 import '../widgets/theme_choice_bottom_sheet.dart';
 
 /// Écran d'animation de conclusion de l'onboarding
@@ -108,7 +108,11 @@ class _ConclusionAnimationScreenState
 
     // Proposer l'activation des notifications (une seule fois, post-onboarding)
     if (mounted) {
-      await showNotificationPermissionBottomSheet(context, ref);
+      await showNotificationActivationModal(
+        context,
+        ref,
+        trigger: ActivationTrigger.onboarding,
+      );
     }
 
     // Naviguer vers le digest avec paramètre first pour welcome experience

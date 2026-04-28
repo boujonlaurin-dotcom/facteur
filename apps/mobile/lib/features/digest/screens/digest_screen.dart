@@ -25,7 +25,8 @@ import '../../app_update/widgets/update_modal.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
-import '../../onboarding/widgets/notification_permission_bottom_sheet.dart';
+import '../../notifications/widgets/notification_activation_modal.dart';
+import '../../notifications/widgets/notification_renudge_banner.dart';
 import '../../settings/providers/notifications_settings_provider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
@@ -86,12 +87,25 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
   void initState() {
     super.initState();
     _checkNotifBannerDismissed();
-    // Seed the home-screen widget with a placeholder if it has never been
-    // populated. The next successful digest fetch overwrites it; this only
-    // matters for users who pinned the widget before opening the app.
     WidgetService.initWidgetIfNeeded();
+    WidgetsBinding.instance.addPostFrameCallback(_maybeShowActivationModal);
     // Note: _checkFirstTimeWelcome moved to didChangeDependencies()
     // because GoRouterState.of(context) requires mounted context
+  }
+
+  /// Trigger B (brief §4.1) — première ouverture post-update : si l'utilisateur
+  /// a déjà complété l'onboarding mais n'a jamais vu la nouvelle modal
+  /// d'activation, on la propose une fois. Synchronisation backend déjà faite
+  /// par [NotificationsSettingsNotifier] au boot.
+  void _maybeShowActivationModal(Duration _) {
+    if (!mounted) return;
+    final settings = ref.read(notificationsSettingsProvider);
+    if (settings.modalSeen) return;
+    showNotificationActivationModal(
+      context,
+      ref,
+      trigger: ActivationTrigger.update,
+    );
   }
 
   void _checkNotifBannerDismissed() {
@@ -477,6 +491,11 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                     ),
                   ),
 
+                  // Re-nudge banner (≥7j après refus, cap 3, espacement 14j)
+                  const SliverToBoxAdapter(
+                    child: NotificationRenudgeBanner(),
+                  ),
+
                   // Notification activation banner (when not enabled & not dismissed)
                   SliverToBoxAdapter(
                     child: Builder(
@@ -503,9 +522,11 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                             color: Colors.transparent,
                             child: InkWell(
                               borderRadius: BorderRadius.circular(16),
-                              onTap: () =>
-                                  showNotificationPermissionBottomSheet(
-                                      context, ref),
+                              onTap: () => showNotificationActivationModal(
+                                context,
+                                ref,
+                                trigger: ActivationTrigger.update,
+                              ),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 16,

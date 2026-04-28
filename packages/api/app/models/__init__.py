@@ -21,6 +21,7 @@ from app.models.source import Source, UserSource
 from app.models.source_search_log import SourceSearchLog
 from app.models.subscription import UserSubscription
 from app.models.user import UserInterest, UserPreference, UserProfile, UserStreak
+from app.models.user_notification_preferences import UserNotificationPreferences
 from app.models.user_personalization import UserPersonalization
 from app.models.user_topic_profile import UserTopicProfile
 from app.models.waitlist import WaitlistEntry
@@ -61,6 +62,8 @@ __all__ = [
     "EditorialHighlightsHistory",
     # Personalization (Story 4.7)
     "UserPersonalization",
+    # Notification preferences (push activation v1)
+    "UserNotificationPreferences",
     # Collections (Saved Groups)
     "Collection",
     "CollectionItem",

@@ -83,6 +83,7 @@ from app.routers import (
     feed,
     images,
     internal,
+    notification_preferences,
     personalization,
     progress,
     sources,
@@ -427,6 +428,11 @@ app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
 app.include_router(progress.router, prefix="/api/progress", tags=["Progress"])
+app.include_router(
+    notification_preferences.router,
+    prefix="/api/notification-preferences",
+    tags=["NotificationPreferences"],
+)
 app.include_router(
     personalization.router,
     prefix="/api/users/personalization",
