@@ -195,6 +195,7 @@ class PushNotificationService {
       importance: Importance.high,
       priority: Priority.high,
       icon: '@drawable/ic_launcher_foreground',
+      largeIcon: const DrawableResourceAndroidBitmap('facteur_avatar'),
       styleInformation: BigTextStyleInformation(
         copy.body,
         contentTitle: copy.title,
@@ -250,6 +251,7 @@ class PushNotificationService {
       importance: Importance.high,
       priority: Priority.high,
       icon: '@drawable/ic_launcher_foreground',
+      largeIcon: const DrawableResourceAndroidBitmap('facteur_avatar'),
       styleInformation: BigTextStyleInformation(
         communityBody,
         contentTitle: communityTitle,

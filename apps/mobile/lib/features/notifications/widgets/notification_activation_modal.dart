@@ -146,7 +146,15 @@ class _NotificationActivationModalState
                     ?.copyWith(fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: FacteurSpacing.space2),
+              const SizedBox(height: FacteurSpacing.space3),
+              Center(
+                child: Image.asset(
+                  'assets/notifications/facteur_avatar.png',
+                  height: 96,
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(height: FacteurSpacing.space3),
               Text(
                 "Fatigué·e d'avoir trop d'infos ?",
                 style: theme.textTheme.bodyMedium
@@ -309,7 +317,15 @@ class _NotificationPreview extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('🧑‍✈️', style: TextStyle(fontSize: 26)),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset(
+                'assets/notifications/facteur_avatar.png',
+                width: 32,
+                height: 32,
+                fit: BoxFit.cover,
+              ),
+            ),
             const SizedBox(width: FacteurSpacing.space3),
             Expanded(
               child: Column(

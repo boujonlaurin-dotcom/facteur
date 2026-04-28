@@ -86,16 +86,38 @@ class _NotificationRenudgeBannerState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            "Facteur prend tout son sens avec une routine quotidienne.",
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            "Donne-lui une chance pendant 7 jours — désactive en 1 clic si ça te dérange.",
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: colors.textSecondary),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset(
+                  'assets/notifications/facteur_avatar.png',
+                  width: 56,
+                  height: 56,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(width: FacteurSpacing.space3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Facteur prend tout son sens avec une routine quotidienne.",
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "Donne-lui une chance pendant 7 jours — désactive en 1 clic si ça te dérange.",
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: colors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: FacteurSpacing.space3),
           Row(
