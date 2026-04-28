@@ -783,19 +783,36 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // EXCEPT in WebView mode where scroll comes from the JS bridge and the
     // user expects hide-on-scroll regardless of how short the in-app stub was.
     if (!isVideo && (!_isShortArticle || _isWebViewActive)) {
-      final headerHeight =
-          MediaQuery.of(context).padding.top + _kHeaderContentHeight;
-      final shift = delta / headerHeight;
-      _headerOffset.value = (_headerOffset.value + shift).clamp(0.0, 1.0);
+      // In WebView mode the JS bridge fires at ~7Hz (150ms throttle) which
+      // makes per-event offset increments visibly choppy. Drive the overlays
+      // with the smooth 200ms tween in either direction instead.
+      if (_isWebViewActive) {
+        if (delta > 0) {
+          if (_headerAutoTarget != 1.0) _animateHeaderTo(1.0);
+          if (!_footerPermanent.value && _footerAutoTarget != 1.0) {
+            _animateFooterTo(1.0);
+          }
+        } else if (delta < 0) {
+          if (_headerAutoTarget != 0.0) _animateHeaderTo(0.0);
+          if (!_footerPermanent.value && _footerAutoTarget != 0.0) {
+            _animateFooterTo(0.0);
+          }
+        }
+      } else {
+        final headerHeight =
+            MediaQuery.of(context).padding.top + _kHeaderContentHeight;
+        final shift = delta / headerHeight;
+        _headerOffset.value = (_headerOffset.value + shift).clamp(0.0, 1.0);
 
-      // Footer mirrors header: hides on scroll-down, shows on scroll-up.
-      // Skipped once the user has reached the end of the displayed content.
-      if (!_footerPermanent.value) {
-        final bottomInset = MediaQuery.of(context).viewPadding.bottom;
-        final footerHeight = _kFooterContentHeight + bottomInset;
-        final footerShift = delta / footerHeight;
-        _footerOffset.value =
-            (_footerOffset.value + footerShift).clamp(0.0, 1.0);
+        // Footer mirrors header: hides on scroll-down, shows on scroll-up.
+        // Skipped once the user has reached the end of the displayed content.
+        if (!_footerPermanent.value) {
+          final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+          final footerHeight = _kFooterContentHeight + bottomInset;
+          final footerShift = delta / footerHeight;
+          _footerOffset.value =
+              (_footerOffset.value + footerShift).clamp(0.0, 1.0);
+        }
       }
     }
     // FABs + footer reappear after 2.5s of scroll inactivity.
@@ -2965,7 +2982,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Voir d\'autres points de vue',
+                  'Couverture médiatique',
                   style: textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: colors.textPrimary,
