@@ -8,7 +8,7 @@ void main() {
         variant: NotifVariant.variantA,
       );
       expect(copy.title, 'Le facteur est passé !');
-      expect(copy.body, "Ton récap du jour t'attend.");
+      expect(copy.body, "Ton récap du jour t'attend quand tu veux.");
     });
 
     test('variant B with teaser uses tutoiement + personnification', () {

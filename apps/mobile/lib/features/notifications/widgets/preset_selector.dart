@@ -36,6 +36,7 @@ class PresetSelector extends StatelessWidget {
               "Message quotidien + 1 pépite recommandée par les Fact·eur·isses.",
           selected: value == NotifPreset.curieux,
           onTap: () => onChanged(NotifPreset.curieux),
+          badge: 'Recommandé',
         ),
       ],
     );
@@ -49,6 +50,7 @@ class _PresetTile extends StatelessWidget {
   final String description;
   final bool selected;
   final VoidCallback onTap;
+  final String? badge;
 
   const _PresetTile({
     required this.icon,
@@ -57,6 +59,7 @@ class _PresetTile extends StatelessWidget {
     required this.description,
     required this.selected,
     required this.onTap,
+    this.badge,
   });
 
   @override
@@ -87,10 +90,35 @@ class _PresetTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      label,
-                      style: theme.textTheme.bodyLarge
-                          ?.copyWith(fontWeight: FontWeight.w600),
+                    Row(
+                      children: [
+                        Text(
+                          label,
+                          style: theme.textTheme.bodyLarge
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        if (badge != null) ...[
+                          const SizedBox(width: FacteurSpacing.space2),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colors.primary.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              badge!,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: colors.primary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Text(

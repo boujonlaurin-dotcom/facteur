@@ -22,7 +22,7 @@ Future<void> showNotificationActivationModal(
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
-    barrierColor: Colors.black54,
+    barrierColor: Colors.black87,
     useRootNavigator: true,
     builder: (_) => Dialog(
       insetPadding: const EdgeInsets.symmetric(
@@ -346,7 +346,7 @@ class _NotificationPreview extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   const Text(
-                      "Le facteur est passé ! Ton récap du jour t'attend."),
+                      "Le facteur est passé ! Ton récap du jour t'attend quand tu veux."),
                 ],
               ),
             ),

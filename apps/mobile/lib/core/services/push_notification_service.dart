@@ -53,11 +53,10 @@ class PushNotificationService {
       tz.setLocalLocation(tz.getLocation('Europe/Paris'));
     }
 
-    // Small icon: monochrome silhouette, blanc sur transparent. ic_launcher_foreground
-    // est un fallback v1 — remplacer par @drawable/ic_stat_facteur dès que l'asset
-    // dédié est fourni (cf plan §3 Icône notif).
+    // Small icon: ic_launcher_foreground a été remplacé par un asset
+    // blanc/alpha dans PR #428 — c'est l'asset correct pour la status bar.
     const androidSettings =
-        AndroidInitializationSettings('@drawable/ic_stat_facteur');
+        AndroidInitializationSettings('@drawable/ic_launcher_foreground');
 
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
@@ -124,7 +123,7 @@ class PushNotificationService {
 
   /// Variante A — défaut, sans teaser éditorial.
   static const String defaultTitle = 'Le facteur est passé !';
-  static const String defaultBody = "Ton récap du jour t'attend.";
+  static const String defaultBody = "Ton récap du jour t'attend quand tu veux.";
 
   /// Variante C — déclenchée manuellement par l'éditorial (hors v1).
   static const String calmTitle = 'Le facteur est passé !';
@@ -192,7 +191,7 @@ class PushNotificationService {
       channelDescription: 'Notification quotidienne quand ton récap est prêt',
       importance: Importance.high,
       priority: Priority.high,
-      icon: '@drawable/ic_stat_facteur',
+      icon: '@drawable/ic_launcher_foreground',
       largeIcon: const DrawableResourceAndroidBitmap('facteur_avatar'),
       styleInformation: BigTextStyleInformation(
         copy.body,
@@ -247,7 +246,7 @@ class PushNotificationService {
       channelDescription: 'Recommandation hebdomadaire des Fact·eur·isses',
       importance: Importance.high,
       priority: Priority.high,
-      icon: '@drawable/ic_stat_facteur',
+      icon: '@drawable/ic_launcher_foreground',
       largeIcon: const DrawableResourceAndroidBitmap('facteur_avatar'),
       styleInformation: BigTextStyleInformation(
         communityBody,
