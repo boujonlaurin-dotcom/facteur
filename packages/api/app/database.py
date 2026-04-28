@@ -42,9 +42,9 @@ _use_queue_pool = _is_railway or _is_supabase
 # Exposé pour les tests : capacité prod et fail-fast timeout. Toute modif ici
 # impacte la pression sur le Supabase Pooler (60 conn partagées).
 PROD_POOL_KWARGS = {
-    "pool_size": 25,
-    "max_overflow": 25,
-    "pool_timeout": 10,
+    "pool_size": 10,
+    "max_overflow": 10,
+    "pool_timeout": 30,
     "pool_recycle": 180,
 }
 
@@ -60,11 +60,11 @@ if _use_queue_pool:
         pool_pre_ping=True,
         # Use AsyncAdaptedQueuePool for proper connection management
         poolclass=AsyncAdaptedQueuePool,
-        # Supabase Pooler 60 connection limit shared. App: 25+25=50 max →
-        # ~16 concurrent feed requests (~3 conns/req). Margin 10 left for the
-        # in-process scheduler. pool_timeout=10s : fail fast for visibility
-        # instead of 30s silent stalls. pool_recycle=180s : Supabase PgBouncer
-        # idle timeout is ~5 min, recycle before that.
+        # Supabase Pooler 60 connection limit shared. App: 10+10=20 max →
+        # laisse de la marge pour le scheduler in-process et autres clients.
+        # pool_timeout=30s : tolère un pic court sans 503 cascade (le revert du
+        # 10s post-incident 2026-04-28 — voir hotfix associé). pool_recycle=180s :
+        # Supabase PgBouncer idle timeout ~5 min, recycle avant.
         **PROD_POOL_KWARGS,
         # Connect args for PgBouncer compatibility
         connect_args={
