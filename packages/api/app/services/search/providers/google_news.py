@@ -51,13 +51,21 @@ class GoogleNewsProvider:
             base_urls: list[str] = []
 
             for entry in feed.entries:
-                link = entry.get("link", "")
-                if not link:
+                # Google News changed its scheme: <link> now points to opaque
+                # `news.google.com/rss/articles/CB...` redirect URLs. The real
+                # publisher is in <source url="...">, exposed by feedparser as
+                # `entry.source.href`. Fall back to <link> for safety.
+                source = entry.get("source", None)
+                publisher_url = ""
+                if source and isinstance(source, dict):
+                    publisher_url = source.get("href", "") or ""
+                if not publisher_url:
+                    publisher_url = entry.get("link", "") or ""
+                if not publisher_url:
                     continue
-                parsed = urlparse(link)
+                parsed = urlparse(publisher_url)
                 domain = parsed.netloc.lower()
-                # Skip Google's own redirects
-                if "google.com" in domain:
+                if not domain or "google.com" in domain:
                     continue
                 if domain not in seen_domains:
                     seen_domains.add(domain)

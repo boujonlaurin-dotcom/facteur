@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../models/topic_models.dart';
 import '../repositories/topic_repository.dart';
 
@@ -102,6 +103,11 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
       } else {
         state = AsyncData([created]);
       }
+      // Sprint 2 PR1 — fire after server-side create so we log the real slug.
+      unawaited(ref.read(analyticsServiceProvider).trackSubtopicAdded(
+            subtopicSlug: created.slugParent ?? created.name,
+            origin: 'custom_topics',
+          ));
       return created;
     } catch (e) {
       // Rollback
@@ -116,6 +122,13 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
     final repo = ref.read(topicRepositoryProvider);
 
     final previousState = state;
+    // Snapshot slug before removing so analytics gets the real value even
+    // when the optimistic update has already dropped the topic from state.
+    final removed = previousState.value?.firstWhere(
+      (t) => t.id == topicId,
+      orElse: () => UserTopicProfile(id: topicId, name: '', slugParent: null),
+    );
+
     if (state.hasValue) {
       state = AsyncData(
         state.value!.where((t) => t.id != topicId).toList(),
@@ -124,6 +137,13 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
 
     try {
       await repo.unfollowTopic(topicId);
+      if (removed != null) {
+        unawaited(ref.read(analyticsServiceProvider).trackSubtopicRemoved(
+              subtopicSlug: removed.slugParent ??
+                  (removed.name.isNotEmpty ? removed.name : topicId),
+              origin: 'custom_topics',
+            ));
+      }
     } catch (e) {
       state = previousState;
       rethrow;

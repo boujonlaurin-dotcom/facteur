@@ -10,7 +10,6 @@ class NudgeIds {
   // Existing (migrated from scattered SharedPreferences keys).
   static const digestWelcome = 'digest_welcome';
   static const widgetPinAndroid = 'widget_pin_android';
-  static const noteWelcome = 'note_welcome';
   static const sunflowerRecommend = 'sunflower_recommend';
   static const savedUnread = 'saved_unread';
 
@@ -23,4 +22,7 @@ class NudgeIds {
   static const articleSaveNotes = 'article_save_notes';
   static const perspectivesCta = 'perspectives_cta';
   static const articleReadOnSite = 'article_read_on_site';
+
+  // Story 14.3 — self-reported "well-informed" score (NPS-style).
+  static const wellInformedPoll = 'well_informed_poll';
 }

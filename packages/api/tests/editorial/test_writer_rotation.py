@@ -17,11 +17,16 @@ import pytest
 from app.services.editorial.writer import EditorialWriterService
 
 
-def _make_content_mock(content_id: UUID | None = None, title: str = "Test article"):
+def _make_content_mock(
+    content_id: UUID | None = None,
+    title: str = "Le rapport qui change la donne pour le secteur",
+):
     c = MagicMock()
     c.id = content_id or uuid4()
     c.title = title
-    c.description = "desc"
+    c.description = (
+        "Une analyse detaillee de l'impact sur les communes et les habitants."
+    )
     c.source_id = uuid4()
     c.source = MagicMock()
     c.source.name = "Test Source"

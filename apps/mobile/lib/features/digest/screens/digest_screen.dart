@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
@@ -13,6 +12,8 @@ import '../../../shared/widgets/loaders/loading_view.dart';
 import '../../../shared/widgets/mode_accent.dart';
 import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../../../shared/widgets/states/laurin_fallback_view.dart';
+import '../../../core/orchestration/first_impression_orchestrator.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../../widgets/design/facteur_logo.dart';
 import '../../feed/models/content_model.dart';
@@ -24,8 +25,8 @@ import '../../app_update/widgets/update_modal.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
-import '../../onboarding/widgets/notification_permission_bottom_sheet.dart';
-import '../../settings/providers/notifications_settings_provider.dart';
+import '../../notifications/widgets/notification_activation_modal.dart';
+import '../../notifications/widgets/notification_renudge_banner.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../models/community_carousel_model.dart';
@@ -34,6 +35,8 @@ import '../providers/digest_format_provider.dart';
 import '../providers/community_carousel_provider.dart';
 import '../providers/digest_provider.dart';
 import '../providers/serein_toggle_provider.dart';
+import '../../well_informed/widgets/well_informed_prompt.dart';
+import '../../../core/services/widget_service.dart';
 import '../widgets/digest_briefing_section.dart';
 import '../widgets/digest_personalization_sheet.dart';
 import '../widgets/digest_welcome_modal.dart';
@@ -55,10 +58,11 @@ class DigestScreen extends ConsumerStatefulWidget {
 class _DigestScreenState extends ConsumerState<DigestScreen> {
   bool _showWelcome = false;
   bool _hasCheckedWelcome = false;
-  bool _notifBannerDismissed = false;
   bool _hasCheckedUpdate = false;
   int _consecutiveErrorCount = 0;
   final ScrollController _scrollController = ScrollController();
+  // Sprint 2 PR1 — dedupe digest_opened + digest_item_viewed per digest_id.
+  String? _trackedDigestId;
 
   @override
   void dispose() {
@@ -76,31 +80,32 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     }
   }
 
+  bool _activationModalShown = false;
+
   @override
   void initState() {
     super.initState();
-    _checkNotifBannerDismissed();
+    WidgetService.initWidgetIfNeeded();
     // Note: _checkFirstTimeWelcome moved to didChangeDependencies()
     // because GoRouterState.of(context) requires mounted context
   }
 
-  void _checkNotifBannerDismissed() {
-    final box = Hive.box<dynamic>('settings');
-    final dismissedAt = box.get('notif_banner_dismissed_at') as int?;
-    if (dismissedAt != null) {
-      final elapsed = DateTime.now().millisecondsSinceEpoch - dismissedAt;
-      // Re-show after 7 days
-      if (elapsed < const Duration(days: 7).inMilliseconds) {
-        _notifBannerDismissed = true;
-      }
-    }
-  }
-
-  void _dismissNotifBanner() {
-    final box = Hive.box<dynamic>('settings');
-    box.put('notif_banner_dismissed_at', DateTime.now().millisecondsSinceEpoch);
-    setState(() {
-      _notifBannerDismissed = true;
+  /// Trigger B (brief §4.1) — première ouverture post-update.
+  /// La décision passe par `firstImpressionSlotProvider` : pas de modal
+  /// pendant l'onboarding, pas de modal en parallèle du Welcome Tour, et
+  /// au plus une modal par session.
+  void _maybeShowActivationModal(FirstImpressionSlot slot) {
+    if (_activationModalShown) return;
+    if (slot != FirstImpressionSlot.notifModal) return;
+    _activationModalShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(notifModalConsumedThisSessionProvider.notifier).state = true;
+      showNotificationActivationModal(
+        context,
+        ref,
+        trigger: ActivationTrigger.update,
+      );
     });
   }
 
@@ -167,7 +172,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     // After a short delay, nudge to pin the Android home screen widget
     Future.delayed(const Duration(milliseconds: 800), () {
       if (mounted) {
-        WidgetPinNudge.show(context);
+        WidgetPinNudge.show(context, ref);
       }
     });
   }
@@ -324,6 +329,12 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     final digestAsync = ref.watch(digestProvider);
     final sereinState = ref.watch(sereinToggleProvider);
 
+    // Orchestrateur "premier impact" — arbitre entre welcome tour, modal
+    // notif, re-nudge banner et well-informed prompt. Garantit max 1 modal
+    // + 1 nudge par session.
+    final impressionSlot = ref.watch(firstImpressionSlotProvider);
+    _maybeShowActivationModal(impressionSlot);
+
     // Initialiser le format depuis la réponse API
     ref.listen(digestProvider, (previous, next) {
       next.whenData((digest) {
@@ -332,6 +343,36 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
           ref
               .read(digestFormatProvider.notifier)
               .initFromDigestResponse(digest.formatVersion);
+        }
+      });
+    });
+
+    // Sprint 2 PR1 — fire digest_opened + digest_item_viewed once per digest.
+    // Semantics: "items rendered in the list" — digest is short (≤ 7 items
+    // typically) so presentation ≈ visibility without per-card VisibilityDetector
+    // wiring across the editorial/ranked/topics layouts.
+    ref.listen(digestProvider, (previous, next) {
+      next.whenData((digest) {
+        if (digest == null) return;
+        if (_trackedDigestId == digest.digestId) return;
+        _trackedDigestId = digest.digestId;
+        final analytics = ref.read(analyticsServiceProvider);
+        final dateIso = digest.targetDate.toIso8601String().substring(0, 10);
+        unawaited(
+          analytics.trackDigestOpened(
+            digestDate: dateIso,
+            itemsCount: digest.items.length,
+          ),
+        );
+        for (var i = 0; i < digest.items.length; i++) {
+          final item = digest.items[i];
+          unawaited(
+            analytics.trackDigestItemViewed(
+              digestDate: dateIso,
+              contentId: item.contentId,
+              position: i,
+            ),
+          );
         }
       });
     });
@@ -437,94 +478,13 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                     ),
                   ),
 
-                  // Notification activation banner (when not enabled & not dismissed)
+                  // Re-nudge banner (≥7j après refus, cap 3, espacement 14j) —
+                  // gaté par l'orchestrateur (1 nudge max, pas en parallèle
+                  // d'une modal ou du welcome tour).
                   SliverToBoxAdapter(
-                    child: Builder(
-                      builder: (context) {
-                        final notifSettings =
-                            ref.watch(notificationsSettingsProvider);
-                        if (notifSettings.pushEnabled ||
-                            _notifBannerDismissed) {
-                          return const SizedBox.shrink();
-                        }
-                        return Container(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colors.primary.withOpacity(0.10),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: colors.primary.withOpacity(0.25),
-                            ),
-                          ),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(16),
-                              onTap: () =>
-                                  showNotificationPermissionBottomSheet(
-                                      context, ref),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 14,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      PhosphorIcons.bellRinging(
-                                          PhosphorIconsStyle.fill),
-                                      color: colors.primary,
-                                      size: 22,
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Activer les notifications',
-                                            style: TextStyle(
-                                              color: colors.textPrimary,
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            'Facteur ne t\'enverra qu\'1 notification par jour, pour te fournir l\'Essentiel.',
-                                            style: TextStyle(
-                                              color: colors.textSecondary,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    GestureDetector(
-                                      behavior: HitTestBehavior.opaque,
-                                      onTap: _dismissNotifBanner,
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(4),
-                                        child: Icon(
-                                          PhosphorIcons.x(),
-                                          color: colors.textTertiary,
-                                          size: 18,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+                    child: impressionSlot == FirstImpressionSlot.renudgeBanner
+                        ? const NotificationRenudgeBanner()
+                        : const SizedBox.shrink(),
                   ),
 
                   // Success banner when digest is completed
@@ -659,6 +619,16 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                         return const SizedBox.shrink();
                       },
                     ),
+                  ),
+
+                  // Story 14.3 — Well-informed self-report inline prompt.
+                  // Cooldown/gating dans wellInformedShouldShowProvider, ET
+                  // arbitrage par firstImpressionSlotProvider (1 nudge max
+                  // par session, jamais en parallèle d'une modal).
+                  SliverToBoxAdapter(
+                    child: impressionSlot == FirstImpressionSlot.wellInformed
+                        ? const WellInformedPrompt()
+                        : const SizedBox.shrink(),
                   ),
 
                   // Digest Briefing Section

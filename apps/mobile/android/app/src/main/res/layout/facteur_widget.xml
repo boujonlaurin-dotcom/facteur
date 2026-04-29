@@ -5,10 +5,11 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/widget_root_bg"
-    android:padding="12dp">
+    android:padding="16dp">
 
-    <!-- Header: centered Facteur wordmark + streak end-aligned -->
+    <!-- Header: Facteur wordmark + streak end-aligned -->
     <RelativeLayout
+        android:id="@+id/widget_header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="4dp">
@@ -20,10 +21,11 @@
             android:layout_centerHorizontal="true"
             android:gravity="center"
             android:text="Facteur"
-            android:textSize="20sp"
-            android:fontFamily="@font/fraunces_bold"
-            android:letterSpacing="-0.03"
-            android:textColor="#2C2A29" />
+            android:textSize="22sp"
+            android:fontFamily="serif"
+            android:textStyle="bold"
+            android:letterSpacing="-0.02"
+            android:textColor="@color/facteur_text_primary" />
 
         <TextView
             android:id="@+id/streak_text"
@@ -33,203 +35,58 @@
             android:layout_centerVertical="true"
             android:text=""
             android:textSize="14sp"
-            android:textColor="#D35400" />
+            android:textColor="@color/facteur_accent" />
     </RelativeLayout>
 
-    <!-- Status message -->
+    <!-- Subtitle -->
     <TextView
-        android:id="@+id/status_message"
+        android:id="@+id/subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
+        android:gravity="center"
+        android:text="L'Essentiel du jour"
+        android:textSize="13sp"
+        android:fontFamily="sans-serif"
+        android:textColor="@color/facteur_text_secondary" />
+
+    <!-- Stale banner (shown when articles_updated_at > 36h) -->
+    <TextView
+        android:id="@+id/stale_banner"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="8dp"
+        android:padding="8dp"
         android:gravity="center"
-        android:text="Ton essentiel du jour t'attend !"
-        android:textSize="13sp"
-        android:textColor="#5D5B5A" />
+        android:background="@color/facteur_stale_banner_bg"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:textColor="@color/facteur_accent"
+        android:visibility="gone"
+        android:text="Mets à jour ton essentiel" />
 
-    <!-- Two article cards side by side -->
+    <!-- Article container — populated inline by FacteurWidget.onUpdate() -->
     <LinearLayout
+        android:id="@+id/articles_container"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:orientation="horizontal"
-        android:layout_marginBottom="8dp">
+        android:orientation="vertical" />
 
-        <!-- Article card 1 -->
-        <LinearLayout
-            android:id="@+id/article_card_1"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:layout_marginEnd="4dp"
-            android:orientation="vertical"
-            android:background="@drawable/widget_card_bg"
-            android:clipChildren="true"
-            android:clipToPadding="false">
-
-            <ImageView
-                android:id="@+id/article_image_1"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:scaleType="centerCrop"
-                android:contentDescription="Article 1 thumbnail" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="8dp">
-
-                <TextView
-                    android:id="@+id/article_title_1"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text=""
-                    android:textSize="13sp"
-                    android:textStyle="bold"
-                    android:textColor="#2C2A29"
-                    android:maxLines="2"
-                    android:ellipsize="end" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="2dp"
-                    android:gravity="center_vertical">
-
-                    <ImageView
-                        android:id="@+id/article_logo_1"
-                        android:layout_width="16dp"
-                        android:layout_height="16dp"
-                        android:layout_marginEnd="4dp"
-                        android:scaleType="fitCenter"
-                        android:visibility="gone"
-                        android:contentDescription="Source logo" />
-
-                    <TextView
-                        android:id="@+id/article_meta_1"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text=""
-                        android:textSize="11sp"
-                        android:textColor="#959392"
-                        android:maxLines="1"
-                        android:ellipsize="end" />
-                </LinearLayout>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- Article card 2 -->
-        <LinearLayout
-            android:id="@+id/article_card_2"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:layout_marginStart="4dp"
-            android:orientation="vertical"
-            android:background="@drawable/widget_card_bg"
-            android:clipChildren="true"
-            android:clipToPadding="false">
-
-            <ImageView
-                android:id="@+id/article_image_2"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:scaleType="centerCrop"
-                android:contentDescription="Article 2 thumbnail" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="8dp">
-
-                <TextView
-                    android:id="@+id/article_title_2"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text=""
-                    android:textSize="13sp"
-                    android:textStyle="bold"
-                    android:textColor="#2C2A29"
-                    android:maxLines="2"
-                    android:ellipsize="end" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="2dp"
-                    android:gravity="center_vertical">
-
-                    <ImageView
-                        android:id="@+id/article_logo_2"
-                        android:layout_width="16dp"
-                        android:layout_height="16dp"
-                        android:layout_marginEnd="4dp"
-                        android:scaleType="fitCenter"
-                        android:visibility="gone"
-                        android:contentDescription="Source logo" />
-
-                    <TextView
-                        android:id="@+id/article_meta_2"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text=""
-                        android:textSize="11sp"
-                        android:textColor="#959392"
-                        android:maxLines="1"
-                        android:ellipsize="end" />
-                </LinearLayout>
-            </LinearLayout>
-        </LinearLayout>
-    </LinearLayout>
-
-    <!-- Buttons row -->
-    <LinearLayout
+    <!-- Footer: single CTA opening the digest -->
+    <TextView
+        android:id="@+id/btn_open"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center">
-
-        <TextView
-            android:id="@+id/btn_more"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginEnd="4dp"
-            android:text="Voir 3 autres news"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:textColor="#FDFBF7"
-            android:background="@drawable/widget_btn_primary"
-            android:paddingTop="10dp"
-            android:paddingBottom="10dp"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:gravity="center" />
-
-        <TextView
-            android:id="@+id/btn_explore"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="4dp"
-            android:text="Explorer"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:textColor="#D35400"
-            android:background="@drawable/widget_btn_secondary"
-            android:paddingTop="10dp"
-            android:paddingBottom="10dp"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:gravity="center" />
-    </LinearLayout>
-
+        android:layout_marginTop="10dp"
+        android:text="Ouvrir Facteur"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:textColor="#FDFBF7"
+        android:background="@drawable/widget_btn_primary"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:gravity="center" />
 </LinearLayout>

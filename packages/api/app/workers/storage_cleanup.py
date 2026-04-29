@@ -7,7 +7,7 @@ import structlog
 from sqlalchemy import delete, func, select
 
 from app.config import get_settings
-from app.database import async_session_maker
+from app.database import safe_async_session
 from app.models.content import Content, UserContentStatus
 from app.models.daily_digest import DailyDigest
 from app.models.source import Source
@@ -59,7 +59,7 @@ async def cleanup_old_articles() -> dict:
         cutoff_date=cutoff_date.isoformat(),
     )
 
-    async with async_session_maker() as session:
+    async with safe_async_session() as session:
         try:
             # Subquery: articles bookmarkés (à préserver)
             bookmarked_subquery = select(UserContentStatus.content_id).where(

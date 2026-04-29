@@ -53,7 +53,7 @@ async def test_cleanup_deletes_old_articles():
     mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.workers.storage_cleanup.async_session_maker", mock_session_maker), \
+    with patch("app.workers.storage_cleanup.safe_async_session", mock_session_maker), \
          patch("app.workers.storage_cleanup.settings") as mock_settings:
         mock_settings.rss_retention_days = 20
 
@@ -89,7 +89,7 @@ async def test_cleanup_skips_when_no_old_articles():
     mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.workers.storage_cleanup.async_session_maker", mock_session_maker), \
+    with patch("app.workers.storage_cleanup.safe_async_session", mock_session_maker), \
          patch("app.workers.storage_cleanup.settings") as mock_settings:
         mock_settings.rss_retention_days = 20
 
@@ -130,7 +130,7 @@ async def test_cleanup_rollback_on_error():
     mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.workers.storage_cleanup.async_session_maker", mock_session_maker), \
+    with patch("app.workers.storage_cleanup.safe_async_session", mock_session_maker), \
          patch("app.workers.storage_cleanup.settings") as mock_settings:
         mock_settings.rss_retention_days = 14
 
@@ -155,7 +155,7 @@ async def test_cleanup_respects_custom_retention_days():
     mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.workers.storage_cleanup.async_session_maker", mock_session_maker), \
+    with patch("app.workers.storage_cleanup.safe_async_session", mock_session_maker), \
          patch("app.workers.storage_cleanup.settings") as mock_settings:
         mock_settings.rss_retention_days = 7
 
@@ -193,7 +193,7 @@ async def test_cleanup_logs_statistics():
     mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.workers.storage_cleanup.async_session_maker", mock_session_maker), \
+    with patch("app.workers.storage_cleanup.safe_async_session", mock_session_maker), \
          patch("app.workers.storage_cleanup.settings") as mock_settings, \
          patch("app.workers.storage_cleanup.logger") as mock_logger:
         mock_settings.rss_retention_days = 20
@@ -236,7 +236,7 @@ async def test_cleanup_preserves_bookmarked_articles():
     mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.workers.storage_cleanup.async_session_maker", mock_session_maker), \
+    with patch("app.workers.storage_cleanup.safe_async_session", mock_session_maker), \
          patch("app.workers.storage_cleanup.settings") as mock_settings:
         mock_settings.rss_retention_days = 20
 
@@ -291,7 +291,7 @@ async def test_cleanup_preserves_digest_referenced_content():
         "app.workers.storage_cleanup._collect_referenced_content_ids",
         new=AsyncMock(return_value={referenced_id}),
     ), patch(
-        "app.workers.storage_cleanup.async_session_maker", mock_session_maker
+        "app.workers.storage_cleanup.safe_async_session", mock_session_maker
     ), patch("app.workers.storage_cleanup.settings") as mock_settings:
         mock_settings.rss_retention_days = 20
 
@@ -344,7 +344,7 @@ async def test_cleanup_skip_path_reports_preserved_digest_refs():
         "app.workers.storage_cleanup._collect_referenced_content_ids",
         new=AsyncMock(return_value={referenced_id}),
     ), patch(
-        "app.workers.storage_cleanup.async_session_maker", mock_session_maker
+        "app.workers.storage_cleanup.safe_async_session", mock_session_maker
     ), patch("app.workers.storage_cleanup.settings") as mock_settings:
         mock_settings.rss_retention_days = 20
 

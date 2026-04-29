@@ -13,7 +13,14 @@ PostHogService posthogService(PosthogServiceRef ref) {
 
 @Riverpod(keepAlive: true)
 AnalyticsService analyticsService(AnalyticsServiceRef ref) {
-  final apiClient = ref.watch(apiClientProvider);
-  final posthog = ref.watch(posthogServiceProvider);
-  return AnalyticsService(apiClient, posthog: posthog);
+  try {
+    final apiClient = ref.watch(apiClientProvider);
+    final posthog = ref.watch(posthogServiceProvider);
+    return AnalyticsService(apiClient, posthog: posthog);
+  } catch (_) {
+    // Upstream providers (Supabase-backed apiClient) not available — e.g.
+    // widget tests that don't initialize the full harness. Fall back to a
+    // no-op instance so every `trackXxx` call silently succeeds.
+    return AnalyticsService.disabled();
+  }
 }

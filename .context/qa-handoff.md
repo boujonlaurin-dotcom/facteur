@@ -1,112 +1,63 @@
-# QA Handoff — Welcome Tour (Story 16.1 PR2)
+# QA Handoff — Recherche de sources (qualité + observabilité)
 
-> Feature branch : `boujonlaurin-dotcom/welcome-tour`
-> Story : `docs/stories/core/16.1.welcome-tour-nudges.md`
+> Branche : `boujonlaurin-dotcom/source-search-fix` → cible `main`
+> Bug doc : `docs/bugs/bug-source-search-quality.md`
+> Diag : `.context/source-search-diag.md`
 
 ## Feature développée
 
-Tour de bienvenue 3 écrans animés (Essentiel / Ton flux / Personnalisation) déclenché pour **tous les utilisateurs** (nouveaux + existants) une fois après onboarding. Gated par le redirect GoRouter via `AuthState.welcomeTourSeen`, persisté par le NudgeService unifié (PR1 #468).
+Refonte du pipeline `POST /sources/smart-search` : drop strict des résultats sans feed RSS détecté, filtre listicle/denylist, fallback root host, catalog accent-insensible + fuzzy `pg_trgm`, court-circuit dès 1 hit curated, log universel dans nouvelle table `source_search_logs`.
 
-## PR associée
-À remplir après `gh pr create`.
+## Pré-requis QA — migration manuelle Supabase
+
+À exécuter dans Supabase Studio Editor SQL **avant déploiement Railway** :
+
+```sql
+CREATE EXTENSION IF NOT EXISTS unaccent;
+-- Puis le DDL de ssq01_create_source_search_logs (cf. alembic/versions)
+```
 
 ## Écrans impactés
 
-| Écran | Route | Modifié / Nouveau |
-|-------|-------|-------------------|
-| Welcome Tour (PageView 3 pages) | `/welcome-tour` | **Nouveau** |
-| Router redirect | (routes.dart) | Modifié (gate `welcomeTourSeen`) |
-| Conclusion onboarding | `/onboarding/conclusion` | Non touché (le redirect intercepte) |
-| Digest | `/digest` | Non touché |
+| Écran | Route mobile | Statut |
+|-------|--------------|--------|
+| Ajouter une source | `add_source_screen.dart` | Modifié (logique backend uniquement) |
 
 ## Scénarios de test
 
-### Scénario 1 : Nouveau user — onboarding → tour → digest
-**Parcours** :
-1. Fresh install, créer un compte, confirmer l'email
-2. Compléter les 15 étapes d'onboarding
-3. Observer la `ConclusionAnimationScreen` (loading animation)
-4. Elle navigue vers `/digest?first=true` mais le redirect intercepte → `/welcome-tour`
-5. Swipe entre les 3 pages (ou tap "Suivant")
-6. Tap "Commencer" sur la 3ᵉ page
+### S1 — Source curated mainstream (happy path)
+Taper `mediapart`. Attendu : Mediapart en tête, `layers_called == ["catalog"]`, latence < 500 ms, zéro listicle.
 
-**Résultat attendu** :
-- Les 3 pages s'affichent dans l'ordre Essentiel → Ton flux → Personnalisation
-- Les dots en bas indiquent la progression
-- Chaque page a une illustration animée (soleil + cartes / cartes défilantes / chips + slider)
-- Après "Commencer" → arrive sur `/digest?first=true`
-- Le `DigestWelcomeModal` existant s'affiche
+### S2 — Accent / typo
+Taper `arret sur images` (sans accent), puis `mediapar`. Attendu : `Arrêt sur Images` et `Mediapart` apparaissent — `unaccent + pg_trgm` doivent matcher.
 
-### Scénario 2 : User existant — 1ʳᵉ relance post-deploy
-**Parcours** :
-1. User déjà onboardé avant ce PR (cache `onboarding_completed=true`, pas de `nudge.welcome_tour.seen`)
-2. Relancer l'app → splash → auth check
-3. Router redirect : `!needsOnboarding && !welcomeTourSeen` → `/welcome-tour`
+### S2-bis — Sources FR indépendantes hors catalog (pipeline externe)
+Taper successivement `politis`, `disclose`, `le media`, `frustration magazine`, `mediacites`.
+Attendu pour chacun : la pipeline externe (Brave + Google News + root-host fallback) doit retrouver le site officiel et résoudre son feed RSS. Pas de listicle. Premier résultat = la source attendue (politis.fr, disclose.ngo, lemediatv.fr, frustrationmagazine.fr, mediacites.fr).
 
-**Résultat attendu** :
-- Le tour s'affiche à la place du `/digest`
-- Même comportement qu'au scénario 1 pour la suite
+### S3 — Requête thématique large (anti-listicle)
+Taper `political news`. Attendu : **zéro** résultat type "60 Best…" / "Top 100…". Si rien n'est trouvable, liste vide + CTA "Élargir la recherche" plutôt que des articles SEO.
 
-### Scénario 3 : Skip depuis la page 1
-**Parcours** :
-1. Arriver sur `/welcome-tour` (via scénario 1 ou 2)
-2. Tap "Passer" en haut à droite
+### S4 — YouTube handle
+Taper `@HugoDecrypte`. Attendu : chaîne résolue (layer `youtube`), feed présent.
 
-**Résultat attendu** :
-- Navigue directement vers `/digest` (sans `?first=true` → pas de welcome modal)
-- `markSeen(welcome_tour)` persiste le flag
+### S5 — Élargir la recherche
+Taper `mediapart` puis tap sur "Élargir la recherche". Attendu : pipeline complet, mais toujours aucun résultat sans `feed_url`.
 
-### Scénario 4 : Re-relance après tour vu
-**Parcours** :
-1. Après scénarios 1, 2 ou 3, tuer l'app
-2. Rouvrir l'app
+### S6 — Observabilité
+SQL :
+```sql
+SELECT query_raw, layers_called, result_count, cache_hit, abandoned, latency_ms
+FROM source_search_logs
+ORDER BY created_at DESC LIMIT 10;
+```
+Attendu : une ligne par recherche jouée, `top_results` rempli, `cache_hit` cohérent. Si l'utilisateur ferme l'écran sans ajouter, la dernière ligne a `abandoned = true`.
 
-**Résultat attendu** :
-- Pas de re-affichage du tour
-- Arrivée directe sur `/digest` (default authenticated route)
-- Deep link `/welcome-tour` forcé → le redirect renvoie vers `/digest`
+## Critères d'acceptation
 
-### Scénario 5 : Retour back-button pendant le tour
-**Parcours** :
-1. Être sur le tour (n'importe quelle page)
-2. Appuyer sur le bouton back Android / geste back iOS
-
-**Résultat attendu** :
-- Le back est bloqué par `PopScope(canPop: false)` — le user ne peut pas quitter le tour sans "Passer" ou "Commencer"
-
-### Scénario 6 : Interruption mid-tour (crash/force quit)
-**Parcours** :
-1. Arriver sur le tour, swipe à la page 2
-2. Force-quit l'app
-3. Relancer
-
-**Résultat attendu** :
-- Le tour réapparaît à la page 1 (état éphémère pas persisté — par design)
-- Pas de crash ni de deadlock
-
-## Critères d'acceptation (story 16.1)
-
-- [ ] AC-1 : Après onboarding, 3 pages Essentiel → Ton flux → Personnalisation
-- [ ] AC-2 : Bouton "Passer" top-right dismiss le tour (mark seen + go digest)
-- [ ] AC-3 : "Commencer" sur dernière page → `/digest?first=true` → `DigestWelcomeModal` s'affiche
-- [ ] AC-4 : Flag persisté → relance de l'app ne re-affiche pas le tour
-- [ ] AC-5 : User existant (pré-PR2) voit le tour **une fois** au prochain boot
-
-## Zones de risque
-
-- **Timing du redirect** : le chargement de `welcomeTourSeen` est async dans `_init()`. Avant qu'il charge, `welcomeTourSeen=true` par défaut → pas de redirect. Cela évite un flash du tour avant que la vraie valeur soit lue. À tester : latence réseau lente au boot, vérifier que le tour apparaît bien après le chargement.
-- **Clash avec `DigestWelcomeModal`** : le modal existant (nudge `digest_welcome`) est déclenché par `/digest?first=true`. Si un user existant n'a jamais vu le modal non plus, il verra tour → digest → modal. C'est l'expérience voulue.
-- **iOS gesture-back** : à vérifier que `PopScope` bloque aussi le swipe-from-left edge natif iOS.
-- **Dark mode** : vérifier que les illustrations (soleil, cartes, chips) sont lisibles dans les deux thèmes.
-
-## Dépendances
-
-- Aucune nouvelle dépendance backend.
-- Utilise `NudgeService` / `NudgeRegistry` (PR1 mergée #468).
-- Route `/welcome-tour` hors `ShellRoute` (pas de bottom nav pendant le tour).
-
-## Notes
-
-- Tests unitaires PR1 (24 tests) : toujours verts.
-- Widget tests PR2 (3 tests, `test/features/welcome_tour/tour_pages_test.dart`) : les 3 pages rendent titre + subtitle sans crash.
-- Test pré-existant `router_redirection_test.dart::Router should redirect to EmailConfirmationScreen` échoue **sur main** déjà — non lié à PR2.
+- [ ] Aucun résultat affiché sans `feed_url`
+- [ ] Aucun listicle/aggregator dans le top 5 sur 5 requêtes thématiques (`political news`, `actualité écologie`, `tech europe`, `crypto news`, `climate`)
+- [ ] Catalog ILIKE accent-insensible : `arret sur images` matche `Arrêt sur Images`
+- [ ] Court-circuit catalog observable (`layers_called == ["catalog"]`, latence < 500 ms) sur 6 sources curated connues
+- [ ] Table `source_search_logs` se remplit en prod
+- [ ] `failed_source_attempts` continue à recevoir les abandons (rétrocompat)

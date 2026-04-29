@@ -2,17 +2,26 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:facteur/core/api/api_client.dart';
+import 'package:facteur/core/api/notification_preferences_api_service.dart';
 import 'package:facteur/core/services/posthog_service.dart';
+import 'package:facteur/features/notifications/widgets/notification_activation_modal.dart';
 
 class AnalyticsService {
-  final ApiClient _apiClient;
+  final ApiClient? _apiClient;
   final PostHogService? _posthog;
   String? _deviceId;
   String? _sessionId;
   DateTime? _sessionStartTime;
 
-  AnalyticsService(this._apiClient, {PostHogService? posthog})
+  AnalyticsService(ApiClient this._apiClient, {PostHogService? posthog})
       : _posthog = posthog;
+
+  /// No-op constructor used when upstream deps (Supabase) aren't available
+  /// — e.g. widget tests that don't initialize the app harness. Every
+  /// `trackXxx` becomes a silent no-op.
+  AnalyticsService.disabled()
+      : _apiClient = null,
+        _posthog = null;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
@@ -209,6 +218,154 @@ class AnalyticsService {
     await _logEvent('source_remove', {'source_id': sourceId});
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // Sprint 2 — feature-by-feature events (PR1)
+  // ──────────────────────────────────────────────────────────────
+
+  Future<void> trackDigestOpened({
+    required String digestDate,
+    int? itemsCount,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'digest_date': digestDate,
+      'items_count': itemsCount,
+    };
+    await _logEvent('digest_opened', props);
+    await _capturePostHog('digest_opened', props);
+  }
+
+  Future<void> trackDigestItemViewed({
+    required String digestDate,
+    required String contentId,
+    required int position,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'digest_date': digestDate,
+      'content_id': contentId,
+      'position': position,
+    };
+    await _logEvent('digest_item_viewed', props);
+  }
+
+  Future<void> trackPerspectiveComparisonOpened({
+    required String contentId,
+    String? clusterId,
+    int sourcesCount = 0,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'content_id': contentId,
+      'cluster_id': clusterId,
+      'sources_count': sourcesCount,
+    };
+    await _logEvent('perspective_comparison_opened', props);
+    await _capturePostHog('perspective_comparison_opened', props);
+  }
+
+  Future<void> trackPerspectiveArticleViewed({
+    required String contentId,
+    required String perspectiveArticleId,
+    String? clusterId,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'content_id': contentId,
+      'perspective_article_id': perspectiveArticleId,
+      'cluster_id': clusterId,
+    };
+    await _logEvent('perspective_article_viewed', props);
+  }
+
+  Future<void> trackPerspectiveComparisonClosed({
+    required String contentId,
+    String? clusterId,
+    int viewedArticles = 0,
+    int openedSeconds = 0,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'content_id': contentId,
+      'cluster_id': clusterId,
+      'viewed_articles': viewedArticles,
+      'opened_seconds': openedSeconds,
+    };
+    await _logEvent('perspective_comparison_closed', props);
+  }
+
+  /// origin: 'digest' | 'feed' | 'settings'
+  Future<void> trackArticleFeedbackSubmitted({
+    required String contentId,
+    required String feedbackType,
+    required String origin,
+    Map<String, dynamic> extra = const {},
+  }) async {
+    final props = <String, dynamic>{
+      'session_id': _sessionId,
+      'content_id': contentId,
+      'feedback_type': feedbackType,
+      'origin': origin,
+      ...extra,
+    };
+    await _logEvent('article_feedback_submitted', props);
+    await _capturePostHog('article_feedback_submitted', props);
+  }
+
+  /// origin: 'onboarding' | 'custom_topics'
+  Future<void> trackSubtopicSuggestionShown({
+    required String subtopicSlug,
+    required String origin,
+  }) async {
+    await _logEvent('subtopic_suggestion_shown', {
+      'session_id': _sessionId,
+      'subtopic_slug': subtopicSlug,
+      'origin': origin,
+    });
+  }
+
+  Future<void> trackSubtopicAdded({
+    required String subtopicSlug,
+    required String origin,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'subtopic_slug': subtopicSlug,
+      'origin': origin,
+    };
+    await _logEvent('subtopic_added', props);
+    await _capturePostHog('subtopic_added', props);
+  }
+
+  Future<void> trackSubtopicRemoved({
+    required String subtopicSlug,
+    required String origin,
+  }) async {
+    await _logEvent('subtopic_removed', {
+      'session_id': _sessionId,
+      'subtopic_slug': subtopicSlug,
+      'origin': origin,
+    });
+  }
+
+  /// Generic settings/preference toggle. `key` is a stable snake_case identifier
+  /// (e.g. 'notifications_daily_digest'), oldValue/newValue are coerced to string
+  /// to keep the event payload shape uniform across bool/int/string toggles.
+  Future<void> trackPreferenceChanged({
+    required String key,
+    required Object? oldValue,
+    required Object? newValue,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'key': key,
+      'old_value': oldValue?.toString(),
+      'new_value': newValue?.toString(),
+    };
+    await _logEvent('preference_changed', props);
+    await _capturePostHog('preference_changed', props);
+  }
+
 
   Future<void> trackAddSourceThemeTap(String themeSlug) async {
     await _logEvent('add_source_theme_tap', {'theme_slug': themeSlug});
@@ -233,6 +390,199 @@ class AnalyticsService {
     await _logEvent('add_source_expand', {'query': query});
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // Story 14.3 — Self-reported "well-informed" score (1-10 NPS).
+  // Trois events pour construire le funnel shown → skipped / submitted.
+  // ──────────────────────────────────────────────────────────────
+
+  Future<void> trackWellInformedPromptShown({
+    String context = 'digest_inline',
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'context': context,
+    };
+    await _logEvent('well_informed_prompt_shown', props);
+  }
+
+  Future<void> trackWellInformedPromptSkipped({
+    String context = 'digest_inline',
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'context': context,
+    };
+    await _logEvent('well_informed_prompt_skipped', props);
+    await _capturePostHog('well_informed_prompt_skipped', props);
+  }
+
+  Future<void> trackWellInformedScoreSubmitted({
+    required int score,
+    String context = 'digest_inline',
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'score': score,
+      'context': context,
+    };
+    await _logEvent('well_informed_score_submitted', props);
+    await _capturePostHog('well_informed_score_submitted', props);
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Home-screen widget — refonte instrumentation
+  // ──────────────────────────────────────────────────────────────
+
+  Future<void> trackWidgetPinNudgeShown() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('widget_pin_nudge_shown', props);
+    await _capturePostHog('widget_pin_nudge_shown', props);
+  }
+
+  Future<void> trackWidgetPinRequested() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('widget_pin_requested', props);
+    await _capturePostHog('widget_pin_requested', props);
+  }
+
+  Future<void> trackWidgetPinDismissed() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('widget_pin_dismissed', props);
+    await _capturePostHog('widget_pin_dismissed', props);
+  }
+
+  /// target: 'digest' | 'article' | 'feed'.
+  /// Fired whenever a `io.supabase.facteur://` widget URI lands in the app.
+  Future<void> trackWidgetAppOpened({
+    required String target,
+    String? articleId,
+    int? position,
+    String? topicId,
+  }) async {
+    final props = <String, dynamic>{
+      'session_id': _sessionId,
+      'target': target,
+      'article_id': articleId,
+      'position': position,
+      'topic_id': topicId,
+    };
+    await _logEvent('widget_app_opened', props);
+    await _capturePostHog('widget_app_opened', props);
+  }
+
+  /// Fired when the widget URI specifically asked for an article reader,
+  /// to power the widget→reader CTR funnel without mixing with `digest`/`feed`
+  /// taps.
+  Future<void> trackWidgetArticleOpened({
+    required String articleId,
+    int? position,
+    String? topicId,
+  }) async {
+    final props = <String, dynamic>{
+      'session_id': _sessionId,
+      'article_id': articleId,
+      'position': position,
+      'topic_id': topicId,
+    };
+    await _logEvent('widget_article_opened', props);
+    await _capturePostHog('widget_article_opened', props);
+  }
+
+  // ── Notifications activation events (brief §7) ──────────────────────
+
+  Future<void> trackModalNotifShown({required ActivationTrigger trigger}) async {
+    final props = <String, dynamic>{'trigger': trigger.name};
+    await _logEvent('modal_notif_shown', props);
+    await _capturePostHog('modal_notif_shown', props);
+  }
+
+  Future<void> trackModalNotifPresetChanged({required NotifPreset preset}) async {
+    final props = <String, dynamic>{'preset': preset.wire};
+    await _logEvent('modal_notif_preset_changed', props);
+    await _capturePostHog('modal_notif_preset_changed', props);
+  }
+
+  Future<void> trackModalNotifTimeChanged({required NotifTimeSlot timeSlot}) async {
+    final props = <String, dynamic>{'time': timeSlot.wire};
+    await _logEvent('modal_notif_time_changed', props);
+    await _capturePostHog('modal_notif_time_changed', props);
+  }
+
+  Future<void> trackModalNotifConfirmed({
+    required NotifPreset preset,
+    required NotifTimeSlot timeSlot,
+    required bool osPermissionGranted,
+  }) async {
+    final props = <String, dynamic>{
+      'preset': preset.wire,
+      'time': timeSlot.wire,
+      'os_permission_granted': osPermissionGranted,
+    };
+    await _logEvent('modal_notif_confirmed', props);
+    await _capturePostHog('modal_notif_confirmed', props);
+  }
+
+  Future<void> trackModalNotifDismissed() async {
+    await _logEvent('modal_notif_dismissed', {});
+    await _capturePostHog('modal_notif_dismissed', {});
+  }
+
+  Future<void> trackRenudgeShown({required int displayCount}) async {
+    final props = <String, dynamic>{'display_count': displayCount};
+    await _logEvent('renudge_shown', props);
+    await _capturePostHog('renudge_shown', props);
+  }
+
+  Future<void> trackRenudgeConfirmed() async {
+    await _logEvent('renudge_confirmed', {});
+    await _capturePostHog('renudge_confirmed', {});
+  }
+
+  Future<void> trackRenudgeDismissed() async {
+    await _logEvent('renudge_dismissed', {});
+    await _capturePostHog('renudge_dismissed', {});
+  }
+
+  Future<void> trackNotifScheduled({
+    required String type, // daily_a / daily_b / daily_empty / community
+    required String time,
+  }) async {
+    final props = <String, dynamic>{'type': type, 'time': time};
+    await _logEvent('notif_scheduled', props);
+    await _capturePostHog('notif_scheduled', props);
+  }
+
+  Future<void> trackNotifOpened({
+    required String type,
+    int? timeToOpenSeconds,
+  }) async {
+    final props = <String, dynamic>{
+      'type': type,
+      'time_to_open': timeToOpenSeconds,
+    };
+    await _logEvent('notif_opened', props);
+    await _capturePostHog('notif_opened', props);
+  }
+
+  Future<void> trackNotifSettingsChanged({
+    required NotifPreset fromPreset,
+    required NotifPreset toPreset,
+  }) async {
+    final props = <String, dynamic>{
+      'from_preset': fromPreset.wire,
+      'to_preset': toPreset.wire,
+    };
+    await _logEvent('notif_settings_changed', props);
+    await _capturePostHog('notif_settings_changed', props);
+  }
+
+  Future<void> trackNotifDisabled({required String source}) async {
+    // source: 'in_app' or 'os_settings'
+    final props = <String, dynamic>{'source': source};
+    await _logEvent('notif_disabled', props);
+    await _capturePostHog('notif_disabled', props);
+  }
+
   Future<void> trackAppFirstLaunch() async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool('has_launched_before') == true) return;
@@ -245,10 +595,12 @@ class AnalyticsService {
     String eventType,
     Map<String, dynamic> eventData,
   ) async {
+    final client = _apiClient;
+    if (client == null) return;
     try {
       if (_deviceId == null) await init();
 
-      await _apiClient.dio.post(
+      await client.dio.post(
         'analytics/events',
         data: {
           'event_type': eventType,

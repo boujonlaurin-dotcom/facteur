@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../auth/auth_state.dart';
 import 'api_client.dart';
+import 'notification_preferences_api_service.dart';
 import 'user_api_service.dart';
 
 /// Provider pour le client Supabase
@@ -18,7 +19,9 @@ final apiClientProvider = Provider<ApiClient>((ref) {
     onAuthError: (code) {
       if (code == 401) {
         // Token invalide ou expiré → message friendly + redirect login
-        ref.read(authStateProvider.notifier).handleSessionExpired();
+        ref
+            .read(authStateProvider.notifier)
+            .handleSessionExpired(reason: 'api_401_after_refresh');
       } else if (code == 403) {
         // Email non confirmé (selon Backend) -> Force redirection vers confirmation.
         // N'est appelé QUE si l'ApiClient a déjà tenté un refresh+retry qui a
@@ -40,4 +43,11 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 final userApiServiceProvider = Provider<UserApiService>((ref) {
   final apiClient = ref.watch(apiClientProvider);
   return UserApiService(apiClient);
+});
+
+/// Provider pour le service API préférences notifications
+final notificationPreferencesApiServiceProvider =
+    Provider<NotificationPreferencesApiService>((ref) {
+  final apiClient = ref.watch(apiClientProvider);
+  return NotificationPreferencesApiService(apiClient);
 });

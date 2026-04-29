@@ -4,6 +4,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../../widgets/design/facteur_card.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
@@ -141,8 +142,45 @@ class _PerspectivesBottomSheetState
   PerspectivesAnalysisState _analysisState = PerspectivesAnalysisState.idle;
   String? _analysisText;
   Set<String> _selectedSegments = {};
+  // Sprint 2 PR1 — perspective comparison events.
+  DateTime? _openedAt;
+  final Set<String> _viewedPerspectiveIds = <String>{};
 
   static const _groupOrder = ['gauche', 'centre', 'droite'];
+
+  @override
+  void initState() {
+    super.initState();
+    _openedAt = DateTime.now();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(analyticsServiceProvider).trackPerspectiveComparisonOpened(
+            contentId: widget.contentId,
+            sourcesCount: widget.perspectives.length,
+          );
+    });
+  }
+
+  @override
+  void dispose() {
+    final opened = _openedAt;
+    final elapsed =
+        opened != null ? DateTime.now().difference(opened).inSeconds : 0;
+    ref.read(analyticsServiceProvider).trackPerspectiveComparisonClosed(
+          contentId: widget.contentId,
+          viewedArticles: _viewedPerspectiveIds.length,
+          openedSeconds: elapsed,
+        );
+    super.dispose();
+  }
+
+  void _onPerspectiveViewed(String perspectiveId) {
+    if (!_viewedPerspectiveIds.add(perspectiveId)) return;
+    ref.read(analyticsServiceProvider).trackPerspectiveArticleViewed(
+          contentId: widget.contentId,
+          perspectiveArticleId: perspectiveId,
+        );
+  }
 
   Map<String, int> get _mergedDistribution {
     final dist = widget.biasDistribution;
@@ -261,7 +299,7 @@ class _PerspectivesBottomSheetState
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Voir d\'autres points de vue',
+                                  'Couverture médiatique',
                                   style: textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.bold,
                                     color: colors.textPrimary,
@@ -333,7 +371,10 @@ class _PerspectivesBottomSheetState
                     ...filtered.map(
                       (p) => Padding(
                         padding: const EdgeInsets.only(bottom: 8),
-                        child: _PerspectiveCard(perspective: p),
+                        child: _PerspectiveCard(
+                          perspective: p,
+                          onView: _onPerspectiveViewed,
+                        ),
                       ),
                     ),
                     Padding(
@@ -360,7 +401,7 @@ class _PerspectivesBottomSheetState
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Voir d\'autres points de vue',
+                              'Couverture médiatique',
                               style: textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: colors.textPrimary,
@@ -472,8 +513,12 @@ class PerspectivesTrianglePainter extends CustomPainter {
 
 class _PerspectiveCard extends ConsumerWidget {
   final Perspective perspective;
+  // Sprint 2 PR1 — optional hook fired with a stable perspective id
+  // before the external URL is launched, so the parent sheet can emit
+  // perspective_article_viewed and keep track of unique views.
+  final void Function(String perspectiveId)? onView;
 
-  const _PerspectiveCard({required this.perspective});
+  const _PerspectiveCard({required this.perspective, this.onView});
 
   /// Find matching Source from user sources by domain
   Source? _findSource(List<Source> sources) {
@@ -522,6 +567,10 @@ class _PerspectiveCard extends ConsumerWidget {
         padding: EdgeInsets.zero,
         borderRadius: FacteurRadius.small,
         onTap: () async {
+          final perspectiveId = perspective.sourceDomain.isNotEmpty
+              ? perspective.sourceDomain
+              : perspective.url;
+          onView?.call(perspectiveId);
           final uri = Uri.parse(perspective.url);
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         },
@@ -539,7 +588,7 @@ class _PerspectiveCard extends ConsumerWidget {
                       Expanded(
                         child: Text(
                           perspective.title
-                              .replaceAll(RegExp(r'\s*[-–|]\s*[^-–|]+$'), '')
+                              .replaceAll(RegExp(r'\s+[-–|]\s+[^-–|]+$'), '')
                               .trim(),
                           style: textTheme.bodyMedium?.copyWith(
                             fontWeight: FontWeight.w500,
@@ -784,6 +833,7 @@ class PerspectivesBiasBar extends StatelessWidget {
   final String sourceName;
   final Set<String> selectedSegments;
   final void Function(String) onSegmentTap;
+  final bool compact;
 
   const PerspectivesBiasBar({
     super.key,
@@ -793,6 +843,7 @@ class PerspectivesBiasBar extends StatelessWidget {
     required this.sourceName,
     required this.selectedSegments,
     required this.onSegmentTap,
+    this.compact = false,
   });
 
   @override
@@ -830,36 +881,46 @@ class PerspectivesBiasBar extends StatelessWidget {
             return Expanded(
               flex: flexValues[i],
               child: GestureDetector(
-                onTap: count > 0 ? () => onSegmentTap(seg.$1) : null,
+                onTap: count > 0 && !compact ? () => onSegmentTap(seg.$1) : null,
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 200),
                   opacity: isActive ? 1.0 : 0.3,
                   child: Column(
                     children: [
-                      Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: seg.$3
-                                .withValues(alpha: count > 0 ? 0.15 : 0.05),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              seg.$2,
-                              maxLines: 1,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: count > 0 ? seg.$3 : colors.textTertiary,
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeInOut,
+                        child: compact
+                            ? const SizedBox.shrink()
+                            : Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Center(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: seg.$3.withValues(
+                                          alpha: count > 0 ? 0.15 : 0.05),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text(
+                                        seg.$2,
+                                        maxLines: 1,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: count > 0
+                                              ? seg.$3
+                                              : colors.textTertiary,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                        ),
                       ),
-                      const SizedBox(height: 4),
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         curve: Curves.easeOut,
@@ -888,61 +949,71 @@ class PerspectivesBiasBar extends StatelessWidget {
             );
           }),
         ),
-        if (sourceIndex >= 0 && sourceBiasStance != 'unknown') ...[
-          const SizedBox(height: 4),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final totalFlex = flexValues.fold<int>(0, (sum, f) => sum + f);
-              double offsetFraction = 0;
-              for (int i = 0; i < sourceIndex; i++) {
-                offsetFraction += flexValues[i] / totalFlex;
-              }
-              offsetFraction += (flexValues[sourceIndex] / totalFlex) / 2;
+        if (sourceIndex >= 0 && sourceBiasStance != 'unknown')
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+            child: compact
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final totalFlex =
+                            flexValues.fold<int>(0, (sum, f) => sum + f);
+                        double offsetFraction = 0;
+                        for (int i = 0; i < sourceIndex; i++) {
+                          offsetFraction += flexValues[i] / totalFlex;
+                        }
+                        offsetFraction +=
+                            (flexValues[sourceIndex] / totalFlex) / 2;
 
-              final markerX = constraints.maxWidth * offsetFraction;
-              final sourceColor = segments[sourceIndex].$3;
-              final displayName =
-                  sourceName.isNotEmpty ? sourceName : segments[sourceIndex].$2;
+                        final markerX = constraints.maxWidth * offsetFraction;
+                        final sourceColor = segments[sourceIndex].$3;
+                        final displayName = sourceName.isNotEmpty
+                            ? sourceName
+                            : segments[sourceIndex].$2;
 
-              return SizedBox(
-                height: 28,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Positioned(
-                      left: markerX - 7,
-                      top: 0,
-                      child: CustomPaint(
-                        size: const Size(14, 8),
-                        painter:
-                            PerspectivesTrianglePainter(color: sourceColor),
-                      ),
-                    ),
-                    Positioned(
-                      left:
-                          (markerX - 50).clamp(0.0, constraints.maxWidth - 100),
-                      top: 10,
-                      child: SizedBox(
-                        width: 100,
-                        child: Text(
-                          displayName,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: sourceColor,
+                        return SizedBox(
+                          height: 28,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Positioned(
+                                left: markerX - 7,
+                                top: 0,
+                                child: CustomPaint(
+                                  size: const Size(14, 8),
+                                  painter: PerspectivesTrianglePainter(
+                                      color: sourceColor),
+                                ),
+                              ),
+                              Positioned(
+                                left: (markerX - 50)
+                                    .clamp(0.0, constraints.maxWidth - 100),
+                                top: 10,
+                                child: SizedBox(
+                                  width: 100,
+                                  child: Text(
+                                    displayName,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: sourceColor,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
+                        );
+                      },
                     ),
-                  ],
-                ),
-              );
-            },
+                  ),
           ),
-        ],
       ],
     );
   }
@@ -1179,6 +1250,12 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
   /// when the user has scrolled past it.
   final Key? firstCardKey;
 
+  /// Whether the section body is expanded. Controlled by the parent.
+  final bool isExpanded;
+
+  /// Called when the user taps the header to toggle collapse/expand.
+  final VoidCallback onToggle;
+
   const PerspectivesInlineSection({
     super.key,
     required this.perspectives,
@@ -1196,6 +1273,8 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
     this.onRequestAnalysis,
     this.analysisZoneKey,
     this.firstCardKey,
+    this.isExpanded = true,
+    required this.onToggle,
   });
 
   @override
@@ -1206,6 +1285,21 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
 class _PerspectivesInlineSectionState
     extends ConsumerState<PerspectivesInlineSection> {
   Set<String> _selectedSegments = {};
+  double _rotationTurns = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _rotationTurns = widget.isExpanded ? 0.5 : 0.0;
+  }
+
+  @override
+  void didUpdateWidget(PerspectivesInlineSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isExpanded != oldWidget.isExpanded) {
+      _rotationTurns += 0.5;
+    }
+  }
 
   Set<String> get _effectiveSegments =>
       widget.externalSelectedSegments ?? _selectedSegments;
@@ -1273,48 +1367,86 @@ class _PerspectivesInlineSectionState
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (widget.perspectives.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      PhosphorIcons.eye(PhosphorIconsStyle.regular),
-                      color: colors.primary,
-                      size: 28,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Voir d\'autres points de vue',
-                        style: textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colors.textPrimary,
-                          fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 1,
-                        ),
+          // ── Row 1: Eye + title + chevron (tappable to toggle) ──────────
+          GestureDetector(
+            onTap: widget.onToggle,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 16, right: 16, top: 16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Icon(
+                    PhosphorIcons.eye(PhosphorIconsStyle.regular),
+                    color: colors.primary,
+                    size: 28,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Couverture médiatique',
+                      style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: colors.textPrimary,
+                        fontSize: 18,
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                PerspectivesBiasBar(
+                  ),
+                  AnimatedRotation(
+                    turns: _rotationTurns,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    child: Icon(
+                      PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
+                      size: 16,
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // ── Row 2: Bias bar (single persistent instance) ───────────────
+          // compact=true hides labels/marker (AnimatedSize collapses their
+          // space); taps are forwarded to onToggle when collapsed.
+          GestureDetector(
+            onTap: !widget.isExpanded ? widget.onToggle : null,
+            behavior: !widget.isExpanded
+                ? HitTestBehavior.opaque
+                : HitTestBehavior.translucent,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: IgnorePointer(
+                ignoring: !widget.isExpanded,
+                child: PerspectivesBiasBar(
+                  compact: !widget.isExpanded,
                   colors: colors,
                   mergedDistribution: _mergedDistribution,
                   sourceBiasStance: widget.sourceBiasStance,
                   sourceName: widget.sourceName,
-                  selectedSegments: _effectiveSegments,
-                  onSegmentTap: _handleSegmentTap,
+                  selectedSegments:
+                      widget.isExpanded ? _effectiveSegments : const {},
+                  onSegmentTap:
+                      widget.isExpanded ? _handleSegmentTap : (_) {},
                 ),
-                SizedBox(
-                  height: _effectiveSegments.isNotEmpty ? 28 : 4,
-                  child: _effectiveSegments.isNotEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
+              ),
+            ),
+          ),
+          // ── Expandable content (cards + analysis) ─────────────────────
+          AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: widget.isExpanded
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_effectiveSegments.isNotEmpty)
+                        Padding(
+                          padding:
+                              const EdgeInsets.only(right: 16, bottom: 8),
                           child: Align(
-                            alignment: Alignment.topRight,
+                            alignment: Alignment.centerRight,
                             child: GestureDetector(
                               onTap: () {
                                 if (widget.onClearSegments != null) {
@@ -1335,7 +1467,8 @@ class _PerspectivesInlineSectionState
                                   ),
                                   const SizedBox(width: 4),
                                   Icon(
-                                    PhosphorIcons.x(PhosphorIconsStyle.bold),
+                                    PhosphorIcons.x(
+                                        PhosphorIconsStyle.bold),
                                     size: 12,
                                     color: colors.primary,
                                   ),
@@ -1343,49 +1476,54 @@ class _PerspectivesInlineSectionState
                               ),
                             ),
                           ),
-                        )
-                      : null,
-                ),
-              ],
-            ),
+                        ),
+                      if (filtered.isNotEmpty)
+                        Padding(
+                          key: widget.firstCardKey,
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _PerspectiveCard(
+                              perspective: filtered.first),
+                        ),
+                      ...filtered.skip(1).map(
+                            (p) => Padding(
+                              padding:
+                                  const EdgeInsets.only(bottom: 8),
+                              child: _PerspectiveCard(perspective: p),
+                            ),
+                          ),
+                      if (widget.comparisonQuality == 'low')
+                        Padding(
+                          padding:
+                              const EdgeInsets.only(top: 4, bottom: 8),
+                          child: Center(
+                            child: PerspectivesWarningBadge(
+                                colors: colors, textTheme: textTheme),
+                          ),
+                        ),
+                      if (widget.analysisState !=
+                          PerspectivesAnalysisState.idle)
+                        Padding(
+                          padding:
+                              const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                          child: PerspectivesAnalysisZone(
+                            state: widget.analysisState,
+                            text: widget.analysisText,
+                            onRequestAnalysis: widget.onRequestAnalysis,
+                            colors: colors,
+                            textTheme: textTheme,
+                            zoneKey: widget.analysisZoneKey,
+                          ),
+                        ),
+                      if (widget.analysisState ==
+                          PerspectivesAnalysisState.idle)
+                        const SizedBox(height: 32),
+                    ],
+                  )
+                : const SizedBox.shrink(),
           ),
-          if (filtered.isNotEmpty)
-            Padding(
-              key: widget.firstCardKey,
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _PerspectiveCard(perspective: filtered.first),
-            ),
-          ...filtered.skip(1).map(
-                (p) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: _PerspectiveCard(perspective: p),
-                ),
-              ),
-          if (widget.comparisonQuality == 'low')
-            Padding(
-              padding: const EdgeInsets.only(top: 4, bottom: 8),
-              child: Center(
-                child: PerspectivesWarningBadge(
-                    colors: colors, textTheme: textTheme),
-              ),
-            ),
-          if (widget.analysisState != PerspectivesAnalysisState.idle)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: PerspectivesAnalysisZone(
-                state: widget.analysisState,
-                text: widget.analysisText,
-                onRequestAnalysis: widget.onRequestAnalysis,
-                colors: colors,
-                textTheme: textTheme,
-                zoneKey: widget.analysisZoneKey,
-              ),
-            ),
-          if (widget.analysisState == PerspectivesAnalysisState.idle)
-            const SizedBox(height: 32),
         ] else ...[
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.only(left: 16, right: 16, top: 16),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1397,11 +1535,11 @@ class _PerspectivesInlineSectionState
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Voir d\'autres points de vue',
+                    'Couverture médiatique',
                     style: textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: colors.textPrimary,
-                      fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 1,
+                      fontSize: 18,
                     ),
                   ),
                 ),

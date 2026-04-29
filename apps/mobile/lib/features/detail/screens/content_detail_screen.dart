@@ -31,7 +31,11 @@ import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
 import '../widgets/youtube_player_widget.dart';
 import '../widgets/note_input_sheet.dart';
-import '../widgets/note_welcome_tooltip.dart';
+import '../../../core/nudges/nudge_coordinator.dart';
+import '../../../core/nudges/nudge_counters.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/widgets/article_save_notes_tooltip.dart';
+import '../../../core/nudges/widgets/nudge_inline_banner.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/widgets/editorial_badge.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
@@ -96,11 +100,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _showFab = false;
   bool _showShareFab = false;
   bool _isShortArticle = false;
-  bool _footerPermanent =
-      false; // true once user reaches end of displayed content
+  // true once user reaches end of displayed content
+  final ValueNotifier<bool> _footerPermanent = ValueNotifier<bool>(false);
   final ValueNotifier<bool> _atPerspectivesSection = ValueNotifier(false);
   bool _suppressPerspectivesCheck = false;
-  bool _showNoteWelcome = false;
+  bool _showSaveNotesNudge = false;
+  bool _showReadOnSiteNudge = false;
+  int _articleOpenCount = 0;
+  bool _readOnSiteNudgeRequested = false;
+
+  AnimationController? _perspectivesPulseController;
+  Animation<double>? _perspectivesPulseScale;
+  bool _perspectivesCtaTriggered = false;
   bool _linkCopiedFab = false;
   bool _linkCopiedHeader = false;
   Timer? _linkCopiedFabTimer;
@@ -118,6 +129,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final GlobalKey _articleKey = GlobalKey();
   final GlobalKey _bridgeKey = GlobalKey();
   final GlobalKey _perspectivesKey = GlobalKey();
+  final GlobalKey _perspectivesDividerKey = GlobalKey();
   final GlobalKey _firstPerspectiveCardKey = GlobalKey();
   bool _isWebViewActive = false;
   bool _ctaTapped = false;
@@ -183,6 +195,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   // Perspectives sticky section header state
   Set<String> _perspectivesSelectedSegments = {};
+  bool _perspectivesExpanded = true;
   final ValueNotifier<bool> _showStickyPerspectivesHeader =
       ValueNotifier(false);
 
@@ -190,6 +203,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void initState() {
     super.initState();
     _content = widget.content;
+    _perspectivesExpanded = !_isPartialContent;
     _startTime = DateTime.now();
     if (_content != null) {
       _isConsumed = _content!.status == ContentStatus.consumed;
@@ -312,11 +326,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }
     });
 
-    // Check if note welcome tooltip should be shown (first time only)
-    NoteWelcomeTooltip.shouldShow().then((show) {
-      if (mounted && show) {
-        setState(() => _showNoteWelcome = true);
-      }
+    // First-time save+notes nudge — gating is enforced by the coordinator's
+    // prereq on welcome_tour (device-scoped key, legacy fallback honored).
+    // The article screen can't be reached during the tour (overlay blocks
+    // taps), so no extra "tour active" guard needed here.
+    _requestSaveNotesNudge();
+
+    // Persist article open count for triggers (read_on_site 4th article,
+    // feed_preview_longpress ≥2 articles opened).
+    NudgeCounters.increment(NudgeCounters.articleOpenCount).then((count) {
+      if (mounted) _articleOpenCount = count;
     });
 
     // 🌻 Nudge: record article open and start 30s timer
@@ -493,6 +512,40 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (progress > _maxReadingProgress) {
       _maxReadingProgress = progress;
     }
+    _maybeRequestReadOnSiteNudge(progress);
+  }
+
+  void _maybeRequestReadOnSiteNudge(double progress) {
+    if (_readOnSiteNudgeRequested) return;
+    if (_showReadOnSiteNudge) return;
+    if (progress < 0.5) return;
+    if (_articleOpenCount < 4) return;
+    _readOnSiteNudgeRequested = true;
+    _requestReadOnSiteNudge();
+  }
+
+  Future<void> _requestReadOnSiteNudge() async {
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    final active = await coordinator.request(NudgeIds.articleReadOnSite);
+    if (!mounted) return;
+    if (active == NudgeIds.articleReadOnSite) {
+      setState(() => _showReadOnSiteNudge = true);
+    }
+  }
+
+  Future<void> _dismissReadOnSiteNudge({required bool converted}) async {
+    if (!_showReadOnSiteNudge) return;
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    if (coordinator.activeId == NudgeIds.articleReadOnSite) {
+      if (converted) {
+        await coordinator.markConverted(NudgeIds.articleReadOnSite);
+      } else {
+        await coordinator.dismiss(markSeen: true);
+      }
+    }
+    if (mounted) {
+      setState(() => _showReadOnSiteNudge = false);
+    }
   }
 
   /// Show header + footer when user reaches the bottom of the article (progress ≥ 98%).
@@ -518,7 +571,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (!_scrollController.hasClients) return;
     if (_scrollController.position.maxScrollExtent < 50) {
       _isShortArticle = true;
-      _footerPermanent = true;
+      _footerPermanent.value = true;
     }
   }
 
@@ -567,12 +620,20 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Updates [_atPerspectivesSection] based on whether the perspectives widget
   /// is visible in the viewport. Called from the scroll notification handler.
   /// Uses ValueNotifier to avoid triggering a full setState during scroll.
-  void _checkAtPerspectivesSection() {
-    if (_suppressPerspectivesCheck) return;
+  void _checkAtPerspectivesSection({bool force = false}) {
+    if (_suppressPerspectivesCheck && !force) return;
     final ctx = _perspectivesKey.currentContext;
-    if (ctx == null) return;
+    if (ctx == null) {
+      if (_atPerspectivesSection.value) _atPerspectivesSection.value = false;
+      if (_showStickyPerspectivesHeader.value) _showStickyPerspectivesHeader.value = false;
+      return;
+    }
     final perspBox = ctx.findRenderObject() as RenderBox?;
-    if (perspBox == null || !perspBox.hasSize) return;
+    if (perspBox == null || !perspBox.hasSize) {
+      if (_atPerspectivesSection.value) _atPerspectivesSection.value = false;
+      if (_showStickyPerspectivesHeader.value) _showStickyPerspectivesHeader.value = false;
+      return;
+    }
 
     final perspScreenY = perspBox.localToGlobal(Offset.zero).dy;
     final screenHeight = MediaQuery.of(context).size.height;
@@ -596,8 +657,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (reached != _atPerspectivesSection.value) {
       _atPerspectivesSection.value = reached;
       // Footer becomes sticky as soon as the perspectives section is reached.
-      if (reached && !_footerPermanent) {
-        _footerPermanent = true;
+      if (reached && !_footerPermanent.value) {
+        _footerPermanent.value = true;
         _animateFooterTo(0.0);
       }
     }
@@ -630,7 +691,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Re-check sticky visibility after the section has rebuilt (filtering may
     // shrink the section back into view with no scroll event).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _checkAtPerspectivesSection();
+      if (mounted) _checkAtPerspectivesSection(force: true);
     });
   }
 
@@ -649,19 +710,20 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       setState(() {
         _isWebViewActive = true;
       });
+      // Reset permanent-footer latch acquired during the CTA reveal scroll
+      // so subsequent WebView scroll deltas can hide/show header & footer.
+      _footerPermanent.value = false;
 
       // Smart-arrival : libère l'écran pour que l'utilisateur puisse interagir
       // avec une éventuelle modale (cookies, paywall) qui verrouille souvent
       // body { overflow: hidden } — sans scroll, le ScrollBridge JS ne peut
       // rien signaler, donc on doit cacher proactivement les overlays.
-      _scrollStopTimer?.cancel(); // sinon le timer hérité du scroll CTA réaffiche le footer
+      // Header & footer restent cachés par défaut en mode WebView et ne
+      // réapparaissent qu'au scroll vers le haut (via _onScrollDelta).
+      _scrollStopTimer?.cancel();
+      _inactivityTimer?.cancel();
       _animateHeaderTo(1.0);
       _animateFooterTo(1.0);
-
-      // Header revient après 2 s pour permettre la navigation back.
-      Timer(const Duration(seconds: 2), () {
-        if (mounted && _isWebViewActive) _animateHeaderTo(0.0);
-      });
     }
   }
 
@@ -717,35 +779,56 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
     // In video readers the header stays visible at all times (only native
     // fullscreen covers it, which is handled by the system).
-    // For short articles that don't need scrolling, keep header visible.
-    if (!isVideo && !_isShortArticle) {
-      final headerHeight =
-          MediaQuery.of(context).padding.top + _kHeaderContentHeight;
-      final shift = delta / headerHeight;
-      _headerOffset.value = (_headerOffset.value + shift).clamp(0.0, 1.0);
+    // For short articles that don't need scrolling, keep header visible —
+    // EXCEPT in WebView mode where scroll comes from the JS bridge and the
+    // user expects hide-on-scroll regardless of how short the in-app stub was.
+    if (!isVideo && (!_isShortArticle || _isWebViewActive)) {
+      // In WebView mode the JS bridge fires at ~7Hz (150ms throttle) which
+      // makes per-event offset increments visibly choppy. Drive the overlays
+      // with the smooth 200ms tween in either direction instead.
+      if (_isWebViewActive) {
+        if (delta > 0) {
+          if (_headerAutoTarget != 1.0) _animateHeaderTo(1.0);
+          if (!_footerPermanent.value && _footerAutoTarget != 1.0) {
+            _animateFooterTo(1.0);
+          }
+        } else if (delta < 0) {
+          if (_headerAutoTarget != 0.0) _animateHeaderTo(0.0);
+          if (!_footerPermanent.value && _footerAutoTarget != 0.0) {
+            _animateFooterTo(0.0);
+          }
+        }
+      } else {
+        final headerHeight =
+            MediaQuery.of(context).padding.top + _kHeaderContentHeight;
+        final shift = delta / headerHeight;
+        _headerOffset.value = (_headerOffset.value + shift).clamp(0.0, 1.0);
 
-      // Footer mirrors header: hides on scroll-down, shows on scroll-up.
-      // Skipped once the user has reached the end of the displayed content.
-      if (!_footerPermanent) {
-        final bottomInset = MediaQuery.of(context).viewPadding.bottom;
-        final footerHeight = _kFooterContentHeight + bottomInset;
-        final footerShift = delta / footerHeight;
-        _footerOffset.value =
-            (_footerOffset.value + footerShift).clamp(0.0, 1.0);
+        // Footer mirrors header: hides on scroll-down, shows on scroll-up.
+        // Skipped once the user has reached the end of the displayed content.
+        if (!_footerPermanent.value) {
+          final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+          final footerHeight = _kFooterContentHeight + bottomInset;
+          final footerShift = delta / footerHeight;
+          _footerOffset.value =
+              (_footerOffset.value + footerShift).clamp(0.0, 1.0);
+        }
       }
     }
-    // FABs + footer reappear after 2.5s of scroll inactivity
+    // FABs + footer reappear after 2.5s of scroll inactivity.
+    // Skip the footer reappear in WebView mode — overlays must stay hidden
+    // until the user explicitly scrolls up to maximise reading space.
     _scrollStopTimer?.cancel();
     _scrollStopTimer = Timer(const Duration(milliseconds: 2000), () {
       if (mounted) {
         _fabOpacity.value = 1.0;
         _fabReappearController.forward(from: 0);
-        _animateFooterTo(0.0);
+        if (!_isWebViewActive) _animateFooterTo(0.0);
       }
     });
     // Auto-hide header after 3s of inactivity (no scroll), but only if not at top
     _inactivityTimer?.cancel();
-    if (!isVideo && !_isShortArticle) {
+    if (!isVideo && (!_isShortArticle || _isWebViewActive)) {
       _inactivityTimer = Timer(const Duration(seconds: 3), () {
         if (mounted && _webScrollY > 0 && _headerOffset.value < 1.0) {
           _animateHeaderTo(1.0);
@@ -1048,6 +1131,72 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
+  void _maybeTriggerPerspectivesCta() {
+    if (_perspectivesCtaTriggered) return;
+    final response = _perspectivesResponse;
+    if (response == null) return;
+    if (response.perspectives.isEmpty || !response.shouldDisplay) return;
+    _perspectivesCtaTriggered = true;
+    NudgeCounters.increment(NudgeCounters.articleWithPerspectivesCount)
+        .then((count) async {
+      if (!mounted) return;
+      if (count < 2) return;
+      final coordinator = ref.read(nudgeCoordinatorProvider);
+      final active = await coordinator.request(NudgeIds.perspectivesCta);
+      if (!mounted) return;
+      if (active != NudgeIds.perspectivesCta) return;
+      _playPerspectivesPulse();
+    });
+  }
+
+  Widget _wrapWithPerspectivesPulse(Widget child) {
+    final scale = _perspectivesPulseScale;
+    if (scale == null) return child;
+    return ScaleTransition(scale: scale, child: child);
+  }
+
+  void _playPerspectivesPulse() {
+    _perspectivesPulseController ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _perspectivesPulseScale ??= TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0), weight: 50),
+    ]).animate(CurvedAnimation(
+      parent: _perspectivesPulseController!,
+      curve: Curves.easeOutCubic,
+    ));
+    _perspectivesPulseController!.forward(from: 0).whenComplete(() async {
+      if (!mounted) return;
+      final coordinator = ref.read(nudgeCoordinatorProvider);
+      if (coordinator.activeId == NudgeIds.perspectivesCta) {
+        await coordinator.dismiss(markSeen: true);
+      }
+    });
+    setState(() {});
+  }
+
+  Future<void> _requestSaveNotesNudge() async {
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    final active = await coordinator.request(NudgeIds.articleSaveNotes);
+    if (!mounted) return;
+    if (active == NudgeIds.articleSaveNotes) {
+      setState(() => _showSaveNotesNudge = true);
+    }
+  }
+
+  Future<void> _dismissSaveNotesNudge() async {
+    if (!_showSaveNotesNudge) return;
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    if (coordinator.activeId == NudgeIds.articleSaveNotes) {
+      await coordinator.dismiss(markSeen: true);
+    }
+    if (mounted) {
+      setState(() => _showSaveNotesNudge = false);
+    }
+  }
+
   @override
   void dispose() {
     // Capture max progress reached before disposing ValueNotifier
@@ -1101,6 +1250,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _likeBounceController.dispose();
     _fabReappearController.dispose();
     _shareFabController.dispose();
+    _perspectivesPulseController?.dispose();
     _exitAnimController.dispose();
     _headerAutoController.dispose();
     _footerAutoController.dispose();
@@ -1108,6 +1258,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _fabOpacity.dispose();
     _headerOffset.dispose();
     _footerOffset.dispose();
+    _footerPermanent.dispose();
     _readingProgress.removeListener(_onReadingProgressNudge);
     _readingProgress.removeListener(_onShareFabProgress);
     _readingProgress.dispose();
@@ -1216,6 +1367,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           _perspectivesResponse = response;
           _perspectivesLoading = false;
         });
+        _maybeTriggerPerspectivesCta();
       }
     } catch (e) {
       debugPrint('Error pre-fetching perspectives: $e');
@@ -1489,24 +1641,38 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               onNotification: (notification) {
                 if (notification is ScrollUpdateNotification) {
                   final delta = notification.scrollDelta ?? 0.0;
+                  final metrics = notification.metrics;
+                  if (metrics.pixels <= 0 && !_isWebViewActive) {
+                    _atPerspectivesSection.value = false;
+                    _showStickyPerspectivesHeader.value = false;
+                    _headerOffset.value = 0.0;
+                    _footerOffset.value = 0.0;
+                  }
+                  
                   // Sync short-article flag from live scroll metrics (catches cases
                   // where the postFrameCallback hasn't fired yet).
                   if (!_isShortArticle &&
-                      notification.metrics.maxScrollExtent < 50) {
+                      metrics.maxScrollExtent < 50) {
                     _isShortArticle = true;
-                    _footerPermanent = true;
+                    _footerPermanent.value = true;
                     _headerOffset.value = 0.0;
                   }
                   _onScrollDelta(delta);
                   _checkAtPerspectivesSection();
                   // Track reading progress from any scrollable (including in-app reader)
-                  final metrics = notification.metrics;
                   if (metrics.maxScrollExtent > 0) {
                     final rawProgress =
                         metrics.pixels / metrics.maxScrollExtent;
-                    // Footer becomes permanent at end of ALL content (incl. perspectives)
-                    if (!_footerPermanent && rawProgress >= 0.98) {
-                      _footerPermanent = true;
+                    // Footer becomes permanent at end of ALL content (incl.
+                    // perspectives) for native in-app reading. Skip for
+                    // scroll-to-site (CTA tapped) where reaching the end means
+                    // revealing the WebView, not finishing reading — locking
+                    // the footer there would freeze it visible during the
+                    // entire WebView session.
+                    if (!_footerPermanent.value &&
+                        !_ctaTapped &&
+                        rawProgress >= 0.98) {
+                      _footerPermanent.value = true;
                       _animateFooterTo(0.0);
                     }
                     // Progress bar uses article-only extent so perspectives don't dilute it
@@ -1664,6 +1830,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   valueListenable: _atPerspectivesSection,
                   builder: (context, atPersp, _) {
                     final show = atPersp &&
+                        !_suppressPerspectivesCheck &&
+                        _perspectivesExpanded &&
                         _perspectivesAnalysisState ==
                             PerspectivesAnalysisState.idle &&
                         _perspectivesResponse != null &&
@@ -1786,30 +1954,39 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ],
                         // Perspectives FAB (articles only) — always just above other FABs
                         if (content.contentType == ContentType.article) ...[
-                          PerspectivesPill(
-                            biasDistribution:
-                                _perspectivesResponse?.biasDistribution ?? {},
-                            isLoading: _perspectivesLoading,
-                            // shouldDisplay=false → traiter comme empty (CTA dimmed,
-                            // bottom sheet montre l'état vide). Cf. backend gate
-                            // docs/bugs/bug-comparison-clustering-too-loose.md
-                            isEmpty: !_perspectivesLoading &&
-                                _perspectivesResponse != null &&
-                                (_perspectivesResponse!.perspectives.isEmpty ||
-                                    !_perspectivesResponse!.shouldDisplay),
-                            onTap: () {
-                              HapticFeedback.lightImpact();
-                              final ctx = _perspectivesKey.currentContext;
-                              if (ctx != null) {
-                                Scrollable.ensureVisible(
-                                  ctx,
-                                  duration: const Duration(milliseconds: 400),
-                                  curve: Curves.easeInOut,
-                                );
-                              } else {
-                                _showPerspectives(context);
-                              }
-                            },
+                          _wrapWithPerspectivesPulse(
+                            PerspectivesPill(
+                              biasDistribution:
+                                  _perspectivesResponse?.biasDistribution ?? {},
+                              isLoading: _perspectivesLoading,
+                              // shouldDisplay=false → traiter comme empty (CTA dimmed,
+                              // bottom sheet montre l'état vide). Cf. backend gate
+                              // docs/bugs/bug-comparison-clustering-too-loose.md
+                              isEmpty: !_perspectivesLoading &&
+                                  _perspectivesResponse != null &&
+                                  (_perspectivesResponse!.perspectives.isEmpty ||
+                                      !_perspectivesResponse!.shouldDisplay),
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                final coordinator =
+                                    ref.read(nudgeCoordinatorProvider);
+                                if (coordinator.activeId ==
+                                    NudgeIds.perspectivesCta) {
+                                  coordinator.markConverted(
+                                      NudgeIds.perspectivesCta);
+                                }
+                                final ctx = _perspectivesKey.currentContext;
+                                if (ctx != null) {
+                                  Scrollable.ensureVisible(
+                                    ctx,
+                                    duration: const Duration(milliseconds: 400),
+                                    curve: Curves.easeInOut,
+                                  );
+                                } else {
+                                  _showPerspectives(context);
+                                }
+                              },
+                            ),
                           ),
                           const SizedBox(height: FacteurSpacing.space3),
                         ],
@@ -1900,12 +2077,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             ),
                           ),
                         ),
-                        // Note welcome tooltip — bottom of FAB column, near the bookmark button
-                        if (_showNoteWelcome) ...[
+                        // Save+notes nudge — bottom of FAB column, near bookmark
+                        if (_showSaveNotesNudge) ...[
                           const SizedBox(height: FacteurSpacing.space3),
-                          NoteWelcomeTooltip(
-                            onDismiss: () =>
-                                setState(() => _showNoteWelcome = false),
+                          ArticleSaveNotesTooltip(
+                            onDismiss: _dismissSaveNotesNudge,
                           ),
                         ],
                       ],
@@ -1992,21 +2168,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               Expanded(
                 child: SizedBox(
                   height: 53,
-                  child: OutlinedButton(
-                    onPressed: _onReadOnSiteTap,
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor: Colors.white.withValues(alpha: 0.5),
-                      foregroundColor: colors.textPrimary,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      side: BorderSide(
-                          color: colors.border.withValues(alpha: 0.5)),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                    ),
-                    child: Row(
-                      children: [
-                        if (content.source.logoUrl != null) ...[
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _footerPermanent,
+                    builder: (context, permanent, _) {
+                      final isWebViewMode = _ctaTapped || _isWebViewActive;
+                      // Primary orange ONLY when the user has reached the
+                      // bottom of the article (footer locked permanent) AND
+                      // the WebView hasn't been revealed yet.
+                      final usePrimary = permanent && !isWebViewMode;
+
+                      final label = isWebViewMode
+                          ? 'Lire via Navigateur'
+                          : 'Lire sur ${content.source.name}';
+                      final showLogo = !isWebViewMode &&
+                          content.source.logoUrl != null;
+                      final iconData = isWebViewMode
+                          ? PhosphorIcons.arrowUpRight(
+                              PhosphorIconsStyle.regular)
+                          : PhosphorIcons.arrowRight(
+                              PhosphorIconsStyle.regular);
+
+                      final children = <Widget>[
+                        if (showLogo) ...[
                           ClipRRect(
                             borderRadius: BorderRadius.circular(8),
                             child: CachedNetworkImage(
@@ -2022,12 +2205,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ],
                         Expanded(
                           child: Text(
-                            _ctaTapped
-                                ? 'Ouvrir via navigateur'
-                                : 'Lire sur ${content.source.name}',
+                            label,
                             style: textTheme.labelMedium?.copyWith(
                               fontWeight: FontWeight.w600,
-                              color: colors.textPrimary,
+                              color: usePrimary
+                                  ? Colors.white
+                                  : colors.textPrimary,
                             ),
                             overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.left,
@@ -2035,16 +2218,47 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ),
                         const SizedBox(width: 4),
                         Icon(
-                          _ctaTapped
-                              ? PhosphorIcons.arrowUpRight(
-                                  PhosphorIconsStyle.regular)
-                              : PhosphorIcons.arrowRight(
-                                  PhosphorIconsStyle.regular),
+                          iconData,
                           size: 16,
-                          color: colors.textSecondary,
+                          color: usePrimary
+                              ? Colors.white.withValues(alpha: 0.8)
+                              : colors.textSecondary,
                         ),
-                      ],
-                    ),
+                      ];
+
+                      if (usePrimary) {
+                        return FilledButton(
+                          onPressed: _onReadOnSiteTap,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: colors.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                          child: Row(children: children),
+                        );
+                      }
+
+                      return OutlinedButton(
+                        onPressed: _onReadOnSiteTap,
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor:
+                              Colors.white.withValues(alpha: 0.5),
+                          foregroundColor: colors.textPrimary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          side: BorderSide(
+                              color: colors.border.withValues(alpha: 0.5)),
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 12),
+                        ),
+                        child: Row(children: children),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -2146,20 +2360,42 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         : () {
                             HapticFeedback.lightImpact();
                             _suppressPerspectivesCheck = true;
-                            _atPerspectivesSection.value = true;
-                            final ctx = _perspectivesKey.currentContext;
-                            if (ctx != null) {
-                              Scrollable.ensureVisible(
-                                ctx,
-                                duration: const Duration(milliseconds: 400),
-                                curve: Curves.easeInOut,
-                              );
-                            } else {
-                              _showPerspectives(context);
-                            }
-                            Future.delayed(const Duration(milliseconds: 450),
-                                () {
-                              if (mounted) _suppressPerspectivesCheck = false;
+                            setState(() => _perspectivesExpanded = true);
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!mounted) return;
+                              final ctx =
+                                  _perspectivesDividerKey.currentContext;
+                              if (ctx != null) {
+                                Scrollable.ensureVisible(
+                                  ctx,
+                                  alignment: 0.0,
+                                  duration: const Duration(milliseconds: 400),
+                                  curve: Curves.easeInOut,
+                                );
+                                // Re-trigger scroll after AnimatedSize expands
+                                // to handle maxScrollExtent changes.
+                                Future.delayed(
+                                    const Duration(milliseconds: 250), () {
+                                  if (!mounted) return;
+                                  final currentCtx =
+                                      _perspectivesDividerKey.currentContext;
+                                  if (currentCtx != null) {
+                                    Scrollable.ensureVisible(
+                                      currentCtx,
+                                      alignment: 0.0,
+                                      duration:
+                                          const Duration(milliseconds: 250),
+                                      curve: Curves.easeOut,
+                                    );
+                                  }
+                                });
+                              } else {
+                                _showPerspectives(context);
+                              }
+                              Future.delayed(
+                                  const Duration(milliseconds: 550), () {
+                                if (mounted) _suppressPerspectivesCheck = false;
+                              });
                             });
                           },
                   );
@@ -2746,10 +2982,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Voir d\'autres points de vue',
+                  'Couverture médiatique',
                   style: textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: colors.textPrimary,
+                    fontSize: 18,
                   ),
                 ),
               ),
@@ -3009,6 +3246,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       if (_perspectivesResponse != null ||
                           _perspectivesLoading) ...[
                         Container(
+                          key: _perspectivesDividerKey,
                           color: colors.backgroundPrimary,
                           padding: const EdgeInsets.symmetric(
                             horizontal: FacteurSpacing.space4,
@@ -3055,7 +3293,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                         WidgetsBinding.instance
                                             .addPostFrameCallback((_) {
                                           if (mounted) {
-                                            _checkAtPerspectivesSection();
+                                            _checkAtPerspectivesSection(
+                                                force: true);
                                           }
                                         });
                                       },
@@ -3065,6 +3304,30 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                           _requestPerspectivesAnalysis,
                                       analysisZoneKey: _analysisZoneKey,
                                       firstCardKey: _firstPerspectiveCardKey,
+                                      isExpanded: _perspectivesExpanded,
+                                      onToggle: () {
+                                        setState(() {
+                                          _perspectivesExpanded =
+                                              !_perspectivesExpanded;
+                                          _suppressPerspectivesCheck = true;
+                                        });
+                                        WidgetsBinding.instance
+                                            .addPostFrameCallback((_) {
+                                          if (mounted) {
+                                            _checkAtPerspectivesSection(
+                                                force: true);
+                                            Future.delayed(
+                                                const Duration(
+                                                    milliseconds: 200), () {
+                                              if (mounted) {
+                                                setState(() =>
+                                                    _suppressPerspectivesCheck =
+                                                        false);
+                                              }
+                                            });
+                                          }
+                                        });
+                                      },
                                     )
                                   : const SizedBox.shrink(),
                         ),
@@ -3569,6 +3832,25 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     articleWidget,
+                    if (_showReadOnSiteNudge) ...[
+                      const SizedBox(height: FacteurSpacing.space4),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: FacteurSpacing.space4),
+                        child: NudgeInlineBanner(
+                          body:
+                              "Préférez l'expérience du site original ? Ouvrez l'article dans votre navigateur.",
+                          icon: PhosphorIcons.arrowSquareOut(),
+                          actionLabel: 'Ouvrir',
+                          onAction: () {
+                            _dismissReadOnSiteNudge(converted: true);
+                            _openOriginalUrl();
+                          },
+                          onDismiss: () =>
+                              _dismissReadOnSiteNudge(converted: false),
+                        ),
+                      ),
+                    ],
                     SizedBox(key: _articleEndKey, height: 0),
                   ],
                 ),
@@ -3577,6 +3859,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 if (_perspectivesResponse != null || _perspectivesLoading) ...[
                   const SizedBox(height: FacteurSpacing.space4),
                   Padding(
+                    key: _perspectivesDividerKey,
                     padding: const EdgeInsets.symmetric(
                         horizontal: FacteurSpacing.space4),
                     child: Divider(color: colors.border, height: 1),
@@ -3611,7 +3894,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       onClearSegments: () {
                         setState(() => _perspectivesSelectedSegments = {});
                         WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) _checkAtPerspectivesSection();
+                          if (mounted) _checkAtPerspectivesSection(force: true);
                         });
                       },
                       analysisState: _perspectivesAnalysisState,
@@ -3619,6 +3902,25 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       onRequestAnalysis: _requestPerspectivesAnalysis,
                       analysisZoneKey: _analysisZoneKey,
                       firstCardKey: _firstPerspectiveCardKey,
+                      isExpanded: _perspectivesExpanded,
+                      onToggle: () {
+                        setState(() {
+                          _perspectivesExpanded = !_perspectivesExpanded;
+                          _suppressPerspectivesCheck = true;
+                        });
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) {
+                            _checkAtPerspectivesSection(force: true);
+                            Future.delayed(const Duration(milliseconds: 200),
+                                () {
+                              if (mounted) {
+                                setState(() =>
+                                    _suppressPerspectivesCheck = false);
+                              }
+                            });
+                          }
+                        });
+                      },
                     ),
                 ],
 
@@ -3696,13 +3998,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         const SizedBox(height: FacteurSpacing.space2),
         if (content.entities.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space4,
-              vertical: 6,
-            ),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 4,
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: _FadeScrollRow(
               children: _buildArticleTagWidgets(context, content),
             ),
           ),
@@ -4009,33 +4306,36 @@ class _FadeScrollRowState extends State<_FadeScrollRow> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: _atStart || !_pointerDown,
-      child: Listener(
-        onPointerDown: (_) => setState(() => _pointerDown = true),
-        onPointerUp: (_) => setState(() => _pointerDown = false),
-        onPointerCancel: (_) => setState(() => _pointerDown = false),
-        child: ShaderMask(
-          shaderCallback: (bounds) => LinearGradient(
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-            colors: [
-              _atStart ? Colors.white : Colors.transparent,
-              Colors.white,
-              Colors.white,
-              _atEnd ? Colors.white : Colors.transparent,
-            ],
-            stops: const [0.0, 0.12, 0.82, 1.0],
-          ).createShader(bounds),
-          blendMode: BlendMode.dstIn,
-          child: NotificationListener<ScrollNotification>(
-            onNotification: (_) => true,
-            child: SingleChildScrollView(
-              controller: _controller,
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                spacing: 6,
-                children: widget.children,
+    return SizedBox(
+      width: double.infinity,
+      child: PopScope(
+        canPop: _atStart || !_pointerDown,
+        child: Listener(
+          onPointerDown: (_) => setState(() => _pointerDown = true),
+          onPointerUp: (_) => setState(() => _pointerDown = false),
+          onPointerCancel: (_) => setState(() => _pointerDown = false),
+          child: ShaderMask(
+            shaderCallback: (bounds) => LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [
+                _atStart ? Colors.white : Colors.transparent,
+                Colors.white,
+                Colors.white,
+                _atEnd ? Colors.white : Colors.transparent,
+              ],
+              stops: const [0.0, 0.12, 0.82, 1.0],
+            ).createShader(bounds),
+            blendMode: BlendMode.dstIn,
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (_) => true,
+              child: SingleChildScrollView(
+                controller: _controller,
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  spacing: 6,
+                  children: widget.children,
+                ),
               ),
             ),
           ),
