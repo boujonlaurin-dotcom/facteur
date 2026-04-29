@@ -26,7 +26,6 @@ class LcVisible extends LearningCheckpointState {
   final Set<String> dismissedIds;
   final Map<String, num> modifiedValues;
   final String? expandedRowId;
-  final Set<String> expandTrackedIds;
   final bool applying;
   final Object? error;
 
@@ -35,7 +34,6 @@ class LcVisible extends LearningCheckpointState {
     this.dismissedIds = const {},
     this.modifiedValues = const {},
     this.expandedRowId,
-    this.expandTrackedIds = const {},
     this.applying = false,
     this.error,
   });
@@ -50,7 +48,6 @@ class LcVisible extends LearningCheckpointState {
     Set<String>? dismissedIds,
     Map<String, num>? modifiedValues,
     Object? expandedRowId = _sentinel,
-    Set<String>? expandTrackedIds,
     bool? applying,
     Object? error = _sentinel,
   }) {
@@ -61,7 +58,6 @@ class LcVisible extends LearningCheckpointState {
       expandedRowId: identical(expandedRowId, _sentinel)
           ? this.expandedRowId
           : expandedRowId as String?,
-      expandTrackedIds: expandTrackedIds ?? this.expandTrackedIds,
       applying: applying ?? this.applying,
       error: identical(error, _sentinel) ? this.error : error,
     );
@@ -131,19 +127,12 @@ class LearningCheckpointNotifier
     if (current is! LcVisible) return;
     final next = current.expandedRowId == proposalId ? null : proposalId;
 
-    if (next != null && !current.expandTrackedIds.contains(proposalId)) {
+    if (next != null) {
       final proposal =
           current.displayed.firstWhere((p) => p.id == proposalId);
-      ref
-          .read(learningCheckpointAnalyticsProvider)
-          .trackExpand(proposal);
-      state = AsyncData(current.copyWith(
-        expandedRowId: next,
-        expandTrackedIds: {...current.expandTrackedIds, proposalId},
-      ));
-    } else {
-      state = AsyncData(current.copyWith(expandedRowId: next));
+      ref.read(learningCheckpointAnalyticsProvider).trackExpand(proposal);
     }
+    state = AsyncData(current.copyWith(expandedRowId: next));
   }
 
   /// Dismiss a single proposal (✕). If it was the last → auto-snooze.

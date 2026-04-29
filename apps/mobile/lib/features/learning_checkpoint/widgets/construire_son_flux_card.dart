@@ -10,20 +10,11 @@ import '../providers/learning_checkpoint_provider.dart';
 import '../services/learning_checkpoint_analytics.dart';
 import 'proposal_row.dart';
 
-class ConstruireSonFluxCard extends ConsumerStatefulWidget {
+class ConstruireSonFluxCard extends ConsumerWidget {
   const ConstruireSonFluxCard({super.key});
 
   @override
-  ConsumerState<ConstruireSonFluxCard> createState() =>
-      _ConstruireSonFluxCardState();
-}
-
-class _ConstruireSonFluxCardState
-    extends ConsumerState<ConstruireSonFluxCard> {
-  bool _shownTracked = false;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     ref.listen<AsyncValue<LearningCheckpointState>>(
       learningCheckpointProvider,
       (prev, next) {
@@ -34,38 +25,32 @@ class _ConstruireSonFluxCardState
           ref.invalidate(userSourcesProvider);
           ref.invalidate(customTopicsProvider);
         }
-        if (n is LcApplied && mounted) {
+        if (n is LcApplied) {
           NotificationService.showSuccess(
             'Tes préférences sont mises à jour',
           );
         }
         final pError = p is LcVisible ? p.error : null;
         final nError = n is LcVisible ? n.error : null;
-        if (nError != null && pError == null && mounted) {
+        if (nError != null && pError == null) {
           NotificationService.showError('Une erreur est survenue');
         }
       },
     );
 
     final value = ref.watch(learningCheckpointProvider).valueOrNull;
-
     if (value is! LcVisible) return const SizedBox.shrink();
 
-    if (!_shownTracked) {
-      _shownTracked = true;
-      final snapshot = value.displayed;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        ref
-            .read(learningCheckpointAnalyticsProvider)
-            .trackShown(snapshot);
-      });
-    }
+    final snapshot = value.displayed;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(learningCheckpointAnalyticsProvider).trackShown(snapshot);
+    });
 
-    return _buildCard(context, visible: value);
+    return _buildCard(context, ref, visible: value);
   }
 
-  Widget _buildCard(BuildContext context, {required LcVisible visible}) {
+  Widget _buildCard(BuildContext context, WidgetRef ref,
+      {required LcVisible visible}) {
     final colors = context.facteurColors;
     final notifier = ref.read(learningCheckpointProvider.notifier);
     final isApplying = visible.applying;
