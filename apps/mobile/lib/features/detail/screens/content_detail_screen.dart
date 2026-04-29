@@ -549,7 +549,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// Show header + footer when user reaches the bottom of the article (progress ≥ 98%).
+  /// Skipped in WebView mode — overlays are controlled by scroll direction only.
   void _onReadingProgressNudge() {
+    if (_isWebViewActive) return;
     if (_readingProgress.value >= 0.98) {
       _inactivityTimer?.cancel();
       if (_headerOffset.value > 0.0) _animateHeaderTo(0.0);
