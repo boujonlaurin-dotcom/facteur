@@ -47,6 +47,14 @@ class UserPersonalization(Base):
         Boolean, default=True, server_default="true"
     )
 
+    # Story 13.2 — Carousel "Pépites" : rate-limit et cool-down dismiss
+    pepite_carousel_dismissed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    pepite_carousel_last_shown_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

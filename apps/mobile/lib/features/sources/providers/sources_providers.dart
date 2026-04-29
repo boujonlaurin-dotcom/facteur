@@ -49,6 +49,41 @@ final userSourcesProvider =
   return UserSourcesNotifier();
 });
 
+/// Pépites — sources curées poussées dans le feed.
+/// Liste vide si aucun trigger actif, rate-limit, ou cool-down côté backend.
+final pepitesProvider =
+    AsyncNotifierProvider<PepitesNotifier, List<Source>>(() {
+  return PepitesNotifier();
+});
+
+class PepitesNotifier extends AsyncNotifier<List<Source>> {
+  @override
+  Future<List<Source>> build() async {
+    final repository = ref.watch(sourcesRepositoryProvider);
+    return repository.getPepites();
+  }
+
+  /// Dismiss le carousel côté backend + vide l'état local.
+  Future<void> dismiss() async {
+    final repository = ref.read(sourcesRepositoryProvider);
+    state = const AsyncValue.data([]);
+    try {
+      await repository.dismissPepiteCarousel();
+    } catch (e, stack) {
+      // ignore: avoid_print
+      print('PepitesNotifier: [ERROR] dismiss failed: $e\n$stack');
+    }
+  }
+
+  /// Retire localement une source (après follow) sans refetch.
+  void removeLocal(String sourceId) {
+    if (!state.hasValue) return;
+    state = AsyncValue.data(
+      state.value!.where((s) => s.id != sourceId).toList(),
+    );
+  }
+}
+
 class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
   @override
   Future<List<Source>> build() async {
