@@ -90,8 +90,9 @@ void main() {
       expect(find.text('Suivi'), findsOneWidget);
       expect(find.text('Suivre'), findsNothing);
       // Bouton reste tappable (toggle complet) — onPressed non-null.
+      // En état Suivi, on utilise ElevatedButton (primary filled).
       final button =
-          tester.widget<OutlinedButton>(find.byType(OutlinedButton));
+          tester.widget<ElevatedButton>(find.byType(ElevatedButton));
       expect(button.onPressed, isNotNull);
     });
   });
