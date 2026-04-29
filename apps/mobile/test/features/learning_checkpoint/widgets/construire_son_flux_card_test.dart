@@ -31,8 +31,6 @@ LearningProposal makeProposal(String id, {double signal = 0.7}) =>
       proposedValue: 1,
       signalStrength: signal,
       signalContext: const SignalContext(articlesShown: 10),
-      shownCount: 0,
-      status: ProposalStatus.pending,
     );
 
 Widget buildApp(ProviderContainer container, Widget child) {

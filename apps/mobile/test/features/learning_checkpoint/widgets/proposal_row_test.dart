@@ -35,8 +35,6 @@ LearningProposal makeProposal({
       proposedValue: type == ProposalType.sourcePriority ? 1 : null,
       signalStrength: signal,
       signalContext: const SignalContext(articlesShown: 10),
-      shownCount: 0,
-      status: ProposalStatus.pending,
     );
 
 Widget wrap(ProviderContainer container, Widget child) =>

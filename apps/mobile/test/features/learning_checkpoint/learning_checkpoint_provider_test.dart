@@ -35,8 +35,6 @@ LearningProposal makeProposal({
     proposedValue: proposedValue,
     signalStrength: signal,
     signalContext: const SignalContext(articlesShown: 15),
-    shownCount: 0,
-    status: ProposalStatus.pending,
   );
 }
 
@@ -216,9 +214,12 @@ void main() {
       // Vérifie que applyProposals a été appelé (par snooze auto).
       verify(() => repo.applyProposals(any())).called(1);
 
-      // État final = LcSnoozed (ou LcApplying → LcSnoozed).
+      // Final state = LcSnoozed (or LcVisible.applying mid-flight).
       final state = container.read(learningCheckpointProvider).value;
-      expect(state, anyOf(isA<LcSnoozed>(), isA<LcApplying>()));
+      expect(state, anyOf(
+        isA<LcSnoozed>(),
+        predicate<LcVisible>((v) => v.applying, 'is LcVisible.applying'),
+      ));
     });
 
     test('G11 — modifyValue stocke la valeur', () async {
@@ -333,7 +334,7 @@ void main() {
           isNotNull);
     });
 
-    test('G15 — validate() échec API → LcError, cooldown non posé',
+    test('G15 — validate() échec API → LcVisible.error, cooldown non posé',
         () async {
       final repo = MockRepo();
       when(() => repo.fetchProposals()).thenAnswer((_) async => [
@@ -352,8 +353,9 @@ void main() {
 
       await container.read(learningCheckpointProvider.notifier).validate();
 
-      expect(
-          container.read(learningCheckpointProvider).value, isA<LcError>());
+      final state = container.read(learningCheckpointProvider).value;
+      expect(state,
+          predicate<LcVisible>((v) => v.error != null && !v.applying));
 
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getInt(LearningCheckpointFlags.kLastActionAtKey), isNull);

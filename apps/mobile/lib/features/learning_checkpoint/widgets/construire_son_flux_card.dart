@@ -10,8 +10,6 @@ import '../providers/learning_checkpoint_provider.dart';
 import '../services/learning_checkpoint_analytics.dart';
 import 'proposal_row.dart';
 
-/// Carte « Construire ton flux · Cette semaine » injectée dans le feed en
-/// position 3 lorsque les conditions de gating sont réunies.
 class ConstruireSonFluxCard extends ConsumerStatefulWidget {
   const ConstruireSonFluxCard({super.key});
 
@@ -29,29 +27,31 @@ class _ConstruireSonFluxCardState
     ref.listen<AsyncValue<LearningCheckpointState>>(
       learningCheckpointProvider,
       (prev, next) {
-        final nextState = next.valueOrNull;
-        if (nextState is LcApplied || nextState is LcSnoozed) {
-          // Rafraîchir le feed + invalidations cross-providers après action.
+        final p = prev?.valueOrNull;
+        final n = next.valueOrNull;
+        if (n is LcApplied || n is LcSnoozed) {
           ref.invalidate(feedProvider);
           ref.invalidate(userSourcesProvider);
           ref.invalidate(customTopicsProvider);
         }
-        if (nextState is LcApplied && mounted) {
+        if (n is LcApplied && mounted) {
           NotificationService.showSuccess(
             'Tes préférences sont mises à jour',
           );
         }
-        if (nextState is LcError && mounted) {
+        final pError = p is LcVisible ? p.error : null;
+        final nError = n is LcVisible ? n.error : null;
+        if (nError != null && pError == null && mounted) {
           NotificationService.showError('Une erreur est survenue');
         }
       },
     );
 
-    final asyncState = ref.watch(learningCheckpointProvider);
-    final value = asyncState.valueOrNull;
+    final value = ref.watch(learningCheckpointProvider).valueOrNull;
 
-    // Track shown une seule fois par transition hidden → visible.
-    if (value is LcVisible && !_shownTracked) {
+    if (value is! LcVisible) return const SizedBox.shrink();
+
+    if (!_shownTracked) {
       _shownTracked = true;
       final snapshot = value.displayed;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -62,27 +62,14 @@ class _ConstruireSonFluxCardState
       });
     }
 
-    if (value is LcVisible) {
-      return _buildCard(context, visible: value);
-    }
-    if (value is LcApplying) {
-      return _buildCard(context, visible: value.previous, isApplying: true);
-    }
-    if (value is LcError && value.previous != null) {
-      return _buildCard(context, visible: value.previous!, hasError: true);
-    }
-    // LcHidden / LcApplied / LcSnoozed / loading → invisible.
-    return const SizedBox.shrink();
+    return _buildCard(context, visible: value);
   }
 
-  Widget _buildCard(
-    BuildContext context, {
-    required LcVisible visible,
-    bool isApplying = false,
-    bool hasError = false,
-  }) {
+  Widget _buildCard(BuildContext context, {required LcVisible visible}) {
     final colors = context.facteurColors;
     final notifier = ref.read(learningCheckpointProvider.notifier);
+    final isApplying = visible.applying;
+    final hasError = visible.hasError;
 
     final remaining = visible.displayed
         .where((p) => !visible.dismissedIds.contains(p.id))

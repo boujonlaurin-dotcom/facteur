@@ -12,8 +12,6 @@ void main() {
     num? proposedValue = 1,
     double signalStrength = 0.75,
     Map<String, dynamic>? signalContext,
-    int shownCount = 0,
-    String status = 'pending',
   }) {
     return {
       'id': id,
@@ -31,8 +29,6 @@ void main() {
             'articles_saved': 0,
             'period_days': 7,
           },
-      'shown_count': shownCount,
-      'status': status,
     };
   }
 
@@ -49,7 +45,6 @@ void main() {
       expect(p.signalStrength, closeTo(0.75, 1e-6));
       expect(p.signalContext.articlesShown, 15);
       expect(p.signalContext.periodDays, 7);
-      expect(p.status, ProposalStatus.pending);
     });
 
     test('M2 — signal_context.articles_saved manquant : pas d\'exception',

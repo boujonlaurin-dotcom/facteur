@@ -26,8 +26,6 @@ LearningProposal makeProposal({
     proposedValue: proposedValue,
     signalStrength: signalStrength,
     signalContext: signalContext,
-    shownCount: 0,
-    status: ProposalStatus.pending,
   );
 }
 

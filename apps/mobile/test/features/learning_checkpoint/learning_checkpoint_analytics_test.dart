@@ -25,8 +25,6 @@ void main() {
       proposedValue: 1,
       signalStrength: signal,
       signalContext: const SignalContext(),
-      shownCount: 0,
-      status: ProposalStatus.pending,
     );
   }
 

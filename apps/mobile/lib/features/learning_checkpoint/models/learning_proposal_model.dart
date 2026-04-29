@@ -1,8 +1,3 @@
-/// Modèles Dart pour la feature « Construire ton flux » (Epic 13).
-///
-/// Convention : parsing manuel via `fromJson`, aligné avec `content_model.dart`.
-/// Les champs snake_case de l'API sont convertis en camelCase.
-
 enum ProposalType {
   sourcePriority,
   followEntity,
@@ -64,29 +59,6 @@ enum EntityType {
   }
 }
 
-enum ProposalStatus {
-  pending,
-  applied,
-  dismissed,
-  snoozed,
-  unknown;
-
-  static ProposalStatus fromWire(String? raw) {
-    switch (raw) {
-      case 'pending':
-        return ProposalStatus.pending;
-      case 'applied':
-        return ProposalStatus.applied;
-      case 'dismissed':
-        return ProposalStatus.dismissed;
-      case 'snoozed':
-        return ProposalStatus.snoozed;
-      default:
-        return ProposalStatus.unknown;
-    }
-  }
-}
-
 enum ApplyActionType {
   accept,
   modify,
@@ -139,8 +111,6 @@ class LearningProposal {
   final num? proposedValue;
   final double signalStrength;
   final SignalContext signalContext;
-  final int shownCount;
-  final ProposalStatus status;
 
   const LearningProposal({
     required this.id,
@@ -152,8 +122,6 @@ class LearningProposal {
     required this.proposedValue,
     required this.signalStrength,
     required this.signalContext,
-    required this.shownCount,
-    required this.status,
   });
 
   factory LearningProposal.fromJson(Map<String, dynamic> json) {
@@ -170,8 +138,6 @@ class LearningProposal {
       signalContext: signalContextRaw is Map<String, dynamic>
           ? SignalContext.fromJson(signalContextRaw)
           : const SignalContext(),
-      shownCount: (json['shown_count'] as num?)?.toInt() ?? 0,
-      status: ProposalStatus.fromWire(json['status'] as String?),
     );
   }
 

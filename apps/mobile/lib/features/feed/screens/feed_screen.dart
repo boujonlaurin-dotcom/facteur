@@ -683,16 +683,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             contents.length > 6;
                         const savedNudgePos = 6;
 
-                        // Construire ton flux : visible uniquement si
-                        // LcVisible et si le feed a assez d'articles pour
-                        // placer la carte en position 3.
-                        final lcAsync = ref.watch(learningCheckpointProvider);
-                        final lcValue = lcAsync.valueOrNull;
+                        final lcValue = ref
+                            .watch(learningCheckpointProvider)
+                            .valueOrNull;
                         final bool showConstruireFlux =
-                            (lcValue is LcVisible ||
-                                lcValue is LcApplying ||
-                                lcValue is LcError) &&
-                            contents.length > 3;
+                            (lcValue?.shouldShow ?? false) &&
+                                contents.length > 3;
 
                         // Empty state when a filter is active but no results
                         final hasActiveFilter =
