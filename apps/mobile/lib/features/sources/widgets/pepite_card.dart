@@ -109,37 +109,58 @@ class PepiteCard extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 height: 32,
-                child: OutlinedButton(
-                  onPressed: onToggleFollow,
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: colors.surface,
-                    foregroundColor: colors.primary,
-                    padding: EdgeInsets.zero,
-                    side: BorderSide(color: colors.primary, width: 1.2),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(FacteurRadius.small),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (isFollowing) ...[
-                        Icon(
-                          PhosphorIcons.check(PhosphorIconsStyle.bold),
-                          size: 14,
+                child: isFollowing
+                    ? ElevatedButton(
+                        onPressed: onToggleFollow,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: colors.primary,
+                          foregroundColor: colors.textPrimary,
+                          elevation: 0,
+                          padding: EdgeInsets.zero,
+                          shape: RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.circular(FacteurRadius.small),
+                          ),
                         ),
-                        const SizedBox(width: 4),
-                      ],
-                      Text(
-                        isFollowing ? 'Suivi' : 'Suivre',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              PhosphorIcons.check(PhosphorIconsStyle.bold),
+                              size: 14,
+                            ),
+                            const SizedBox(width: 4),
+                            const Text(
+                              'Suivi',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : OutlinedButton(
+                        onPressed: onToggleFollow,
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: colors.surface,
+                          foregroundColor: colors.primary,
+                          padding: EdgeInsets.zero,
+                          side:
+                              BorderSide(color: colors.primary, width: 1.2),
+                          shape: RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.circular(FacteurRadius.small),
+                          ),
+                        ),
+                        child: const Text(
+                          'Suivre',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ],
-                  ),
-                ),
               ),
             ],
           ),
