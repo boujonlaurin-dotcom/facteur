@@ -789,7 +789,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       // makes per-event offset increments visibly choppy. Drive the overlays
       // with the smooth 200ms tween in either direction instead.
       if (_isWebViewActive) {
-        // Header always pinned in WebView mode — only footer hides/shows on scroll.
         if (delta > 0) {
           if (!_footerPermanent.value && _footerAutoTarget != 1.0) {
             _animateFooterTo(1.0);
