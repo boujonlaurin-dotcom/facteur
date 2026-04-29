@@ -36,7 +36,7 @@ class PepitesCarousel extends ConsumerWidget {
     List<Source> sources,
   ) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
