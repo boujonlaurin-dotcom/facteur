@@ -12,8 +12,7 @@ import 'time_slot_selector.dart';
 /// Trigger d'affichage de la modal — utilisé pour l'event tracking.
 enum ActivationTrigger { onboarding, update, renudge }
 
-/// Affiche la modal d'activation comme dialogue flottant translucide
-/// (pattern aligné sur `digest_welcome_modal.dart`).
+/// Affiche la modal d'activation comme dialogue flottant translucide.
 Future<void> showNotificationActivationModal(
   BuildContext context,
   WidgetRef ref, {

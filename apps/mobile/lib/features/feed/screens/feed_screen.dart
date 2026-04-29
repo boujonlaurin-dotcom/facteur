@@ -20,7 +20,6 @@ import '../../../core/nudges/nudge_coordinator.dart';
 import '../../../core/nudges/nudge_counters.dart';
 import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/widgets/feed_nudge_anchors.dart';
-import '../../welcome_tour/controllers/welcome_tour_controller.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../providers/feed_provider.dart';
@@ -49,7 +48,12 @@ import '../../custom_topics/widgets/topic_chip.dart';
 // import '../../custom_topics/widgets/cluster_chip.dart';
 // import '../widgets/keyword_overflow_chip.dart';
 // import '../widgets/entity_overflow_chip.dart';
+import '../widgets/digest_entry_card.dart';
 import '../widgets/feed_carousel.dart';
+import '../../../core/orchestration/first_impression_orchestrator.dart';
+import '../../notifications/widgets/notification_activation_modal.dart';
+import '../../notifications/widgets/notification_renudge_banner.dart';
+import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../widgets/feed_refresh_undo_banner.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../widgets/empty_filter_state.dart';
@@ -75,6 +79,7 @@ class FeedScreen extends ConsumerStatefulWidget {
 
 class _FeedScreenState extends ConsumerState<FeedScreen> {
   bool _showWelcome = false;
+  bool _activationModalShown = false;
   bool _caughtUpDismissed = false;
   static const int _caughtUpThreshold = 8;
   final ScrollController _scrollController = ScrollController();
@@ -89,7 +94,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   bool _showStickyBar = false;
   double _lastScrollPos = 0;
   static const double _stickyScrollThreshold = 12;
-  static const double _stickyHideAboveScroll = 240;
+  static const double _stickyHideAboveScroll = 380;
 
   // Feed Refresh: track timestamps of recent refreshes for anti-addiction
   final List<DateTime> _refreshTimestamps = [];
@@ -156,12 +161,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   }
 
   Future<void> _recordFeedOpenAndMaybeNudge() async {
-    // The shell navigates to /feed during welcome_tour step 2 — don't count
-    // that as a "natural" visit and don't request a spotlight that would
-    // overlap the tour overlay. Whether the tour has been seen at all is
-    // already enforced by the registry prerequisite (read device-scoped, so
-    // PR2 v1 legacy users who never re-saw the user-scoped tour still pass).
-    if (ref.read(welcomeTourControllerProvider).active) return;
     final opens = await NudgeCounters.increment(NudgeCounters.feedOpenCount);
     final taps = await NudgeCounters.get(NudgeCounters.feedCardTapCount);
     if (!mounted) return;
@@ -184,8 +183,25 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   }
 
   Future<void> _onFeedCardTapped() async {
-    if (ref.read(welcomeTourControllerProvider).active) return;
     await NudgeCounters.increment(NudgeCounters.feedCardTapCount);
+  }
+
+  /// Modal d'activation notif gatée par `firstImpressionSlotProvider` (au
+  /// plus 1 modal/session, arbitrée avec re-nudge banner + well-informed
+  /// prompt).
+  void _maybeShowActivationModal(FirstImpressionSlot slot) {
+    if (_activationModalShown) return;
+    if (slot != FirstImpressionSlot.notifModal) return;
+    _activationModalShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(notifModalConsumedThisSessionProvider.notifier).state = true;
+      showNotificationActivationModal(
+        context,
+        ref,
+        trigger: ActivationTrigger.update,
+      );
+    });
   }
 
   // Epic 12: One-shot toast explaining the new chronological default
@@ -519,6 +535,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     final feedAsync = ref.watch(feedProvider);
     final colors = context.facteurColors;
 
+    // Orchestrateur "premier impact" — arbitre entre modal notif, re-nudge
+    // banner et well-informed prompt. Garantit max 1 modal + 1 nudge par
+    // session.
+    final impressionSlot = ref.watch(firstImpressionSlotProvider);
+    _maybeShowActivationModal(impressionSlot);
+
     // Pre-warm topics provider (single watch for all TopicChips)
     final followedTopics = ref.watch(customTopicsProvider).valueOrNull ?? [];
 
@@ -610,6 +632,30 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                               .bodyMedium
                               ?.copyWith(color: colors.textSecondary),
                         ),
+                      ),
+                    ),
+                    // Re-nudge banner (≥7j après refus, cap 3, espacement
+                    // 14j) — gaté par l'orchestrateur (1 nudge max, pas en
+                    // parallèle d'une modal).
+                    SliverToBoxAdapter(
+                      child: impressionSlot ==
+                              FirstImpressionSlot.renudgeBanner
+                          ? const NotificationRenudgeBanner()
+                          : const SizedBox.shrink(),
+                    ),
+                    // Story 14.3 — Well-informed self-report inline prompt.
+                    // Cooldown dans `wellInformedShouldShowProvider`, arbitré
+                    // par l'orchestrateur.
+                    SliverToBoxAdapter(
+                      child: impressionSlot ==
+                              FirstImpressionSlot.wellInformed
+                          ? const WellInformedPrompt()
+                          : const SizedBox.shrink(),
+                    ),
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.only(top: 14, bottom: 8),
+                        child: DigestEntryCard(),
                       ),
                     ),
                     SliverToBoxAdapter(

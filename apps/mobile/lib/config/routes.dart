@@ -132,7 +132,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isOnInterestsFromOnboarding =
           matchedLocation == RoutePaths.myInterests &&
               state.uri.queryParameters['serein'] == '1';
-      final isOnDigest = matchedLocation == RoutePaths.digest;
 
       // 1. Les utilisateurs non connectés
       if (!isLoggedIn) {
@@ -158,8 +157,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (isOnLoginPage || isOnEmailConfirmation || isOnSplash) {
         return authState.needsOnboarding
             ? RoutePaths.onboarding
-            : RoutePaths
-                .digest; // Digest is now the default authenticated route
+            : RoutePaths.feed;
       }
 
       // 4. Onboarding : forcer si nécessaire
@@ -169,17 +167,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         return RoutePaths.onboarding;
       }
 
-      // 5. Onboarding : empêcher d'y retourner si fini
+      // 5. Onboarding : empêcher d'y retourner si fini → atterrissage feed
       if (!authState.needsOnboarding && isOnOnboarding) {
-        // Post-onboarding goes to /digest. The Welcome Tour v2 is triggered
-        // by WelcomeTourHost (overlay coachmark over /digest, /feed, /settings)
-        // when authState.welcomeTourSeen is false — no dedicated route.
-        return RoutePaths.digest;
-      }
-
-      // Allow staying on digest (default authenticated route)
-      if (isOnDigest) {
-        return null;
+        return RoutePaths.feed;
       }
 
       return null;
@@ -231,13 +221,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (context, state, child) => ShellScaffold(child: child),
         routes: [
-          // Digest (Essentiel) - Default authenticated route
-          GoRoute(
-            path: RoutePaths.digest,
-            name: RouteNames.digest,
-            builder: (context, state) => const DigestScreen(),
-          ),
-
           // Feed
           GoRoute(
             path: RoutePaths.feed,
@@ -388,6 +371,17 @@ final routerProvider = Provider<GoRouter>((ref) {
             ],
           ),
         ],
+      ),
+
+      // Digest (Essentiel) - opened from the feed card or widget. Lives
+      // outside the ShellRoute so the bottom nav is hidden, with full-screen
+      // swipe-back to the feed.
+      GoRoute(
+        path: RoutePaths.digest,
+        name: RouteNames.digest,
+        pageBuilder: (context, state) => const FullSwipeCupertinoPage(
+          child: DigestScreen(),
+        ),
       ),
 
       // Topic Explorer (outside ShellRoute to hide bottom nav)

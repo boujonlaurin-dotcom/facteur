@@ -8,7 +8,6 @@ import 'package:facteur/core/providers/navigation_providers.dart';
 import '../../../config/theme.dart';
 import '../../../config/routes.dart';
 import '../../../core/nudges/widgets/nudge_host.dart';
-import '../../../features/welcome_tour/widgets/welcome_tour_host.dart';
 
 /// Scaffold avec bottom navigation pour les écrans principaux
 class ShellScaffold extends StatelessWidget {
@@ -27,7 +26,6 @@ class ShellScaffold extends StatelessWidget {
           body: child,
           bottomNavigationBar: const _BottomNavBar(),
         ),
-        const WelcomeTourHost(),
         const NudgeHost(),
       ],
     );
@@ -40,20 +38,17 @@ class _BottomNavBar extends ConsumerWidget {
   int _calculateSelectedIndex(BuildContext context) {
     final location = GoRouterState.of(context).uri.path;
 
-    // Tab 0: Essentiel (Digest)
-    if (location.startsWith(RoutePaths.digest)) return 0;
-
-    // Tab 1: Mon flux (Feed)
-    if (location.startsWith(RoutePaths.feed)) return 1;
-    // Saved screen: show as part of settings (nearest logical tab)
-    if (location.startsWith(RoutePaths.saved)) return 2;
+    // Tab 0: Mon flux (Feed)
+    if (location.startsWith(RoutePaths.feed)) return 0;
+    // Saved screen: surface as part of feed (nearest logical tab)
+    if (location.startsWith(RoutePaths.saved)) return 0;
     // MVP: Progressions tab removed - redirect to feed if accessed
-    if (location.startsWith(RoutePaths.progress)) return 1;
+    if (location.startsWith(RoutePaths.progress)) return 0;
 
-    // Tab 2: Paramètres (Settings)
-    if (location.startsWith(RoutePaths.settings)) return 2;
+    // Tab 1: Paramètres (Settings)
+    if (location.startsWith(RoutePaths.settings)) return 1;
 
-    // Default to digest (Essentiel) tab
+    // Default to feed tab
     return 0;
   }
 
@@ -62,10 +57,9 @@ class _BottomNavBar extends ConsumerWidget {
     if (index == selectedIndex) {
       // Determine the root path for this tab
       final tabRootPath = switch (index) {
-        0 => RoutePaths.digest,
-        1 => RoutePaths.feed,
-        2 => RoutePaths.settings,
-        _ => RoutePaths.digest,
+        0 => RoutePaths.feed,
+        1 => RoutePaths.settings,
+        _ => RoutePaths.feed,
       };
 
       final currentLocation = GoRouterState.of(context).uri.path;
@@ -79,10 +73,8 @@ class _BottomNavBar extends ConsumerWidget {
         HapticFeedback.mediumImpact();
         switch (index) {
           case 0:
-            ref.read(digestScrollTriggerProvider.notifier).state++;
-          case 1:
             ref.read(feedScrollTriggerProvider.notifier).state++;
-          case 2:
+          case 1:
             ref.read(settingsScrollTriggerProvider.notifier).state++;
         }
       }
@@ -94,10 +86,8 @@ class _BottomNavBar extends ConsumerWidget {
     NotificationService.hide();
     switch (index) {
       case 0:
-        context.goNamed(RouteNames.digest);
-      case 1:
         context.goNamed(RouteNames.feed);
-      case 2:
+      case 1:
         context.goNamed(RouteNames.settings);
     }
   }
@@ -112,37 +102,28 @@ class _BottomNavBar extends ConsumerWidget {
         color: colors.backgroundPrimary,
         border: Border(
           top: BorderSide(
-            color: colors.border.withOpacity(0.5), // Increased visibility
-            width: 0.8, // Slightly thicker for definition
+            color: colors.border.withOpacity(0.5),
+            width: 0.8,
           ),
         ),
       ),
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14), // Refined padding
+          padding: const EdgeInsets.symmetric(vertical: 14),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              // Tab 0: Essentiel (Digest)
+              // Tab 0: Mon flux (Feed)
               _NavItem(
-                key: bottomNavDigestKey,
-                label: 'Essentiel',
+                label: 'Mon flux',
                 isSelected: selectedIndex == 0,
                 onTap: () => _onItemTapped(context, ref, 0, selectedIndex),
               ),
-              // Tab 1: Mon flux (Feed) — Epic 12
+              // Tab 1: Paramètres (Settings)
               _NavItem(
-                key: bottomNavFeedKey,
-                label: 'Mon flux',
+                label: 'Paramètres',
                 isSelected: selectedIndex == 1,
                 onTap: () => _onItemTapped(context, ref, 1, selectedIndex),
-              ),
-              // Tab 2: Paramètres (Settings)
-              _NavItem(
-                key: bottomNavSettingsKey,
-                label: 'Paramètres',
-                isSelected: selectedIndex == 2,
-                onTap: () => _onItemTapped(context, ref, 2, selectedIndex),
               ),
             ],
           ),
@@ -158,7 +139,6 @@ class _NavItem extends StatelessWidget {
   final VoidCallback onTap;
 
   const _NavItem({
-    super.key,
     required this.label,
     required this.isSelected,
     required this.onTap,
@@ -190,7 +170,7 @@ class _NavItem extends StatelessWidget {
                     color:
                         isSelected ? colors.textPrimary : colors.textTertiary,
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                    fontSize: 13, // Increased font size
+                    fontSize: 13,
                     letterSpacing: 0.1,
                   ),
             ),
@@ -198,7 +178,7 @@ class _NavItem extends StatelessWidget {
             // Dot indicator
             AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              width: 6, // Increased dot size
+              width: 6,
               height: 6,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
