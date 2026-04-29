@@ -114,8 +114,10 @@ class PepiteCard extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: isFollowing
                         ? colors.backgroundSecondary
-                        : colors.primary,
-                    foregroundColor: colors.textPrimary,
+                        : colors.secondary.withValues(alpha: 0.18),
+                    foregroundColor: isFollowing
+                        ? colors.textPrimary
+                        : colors.secondary,
                     elevation: 0,
                     padding: EdgeInsets.zero,
                     shape: RoundedRectangleBorder(
