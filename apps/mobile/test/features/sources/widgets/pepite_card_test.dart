@@ -91,7 +91,7 @@ void main() {
       expect(find.text('Suivre'), findsNothing);
       // Bouton reste tappable (toggle complet) — onPressed non-null.
       final button =
-          tester.widget<ElevatedButton>(find.byType(ElevatedButton));
+          tester.widget<OutlinedButton>(find.byType(OutlinedButton));
       expect(button.onPressed, isNotNull);
     });
   });
