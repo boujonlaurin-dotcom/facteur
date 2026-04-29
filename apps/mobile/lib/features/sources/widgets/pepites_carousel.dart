@@ -46,22 +46,26 @@ class PepitesCarousel extends ConsumerWidget {
               children: [
                 Image.asset(
                   'assets/images/recos_facteur.png',
-                  width: 28,
-                  height: 28,
+                  width: 40,
+                  height: 40,
                   fit: BoxFit.contain,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    "Recommandées par l'équipe",
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                    "Recos. de l'équipe Facteur",
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      height: 1.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 _DismissButton(
-                  onPressed: () =>
-                      ref.read(pepitesProvider.notifier).dismiss(),
+                  onPressed: () => ref.read(pepitesProvider.notifier).dismiss(),
                 ),
               ],
             ),

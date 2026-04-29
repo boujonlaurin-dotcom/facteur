@@ -52,6 +52,18 @@ class PepiteCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 4),
+            Text(
+              source.getThemeLabel(),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                  ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
             if (source.followerCount > 0)
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
