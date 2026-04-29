@@ -46,7 +46,7 @@ class PepiteCard extends StatelessWidget {
           width: 170,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: colors.primary.withValues(alpha: 0.04),
+            color: colors.surface,
             borderRadius: radius,
           ),
           child: Column(
@@ -109,22 +109,15 @@ class PepiteCard extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 height: 32,
-                child: ElevatedButton(
+                child: OutlinedButton(
                   onPressed: onToggleFollow,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isFollowing
-                        ? colors.backgroundSecondary
-                        : colors.secondary.withValues(alpha: 0.18),
-                    foregroundColor: isFollowing
-                        ? colors.textPrimary
-                        : colors.secondary,
-                    elevation: 0,
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: colors.surface,
+                    foregroundColor: colors.primary,
                     padding: EdgeInsets.zero,
+                    side: BorderSide(color: colors.primary, width: 1.2),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(FacteurRadius.small),
-                      side: isFollowing
-                          ? BorderSide(color: colors.border)
-                          : BorderSide.none,
                     ),
                   ),
                   child: Row(
