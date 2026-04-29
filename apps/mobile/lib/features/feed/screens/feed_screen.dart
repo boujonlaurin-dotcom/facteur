@@ -50,6 +50,9 @@ import '../../custom_topics/widgets/topic_chip.dart';
 // import '../widgets/entity_overflow_chip.dart';
 import '../widgets/digest_entry_card.dart';
 import '../widgets/feed_carousel.dart';
+import '../../app_update/providers/app_update_provider.dart';
+import '../../app_update/widgets/update_button.dart';
+import '../../app_update/widgets/update_modal.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../notifications/widgets/notification_activation_modal.dart';
 import '../../notifications/widgets/notification_renudge_banner.dart';
@@ -61,6 +64,7 @@ import '../widgets/follow_keyword_suggestion_card.dart';
 import '../widgets/interest_filter_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/widgets/serein_toggle_chip.dart';
+import '../../settings/providers/user_profile_provider.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/pepites_carousel.dart';
 import '../../progress/widgets/progression_card.dart';
@@ -138,6 +142,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   // Compteur d'échecs consécutifs pour basculer entre FriendlyErrorView et
   // LaurinFallbackView (UX uniquement, pas de modif provider).
   int _consecutiveErrorCount = 0;
+
+  // Update modal: déclenchée une seule fois par session si une update est dispo.
+  bool _hasCheckedUpdate = false;
 
   Future<void> _withFeedLoading(Future<void> Function() action) async {
     if (mounted) setState(() => _isFeedRefreshing = true);
@@ -581,6 +588,21 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       }
     });
 
+    // Show update modal at launch when an update is available.
+    ref.listen(appUpdateProvider, (previous, next) {
+      if (_hasCheckedUpdate) return;
+      next.whenData((info) {
+        if (info != null && info.updateAvailable && UpdateModal.shouldShow()) {
+          _hasCheckedUpdate = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              UpdateModal.show(context, info: info);
+            }
+          });
+        }
+      });
+    });
+
     return PopScope(
       canPop: false,
       child: Material(
@@ -601,38 +623,20 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           horizontal: FacteurSpacing.space6,
                           vertical: FacteurSpacing.space3,
                         ),
-                        child: Center(child: FacteurLogo(size: 22, showIcon: false)),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 16, 8, 4),
-                        child: Row(
+                        child: Stack(
+                          alignment: Alignment.center,
                           children: [
-                            Expanded(
-                              child: Text(
-                                'Bonjour,',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .displayMedium,
-                              ),
+                            FacteurLogo(size: 22, showIcon: false),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: UpdateButton(),
                             ),
-                            const SereinToggleChip(),
                           ],
                         ),
                       ),
                     ),
                     SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Text(
-                          'Votre flux issu de vos sources de confiance.',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.copyWith(color: colors.textSecondary),
-                        ),
-                      ),
+                      child: _FeedTourneeHeader(),
                     ),
                     // Re-nudge banner (≥7j après refus, cap 3, espacement
                     // 14j) — gaté par l'orchestrateur (1 nudge max, pas en
@@ -1468,6 +1472,87 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
         ),
       ),
     );
+  }
+}
+
+/// Header "Bonjour {prénom}, votre tournée du jour" en haut du feed,
+/// avec une overline date façon tampon postal et le toggle Normal/Serein
+/// aligné à droite.
+class _FeedTourneeHeader extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.facteurColors;
+    final profile = ref.watch(userProfileProvider);
+    final firstName = (profile.displayName ?? '').trim().split(' ').first;
+    final greeting = firstName.isEmpty
+        ? 'Bonjour,'
+        : 'Bonjour $firstName,';
+    final now = DateTime.now();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text(
+                  _formatStamp(now),
+                  style: FacteurTypography.stamp(colors.textTertiary)
+                      .copyWith(letterSpacing: 1.2),
+                ),
+              ),
+              const SereinToggleChip(),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            greeting,
+            style: FacteurTypography.serifTitle(colors.textPrimary)
+                .copyWith(fontSize: 26, height: 1.15),
+          ),
+          Text(
+            'votre tournée du jour',
+            style: FacteurTypography.serifTitle(colors.textPrimary)
+                .copyWith(fontSize: 26, height: 1.15),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static const List<String> _frDays = [
+    'LUNDI',
+    'MARDI',
+    'MERCREDI',
+    'JEUDI',
+    'VENDREDI',
+    'SAMEDI',
+    'DIMANCHE',
+  ];
+
+  static const List<String> _frMonthsAbbr = [
+    'JANV.',
+    'FÉVR.',
+    'MARS',
+    'AVR.',
+    'MAI',
+    'JUIN',
+    'JUIL.',
+    'AOÛT',
+    'SEPT.',
+    'OCT.',
+    'NOV.',
+    'DÉC.',
+  ];
+
+  static String _formatStamp(DateTime d) {
+    final day = _frDays[d.weekday - 1];
+    final month = _frMonthsAbbr[d.month - 1];
+    final hh = d.hour.toString();
+    final mm = d.minute.toString().padLeft(2, '0');
+    return '$day ${d.day} $month · ${hh}H$mm';
   }
 }
 

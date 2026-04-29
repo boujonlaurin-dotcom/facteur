@@ -13,14 +13,9 @@ import '../../../shared/widgets/mode_accent.dart';
 import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../../../shared/widgets/states/laurin_fallback_view.dart';
 import '../../../core/providers/analytics_provider.dart';
-import '../../../widgets/design/facteur_logo.dart';
 import '../../feed/models/content_model.dart';
 
 import '../../feed/providers/feed_provider.dart';
-import '../../app_update/providers/app_update_provider.dart';
-import '../../app_update/widgets/update_button.dart';
-import '../../app_update/widgets/update_modal.dart';
-import '../../gamification/widgets/streak_indicator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
 import '../../sources/models/source_model.dart';
@@ -33,6 +28,7 @@ import '../providers/digest_provider.dart';
 import '../providers/serein_toggle_provider.dart';
 import '../../../core/services/widget_service.dart';
 import '../widgets/digest_briefing_section.dart';
+import '../widgets/digest_hero.dart';
 import '../widgets/digest_personalization_sheet.dart';
 import '../widgets/widget_pin_nudge.dart';
 import 'closure_screen.dart';
@@ -50,7 +46,6 @@ class DigestScreen extends ConsumerStatefulWidget {
 }
 
 class _DigestScreenState extends ConsumerState<DigestScreen> {
-  bool _hasCheckedUpdate = false;
   int _consecutiveErrorCount = 0;
   final ScrollController _scrollController = ScrollController();
   // Sprint 2 PR1 — dedupe digest_opened + digest_item_viewed per digest_id.
@@ -283,21 +278,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       }
     });
 
-    // Show update modal at launch when an update is available
-    ref.listen(appUpdateProvider, (previous, next) {
-      if (_hasCheckedUpdate) return;
-      next.whenData((info) {
-        if (info != null && info.updateAvailable && UpdateModal.shouldShow()) {
-          _hasCheckedUpdate = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              UpdateModal.show(context, info: info);
-            }
-          });
-        }
-      });
-    });
-
     debugPrint('DigestScreen: digestAsync state = ${digestAsync.toString()}');
 
     // Open closure modal when digest completes. Rendered as a modal (not a
@@ -342,27 +322,38 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
               child: CustomScrollView(
                 controller: _scrollController,
                 slivers: [
-                  // Feed-style header with logo, streak, and update button
-                  const SliverToBoxAdapter(
+                  // Header : back rond + titre majuscules
+                  SliverToBoxAdapter(
                     child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: FacteurSpacing.space6,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space4,
                         vertical: FacteurSpacing.space2,
                       ),
-                      child: Stack(
-                        alignment: Alignment.center,
+                      child: Row(
                         children: [
-                          FacteurLogo(size: 22, showIcon: false),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              StreakIndicator(),
-                              UpdateButton(),
-                            ],
+                          _CircularBackButton(onTap: () => context.pop()),
+                          const SizedBox(width: 12),
+                          Text(
+                            "L'ESSENTIEL DU JOUR",
+                            style: FacteurTypography.stamp(
+                                    colors.textTertiary)
+                                .copyWith(
+                              fontSize: 12,
+                              letterSpacing: 1.4,
+                            ),
                           ),
                         ],
                       ),
+                    ),
+                  ),
+
+                  // Hero : pill + titre + meta + illustration facteur
+                  SliverToBoxAdapter(
+                    child: DigestHero(
+                      articleCount:
+                          digestAsync.valueOrNull?.items.length ?? 5,
+                      targetDate:
+                          digestAsync.valueOrNull?.targetDate ?? DateTime.now(),
                     ),
                   ),
 
@@ -679,5 +670,37 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       default:
         return SourceType.article;
     }
+  }
+}
+
+class _CircularBackButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _CircularBackButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: colors.surface.withOpacity(0.9),
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            PhosphorIcons.arrowLeft(PhosphorIconsStyle.bold),
+            size: 18,
+            color: colors.textPrimary,
+          ),
+        ),
+      ),
+    );
   }
 }

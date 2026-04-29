@@ -32,6 +32,15 @@ void main() {
       expect(find.text("L'ESSENTIEL"), findsOneWidget);
       // Sous-titre : N articles + date du jour formattée fr (fallback 5).
       expect(find.textContaining('articles ·'), findsOneWidget);
+      // Illustration facteur (réutilise l'asset notif).
+      final illustration = find.byWidgetPredicate(
+        (w) =>
+            w is Image &&
+            w.image is AssetImage &&
+            (w.image as AssetImage).assetName ==
+                'assets/notifications/facteur_avatar.png',
+      );
+      expect(illustration, findsOneWidget);
     });
 
     testWidgets('utilise items.length du digest quand chargé', (tester) async {
