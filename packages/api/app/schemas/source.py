@@ -37,6 +37,7 @@ class SourceResponse(BaseModel):
     score_independence: float | None = None
     score_rigor: float | None = None
     score_ux: float | None = None
+    editorial_note: str | None = None
 
     class Config:
         from_attributes = True

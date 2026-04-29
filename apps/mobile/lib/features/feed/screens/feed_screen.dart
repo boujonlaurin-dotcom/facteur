@@ -683,8 +683,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         final pepitesAsync = ref.watch(pepitesProvider);
                         final pepitesList = pepitesAsync.valueOrNull ?? const [];
                         final showPepitesCarousel = pepitesList.isNotEmpty &&
-                            contents.length > 3;
-                        const pepitesCarouselPos = 3;
+                            contents.length > 5;
+                        const pepitesCarouselPos = 5;
 
                         // Empty state when a filter is active but no results
                         final hasActiveFilter =

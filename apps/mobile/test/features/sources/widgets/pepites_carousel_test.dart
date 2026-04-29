@@ -58,7 +58,7 @@ void main() {
       await tester.pumpWidget(wrap(sources: mockSources));
       await tester.pumpAndSettle();
 
-      expect(find.text('Des sources à découvrir'), findsOneWidget);
+      expect(find.text("Recos. de l'équipe Facteur"), findsOneWidget);
       expect(find.text('Le Grand Continent'), findsOneWidget);
       expect(find.text('Next.ink'), findsOneWidget);
     });
@@ -67,7 +67,7 @@ void main() {
       await tester.pumpWidget(wrap(sources: const []));
       await tester.pumpAndSettle();
 
-      expect(find.text('Des sources à découvrir'), findsNothing);
+      expect(find.text("Recos. de l'équipe Facteur"), findsNothing);
     });
 
     testWidgets('dismiss button calls notifier.dismiss', (tester) async {

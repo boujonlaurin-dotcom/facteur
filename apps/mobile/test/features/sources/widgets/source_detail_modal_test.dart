@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:facteur/features/sources/widgets/source_detail_modal.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:facteur/features/sources/models/smart_search_result.dart';
@@ -17,7 +18,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
+      ProviderScope(child: MaterialApp(
         theme: FacteurTheme.lightTheme,
         home: Scaffold(
           body: SourceDetailModal(
@@ -25,7 +26,7 @@ void main() {
             onToggleTrust: () {},
           ),
         ),
-      ),
+      )),
     );
 
     // Verify that the rational is displayed
@@ -53,7 +54,7 @@ void main() {
     ];
 
     await tester.pumpWidget(
-      MaterialApp(
+      ProviderScope(child: MaterialApp(
         theme: FacteurTheme.lightTheme,
         home: Scaffold(
           body: SingleChildScrollView(
@@ -64,7 +65,7 @@ void main() {
             ),
           ),
         ),
-      ),
+      )),
     );
 
     expect(find.text('Derniers articles'), findsOneWidget);
@@ -82,7 +83,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
+      ProviderScope(child: MaterialApp(
         theme: FacteurTheme.lightTheme,
         home: Scaffold(
           body: SingleChildScrollView(
@@ -92,7 +93,7 @@ void main() {
             ),
           ),
         ),
-      ),
+      )),
     );
 
     expect(find.text('Derniers articles'), findsNothing);
@@ -109,7 +110,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
+      ProviderScope(child: MaterialApp(
         theme: FacteurTheme.lightTheme,
         home: Scaffold(
           body: SingleChildScrollView(
@@ -120,7 +121,7 @@ void main() {
             ),
           ),
         ),
-      ),
+      )),
     );
 
     expect(find.text('Fréquence'), findsOneWidget);

@@ -136,6 +136,9 @@ class Source(Base):
         ARRAY(Text), nullable=True
     )
 
+    # Note éditoriale "Pourquoi on apprécie" — affichée dans la modal source.
+    editorial_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Relations
     contents: Mapped[list["Content"]] = relationship(
         "Content", back_populates="source", cascade="all, delete-orphan"
