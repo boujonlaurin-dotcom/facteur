@@ -75,13 +75,6 @@ class PepitesNotifier extends AsyncNotifier<List<Source>> {
     }
   }
 
-  /// Retire localement une source (après follow) sans refetch.
-  void removeLocal(String sourceId) {
-    if (!state.hasValue) return;
-    state = AsyncValue.data(
-      state.value!.where((s) => s.id != sourceId).toList(),
-    );
-  }
 }
 
 class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
