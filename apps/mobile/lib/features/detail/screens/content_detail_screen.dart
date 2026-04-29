@@ -720,11 +720,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       // avec une éventuelle modale (cookies, paywall) qui verrouille souvent
       // body { overflow: hidden } — sans scroll, le ScrollBridge JS ne peut
       // rien signaler, donc on doit cacher proactivement les overlays.
-      // Header & footer restent cachés par défaut en mode WebView et ne
-      // réapparaissent qu'au scroll vers le haut (via _onScrollDelta).
+      // Header reste toujours visible en mode WebView. Footer caché par défaut,
+      // réapparaît au scroll vers le haut (via _onScrollDelta).
       _scrollStopTimer?.cancel();
       _inactivityTimer?.cancel();
-      _animateHeaderTo(1.0);
+      _animateHeaderTo(0.0);
       _animateFooterTo(1.0);
     }
   }
@@ -789,13 +789,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       // makes per-event offset increments visibly choppy. Drive the overlays
       // with the smooth 200ms tween in either direction instead.
       if (_isWebViewActive) {
+        // Header always pinned in WebView mode — only footer hides/shows on scroll.
         if (delta > 0) {
-          if (_headerAutoTarget != 1.0) _animateHeaderTo(1.0);
           if (!_footerPermanent.value && _footerAutoTarget != 1.0) {
             _animateFooterTo(1.0);
           }
         } else if (delta < 0) {
-          if (_headerAutoTarget != 0.0) _animateHeaderTo(0.0);
           if (!_footerPermanent.value && _footerAutoTarget != 0.0) {
             _animateFooterTo(0.0);
           }
@@ -3118,9 +3117,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     return Stack(
       children: [
-        // LAYER 0: WebView — fixed in viewport, always rendered.
+        // LAYER 0: WebView — fixed in viewport below the header, always rendered.
         // Painted first so it appears visually behind the scrollable content.
-        Positioned.fill(
+        Positioned(
+          top: headerHeight,
+          left: 0,
+          right: 0,
+          bottom: 0,
           child: _buildWebViewLayer(),
         ),
 
