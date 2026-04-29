@@ -135,13 +135,13 @@ class PepiteService:
                 return 0
             return len(set(source.pepite_for_themes) & interest_slugs)
 
-        # Tri prioritaire : (1) match thème user, (2) source avec logo,
-        # (3) nb de followers — pour mettre en avant les cartes les plus
-        # "vendeuses" visuellement.
+        # Tri prioritaire : (1) source avec logo (les cartes sans logo
+        # sont moins "vendeuses" visuellement), (2) match thème user,
+        # (3) nb de followers.
         rows.sort(
             key=lambda row: (
-                _match_score(row[0]),
                 1 if row[0].logo_url else 0,
+                _match_score(row[0]),
                 row[1] or 0,
             ),
             reverse=True,
