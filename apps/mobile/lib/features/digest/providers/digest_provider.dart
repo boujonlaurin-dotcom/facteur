@@ -289,20 +289,22 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       if (digest == null) return;
 
       final isSerein = ref.read(sereinToggleProvider).enabled;
-      final firstTopic = digest.topics
-          .map((t) => t.label)
-          .firstWhere((l) => l.isNotEmpty, orElse: () => '');
+      final topTopics = digest.topics
+          .map((t) => t.label.trim())
+          .where((l) => l.isNotEmpty)
+          .take(3)
+          .toList();
 
       // Variante C (jour calme) hors v1 — Serein + variante A pour rester
       // cohérent avec le brief §6.1 (variante C = override manuel uniquement).
-      final variant = (!isSerein && firstTopic.isNotEmpty)
+      final variant = (!isSerein && topTopics.isNotEmpty)
           ? NotifVariant.variantB
           : NotifVariant.variantA;
 
       await PushNotificationService().scheduleDailyDigestNotification(
         timeSlot: settings.timeSlot,
         variant: variant,
-        teaser: variant == NotifVariant.variantB ? firstTopic : null,
+        teasers: variant == NotifVariant.variantB ? topTopics : null,
       );
       debugPrint(
         'DigestNotifier: Re-scheduled (variant: $variant, slot: ${settings.timeSlot})',

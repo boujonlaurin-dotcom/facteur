@@ -53,10 +53,10 @@ class PushNotificationService {
       tz.setLocalLocation(tz.getLocation('Europe/Paris'));
     }
 
-    // Small icon: ic_launcher_foreground a été remplacé par un asset
-    // blanc/alpha dans PR #428 — c'est l'asset correct pour la status bar.
+    // Small icon: silhouette monochrome dédiée — Android exige un asset
+    // blanc/alpha pour la status bar (sinon bloc coloré mal dimensionné).
     const androidSettings =
-        AndroidInitializationSettings('@drawable/ic_launcher_foreground');
+        AndroidInitializationSettings('@drawable/ic_stat_facteur');
 
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
@@ -121,44 +121,55 @@ class PushNotificationService {
 
   // --- Copy variants -------------------------------------------------------
 
+  /// Nom affiché comme expéditeur dans la notif Android (MessagingStyle).
+  static const String senderName = 'Ton facteur';
+
   /// Variante A — défaut, sans teaser éditorial.
-  static const String defaultTitle = 'Le facteur est passé !';
+  static const String defaultTitle = 'Le facteur est là';
   static const String defaultBody = "Ton récap du jour t'attend quand tu veux.";
 
   /// Variante C — déclenchée manuellement par l'éditorial (hors v1).
-  static const String calmTitle = 'Le facteur est passé !';
+  static const String calmTitle = 'Le facteur est là';
   static const String calmBody =
       "Rien d'important dans l'actu aujourd'hui. Belle journée !";
 
   /// Pépite communauté hebdo (vendredi 18:00, préset Curieux).
-  static const String communityTitle = 'Le facteur est passé !';
+  static const String communityTitle = 'Le facteur est là';
   static const String communityBody =
       "Les Fact·eur·isses adorent cet article. Jette-y un œil quand tu as 2 min !";
 
-  /// Construit le couple (title, body) selon la variante.
+  /// Construit le triplet (title, body, bigText) selon la variante.
   ///
-  /// - [variantB] requiert [teaser] (titre du sujet phare). Tronqué à 60c
-  ///   pour respecter le brief §6.1.
-  static ({String title, String body}) buildCopy({
+  /// - [variantB] requiert au moins un teaser dans [teasers]. Le premier
+  ///   teaser est utilisé pour le body collapsed (tronqué à 60c, brief §6.1) ;
+  ///   l'ensemble (max 3) est rendu en bullets dans le bigText Android.
+  static ({String title, String body, String bigText}) buildCopy({
     required NotifVariant variant,
-    String? teaser,
+    List<String>? teasers,
   }) {
     switch (variant) {
       case NotifVariant.variantA:
-        return (title: defaultTitle, body: defaultBody);
+        return (title: defaultTitle, body: defaultBody, bigText: defaultBody);
       case NotifVariant.variantB:
-        if (teaser == null || teaser.trim().isEmpty) {
-          return (title: defaultTitle, body: defaultBody);
+        final cleaned = (teasers ?? const <String>[])
+            .map((t) => t.trim())
+            .where((t) => t.isNotEmpty)
+            .take(3)
+            .toList();
+        if (cleaned.isEmpty) {
+          return (title: defaultTitle, body: defaultBody, bigText: defaultBody);
         }
-        final trimmed = teaser.trim();
+        final first = cleaned.first;
         final clipped =
-            trimmed.length > 60 ? '${trimmed.substring(0, 57)}…' : trimmed;
+            first.length > 60 ? '${first.substring(0, 57)}…' : first;
+        final bullets = cleaned.map((t) => '• $t').join('\n');
         return (
-          title: 'Je suis passé.',
+          title: defaultTitle,
           body: 'À la une : $clipped',
+          bigText: bullets,
         );
       case NotifVariant.variantC:
-        return (title: calmTitle, body: calmBody);
+        return (title: calmTitle, body: calmBody, bigText: calmBody);
     }
   }
 
@@ -171,11 +182,11 @@ class PushNotificationService {
   Future<bool> scheduleDailyDigestNotification({
     NotifTimeSlot timeSlot = NotifTimeSlot.morning,
     NotifVariant variant = NotifVariant.variantA,
-    String? teaser,
+    List<String>? teasers,
   }) async {
     final time = _timeOfDayFor(timeSlot);
     final scheduledDate = _nextInstanceOf(time);
-    final copy = buildCopy(variant: variant, teaser: teaser);
+    final copy = buildCopy(variant: variant, teasers: teasers);
 
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
@@ -185,17 +196,27 @@ class PushNotificationService {
         ? AndroidScheduleMode.alarmClock
         : AndroidScheduleMode.inexactAllowWhileIdle;
 
+    const sender = Person(
+      name: senderName,
+      key: 'facteur',
+      important: true,
+      icon: DrawableResourceAndroidIcon('facteur_avatar'),
+    );
     final androidDetails = AndroidNotificationDetails(
       'digest_channel',
       'Digest quotidien',
       channelDescription: 'Notification quotidienne quand ton récap est prêt',
       importance: Importance.high,
       priority: Priority.high,
-      icon: '@drawable/ic_launcher_foreground',
-      largeIcon: const DrawableResourceAndroidBitmap('facteur_avatar'),
-      styleInformation: BigTextStyleInformation(
-        copy.body,
-        contentTitle: copy.title,
+      icon: '@drawable/ic_stat_facteur',
+      color: const Color(0xFFD35400),
+      styleInformation: MessagingStyleInformation(
+        const Person(name: 'Toi'),
+        conversationTitle: copy.title,
+        groupConversation: false,
+        messages: [
+          Message(copy.bigText, DateTime.now(), sender),
+        ],
       ),
     );
     const iosDetails = DarwinNotificationDetails();
@@ -246,7 +267,8 @@ class PushNotificationService {
       channelDescription: 'Recommandation hebdomadaire des Fact·eur·isses',
       importance: Importance.high,
       priority: Priority.high,
-      icon: '@drawable/ic_launcher_foreground',
+      icon: '@drawable/ic_stat_facteur',
+      color: const Color(0xFFD35400),
       largeIcon: const DrawableResourceAndroidBitmap('facteur_avatar'),
       styleInformation: BigTextStyleInformation(
         communityBody,
