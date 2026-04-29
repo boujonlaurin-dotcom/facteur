@@ -1,8 +1,8 @@
 """Tests for PepiteService (Story 13.2 — Feed Pepites Carousel).
 
-Mock-based tests (no DB required) covering:
-- Adaptive rate-limit by followed-source palier
-- Cool-down predicate (dismiss)
+Mock-based tests (no DB required) couvrant :
+- Rate-limit uniforme (24h pour tous)
+- Cool-down (dismiss → 7j)
 - Selection logic (exclusion, theme priority, touch last_shown)
 - Dismiss
 """
@@ -17,11 +17,7 @@ import pytest
 from app.models.enums import SourceType
 from app.services.pepite_service import (
     DISMISS_COOL_DOWN_DAYS,
-    HIGH_SOURCES_THRESHOLD,
-    LOW_SOURCES_THRESHOLD,
-    RATE_LIMIT_HOURS_HIGH,
-    RATE_LIMIT_HOURS_LOW,
-    RATE_LIMIT_HOURS_MEDIUM,
+    RATE_LIMIT_HOURS,
     PepiteService,
 )
 
@@ -62,80 +58,31 @@ def _mk_source(
     )
 
 
-class TestRateLimitHours:
-    """Adaptive rate-limit window per followed-source palier."""
-
-    def test_low_palier_24h(self):
-        assert PepiteService._rate_limit_hours(0) == RATE_LIMIT_HOURS_LOW
-        assert (
-            PepiteService._rate_limit_hours(LOW_SOURCES_THRESHOLD - 1)
-            == RATE_LIMIT_HOURS_LOW
-        )
-
-    def test_medium_palier_7d(self):
-        assert (
-            PepiteService._rate_limit_hours(LOW_SOURCES_THRESHOLD)
-            == RATE_LIMIT_HOURS_MEDIUM
-        )
-        assert (
-            PepiteService._rate_limit_hours(HIGH_SOURCES_THRESHOLD - 1)
-            == RATE_LIMIT_HOURS_MEDIUM
-        )
-
-    def test_high_palier_14d(self):
-        assert (
-            PepiteService._rate_limit_hours(HIGH_SOURCES_THRESHOLD)
-            == RATE_LIMIT_HOURS_HIGH
-        )
-        assert (
-            PepiteService._rate_limit_hours(HIGH_SOURCES_THRESHOLD * 10)
-            == RATE_LIMIT_HOURS_HIGH
-        )
-
-
 class TestRateLimitPredicate:
     def test_not_rate_limited_when_personalization_none(self):
-        assert PepiteService._rate_limited(None, source_count=0) is False
+        assert PepiteService._rate_limited(None) is False
 
     def test_not_rate_limited_when_last_shown_none(self):
         perso = SimpleNamespace(pepite_carousel_last_shown_at=None)
-        assert PepiteService._rate_limited(perso, source_count=5) is False
+        assert PepiteService._rate_limited(perso) is False
 
-    def test_rate_limited_recent_low_palier(self):
+    def test_rate_limited_recent(self):
         perso = SimpleNamespace(
             pepite_carousel_last_shown_at=_now() - timedelta(hours=1),
         )
-        assert PepiteService._rate_limited(perso, source_count=5) is True
+        assert PepiteService._rate_limited(perso) is True
 
-    def test_not_rate_limited_past_24h_low_palier(self):
+    def test_not_rate_limited_past_24h(self):
         perso = SimpleNamespace(
             pepite_carousel_last_shown_at=_now()
-            - timedelta(hours=RATE_LIMIT_HOURS_LOW + 1),
+            - timedelta(hours=RATE_LIMIT_HOURS + 1),
         )
-        assert PepiteService._rate_limited(perso, source_count=5) is False
+        assert PepiteService._rate_limited(perso) is False
 
     def test_handles_naive_datetime(self):
         naive = datetime.utcnow() - timedelta(hours=1)
         perso = SimpleNamespace(pepite_carousel_last_shown_at=naive)
-        assert PepiteService._rate_limited(perso, source_count=5) is True
-
-    def test_medium_palier_blocks_for_7_days(self):
-        perso = SimpleNamespace(
-            pepite_carousel_last_shown_at=_now() - timedelta(days=6),
-        )
-        # 20 sources → 7d window → still blocked at 6d
-        assert PepiteService._rate_limited(perso, source_count=30) is True
-        # But <20 sources → 24h window → not blocked at 6d
-        assert PepiteService._rate_limited(perso, source_count=5) is False
-
-    def test_high_palier_blocks_for_14_days(self):
-        perso = SimpleNamespace(
-            pepite_carousel_last_shown_at=_now() - timedelta(days=10),
-        )
-        # 100 sources → 14d window → still blocked at 10d
-        assert PepiteService._rate_limited(perso, source_count=100) is True
-        # 30 sources → 7d window → not blocked at 10d
-        assert PepiteService._rate_limited(perso, source_count=30) is False
+        assert PepiteService._rate_limited(perso) is True
 
 
 class TestCoolDownPredicate:
@@ -162,7 +109,7 @@ class TestCoolDownPredicate:
 
 class TestShouldShow:
     @pytest.mark.asyncio
-    async def test_blocked_by_cool_down_short_circuits_without_count_query(self):
+    async def test_blocked_by_cool_down(self):
         session = AsyncMock()
         perso = SimpleNamespace(
             pepite_carousel_last_shown_at=None,
@@ -173,62 +120,35 @@ class TestShouldShow:
 
         service = PepiteService(session)
         assert await service.should_show_pepite_carousel(str(uuid4())) is False
-        session.execute.assert_not_called()  # cool-down short-circuits
 
     @pytest.mark.asyncio
-    async def test_blocked_by_rate_limit_low_palier(self):
+    async def test_blocked_by_rate_limit(self):
         session = AsyncMock()
         perso = SimpleNamespace(
             pepite_carousel_last_shown_at=_now() - timedelta(hours=1),
             pepite_carousel_dismissed_at=None,
         )
         session.scalar = AsyncMock(return_value=perso)
-        count_result = MagicMock()
-        count_result.scalar.return_value = 5
-        session.execute = AsyncMock(return_value=count_result)
 
         service = PepiteService(session)
         assert await service.should_show_pepite_carousel(str(uuid4())) is False
 
     @pytest.mark.asyncio
-    async def test_blocked_by_rate_limit_high_palier_after_10_days(self):
-        """Compte avec 60 sources → rate-limit 14j. Last shown 10j ago → bloqué."""
-        session = AsyncMock()
-        perso = SimpleNamespace(
-            pepite_carousel_last_shown_at=_now() - timedelta(days=10),
-            pepite_carousel_dismissed_at=None,
-        )
-        session.scalar = AsyncMock(return_value=perso)
-        count_result = MagicMock()
-        count_result.scalar.return_value = 60
-        session.execute = AsyncMock(return_value=count_result)
-
-        service = PepiteService(session)
-        assert await service.should_show_pepite_carousel(str(uuid4())) is False
-
-    @pytest.mark.asyncio
-    async def test_allows_when_no_personalization_and_any_source_count(self):
+    async def test_allows_when_no_personalization(self):
         session = AsyncMock()
         session.scalar = AsyncMock(return_value=None)
-        count_result = MagicMock()
-        count_result.scalar.return_value = 100
-        session.execute = AsyncMock(return_value=count_result)
 
         service = PepiteService(session)
         assert await service.should_show_pepite_carousel(str(uuid4())) is True
 
     @pytest.mark.asyncio
-    async def test_allows_when_past_rate_limit_window_for_palier(self):
-        """Compte 30 sources → 7j window. Last shown 8j ago → autorisé."""
+    async def test_allows_when_past_24h(self):
         session = AsyncMock()
         perso = SimpleNamespace(
-            pepite_carousel_last_shown_at=_now() - timedelta(days=8),
+            pepite_carousel_last_shown_at=_now() - timedelta(hours=25),
             pepite_carousel_dismissed_at=None,
         )
         session.scalar = AsyncMock(return_value=perso)
-        count_result = MagicMock()
-        count_result.scalar.return_value = 30
-        session.execute = AsyncMock(return_value=count_result)
 
         service = PepiteService(session)
         assert await service.should_show_pepite_carousel(str(uuid4())) is True
@@ -237,16 +157,12 @@ class TestShouldShow:
 class TestSelection:
     @pytest.mark.asyncio
     async def test_returns_empty_when_rate_limited(self):
-        """Rate-limited → empty."""
         session = AsyncMock()
         perso = SimpleNamespace(
             pepite_carousel_last_shown_at=_now() - timedelta(hours=1),
             pepite_carousel_dismissed_at=None,
         )
         session.scalar = AsyncMock(return_value=perso)
-        count_result = MagicMock()
-        count_result.scalar.return_value = 5  # low palier → 24h window
-        session.execute = AsyncMock(return_value=count_result)
 
         service = PepiteService(session)
         results = await service.get_pepites_for_user(str(uuid4()))
@@ -269,12 +185,9 @@ class TestSelection:
         session.scalar = AsyncMock(return_value=perso)
 
         # execute() call order:
-        # 1. _source_count (should_show_pepite_carousel)
-        # 2. followed IDs
-        # 3. interest slugs
-        # 4. candidate query
-        count_result = MagicMock()
-        count_result.scalar.return_value = 5
+        # 1. followed IDs
+        # 2. interest slugs
+        # 3. candidate query
         followed_result = MagicMock()
         followed_result.scalars.return_value.all.return_value = [followed_id]
         interests_result = MagicMock()
@@ -283,12 +196,7 @@ class TestSelection:
         sources_result.all.return_value = [(visible, 3)]
 
         session.execute = AsyncMock(
-            side_effect=[
-                count_result,
-                followed_result,
-                interests_result,
-                sources_result,
-            ]
+            side_effect=[followed_result, interests_result, sources_result]
         )
 
         service = PepiteService(session)
@@ -312,23 +220,15 @@ class TestSelection:
         )
         session.scalar = AsyncMock(return_value=perso)
 
-        count_result = MagicMock()
-        count_result.scalar.return_value = 5
         followed_result = MagicMock()
         followed_result.scalars.return_value.all.return_value = []
         interests_result = MagicMock()
         interests_result.all.return_value = [("tech",)]
-        # Return no_match FIRST in raw SQL result — should be reordered by sort
         sources_result = MagicMock()
         sources_result.all.return_value = [(no_match, 10), (match, 1)]
 
         session.execute = AsyncMock(
-            side_effect=[
-                count_result,
-                followed_result,
-                interests_result,
-                sources_result,
-            ]
+            side_effect=[followed_result, interests_result, sources_result]
         )
 
         service = PepiteService(session)
@@ -349,8 +249,6 @@ class TestSelection:
         session.add = MagicMock()
         session.flush = AsyncMock()
 
-        count_result = MagicMock()
-        count_result.scalar.return_value = 0
         followed_result = MagicMock()
         followed_result.scalars.return_value.all.return_value = []
         interests_result = MagicMock()
@@ -359,12 +257,7 @@ class TestSelection:
         sources_result.all.return_value = [(src, 0)]
 
         session.execute = AsyncMock(
-            side_effect=[
-                count_result,
-                followed_result,
-                interests_result,
-                sources_result,
-            ]
+            side_effect=[followed_result, interests_result, sources_result]
         )
 
         service = PepiteService(session)
