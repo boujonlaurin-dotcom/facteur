@@ -97,6 +97,7 @@ class SourceService:
                 score_independence=s.score_independence,
                 score_rigor=s.score_rigor,
                 score_ux=s.score_ux,
+                editorial_note=getattr(s, "editorial_note", None),
             )
             for s in custom_sources
         ]
@@ -156,6 +157,7 @@ class SourceService:
                 score_independence=s.score_independence,
                 score_rigor=s.score_rigor,
                 score_ux=s.score_ux,
+                editorial_note=getattr(s, "editorial_note", None),
             )
             for s in sources
         ]
@@ -220,6 +222,7 @@ class SourceService:
                 score_independence=s.score_independence,
                 score_rigor=s.score_rigor,
                 score_ux=s.score_ux,
+                editorial_note=getattr(s, "editorial_note", None),
             )
             for s, follower_count in rows
         ]
@@ -286,6 +289,7 @@ class SourceService:
                 score_independence=s.score_independence,
                 score_rigor=s.score_rigor,
                 score_ux=s.score_ux,
+                editorial_note=getattr(s, "editorial_note", None),
             )
             for s in sources
         ]
@@ -362,6 +366,7 @@ class SourceService:
             score_independence=source.score_independence,
             score_rigor=source.score_rigor,
             score_ux=source.score_ux,
+            editorial_note=getattr(source, "editorial_note", None),
         )
 
     async def delete_custom_source(self, user_id: str, source_id: str) -> bool:
@@ -491,6 +496,7 @@ class SourceService:
             score_independence=source.score_independence,
             score_rigor=source.score_rigor,
             score_ux=source.score_ux,
+            editorial_note=getattr(source, "editorial_note", None),
         )
 
     async def update_source_subscription(
@@ -552,6 +558,7 @@ class SourceService:
             score_independence=source.score_independence,
             score_rigor=source.score_rigor,
             score_ux=source.score_ux,
+            editorial_note=getattr(source, "editorial_note", None),
         )
 
     async def untrust_source(self, user_id: str, source_id: str) -> bool:
