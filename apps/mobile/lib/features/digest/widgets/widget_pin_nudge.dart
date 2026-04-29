@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -18,7 +19,9 @@ import '../../../core/services/widget_service.dart';
 /// to track whether the nudge has already been displayed.
 class WidgetPinNudge {
   /// Returns true if the nudge should be shown (Android + never shown before).
+  /// `dart:io`'s `Platform` throws on Web, so guard with `kIsWeb` first.
   static Future<bool> shouldShow() async {
+    if (kIsWeb) return false;
     if (!Platform.isAndroid) return false;
     return NudgeService().canShow(NudgeIds.widgetPinAndroid);
   }

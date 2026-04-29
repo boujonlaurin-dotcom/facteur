@@ -326,10 +326,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }
     });
 
-    // First-time save+notes nudge — gating is enforced by the coordinator's
-    // prereq on welcome_tour (device-scoped key, legacy fallback honored).
-    // The article screen can't be reached during the tour (overlay blocks
-    // taps), so no extra "tour active" guard needed here.
+    // First-time save+notes nudge.
     _requestSaveNotesNudge();
 
     // Persist article open count for triggers (read_on_site 4th article,

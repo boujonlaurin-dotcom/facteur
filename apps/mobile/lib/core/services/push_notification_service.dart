@@ -232,7 +232,7 @@ class PushNotificationService {
       ),
       androidScheduleMode: scheduleMode,
       matchDateTimeComponents: DateTimeComponents.time,
-      payload: 'route:/digest',
+      payload: 'route:/feed',
     );
 
     debugPrint(
@@ -390,7 +390,7 @@ class PushNotificationService {
   }
 
   static String _routeFromPayload(String? payload) {
-    if (payload == null || !payload.startsWith('route:')) return '/digest';
+    if (payload == null || !payload.startsWith('route:')) return '/feed';
     return payload.substring('route:'.length);
   }
 }

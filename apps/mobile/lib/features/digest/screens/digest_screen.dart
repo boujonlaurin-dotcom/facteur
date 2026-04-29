@@ -12,21 +12,12 @@ import '../../../shared/widgets/loaders/loading_view.dart';
 import '../../../shared/widgets/mode_accent.dart';
 import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../../../shared/widgets/states/laurin_fallback_view.dart';
-import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../../core/providers/analytics_provider.dart';
-import '../../../core/providers/navigation_providers.dart';
-import '../../../widgets/design/facteur_logo.dart';
 import '../../feed/models/content_model.dart';
 
 import '../../feed/providers/feed_provider.dart';
-import '../../app_update/providers/app_update_provider.dart';
-import '../../app_update/widgets/update_button.dart';
-import '../../app_update/widgets/update_modal.dart';
-import '../../gamification/widgets/streak_indicator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
-import '../../notifications/widgets/notification_activation_modal.dart';
-import '../../notifications/widgets/notification_renudge_banner.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../models/community_carousel_model.dart';
@@ -35,11 +26,10 @@ import '../providers/digest_format_provider.dart';
 import '../providers/community_carousel_provider.dart';
 import '../providers/digest_provider.dart';
 import '../providers/serein_toggle_provider.dart';
-import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../../../core/services/widget_service.dart';
 import '../widgets/digest_briefing_section.dart';
+import '../widgets/digest_hero.dart';
 import '../widgets/digest_personalization_sheet.dart';
-import '../widgets/digest_welcome_modal.dart';
 import '../widgets/widget_pin_nudge.dart';
 import 'closure_screen.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
@@ -56,9 +46,6 @@ class DigestScreen extends ConsumerStatefulWidget {
 }
 
 class _DigestScreenState extends ConsumerState<DigestScreen> {
-  bool _showWelcome = false;
-  bool _hasCheckedWelcome = false;
-  bool _hasCheckedUpdate = false;
   int _consecutiveErrorCount = 0;
   final ScrollController _scrollController = ScrollController();
   // Sprint 2 PR1 — dedupe digest_opened + digest_item_viewed per digest_id.
@@ -70,107 +57,12 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     super.dispose();
   }
 
-  void _scrollToTop() {
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeOutCubic,
-      );
-    }
-  }
-
-  bool _activationModalShown = false;
-
   @override
   void initState() {
     super.initState();
     WidgetService.initWidgetIfNeeded();
-    // Note: _checkFirstTimeWelcome moved to didChangeDependencies()
-    // because GoRouterState.of(context) requires mounted context
-  }
-
-  /// Trigger B (brief §4.1) — première ouverture post-update.
-  /// La décision passe par `firstImpressionSlotProvider` : pas de modal
-  /// pendant l'onboarding, pas de modal en parallèle du Welcome Tour, et
-  /// au plus une modal par session.
-  void _maybeShowActivationModal(FirstImpressionSlot slot) {
-    if (_activationModalShown) return;
-    if (slot != FirstImpressionSlot.notifModal) return;
-    _activationModalShown = true;
+    // Nudge to pin the Android widget once after first display.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      ref.read(notifModalConsumedThisSessionProvider.notifier).state = true;
-      showNotificationActivationModal(
-        context,
-        ref,
-        trigger: ActivationTrigger.update,
-      );
-    });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-
-    // ignore: avoid_print
-    print('DigestScreen: didChangeDependencies');
-
-    // Robust check for first-time navigation parameter
-    try {
-      final state = GoRouterState.of(context);
-      final isFirstStr = state.uri.queryParameters['first'];
-      final isFirst = isFirstStr == 'true';
-
-      // ignore: avoid_print
-      print('DigestScreen: isFirst=$isFirst (raw: $isFirstStr)');
-
-      if (isFirst && !_hasCheckedWelcome) {
-        _hasCheckedWelcome = true; // Mark as checked to prevent re-triggering
-        // Use post-frame callback to avoid showing modal during build
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            _checkFirstTimeWelcome();
-          }
-        });
-      }
-    } catch (e) {
-      // ignore: avoid_print
-      print('DigestScreen: Error accessing GoRouterState: $e');
-    }
-  }
-
-  Future<void> _checkFirstTimeWelcome() async {
-    try {
-      // Check for 'first' query param (from onboarding)
-      final uri = GoRouterState.of(context).uri;
-      final isFirstTime = uri.queryParameters['first'] == 'true';
-
-      if (isFirstTime) {
-        // Also check shared preferences to ensure we only show once
-        final shouldShow = await DigestWelcomeModal.shouldShowWelcome();
-        if (shouldShow && mounted) {
-          setState(() {
-            _showWelcome = true;
-          });
-        }
-      }
-    } catch (e, stack) {
-      debugPrint('DigestScreen: Error in _checkFirstTimeWelcome: $e');
-      debugPrint('Stack: $stack');
-      // Silently ignore errors - welcome modal is not critical
-    }
-  }
-
-  void _dismissWelcome() {
-    setState(() {
-      _showWelcome = false;
-    });
-    // Clear the query param from URL
-    context.go(RoutePaths.digest);
-
-    // After a short delay, nudge to pin the Android home screen widget
-    Future.delayed(const Duration(milliseconds: 800), () {
       if (mounted) {
         WidgetPinNudge.show(context, ref);
       }
@@ -329,12 +221,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     final digestAsync = ref.watch(digestProvider);
     final sereinState = ref.watch(sereinToggleProvider);
 
-    // Orchestrateur "premier impact" — arbitre entre welcome tour, modal
-    // notif, re-nudge banner et well-informed prompt. Garantit max 1 modal
-    // + 1 nudge par session.
-    final impressionSlot = ref.watch(firstImpressionSlotProvider);
-    _maybeShowActivationModal(impressionSlot);
-
     // Initialiser le format depuis la réponse API
     ref.listen(digestProvider, (previous, next) {
       next.whenData((digest) {
@@ -392,24 +278,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       }
     });
 
-    // Listen to scroll to top trigger
-    ref.listen(digestScrollTriggerProvider, (_, __) => _scrollToTop());
-
-    // Show update modal at launch when an update is available
-    ref.listen(appUpdateProvider, (previous, next) {
-      if (_hasCheckedUpdate) return;
-      next.whenData((info) {
-        if (info != null && info.updateAvailable && UpdateModal.shouldShow()) {
-          _hasCheckedUpdate = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              UpdateModal.show(context, info: info);
-            }
-          });
-        }
-      });
-    });
-
     debugPrint('DigestScreen: digestAsync state = ${digestAsync.toString()}');
 
     // Open closure modal when digest completes. Rendered as a modal (not a
@@ -454,37 +322,39 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
               child: CustomScrollView(
                 controller: _scrollController,
                 slivers: [
-                  // Feed-style header with logo, streak, and update button
-                  const SliverToBoxAdapter(
+                  // Header : back rond + titre majuscules
+                  SliverToBoxAdapter(
                     child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: FacteurSpacing.space6,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space4,
                         vertical: FacteurSpacing.space2,
                       ),
-                      child: Stack(
-                        alignment: Alignment.center,
+                      child: Row(
                         children: [
-                          FacteurLogo(size: 22, showIcon: false),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              StreakIndicator(),
-                              UpdateButton(),
-                            ],
+                          _CircularBackButton(onTap: () => context.pop()),
+                          const SizedBox(width: 12),
+                          Text(
+                            "L'ESSENTIEL DU JOUR",
+                            style: FacteurTypography.stamp(
+                                    colors.textTertiary)
+                                .copyWith(
+                              fontSize: 12,
+                              letterSpacing: 1.4,
+                            ),
                           ),
                         ],
                       ),
                     ),
                   ),
 
-                  // Re-nudge banner (≥7j après refus, cap 3, espacement 14j) —
-                  // gaté par l'orchestrateur (1 nudge max, pas en parallèle
-                  // d'une modal ou du welcome tour).
+                  // Hero : pill + titre + meta + illustration facteur
                   SliverToBoxAdapter(
-                    child: impressionSlot == FirstImpressionSlot.renudgeBanner
-                        ? const NotificationRenudgeBanner()
-                        : const SizedBox.shrink(),
+                    child: DigestHero(
+                      articleCount:
+                          digestAsync.valueOrNull?.items.length ?? 5,
+                      targetDate:
+                          digestAsync.valueOrNull?.targetDate ?? DateTime.now(),
+                    ),
                   ),
 
                   // Success banner when digest is completed
@@ -621,16 +491,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                     ),
                   ),
 
-                  // Story 14.3 — Well-informed self-report inline prompt.
-                  // Cooldown/gating dans wellInformedShouldShowProvider, ET
-                  // arbitrage par firstImpressionSlotProvider (1 nudge max
-                  // par session, jamais en parallèle d'une modal).
-                  SliverToBoxAdapter(
-                    child: impressionSlot == FirstImpressionSlot.wellInformed
-                        ? const WellInformedPrompt()
-                        : const SizedBox.shrink(),
-                  ),
-
                   // Digest Briefing Section
                   SliverToBoxAdapter(
                     child: Padding(
@@ -724,13 +584,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
             ),
           ),
         ),
-        // Welcome modal overlay for first-time users
-        if (_showWelcome)
-          Positioned.fill(
-            child: DigestWelcomeModal(
-              onDismiss: _dismissWelcome,
-            ),
-          ),
       ],
     );
   }
@@ -817,5 +670,37 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       default:
         return SourceType.article;
     }
+  }
+}
+
+class _CircularBackButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _CircularBackButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: colors.surface.withOpacity(0.9),
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            PhosphorIcons.arrowLeft(PhosphorIconsStyle.bold),
+            size: 18,
+            color: colors.textPrimary,
+          ),
+        ),
+      ),
+    );
   }
 }

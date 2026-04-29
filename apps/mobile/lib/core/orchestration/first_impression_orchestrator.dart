@@ -3,17 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/auth_state.dart';
 import '../../features/notifications/providers/notification_renudge_provider.dart';
 import '../../features/settings/providers/notifications_settings_provider.dart';
-import '../../features/welcome_tour/controllers/welcome_tour_controller.dart';
 import '../../features/well_informed/providers/well_informed_prompt_provider.dart';
 
-/// Slot d'engagement éligible à l'arrivée sur le Digest.
+/// Slot d'engagement éligible à l'arrivée sur le Feed.
 ///
 /// Garantit qu'au plus **un** overlay modal ET **un** nudge inline sont
-/// éligibles à un instant donné. Sans cet arbitrage, welcome tour, modal
-/// notif, re-nudge banner et well-informed prompt se cumulaient.
+/// éligibles à un instant donné. Sans cet arbitrage, modal notif, re-nudge
+/// banner et well-informed prompt se cumulaient.
 enum FirstImpressionSlot {
   none,
-  welcomeTour,
   notifModal,
   renudgeBanner,
   wellInformed,
@@ -30,15 +28,13 @@ final nudgeConsumedThisSessionProvider = StateProvider<bool>((_) => false);
 ///
 /// Règles :
 /// 1. Onboarding pas terminé → rien (l'onboarding occupe toute la fenêtre).
-/// 2. Welcome tour actif ou jamais vu → `welcomeTour` (et rien d'autre).
-/// 3. Sync préfs notif terminé ET `modalSeen=false` ET pas déjà consommé →
+/// 2. Sync préfs notif terminé ET `modalSeen=false` ET pas déjà consommé →
 ///    `notifModal`.
-/// 4. Re-nudge éligible (cap, espacement, refus passé) ET aucun nudge déjà
+/// 3. Re-nudge éligible (cap, espacement, refus passé) ET aucun nudge déjà
 ///    consommé cette session → `renudgeBanner`.
-/// 5. Well-informed prompt dû ET aucun nudge déjà consommé → `wellInformed`.
+/// 4. Well-informed prompt dû ET aucun nudge déjà consommé → `wellInformed`.
 final firstImpressionSlotProvider = Provider<FirstImpressionSlot>((ref) {
   final auth = ref.watch(authStateProvider);
-  final tour = ref.watch(welcomeTourControllerProvider);
   final notif = ref.watch(notificationsSettingsProvider);
   final modalConsumed = ref.watch(notifModalConsumedThisSessionProvider);
   final nudgeConsumed = ref.watch(nudgeConsumedThisSessionProvider);
@@ -50,10 +46,6 @@ final firstImpressionSlotProvider = Provider<FirstImpressionSlot>((ref) {
     return FirstImpressionSlot.none;
   }
   if (auth.needsOnboarding) return FirstImpressionSlot.none;
-
-  if (tour.active || !auth.welcomeTourSeen) {
-    return FirstImpressionSlot.welcomeTour;
-  }
 
   if (!modalConsumed && notif.synced && !notif.modalSeen) {
     return FirstImpressionSlot.notifModal;
