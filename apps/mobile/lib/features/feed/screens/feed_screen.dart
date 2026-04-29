@@ -683,12 +683,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             contents.length > 6;
                         const savedNudgePos = 6;
 
-                        final lcValue = ref
-                            .watch(learningCheckpointProvider)
-                            .valueOrNull;
-                        final bool showConstruireFlux =
-                            (lcValue?.shouldShow ?? false) &&
-                                contents.length > 3;
+                        final bool showConstruireFlux = ref.watch(
+                              learningCheckpointProvider.select(
+                                (s) => s.valueOrNull?.shouldShow ?? false,
+                              ),
+                            ) &&
+                            contents.length > 3;
 
                         // Empty state when a filter is active but no results
                         final hasActiveFilter =
