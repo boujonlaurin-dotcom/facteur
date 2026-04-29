@@ -33,9 +33,11 @@ class PepiteCard extends StatelessWidget {
         width: 170,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: colors.surface,
+          color: colors.primary.withValues(alpha: 0.04),
           borderRadius: BorderRadius.circular(FacteurRadius.medium),
-          border: Border.all(color: colors.border),
+          border: Border.all(
+            color: colors.primary.withValues(alpha: 0.22),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
