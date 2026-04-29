@@ -58,6 +58,7 @@ import '../widgets/interest_filter_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/widgets/serein_toggle_chip.dart';
 import '../../sources/providers/sources_providers.dart';
+import '../../sources/widgets/pepites_carousel.dart';
 import '../../progress/widgets/progression_card.dart';
 import '../../../shared/widgets/loaders/loading_view.dart';
 import '../../../shared/widgets/mode_accent.dart';
@@ -678,6 +679,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             contents.length > 6;
                         const savedNudgePos = 6;
 
+                        // Backend gère rate-limit + cool-down : liste vide → widget invisible.
+                        final pepitesAsync = ref.watch(pepitesProvider);
+                        final pepitesList = pepitesAsync.valueOrNull ?? const [];
+                        final showPepitesCarousel = pepitesList.isNotEmpty &&
+                            contents.length > 3;
+                        const pepitesCarouselPos = 3;
+
                         // Empty state when a filter is active but no results
                         final hasActiveFilter =
                             notifier.selectedTheme != null ||
@@ -697,7 +705,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         // trailing (loader ou spacer). CaughtUp et SavedNudge sont
                         // mutuellement exclusifs → intercalatedCount ≤ 1.
                         final int intercalatedCount =
-                            (showCaughtUp ? 1 : 0) + (showSavedNudge ? 1 : 0) + sortedCarousels.length;
+                            (showCaughtUp ? 1 : 0) +
+                            (showSavedNudge ? 1 : 0) +
+                            (showPepitesCarousel ? 1 : 0) +
+                            sortedCarousels.length;
                         final int effectiveChildCount =
                             contents.isEmpty ? 1 : contents.length + intercalatedCount + 1;
 
@@ -784,6 +795,21 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 // Compter la CaughtUpCard si elle est passée (pour le décalage)
                                 if (showCaughtUp && listIndex > caughtUpPos) {
                                   contentOffset++;
+                                }
+
+                                if (showPepitesCarousel) {
+                                  final pepitesEffectivePos =
+                                      pepitesCarouselPos + contentOffset;
+                                  if (listIndex == pepitesEffectivePos) {
+                                    return const Padding(
+                                      key: ValueKey('pepites_carousel'),
+                                      padding: EdgeInsets.only(bottom: 16),
+                                      child: PepitesCarousel(),
+                                    );
+                                  }
+                                  if (listIndex > pepitesEffectivePos) {
+                                    contentOffset++;
+                                  }
                                 }
 
                                 // Saved Nudge at position 6

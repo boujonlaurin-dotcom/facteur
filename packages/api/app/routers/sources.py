@@ -37,6 +37,7 @@ from app.schemas.source import (
     UpdateSourceWeightRequest,
 )
 from app.services.feed_cache import FEED_CACHE
+from app.services.pepite_service import PepiteService
 from app.services.search.smart_source_search import (
     SmartSourceSearchService,
     mark_search_abandoned,
@@ -171,6 +172,36 @@ async def get_trending_sources(
     service = SourceService(db)
     sources = await service.get_trending_sources(user_id=user_id, limit=limit)
     return sources
+
+
+@router.get("/pepites", response_model=list[SourceResponse])
+async def get_pepites(
+    limit: int = 4,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[SourceResponse]:
+    """Carousel "Pépites" — sources curées à pousser dans le feed.
+
+    Liste vide si l'utilisateur ne remplit pas les conditions
+    (rate-limité ou dismiss récent).
+    """
+    service = PepiteService(db)
+    sources = await service.get_pepites_for_user(user_id, limit=limit)
+    if sources:
+        await db.commit()
+    return sources
+
+
+@router.post("/pepites/dismiss", status_code=status.HTTP_204_NO_CONTENT)
+async def dismiss_pepites_carousel(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Dismiss le carousel "Pépites" — cool-down 7j avant réapparition."""
+    service = PepiteService(db)
+    await service.dismiss_pepite_carousel(user_id)
+    await db.commit()
+    return None
 
 
 THEME_LABELS = {
