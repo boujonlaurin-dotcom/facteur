@@ -697,6 +697,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
   }
 
+  /// Exit WebView mode and return to in-app article reading.
+  void _exitWebViewMode() {
+    setState(() {
+      _isWebViewActive = false;
+      _ctaTapped = false;
+      _offsetsComputed = false;
+      _bridgeEndOffset = 0;
+    });
+    _footerPermanent.value = false;
+    _animateFooterTo(0.0);
+    _scrollController.jumpTo(0);
+  }
+
   /// Scroll listener driving WebView activation.
   void _onScrollToSite() {
     if (!_ctaTapped || !_offsetsComputed) return;
@@ -2551,7 +2564,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     size: 16,
                     color: colors.textSecondary,
                   ),
-                  onPressed: () => context.pop(_content),
+                  onPressed: _isWebViewActive
+                      ? _exitWebViewMode
+                      : () => context.pop(_content),
                 ),
                 const SizedBox(width: 4),
 
