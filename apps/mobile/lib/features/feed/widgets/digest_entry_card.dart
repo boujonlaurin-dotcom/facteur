@@ -1,6 +1,3 @@
-import 'dart:async';
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -19,7 +16,7 @@ import '../../digest/widgets/lecture_apaisee_pill.dart';
 ///
 /// Toujours 2 cartes : « L'essentiel du jour » et « Une lecture apaisée ».
 /// L'ordre dépend du toggle Serein (Lecture apaisée en tête quand activé).
-class DigestEntryCard extends ConsumerStatefulWidget {
+class DigestEntryCard extends ConsumerWidget {
   const DigestEntryCard({super.key});
 
   static const double _carouselHeight = 170;
@@ -28,35 +25,7 @@ class DigestEntryCard extends ConsumerStatefulWidget {
   static const double _gap = 12;
 
   @override
-  ConsumerState<DigestEntryCard> createState() => _DigestEntryCardState();
-}
-
-class _DigestEntryCardState extends ConsumerState<DigestEntryCard>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse;
-  Timer? _pulseDelay;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulse = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    );
-    _pulseDelay = Timer(const Duration(milliseconds: 800), () {
-      if (mounted) _pulse.forward();
-    });
-  }
-
-  @override
-  void dispose() {
-    _pulseDelay?.cancel();
-    _pulse.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final dual = ref.watch(dualDigestPreviewProvider);
     final isSerein = ref.watch(sereinToggleProvider).enabled;
     final colors = context.facteurColors;
@@ -67,8 +36,8 @@ class _DigestEntryCardState extends ConsumerState<DigestEntryCard>
     final targetDate = dual.normal?.targetDate ?? DateTime.now();
 
     final width = MediaQuery.of(context).size.width -
-        (DigestEntryCard._horizontalPadding * 2) -
-        DigestEntryCard._peek;
+        (_horizontalPadding * 2) -
+        _peek;
 
     void openDigest({required bool requireSerein}) {
       if (requireSerein != isSerein) {
@@ -115,23 +84,14 @@ class _DigestEntryCardState extends ConsumerState<DigestEntryCard>
         : [essentielCard, lectureApaiseeCard];
 
     return SizedBox(
-      height: DigestEntryCard._carouselHeight,
-      child: AnimatedBuilder(
-        animation: _pulse,
-        builder: (context, child) {
-          final scale = 1.0 + 0.04 * math.sin(_pulse.value * 2 * math.pi);
-          return Transform.scale(scale: scale, child: child);
-        },
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(
-              horizontal: DigestEntryCard._horizontalPadding),
-          physics: const BouncingScrollPhysics(),
-          itemCount: cards.length,
-          separatorBuilder: (_, __) =>
-              const SizedBox(width: DigestEntryCard._gap),
-          itemBuilder: (_, i) => cards[i],
-        ),
+      height: _carouselHeight,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: _horizontalPadding),
+        physics: const BouncingScrollPhysics(),
+        itemCount: cards.length,
+        separatorBuilder: (_, __) => const SizedBox(width: _gap),
+        itemBuilder: (_, i) => cards[i],
       ),
     );
   }
@@ -171,6 +131,7 @@ class _CarouselCard extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.hardEdge,
         children: [
+          // Subtle radial colour veil — top-right corner
           Positioned(
             top: 0,
             right: 0,

@@ -1555,24 +1555,48 @@ class _FeedTourneeHeader extends ConsumerWidget {
     final firstName = (profile.displayName ?? '').trim().split(' ').first;
     final hello = DateTime.now().hour >= 18 ? 'Bonsoir' : 'Bonjour';
     final greeting = firstName.isEmpty ? '$hello,' : '$hello $firstName,';
+    final now = DateTime.now();
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
+            _formatStamp(now),
+            style: FacteurTypography.stamp(colors.textTertiary)
+                .copyWith(letterSpacing: 1.2),
+          ),
+          const SizedBox(height: 6),
+          Text(
             greeting,
             style: FacteurTypography.serifTitle(colors.textPrimary)
                 .copyWith(fontSize: 26, height: 1.15),
           ),
           Text(
-            'Vos infos du jour',
+            'votre tournée du jour',
             style: FacteurTypography.serifTitle(colors.textPrimary)
                 .copyWith(fontSize: 26, height: 1.15),
           ),
         ],
       ),
     );
+  }
+
+  static const List<String> _frDays = [
+    'LUNDI', 'MARDI', 'MERCREDI', 'JEUDI', 'VENDREDI', 'SAMEDI', 'DIMANCHE',
+  ];
+
+  static const List<String> _frMonthsAbbr = [
+    'JANV.', 'FÉVR.', 'MARS', 'AVR.', 'MAI', 'JUIN',
+    'JUIL.', 'AOÛT', 'SEPT.', 'OCT.', 'NOV.', 'DÉC.',
+  ];
+
+  static String _formatStamp(DateTime d) {
+    final day = _frDays[d.weekday - 1];
+    final month = _frMonthsAbbr[d.month - 1];
+    final hh = d.hour.toString();
+    final mm = d.minute.toString().padLeft(2, '0');
+    return '$day ${d.day} $month · ${hh}H$mm';
   }
 }
 

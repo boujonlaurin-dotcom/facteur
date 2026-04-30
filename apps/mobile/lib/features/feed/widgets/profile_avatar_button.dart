@@ -4,8 +4,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 
-/// Round filled button (primary) with a Phosphor user icon — opens settings
-/// from the feed header.
+/// Gear icon button — opens settings from the feed header.
 class ProfileAvatarButton extends StatelessWidget {
   final double size;
   final VoidCallback? onTap;
