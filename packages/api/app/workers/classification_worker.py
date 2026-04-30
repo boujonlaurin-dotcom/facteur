@@ -240,7 +240,13 @@ class ClassificationWorker:
                     )
             else:
                 all_results = [
-                    {"topics": [], "serene": None, "entities": []} for _ in batch_items
+                    {
+                        "topics": [],
+                        "serene": None,
+                        "good_news": None,
+                        "entities": [],
+                    }
+                    for _ in batch_items
                 ]
 
             # Process results
@@ -258,15 +264,22 @@ class ClassificationWorker:
                         result = (
                             all_results[batch_result_idx]
                             if batch_result_idx < len(all_results)
-                            else {"topics": [], "serene": None, "entities": []}
+                            else {
+                                "topics": [],
+                                "serene": None,
+                                "good_news": None,
+                                "entities": [],
+                            }
                         )
                         batch_result_idx += 1
                         topics = result.get("topics", [])
                         is_serene = result.get("serene")
+                        is_good_news = result.get("good_news")
                         entities = result.get("entities", [])
                     else:
                         topics = []
                         is_serene = None
+                        is_good_news = None
                         entities = []
 
                     # If still no topics after individual retry, let the retry
@@ -283,7 +296,11 @@ class ClassificationWorker:
                         )
 
                     await service.mark_completed_with_entities(
-                        item.id, topics, entities, is_serene=is_serene
+                        item.id,
+                        topics,
+                        entities,
+                        is_serene=is_serene,
+                        is_good_news=is_good_news,
                     )
 
                 except Exception as e:

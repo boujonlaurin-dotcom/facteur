@@ -60,7 +60,7 @@ async def _check_email_confirmed_with_retry(
     from sqlalchemy.exc import OperationalError
     from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 
-    from app.database import async_session_maker
+    from app.database import safe_async_session
 
     global _email_confirmed_cache
 
@@ -78,7 +78,7 @@ async def _check_email_confirmed_with_retry(
     for attempt in range(max_retries):
         try:
             # Use asyncio.wait_for to add timeout to the entire session operation
-            async with async_session_maker() as session:
+            async with safe_async_session() as session:
                 # Execute query with shorter timeout to avoid holding connections
                 result = await asyncio.wait_for(
                     session.execute(

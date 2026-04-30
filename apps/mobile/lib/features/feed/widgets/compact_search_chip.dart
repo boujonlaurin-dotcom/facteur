@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../config/theme.dart';
 import 'search_filter_sheet.dart';
 
 typedef SearchChangedCallback = void Function(
@@ -81,39 +82,32 @@ class _InactiveChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final muted = colorScheme.onSurface.withOpacity(0.5);
-    final trackColor = isDark
-        ? Colors.white.withOpacity(0.08)
-        : Colors.black.withOpacity(0.05);
+    final colors = context.facteurColors;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
         height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: trackColor,
+          borderRadius: BorderRadius.circular(FacteurRadius.full),
+          color: colors.surface,
+          border: Border.all(color: colors.border),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Opacity(
-              opacity: 0.65,
-              child: Icon(
-                PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold),
-                size: 16,
-                color: muted,
-              ),
+            Icon(
+              PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold),
+              size: 14,
+              color: colors.textSecondary,
             ),
             const SizedBox(width: 5),
             Text(
-              '#Actus',
+              'Actus',
               style: TextStyle(
                 fontSize: 12,
-                color: muted,
+                color: colors.textPrimary,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -142,10 +136,11 @@ class _ActiveChip extends StatelessWidget {
 
     return Container(
       height: 28,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(FacteurRadius.full),
         color: primary.withOpacity(0.12),
+        border: Border.all(color: primary),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

@@ -23,7 +23,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import async_session_maker
+from app.database import safe_async_session
 from app.models.daily_digest import DailyDigest
 from app.models.user import UserProfile
 from app.services.digest_generation_state_service import (
@@ -169,7 +169,7 @@ class DigestGenerationJob:
                 # courtes pendant les 3-5 min de LLM ; évite d'agripper la
                 # session batch pour toute la durée. Cf. bug-infinite-load-requests.md P1.
                 pipeline = EditorialPipelineService(
-                    session, session_maker=async_session_maker
+                    session, session_maker=safe_async_session
                 )
                 if pipeline.llm.is_ready and user_ids:
                     global_candidates = await self._get_global_candidates(session)
@@ -332,10 +332,14 @@ class DigestGenerationJob:
         # we keep it behind the mode branch to match existing behaviour.
         stmt = select(Content).options(selectinload(Content.source))
         if mode == "serein":
-            from app.services.recommendation.filter_presets import apply_serein_filter
+            # Mode "Bonnes nouvelles" : hard-filter is_good_news=True. Pool
+            # potentiellement plus restreint que l'ancien serein, c'est voulu.
+            from app.services.recommendation.filter_presets import (
+                apply_good_news_filter,
+            )
 
             stmt = stmt.join(Source, Content.source_id == Source.id)
-            stmt = apply_serein_filter(stmt)
+            stmt = apply_good_news_filter(stmt)
         stmt = (
             stmt.where(Content.published_at >= cutoff)
             .order_by(Content.published_at.desc())
@@ -422,7 +426,7 @@ class DigestGenerationJob:
 
         async def process_with_limit(user_id: UUID) -> None:
             # Open a fresh session per user so errors don't poison peers
-            async with semaphore, async_session_maker() as user_session:
+            async with semaphore, safe_async_session() as user_session:
                 try:
                     await self._generate_digest_for_user(
                         user_session,
@@ -447,7 +451,7 @@ class DigestGenerationJob:
                     # variants as failed in a fresh session so rollback
                     # doesn't erase the observability row.
                     try:
-                        async with async_session_maker() as state_session:
+                        async with safe_async_session() as state_session:
                             for is_ser in (False, True):
                                 await state_mark_failed(
                                     state_session,
@@ -470,7 +474,7 @@ class DigestGenerationJob:
         async def _missing_pairs() -> list[tuple[UUID, bool]]:
             """Return (user_id, is_serene) pairs missing from daily_digest."""
             expected = {(uid, is_ser) for uid in user_ids for is_ser in (False, True)}
-            async with async_session_maker() as ro_session:
+            async with safe_async_session() as ro_session:
                 result = await ro_session.execute(
                     select(DailyDigest.user_id, DailyDigest.is_serene).where(
                         DailyDigest.target_date == target_date,
@@ -619,9 +623,7 @@ class DigestGenerationJob:
                     # session_maker propagé → pipeline LLM utilisera des
                     # sessions courtes et commit()ra user_session avant LLM
                     # pour libérer la connexion au pool.
-                    selector = DigestSelector(
-                        session, session_maker=async_session_maker
-                    )
+                    selector = DigestSelector(session, session_maker=safe_async_session)
                     digest_items = await selector.select_for_user(
                         user_id=user_id,
                         limit=user_target,
@@ -723,7 +725,7 @@ class DigestGenerationJob:
                     # so this user's main session can continue with the
                     # other variant cleanly.
                     try:
-                        async with async_session_maker() as variant_state_session:
+                        async with safe_async_session() as variant_state_session:
                             await state_mark_failed(
                                 variant_state_session,
                                 user_id,
@@ -796,7 +798,7 @@ async def run_digest_generation(
     mark_generation_started()
 
     # Obtenir une session depuis le contexte
-    async with async_session_maker() as session:
+    async with safe_async_session() as session:
         try:
             result = await job.run(session, target_date)
             await session.commit()
@@ -837,7 +839,7 @@ async def generate_digest_for_user(
     if target_date is None:
         target_date = today_paris()
 
-    async with async_session_maker() as session:
+    async with safe_async_session() as session:
         try:
             # Vérifier l'existant
             if not force:
@@ -867,7 +869,7 @@ async def generate_digest_for_user(
             # Générer — session_maker pour que la pipeline LLM (si format
             # éditorial activé) ouvre des sessions courtes et n'agrippe pas
             # la session de regen. Cf. bug-infinite-load-requests.md (P1).
-            selector = DigestSelector(session, session_maker=async_session_maker)
+            selector = DigestSelector(session, session_maker=safe_async_session)
             digest_items = await selector.select_for_user(
                 user_id=user_id,
                 limit=DiversityConstraints.TARGET_DIGEST_SIZE,

@@ -41,7 +41,7 @@ from app.models.user import UserProfile, UserSubtopic
 from app.schemas.digest import DigestScoreBreakdown
 from app.services.briefing.importance_detector import ImportanceDetector
 from app.services.recommendation.filter_presets import (
-    apply_serein_filter,
+    apply_good_news_filter,
     is_sport_content,
 )
 from app.services.recommendation.scoring_config import ScoringWeights
@@ -770,11 +770,13 @@ class DigestSelector:
                         Content.is_paid.is_not(True)
                     )
 
-            # Appliquer le filtre serein si demandé
+            # Mode "serein" devient "Bonnes nouvelles du jour" : hard-filter
+            # is_good_news=True. La promesse prime sur la quantité (digest
+            # potentiellement partiel). Les `sensitive_themes` n'ont plus
+            # d'effet ici — bonne nouvelle ⇒ déjà non-anxiogène par construction.
             if mode == "serein":
-                user_sources_query = apply_serein_filter(
+                user_sources_query = apply_good_news_filter(
                     user_sources_query,
-                    sensitive_themes=sensitive_themes,
                     excluded_topics=excluded_topics,
                 )
 
@@ -844,11 +846,10 @@ class DigestSelector:
             else:
                 curated_query = curated_query.where(Content.is_paid.is_not(True))
 
-        # Appliquer le filtre serein si demandé
+        # Mode "Bonnes nouvelles" : hard-filter is_good_news=True (cf. supra).
         if mode == "serein":
-            curated_query = apply_serein_filter(
+            curated_query = apply_good_news_filter(
                 curated_query,
-                sensitive_themes=sensitive_themes,
                 excluded_topics=excluded_topics,
             )
 
@@ -858,8 +859,9 @@ class DigestSelector:
 
         curated_count = len(curated_candidates)
 
-        # Étape 3: In serein mode, include serein_default sources (humorous/satirical)
-        # even if user doesn't follow them and they aren't curated.
+        # Étape 3: En mode "Bonnes nouvelles", on conserve le pool serein_default
+        # (sources humoristiques/satiriques) MAIS on exige aussi is_good_news=True.
+        # Sans ce gate, des billets satiriques anodins sortent comme "bonne nouvelle".
         serein_default_count = 0
         if mode == "serein":
             existing_ids = {c.id for c in candidates}
@@ -872,6 +874,7 @@ class DigestSelector:
                     Content.published_at >= since,
                     Source.serein_default == True,  # noqa: E712
                     Source.is_active == True,  # noqa: E712
+                    Content.is_good_news == True,  # noqa: E712
                     Content.id.notin_(list(existing_ids)) if existing_ids else True,
                 )
                 .order_by(Content.published_at.desc())

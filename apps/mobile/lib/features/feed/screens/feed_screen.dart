@@ -15,11 +15,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../config/routes.dart';
+import '../../../core/web/web_perf.dart';
 import '../../../core/nudges/nudge_coordinator.dart';
 import '../../../core/nudges/nudge_counters.dart';
 import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/widgets/feed_nudge_anchors.dart';
-import '../../welcome_tour/controllers/welcome_tour_controller.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../providers/feed_provider.dart';
@@ -48,15 +48,27 @@ import '../../custom_topics/widgets/topic_chip.dart';
 // import '../../custom_topics/widgets/cluster_chip.dart';
 // import '../widgets/keyword_overflow_chip.dart';
 // import '../widgets/entity_overflow_chip.dart';
+import '../widgets/digest_entry_card.dart';
 import '../widgets/feed_carousel.dart';
+import '../widgets/profile_avatar_button.dart';
+import '../../gamification/widgets/streak_indicator.dart';
+import '../../app_update/providers/app_update_provider.dart';
+import '../../app_update/widgets/update_button.dart';
+import '../../app_update/widgets/update_modal.dart';
+import '../../../core/orchestration/first_impression_orchestrator.dart';
+import '../../notifications/widgets/notification_activation_modal.dart';
+import '../../notifications/widgets/notification_renudge_banner.dart';
+import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../widgets/feed_refresh_undo_banner.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../widgets/empty_filter_state.dart';
+import '../widgets/filter_collapsible_panel.dart';
 import '../widgets/follow_keyword_suggestion_card.dart';
 import '../widgets/interest_filter_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
-import '../../digest/widgets/serein_toggle_chip.dart';
+import '../../settings/providers/user_profile_provider.dart';
 import '../../sources/providers/sources_providers.dart';
+import '../../sources/widgets/pepites_carousel.dart';
 import '../../progress/widgets/progression_card.dart';
 import '../../../shared/widgets/loaders/loading_view.dart';
 import '../../../shared/widgets/mode_accent.dart';
@@ -73,10 +85,12 @@ class FeedScreen extends ConsumerStatefulWidget {
 
 class _FeedScreenState extends ConsumerState<FeedScreen> {
   bool _showWelcome = false;
+  bool _activationModalShown = false;
   bool _caughtUpDismissed = false;
-  static const int _caughtUpThreshold = 8;
+  static const int _caughtUpMinScrolled = 15;
   final ScrollController _scrollController = ScrollController();
   double _maxScrollPercent = 0.0;
+  bool _userHasScrolled = false;
   final int _itemsViewed = 0;
 
   bool _hasNudged = false;
@@ -87,7 +101,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   bool _showStickyBar = false;
   double _lastScrollPos = 0;
   static const double _stickyScrollThreshold = 12;
-  static const double _stickyHideAboveScroll = 240;
+  static const double _stickyHideAboveScroll = 380;
 
   // Feed Refresh: track timestamps of recent refreshes for anti-addiction
   final List<DateTime> _refreshTimestamps = [];
@@ -132,6 +146,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   // LaurinFallbackView (UX uniquement, pas de modif provider).
   int _consecutiveErrorCount = 0;
 
+  // Update modal: déclenchée une seule fois par session si une update est dispo.
+  bool _hasCheckedUpdate = false;
+
   Future<void> _withFeedLoading(Future<void> Function() action) async {
     if (mounted) setState(() => _isFeedRefreshing = true);
     try {
@@ -154,12 +171,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   }
 
   Future<void> _recordFeedOpenAndMaybeNudge() async {
-    // The shell navigates to /feed during welcome_tour step 2 — don't count
-    // that as a "natural" visit and don't request a spotlight that would
-    // overlap the tour overlay. Whether the tour has been seen at all is
-    // already enforced by the registry prerequisite (read device-scoped, so
-    // PR2 v1 legacy users who never re-saw the user-scoped tour still pass).
-    if (ref.read(welcomeTourControllerProvider).active) return;
     final opens = await NudgeCounters.increment(NudgeCounters.feedOpenCount);
     final taps = await NudgeCounters.get(NudgeCounters.feedCardTapCount);
     if (!mounted) return;
@@ -182,8 +193,25 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   }
 
   Future<void> _onFeedCardTapped() async {
-    if (ref.read(welcomeTourControllerProvider).active) return;
     await NudgeCounters.increment(NudgeCounters.feedCardTapCount);
+  }
+
+  /// Modal d'activation notif gatée par `firstImpressionSlotProvider` (au
+  /// plus 1 modal/session, arbitrée avec re-nudge banner + well-informed
+  /// prompt).
+  void _maybeShowActivationModal(FirstImpressionSlot slot) {
+    if (_activationModalShown) return;
+    if (slot != FirstImpressionSlot.notifModal) return;
+    _activationModalShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(notifModalConsumedThisSessionProvider.notifier).state = true;
+      showNotificationActivationModal(
+        context,
+        ref,
+        trigger: ActivationTrigger.update,
+      );
+    });
   }
 
   // Epic 12: One-shot toast explaining the new chronological default
@@ -289,6 +317,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
     final maxScroll = _scrollController.position.maxScrollExtent;
     final currentScroll = _scrollController.position.pixels;
+
+    // Bonus: nudge animations only after the user has scrolled a bit.
+    if (!_userHasScrolled && currentScroll > 40) {
+      setState(() => _userHasScrolled = true);
+    }
 
     // Sticky filter bar visibility
     final delta = currentScroll - _lastScrollPos;
@@ -418,7 +451,26 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
   }
 
-  Widget _buildFilterBarContent(BuildContext context) {
+  int _activeFilterCount() {
+    final notifier = ref.read(feedProvider.notifier);
+    var count = 0;
+    if (notifier.selectedSourceId != null) count++;
+    if (notifier.selectedTheme != null ||
+        notifier.selectedTopic != null ||
+        notifier.selectedEntity != null) count++;
+    if (notifier.selectedKeyword != null &&
+        notifier.selectedKeyword!.isNotEmpty) count++;
+    return count;
+  }
+
+  Widget _buildFilterBar(BuildContext context) {
+    return FilterCollapsiblePanel(
+      activeCount: _activeFilterCount(),
+      chipsRow: _buildFilterChipsRow(context),
+    );
+  }
+
+  Widget _buildFilterChipsRow(BuildContext context) {
     final notifier = ref.read(feedProvider.notifier);
 
     if (notifier.selectedTheme == null &&
@@ -517,6 +569,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     final feedAsync = ref.watch(feedProvider);
     final colors = context.facteurColors;
 
+    // Orchestrateur "premier impact" — arbitre entre modal notif, re-nudge
+    // banner et well-informed prompt. Garantit max 1 modal + 1 nudge par
+    // session.
+    final impressionSlot = ref.watch(firstImpressionSlotProvider);
+    _maybeShowActivationModal(impressionSlot);
+
     // Pre-warm topics provider (single watch for all TopicChips)
     final followedTopics = ref.watch(customTopicsProvider).valueOrNull ?? [];
 
@@ -557,6 +615,21 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       }
     });
 
+    // Show update modal at launch when an update is available.
+    ref.listen(appUpdateProvider, (previous, next) {
+      if (_hasCheckedUpdate) return;
+      next.whenData((info) {
+        if (info != null && info.updateAvailable && UpdateModal.shouldShow()) {
+          _hasCheckedUpdate = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              UpdateModal.show(context, info: info);
+            }
+          });
+        }
+      });
+    });
+
     return PopScope(
       canPop: false,
       child: Material(
@@ -571,50 +644,70 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                   controller: _scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
-                    const SliverToBoxAdapter(
+                    SliverToBoxAdapter(
                       child: Padding(
-                        padding: EdgeInsets.symmetric(
+                        padding: const EdgeInsets.symmetric(
                           horizontal: FacteurSpacing.space6,
                           vertical: FacteurSpacing.space3,
                         ),
-                        child: Center(child: FacteurLogo(size: 22, showIcon: false)),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 16, 8, 4),
-                        child: Row(
+                        child: Stack(
+                          alignment: Alignment.center,
                           children: [
-                            Expanded(
-                              child: Text(
-                                'Bonjour,',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .displayMedium,
+                            const FacteurLogo(size: 22, showIcon: false),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: const StreakIndicator(),
+                            ),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const UpdateButton(),
+                                  const SizedBox(width: 8),
+                                  ProfileAvatarButton(
+                                    onTap: () =>
+                                        context.push(RoutePaths.settings),
+                                  ),
+                                ],
                               ),
                             ),
-                            const SereinToggleChip(),
                           ],
                         ),
                       ),
                     ),
                     SliverToBoxAdapter(
+                      child: _FeedTourneeHeader(),
+                    ),
+                    // Re-nudge banner (≥7j après refus, cap 3, espacement
+                    // 14j) — gaté par l'orchestrateur (1 nudge max, pas en
+                    // parallèle d'une modal).
+                    SliverToBoxAdapter(
+                      child: impressionSlot ==
+                              FirstImpressionSlot.renudgeBanner
+                          ? const NotificationRenudgeBanner()
+                          : const SizedBox.shrink(),
+                    ),
+                    // Story 14.3 — Well-informed self-report inline prompt.
+                    // Cooldown dans `wellInformedShouldShowProvider`, arbitré
+                    // par l'orchestrateur.
+                    SliverToBoxAdapter(
+                      child: impressionSlot ==
+                              FirstImpressionSlot.wellInformed
+                          ? const WellInformedPrompt()
+                          : const SizedBox.shrink(),
+                    ),
+                    const SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Text(
-                          'Votre flux issu de vos sources de confiance.',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.copyWith(color: colors.textSecondary),
-                        ),
+                        padding: EdgeInsets.only(top: 14, bottom: 8),
+                        child: DigestEntryCard(),
                       ),
                     ),
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16.0, vertical: 8.0),
-                        child: _buildFilterBarContent(context),
+                        child: _buildFilterBar(context),
                       ),
                     ),
                     SliverToBoxAdapter(
@@ -658,10 +751,37 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         final streakAsync = ref.watch(streakProvider);
                         final dailyCount =
                             streakAsync.valueOrNull?.weeklyCount ?? 0;
-                        final showCaughtUp = dailyCount >= _caughtUpThreshold &&
-                            !_caughtUpDismissed;
-                        // Position de la carte "Tu es à jour" après 8 articles
-                        const caughtUpPos = 8;
+                        final isSerein =
+                            ref.watch(sereinToggleProvider).enabled;
+
+                        bool showCaughtUp;
+                        int caughtUpPos;
+                        if (_caughtUpDismissed) {
+                          showCaughtUp = false;
+                          caughtUpPos = -1;
+                        } else if (isSerein) {
+                          showCaughtUp =
+                              dailyCount >= _caughtUpMinScrolled &&
+                                  contents.length > _caughtUpMinScrolled;
+                          caughtUpPos = _caughtUpMinScrolled;
+                        } else {
+                          final now = DateTime.now();
+                          final firstOldIdx = contents.indexWhere(
+                            (c) =>
+                                now.difference(c.publishedAt) >
+                                const Duration(hours: 24),
+                          );
+                          if (firstOldIdx >= 0 &&
+                              contents.length >= _caughtUpMinScrolled) {
+                            caughtUpPos = firstOldIdx < _caughtUpMinScrolled
+                                ? _caughtUpMinScrolled
+                                : firstOldIdx;
+                            showCaughtUp = contents.length > caughtUpPos;
+                          } else {
+                            showCaughtUp = false;
+                            caughtUpPos = -1;
+                          }
+                        }
 
                         // Saved nudge: show at position 6 if user has 3+ unread saves
                         final savedSummary =
@@ -676,6 +796,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             savedSummary.unreadCount >= 3 &&
                             contents.length > 6;
                         const savedNudgePos = 6;
+
+                        // Backend gère rate-limit + cool-down : liste vide → widget invisible.
+                        final pepitesAsync = ref.watch(pepitesProvider);
+                        final pepitesList = pepitesAsync.valueOrNull ?? const [];
+                        final showPepitesCarousel = pepitesList.isNotEmpty &&
+                            contents.length > 5;
+                        const pepitesCarouselPos = 5;
 
                         // Empty state when a filter is active but no results
                         final hasActiveFilter =
@@ -696,7 +823,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         // trailing (loader ou spacer). CaughtUp et SavedNudge sont
                         // mutuellement exclusifs → intercalatedCount ≤ 1.
                         final int intercalatedCount =
-                            (showCaughtUp ? 1 : 0) + (showSavedNudge ? 1 : 0) + sortedCarousels.length;
+                            (showCaughtUp ? 1 : 0) +
+                            (showSavedNudge ? 1 : 0) +
+                            (showPepitesCarousel ? 1 : 0) +
+                            sortedCarousels.length;
                         final int effectiveChildCount =
                             contents.isEmpty ? 1 : contents.length + intercalatedCount + 1;
 
@@ -783,6 +913,21 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 // Compter la CaughtUpCard si elle est passée (pour le décalage)
                                 if (showCaughtUp && listIndex > caughtUpPos) {
                                   contentOffset++;
+                                }
+
+                                if (showPepitesCarousel) {
+                                  final pepitesEffectivePos =
+                                      pepitesCarouselPos + contentOffset;
+                                  if (listIndex == pepitesEffectivePos) {
+                                    return const Padding(
+                                      key: ValueKey('pepites_carousel'),
+                                      padding: EdgeInsets.only(bottom: 16),
+                                      child: PepitesCarousel(),
+                                    );
+                                  }
+                                  if (listIndex > pepitesEffectivePos) {
+                                    contentOffset++;
+                                  }
                                 }
 
                                 // Saved Nudge at position 6
@@ -1011,8 +1156,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 final progressionTopic =
                                     _activeProgressions[content.id];
 
-                                final showHint =
-                                    !_swipeHintSeen && contentIndex <= 1;
+                                final showHint = !_swipeHintSeen &&
+                                    _userHasScrolled &&
+                                    contentIndex <= 1;
 
                                 Widget cardWidget = SwipeToOpenCard(
                                   onSwipeOpen: () => _showArticleModal(content),
@@ -1325,18 +1471,22 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     duration: const Duration(milliseconds: 180),
                     curve: Curves.easeOut,
                     child: ClipRect(
-                      child: BackdropFilter(
+                      child: webBlurFallback(
                         filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                        fallbackColor: colors.backgroundPrimary
+                            .withValues(alpha: 0.96),
                         child: Container(
-                          color: colors.backgroundPrimary
-                              .withValues(alpha: 0.88),
+                          color: kWebPerf
+                              ? null
+                              : colors.backgroundPrimary
+                                  .withValues(alpha: 0.88),
                           padding: EdgeInsets.fromLTRB(
                             16,
                             MediaQuery.of(context).padding.top + 10,
                             16,
                             8,
                           ),
-                          child: _buildFilterBarContent(context),
+                          child: _buildFilterBar(context),
                         ),
                       ),
                     ),
@@ -1391,6 +1541,62 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
         ),
       ),
     );
+  }
+}
+
+/// Header "Bonjour {prénom}, votre tournée du jour" en haut du feed,
+/// avec une overline date façon tampon postal et le toggle Normal/Serein
+/// aligné à droite.
+class _FeedTourneeHeader extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.facteurColors;
+    final profile = ref.watch(userProfileProvider);
+    final firstName = (profile.displayName ?? '').trim().split(' ').first;
+    final hello = DateTime.now().hour >= 18 ? 'Bonsoir' : 'Bonjour';
+    final greeting = firstName.isEmpty ? '$hello,' : '$hello $firstName,';
+    final now = DateTime.now();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _formatStamp(now),
+            style: FacteurTypography.stamp(colors.textTertiary)
+                .copyWith(letterSpacing: 1.2),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            greeting,
+            style: FacteurTypography.serifTitle(colors.textPrimary)
+                .copyWith(fontSize: 26, height: 1.15),
+          ),
+          Text(
+            'votre tournée du jour',
+            style: FacteurTypography.serifTitle(colors.textPrimary)
+                .copyWith(fontSize: 26, height: 1.15),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static const List<String> _frDays = [
+    'LUNDI', 'MARDI', 'MERCREDI', 'JEUDI', 'VENDREDI', 'SAMEDI', 'DIMANCHE',
+  ];
+
+  static const List<String> _frMonthsAbbr = [
+    'JANV.', 'FÉVR.', 'MARS', 'AVR.', 'MAI', 'JUIN',
+    'JUIL.', 'AOÛT', 'SEPT.', 'OCT.', 'NOV.', 'DÉC.',
+  ];
+
+  static String _formatStamp(DateTime d) {
+    final day = _frDays[d.weekday - 1];
+    final month = _frMonthsAbbr[d.month - 1];
+    final hh = d.hour.toString();
+    final mm = d.minute.toString().padLeft(2, '0');
+    return '$day ${d.day} $month · ${hh}H$mm';
   }
 }
 

@@ -174,21 +174,18 @@ class CommunityRecommendationService:
     async def get_community_carousels(
         self,
     ) -> tuple[list[dict], list[dict]]:
-        """Build both community carousels with non-duplication.
+        """Build both community carousels.
 
-        Feed carousel has priority. Digest excludes Feed IDs.
+        Feed and Digest live on separate screens, so overlap between the two
+        is acceptable. The Digest screen also re-dedupes against the main
+        digest items on the mobile side. Excluding feed_ids here used to
+        empty the digest carousel whenever the community-wide like pool was
+        small (≤ MAX_CAROUSEL_ITEMS), which is the steady state today.
 
         Returns: (feed_items, digest_items)
         """
-        # Feed first (best scored)
         feed_items = await self.get_top_recommendations(limit=MAX_CAROUSEL_ITEMS)
-
-        # Digest excludes feed articles
-        feed_ids = {item["content"].id for item in feed_items}
-        digest_items = await self.get_recent_recommendations(
-            limit=MAX_CAROUSEL_ITEMS,
-            exclude_ids=feed_ids if feed_ids else None,
-        )
+        digest_items = await self.get_recent_recommendations(limit=MAX_CAROUSEL_ITEMS)
 
         logger.info(
             "community_carousels_built",

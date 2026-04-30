@@ -14,6 +14,7 @@ See docs/maintenance/maintenance-digest-readonly-hotpath.md.
 """
 
 import asyncio
+import contextlib
 import time
 from datetime import date, timedelta
 from uuid import UUID
@@ -25,7 +26,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import async_session_maker, get_db
+from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
 from app.models.daily_digest import DailyDigest
 from app.schemas.digest import (
@@ -49,6 +50,15 @@ router = APIRouter()
 # Timeout for POST /api/digest/generate (admin/debug). force=True can take
 # longer than a normal generation, so this bound is generous.
 DIGEST_GENERATE_TIMEOUT_S = 60.0
+
+# Hard ceiling on the post-gather block (serein_enabled + 2 community
+# enrichments) on the outer `db` session. After the 25-30s LLM gather, the
+# outer connection has been idle and Supabase/PgBouncer may have killed it.
+# Without this bound, a fail-open `db.rollback()` on a dead conn can hang
+# indefinitely (statement_timeout doesn't cover ROLLBACK), which leaks the
+# session for hours and starves the singleflight slot — producing the
+# infinite-loading symptom observed in prod (long_session_checkout=7231s).
+DIGEST_BOTH_POST_GATHER_TIMEOUT_S = 5.0
 
 
 class ActionRequest(BaseModel):
@@ -157,10 +167,16 @@ async def _enrich_community_carousel(
         logger.exception("community_carousel_enrichment_failed")
         # Round 6 — mirror D3 (PR #437 community.py). Handler is fail-open so
         # get_db never sees the raise and cannot rollback a dirty session.
+        # Bound the rollback: on a Supabase-killed connection, asyncpg can
+        # hang indefinitely waiting for a server ACK that never comes
+        # (statement_timeout doesn't apply to ROLLBACK). On timeout, force
+        # invalidate so the dead conn is dropped from the pool.
         try:
-            await db.rollback()
-        except Exception as rb_exc:
+            await asyncio.wait_for(db.rollback(), timeout=2.0)
+        except (TimeoutError, Exception) as rb_exc:
             logger.debug("community_carousel_rollback_failed", error=str(rb_exc))
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(db.invalidate(), timeout=1.0)
 
     return digest
 
@@ -435,7 +451,7 @@ async def generate_digest(
     # Cf. bug-infinite-load-requests.md (P1) — la pipeline éditoriale doit
     # pouvoir ouvrir ses propres sessions courtes hors de la session FastAPI
     # pour libérer la connexion au pool pendant 3-5 min de travail LLM.
-    service = DigestService(db, session_maker=async_session_maker)
+    service = DigestService(db, session_maker=safe_async_session)
     user_uuid = UUID(current_user_id)
 
     # Round 2 fix (item 4) : wait_for sur la génération — même motif que

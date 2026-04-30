@@ -2,7 +2,7 @@
 
 import structlog
 
-from app.database import async_session_maker
+from app.database import safe_async_session
 from app.services.sync_service import SyncService
 
 logger = structlog.get_logger()
@@ -16,8 +16,8 @@ async def sync_all_sources() -> dict:
     """
     logger.info("Executing periodic RSS sync job")
 
-    async with async_session_maker() as session:
-        service = SyncService(session, session_maker=async_session_maker)
+    async with safe_async_session() as session:
+        service = SyncService(session, session_maker=safe_async_session)
         try:
             return await service.sync_all_sources()
         finally:
@@ -41,8 +41,8 @@ async def sync_source(source_id: str) -> bool:
     """
     logger.info("Executing manual RSS sync for source", source_id=source_id)
 
-    async with async_session_maker() as session:
-        service = SyncService(session, session_maker=async_session_maker)
+    async with safe_async_session() as session:
+        service = SyncService(session, session_maker=safe_async_session)
         try:
             # Récupérer la source
             from uuid import UUID

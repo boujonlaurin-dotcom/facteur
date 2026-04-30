@@ -4,26 +4,60 @@
 /// dans les cards feed/digest et le reader in-app.
 library;
 
+/// Décode les entités HTML (named + numériques decimal/hex), en bouclant
+/// pour gérer le multi-encodage (ex: `&amp;lt;` → `&lt;` → `<`).
+///
+/// Robuste face aux flux RSS où les entités peuvent être encodées 1, 2 ou
+/// 3 fois selon les pipelines. Limite la boucle à 3 passes.
+String decodeHtmlEntities(String input) {
+  var text = input;
+  for (var pass = 0; pass < 3; pass++) {
+    final before = text;
+    // Numeric entities (decimal & hex) — handles any code point.
+    text = text.replaceAllMapped(
+      RegExp(r'&#(x[0-9a-fA-F]+|[0-9]+);'),
+      (m) {
+        final raw = m.group(1)!;
+        final code = raw.startsWith('x') || raw.startsWith('X')
+            ? int.tryParse(raw.substring(1), radix: 16)
+            : int.tryParse(raw);
+        if (code == null || code < 0 || code > 0x10FFFF) return m.group(0)!;
+        return String.fromCharCode(code);
+      },
+    );
+    // Named entities. `&amp;` must come last so pre-existing `&amp;lt;`
+    // becomes `&lt;` and gets fully decoded on the next pass.
+    text = text
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&apos;', "'")
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&laquo;', '«')
+        .replaceAll('&raquo;', '»')
+        .replaceAll('&hellip;', '…')
+        .replaceAll('&mdash;', '—')
+        .replaceAll('&ndash;', '–')
+        .replaceAll('&lsquo;', '‘')
+        .replaceAll('&rsquo;', '’')
+        .replaceAll('&ldquo;', '“')
+        .replaceAll('&rdquo;', '”')
+        .replaceAll('&amp;', '&');
+    if (text == before) break;
+  }
+  return text;
+}
+
 /// Supprime les balises HTML et décode les entités HTML courantes.
 ///
 /// Utilisé pour nettoyer les descriptions RSS qui peuvent contenir
 /// du HTML brut avant affichage dans les cards et previews.
 String stripHtml(String html) {
+  // Decode entities first so encoded `&lt;p&gt;` becomes `<p>` and is then
+  // stripped by the tag regex below.
+  var text = decodeHtmlEntities(html);
   // Remove HTML tags
-  var text = html.replaceAll(RegExp(r'<[^>]+>'), '');
-  // Decode common HTML entities
-  text = text
-      .replaceAll('&amp;', '&')
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&quot;', '"')
-      .replaceAll('&#39;', "'")
-      .replaceAll('&apos;', "'")
-      .replaceAll('&nbsp;', ' ')
-      .replaceAll('&#8217;', '\u2019')
-      .replaceAll('&#8216;', '\u2018')
-      .replaceAll('&#8220;', '\u201C')
-      .replaceAll('&#8221;', '\u201D');
+  text = text.replaceAll(RegExp(r'<[^>]+>'), '');
   // Collapse multiple whitespace/newlines into single space
   text = text.replaceAll(RegExp(r'\s+'), ' ').trim();
   return text;
@@ -31,20 +65,15 @@ String stripHtml(String html) {
 
 /// Nettoie le HTML d'un article pour le reader in-app.
 ///
-/// - Décode les entités HTML (gère le double encodage RSS)
+/// - Décode les entités HTML (gère le double/triple encodage RSS, named +
+///   numérique)
 /// - Supprime les images et figures (affichées séparément en hero)
 /// - Supprime les paragraphes et divs vides
 /// - Préserve les balises sémantiques (p, h1-h6, blockquote, ul, etc.)
 String sanitizeArticleHtml(String html) {
-  var content = html;
-  // Decode HTML entities (handles double-encoded RSS content)
-  content = content
-      .replaceAll('&amp;', '&')
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&quot;', '"')
-      .replaceAll('&#39;', "'")
-      .replaceAll('&apos;', "'");
+  // Decode HTML entities (handles single, double or triple-encoded RSS
+  // content, including named and numeric entities).
+  var content = decodeHtmlEntities(html);
   // Strip figure elements (includes figcaption) — order matters
   content = content.replaceAll(
       RegExp(r'<figure[^>]*>.*?</figure>', dotAll: true), '');
@@ -85,6 +114,8 @@ String sanitizeArticleHtml(String html) {
   // Strip empty paragraphs and divs (run twice to catch newly-emptied containers)
   content = content.replaceAll(RegExp(r'<(p|div)[^>]*>\s*</(p|div)>'), '');
   content = content.replaceAll(RegExp(r'<(p|div)[^>]*>\s*</(p|div)>'), '');
+  // Strip trailing <br> tags to prevent extra line-height whitespace at article end
+  content = content.replaceAll(RegExp(r'(\s*<br\s*/?\s*>)+\s*$'), '');
   // Strip trailing "Lire aussi" link blocks (lists where all items are just links)
   content = content.replaceAll(
       RegExp(
@@ -117,7 +148,7 @@ final _truncationPatterns = [
   RegExp(r'Lire la suite', caseSensitive: false),
   RegExp(r'Read more', caseSensitive: false),
   RegExp(r'Continue reading', caseSensitive: false),
-  RegExp(r"L['']article .+ est apparu en premier sur", caseSensitive: false),
+  RegExp(r"L['’]article .+ est apparu en premier sur", caseSensitive: false),
   RegExp(r'Cet article .+ est publié sur', caseSensitive: false),
   RegExp(r'The post .+ appeared first on', caseSensitive: false),
 ];

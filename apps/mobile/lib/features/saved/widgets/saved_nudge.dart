@@ -32,10 +32,10 @@ class SavedNudge extends ConsumerWidget {
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       decoration: BoxDecoration(
         color: colors.backgroundSecondary,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -88,29 +88,28 @@ class SavedNudge extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              FilledButton.tonal(
-                onPressed: () {
-                  _dismiss(ref);
-                  context.go(RoutePaths.saved);
-                },
-                style: FilledButton.styleFrom(
-                  backgroundColor: colors.primary.withOpacity(0.1),
-                  foregroundColor: colors.primary,
-                  elevation: 0,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonal(
+              onPressed: () {
+                _dismiss(ref);
+                context.go(RoutePaths.saved);
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: colors.primary.withOpacity(0.1),
+                foregroundColor: colors.primary,
+                elevation: 0,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Text('Voir mes sauvegardes'),
               ),
-            ],
+              child: const Text(
+                'Voir mes sauvegardes',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
           ),
         ],
       ),

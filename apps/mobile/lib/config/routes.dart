@@ -16,23 +16,26 @@ import '../features/detail/screens/content_detail_screen.dart';
 import '../features/sources/screens/sources_screen.dart';
 import '../features/sources/screens/add_source_screen.dart';
 import '../features/sources/screens/theme_sources_screen.dart';
-import '../features/settings/screens/settings_screen.dart';
+import '../features/settings/screens/profile_screen.dart';
 import '../features/settings/screens/account_screen.dart';
 import '../features/settings/screens/notifications_screen.dart';
 import '../features/settings/screens/about_screen.dart';
+import '../features/settings/widgets/settings_sheet.dart';
 import '../features/custom_topics/screens/my_interests_screen.dart';
 import '../features/custom_topics/screens/topic_explorer_screen.dart';
 import '../features/progress/screens/progressions_screen.dart';
 import '../features/progress/screens/quiz_screen.dart';
 import '../features/subscription/screens/paywall_screen.dart';
 import '../features/digest/screens/digest_screen.dart';
+import '../features/veille/screens/veille_config_screen.dart';
 import '../features/digest/screens/closure_screen.dart';
 import '../features/saved/screens/saved_screen.dart';
 import '../features/saved/screens/saved_all_screen.dart';
 import '../features/saved/screens/collection_detail_screen.dart';
 import '../core/auth/auth_state.dart';
+import '../core/nudges/widgets/nudge_host.dart';
 import '../core/ui/notification_service.dart';
-import '../shared/widgets/navigation/shell_scaffold.dart';
+import '../shared/widgets/navigation/modal_bottom_sheet_page.dart';
 
 /// Noms des routes
 class RouteNames {
@@ -55,6 +58,7 @@ class RouteNames {
   static const String account = 'account';
   static const String notifications = 'notifications';
   static const String about = 'about';
+  static const String profile = 'profile';
   static const String progress = 'progress';
   static const String quiz = 'quiz';
   static const String paywall = 'paywall';
@@ -62,6 +66,7 @@ class RouteNames {
   static const String myInterests = 'my-interests';
   static const String topicExplorer = 'topic-explorer';
   static const String themeSources = 'theme-sources';
+  static const String veilleConfig = 'veille-config';
 }
 
 /// Chemins des routes
@@ -83,12 +88,14 @@ class RoutePaths {
   static const String account = '/settings/account';
   static const String notifications = '/settings/notifications';
   static const String about = '/settings/about';
+  static const String profile = '/settings/profile';
   static const String myInterests = '/settings/interests';
   static const String topicExplorer = '/topic-explorer';
   static const String progress = '/progress';
   static const String quiz = '/quiz';
   static const String paywall = '/paywall';
   static const String emailConfirmation = '/email-confirmation';
+  static const String veilleConfig = '/veille/config';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -132,7 +139,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isOnInterestsFromOnboarding =
           matchedLocation == RoutePaths.myInterests &&
               state.uri.queryParameters['serein'] == '1';
-      final isOnDigest = matchedLocation == RoutePaths.digest;
 
       // 1. Les utilisateurs non connectés
       if (!isLoggedIn) {
@@ -158,8 +164,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (isOnLoginPage || isOnEmailConfirmation || isOnSplash) {
         return authState.needsOnboarding
             ? RoutePaths.onboarding
-            : RoutePaths
-                .digest; // Digest is now the default authenticated route
+            : RoutePaths.feed;
       }
 
       // 4. Onboarding : forcer si nécessaire
@@ -169,17 +174,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         return RoutePaths.onboarding;
       }
 
-      // 5. Onboarding : empêcher d'y retourner si fini
+      // 5. Onboarding : empêcher d'y retourner si fini → atterrissage feed
       if (!authState.needsOnboarding && isOnOnboarding) {
-        // Post-onboarding goes to /digest. The Welcome Tour v2 is triggered
-        // by WelcomeTourHost (overlay coachmark over /digest, /feed, /settings)
-        // when authState.welcomeTourSeen is false — no dedicated route.
-        return RoutePaths.digest;
-      }
-
-      // Allow staying on digest (default authenticated route)
-      if (isOnDigest) {
-        return null;
+        return RoutePaths.feed;
       }
 
       return null;
@@ -227,167 +224,187 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ConclusionAnimationScreen(),
       ),
 
-      // Shell avec bottom navigation
-      ShellRoute(
-        builder: (context, state, child) => ShellScaffold(child: child),
+      // Feed (route racine post-removal du Shell — la bottom nav est supprimée)
+      GoRoute(
+        path: RoutePaths.feed,
+        name: RouteNames.feed,
+        builder: (context, state) => const Stack(
+          children: [
+            FeedScreen(),
+            NudgeHost(),
+          ],
+        ),
         routes: [
-          // Digest (Essentiel) - Default authenticated route
+          // Détail contenu (nested)
           GoRoute(
-            path: RoutePaths.digest,
-            name: RouteNames.digest,
-            builder: (context, state) => const DigestScreen(),
-          ),
-
-          // Feed
-          GoRoute(
-            path: RoutePaths.feed,
-            name: RouteNames.feed,
-            builder: (context, state) => const FeedScreen(),
-            routes: [
-              // Détail contenu (nested)
-              GoRoute(
-                path: 'content/:id',
-                name: RouteNames.contentDetail,
-                parentNavigatorKey: NotificationService.navigatorKey,
-                pageBuilder: (context, state) {
-                  final contentId = state.pathParameters['id']!;
-                  // Story 5.2: Pass Content via extra for in-app reading
-                  final content = state.extra as Content?;
-                  return FullSwipeCupertinoPage(
-                    child: ContentDetailScreen(
-                      contentId: contentId,
-                      content: content,
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-
-          // Saved (Sauvegardés)
-          GoRoute(
-            path: RoutePaths.saved,
-            name: RouteNames.saved,
-            builder: (context, state) => const SavedScreen(),
-            routes: [
-              GoRoute(
-                path: 'all',
-                name: RouteNames.savedAll,
-                pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-                  child: SavedAllScreen(),
+            path: 'content/:id',
+            name: RouteNames.contentDetail,
+            parentNavigatorKey: NotificationService.navigatorKey,
+            pageBuilder: (context, state) {
+              final contentId = state.pathParameters['id']!;
+              // Story 5.2: Pass Content via extra for in-app reading
+              final content = state.extra as Content?;
+              return FullSwipeCupertinoPage(
+                child: ContentDetailScreen(
+                  contentId: contentId,
+                  content: content,
                 ),
-              ),
-              GoRoute(
-                path: 'collection/:id',
-                name: RouteNames.collectionDetail,
-                pageBuilder: (context, state) => FullSwipeCupertinoPage(
-                  child: CollectionDetailScreen(
-                    collectionId: state.pathParameters['id']!,
-                  ),
-                ),
-              ),
-            ],
+              );
+            },
           ),
+        ],
+      ),
 
-          // MVP: Progressions routes temporarily disabled
-          // The tab is removed but we keep route definitions for potential deep links
-          // Users will be redirected to feed by shell_scaffold index calculation
+      // Saved (Sauvegardés)
+      GoRoute(
+        path: RoutePaths.saved,
+        name: RouteNames.saved,
+        builder: (context, state) => const SavedScreen(),
+        routes: [
           GoRoute(
-            path: RoutePaths.progress,
-            name: RouteNames.progress,
-            // MVP: Redirect to feed with info message
+            path: 'all',
+            name: RouteNames.savedAll,
+            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
+              child: SavedAllScreen(),
+            ),
+          ),
+          GoRoute(
+            path: 'collection/:id',
+            name: RouteNames.collectionDetail,
+            pageBuilder: (context, state) => FullSwipeCupertinoPage(
+              child: CollectionDetailScreen(
+                collectionId: state.pathParameters['id']!,
+              ),
+            ),
+          ),
+        ],
+      ),
+
+      // MVP: Progressions routes temporarily disabled
+      GoRoute(
+        path: RoutePaths.progress,
+        name: RouteNames.progress,
+        redirect: (context, state) {
+          return RoutePaths.feed;
+        },
+        builder: (context, state) => const ProgressionsScreen(),
+        routes: [
+          GoRoute(
+            path: 'quiz',
+            name: RouteNames.quiz,
+            parentNavigatorKey: NotificationService.navigatorKey,
             redirect: (context, state) {
               return RoutePaths.feed;
             },
-            builder: (context, state) => const ProgressionsScreen(),
-            routes: [
-              GoRoute(
-                path: 'quiz',
-                name: RouteNames.quiz,
-                parentNavigatorKey: NotificationService.navigatorKey,
-                redirect: (context, state) {
-                  return RoutePaths.feed;
-                },
-                builder: (context, state) {
-                  final topic = state.extra as String;
-                  return QuizScreen(topic: topic);
-                },
-              ),
-            ],
+            builder: (context, state) {
+              final topic = state.extra as String;
+              return QuizScreen(topic: topic);
+            },
           ),
+        ],
+      ),
 
-          // Settings
+      // Settings — bottom sheet root + sous-pages full-screen
+      GoRoute(
+        path: RoutePaths.settings,
+        name: RouteNames.settings,
+        pageBuilder: (context, state) => const ModalBottomSheetPage(
+          child: SettingsSheet(),
+        ),
+        routes: [
           GoRoute(
-            path: RoutePaths.settings,
-            name: RouteNames.settings,
-            builder: (context, state) => const SettingsScreen(),
+            path: 'profile', // /settings/profile
+            name: RouteNames.profile,
+            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
+              child: ProfileScreen(),
+            ),
+          ),
+          GoRoute(
+            path: 'sources', // /settings/sources
+            name: RouteNames.sources,
+            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
+              child: SourcesScreen(),
+            ),
             routes: [
               GoRoute(
-                path: 'sources', // /settings/sources
-                name: RouteNames.sources,
-                pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-                  child: SourcesScreen(),
-                ),
-                routes: [
-                  GoRoute(
-                    path: 'add', // /settings/sources/add
-                    name: RouteNames.addSource,
-                    pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-                      child: AddSourceScreen(),
-                    ),
-                  ),
-                  GoRoute(
-                    path: 'theme/:slug', // /settings/sources/theme/:slug
-                    name: RouteNames.themeSources,
-                    pageBuilder: (context, state) {
-                      final slug = state.pathParameters['slug']!;
-                      final themeName = state.extra as String?;
-                      return FullSwipeCupertinoPage(
-                        child: ThemeSourcesScreen(
-                          themeSlug: slug,
-                          themeName: themeName,
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-              GoRoute(
-                path: 'account', // /settings/account
-                name: RouteNames.account,
-                pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-                  child: AccountScreen(),
+                path: 'add', // /settings/sources/add
+                name: RouteNames.addSource,
+                pageBuilder: (context, state) =>
+                    const FullSwipeCupertinoPage(
+                  child: AddSourceScreen(),
                 ),
               ),
               GoRoute(
-                path: 'notifications', // /settings/notifications
-                name: RouteNames.notifications,
-                pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-                  child: NotificationsScreen(),
-                ),
-              ),
-              GoRoute(
-                path: 'about', // /settings/about
-                name: RouteNames.about,
-                pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-                  child: AboutScreen(),
-                ),
-              ),
-              GoRoute(
-                path: 'interests', // /settings/interests
-                name: RouteNames.myInterests,
+                path: 'theme/:slug', // /settings/sources/theme/:slug
+                name: RouteNames.themeSources,
                 pageBuilder: (context, state) {
-                  final forceSereinOn =
-                      state.uri.queryParameters['serein'] == '1';
+                  final slug = state.pathParameters['slug']!;
+                  final themeName = state.extra as String?;
                   return FullSwipeCupertinoPage(
-                    child:
-                        MyInterestsScreen(forceSereinOn: forceSereinOn),
+                    child: ThemeSourcesScreen(
+                      themeSlug: slug,
+                      themeName: themeName,
+                    ),
                   );
                 },
               ),
             ],
           ),
+          GoRoute(
+            path: 'account', // /settings/account
+            name: RouteNames.account,
+            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
+              child: AccountScreen(),
+            ),
+          ),
+          GoRoute(
+            path: 'notifications', // /settings/notifications
+            name: RouteNames.notifications,
+            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
+              child: NotificationsScreen(),
+            ),
+          ),
+          GoRoute(
+            path: 'about', // /settings/about
+            name: RouteNames.about,
+            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
+              child: AboutScreen(),
+            ),
+          ),
+          GoRoute(
+            path: 'interests', // /settings/interests
+            name: RouteNames.myInterests,
+            pageBuilder: (context, state) {
+              final forceSereinOn =
+                  state.uri.queryParameters['serein'] == '1';
+              return FullSwipeCupertinoPage(
+                child: MyInterestsScreen(forceSereinOn: forceSereinOn),
+              );
+            },
+          ),
         ],
+      ),
+
+      // Veille Config — flow de configuration "Ma veille" (4 étapes).
+      // Hors ShellRoute pour cacher la bottom nav (full-screen modal).
+      GoRoute(
+        path: RoutePaths.veilleConfig,
+        name: RouteNames.veilleConfig,
+        pageBuilder: (context, state) => const FullSwipeCupertinoPage(
+          child: VeilleConfigScreen(),
+        ),
+      ),
+
+      // Digest (Essentiel) - opened from the feed card or widget. Lives
+      // outside the ShellRoute so the bottom nav is hidden, with full-screen
+      // swipe-back to the feed.
+      GoRoute(
+        path: RoutePaths.digest,
+        name: RouteNames.digest,
+        pageBuilder: (context, state) => const FullSwipeCupertinoPage(
+          transitionDurationOverride: Duration(milliseconds: 480),
+          child: DigestScreen(),
+        ),
       ),
 
       // Topic Explorer (outside ShellRoute to hide bottom nav)

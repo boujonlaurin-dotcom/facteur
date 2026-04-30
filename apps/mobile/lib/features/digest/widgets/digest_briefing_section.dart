@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
+import '../../../widgets/design/facteur_thumbnail.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
@@ -17,7 +18,6 @@ import 'coup_de_coeur_block.dart';
 import 'pepite_block.dart';
 import 'quote_block.dart';
 import 'section_divider.dart';
-import 'serein_toggle_chip.dart';
 import 'topic_section.dart';
 import 'transition_text.dart';
 
@@ -159,42 +159,40 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
 
     final colors = context.facteurColors;
 
+    final introTextStyle = TextStyle(
+      fontSize: 13,
+      height: 1.45,
+      color: colors.textSecondary,
+    );
+    // In editorial mode, the description wraps around the lead topic image
+    // (magazine layout). The dots gauge then sits below it.
+    final showDotsAtTop = widget.dailyGoal > 0 &&
+        !(widget.isSerein && widget.usesEditorial && _usesTopics);
+
     return Padding(
       padding: const EdgeInsets.only(top: 12, bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: title (left) | serein toggle (right)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Text(
-                    "L'Essentiel du jour",
-                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
-                      color: colors.textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const SereinToggleChip(),
-              ],
-            ),
-          ),
-          // Compact progress counter below title
-          if (widget.dailyGoal > 0)
+          if (!widget.isSerein)
             Padding(
-              padding: const EdgeInsets.only(left: 14, top: 6),
+              padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+              child: _MagazineIntro(
+                text:
+                    "L'Essentiel est une synthèse des sujets les plus couverts en France aujourd'hui. Facteur compare les points de vues, et t'amène vers des articles pour t'aider à prendre du recul sur l'actualité.",
+                textStyle: introTextStyle,
+                heroImageUrl: _findHeroImageUrl(),
+              ),
+            ),
+          if (!widget.isSerein) const SizedBox(height: 16),
+          // Compact progress counter (after description, before topics)
+          if (showDotsAtTop) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 14),
               child: _buildCompactCounter(colors),
             ),
-          const SizedBox(height: 10),
+            const SizedBox(height: 16),
+          ],
           // Content area with crossfade on serein toggle
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
@@ -273,14 +271,14 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         ...List.generate(denominator, (i) {
           final isDone = i < processed;
           return Container(
-            width: 8,
-            height: 2,
-            margin: EdgeInsets.only(right: i < denominator - 1 ? 2 : 0),
+            width: 16,
+            height: 4,
+            margin: EdgeInsets.only(right: i < denominator - 1 ? 4 : 0),
             decoration: BoxDecoration(
               color: isDone
                   ? (isComplete ? colors.success : color)
                   : colors.textTertiary.withOpacity(0.25),
-              borderRadius: BorderRadius.circular(1.25),
+              borderRadius: BorderRadius.circular(2),
             ),
           );
         }),
@@ -288,13 +286,48 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     );
   }
 
+  /// Returns the thumbnail URL of the lead topic (rank 1 / À la Une), to be
+  /// used as the magazine intro image. Returns null if no usable image.
+  String? _findHeroImageUrl() {
+    final topics = widget.topics;
+    if (topics == null || topics.isEmpty) return null;
+    DigestTopic? lead;
+    for (final t in topics) {
+      if (t.isUne || t.rank == 1) {
+        lead = t;
+        break;
+      }
+    }
+    lead ??= topics.first;
+    for (final a in lead.articles.where((a) => a.badge != 'pas_de_recul')) {
+      final url = a.thumbnailUrl;
+      if (url != null && url.isNotEmpty &&
+          !FacteurThumbnail.failedUrls.contains(url)) {
+        return url;
+      }
+    }
+    return null;
+  }
+
   Widget _buildEditorialLayout() {
     final isSerene = widget.isSerein;
     final sections = <Widget>[];
 
-    // Quote block first in serein mode — sets the tone for the reading
+    // Quote block first in serein mode — sets the tone for the reading.
+    // The dots gauge then sits between the quote and the first topic so the
+    // reader sees: citation → progression → topics.
     if (isSerene && widget.digest?.quote != null) {
       sections.add(QuoteBlock(quote: widget.digest!.quote!));
+      if (widget.dailyGoal > 0) {
+        sections.add(const SizedBox(height: 4));
+        sections.add(
+          Padding(
+            padding: const EdgeInsets.only(left: 14),
+            child: _buildCompactCounter(context.facteurColors),
+          ),
+        );
+        sections.add(const SizedBox(height: 16));
+      }
     }
 
     // Topics with intro text, editorial DigestCards, and transition text
@@ -580,4 +613,101 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     return r.trim().toUpperCase();
   }
 
+}
+
+/// Magazine-style intro: the description text wraps around a small thumbnail
+/// of the lead topic image floating at the top-right. Falls back to a plain
+/// Text when no image is available.
+class _MagazineIntro extends StatelessWidget {
+  final String text;
+  final TextStyle textStyle;
+  final String? heroImageUrl;
+
+  const _MagazineIntro({
+    required this.text,
+    required this.textStyle,
+    required this.heroImageUrl,
+  });
+
+  static const double _imageWidth = 132;
+  static const double _imageAspect = 4 / 3;
+  static const double _gap = 12;
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = heroImageUrl;
+    if (imageUrl == null || imageUrl.isEmpty) {
+      return Text(text, style: textStyle);
+    }
+    return LayoutBuilder(
+      builder: (ctx, constraints) {
+        final fullWidth = constraints.maxWidth;
+        final firstColWidth = fullWidth - _imageWidth - _gap;
+        if (firstColWidth < 80) {
+          // Too narrow to wrap usefully — fall back to text-only.
+          return Text(text, style: textStyle);
+        }
+
+        const imageHeight = _imageWidth / _imageAspect;
+        final lineHeight =
+            (textStyle.fontSize ?? 13) * (textStyle.height ?? 1.45);
+        final maxLines = (imageHeight / lineHeight).floor().clamp(1, 99);
+
+        // Measure how much text fits in the first column at imageHeight
+        final tp = TextPainter(
+          text: TextSpan(text: text, style: textStyle),
+          textDirection: TextDirection.ltr,
+          maxLines: maxLines,
+        )..layout(maxWidth: firstColWidth);
+
+        int splitOffset;
+        if (!tp.didExceedMaxLines) {
+          splitOffset = text.length;
+        } else {
+          final pos = tp.getPositionForOffset(
+            Offset(firstColWidth, tp.height - 1),
+          );
+          splitOffset = pos.offset;
+          while (splitOffset > 0 && text[splitOffset - 1] != ' ') {
+            splitOffset--;
+          }
+          if (splitOffset == 0) splitOffset = pos.offset;
+        }
+
+        final firstPart = text.substring(0, splitOffset).trimRight();
+        final secondPart = splitOffset >= text.length
+            ? ''
+            : text.substring(splitOffset).trimLeft();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: Text(firstPart, style: textStyle)),
+                const SizedBox(width: _gap),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(
+                    width: _imageWidth,
+                    height: imageHeight,
+                    child: FacteurThumbnail(
+                      imageUrl: imageUrl,
+                      aspectRatio: _imageAspect,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (secondPart.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(secondPart, style: textStyle),
+            ],
+          ],
+        );
+      },
+    );
+  }
 }

@@ -4,7 +4,7 @@ from datetime import datetime
 import structlog
 from sqlalchemy import select
 
-from app.database import async_session_maker
+from app.database import safe_async_session
 from app.models.user import UserProfile
 from app.services.briefing_service import BriefingService
 
@@ -31,7 +31,7 @@ async def generate_daily_top3_job(trigger_manual: bool = False):
         # contribuait à saturer le pool Supabase (connexions check-outées
         # sans rollback propre).
         # 1. Global context : session courte dédiée.
-        async with async_session_maker() as ctx_session:
+        async with safe_async_session() as ctx_session:
             try:
                 briefing_service_ctx = BriefingService(ctx_session)
                 logger.info("daily_top3_building_context")
@@ -72,7 +72,7 @@ async def generate_daily_top3_job(trigger_manual: bool = False):
 
         for user_id in user_ids:
             try:
-                async with async_session_maker() as user_session:
+                async with safe_async_session() as user_session:
                     try:
                         briefing_service = BriefingService(user_session)
                         await briefing_service.generate_briefing_for_user(

@@ -162,27 +162,46 @@ class EditorialPipelineService:
                 capped_size=len(capped),
             )
 
-        # ÉTAPE 1B: Pré-sélection "À la Une" — cluster le plus couvert
+        # ÉTAPE 1B: Pré-sélection "À la Une" — cluster le plus couvert.
+        # Mode "serein" (Bonnes nouvelles) : seuil multi-sources ≥2 pour
+        # garantir la promesse "couverte par au moins quelques sources" — si
+        # aucun cluster ne répond, pas d'À la Une (le rang 1 reste une bonne
+        # nouvelle simple).
         step_start = time.time()
         trending_clusters = [c for c in clusters if c.is_trending]
         a_la_une_topic = None
 
-        if trending_clusters:
+        if mode == "serein":
+            multi_source_clusters = [
+                c for c in trending_clusters if len(c.source_ids) >= 2
+            ]
+            if multi_source_clusters:
+                top3 = sorted(
+                    multi_source_clusters,
+                    key=lambda c: len(c.source_ids),
+                    reverse=True,
+                )[:3]
+                a_la_une_topic = await self.curation.select_bonne_nouvelle(top3)
+                if not a_la_une_topic:
+                    a_la_une_topic = _cluster_to_une_topic(top3[0])
+            else:
+                logger.info(
+                    "editorial_pipeline.bonne_nouvelle_no_multi_source_cluster",
+                    trending=len(trending_clusters),
+                )
+        elif trending_clusters:
             top3 = sorted(
                 trending_clusters, key=lambda c: len(c.source_ids), reverse=True
             )[:3]
 
             if len(top3) == 1:
                 a_la_une_topic = _cluster_to_une_topic(top3[0])
-            elif mode == "serein":
-                a_la_une_topic = await self.curation.select_bonne_nouvelle(top3)
-                if not a_la_une_topic:
-                    a_la_une_topic = _cluster_to_une_topic(top3[0])
             else:
                 a_la_une_topic = await self.curation.select_a_la_une(top3)
                 if not a_la_une_topic:
                     a_la_une_topic = _cluster_to_une_topic(top3[0])
 
+        if a_la_une_topic:
             logger.info(
                 "editorial_pipeline.a_la_une_selected",
                 topic_id=a_la_une_topic.topic_id,

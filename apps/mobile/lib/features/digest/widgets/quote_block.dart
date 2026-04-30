@@ -18,7 +18,7 @@ class QuoteBlock extends StatelessWidget {
     final separatorColor = colors.primary.withOpacity(isDark ? 0.45 : 0.38);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -33,7 +33,7 @@ class QuoteBlock extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           // Inline quote: « text » — author
           Text.rich(
             TextSpan(
@@ -78,7 +78,7 @@ class QuoteBlock extends StatelessWidget {
               color: colors.textSecondary.withOpacity(0.65),
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           // Bottom separator
           Center(
             child: Container(

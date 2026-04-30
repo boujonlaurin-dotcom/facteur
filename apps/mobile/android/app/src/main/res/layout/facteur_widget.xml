@@ -5,14 +5,14 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/widget_root_bg"
-    android:padding="14dp">
+    android:padding="16dp">
 
     <!-- Header: Facteur wordmark + streak end-aligned -->
     <RelativeLayout
         android:id="@+id/widget_header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="2dp">
+        android:layout_marginBottom="4dp">
 
         <TextView
             android:id="@+id/app_name"
@@ -21,9 +21,10 @@
             android:layout_centerHorizontal="true"
             android:gravity="center"
             android:text="Facteur"
-            android:textSize="20sp"
-            android:fontFamily="@font/fraunces_bold"
-            android:letterSpacing="-0.03"
+            android:textSize="22sp"
+            android:fontFamily="serif"
+            android:textStyle="bold"
+            android:letterSpacing="-0.02"
             android:textColor="@color/facteur_text_primary" />
 
         <TextView
@@ -42,10 +43,11 @@
         android:id="@+id/subtitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="10dp"
+        android:layout_marginBottom="12dp"
         android:gravity="center"
         android:text="L'Essentiel du jour"
-        android:textSize="12sp"
+        android:textSize="13sp"
+        android:fontFamily="sans-serif"
         android:textColor="@color/facteur_text_secondary" />
 
     <!-- Stale banner (shown when articles_updated_at > 36h) -->
@@ -63,45 +65,20 @@
         android:visibility="gone"
         android:text="Mets à jour ton essentiel" />
 
-    <!-- Scrollable article list -->
-    <FrameLayout
+    <!-- Article container — populated inline by FacteurWidget.onUpdate() -->
+    <LinearLayout
+        android:id="@+id/articles_container"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
-
-        <ListView
-            android:id="@+id/articles_list"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:divider="@null"
-            android:dividerHeight="0dp"
-            android:scrollbars="vertical" />
-
-        <LinearLayout
-            android:id="@+id/empty_view"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:padding="16dp"
-            android:visibility="gone">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:text="Ouvre Facteur pour charger ton essentiel"
-                android:textSize="13sp"
-                android:textColor="@color/facteur_text_secondary" />
-        </LinearLayout>
-    </FrameLayout>
+        android:layout_weight="1"
+        android:orientation="vertical" />
 
     <!-- Footer: single CTA opening the digest -->
     <TextView
         android:id="@+id/btn_open"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="10dp"
         android:text="Ouvrir Facteur"
         android:textSize="14sp"
         android:textStyle="bold"
