@@ -9,12 +9,13 @@ import '../../../widgets/design/facteur_card.dart';
 import '../../digest/providers/digest_provider.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/widgets/essentiel_pill.dart';
-import '../../digest/widgets/lecture_apaisee_pill.dart';
+import '../../digest/widgets/bonnes_nouvelles_pill.dart';
 
 /// Mini-carousel horizontal en tête du feed.
 ///
-/// Toujours 2 cartes : « L'essentiel du jour » et « Une lecture apaisée ».
-/// L'ordre dépend du toggle Serein (Lecture apaisée en tête quand activé).
+/// Toujours 2 cartes : « L'essentiel du jour » et « Les bonnes nouvelles
+/// du jour ». L'ordre dépend du toggle Serein (Bonnes nouvelles en tête
+/// quand activé).
 class DigestEntryCard extends ConsumerWidget {
   const DigestEntryCard({super.key});
 
@@ -68,8 +69,8 @@ class DigestEntryCard extends ConsumerWidget {
       child: _CarouselCard(
         backgroundColor: cardBackground,
         perforationColor: SereinColors.sereinColor,
-        pill: LectureApaiseePill(isDark: isDark, outlined: true),
-        title: 'Une lecture apaisée',
+        pill: BonnesNouvellesPill(isDark: isDark, outlined: true),
+        title: 'Les bonnes nouvelles du jour',
         titleColor: colors.textPrimary,
         captionColor: colors.textTertiary,
         articleCount: sereinCount,

@@ -49,6 +49,8 @@ class _NotificationActivationModalState
     extends ConsumerState<NotificationActivationModal> {
   late NotifPreset _preset;
   late NotifTimeSlot _timeSlot;
+  late bool _goodNewsEnabled;
+  late NotifTimeSlot _goodNewsTimeSlot;
   bool _busy = false;
 
   @override
@@ -57,6 +59,11 @@ class _NotificationActivationModalState
     final current = ref.read(notificationsSettingsProvider);
     _preset = current.preset;
     _timeSlot = current.timeSlot;
+    // Toggle Bonnes nouvelles : conserve l'état persisté si déjà activé,
+    // sinon OFF par défaut. Aucun pré-cochage automatique basé sur d'autres
+    // préférences (ex. mode serein actif) — opt-in 100 % explicite.
+    _goodNewsEnabled = current.goodNewsEnabled;
+    _goodNewsTimeSlot = current.goodNewsTimeSlot;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(analyticsServiceProvider).trackModalNotifShown(
@@ -82,6 +89,13 @@ class _NotificationActivationModalState
       timeSlot: _timeSlot,
       osGranted: granted,
     );
+
+    if (_goodNewsEnabled) {
+      await notifier.confirmGoodNewsActivation(
+        timeSlot: _goodNewsTimeSlot,
+        osGranted: granted,
+      );
+    }
 
     analytics.trackModalNotifConfirmed(
       preset: _preset,
@@ -208,6 +222,14 @@ class _NotificationActivationModalState
                 },
               ),
               const SizedBox(height: FacteurSpacing.space6),
+              _GoodNewsSection(
+                enabled: _goodNewsEnabled,
+                timeSlot: _goodNewsTimeSlot,
+                onToggle: (v) => setState(() => _goodNewsEnabled = v),
+                onTimeSlotChanged: (s) =>
+                    setState(() => _goodNewsTimeSlot = s),
+              ),
+              const SizedBox(height: FacteurSpacing.space6),
               SizedBox(
                 height: 48,
                 child: ElevatedButton(
@@ -283,6 +305,83 @@ class _SectionHeader extends StatelessWidget {
         color: colors.textSecondary,
         fontWeight: FontWeight.w700,
         letterSpacing: 0.4,
+      ),
+    );
+  }
+}
+
+/// Section dédiée au canal opt-in « Bonnes nouvelles du jour ».
+///
+/// Strictement indépendante du toggle digest principal : l'utilisateur peut
+/// activer l'un sans l'autre, et activer cette section ne pré-coche jamais
+/// le digest principal (ni inversement). Le bouton « Activer ton Facteur »
+/// du parent ne souscrit à ce canal que si [enabled] est true.
+class _GoodNewsSection extends StatelessWidget {
+  final bool enabled;
+  final NotifTimeSlot timeSlot;
+  final ValueChanged<bool> onToggle;
+  final ValueChanged<NotifTimeSlot> onTimeSlotChanged;
+
+  const _GoodNewsSection({
+    required this.enabled,
+    required this.timeSlot,
+    required this.onToggle,
+    required this.onTimeSlotChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(FacteurSpacing.space4),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border.all(color: colors.surfaceElevated),
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '🌱 Bonnes nouvelles du jour',
+                      style: theme.textTheme.bodyLarge
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "Une dose d'espoir, à un moment dédié de la journée.",
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch.adaptive(
+                value: enabled,
+                onChanged: onToggle,
+                activeColor: colors.primary,
+              ),
+            ],
+          ),
+          if (enabled) ...[
+            const SizedBox(height: FacteurSpacing.space3),
+            const _SectionHeader(label: 'À quel moment ?'),
+            const SizedBox(height: FacteurSpacing.space3),
+            TimeSlotSelector(
+              value: timeSlot,
+              onChanged: onTimeSlotChanged,
+            ),
+          ],
+        ],
       ),
     );
   }
