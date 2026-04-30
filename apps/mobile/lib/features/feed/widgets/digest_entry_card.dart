@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/serein_colors.dart';
@@ -54,7 +55,7 @@ class DigestEntryCard extends ConsumerWidget {
       child: _CarouselCard(
         backgroundColor: cardBackground,
         perforationColor: colors.primary,
-        pill: EssentielPill(colors: colors, isDark: isDark, outlined: true),
+        pill: EssentielPill(colors: colors, isDark: isDark),
         title: "L'essentiel du jour",
         titleColor: colors.textPrimary,
         captionColor: colors.textTertiary,
@@ -69,7 +70,7 @@ class DigestEntryCard extends ConsumerWidget {
       child: _CarouselCard(
         backgroundColor: cardBackground,
         perforationColor: SereinColors.sereinColor,
-        pill: BonnesNouvellesPill(isDark: isDark, outlined: true),
+        pill: BonnesNouvellesPill(isDark: isDark),
         title: 'Les bonnes nouvelles du jour',
         titleColor: colors.textPrimary,
         captionColor: colors.textTertiary,
@@ -122,6 +123,7 @@ class _CarouselCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.facteurColors;
     return FacteurCard(
       onTap: onTap,
       backgroundColor: backgroundColor,
@@ -130,6 +132,27 @@ class _CarouselCard extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.hardEdge,
         children: [
+          // Subtle radial colour veil — top-right corner
+          Positioned(
+            top: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Container(
+                width: 180,
+                height: 120,
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.topRight,
+                    radius: 1.0,
+                    colors: [
+                      perforationColor.withOpacity(0.10),
+                      perforationColor.withOpacity(0.0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
           Positioned(
             left: 10,
             top: 16,
@@ -148,6 +171,15 @@ class _CarouselCard extends StatelessWidget {
             ),
           ),
           Positioned(top: 16, left: 28, child: pill),
+          Positioned(
+            top: 14,
+            right: 14,
+            child: Icon(
+              PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
+              size: 18,
+              color: colors.textSecondary,
+            ),
+          ),
           Positioned(
             left: 28,
             right: 120,

@@ -126,16 +126,16 @@ class PushNotificationService {
   static const String senderName = 'Ton facteur';
 
   /// Variante A — défaut, sans teaser éditorial.
-  static const String defaultTitle = 'Le facteur est là';
+  static const String defaultTitle = 'Facteur';
   static const String defaultBody = "Ton récap du jour t'attend quand tu veux.";
 
   /// Variante C — déclenchée manuellement par l'éditorial (hors v1).
-  static const String calmTitle = 'Le facteur est là';
+  static const String calmTitle = 'Facteur';
   static const String calmBody =
       "Rien d'important dans l'actu aujourd'hui. Belle journée !";
 
   /// Pépite communauté hebdo (vendredi 18:00, préset Curieux).
-  static const String communityTitle = 'Le facteur est là';
+  static const String communityTitle = 'Facteur';
   static const String communityBody =
       "Les Fact·eur·isses adorent cet article. Jette-y un œil quand tu as 2 min !";
 
@@ -172,7 +172,7 @@ class PushNotificationService {
         return (
           title: defaultTitle,
           body: 'À la une : $clipped',
-          bigText: bullets,
+          bigText: "À la une dans l'Essentiel :\n$bullets",
         );
       case NotifVariant.variantC:
         return (title: calmTitle, body: calmBody, bigText: calmBody);
@@ -218,7 +218,6 @@ class PushNotificationService {
       color: const Color(0xFFD35400),
       styleInformation: MessagingStyleInformation(
         const Person(name: 'Toi'),
-        conversationTitle: copy.title,
         groupConversation: false,
         messages: [
           Message(copy.bigText, DateTime.now(), sender),
@@ -238,7 +237,7 @@ class PushNotificationService {
       ),
       androidScheduleMode: scheduleMode,
       matchDateTimeComponents: DateTimeComponents.time,
-      payload: 'route:/feed',
+      payload: 'route:/digest',
     );
 
     debugPrint(
@@ -458,7 +457,7 @@ class PushNotificationService {
   }
 
   static String _routeFromPayload(String? payload) {
-    if (payload == null || !payload.startsWith('route:')) return '/feed';
+    if (payload == null || !payload.startsWith('route:')) return '/digest';
     return payload.substring('route:'.length);
   }
 }

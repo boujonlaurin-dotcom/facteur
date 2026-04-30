@@ -7,7 +7,7 @@ void main() {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantA,
       );
-      expect(copy.title, 'Le facteur est là');
+      expect(copy.title, 'Facteur');
       expect(copy.body, "Ton récap du jour t'attend quand tu veux.");
       expect(copy.bigText, copy.body);
     });
@@ -17,9 +17,9 @@ void main() {
         variant: NotifVariant.variantB,
         teasers: ['Trump'],
       );
-      expect(copy.title, 'Le facteur est là');
+      expect(copy.title, 'Facteur');
       expect(copy.body, 'À la une : Trump');
-      expect(copy.bigText, '• Trump');
+      expect(copy.bigText, "À la une dans l'Essentiel :\n• Trump");
     });
 
     test('variant B with multiple teasers renders bullet bigText (max 3)', () {
@@ -28,7 +28,10 @@ void main() {
         teasers: ['Trump', 'Climat', 'Marseille', 'Quatrième'],
       );
       expect(copy.body, 'À la une : Trump');
-      expect(copy.bigText, '• Trump\n• Climat\n• Marseille');
+      expect(
+        copy.bigText,
+        "À la une dans l'Essentiel :\n• Trump\n• Climat\n• Marseille",
+      );
     });
 
     test('variant B without teasers falls back to A', () {
@@ -36,7 +39,7 @@ void main() {
         variant: NotifVariant.variantB,
         teasers: const [],
       );
-      expect(copy.title, 'Le facteur est là');
+      expect(copy.title, 'Facteur');
     });
 
     test('variant B truncates first teaser longer than 60 chars', () {
@@ -53,7 +56,7 @@ void main() {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantC,
       );
-      expect(copy.title, 'Le facteur est là');
+      expect(copy.title, 'Facteur');
       expect(copy.body, contains("Belle journée"));
     });
   });
