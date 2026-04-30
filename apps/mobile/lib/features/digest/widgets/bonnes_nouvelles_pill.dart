@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../../config/serein_colors.dart';
 
-class LectureApaiseePill extends StatelessWidget {
+class BonnesNouvellesPill extends StatelessWidget {
   final bool isDark;
   final bool outlined;
 
-  const LectureApaiseePill({
+  const BonnesNouvellesPill({
     super.key,
     required this.isDark,
     this.outlined = false,
@@ -35,7 +35,7 @@ class LectureApaiseePill extends StatelessWidget {
           ),
           const SizedBox(width: 5),
           const Text(
-            'LECTURE APAISÉE',
+            'BONNES NOUVELLES',
             style: TextStyle(
               color: SereinColors.sereinColor,
               fontSize: 10,

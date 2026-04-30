@@ -354,6 +354,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                           digestAsync.valueOrNull?.items.length ?? 5,
                       targetDate:
                           digestAsync.valueOrNull?.targetDate ?? DateTime.now(),
+                      isSerein: sereinState.enabled,
                     ),
                   ),
 

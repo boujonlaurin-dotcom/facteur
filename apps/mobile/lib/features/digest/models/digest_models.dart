@@ -97,6 +97,7 @@ class DigestTopic with _$DigestTopic {
     @Default('') String reason,
     @JsonKey(name: 'is_trending') @Default(false) bool isTrending,
     @JsonKey(name: 'is_une') @Default(false) bool isUne,
+    @JsonKey(name: 'source_count') @Default(0) int sourceCount,
     String? theme,
     @JsonKey(name: 'topic_score') @Default(0.0) double topicScore,
     @Default([]) List<String> subjects,
@@ -115,9 +116,6 @@ class DigestTopic with _$DigestTopic {
   /// A topic is "covered" when at least one article has been interacted with
   bool get isCovered =>
       articles.any((a) => a.isRead || a.isSaved || a.isDismissed);
-
-  /// Number of sources covering this topic
-  int get sourceCount => articles.length;
 
   factory DigestTopic.fromJson(Map<String, dynamic> json) =>
       _$DigestTopicFromJson(json);

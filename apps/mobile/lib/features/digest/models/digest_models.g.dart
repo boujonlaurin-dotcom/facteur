@@ -132,6 +132,7 @@ _$DigestTopicImpl _$$DigestTopicImplFromJson(Map<String, dynamic> json) =>
       reason: json['reason'] as String? ?? '',
       isTrending: json['is_trending'] as bool? ?? false,
       isUne: json['is_une'] as bool? ?? false,
+      sourceCount: (json['source_count'] as num?)?.toInt() ?? 0,
       theme: json['theme'] as String?,
       topicScore: (json['topic_score'] as num?)?.toDouble() ?? 0.0,
       subjects: (json['subjects'] as List<dynamic>?)
@@ -167,6 +168,7 @@ Map<String, dynamic> _$$DigestTopicImplToJson(_$DigestTopicImpl instance) =>
       'reason': instance.reason,
       'is_trending': instance.isTrending,
       'is_une': instance.isUne,
+      'source_count': instance.sourceCount,
       'theme': instance.theme,
       'topic_score': instance.topicScore,
       'subjects': instance.subjects,

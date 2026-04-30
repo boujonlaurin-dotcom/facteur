@@ -21,6 +21,7 @@ import '../../feed/widgets/perspectives_loading_sheet.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import 'a_la_une_badge.dart';
 import 'article_thumbs_feedback.dart';
 import 'divergence_analysis_block.dart';
 import 'editorial_badge.dart';
@@ -977,7 +978,9 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           ),
 
           // Row 2: Badges — skip for singletons
-          if (!isSingleton && (topic.isTrending || topic.isUne)) ...[
+          if (!isSingleton &&
+              (topic.isTrending ||
+                  (topic.isUne && topic.sourceCount >= 2))) ...[
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -989,13 +992,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                     icon: PhosphorIcons.trendUp(PhosphorIconsStyle.bold),
                     label: 'Couvert par ${topic.sourceCount} sources',
                   ),
-                if (topic.isUne)
-                  _buildBadge(
-                    colors,
-                    isDark,
-                    icon: PhosphorIcons.newspaper(PhosphorIconsStyle.bold),
-                    label: 'A la une',
-                  ),
+                if (topic.isUne && topic.sourceCount >= 2)
+                  ALaUneBadge(sourceCount: topic.sourceCount),
               ],
             ),
           ],

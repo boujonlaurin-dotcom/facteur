@@ -23,7 +23,7 @@ final posthogServiceProvider = Provider<PostHogService>.internal(
 );
 
 typedef PosthogServiceRef = ProviderRef<PostHogService>;
-String _$analyticsServiceHash() => r'ce5011ca427202ed88c7e0a870ad1c06c4944912';
+String _$analyticsServiceHash() => r'ad79a9efe03715d95cfa0322e2baf253d8e9b7fc';
 
 /// See also [analyticsService].
 @ProviderFor(analyticsService)
