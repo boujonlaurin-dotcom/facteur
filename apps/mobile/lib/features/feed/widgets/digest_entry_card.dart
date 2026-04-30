@@ -99,11 +99,11 @@ class _DigestCard extends StatelessWidget {
             left: 28,
             child: EssentielPill(colors: colors, isDark: isDark),
           ),
-          // Titre + caption en bas à gauche.
+          // Titre + caption ancrés juste sous le pill (haut-gauche).
           Positioned(
             left: 28,
             right: 120,
-            bottom: 16,
+            top: 52,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -139,11 +139,6 @@ class _PerforationDots extends StatelessWidget {
   final Color color;
   static const double _dotSize = 3;
   static const double _spacing = 6;
-  // Fraction de la hauteur disponible utilisée par la colonne de dots :
-  // une perforation plus courte ancrée vers le bas réduit l'espace mort
-  // dans la moitié haute de la carte, l'espacement visuel inter-dots reste
-  // identique (_spacing px).
-  static const double _fillFraction = 0.55;
 
   const _PerforationDots({required this.color});
 
@@ -153,16 +148,13 @@ class _PerforationDots extends StatelessWidget {
       builder: (context, constraints) {
         final height = constraints.maxHeight;
         final unit = _dotSize + _spacing;
-        final maxCount =
-            height <= 0 ? 0 : ((height + _spacing) / unit).floor();
-        final count = (maxCount * _fillFraction).round();
-        return Align(
-          alignment: Alignment.bottomCenter,
+        final count = height <= 0 ? 0 : ((height + _spacing) / unit).floor();
+        return SizedBox(
+          height: height,
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              for (int i = 0; i < count; i++) ...[
-                if (i > 0) const SizedBox(height: _spacing),
+              for (int i = 0; i < count; i++)
                 Container(
                   width: _dotSize,
                   height: _dotSize,
@@ -171,7 +163,6 @@ class _PerforationDots extends StatelessWidget {
                     shape: BoxShape.circle,
                   ),
                 ),
-              ],
             ],
           ),
         );
