@@ -92,7 +92,9 @@ void main() {
       await tester.pumpWidget(buildWidget(
         divergenceAnalysis: 'Analyse texte',
       ));
-      expect(find.byType(InkWell), findsOneWidget);
+      // Parent InkWell wraps the card; the collapsed CTA OutlinedButton
+      // adds its own internal InkWell — assert at least the parent is there.
+      expect(find.byType(InkWell), findsAtLeastNWidgets(1));
     });
 
     testWidgets('tap on chevron reveals analysis text', (tester) async {
@@ -229,8 +231,10 @@ void main() {
         excludeSourceId: only.id,
         excludeSourceName: only.name,
       ));
-      // perspectiveCount = 1 → button hidden anyway (existing invariant).
-      expect(find.byType(OutlinedButton), findsNothing);
+      // perspectiveCount = 1 → "Voir les perspectives" CTA hidden anyway.
+      await tester.tap(find.text("Lire l'analyse"));
+      await tester.pump();
+      expect(find.textContaining('perspectives'), findsNothing);
     });
   });
 }

@@ -38,11 +38,19 @@ class DigestEntryCard extends ConsumerWidget {
         (_horizontalPadding * 2) -
         _peek;
 
-    void openDigest({required bool requireSerein}) {
-      if (requireSerein != isSerein) {
-        ref.read(sereinToggleProvider.notifier).toggle();
+    Future<void> openDigest({required bool requireSerein}) async {
+      final original = ref.read(sereinToggleProvider).enabled;
+      final notifier = ref.read(sereinToggleProvider.notifier);
+      if (requireSerein != original) {
+        notifier.setEnabledLocal(requireSerein);
       }
-      context.push(RoutePaths.digest);
+      await context.push(RoutePaths.digest);
+      // Restore the user's persisted mode on return — visiting "Lecture
+      // apaisée" must not change the global preference.
+      if (requireSerein != original &&
+          ref.read(sereinToggleProvider).enabled != original) {
+        notifier.setEnabledLocal(original);
+      }
     }
 
     final cardBackground =

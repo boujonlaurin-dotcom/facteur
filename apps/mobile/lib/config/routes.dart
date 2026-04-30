@@ -389,7 +389,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: RoutePaths.digest,
         name: RouteNames.digest,
         pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-          transitionDurationOverride: Duration(milliseconds: 250),
+          transitionDurationOverride: Duration(milliseconds: 480),
           child: DigestScreen(),
         ),
       ),
