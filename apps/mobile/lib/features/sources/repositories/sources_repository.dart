@@ -203,7 +203,7 @@ class SourcesRepository {
     }
   }
 
-  Future<List<Source>> getPepites({int limit = 4}) async {
+  Future<List<Source>> getPepites({int limit = 10}) async {
     try {
       final response = await _apiClient.dio
           .get<dynamic>('sources/pepites', queryParameters: {'limit': limit});

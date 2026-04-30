@@ -90,6 +90,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   static const int _caughtUpMinScrolled = 15;
   final ScrollController _scrollController = ScrollController();
   double _maxScrollPercent = 0.0;
+  bool _userHasScrolled = false;
   final int _itemsViewed = 0;
 
   bool _hasNudged = false;
@@ -316,6 +317,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
     final maxScroll = _scrollController.position.maxScrollExtent;
     final currentScroll = _scrollController.position.pixels;
+
+    // Bonus: nudge animations only after the user has scrolled a bit.
+    if (!_userHasScrolled && currentScroll > 40) {
+      setState(() => _userHasScrolled = true);
+    }
 
     // Sticky filter bar visibility
     final delta = currentScroll - _lastScrollPos;
@@ -1150,8 +1156,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 final progressionTopic =
                                     _activeProgressions[content.id];
 
-                                final showHint =
-                                    !_swipeHintSeen && contentIndex <= 1;
+                                final showHint = !_swipeHintSeen &&
+                                    _userHasScrolled &&
+                                    contentIndex <= 1;
 
                                 Widget cardWidget = SwipeToOpenCard(
                                   onSwipeOpen: () => _showArticleModal(content),
@@ -1546,67 +1553,26 @@ class _FeedTourneeHeader extends ConsumerWidget {
     final colors = context.facteurColors;
     final profile = ref.watch(userProfileProvider);
     final firstName = (profile.displayName ?? '').trim().split(' ').first;
-    final greeting = firstName.isEmpty
-        ? 'Bonjour,'
-        : 'Bonjour $firstName,';
-    final now = DateTime.now();
+    final hello = DateTime.now().hour >= 18 ? 'Bonsoir' : 'Bonjour';
+    final greeting = firstName.isEmpty ? '$hello,' : '$hello $firstName,';
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _formatStamp(now),
-            style: FacteurTypography.stamp(colors.textTertiary)
-                .copyWith(letterSpacing: 1.2),
-          ),
-          const SizedBox(height: 6),
-          Text(
             greeting,
             style: FacteurTypography.serifTitle(colors.textPrimary)
                 .copyWith(fontSize: 26, height: 1.15),
           ),
           Text(
-            'votre tournée du jour',
+            'Vos infos du jour',
             style: FacteurTypography.serifTitle(colors.textPrimary)
                 .copyWith(fontSize: 26, height: 1.15),
           ),
         ],
       ),
     );
-  }
-
-  static const List<String> _frDays = [
-    'LUNDI',
-    'MARDI',
-    'MERCREDI',
-    'JEUDI',
-    'VENDREDI',
-    'SAMEDI',
-    'DIMANCHE',
-  ];
-
-  static const List<String> _frMonthsAbbr = [
-    'JANV.',
-    'FÉVR.',
-    'MARS',
-    'AVR.',
-    'MAI',
-    'JUIN',
-    'JUIL.',
-    'AOÛT',
-    'SEPT.',
-    'OCT.',
-    'NOV.',
-    'DÉC.',
-  ];
-
-  static String _formatStamp(DateTime d) {
-    final day = _frDays[d.weekday - 1];
-    final month = _frMonthsAbbr[d.month - 1];
-    final hh = d.hour.toString();
-    final mm = d.minute.toString().padLeft(2, '0');
-    return '$day ${d.day} $month · ${hh}H$mm';
   }
 }
 

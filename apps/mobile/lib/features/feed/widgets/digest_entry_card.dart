@@ -1,6 +1,10 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/serein_colors.dart';
@@ -15,7 +19,7 @@ import '../../digest/widgets/lecture_apaisee_pill.dart';
 ///
 /// Toujours 2 cartes : « L'essentiel du jour » et « Une lecture apaisée ».
 /// L'ordre dépend du toggle Serein (Lecture apaisée en tête quand activé).
-class DigestEntryCard extends ConsumerWidget {
+class DigestEntryCard extends ConsumerStatefulWidget {
   const DigestEntryCard({super.key});
 
   static const double _carouselHeight = 170;
@@ -24,7 +28,35 @@ class DigestEntryCard extends ConsumerWidget {
   static const double _gap = 12;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DigestEntryCard> createState() => _DigestEntryCardState();
+}
+
+class _DigestEntryCardState extends ConsumerState<DigestEntryCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+  Timer? _pulseDelay;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    _pulseDelay = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) _pulse.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pulseDelay?.cancel();
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final dual = ref.watch(dualDigestPreviewProvider);
     final isSerein = ref.watch(sereinToggleProvider).enabled;
     final colors = context.facteurColors;
@@ -35,8 +67,8 @@ class DigestEntryCard extends ConsumerWidget {
     final targetDate = dual.normal?.targetDate ?? DateTime.now();
 
     final width = MediaQuery.of(context).size.width -
-        (_horizontalPadding * 2) -
-        _peek;
+        (DigestEntryCard._horizontalPadding * 2) -
+        DigestEntryCard._peek;
 
     void openDigest({required bool requireSerein}) {
       if (requireSerein != isSerein) {
@@ -53,7 +85,7 @@ class DigestEntryCard extends ConsumerWidget {
       child: _CarouselCard(
         backgroundColor: cardBackground,
         perforationColor: colors.primary,
-        pill: EssentielPill(colors: colors, isDark: isDark, outlined: true),
+        pill: EssentielPill(colors: colors, isDark: isDark),
         title: "L'essentiel du jour",
         titleColor: colors.textPrimary,
         captionColor: colors.textTertiary,
@@ -68,7 +100,7 @@ class DigestEntryCard extends ConsumerWidget {
       child: _CarouselCard(
         backgroundColor: cardBackground,
         perforationColor: SereinColors.sereinColor,
-        pill: LectureApaiseePill(isDark: isDark, outlined: true),
+        pill: LectureApaiseePill(isDark: isDark),
         title: 'Une lecture apaisée',
         titleColor: colors.textPrimary,
         captionColor: colors.textTertiary,
@@ -83,14 +115,23 @@ class DigestEntryCard extends ConsumerWidget {
         : [essentielCard, lectureApaiseeCard];
 
     return SizedBox(
-      height: _carouselHeight,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: _horizontalPadding),
-        physics: const BouncingScrollPhysics(),
-        itemCount: cards.length,
-        separatorBuilder: (_, __) => const SizedBox(width: _gap),
-        itemBuilder: (_, i) => cards[i],
+      height: DigestEntryCard._carouselHeight,
+      child: AnimatedBuilder(
+        animation: _pulse,
+        builder: (context, child) {
+          final scale = 1.0 + 0.04 * math.sin(_pulse.value * 2 * math.pi);
+          return Transform.scale(scale: scale, child: child);
+        },
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(
+              horizontal: DigestEntryCard._horizontalPadding),
+          physics: const BouncingScrollPhysics(),
+          itemCount: cards.length,
+          separatorBuilder: (_, __) =>
+              const SizedBox(width: DigestEntryCard._gap),
+          itemBuilder: (_, i) => cards[i],
+        ),
       ),
     );
   }
@@ -121,6 +162,7 @@ class _CarouselCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.facteurColors;
     return FacteurCard(
       onTap: onTap,
       backgroundColor: backgroundColor,
@@ -129,6 +171,26 @@ class _CarouselCard extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.hardEdge,
         children: [
+          Positioned(
+            top: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Container(
+                width: 180,
+                height: 120,
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.topRight,
+                    radius: 1.0,
+                    colors: [
+                      perforationColor.withOpacity(0.10),
+                      perforationColor.withOpacity(0.0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
           Positioned(
             left: 10,
             top: 16,
@@ -147,6 +209,15 @@ class _CarouselCard extends StatelessWidget {
             ),
           ),
           Positioned(top: 16, left: 28, child: pill),
+          Positioned(
+            top: 14,
+            right: 14,
+            child: Icon(
+              PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
+              size: 18,
+              color: colors.textSecondary,
+            ),
+          ),
           Positioned(
             left: 28,
             right: 120,

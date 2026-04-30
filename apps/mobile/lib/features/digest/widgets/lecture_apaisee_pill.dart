@@ -4,26 +4,19 @@ import '../../../config/serein_colors.dart';
 
 class LectureApaiseePill extends StatelessWidget {
   final bool isDark;
-  final bool outlined;
 
   const LectureApaiseePill({
     super.key,
     required this.isDark,
-    this.outlined = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: outlined
-            ? Colors.transparent
-            : SereinColors.sereinColor.withOpacity(isDark ? 0.18 : 0.12),
-        border: outlined
-            ? Border.all(color: SereinColors.sereinColor, width: 1.2)
-            : null,
-        borderRadius: BorderRadius.circular(14),
+        color: SereinColors.sereinColor.withOpacity(isDark ? 0.18 : 0.12),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
