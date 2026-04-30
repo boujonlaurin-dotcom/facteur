@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import 'feedback_bottom_sheet.dart';
@@ -79,33 +80,67 @@ class _ClosureBlockState extends State<ClosureBlock>
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () {
-                    HapticFeedback.mediumImpact();
-                    showModalBottomSheet<void>(
-                      context: context,
-                      isScrollControlled: true,
-                      builder: (_) => const FeedbackBottomSheet(),
-                    );
-                  },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: colors.primary,
-                    foregroundColor: Colors.white,
-                    shape: const StadiumBorder(),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 28,
-                      vertical: 14,
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        HapticFeedback.lightImpact();
+                        if (context.canPop()) {
+                          context.pop();
+                        } else {
+                          context.go('/feed');
+                        }
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: colors.textSecondary,
+                        side: BorderSide(
+                          color: colors.textSecondary.withOpacity(0.35),
+                          width: 1,
+                        ),
+                        shape: const StadiumBorder(),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      icon: const Icon(Icons.arrow_back, size: 16),
+                      label: const Text('Retour au flux'),
                     ),
                   ),
-                  icon: Icon(PhosphorIcons.checkCircle(), size: 18),
-                  label: const Text('Essentiel terminé — Un avis ?'),
-                ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        HapticFeedback.mediumImpact();
+                        showModalBottomSheet<void>(
+                          context: context,
+                          isScrollControlled: true,
+                          builder: (_) => const FeedbackBottomSheet(),
+                        );
+                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: colors.primary,
+                        foregroundColor: Colors.white,
+                        shape: const StadiumBorder(),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      icon: Icon(PhosphorIcons.checkCircle(), size: 16),
+                      label: const Text('Un avis ?'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

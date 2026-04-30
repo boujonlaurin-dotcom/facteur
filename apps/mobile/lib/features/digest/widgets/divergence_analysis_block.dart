@@ -103,23 +103,44 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
               // Toggle is handled by the parent InkWell (whole card is tappable).
               const SizedBox(height: 14),
               if (!_isExpanded)
-                Row(
-                  children: [
-                    Icon(
-                      Icons.expand_more,
-                      size: 16,
-                      color: colors.primary.withOpacity(0.7),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      "Lire l'analyse",
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: colors.primary.withOpacity(0.7),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    height: 30,
+                    child: OutlinedButton(
+                      onPressed: () => setState(() => _isExpanded = true),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: colors.textSecondary,
+                        side: BorderSide(
+                          color: colors.textSecondary.withOpacity(0.25),
+                          width: 0.8,
+                        ),
+                        shape: const StadiumBorder(),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 0),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.expand_more,
+                            size: 14,
+                            color: colors.textSecondary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            "Lire l'analyse",
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: colors.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 )
               else ...[
                 // "Réduire" chevron aligned right — toggles via parent InkWell.

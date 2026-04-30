@@ -18,7 +18,7 @@ class EssentielPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
         color: outlined
             ? Colors.transparent
@@ -26,7 +26,7 @@ class EssentielPill extends StatelessWidget {
         border: outlined
             ? Border.all(color: colors.primary, width: 1.2)
             : null,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

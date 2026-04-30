@@ -26,18 +26,17 @@ class DigestHero extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return SizedBox(
-      height: 200,
+      height: 170,
       child: Stack(
         clipBehavior: Clip.hardEdge,
         children: [
-          // Illustration facteur, ancrée bottom-right (flush coin).
           Positioned(
             right: 0,
             bottom: 0,
             child: IgnorePointer(
               child: Image.asset(
                 'assets/notifications/facteur_avatar.png',
-                height: 150,
+                height: 140,
                 fit: BoxFit.contain,
               ),
             ),
@@ -68,7 +67,7 @@ class DigestHero extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 14),
                 Text(
                   '$articleCount articles · ${formatDigestDate(targetDate)}',
                   style:

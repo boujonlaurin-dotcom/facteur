@@ -15,7 +15,7 @@ class BonnesNouvellesPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
         color: outlined
             ? Colors.transparent
@@ -23,7 +23,7 @@ class BonnesNouvellesPill extends StatelessWidget {
         border: outlined
             ? Border.all(color: SereinColors.sereinColor, width: 1.2)
             : null,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
