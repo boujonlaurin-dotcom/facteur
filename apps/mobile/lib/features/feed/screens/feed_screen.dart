@@ -50,6 +50,7 @@ import '../../custom_topics/widgets/topic_chip.dart';
 // import '../widgets/entity_overflow_chip.dart';
 import '../widgets/digest_entry_card.dart';
 import '../widgets/feed_carousel.dart';
+import '../widgets/profile_avatar_button.dart';
 import '../../app_update/providers/app_update_provider.dart';
 import '../../app_update/widgets/update_button.dart';
 import '../../app_update/widgets/update_modal.dart';
@@ -60,10 +61,10 @@ import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../widgets/feed_refresh_undo_banner.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../widgets/empty_filter_state.dart';
+import '../widgets/filter_collapsible_panel.dart';
 import '../widgets/follow_keyword_suggestion_card.dart';
 import '../widgets/interest_filter_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
-import '../../digest/widgets/serein_toggle_chip.dart';
 import '../../settings/providers/user_profile_provider.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/pepites_carousel.dart';
@@ -443,7 +444,26 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
   }
 
-  Widget _buildFilterBarContent(BuildContext context) {
+  int _activeFilterCount() {
+    final notifier = ref.read(feedProvider.notifier);
+    var count = 0;
+    if (notifier.selectedSourceId != null) count++;
+    if (notifier.selectedTheme != null ||
+        notifier.selectedTopic != null ||
+        notifier.selectedEntity != null) count++;
+    if (notifier.selectedKeyword != null &&
+        notifier.selectedKeyword!.isNotEmpty) count++;
+    return count;
+  }
+
+  Widget _buildFilterBar(BuildContext context) {
+    return FilterCollapsiblePanel(
+      activeCount: _activeFilterCount(),
+      chipsRow: _buildFilterChipsRow(context),
+    );
+  }
+
+  Widget _buildFilterChipsRow(BuildContext context) {
     final notifier = ref.read(feedProvider.notifier);
 
     if (notifier.selectedTheme == null &&
@@ -617,17 +637,24 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                   controller: _scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
-                    const SliverToBoxAdapter(
+                    SliverToBoxAdapter(
                       child: Padding(
-                        padding: EdgeInsets.symmetric(
+                        padding: const EdgeInsets.symmetric(
                           horizontal: FacteurSpacing.space6,
                           vertical: FacteurSpacing.space3,
                         ),
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            FacteurLogo(size: 22, showIcon: false),
+                            const FacteurLogo(size: 22, showIcon: false),
                             Align(
+                              alignment: Alignment.centerLeft,
+                              child: ProfileAvatarButton(
+                                onTap: () =>
+                                    context.push(RoutePaths.settings),
+                              ),
+                            ),
+                            const Align(
                               alignment: Alignment.centerRight,
                               child: UpdateButton(),
                             ),
@@ -666,7 +693,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16.0, vertical: 8.0),
-                        child: _buildFilterBarContent(context),
+                        child: _buildFilterBar(context),
                       ),
                     ),
                     SliverToBoxAdapter(
@@ -1444,7 +1471,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             16,
                             8,
                           ),
-                          child: _buildFilterBarContent(context),
+                          child: _buildFilterBar(context),
                         ),
                       ),
                     ),
@@ -1520,18 +1547,10 @@ class _FeedTourneeHeader extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Text(
-                  _formatStamp(now),
-                  style: FacteurTypography.stamp(colors.textTertiary)
-                      .copyWith(letterSpacing: 1.2),
-                ),
-              ),
-              const SereinToggleChip(),
-            ],
+          Text(
+            _formatStamp(now),
+            style: FacteurTypography.stamp(colors.textTertiary)
+                .copyWith(letterSpacing: 1.2),
           ),
           const SizedBox(height: 6),
           Text(

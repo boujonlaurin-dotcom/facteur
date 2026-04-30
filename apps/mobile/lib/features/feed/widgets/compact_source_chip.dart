@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../sources/models/source_model.dart';
 import 'source_filter_sheet.dart';
@@ -109,21 +110,18 @@ class _InactiveChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final muted = colorScheme.onSurface.withOpacity(0.5);
-    final trackColor = isDark
-        ? Colors.white.withOpacity(0.08)
-        : Colors.black.withOpacity(0.05);
+    final colors = context.facteurColors;
+    final muted = colors.textSecondary;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
         height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: trackColor,
+          borderRadius: BorderRadius.circular(FacteurRadius.full),
+          color: colors.surface,
+          border: Border.all(color: colors.border),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -131,9 +129,12 @@ class _InactiveChip extends StatelessWidget {
             if (topSources.isEmpty) ...[
               Text(
                 'Sources',
-                style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w500),
+                style: TextStyle(
+                    fontSize: 12,
+                    color: colors.textPrimary,
+                    fontWeight: FontWeight.w500),
               ),
-              const SizedBox(width: 2),
+              const SizedBox(width: 4),
             ] else ...[
               // Avatar stack — overlap adapts to screen width
               Builder(builder: (context) {
@@ -199,17 +200,18 @@ class _ActiveChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final primary = colorScheme.primary;
+    final colors = context.facteurColors;
+    final primary = colors.primary;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
         height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(FacteurRadius.full),
           color: primary.withOpacity(0.12),
+          border: Border.all(color: primary),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

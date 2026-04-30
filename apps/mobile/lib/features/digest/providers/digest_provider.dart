@@ -26,6 +26,18 @@ final digestProvider =
   return DigestNotifier();
 });
 
+/// Read-only snapshot of the dual digest cache (both Essentiel + Lecture
+/// apaisée variants). Re-emits when [digestProvider] changes. Falls back to
+/// the active digest from state when the dual cache hasn't been populated
+/// yet — keeps the feed carousel resilient before /digest/both lands.
+final dualDigestPreviewProvider =
+    Provider<({DigestResponse? normal, DigestResponse? serein})>((ref) {
+  final state = ref.watch(digestProvider);
+  final notifier = ref.read(digestProvider.notifier);
+  final normal = notifier.normalDigest ?? state.valueOrNull;
+  return (normal: normal, serein: notifier.sereinDigest);
+});
+
 class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   bool _isCompleting = false;
 
@@ -34,6 +46,9 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   DigestResponse? _normalDigest;
   DigestResponse? _sereinDigest;
   String? _cachedDate; // ISO date string (YYYY-MM-DD) for cache invalidation
+
+  DigestResponse? get normalDigest => _normalDigest;
+  DigestResponse? get sereinDigest => _sereinDigest;
 
   /// Timer scheduled when a stale fallback digest is shown, to auto-refetch
   /// fresh content generated in the background.
