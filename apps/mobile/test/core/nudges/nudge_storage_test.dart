@@ -16,28 +16,28 @@ void main() {
   group('NudgeStorage — seen flag', () {
     test('isSeen defaults to false when no value set', () async {
       final storage = NudgeStorage(prefs: await SharedPreferences.getInstance());
-      final nudge = NudgeRegistry.get(NudgeIds.digestWelcome);
+      final nudge = NudgeRegistry.get(NudgeIds.widgetPinAndroid);
       expect(await storage.isSeen(nudge), isFalse);
     });
 
     test('markSeen + isSeen roundtrip via namespaced key', () async {
       final prefs = await SharedPreferences.getInstance();
       final storage = NudgeStorage(prefs: prefs);
-      final nudge = NudgeRegistry.get(NudgeIds.digestWelcome);
+      final nudge = NudgeRegistry.get(NudgeIds.widgetPinAndroid);
 
       await storage.markSeen(nudge);
 
       expect(await storage.isSeen(nudge), isTrue);
-      expect(prefs.getBool('nudge.digest_welcome.seen'), isTrue);
+      expect(prefs.getBool('nudge.widget_pin_android.seen'), isTrue);
     });
 
     test('legacy key is read when namespaced key missing', () async {
       SharedPreferences.setMockInitialValues({
-        'has_seen_digest_welcome': true,
+        'has_seen_widget_pin_nudge': true,
       });
       final prefs = await SharedPreferences.getInstance();
       final storage = NudgeStorage(prefs: prefs);
-      final nudge = NudgeRegistry.get(NudgeIds.digestWelcome);
+      final nudge = NudgeRegistry.get(NudgeIds.widgetPinAndroid);
 
       expect(await storage.isSeen(nudge), isTrue);
     });
@@ -45,21 +45,21 @@ void main() {
     test('legacy key is ALSO written for defensive rollback', () async {
       final prefs = await SharedPreferences.getInstance();
       final storage = NudgeStorage(prefs: prefs);
-      final nudge = NudgeRegistry.get(NudgeIds.digestWelcome);
+      final nudge = NudgeRegistry.get(NudgeIds.widgetPinAndroid);
 
       await storage.markSeen(nudge);
 
-      expect(prefs.getBool('has_seen_digest_welcome'), isTrue);
+      expect(prefs.getBool('has_seen_widget_pin_nudge'), isTrue);
     });
 
     test('namespaced value takes precedence over legacy', () async {
       SharedPreferences.setMockInitialValues({
-        'has_seen_digest_welcome': true,
-        'nudge.digest_welcome.seen': false,
+        'has_seen_widget_pin_nudge': true,
+        'nudge.widget_pin_android.seen': false,
       });
       final prefs = await SharedPreferences.getInstance();
       final storage = NudgeStorage(prefs: prefs);
-      final nudge = NudgeRegistry.get(NudgeIds.digestWelcome);
+      final nudge = NudgeRegistry.get(NudgeIds.widgetPinAndroid);
 
       expect(await storage.isSeen(nudge), isFalse);
     });

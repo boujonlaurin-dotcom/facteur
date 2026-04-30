@@ -8,8 +8,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../features/auth/utils/auth_error_messages.dart';
-import '../nudges/nudge_ids.dart';
-import '../nudges/nudge_service.dart';
 import '../services/posthog_service.dart';
 import '../services/widget_service.dart';
 import 'session_refresher.dart';
@@ -38,13 +36,6 @@ class AuthState {
   /// Cf. docs/bugs/bug-feed-403-auth-recovery.md.
   final DateTime? lastTokenRefreshAt;
 
-  /// Whether the user has already seen the post-onboarding Welcome Tour.
-  ///
-  /// Loaded at app boot from the unified NudgeService. Used by the GoRouter
-  /// redirect to gate `/welcome-tour` synchronously for both new users
-  /// (post-onboarding) and existing users (first boot after deploy).
-  final bool welcomeTourSeen;
-
   const AuthState({
     this.user,
     this.isLoading = false,
@@ -54,7 +45,6 @@ class AuthState {
     this.forceUnconfirmed = false,
     this.sessionExpired = false,
     this.lastTokenRefreshAt,
-    this.welcomeTourSeen = true,
   });
 
   bool get isAuthenticated => user != null;
@@ -94,7 +84,6 @@ class AuthState {
     bool? forceUnconfirmed,
     bool? sessionExpired,
     DateTime? lastTokenRefreshAt,
-    bool? welcomeTourSeen,
   }) {
     return AuthState(
       user: user ?? this.user,
@@ -107,7 +96,6 @@ class AuthState {
       forceUnconfirmed: forceUnconfirmed ?? this.forceUnconfirmed,
       sessionExpired: sessionExpired ?? this.sessionExpired,
       lastTokenRefreshAt: lastTokenRefreshAt ?? this.lastTokenRefreshAt,
-      welcomeTourSeen: welcomeTourSeen ?? this.welcomeTourSeen,
     );
   }
 }
@@ -244,7 +232,6 @@ class AuthStateNotifier extends StateNotifier<AuthState>
 
       if (session != null) {
         await _checkOnboardingStatus();
-        await _loadWelcomeTourSeen();
       }
 
       // 7. Écouter les changements futurs
@@ -304,12 +291,6 @@ class AuthStateNotifier extends StateNotifier<AuthState>
 
       if (user != null && isNewSignIn) {
         // Check onboarding on first sign-in (new user appearing).
-        // Sequential await: `welcomeTourSeen` must settle AFTER `needsOnboarding`
-        // so the `WelcomeTourHost` doesn't race — starting the tour in the
-        // brief window where the shell is mounted before the onboarding
-        // redirect kicks in. Without the sequence, switching accounts on the
-        // same device could flash the tour and then strand its controller
-        // with `active=true` during onboarding.
         _loadSessionProfile();
       }
     });
@@ -400,16 +381,8 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     super.dispose();
   }
 
-  /// Loads onboarding status and welcome-tour-seen flag in sequence.
-  ///
-  /// Sequential ordering is load-bearing: `WelcomeTourHost` listens to both
-  /// flags, and if `welcomeTourSeen=false` settles before `needsOnboarding=true`
-  /// the host will start the tour in the shell before the onboarding redirect
-  /// takes effect — leaving the tour's state machine stuck when the host
-  /// unmounts.
   Future<void> _loadSessionProfile() async {
     await _checkOnboardingStatus();
-    await _loadWelcomeTourSeen();
   }
 
   Future<void> _checkOnboardingStatus() async {
@@ -472,40 +445,6 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   /// Force le rafraîchissement du statut onboarding depuis la DB
   Future<void> refreshOnboardingStatus() async {
     await _checkOnboardingStatus();
-  }
-
-  /// Charge l'état "tour vu" pour l'utilisateur courant depuis NudgeService.
-  ///
-  /// La clé est scopée par `user.id` (cf. [NudgeStorage.isSeenForUser]) pour
-  /// que deux comptes sur le même device voient le tour indépendamment.
-  /// Appelé à l'init (session restaurée) et lors d'un nouveau sign-in.
-  Future<void> _loadWelcomeTourSeen() async {
-    final userId = state.user?.id;
-    if (userId == null) return;
-    try {
-      final seen =
-          await NudgeService().isSeenForUser(NudgeIds.welcomeTour, userId);
-      if (state.welcomeTourSeen != seen) {
-        state = state.copyWith(welcomeTourSeen: seen);
-      }
-    } catch (e) {
-      debugPrint('AuthState: _loadWelcomeTourSeen error: $e');
-    }
-  }
-
-  /// Marque le Welcome Tour comme vu pour l'utilisateur courant.
-  ///
-  /// Appelé par le `WelcomeTourController` à la fin du tour ou sur skip.
-  Future<void> markWelcomeTourSeen() async {
-    if (state.welcomeTourSeen) return;
-    final userId = state.user?.id;
-    state = state.copyWith(welcomeTourSeen: true);
-    if (userId == null) return;
-    try {
-      await NudgeService().markSeenForUser(NudgeIds.welcomeTour, userId);
-    } catch (e) {
-      debugPrint('AuthState: markWelcomeTourSeen persistence error: $e');
-    }
   }
 
   Future<void> signInWithEmail(
