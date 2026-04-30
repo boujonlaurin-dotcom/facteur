@@ -85,7 +85,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   bool _showWelcome = false;
   bool _activationModalShown = false;
   bool _caughtUpDismissed = false;
-  static const int _caughtUpThreshold = 8;
+  static const int _caughtUpMinScrolled = 15;
   final ScrollController _scrollController = ScrollController();
   double _maxScrollPercent = 0.0;
   final int _itemsViewed = 0;
@@ -710,10 +710,37 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         final streakAsync = ref.watch(streakProvider);
                         final dailyCount =
                             streakAsync.valueOrNull?.weeklyCount ?? 0;
-                        final showCaughtUp = dailyCount >= _caughtUpThreshold &&
-                            !_caughtUpDismissed;
-                        // Position de la carte "Tu es à jour" après 8 articles
-                        const caughtUpPos = 8;
+                        final isSerein =
+                            ref.watch(sereinToggleProvider).enabled;
+
+                        bool showCaughtUp;
+                        int caughtUpPos;
+                        if (_caughtUpDismissed) {
+                          showCaughtUp = false;
+                          caughtUpPos = -1;
+                        } else if (isSerein) {
+                          showCaughtUp =
+                              dailyCount >= _caughtUpMinScrolled &&
+                                  contents.length > _caughtUpMinScrolled;
+                          caughtUpPos = _caughtUpMinScrolled;
+                        } else {
+                          final now = DateTime.now();
+                          final firstOldIdx = contents.indexWhere(
+                            (c) =>
+                                now.difference(c.publishedAt) >
+                                const Duration(hours: 24),
+                          );
+                          if (firstOldIdx >= 0 &&
+                              contents.length >= _caughtUpMinScrolled) {
+                            caughtUpPos = firstOldIdx < _caughtUpMinScrolled
+                                ? _caughtUpMinScrolled
+                                : firstOldIdx;
+                            showCaughtUp = contents.length > caughtUpPos;
+                          } else {
+                            showCaughtUp = false;
+                            caughtUpPos = -1;
+                          }
+                        }
 
                         // Saved nudge: show at position 6 if user has 3+ unread saves
                         final savedSummary =
