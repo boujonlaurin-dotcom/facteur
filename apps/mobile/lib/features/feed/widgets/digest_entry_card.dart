@@ -138,7 +138,12 @@ class _DigestCard extends StatelessWidget {
 class _PerforationDots extends StatelessWidget {
   final Color color;
   static const double _dotSize = 3;
-  static const double _spacing = 10;
+  static const double _spacing = 6;
+  // Fraction de la hauteur disponible utilisée par la colonne de dots :
+  // une perforation plus courte ancrée vers le bas réduit l'espace mort
+  // dans la moitié haute de la carte, l'espacement visuel inter-dots reste
+  // identique (_spacing px).
+  static const double _fillFraction = 0.55;
 
   const _PerforationDots({required this.color});
 
@@ -148,13 +153,16 @@ class _PerforationDots extends StatelessWidget {
       builder: (context, constraints) {
         final height = constraints.maxHeight;
         final unit = _dotSize + _spacing;
-        final count = height <= 0 ? 0 : ((height + _spacing) / unit).floor();
-        return SizedBox(
-          height: height,
+        final maxCount =
+            height <= 0 ? 0 : ((height + _spacing) / unit).floor();
+        final count = (maxCount * _fillFraction).round();
+        return Align(
+          alignment: Alignment.bottomCenter,
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              for (int i = 0; i < count; i++)
+              for (int i = 0; i < count; i++) ...[
+                if (i > 0) const SizedBox(height: _spacing),
                 Container(
                   width: _dotSize,
                   height: _dotSize,
@@ -163,6 +171,7 @@ class _PerforationDots extends StatelessWidget {
                     shape: BoxShape.circle,
                   ),
                 ),
+              ],
             ],
           ),
         );
