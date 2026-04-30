@@ -138,7 +138,7 @@ class _DigestCard extends StatelessWidget {
 class _PerforationDots extends StatelessWidget {
   final Color color;
   static const double _dotSize = 3;
-  static const double _spacing = 6;
+  static const double _spacing = 10;
 
   const _PerforationDots({required this.color});
 
