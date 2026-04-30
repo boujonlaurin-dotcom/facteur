@@ -1,16 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-import '../../../config/theme.dart';
+import '../../../config/serein_colors.dart';
 
-class EssentielPill extends StatelessWidget {
-  final FacteurColors colors;
+class LectureApaiseePill extends StatelessWidget {
   final bool isDark;
   final bool outlined;
 
-  const EssentielPill({
+  const LectureApaiseePill({
     super.key,
-    required this.colors,
     required this.isDark,
     this.outlined = false,
   });
@@ -22,9 +19,9 @@ class EssentielPill extends StatelessWidget {
       decoration: BoxDecoration(
         color: outlined
             ? Colors.transparent
-            : colors.primary.withOpacity(isDark ? 0.18 : 0.12),
+            : SereinColors.sereinColor.withOpacity(isDark ? 0.18 : 0.12),
         border: outlined
-            ? Border.all(color: colors.primary, width: 1.2)
+            ? Border.all(color: SereinColors.sereinColor, width: 1.2)
             : null,
         borderRadius: BorderRadius.circular(14),
       ),
@@ -32,15 +29,15 @@ class EssentielPill extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            PhosphorIcons.envelope(PhosphorIconsStyle.fill),
+            SereinColors.sereinIcon,
             size: 12,
-            color: colors.primary,
+            color: SereinColors.sereinColor,
           ),
           const SizedBox(width: 5),
-          Text(
-            "L'ESSENTIEL",
+          const Text(
+            'LECTURE APAISÉE',
             style: TextStyle(
-              color: colors.primary,
+              color: SereinColors.sereinColor,
               fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.8,
@@ -50,23 +47,4 @@ class EssentielPill extends StatelessWidget {
       ),
     );
   }
-}
-
-const List<String> _frMonthsAbbr = [
-  'janv.',
-  'févr.',
-  'mars',
-  'avr.',
-  'mai',
-  'juin',
-  'juil.',
-  'août',
-  'sept.',
-  'oct.',
-  'nov.',
-  'déc.',
-];
-
-String formatDigestDate(DateTime date) {
-  return '${date.day} ${_frMonthsAbbr[date.month - 1]}';
 }

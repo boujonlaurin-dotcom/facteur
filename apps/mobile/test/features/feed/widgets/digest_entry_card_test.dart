@@ -24,15 +24,18 @@ void main() {
   }
 
   group('DigestEntryCard', () {
-    testWidgets("affiche le titre + le badge L'ESSENTIEL", (tester) async {
+    testWidgets('affiche les deux cartes Essentiel + Lecture apaisée',
+        (tester) async {
       await tester.pumpWidget(makeHost());
       await tester.pumpAndSettle();
 
       expect(find.text("L'essentiel du jour"), findsOneWidget);
       expect(find.text("L'ESSENTIEL"), findsOneWidget);
-      // Sous-titre : N articles + date du jour formattée fr (fallback 5).
-      expect(find.textContaining('articles ·'), findsOneWidget);
-      // Illustration facteur (réutilise l'asset notif).
+      expect(find.text('Une lecture apaisée'), findsOneWidget);
+      expect(find.text('LECTURE APAISÉE'), findsOneWidget);
+      // Les deux cartes affichent le sous-titre meta « N articles · date ».
+      expect(find.textContaining('articles ·'), findsNWidgets(2));
+      // Illustration facteur dupliquée sur les 2 cartes.
       final illustration = find.byWidgetPredicate(
         (w) =>
             w is Image &&
@@ -40,7 +43,7 @@ void main() {
             (w.image as AssetImage).assetName ==
                 'assets/notifications/facteur_avatar.png',
       );
-      expect(illustration, findsOneWidget);
+      expect(illustration, findsNWidgets(2));
     });
 
     testWidgets('utilise items.length du digest quand chargé', (tester) async {
@@ -56,7 +59,9 @@ void main() {
       await tester.pumpWidget(makeHost(digest: digest));
       await tester.pumpAndSettle();
 
-      expect(find.text('7 articles · 21 mai'), findsOneWidget);
+      // Les 2 cartes utilisent le même fallback de count quand la variante
+      // serein n'est pas encore en cache.
+      expect(find.text('7 articles · 21 mai'), findsNWidgets(2));
     });
   });
 }

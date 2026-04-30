@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../sources/models/source_model.dart';
 import 'source_filter_sheet.dart';
@@ -74,10 +75,6 @@ class CompactSourceChip extends StatelessWidget {
             )
           : _InactiveChip(
               key: const ValueKey('source_inactive'),
-              topSources: _topSources,
-              remainingCount: followedSources.length > 3
-                  ? followedSources.length - 3
-                  : 0,
               onTap: () {
                 HapticFeedback.mediumImpact();
                 _openSheet(context);
@@ -96,81 +93,39 @@ class CompactSourceChip extends StatelessWidget {
 }
 
 class _InactiveChip extends StatelessWidget {
-  final List<Source> topSources;
-  final int remainingCount;
   final VoidCallback onTap;
 
   const _InactiveChip({
     super.key,
-    required this.topSources,
-    required this.remainingCount,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final muted = colorScheme.onSurface.withOpacity(0.5);
-    final trackColor = isDark
-        ? Colors.white.withOpacity(0.08)
-        : Colors.black.withOpacity(0.05);
+    final colors = context.facteurColors;
+    final muted = colors.textSecondary;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
         height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: trackColor,
+          borderRadius: BorderRadius.circular(FacteurRadius.full),
+          color: colors.surface,
+          border: Border.all(color: colors.border),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (topSources.isEmpty) ...[
-              Text(
-                'Sources',
-                style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(width: 2),
-            ] else ...[
-              // Avatar stack — overlap adapts to screen width
-              Builder(builder: (context) {
-                final screenW = MediaQuery.of(context).size.width;
-                // step ranges from 13 (small, ~320px) to 16 (large, ≥430px)
-                final step = (screenW / 35).clamp(13.0, 16.0);
-                final stackW = 18.0 + (topSources.length - 1) * step;
-                return Opacity(
-                  opacity: 0.65,
-                  child: SizedBox(
-                    width: stackW,
-                    height: 18,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        for (int i = 0; i < topSources.length; i++)
-                          Positioned(
-                            left: i * step,
-                            child: _SourceAvatar(
-                              source: topSources[i],
-                              size: 18,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
-              const SizedBox(width: 6),
-              if (remainingCount > 0) ...[
-                Text(
-                  '+$remainingCount',
-                  style: TextStyle(fontSize: 11, color: muted),
-                ),
-                const SizedBox(width: 2),
-              ],
-            ],
+            Text(
+              'Sources',
+              style: TextStyle(
+                  fontSize: 12,
+                  color: colors.textPrimary,
+                  fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(width: 4),
             Icon(
               PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
               size: 10,
@@ -199,17 +154,18 @@ class _ActiveChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final primary = colorScheme.primary;
+    final colors = context.facteurColors;
+    final primary = colors.primary;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
         height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(FacteurRadius.full),
           color: primary.withOpacity(0.12),
+          border: Border.all(color: primary),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

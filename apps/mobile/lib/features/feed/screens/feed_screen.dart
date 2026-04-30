@@ -50,6 +50,8 @@ import '../../custom_topics/widgets/topic_chip.dart';
 // import '../widgets/entity_overflow_chip.dart';
 import '../widgets/digest_entry_card.dart';
 import '../widgets/feed_carousel.dart';
+import '../widgets/profile_avatar_button.dart';
+import '../../gamification/widgets/streak_indicator.dart';
 import '../../app_update/providers/app_update_provider.dart';
 import '../../app_update/widgets/update_button.dart';
 import '../../app_update/widgets/update_modal.dart';
@@ -60,10 +62,10 @@ import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../widgets/feed_refresh_undo_banner.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../widgets/empty_filter_state.dart';
+import '../widgets/filter_collapsible_panel.dart';
 import '../widgets/follow_keyword_suggestion_card.dart';
 import '../widgets/interest_filter_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
-import '../../digest/widgets/serein_toggle_chip.dart';
 import '../../settings/providers/user_profile_provider.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/pepites_carousel.dart';
@@ -88,6 +90,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   static const int _caughtUpMinScrolled = 15;
   final ScrollController _scrollController = ScrollController();
   double _maxScrollPercent = 0.0;
+  bool _userHasScrolled = false;
   final int _itemsViewed = 0;
 
   bool _hasNudged = false;
@@ -315,6 +318,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     final maxScroll = _scrollController.position.maxScrollExtent;
     final currentScroll = _scrollController.position.pixels;
 
+    // Bonus: nudge animations only after the user has scrolled a bit.
+    if (!_userHasScrolled && currentScroll > 40) {
+      setState(() => _userHasScrolled = true);
+    }
+
     // Sticky filter bar visibility
     final delta = currentScroll - _lastScrollPos;
     if (delta.abs() >= _stickyScrollThreshold) {
@@ -443,7 +451,26 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
   }
 
-  Widget _buildFilterBarContent(BuildContext context) {
+  int _activeFilterCount() {
+    final notifier = ref.read(feedProvider.notifier);
+    var count = 0;
+    if (notifier.selectedSourceId != null) count++;
+    if (notifier.selectedTheme != null ||
+        notifier.selectedTopic != null ||
+        notifier.selectedEntity != null) count++;
+    if (notifier.selectedKeyword != null &&
+        notifier.selectedKeyword!.isNotEmpty) count++;
+    return count;
+  }
+
+  Widget _buildFilterBar(BuildContext context) {
+    return FilterCollapsiblePanel(
+      activeCount: _activeFilterCount(),
+      chipsRow: _buildFilterChipsRow(context),
+    );
+  }
+
+  Widget _buildFilterChipsRow(BuildContext context) {
     final notifier = ref.read(feedProvider.notifier);
 
     if (notifier.selectedTheme == null &&
@@ -617,19 +644,33 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                   controller: _scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
-                    const SliverToBoxAdapter(
+                    SliverToBoxAdapter(
                       child: Padding(
-                        padding: EdgeInsets.symmetric(
+                        padding: const EdgeInsets.symmetric(
                           horizontal: FacteurSpacing.space6,
                           vertical: FacteurSpacing.space3,
                         ),
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            FacteurLogo(size: 22, showIcon: false),
+                            const FacteurLogo(size: 22, showIcon: false),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: const StreakIndicator(),
+                            ),
                             Align(
                               alignment: Alignment.centerRight,
-                              child: UpdateButton(),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const UpdateButton(),
+                                  const SizedBox(width: 8),
+                                  ProfileAvatarButton(
+                                    onTap: () =>
+                                        context.push(RoutePaths.settings),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
@@ -666,7 +707,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16.0, vertical: 8.0),
-                        child: _buildFilterBarContent(context),
+                        child: _buildFilterBar(context),
                       ),
                     ),
                     SliverToBoxAdapter(
@@ -1115,8 +1156,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 final progressionTopic =
                                     _activeProgressions[content.id];
 
-                                final showHint =
-                                    !_swipeHintSeen && contentIndex <= 1;
+                                final showHint = !_swipeHintSeen &&
+                                    _userHasScrolled &&
+                                    contentIndex <= 1;
 
                                 Widget cardWidget = SwipeToOpenCard(
                                   onSwipeOpen: () => _showArticleModal(content),
@@ -1444,7 +1486,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             16,
                             8,
                           ),
-                          child: _buildFilterBarContent(context),
+                          child: _buildFilterBar(context),
                         ),
                       ),
                     ),
@@ -1511,27 +1553,18 @@ class _FeedTourneeHeader extends ConsumerWidget {
     final colors = context.facteurColors;
     final profile = ref.watch(userProfileProvider);
     final firstName = (profile.displayName ?? '').trim().split(' ').first;
-    final greeting = firstName.isEmpty
-        ? 'Bonjour,'
-        : 'Bonjour $firstName,';
+    final hello = DateTime.now().hour >= 18 ? 'Bonsoir' : 'Bonjour';
+    final greeting = firstName.isEmpty ? '$hello,' : '$hello $firstName,';
     final now = DateTime.now();
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Text(
-                  _formatStamp(now),
-                  style: FacteurTypography.stamp(colors.textTertiary)
-                      .copyWith(letterSpacing: 1.2),
-                ),
-              ),
-              const SereinToggleChip(),
-            ],
+          Text(
+            _formatStamp(now),
+            style: FacteurTypography.stamp(colors.textTertiary)
+                .copyWith(letterSpacing: 1.2),
           ),
           const SizedBox(height: 6),
           Text(
@@ -1550,28 +1583,12 @@ class _FeedTourneeHeader extends ConsumerWidget {
   }
 
   static const List<String> _frDays = [
-    'LUNDI',
-    'MARDI',
-    'MERCREDI',
-    'JEUDI',
-    'VENDREDI',
-    'SAMEDI',
-    'DIMANCHE',
+    'LUNDI', 'MARDI', 'MERCREDI', 'JEUDI', 'VENDREDI', 'SAMEDI', 'DIMANCHE',
   ];
 
   static const List<String> _frMonthsAbbr = [
-    'JANV.',
-    'FÉVR.',
-    'MARS',
-    'AVR.',
-    'MAI',
-    'JUIN',
-    'JUIL.',
-    'AOÛT',
-    'SEPT.',
-    'OCT.',
-    'NOV.',
-    'DÉC.',
+    'JANV.', 'FÉVR.', 'MARS', 'AVR.', 'MAI', 'JUIN',
+    'JUIL.', 'AOÛT', 'SEPT.', 'OCT.', 'NOV.', 'DÉC.',
   ];
 
   static String _formatStamp(DateTime d) {
