@@ -3,57 +3,117 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../config/routes.dart';
+import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_card.dart';
 import '../../digest/providers/digest_provider.dart';
+import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/widgets/essentiel_pill.dart';
+import '../../digest/widgets/lecture_apaisee_pill.dart';
 
-/// Mini-carousel horizontal en tête du feed contenant la carte
-/// "L'essentiel du jour". La structure ListView permet d'accueillir d'autres
-/// cartes (mode serein, etc.) sans changer la mise en page parente.
+/// Mini-carousel horizontal en tête du feed.
+///
+/// Toujours 2 cartes : « L'essentiel du jour » et « Une lecture apaisée ».
+/// L'ordre dépend du toggle Serein (Lecture apaisée en tête quand activé).
 class DigestEntryCard extends ConsumerWidget {
   const DigestEntryCard({super.key});
 
   static const double _carouselHeight = 170;
   static const double _horizontalPadding = 16;
   static const double _peek = 24;
+  static const double _gap = 12;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final digest = ref.watch(digestProvider).valueOrNull;
-    final articleCount = digest?.items.length ?? 5;
-    final targetDate = digest?.targetDate ?? DateTime.now();
+    final dual = ref.watch(dualDigestPreviewProvider);
+    final isSerein = ref.watch(sereinToggleProvider).enabled;
+    final colors = context.facteurColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final normalCount = dual.normal?.items.length ?? 5;
+    final sereinCount = dual.serein?.items.length ?? normalCount;
+    final targetDate = dual.normal?.targetDate ?? DateTime.now();
+
     final width = MediaQuery.of(context).size.width -
         (_horizontalPadding * 2) -
         _peek;
 
+    void openDigest({required bool requireSerein}) {
+      if (requireSerein != isSerein) {
+        ref.read(sereinToggleProvider.notifier).toggle();
+      }
+      context.push(RoutePaths.digest);
+    }
+
+    final cardBackground =
+        isDark ? colors.surface : const Color(0xFFFBF5EE);
+
+    final essentielCard = SizedBox(
+      width: width,
+      child: _CarouselCard(
+        backgroundColor: cardBackground,
+        perforationColor: colors.primary,
+        pill: EssentielPill(colors: colors, isDark: isDark, outlined: true),
+        title: "L'essentiel du jour",
+        titleColor: colors.textPrimary,
+        captionColor: colors.textTertiary,
+        articleCount: normalCount,
+        targetDate: targetDate,
+        onTap: () => openDigest(requireSerein: false),
+      ),
+    );
+
+    final lectureApaiseeCard = SizedBox(
+      width: width,
+      child: _CarouselCard(
+        backgroundColor: cardBackground,
+        perforationColor: SereinColors.sereinColor,
+        pill: LectureApaiseePill(isDark: isDark, outlined: true),
+        title: 'Une lecture apaisée',
+        titleColor: colors.textPrimary,
+        captionColor: colors.textTertiary,
+        articleCount: sereinCount,
+        targetDate: targetDate,
+        onTap: () => openDigest(requireSerein: true),
+      ),
+    );
+
+    final cards = isSerein
+        ? [lectureApaiseeCard, essentielCard]
+        : [essentielCard, lectureApaiseeCard];
+
     return SizedBox(
       height: _carouselHeight,
-      child: ListView(
+      child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: _horizontalPadding),
         physics: const BouncingScrollPhysics(),
-        children: [
-          SizedBox(
-            width: width,
-            child: _DigestCard(
-              articleCount: articleCount,
-              targetDate: targetDate,
-              onTap: () => context.push(RoutePaths.digest),
-            ),
-          ),
-        ],
+        itemCount: cards.length,
+        separatorBuilder: (_, __) => const SizedBox(width: _gap),
+        itemBuilder: (_, i) => cards[i],
       ),
     );
   }
 }
 
-class _DigestCard extends StatelessWidget {
+class _CarouselCard extends StatelessWidget {
+  final Color backgroundColor;
+  final Color perforationColor;
+  final Widget pill;
+  final String title;
+  final Color titleColor;
+  final Color captionColor;
   final int articleCount;
   final DateTime targetDate;
   final VoidCallback onTap;
 
-  const _DigestCard({
+  const _CarouselCard({
+    required this.backgroundColor,
+    required this.perforationColor,
+    required this.pill,
+    required this.title,
+    required this.titleColor,
+    required this.captionColor,
     required this.articleCount,
     required this.targetDate,
     required this.onTap,
@@ -61,27 +121,20 @@ class _DigestCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return FacteurCard(
       onTap: onTap,
-      backgroundColor:
-          isDark ? colors.surface : const Color(0xFFFBF5EE),
+      backgroundColor: backgroundColor,
       borderRadius: FacteurRadius.medium,
       padding: EdgeInsets.zero,
       child: Stack(
         clipBehavior: Clip.hardEdge,
         children: [
-          // Perforation gauche : colonne pleine de dots oranges
-          // façon timbre, du haut vers le bas de la carte.
           Positioned(
             left: 10,
             top: 16,
             bottom: 16,
-            child: _PerforationDots(color: colors.primary),
+            child: _PerforationDots(color: perforationColor),
           ),
-          // Illustration facteur, ancrée bottom-right (flush coin).
           Positioned(
             right: 0,
             bottom: 0,
@@ -93,33 +146,26 @@ class _DigestCard extends StatelessWidget {
               ),
             ),
           ),
-          // Pill "L'ESSENTIEL" en haut à gauche.
-          Positioned(
-            top: 16,
-            left: 28,
-            child: EssentielPill(colors: colors, isDark: isDark),
-          ),
-          // Titre serif ancré juste sous le pill (haut-gauche).
+          Positioned(top: 16, left: 28, child: pill),
           Positioned(
             left: 28,
             right: 120,
             top: 52,
             child: Text(
-              "L'essentiel du jour",
-              style: FacteurTypography.serifTitle(colors.textPrimary)
+              title,
+              style: FacteurTypography.serifTitle(titleColor)
                   .copyWith(fontSize: 24, height: 1.15),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          // Meta (articles · date) ancrée en bas à gauche.
           Positioned(
             left: 28,
             right: 120,
             bottom: 16,
             child: Text(
               '$articleCount articles · ${formatDigestDate(targetDate)}',
-              style: FacteurTypography.stamp(colors.textTertiary).copyWith(
+              style: FacteurTypography.stamp(captionColor).copyWith(
                 fontSize: 11,
                 letterSpacing: 1.2,
               ),
@@ -131,8 +177,7 @@ class _DigestCard extends StatelessWidget {
   }
 }
 
-/// Colonne de dots décoratifs façon perforation de timbre. Le nombre de dots
-/// est calculé à partir de la hauteur disponible pour remplir tout le côté.
+/// Colonne de dots décoratifs façon perforation de timbre.
 class _PerforationDots extends StatelessWidget {
   final Color color;
   static const double _dotSize = 3;
@@ -168,4 +213,3 @@ class _PerforationDots extends StatelessWidget {
     );
   }
 }
-
