@@ -99,32 +99,30 @@ class _DigestCard extends StatelessWidget {
             left: 28,
             child: EssentielPill(colors: colors, isDark: isDark),
           ),
-          // Titre + caption en bas à gauche.
+          // Titre serif ancré juste sous le pill (haut-gauche).
+          Positioned(
+            left: 28,
+            right: 120,
+            top: 52,
+            child: Text(
+              "L'essentiel du jour",
+              style: FacteurTypography.serifTitle(colors.textPrimary)
+                  .copyWith(fontSize: 24, height: 1.15),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          // Meta (articles · date) ancrée en bas à gauche.
           Positioned(
             left: 28,
             right: 120,
             bottom: 16,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  "L'essentiel du jour",
-                  style: FacteurTypography.serifTitle(colors.textPrimary)
-                      .copyWith(fontSize: 24, height: 1.15),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '$articleCount articles · ${formatDigestDate(targetDate)}',
-                  style:
-                      FacteurTypography.stamp(colors.textTertiary).copyWith(
-                    fontSize: 11,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ],
+            child: Text(
+              '$articleCount articles · ${formatDigestDate(targetDate)}',
+              style: FacteurTypography.stamp(colors.textTertiary).copyWith(
+                fontSize: 11,
+                letterSpacing: 1.2,
+              ),
             ),
           ),
         ],
