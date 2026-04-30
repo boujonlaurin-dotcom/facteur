@@ -6,11 +6,13 @@ import '../../../config/theme.dart';
 class EssentielPill extends StatelessWidget {
   final FacteurColors colors;
   final bool isDark;
+  final bool outlined;
 
   const EssentielPill({
     super.key,
     required this.colors,
     required this.isDark,
+    this.outlined = false,
   });
 
   @override
@@ -18,7 +20,12 @@ class EssentielPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: colors.primary.withOpacity(isDark ? 0.18 : 0.12),
+        color: outlined
+            ? Colors.transparent
+            : colors.primary.withOpacity(isDark ? 0.18 : 0.12),
+        border: outlined
+            ? Border.all(color: colors.primary, width: 1.2)
+            : null,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(

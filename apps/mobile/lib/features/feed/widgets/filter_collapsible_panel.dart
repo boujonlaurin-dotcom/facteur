@@ -35,7 +35,7 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final hasActive = widget.activeCount > 0;
-    final label = hasActive ? 'Filtrer · ${widget.activeCount}' : 'Filtrer';
+    final label = hasActive ? 'Filtres · ${widget.activeCount}' : 'Filtres';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

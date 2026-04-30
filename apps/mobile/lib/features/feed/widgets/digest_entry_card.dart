@@ -45,13 +45,15 @@ class DigestEntryCard extends ConsumerWidget {
       context.push(RoutePaths.digest);
     }
 
+    final cardBackground =
+        isDark ? colors.surface : const Color(0xFFFBF5EE);
+
     final essentielCard = SizedBox(
       width: width,
       child: _CarouselCard(
-        backgroundColor:
-            isDark ? colors.surface : const Color(0xFFFBF5EE),
+        backgroundColor: cardBackground,
         perforationColor: colors.primary,
-        pill: EssentielPill(colors: colors, isDark: isDark),
+        pill: EssentielPill(colors: colors, isDark: isDark, outlined: true),
         title: "L'essentiel du jour",
         titleColor: colors.textPrimary,
         captionColor: colors.textTertiary,
@@ -64,16 +66,12 @@ class DigestEntryCard extends ConsumerWidget {
     final lectureApaiseeCard = SizedBox(
       width: width,
       child: _CarouselCard(
-        backgroundColor: isDark
-            ? SereinColors.sereinBackgroundColor
-            : SereinColors.sereinLightBackgroundColor,
+        backgroundColor: cardBackground,
         perforationColor: SereinColors.sereinColor,
-        pill: LectureApaiseePill(isDark: isDark),
+        pill: LectureApaiseePill(isDark: isDark, outlined: true),
         title: 'Une lecture apaisée',
-        titleColor: isDark ? colors.textPrimary : Colors.white,
-        captionColor:
-            isDark ? colors.textTertiary : Colors.white.withOpacity(0.85),
-        avatarOpacity: isDark ? 0.6 : 0.9,
+        titleColor: colors.textPrimary,
+        captionColor: colors.textTertiary,
         articleCount: sereinCount,
         targetDate: targetDate,
         onTap: () => openDigest(requireSerein: true),
@@ -105,7 +103,6 @@ class _CarouselCard extends StatelessWidget {
   final String title;
   final Color titleColor;
   final Color captionColor;
-  final double avatarOpacity;
   final int articleCount;
   final DateTime targetDate;
   final VoidCallback onTap;
@@ -120,7 +117,6 @@ class _CarouselCard extends StatelessWidget {
     required this.articleCount,
     required this.targetDate,
     required this.onTap,
-    this.avatarOpacity = 1.0,
   });
 
   @override
@@ -143,13 +139,10 @@ class _CarouselCard extends StatelessWidget {
             right: 0,
             bottom: 0,
             child: IgnorePointer(
-              child: Opacity(
-                opacity: avatarOpacity,
-                child: Image.asset(
-                  'assets/notifications/facteur_avatar.png',
-                  height: 130,
-                  fit: BoxFit.contain,
-                ),
+              child: Image.asset(
+                'assets/notifications/facteur_avatar.png',
+                height: 130,
+                fit: BoxFit.contain,
               ),
             ),
           ),

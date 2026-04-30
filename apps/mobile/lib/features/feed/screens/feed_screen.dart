@@ -51,6 +51,7 @@ import '../../custom_topics/widgets/topic_chip.dart';
 import '../widgets/digest_entry_card.dart';
 import '../widgets/feed_carousel.dart';
 import '../widgets/profile_avatar_button.dart';
+import '../../gamification/widgets/streak_indicator.dart';
 import '../../app_update/providers/app_update_provider.dart';
 import '../../app_update/widgets/update_button.dart';
 import '../../app_update/widgets/update_modal.dart';
@@ -649,14 +650,21 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             const FacteurLogo(size: 22, showIcon: false),
                             Align(
                               alignment: Alignment.centerLeft,
-                              child: ProfileAvatarButton(
-                                onTap: () =>
-                                    context.push(RoutePaths.settings),
-                              ),
+                              child: const StreakIndicator(),
                             ),
-                            const Align(
+                            Align(
                               alignment: Alignment.centerRight,
-                              child: UpdateButton(),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const UpdateButton(),
+                                  const SizedBox(width: 8),
+                                  ProfileAvatarButton(
+                                    onTap: () =>
+                                        context.push(RoutePaths.settings),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
