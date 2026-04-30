@@ -42,7 +42,6 @@ from app.schemas.digest import DigestScoreBreakdown
 from app.services.briefing.importance_detector import ImportanceDetector
 from app.services.recommendation.filter_presets import (
     apply_good_news_filter,
-    apply_serein_filter,
     is_sport_content,
 )
 from app.services.recommendation.scoring_config import ScoringWeights
