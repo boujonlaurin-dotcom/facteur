@@ -104,7 +104,7 @@ class _InactiveChip extends StatelessWidget {
             ),
             const SizedBox(width: 5),
             Text(
-              '#Actus',
+              'Actus',
               style: TextStyle(
                 fontSize: 12,
                 color: colors.textPrimary,

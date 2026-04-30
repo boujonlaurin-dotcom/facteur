@@ -242,7 +242,7 @@ class _FeedCardState extends State<FeedCard>
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 6, vertical: 3),
                                 decoration: BoxDecoration(
-                                  color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.005)!,
+                                  color: Colors.transparent,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Row(
