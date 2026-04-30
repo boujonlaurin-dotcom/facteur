@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../../config/theme.dart';
+import 'bonnes_nouvelles_pill.dart';
 import 'essentiel_pill.dart';
-import 'lecture_apaisee_pill.dart';
 
-/// Hero plein-page de la page Digest. Pill (Essentiel ou Lecture apaisée) +
-/// grand titre serif + meta, avec illustration facteur ancrée bottom-right.
+/// Hero plein-page de la page Digest. Reprend la mise en page de la preview
+/// card du feed (pill + grand titre serif + meta + illustration facteur
+/// ancrée bottom-right) sans wrapper carte ni perforation, posé directement
+/// sur le fond de la page. Adapte la pill et le titre selon le mode actif.
 class DigestHero extends StatelessWidget {
   final int articleCount;
   final DateTime targetDate;
@@ -22,7 +24,6 @@ class DigestHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final title = isSerein ? 'Une lecture apaisée' : "L'essentiel du jour";
 
     return SizedBox(
       height: 170,
@@ -40,18 +41,27 @@ class DigestHero extends StatelessWidget {
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 140, 12),
+          // Pill identifiant le mode actif, en haut à gauche.
+          Positioned(
+            top: 16,
+            left: 16,
+            child: isSerein
+                ? BonnesNouvellesPill(isDark: isDark)
+                : EssentielPill(colors: colors, isDark: isDark),
+          ),
+          // Titre + caption en bas à gauche.
+          Positioned(
+            left: 16,
+            right: 140,
+            bottom: 18,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                isSerein
-                    ? LectureApaiseePill(isDark: isDark)
-                    : EssentielPill(colors: colors, isDark: isDark),
-                const SizedBox(height: 6),
                 Text(
-                  title,
+                  isSerein
+                      ? 'Les bonnes nouvelles du jour'
+                      : "L'essentiel du jour",
                   style: FacteurTypography.serifTitle(colors.textPrimary)
                       .copyWith(fontSize: 32, height: 1.1),
                   maxLines: 2,

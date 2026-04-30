@@ -108,14 +108,17 @@ class ClassificationQueueService:
         topics: list[str],
         entities: list[dict],
         is_serene: bool | None = None,
+        is_good_news: bool | None = None,
     ) -> None:
-        """Marque un élément comme complété avec topics, entités et sérénité.
+        """Marque un élément comme complété avec topics, entités, sérénité et good news.
 
         Args:
             queue_id: ID de l'élément dans la file
             topics: Liste des topics classifiés
             entities: Liste des entités extraites (format: [{"text": "...", "label": "..."}])
-            is_serene: True si article positif/neutre, False si négatif, None si inconnu
+            is_serene: True si article non-anxiogène, False sinon, None si inconnu
+            is_good_news: True si véritable bonne nouvelle (espoir, progrès tangible),
+                False sinon, None si inconnu. Indépendant d'is_serene.
         """
         import structlog
 
@@ -146,6 +149,14 @@ class ClassificationQueueService:
                     # Column may not exist yet during rolling deployment
                     logger.warning(
                         "is_serene_column_missing",
+                        error=str(e),
+                        content_id=str(content.id),
+                    )
+                try:
+                    content.is_good_news = is_good_news
+                except (AttributeError, Exception) as e:
+                    logger.warning(
+                        "is_good_news_column_missing",
                         error=str(e),
                         content_id=str(content.id),
                     )
@@ -301,6 +312,31 @@ class ClassificationQueueService:
         content_ids_query = (
             select(Content.id)
             .where(Content.is_serene.is_(None))
+            .where(Content.topics.isnot(None))
+            .order_by(Content.published_at.desc())
+            .limit(batch_limit)
+        )
+
+        result = await self.session.execute(content_ids_query)
+        content_ids = result.scalars().all()
+
+        count = 0
+        for content_id in content_ids:
+            created = await self.enqueue(content_id, priority=3)
+            if created:
+                count += 1
+
+        return count
+
+    async def requeue_missing_good_news(self, batch_limit: int = 500) -> int:
+        """Remet en file les articles classifiés mais sans is_good_news.
+
+        Cible les articles déjà classifiés (topics != NULL) mais où
+        is_good_news est NULL (classifiés avant l'ajout du champ).
+        """
+        content_ids_query = (
+            select(Content.id)
+            .where(Content.is_good_news.is_(None))
             .where(Content.topics.isnot(None))
             .order_by(Content.published_at.desc())
             .limit(batch_limit)

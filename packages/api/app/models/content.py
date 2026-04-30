@@ -91,8 +91,13 @@ class Content(Base):
     is_paid: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
-    # Sérénité: article positif/constructif détecté par ML
+    # Sérénité: article non-anxiogène détecté par ML
     is_serene: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
+    # Bonne nouvelle: article véritablement positif (progrès tangible, espoir).
+    # Indépendant d'is_serene — sert exclusivement au digest "Bonnes nouvelles du jour".
+    is_good_news: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, default=None
+    )
     # In-App Reading: content quality signal ('full', 'partial', 'none')
     content_quality: Mapped[str | None] = mapped_column(
         String(20), nullable=True, default=None

@@ -24,15 +24,15 @@ void main() {
   }
 
   group('DigestEntryCard', () {
-    testWidgets('affiche les deux cartes Essentiel + Lecture apaisée',
+    testWidgets('affiche les deux cartes Essentiel + Bonnes nouvelles',
         (tester) async {
       await tester.pumpWidget(makeHost());
       await tester.pumpAndSettle();
 
       expect(find.text("L'essentiel du jour"), findsOneWidget);
       expect(find.text("L'ESSENTIEL"), findsOneWidget);
-      expect(find.text('Une lecture apaisée'), findsOneWidget);
-      expect(find.text('LECTURE APAISÉE'), findsOneWidget);
+      expect(find.text('Les bonnes nouvelles du jour'), findsOneWidget);
+      expect(find.text('BONNES NOUVELLES'), findsOneWidget);
       // Les deux cartes affichent le sous-titre meta « N articles · date ».
       expect(find.textContaining('articles ·'), findsNWidgets(2));
       // Illustration facteur dupliquée sur les 2 cartes.

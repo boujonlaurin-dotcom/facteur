@@ -174,6 +174,20 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                         : colors.textSecondary,
                   ),
                 ),
+                // Attribution discrète — le texte de l'analyse est généré
+                // par Mistral Large (cf. perspective_service.analyze_divergences).
+                // Mention rendue petite et grise pour rester transparent
+                // sans détourner l'attention du contenu.
+                const SizedBox(height: 8),
+                Text(
+                  'Analyse générée par Mistral Large',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontStyle: FontStyle.italic,
+                    color: (isDark ? Colors.white : colors.textSecondary)
+                        .withOpacity(0.5),
+                  ),
+                ),
                 // CTA — pill discrète "Voir les N perspectives [logo×3]".
                 // Style volontairement effacé : couleur tertiaire, bord
                 // léger, taille compacte. Le focus visuel reste sur la

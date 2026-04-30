@@ -183,6 +183,20 @@ void main() {
       expect(find.byType(Tooltip), findsNothing);
     });
 
+    testWidgets('Mistral attribution is shown only when expanded',
+        (tester) async {
+      await tester.pumpWidget(buildWidget(
+        divergenceAnalysis: 'Analyse texte',
+      ));
+      // Replié : attribution cachée (texte d'analyse non visible).
+      expect(find.text('Analyse générée par Mistral Large'), findsNothing);
+
+      // Déplier
+      await tester.tap(find.text("Lire l'analyse"));
+      await tester.pump();
+      expect(find.text('Analyse générée par Mistral Large'), findsOneWidget);
+    });
+
     testWidgets(
         'CTA shows up to 3 other-source logos and excludes the singleton source',
         (tester) async {

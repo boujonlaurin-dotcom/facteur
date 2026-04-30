@@ -75,10 +75,6 @@ class CompactSourceChip extends StatelessWidget {
             )
           : _InactiveChip(
               key: const ValueKey('source_inactive'),
-              topSources: _topSources,
-              remainingCount: followedSources.length > 3
-                  ? followedSources.length - 3
-                  : 0,
               onTap: () {
                 HapticFeedback.mediumImpact();
                 _openSheet(context);
@@ -97,14 +93,10 @@ class CompactSourceChip extends StatelessWidget {
 }
 
 class _InactiveChip extends StatelessWidget {
-  final List<Source> topSources;
-  final int remainingCount;
   final VoidCallback onTap;
 
   const _InactiveChip({
     super.key,
-    required this.topSources,
-    required this.remainingCount,
     required this.onTap,
   });
 
@@ -126,52 +118,14 @@ class _InactiveChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (topSources.isEmpty) ...[
-              Text(
-                'Sources',
-                style: TextStyle(
-                    fontSize: 12,
-                    color: colors.textPrimary,
-                    fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(width: 4),
-            ] else ...[
-              // Avatar stack — overlap adapts to screen width
-              Builder(builder: (context) {
-                final screenW = MediaQuery.of(context).size.width;
-                // step ranges from 13 (small, ~320px) to 16 (large, ≥430px)
-                final step = (screenW / 35).clamp(13.0, 16.0);
-                final stackW = 18.0 + (topSources.length - 1) * step;
-                return Opacity(
-                  opacity: 0.65,
-                  child: SizedBox(
-                    width: stackW,
-                    height: 18,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        for (int i = 0; i < topSources.length; i++)
-                          Positioned(
-                            left: i * step,
-                            child: _SourceAvatar(
-                              source: topSources[i],
-                              size: 18,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
-              const SizedBox(width: 6),
-              if (remainingCount > 0) ...[
-                Text(
-                  '+$remainingCount',
-                  style: TextStyle(fontSize: 11, color: muted),
-                ),
-                const SizedBox(width: 2),
-              ],
-            ],
+            Text(
+              'Sources',
+              style: TextStyle(
+                  fontSize: 12,
+                  color: colors.textPrimary,
+                  fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(width: 4),
             Icon(
               PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
               size: 10,

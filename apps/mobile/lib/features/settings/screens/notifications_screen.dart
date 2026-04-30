@@ -85,6 +85,15 @@ class NotificationsScreen extends ConsumerWidget {
                 textAlign: TextAlign.center,
               ),
             ],
+            const SizedBox(height: FacteurSpacing.space6),
+            _GoodNewsToggle(
+              enabled: settings.goodNewsEnabled,
+              timeSlot: settings.goodNewsTimeSlot,
+              onToggle: (value) =>
+                  unawaited(notifier.setGoodNewsEnabled(value)),
+              onTimeSlotChanged: (slot) =>
+                  unawaited(notifier.setGoodNewsTimeSlot(slot)),
+            ),
           ],
         ),
       ),
@@ -146,6 +155,79 @@ class _PushToggle extends StatelessWidget {
             onChanged: onChanged,
             activeColor: colors.primary,
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Toggle indépendant du canal « Bonnes nouvelles du jour ».
+///
+/// Vit séparément du toggle digest principal pour respecter la règle
+/// CRITIQUE : les deux opt-ins ne doivent jamais être couplés. Visible
+/// même quand le push principal est OFF, pour que la promesse reste
+/// découvrable depuis le profil.
+class _GoodNewsToggle extends StatelessWidget {
+  final bool enabled;
+  final NotifTimeSlot timeSlot;
+  final ValueChanged<bool> onToggle;
+  final ValueChanged<NotifTimeSlot> onTimeSlotChanged;
+
+  const _GoodNewsToggle({
+    required this.enabled,
+    required this.timeSlot,
+    required this.onToggle,
+    required this.onTimeSlotChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+        border: Border.all(color: colors.surfaceElevated),
+      ),
+      padding: const EdgeInsets.all(FacteurSpacing.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '🌱 Bonnes nouvelles du jour',
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "Une dose d'espoir, à un horaire dédié.",
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: colors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              Switch.adaptive(
+                value: enabled,
+                onChanged: onToggle,
+                activeColor: colors.primary,
+              ),
+            ],
+          ),
+          if (enabled) ...[
+            const SizedBox(height: FacteurSpacing.space4),
+            TimeSlotSelector(
+              value: timeSlot,
+              onChanged: onTimeSlotChanged,
+            ),
+          ],
         ],
       ),
     );
