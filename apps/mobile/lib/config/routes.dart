@@ -26,6 +26,7 @@ import '../features/progress/screens/progressions_screen.dart';
 import '../features/progress/screens/quiz_screen.dart';
 import '../features/subscription/screens/paywall_screen.dart';
 import '../features/digest/screens/digest_screen.dart';
+import '../features/veille/screens/veille_config_screen.dart';
 import '../features/digest/screens/closure_screen.dart';
 import '../features/saved/screens/saved_screen.dart';
 import '../features/saved/screens/saved_all_screen.dart';
@@ -62,6 +63,7 @@ class RouteNames {
   static const String myInterests = 'my-interests';
   static const String topicExplorer = 'topic-explorer';
   static const String themeSources = 'theme-sources';
+  static const String veilleConfig = 'veille-config';
 }
 
 /// Chemins des routes
@@ -89,6 +91,7 @@ class RoutePaths {
   static const String quiz = '/quiz';
   static const String paywall = '/paywall';
   static const String emailConfirmation = '/email-confirmation';
+  static const String veilleConfig = '/veille/config';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -371,6 +374,16 @@ final routerProvider = Provider<GoRouter>((ref) {
             ],
           ),
         ],
+      ),
+
+      // Veille Config — flow de configuration "Ma veille" (4 étapes).
+      // Hors ShellRoute pour cacher la bottom nav (full-screen modal).
+      GoRoute(
+        path: RoutePaths.veilleConfig,
+        name: RouteNames.veilleConfig,
+        pageBuilder: (context, state) => const FullSwipeCupertinoPage(
+          child: VeilleConfigScreen(),
+        ),
       ),
 
       // Digest (Essentiel) - opened from the feed card or widget. Lives

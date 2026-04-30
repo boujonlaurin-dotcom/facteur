@@ -167,6 +167,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           context.pushNamed(RouteNames.myInterests);
                         },
                       ),
+                      _buildTile(
+                        context,
+                        icon: PhosphorIcons.binoculars(
+                          PhosphorIconsStyle.regular,
+                        ),
+                        title: 'Configurer ma veille',
+                        subtitle: 'Aperçu — 4 étapes guidées',
+                        onTap: () {
+                          context.pushNamed(RouteNames.veilleConfig);
+                        },
+                      ),
                       // Moved to SourcesScreen (top of page)
                     ],
                   ),
