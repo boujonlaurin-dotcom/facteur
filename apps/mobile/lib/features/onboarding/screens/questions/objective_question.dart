@@ -51,59 +51,66 @@ class _ObjectiveQuestionState extends ConsumerState<ObjectiveQuestion> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 2),
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: FacteurSpacing.space8),
 
-          // Question
-          Text(
-            OnboardingStrings.q1Title,
-            style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
+                  Text(
+                    OnboardingStrings.q1Title,
+                    style: Theme.of(context).textTheme.displayLarge,
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const SizedBox(height: FacteurSpacing.space3),
+
+                  Text(
+                    OnboardingStrings.q1Subtitle,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const SizedBox(height: FacteurSpacing.space6),
+
+                  SelectionCard(
+                    emoji: '🔊',
+                    label: OnboardingStrings.q1NoiseLabel,
+                    subtitle: OnboardingStrings.q1NoiseSubtitle,
+                    isSelected: _selectedObjectives.contains('noise'),
+                    onTap: () => _toggle('noise'),
+                  ),
+
+                  const SizedBox(height: FacteurSpacing.space3),
+
+                  SelectionCard(
+                    emoji: '⚖️',
+                    label: OnboardingStrings.q1BiasLabel,
+                    subtitle: OnboardingStrings.q1BiasSubtitle,
+                    isSelected: _selectedObjectives.contains('bias'),
+                    onTap: () => _toggle('bias'),
+                  ),
+
+                  const SizedBox(height: FacteurSpacing.space3),
+
+                  SelectionCard(
+                    emoji: '👎',
+                    label: OnboardingStrings.q1AnxietyLabel,
+                    subtitle: OnboardingStrings.q1AnxietySubtitle,
+                    isSelected: _selectedObjectives.contains('anxiety'),
+                    onTap: () => _toggle('anxiety'),
+                  ),
+
+                  const SizedBox(height: FacteurSpacing.space6),
+                ],
+              ),
+            ),
           ),
 
-          const SizedBox(height: FacteurSpacing.space3),
-
-          Text(
-            OnboardingStrings.q1Subtitle,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space6),
-
-          // Options
-          SelectionCard(
-            emoji: '🔊',
-            label: OnboardingStrings.q1NoiseLabel,
-            subtitle: OnboardingStrings.q1NoiseSubtitle,
-            isSelected: _selectedObjectives.contains('noise'),
-            onTap: () => _toggle('noise'),
-          ),
-
-          const SizedBox(height: FacteurSpacing.space3),
-
-          SelectionCard(
-            emoji: '⚖️',
-            label: OnboardingStrings.q1BiasLabel,
-            subtitle: OnboardingStrings.q1BiasSubtitle,
-            isSelected: _selectedObjectives.contains('bias'),
-            onTap: () => _toggle('bias'),
-          ),
-
-          const SizedBox(height: FacteurSpacing.space3),
-
-          SelectionCard(
-            emoji: '👎',
-            label: OnboardingStrings.q1AnxietyLabel,
-            subtitle: OnboardingStrings.q1AnxietySubtitle,
-            isSelected: _selectedObjectives.contains('anxiety'),
-            onTap: () => _toggle('anxiety'),
-          ),
-
-          const Spacer(flex: 3),
-
-          // Continue button (disabled if empty)
           ElevatedButton(
             onPressed: _selectedObjectives.isEmpty
                 ? null
