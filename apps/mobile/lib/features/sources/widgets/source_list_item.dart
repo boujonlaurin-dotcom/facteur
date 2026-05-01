@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
-import '../../../widgets/design/facteur_image.dart';
 import '../../../widgets/design/facteur_stamp.dart';
 import '../../../widgets/design/priority_slider.dart';
 import '../models/source_model.dart';
 import 'source_detail_modal.dart';
+import 'source_logo_avatar.dart';
 
 class SourceListItem extends StatelessWidget {
   final Source source;
@@ -66,8 +66,8 @@ class SourceListItem extends StatelessWidget {
         opacity: isMuted ? 0.5 : 1.0,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(12),
+          margin: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
             color: isMuted
                 ? colors.surface
@@ -85,35 +85,12 @@ class SourceListItem extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Logo or Placeholder
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: colors.backgroundSecondary,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: source.logoUrl != null && source.logoUrl!.isNotEmpty
-                    ? FacteurImage(
-                        imageUrl: source.logoUrl!,
-                        fit: BoxFit.cover,
-                        placeholder: (context) => Center(
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: colors.secondary.withOpacity(0.3),
-                            ),
-                          ),
-                        ),
-                        errorWidget: (context) =>
-                            Icon(_typeIcon, color: colors.secondary, size: 20),
-                      )
-                    : Icon(_typeIcon, color: colors.secondary, size: 20),
+              SourceLogoAvatar(
+                source: source,
+                size: 60,
+                radius: 12,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 14),
 
               // Info
               Expanded(
@@ -126,8 +103,9 @@ class SourceListItem extends StatelessWidget {
                           child: Text(
                             source.name,
                             style:
-                                Theme.of(context).textTheme.labelLarge?.copyWith(
+                                Theme.of(context).textTheme.bodyLarge?.copyWith(
                                       color: colors.textPrimary,
+                                      fontWeight: FontWeight.w600,
                                     ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -147,13 +125,27 @@ class SourceListItem extends StatelessWidget {
                         ],
                       ],
                     ),
-                    if (source.theme != null)
-                      Text(
-                        source.getThemeLabel(),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: colors.textTertiary,
+                    if (source.theme != null) ...[
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Icon(_typeIcon,
+                              color: colors.textTertiary, size: 13),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              source.getThemeLabel(),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: colors.textTertiary),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
+                          ),
+                        ],
                       ),
+                    ],
                   ],
                 ),
               ),

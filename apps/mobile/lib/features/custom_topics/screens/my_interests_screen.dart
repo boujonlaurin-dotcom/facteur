@@ -3,11 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../config/routes.dart';
+import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
+import '../../../shared/widgets/fab_nudge_bubble.dart';
 import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
-import '../../digest/widgets/serein_toggle_chip.dart';
 import '../../feed/repositories/personalization_repository.dart';
 import '../models/topic_models.dart';
 import '../providers/custom_topics_provider.dart';
@@ -91,29 +92,28 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
         backgroundColor: colors.backgroundPrimary,
         elevation: 0,
         titleTextStyle: textTheme.displaySmall,
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(40),
-          child: Padding(
-            padding: EdgeInsets.only(
-              right: FacteurSpacing.space3,
-              bottom: FacteurSpacing.space2,
-            ),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: SereinToggleChip(),
+      ),
+      floatingActionButton: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Flexible(
+            child: FabNudgeBubble(
+              text: 'Suivez n\'importe quel sujet pour le faire ressortir dans votre flux !',
             ),
           ),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => EntityAddSheet.show(context),
-        backgroundColor: const Color(0xFFE07A5F),
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add, size: 20),
-        label: const Text(
-          'Sujet personnalisé',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
+          const SizedBox(width: 6),
+          FloatingActionButton.extended(
+            onPressed: () => EntityAddSheet.show(context),
+            backgroundColor: const Color(0xFFE07A5F),
+            foregroundColor: Colors.white,
+            icon: const Icon(Icons.add, size: 20),
+            label: const Text(
+              'Sujet personnalisé',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
       ),
       body: topicsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -245,6 +245,21 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                         ),
                       ),
                     ],
+                  ),
+                ),
+
+                // Mode Serein toggle (DS aligned with Réglages sheet)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    FacteurSpacing.space4,
+                    0,
+                    FacteurSpacing.space4,
+                    FacteurSpacing.space3,
+                  ),
+                  child: _SereinToggleTile(
+                    enabled: sereinMode,
+                    onChanged: () =>
+                        ref.read(sereinToggleProvider.notifier).toggle(),
                   ),
                 ),
 
@@ -472,3 +487,79 @@ class _ContentTypesSection extends ConsumerWidget {
   }
 }
 
+
+/// Mode Serein toggle, styled like the tile in the Réglages sheet.
+class _SereinToggleTile extends StatelessWidget {
+  final bool enabled;
+  final VoidCallback onChanged;
+
+  const _SereinToggleTile({required this.enabled, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final borderRadius = BorderRadius.circular(FacteurRadius.large);
+    return Material(
+      color: colors.surface,
+      borderRadius: borderRadius,
+      child: InkWell(
+        onTap: onChanged,
+        borderRadius: borderRadius,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: borderRadius,
+            border: Border.all(color: colors.surfaceElevated),
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: FacteurSpacing.space4,
+            vertical: FacteurSpacing.space3,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: SereinColors.sereinColor.withOpacity(0.12),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  SereinColors.sereinIcon,
+                  color: SereinColors.sereinColor,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: FacteurSpacing.space3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Mode Serein',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Une lecture plus calme, sans urgence',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textSecondary,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch.adaptive(
+                value: enabled,
+                activeColor: SereinColors.sereinColor,
+                onChanged: (_) => onChanged(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
