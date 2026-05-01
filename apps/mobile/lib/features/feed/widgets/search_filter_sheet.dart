@@ -80,9 +80,13 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
     final trendingAsync = ref.watch(trendingTopicsProvider);
     final hasQuery = _searchController.text.trim().isNotEmpty;
 
-    return Container(
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Container(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.81,
+        maxHeight: MediaQuery.of(context).size.height * 0.95,
       ),
       decoration: BoxDecoration(
         color: colors.backgroundSecondary,
@@ -301,6 +305,7 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
               ),
           ],
         ),
+      ),
       ),
     );
   }

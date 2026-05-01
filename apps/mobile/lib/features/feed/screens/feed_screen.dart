@@ -28,7 +28,7 @@ import '../../../widgets/design/facteur_logo.dart';
 import '../models/content_model.dart';
 import '../widgets/feed_card.dart';
 import '../widgets/compact_source_chip.dart';
-import '../widgets/compact_search_chip.dart';
+import '../widgets/search_filter_sheet.dart';
 import '../widgets/compact_theme_chip.dart';
 import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
@@ -99,6 +99,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   // Sticky filter bar overlay state
   bool _showStickyBar = false;
   double _lastScrollPos = 0;
+  double _lastFabScrollPos = 0;
+  bool _showScrollTopFab = false;
+  double _upwardAccumulator = 0;
+  bool _showPullHint = false;
+  DateTime? _lastPullHintAt;
+  Timer? _pullHintTimer;
   static const double _stickyScrollThreshold = 12;
   static const double _stickyHideAboveScroll = 380;
 
@@ -308,6 +314,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       debugPrint('FeedScreen: Analytics tracking skipped during dispose');
     }
     _scrollController.dispose();
+    _pullHintTimer?.cancel();
     super.dispose();
   }
 
@@ -360,6 +367,45 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
         ScrollDirection.forward;
     if (currentScroll >= maxScroll - 800 && notScrollingUp) {
       ref.read(feedProvider.notifier).loadMore();
+    }
+
+    // Bouton "remonter" : cumul instantané du scroll vers le haut. Apparait
+    // après ≥ 250 px remontés ET position > 600 px. Disparait IMMÉDIATEMENT
+    // dès que l'utilisateur descend ou repasse sous 200 px.
+    final fabDelta = currentScroll - _lastFabScrollPos;
+    _lastFabScrollPos = currentScroll;
+    if (fabDelta < -0.5) {
+      _upwardAccumulator += -fabDelta;
+    } else if (fabDelta > 0.5) {
+      _upwardAccumulator = 0;
+      if (_showScrollTopFab) {
+        setState(() => _showScrollTopFab = false);
+      }
+    }
+    final shouldShowScrollTop =
+        _upwardAccumulator > 250 && currentScroll > 600;
+    final shouldHideScrollTop = currentScroll < 200;
+    if (shouldShowScrollTop && !_showScrollTopFab) {
+      setState(() => _showScrollTopFab = true);
+    } else if (shouldHideScrollTop && _showScrollTopFab) {
+      setState(() => _showScrollTopFab = false);
+    }
+
+    // Hint pull-to-refresh : montre une fois quand l'utilisateur remonte
+    // tout en haut du feed (signale visuellement qu'un pull est possible).
+    final scrollingUp = _scrollController.position.userScrollDirection ==
+        ScrollDirection.forward;
+    if (scrollingUp && currentScroll < 20 && _userHasScrolled) {
+      final now = DateTime.now();
+      final last = _lastPullHintAt;
+      if (last == null || now.difference(last) > const Duration(minutes: 2)) {
+        _lastPullHintAt = now;
+        setState(() => _showPullHint = true);
+        _pullHintTimer?.cancel();
+        _pullHintTimer = Timer(const Duration(milliseconds: 1800), () {
+          if (mounted) setState(() => _showPullHint = false);
+        });
+      }
     }
   }
 
@@ -463,9 +509,35 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   }
 
   Widget _buildFilterBar(BuildContext context) {
+    final notifier = ref.read(feedProvider.notifier);
+    final hasSearch = notifier.selectedKeyword != null &&
+        notifier.selectedKeyword!.isNotEmpty;
     return FilterCollapsiblePanel(
       activeCount: _activeFilterCount(),
       chipsRow: _buildFilterChipsRow(context),
+      leadingTrigger: _SearchTriggerButton(
+        active: hasSearch,
+        keyword: notifier.selectedKeyword,
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          SearchFilterSheet.show(
+            context,
+            currentKeyword: notifier.selectedKeyword,
+            onSearchSubmitted: (keyword, {bool fromTrending = false}) {
+              _withFeedLoading(() => notifier.setKeyword(
+                    keyword,
+                    includeUnfollowed: fromTrending,
+                  ));
+              _scrollToTop();
+            },
+          );
+        },
+        onClear: () {
+          HapticFeedback.mediumImpact();
+          _withFeedLoading(() => notifier.setKeyword(null));
+          _scrollToTop();
+        },
+      ),
     );
   }
 
@@ -542,19 +614,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                   await notifier.setTopic(slug);
                 }
               });
-              _scrollToTop();
-            },
-          ),
-        ),
-        const SizedBox(width: 8),
-        Flexible(
-          child: CompactSearchChip(
-            activeKeyword: notifier.selectedKeyword,
-            onSearchChanged: (keyword, {bool fromTrending = false}) {
-              _withFeedLoading(() => notifier.setKeyword(
-                    keyword,
-                    includeUnfollowed: fromTrending,
-                  ));
               _scrollToTop();
             },
           ),
@@ -812,12 +871,23 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 .watch(savedNudgeDismissedProvider)
                                 .valueOrNull ??
                             false;
+                        // SavedNudge : laisser respirer le feed avant de pousser
+                        // un nudge "Tu as N sauvegardés". Au minimum 10 cartes
+                        // après le carrousel "Plus tard, c'est maintenant"
+                        // (saved) si présent ; sinon position fixe assez basse.
+                        final savedCarouselPos = state.carousels
+                            .where((c) =>
+                                c.carouselType == 'saved' && c.items.isNotEmpty)
+                            .map((c) => c.position)
+                            .fold<int?>(null, (acc, p) => acc == null ? p : (p < acc ? p : acc));
+                        final savedNudgePos = savedCarouselPos != null
+                            ? savedCarouselPos + 11
+                            : 33;
                         final showSavedNudge = !showCaughtUp &&
                             !savedNudgeDismissed &&
                             savedSummary != null &&
                             savedSummary.unreadCount >= 3 &&
-                            contents.length > 6;
-                        const savedNudgePos = 6;
+                            contents.length > savedNudgePos;
 
                         // Backend gère rate-limit + cool-down : liste vide → widget invisible.
                         final pepitesAsync = ref.watch(pepitesProvider);
@@ -833,11 +903,21 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 notifier.selectedEntity != null ||
                                 notifier.selectedSourceId != null;
 
-                        // Carousels: sorted by position, hidden when filter active
+                        // Carousels: sorted by position, hidden when filter
+                        // active. Pour éviter l'effet "fin de flux" où plusieurs
+                        // carrousels s'empilent en queue avant que loadMore
+                        // ramène la page suivante : on filtre les positions au-
+                        // delà des items chargés, et on réserve une queue de
+                        // 5 items lorsqu'une page suivante est attendue.
+                        final reservedTail =
+                            ref.read(feedProvider.notifier).hasNext ? 5 : 0;
+                        final maxAllowedPos =
+                            (contents.length - reservedTail).clamp(0, contents.length);
                         final sortedCarousels = hasActiveFilter
                             ? <FeedCarouselData>[]
                             : ([...state.carousels]
-                                .where((c) => c.items.isNotEmpty)
+                                .where((c) =>
+                                    c.items.isNotEmpty && c.position < maxAllowedPos)
                                 .toList()
                                 ..sort((a, b) => a.position.compareTo(b.position)));
 
@@ -971,7 +1051,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
                                 // Carousels at their designated positions
                                 for (final carousel in sortedCarousels) {
-                                  final effectivePos = carousel.position.clamp(0, contents.length) + contentOffset;
+                                  final effectivePos = carousel.position + contentOffset;
                                   if (listIndex == effectivePos) {
                                     contentOffset++;
                                     return Padding(
@@ -1180,7 +1260,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
                                 final showHint = !_swipeHintSeen &&
                                     _userHasScrolled &&
-                                    contentIndex <= 1;
+                                    contentIndex == 0;
 
                                 Widget cardWidget = SwipeToOpenCard(
                                   onSwipeOpen: () => _showArticleModal(content),
@@ -1559,7 +1639,180 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                   ),
                 ),
               ),
+            // Bouton "remonter en haut" : apparait quand l'utilisateur a
+            // scrollé bas et commence à remonter. Tap = scroll-to-top smooth.
+            Positioned(
+              right: 16,
+              bottom: 24,
+              child: SafeArea(
+                child: AnimatedSlide(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  offset: _showScrollTopFab
+                      ? Offset.zero
+                      : const Offset(0, 1.6),
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 220),
+                    opacity: _showScrollTopFab ? 1.0 : 0.0,
+                    child: _ScrollToTopButton(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        _scrollToTop();
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // Hint pull-to-refresh : flèche vers le bas qui flotte au-dessus
+            // du feed quand l'utilisateur arrive en haut, signalant qu'on
+            // peut tirer pour rafraîchir. Ne déclenche PAS de refresh.
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 280),
+                    opacity: _showPullHint ? 1.0 : 0.0,
+                    child: _PullToRefreshHint(active: _showPullHint),
+                  ),
+                ),
+              ),
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScrollToTopButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _ScrollToTopButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Material(
+      color: colors.backgroundPrimary,
+      shape: const CircleBorder(),
+      elevation: 4,
+      shadowColor: Colors.black26,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: colors.border),
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
+            size: 18,
+            color: colors.textPrimary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PullToRefreshHint extends StatefulWidget {
+  final bool active;
+  const _PullToRefreshHint({required this.active});
+
+  @override
+  State<_PullToRefreshHint> createState() => _PullToRefreshHintState();
+}
+
+class _PullToRefreshHintState extends State<_PullToRefreshHint>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _bounceController;
+
+  @override
+  void initState() {
+    super.initState();
+    _bounceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    if (widget.active) _bounceController.repeat();
+  }
+
+  @override
+  void didUpdateWidget(_PullToRefreshHint oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !_bounceController.isAnimating) {
+      _bounceController.repeat();
+    } else if (!widget.active && _bounceController.isAnimating) {
+      _bounceController.stop();
+      _bounceController.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _bounceController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Padding(
+      padding: const EdgeInsets.only(top: 80),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: colors.primary.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(FacteurRadius.full),
+            boxShadow: [
+              BoxShadow(
+                color: colors.primary.withOpacity(0.25),
+                blurRadius: 12,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedBuilder(
+                animation: _bounceController,
+                builder: (context, child) {
+                  final t = _bounceController.value;
+                  // Bounce vertical : 0 → -3 → +3 → 0
+                  final offset = math.sin(t * math.pi * 2) * 3.0;
+                  return Transform.translate(
+                    offset: Offset(0, offset),
+                    child: child,
+                  );
+                },
+                child: Icon(
+                  PhosphorIcons.arrowDown(PhosphorIconsStyle.bold),
+                  size: 14,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Tirer pour rafraîchir',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1810,6 +2063,96 @@ class _RefreshConfirmSheet extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _SearchTriggerButton extends StatelessWidget {
+  final bool active;
+  final String? keyword;
+  final VoidCallback onTap;
+  final VoidCallback onClear;
+
+  const _SearchTriggerButton({
+    required this.active,
+    required this.keyword,
+    required this.onTap,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final primary = colors.primary;
+    if (active) {
+      return GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          height: 32,
+          padding: const EdgeInsets.only(left: 10, right: 6),
+          decoration: BoxDecoration(
+            color: primary.withOpacity(0.12),
+            border: Border.all(color: primary),
+            borderRadius: BorderRadius.circular(FacteurRadius.full),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold),
+                size: 14,
+                color: primary,
+              ),
+              const SizedBox(width: 4),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 100),
+                child: Text(
+                  keyword ?? '',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: primary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onClear,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                  child: Icon(
+                    PhosphorIcons.x(PhosphorIconsStyle.bold),
+                    size: 12,
+                    color: primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: 32,
+        width: 32,
+        decoration: BoxDecoration(
+          color: colors.surface,
+          border: Border.all(color: colors.border),
+          borderRadius: BorderRadius.circular(FacteurRadius.full),
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
+          size: 16,
+          color: colors.textSecondary,
+        ),
       ),
     );
   }
