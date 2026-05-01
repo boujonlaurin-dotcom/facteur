@@ -31,19 +31,28 @@ void main() {
 
       expect(find.text("L'essentiel du jour"), findsOneWidget);
       expect(find.text("L'ESSENTIEL"), findsOneWidget);
-      expect(find.text('Les bonnes nouvelles du jour'), findsOneWidget);
+      expect(find.text('Les bonnes nouvelles'), findsOneWidget);
       expect(find.text('BONNES NOUVELLES'), findsOneWidget);
       // Les deux cartes affichent le sous-titre meta « N articles · date ».
       expect(find.textContaining('articles ·'), findsNWidgets(2));
-      // Illustration facteur dupliquée sur les 2 cartes.
-      final illustration = find.byWidgetPredicate(
+      // Illustration facteur sur la carte Essentiel.
+      final essentielIllustration = find.byWidgetPredicate(
         (w) =>
             w is Image &&
             w.image is AssetImage &&
             (w.image as AssetImage).assetName ==
                 'assets/notifications/facteur_avatar.png',
       );
-      expect(illustration, findsNWidgets(2));
+      expect(essentielIllustration, findsOneWidget);
+      // Illustration goodnews sur la carte Bonnes nouvelles.
+      final goodNewsIllustration = find.byWidgetPredicate(
+        (w) =>
+            w is Image &&
+            w.image is AssetImage &&
+            (w.image as AssetImage).assetName ==
+                'assets/notifications/facteur_goodnews.png',
+      );
+      expect(goodNewsIllustration, findsOneWidget);
     });
 
     testWidgets('utilise items.length du digest quand chargé', (tester) async {

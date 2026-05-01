@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
-import '../../../widgets/design/facteur_thumbnail.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
@@ -164,8 +163,8 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       height: 1.45,
       color: colors.textSecondary,
     );
-    // In editorial mode, the description wraps around the lead topic image
-    // (magazine layout). The dots gauge then sits below it.
+    // En serein éditorial, les dots sont rendus après QuoteBlock
+    // (cf. _buildEditorialLayout) — on les omet du haut.
     final showDotsAtTop = widget.dailyGoal > 0 &&
         !(widget.isSerein && widget.usesEditorial && _usesTopics);
 
@@ -177,11 +176,9 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           if (!widget.isSerein)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
-              child: _MagazineIntro(
-                text:
-                    "L'Essentiel est une synthèse des sujets les plus couverts en France aujourd'hui. Facteur compare les points de vues, et t'amène vers des articles pour t'aider à prendre du recul sur l'actualité.",
-                textStyle: introTextStyle,
-                heroImageUrl: _findHeroImageUrl(),
+              child: Text(
+                "L'Essentiel est une synthèse des sujets les plus couverts en France aujourd'hui. Facteur compare les points de vues, et t'amène vers des articles pour t'aider à prendre du recul sur l'actualité.",
+                style: introTextStyle,
               ),
             ),
           if (!widget.isSerein) const SizedBox(height: 16),
@@ -284,29 +281,6 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         }),
       ],
     );
-  }
-
-  /// Returns the thumbnail URL of the lead topic (rank 1 / À la Une), to be
-  /// used as the magazine intro image. Returns null if no usable image.
-  String? _findHeroImageUrl() {
-    final topics = widget.topics;
-    if (topics == null || topics.isEmpty) return null;
-    DigestTopic? lead;
-    for (final t in topics) {
-      if (t.isUne || t.rank == 1) {
-        lead = t;
-        break;
-      }
-    }
-    lead ??= topics.first;
-    for (final a in lead.articles.where((a) => a.badge != 'pas_de_recul')) {
-      final url = a.thumbnailUrl;
-      if (url != null && url.isNotEmpty &&
-          !FacteurThumbnail.failedUrls.contains(url)) {
-        return url;
-      }
-    }
-    return null;
   }
 
   Widget _buildEditorialLayout() {
@@ -613,101 +587,4 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     return r.trim().toUpperCase();
   }
 
-}
-
-/// Magazine-style intro: the description text wraps around a small thumbnail
-/// of the lead topic image floating at the top-right. Falls back to a plain
-/// Text when no image is available.
-class _MagazineIntro extends StatelessWidget {
-  final String text;
-  final TextStyle textStyle;
-  final String? heroImageUrl;
-
-  const _MagazineIntro({
-    required this.text,
-    required this.textStyle,
-    required this.heroImageUrl,
-  });
-
-  static const double _imageWidth = 132;
-  static const double _imageAspect = 4 / 3;
-  static const double _gap = 12;
-
-  @override
-  Widget build(BuildContext context) {
-    final imageUrl = heroImageUrl;
-    if (imageUrl == null || imageUrl.isEmpty) {
-      return Text(text, style: textStyle);
-    }
-    return LayoutBuilder(
-      builder: (ctx, constraints) {
-        final fullWidth = constraints.maxWidth;
-        final firstColWidth = fullWidth - _imageWidth - _gap;
-        if (firstColWidth < 80) {
-          // Too narrow to wrap usefully — fall back to text-only.
-          return Text(text, style: textStyle);
-        }
-
-        const imageHeight = _imageWidth / _imageAspect;
-        final lineHeight =
-            (textStyle.fontSize ?? 13) * (textStyle.height ?? 1.45);
-        final maxLines = (imageHeight / lineHeight).floor().clamp(1, 99);
-
-        // Measure how much text fits in the first column at imageHeight
-        final tp = TextPainter(
-          text: TextSpan(text: text, style: textStyle),
-          textDirection: TextDirection.ltr,
-          maxLines: maxLines,
-        )..layout(maxWidth: firstColWidth);
-
-        int splitOffset;
-        if (!tp.didExceedMaxLines) {
-          splitOffset = text.length;
-        } else {
-          final pos = tp.getPositionForOffset(
-            Offset(firstColWidth, tp.height - 1),
-          );
-          splitOffset = pos.offset;
-          while (splitOffset > 0 && text[splitOffset - 1] != ' ') {
-            splitOffset--;
-          }
-          if (splitOffset == 0) splitOffset = pos.offset;
-        }
-
-        final firstPart = text.substring(0, splitOffset).trimRight();
-        final secondPart = splitOffset >= text.length
-            ? ''
-            : text.substring(splitOffset).trimLeft();
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: Text(firstPart, style: textStyle)),
-                const SizedBox(width: _gap),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: SizedBox(
-                    width: _imageWidth,
-                    height: imageHeight,
-                    child: FacteurThumbnail(
-                      imageUrl: imageUrl,
-                      aspectRatio: _imageAspect,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (secondPart.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(secondPart, style: textStyle),
-            ],
-          ],
-        );
-      },
-    );
-  }
 }

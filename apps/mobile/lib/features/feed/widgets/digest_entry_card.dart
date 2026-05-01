@@ -79,11 +79,12 @@ class DigestEntryCard extends ConsumerWidget {
         backgroundColor: cardBackground,
         perforationColor: SereinColors.sereinColor,
         pill: BonnesNouvellesPill(isDark: isDark),
-        title: 'Les bonnes nouvelles du jour',
+        title: 'Les bonnes nouvelles',
         titleColor: colors.textPrimary,
         captionColor: colors.textTertiary,
         articleCount: sereinCount,
         targetDate: targetDate,
+        assetPath: 'assets/notifications/facteur_goodnews.png',
         onTap: () => openDigest(requireSerein: true),
       ),
     );
@@ -117,6 +118,7 @@ class _CarouselCard extends StatelessWidget {
   final DateTime targetDate;
   final VoidCallback onTap;
   final double avatarOpacity;
+  final String assetPath;
 
   const _CarouselCard({
     required this.backgroundColor,
@@ -129,6 +131,7 @@ class _CarouselCard extends StatelessWidget {
     required this.targetDate,
     required this.onTap,
     this.avatarOpacity = 1.0,
+    this.assetPath = 'assets/notifications/facteur_avatar.png',
   });
 
   @override
@@ -176,7 +179,7 @@ class _CarouselCard extends StatelessWidget {
               child: Opacity(
                 opacity: avatarOpacity,
                 child: Image.asset(
-                  'assets/notifications/facteur_avatar.png',
+                  assetPath,
                   height: 130,
                   fit: BoxFit.contain,
                 ),
@@ -200,7 +203,7 @@ class _CarouselCard extends StatelessWidget {
             child: Text(
               title,
               style: FacteurTypography.serifTitle(titleColor)
-                  .copyWith(fontSize: 24, height: 1.15),
+                  .copyWith(fontSize: 22, height: 1.15),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),

@@ -320,6 +320,12 @@ class PushNotificationService {
         ? AndroidScheduleMode.alarmClock
         : AndroidScheduleMode.inexactAllowWhileIdle;
 
+    const sender = Person(
+      name: senderName,
+      key: 'facteur_goodnews',
+      important: true,
+      icon: DrawableResourceAndroidIcon('facteur_goodnews'),
+    );
     final androidDetails = AndroidNotificationDetails(
       'good_news_channel',
       'Bonnes nouvelles du jour',
@@ -329,10 +335,12 @@ class PushNotificationService {
       priority: Priority.high,
       icon: '@drawable/ic_stat_facteur',
       color: const Color(0xFFD35400),
-      largeIcon: const DrawableResourceAndroidBitmap('facteur_avatar'),
-      styleInformation: BigTextStyleInformation(
-        goodNewsBody,
-        contentTitle: goodNewsTitle,
+      styleInformation: MessagingStyleInformation(
+        const Person(name: 'Toi'),
+        groupConversation: false,
+        messages: [
+          Message(goodNewsBody, DateTime.now(), sender),
+        ],
       ),
     );
     const iosDetails = DarwinNotificationDetails();
