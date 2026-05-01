@@ -116,6 +116,7 @@ class _CarouselCard extends StatelessWidget {
   final int articleCount;
   final DateTime targetDate;
   final VoidCallback onTap;
+  final double avatarOpacity;
 
   const _CarouselCard({
     required this.backgroundColor,
