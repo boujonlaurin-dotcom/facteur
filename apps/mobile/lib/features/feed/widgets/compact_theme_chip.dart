@@ -95,7 +95,7 @@ class _InactiveChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Thèmes',
+              'Mes thèmes',
               style: TextStyle(
                   fontSize: 12,
                   color: colors.textPrimary,

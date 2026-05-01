@@ -46,6 +46,13 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
       appBar: AppBar(
+        leading: Navigator.of(context).canPop()
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.pop(),
+              )
+            : null,
+        automaticallyImplyLeading: false,
         title: const Text('Mes sauvegardes'),
         backgroundColor: colors.backgroundPrimary,
         elevation: 0,

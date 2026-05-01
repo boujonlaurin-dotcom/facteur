@@ -6,8 +6,9 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/routes.dart';
 import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
+import '../../app_update/providers/app_update_provider.dart';
+import '../../app_update/widgets/update_bottom_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
-import '../../feed/widgets/profile_avatar_button.dart';
 import '../providers/user_profile_provider.dart';
 import 'feedback_modal.dart';
 
@@ -72,11 +73,12 @@ class SettingsSheet extends ConsumerWidget {
                     FacteurSpacing.space4,
                     FacteurSpacing.space8,
                   ),
-                  child: Column(
+                  child: const Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: const [
+                    children: [
                       _ProfileBlock(),
                       SizedBox(height: FacteurSpacing.space4),
+                      _UpdateAvailableTile(),
                       _SereinSwitchTile(),
                       SizedBox(height: FacteurSpacing.space4),
                       _ContentShortcuts(),
@@ -106,7 +108,24 @@ class _ProfileBlock extends ConsumerWidget {
         padding: const EdgeInsets.all(FacteurSpacing.space4),
         child: Row(
           children: [
-            const ProfileAvatarButton.display(size: 48),
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colors.primary.withOpacity(0.10),
+                border: Border.all(
+                  color: colors.primary.withOpacity(0.25),
+                  width: 1,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                PhosphorIcons.userCircle(PhosphorIconsStyle.duotone),
+                size: 30,
+                color: colors.primary,
+              ),
+            ),
             const SizedBox(width: FacteurSpacing.space4),
             Expanded(
               child: Consumer(builder: (context, ref, _) {
@@ -141,6 +160,76 @@ class _ProfileBlock extends ConsumerWidget {
               size: 18,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UpdateAvailableTile extends ConsumerWidget {
+  const _UpdateAvailableTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.facteurColors;
+    final info = ref.watch(appUpdateProvider).valueOrNull;
+    if (info == null || !info.updateAvailable) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: FacteurSpacing.space4),
+      child: _SheetCard(
+        onTap: () => UpdateBottomSheet.show(context, info: info),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: FacteurSpacing.space4,
+            vertical: FacteurSpacing.space4,
+          ),
+          child: Row(
+            children: [
+              Icon(
+                PhosphorIcons.arrowCircleDown(PhosphorIconsStyle.regular),
+                color: colors.primary,
+                size: 22,
+              ),
+              const SizedBox(width: FacteurSpacing.space3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Mise à jour disponible',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: colors.primary,
+                          ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      info.name.isNotEmpty ? info.name : info.latestTag,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textSecondary,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: colors.error,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: FacteurSpacing.space2),
+              Icon(
+                PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
+                color: colors.primary.withOpacity(0.6),
+                size: 18,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -241,7 +330,7 @@ class _ContentShortcuts extends StatelessWidget {
           _ShortcutTile(
             icon: PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.regular),
             label: 'Sauvegardés',
-            onTap: () => context.go(RoutePaths.saved),
+            onTap: () => context.pushNamed(RouteNames.saved),
           ),
         ],
       ),
