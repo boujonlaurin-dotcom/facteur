@@ -90,6 +90,7 @@ from app.routers import (
     streaks,
     subscription,
     users,
+    veille,
     waitlist,
     webhooks,
     well_informed,
@@ -466,6 +467,7 @@ app.include_router(
     prefix="/api/well-informed",
     tags=["WellInformed"],
 )
+app.include_router(veille.router, prefix="/api/veille", tags=["Veille"])
 
 
 @app.exception_handler(Exception)
