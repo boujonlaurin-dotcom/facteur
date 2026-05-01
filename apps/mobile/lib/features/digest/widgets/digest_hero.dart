@@ -35,7 +35,9 @@ class DigestHero extends StatelessWidget {
             bottom: 0,
             child: IgnorePointer(
               child: Image.asset(
-                'assets/notifications/facteur_avatar.png',
+                isSerein
+                    ? 'assets/notifications/facteur_goodnews.png'
+                    : 'assets/notifications/facteur_avatar.png',
                 height: 140,
                 fit: BoxFit.contain,
               ),
@@ -60,7 +62,7 @@ class DigestHero extends StatelessWidget {
               children: [
                 Text(
                   isSerein
-                      ? 'Les bonnes nouvelles du jour'
+                      ? 'Les bonnes nouvelles'
                       : "L'essentiel du jour",
                   style: FacteurTypography.serifTitle(colors.textPrimary)
                       .copyWith(fontSize: 32, height: 1.1),
