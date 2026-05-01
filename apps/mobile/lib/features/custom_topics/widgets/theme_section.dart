@@ -137,7 +137,7 @@ class ThemeSection extends ConsumerWidget {
             initiallyExpanded: false,
             tilePadding: const EdgeInsets.symmetric(
               horizontal: FacteurSpacing.space4,
-              vertical: FacteurSpacing.space1,
+              vertical: FacteurSpacing.space3,
             ),
             childrenPadding: const EdgeInsets.only(
               bottom: FacteurSpacing.space3,
@@ -453,11 +453,11 @@ class _ThemeHeader extends ConsumerWidget {
 
     final titleText = Expanded(
       child: Text(
-        '${getMacroThemeEmoji(themeLabel)} ${themeLabel.toUpperCase()}',
-        style: textTheme.labelSmall?.copyWith(
-          color: colors.textTertiary,
-          letterSpacing: 1.5,
-          fontWeight: FontWeight.w600,
+        '${getMacroThemeEmoji(themeLabel)}  $themeLabel',
+        style: textTheme.titleMedium?.copyWith(
+          color: colors.textPrimary,
+          fontWeight: FontWeight.w700,
+          fontSize: 17,
         ),
       ),
     );
