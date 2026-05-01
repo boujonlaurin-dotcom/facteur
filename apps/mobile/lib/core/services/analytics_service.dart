@@ -451,6 +451,24 @@ class AnalyticsService {
     await _capturePostHog('widget_pin_dismissed', props);
   }
 
+  Future<void> trackDiscoverDisableStepShown() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('discover_disable_step_shown', props);
+    await _capturePostHog('discover_disable_step_shown', props);
+  }
+
+  Future<void> trackDiscoverDisableConfirmed() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('discover_disable_confirmed', props);
+    await _capturePostHog('discover_disable_confirmed', props);
+  }
+
+  Future<void> trackDiscoverDisableSkipped() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('discover_disable_skipped', props);
+    await _capturePostHog('discover_disable_skipped', props);
+  }
+
   /// target: 'digest' | 'article' | 'feed'.
   /// Fired whenever a `io.supabase.facteur://` widget URI lands in the app.
   Future<void> trackWidgetAppOpened({

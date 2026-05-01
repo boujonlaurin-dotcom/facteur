@@ -1,82 +1,62 @@
-# PR — Activation Notifications Push v1
+# PR — Widget Android : fix `Class not allowed to be inflated android.view.View`
 
 ## Why
 
-Implémente le brief produit du 28/04/2026 — modal d'activation, présets de rythme (Minimaliste/Curieux), horaire paramétrable (Matin 07:30 / Soir 19:00), re-nudge post-refus, sync backend des préférences notif. Objectif : faire de la notif push le 1er vecteur de retour D7/D30 sans trahir le positionnement slow media (tutoiement, écriture inclusive avec point médian, personnification du Facteur à la 1ʳᵉ personne).
+Le widget Android Facteur était cassé sur Samsung One UI depuis 4 itérations
+(PR #478, #501, #505, #525). Symptôme : "Impossible d'ajouter le widget" +
+écran noir. Aucune itération n'avait jamais lu le logcat.
 
-## Changements
+Logcat capté sur Samsung S24 le 2026-05-01 :
 
-**Backend (`packages/api`)**
-- Nouvelle table `user_notification_preferences` (Alembic `np01`) — `preset` ∈ {minimaliste, curieux}, `time_slot` ∈ {morning, evening}, état refus/re-nudge, `modal_seen`, timezone.
-- Router `GET/PATCH /api/notification-preferences` (auto-create row au GET, partial update au PATCH).
-- Tests router (`tests/routers/test_notification_preferences.py`) — defaults, patch, validation invalide.
+```
+W AppWidgetHostView: android.widget.RemoteViews$ActionException:
+  android.view.InflateException: Binary XML file line #123 in
+  com.example.facteur:layout/widget_article_row:
+  Class not allowed to be inflated android.view.View
+```
 
-**Mobile (`apps/mobile`)**
-- `NotificationsSettingsNotifier` étendu : enums `NotifPreset`/`NotifTimeSlot`, sync backend (boot + debounced PATCH + retry `pending_sync` au prochain boot), Hive cache offline.
-- `PushNotificationService` réécrit : heure paramétrable via slot, `scheduleWeeklyCommunityPick` (vendredi 18:00 pour préset Curieux), variantes copy A/B/C avec tutoiement + personnification ("Facteur passé !"), payload routing pour deep-link article.
-- `NotificationActivationModal` full-screen : préset RadioGroup, pills horaire, preview live, CTA OS prompt → snackbar si refus. Trigger A (post-onboarding, remplace l'ancien bottom sheet) et Trigger B (1ʳᵉ ouverture post-update si `modal_seen=false`).
-- `NotificationRenudgeBanner` + provider : règle ≥7j depuis refus, espacement 14j, cap 3.
-- Settings `Profil > Notifications` étendu : préset + heure éditables (composants partagés modal/settings).
-- 11 events PostHog (`modal_notif_*`, `renudge_*`, `notif_scheduled`/`opened`, `notif_settings_changed`, `notif_disabled`).
+`RemoteViews` impose une whitelist stricte des classes inflatables (API ≥ 31,
+l'app cible API 36). `android.view.View` brut n'est PAS autorisé. Allowlist :
+`AdapterViewFlipper, FrameLayout, GridLayout, GridView, LinearLayout, ListView,
+RelativeLayout, StackView, ViewFlipper, AnalogClock, Button, Chronometer,
+ImageButton, ImageView, ProgressBar, RadioGroup, RadioButton, TextClock,
+TextView, ViewStub, Space`.
 
-## Décisions confirmées avec le PO (2026-04-28)
-- Sync backend dès v1 (pas local-only).
-- Trigger B au post-update via flag `modal_seen`.
-- Variante B (sujet phare) auto = 1ᵉʳ topic du digest connu côté client.
-- Assets icône (`ic_stat_facteur` Android, app icon iOS) et illustrations modal/re-nudge fournis par le PO ultérieurement (placeholders 🧑‍✈️ + `ic_launcher_foreground` en attendant).
+`widget_article_row.xml` contenait deux `<View>` :
+- L. 120 : spacer flex (`layout_weight="1"`) — entre `row_source_name` et `row_time`.
+- L. 133 : séparateur 1dp avec background.
 
-## Hors-scope v1 (cf brief §9)
+→ L'inflate échouait dès la première row, l'host launcher avortait le bind.
 
-Variante C jour calme (override manuel éditorial), A/B test, alertes veille thématique, time picker libre, pause vacances.
+## What
+
+2 lignes XML modifiées dans `widget_article_row.xml` :
+
+- `<View layout_weight="1"/>` (spacer) → `<Space layout_weight="1"/>`
+- `<View ... background="@color/facteur_border"/>` (séparateur) → `<TextView ...>`
+  (TextView est whitelisté et accepte un `android:background`).
+
+Aucun changement Kotlin. Aucun changement architectural.
+
+## Investigation report
+
+Détails complets : `.context/widget-android-investigation.md`
+(setup, logcat filtré, dumpsys, conclusion).
 
 ## Test plan
 
-- [x] `flutter analyze lib` → 0 errors (562 infos pré-existantes : withOpacity, etc.)
-- [x] `flutter test test/features/notifications test/core/services/push_notification_service_copy_test.dart` → 12/12 pass
-- [x] `ruff format --check` + `ruff check` backend → OK
-- [x] Backend smoke import (`python -c "from app.main import app"`) → OK
-- [x] `alembic heads` → 1 head unique (`np01`)
-- [ ] **QA manuelle** : flow onboarding → modal s'affiche → sélection Curieux/Soir → confirm → notif planifiée à 19:00 + vendredi 18:00, settings reflète. Toggle off in-app → cancel les 2 schedules.
-- [ ] **Device Android** : `adb shell dumpsys alarm | grep facteur` montre id=0 (digest) + id=1 (community).
-- [ ] **Assets** : intégrer `ic_stat_facteur` monochrome blanc-sur-transparent dans `android/app/src/main/res/drawable-{mdpi..xxxhdpi}/` et illustrations modal/re-nudge dans `assets/notifications/` quand fournis.
-- [ ] **PostHog** : events `modal_notif_*`, `renudge_*`, `notif_scheduled` visibles après run.
+- [ ] Build APK release sur la branche, install sur Samsung One UI réel
+- [ ] Long-press écran d'accueil → Widgets → Facteur → drag
+- [ ] Le widget s'affiche avec les 5 articles (header, rows, footer CTA)
+- [ ] Aucune erreur "Impossible d'ajouter le widget"
+- [ ] Tap sur une row ouvre le deep link `io.supabase.facteur://digest/<id>`
+- [ ] Tap sur le footer CTA ouvre l'app
+- [ ] (Optionnel) tester aussi sur émulateur Pixel pour valider la généralité
 
-## Migration
+## Out of scope
 
-Appliquer la migration `np01_create_user_notification_preferences` via **Supabase SQL Editor** (jamais sur Railway, cf CLAUDE.md). Idempotent côté users : `modal_seen=false` par défaut → Trigger B s'affichera à leur prochaine ouverture, comportement intentionnel.
-
----
-
-## v1.1 — Fix superpositions + UI polish (post-QA PO 2026-04-28)
-
-### Pourquoi
-QA E2E PO sur la v1 a remonté deux familles de bugs bloquants (cf `.context/handoff-notif-activation-v2.md`) :
-1. **Superpositions** d'overlays : modal notif + onboarding questionnaire, modal notif + Welcome Tour, et cumul welcome tour / NIS prompt / modal / re-nudge à l'arrivée sur le Digest.
-2. **UI** : modal full-screen incohérente avec le reste de l'app, hiérarchie typo pauvre, sections (preview, time slot) sans intro.
-
-### Changements
-
-**Orchestrateur "premier impact"** — `apps/mobile/lib/core/orchestration/first_impression_orchestrator.dart` (NEW)
-- `firstImpressionSlotProvider` : enum `FirstImpressionSlot {none, welcomeTour, notifModal, renudgeBanner, wellInformed}` calculé depuis `authStateProvider`, `welcomeTourControllerProvider`, `notificationsSettingsProvider`, `notificationRenudgeShouldShowProvider`, `wellInformedShouldShowProvider`.
-- Règles : onboarding pas terminé → rien ; tour actif/jamais vu → tour seul ; sinon modal notif (1 fois) ; sinon re-nudge ou well-informed (1 nudge max par session).
-- 2 `StateProvider<bool>` session-only : `notifModalConsumedThisSessionProvider`, `nudgeConsumedThisSessionProvider`.
-
-**Wiring** — `apps/mobile/lib/features/digest/screens/digest_screen.dart`
-- `_maybeShowActivationModal` consomme désormais le slot, plus de `notificationsSettingsProvider` direct.
-- `NotificationRenudgeBanner` et `WellInformedPrompt` dans le scroll sont gatés par le slot.
-- Imports nettoyés (suppression `notifications_settings_provider`, `well_informed_prompt_provider`).
-
-**Restyle modal** — `apps/mobile/lib/features/notifications/widgets/notification_activation_modal.dart`
-- Passage de `MaterialPageRoute(fullscreenDialog: true)` à `showDialog` + `Dialog` flottant + `barrierColor: Colors.black54` (pattern aligné `digest_welcome_modal.dart`).
-- Restructure contenu : titre `displaySmall` → hook secondaire → 3 bullets ✓ (au lieu de paragraphes blocs) → mini-label italique d'intro preview → `_NotificationPreview` → section header "Choisis ton rythme" → `PresetSelector` → section header "À quel moment ?" → `TimeSlotSelector` → CTA + lien.
-
-**Setup nudge consumed flags**
-- `notification_renudge_banner.dart` : marque `nudgeConsumedThisSessionProvider` post-frame au 1ʳᵉ affichage.
-- `well_informed_prompt.dart` : idem.
-
-### Test plan v1.1
-
-- [x] `flutter analyze lib` → 0 errors (warnings préexistants seuls).
-- [x] `flutter test test/features/notifications/` → 7/7 pass.
-- [x] `flutter test test/features/well_informed/` → 8/8 pass.
-- [ ] **Test E2E manuel** (handoff §3) : reset DB compte test → onboarding (pas de modal pendant questionnaire) → fin onboarding (modal une fois après theme choice) → restart `modal_seen=true` + `welcome_tour_completed=false` (tour seul) → restart `modal_seen=false` post-update (modal une seule fois) → jamais 2 overlays simultanés.
+- Pas de changement de stratégie de rendu (rester sur `addView` inline,
+  validé par les logs : `onUpdate id=25 json.len=2581` + bind système OK).
+- Pas de retour à `RemoteViewsService`/`Factory` (cassé sur Samsung).
+- Pas de changement de taille du widget (`minHeight=340dp` OK, le launcher
+  l'accepte — c'était bien le rendu qui cassait, pas le sizing).
