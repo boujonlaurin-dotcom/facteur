@@ -36,7 +36,7 @@ void main() {
       ));
 
       expect(find.byType(TextField), findsOneWidget);
-      expect(find.text('Rechercher une source...'), findsOneWidget);
+      expect(find.text('Une URL, un nom de média...'), findsOneWidget);
     });
 
     testWidgets('does NOT fire onSubmit while typing (no debounce)',
