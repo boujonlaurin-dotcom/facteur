@@ -132,8 +132,8 @@ class TestBuildCarouselsHot:
         assert c["carousel_type"] == "hot"
         assert "Trump" in c["title"]
         assert c["emoji"] == "\U0001f50d"
-        # Story 12.8: hot base position is 15 (business order), no jitter without user_id
-        assert c["position"] == 15
+        # Hot base position is 29 (cadence GNews ~6, business order)
+        assert c["position"] == 29
         assert len(c["items"]) == 5  # rep + 4 hidden
         assert len(c["badges"]) == len(c["items"])
         assert c["badges"][0]["code"] == "actu_chaude"
@@ -433,7 +433,7 @@ class TestBuildCarouselsNewSource:
         assert len(new_src) == 1
         c = new_src[0]
         assert "TechCrunch" in c["title"]
-        assert c["position"] >= 4  # MIN_CAROUSEL_POSITION enforced
+        assert c["position"] >= 5  # MIN_CAROUSEL_POSITION enforced
         assert c["badges"][0]["code"] == "new_source"
         assert len(c["items"]) == 4
 
@@ -533,7 +533,7 @@ class TestBuildCarouselsCommunity:
         assert len(community) == 1
         c = community[0]
         assert c["title"] == "Recos de la communauté"
-        assert c["position"] >= 4  # MIN_CAROUSEL_POSITION enforced; slot shuffled
+        assert c["position"] >= 5  # MIN_CAROUSEL_POSITION enforced; slot shuffled
         assert c["badges"][0]["code"] == "community"
         assert len(c["items"]) == 4
 
@@ -601,7 +601,7 @@ class TestBuildCarouselsSaved:
         assert len(saved) == 1
         c = saved[0]
         assert c["title"] == "Plus tard, c\u2019est maintenant !"
-        assert c["position"] >= 4  # MIN_CAROUSEL_POSITION enforced; slot shuffled
+        assert c["position"] >= 5  # MIN_CAROUSEL_POSITION enforced; slot shuffled
         assert len(c["items"]) == 3
 
         # Verify per-item badges
@@ -686,8 +686,8 @@ class TestBuildCarouselsPhaseB_Integration:
 
 class TestMinCarouselPosition:
     @pytest.mark.asyncio
-    async def test_no_carousel_below_position_4(self):
-        """All carousels must have position >= 4 (MIN_CAROUSEL_POSITION)."""
+    async def test_no_carousel_below_min_position(self):
+        """All carousels must have position >= MIN_CAROUSEL_POSITION."""
         service = _setup_service()
         rep = MockContent(title="Trump article")
         hidden = [MockContent(title=f"Trump {i}") for i in range(4)]
@@ -700,8 +700,8 @@ class TestMinCarouselPosition:
 
         _, carousels = await service._build_carousels([], pre_regroup_map)
         for c in carousels:
-            assert c["position"] >= 4, (
-                f"Carousel {c['carousel_type']} at position {c['position']} < 4"
+            assert c["position"] >= 5, (
+                f"Carousel {c['carousel_type']} at position {c['position']} < 5"
             )
 
     @pytest.mark.asyncio
@@ -719,8 +719,8 @@ class TestMinCarouselPosition:
 
         _, carousels = await service._build_carousels([], pre_regroup_map)
         assert len(carousels) == 1
-        # Story 12.8: hot base position is 15 (no jitter without user_id)
-        assert carousels[0]["position"] == 15
+        # Hot base position is 29 (no jitter without user_id)
+        assert carousels[0]["position"] == 29
 
 
 def _setup_service_with_overflow_and_mocks():
@@ -799,7 +799,7 @@ class TestDailyJitter:
         service.keyword_overflow = []
 
         base_hot = RecommendationService._CAROUSEL_BASE_POSITIONS["hot"]
-        MIN_POS = 4
+        MIN_POS = 5
         for _ in range(20):
             _, carousels = await service._build_carousels(
                 [], pre_regroup_map, user_id=uuid4(),

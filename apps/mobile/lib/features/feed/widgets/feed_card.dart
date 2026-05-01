@@ -228,6 +228,11 @@ class _FeedCardState extends State<FeedCard>
                             // Source Logo + Name (tappable for source detail — Epic 12)
                             Flexible(
                             child: _FooterBadgeNudge(
+                              // Une seule balise pulse par carte. Si la carte
+                              // n'a pas de topic chip, c'est forcément la
+                              // source. Sinon, parité du hashCode.
+                              enabled: widget.topicChipWidget == null ||
+                                  widget.content.id.hashCode.isEven,
                               child: KeyedSubtree(
                                 // Fallback anchor for feed_badge_longpress when
                                 // the card has no topic chip.
@@ -467,6 +472,7 @@ class _FeedCardState extends State<FeedCard>
                             if (widget.topicChipWidget != null)
                               Flexible(
                                 child: _FooterBadgeNudge(
+                                  enabled: widget.content.id.hashCode.isOdd,
                                   child: KeyedSubtree(
                                     // Nudge anchor attaches to topic chip when
                                     // present (priority target for
@@ -737,8 +743,9 @@ class _FeedCardState extends State<FeedCard>
 /// Plays a tiny scale pulse (~2%) at random intervals (8–15 s).
 class _FooterBadgeNudge extends StatefulWidget {
   final Widget child;
+  final bool enabled;
 
-  const _FooterBadgeNudge({required this.child});
+  const _FooterBadgeNudge({required this.child, this.enabled = true});
 
   @override
   State<_FooterBadgeNudge> createState() => _FooterBadgeNudgeState();
@@ -749,24 +756,40 @@ class _FooterBadgeNudgeState extends State<_FooterBadgeNudge>
   late final AnimationController _controller;
   final math.Random _rng = math.Random();
   Timer? _timer;
+  bool _firstPopFired = false;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 1100),
     );
     _controller.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _scheduleNext();
       }
     });
-    _scheduleNext();
+    if (widget.enabled) _scheduleNext();
+  }
+
+  @override
+  void didUpdateWidget(_FooterBadgeNudge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.enabled && !oldWidget.enabled) {
+      _scheduleNext();
+    } else if (!widget.enabled && oldWidget.enabled) {
+      _timer?.cancel();
+      _controller.value = 0;
+    }
   }
 
   void _scheduleNext() {
-    final delayMs = 8000 + _rng.nextInt(7000); // 8–15 s
+    // 1er pop rapide pour être découvrable, puis cadence rare (20–35 s).
+    final delayMs = !_firstPopFired
+        ? 2500 + _rng.nextInt(2000)
+        : 20000 + _rng.nextInt(15000);
+    _firstPopFired = true;
     _timer?.cancel();
     _timer = Timer(Duration(milliseconds: delayMs), () {
       if (mounted) _controller.forward(from: 0);
@@ -782,11 +805,16 @@ class _FooterBadgeNudgeState extends State<_FooterBadgeNudge>
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.enabled) return widget.child;
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
-        // One gentle sine pulse: 1.0 → 1.02 → 1.0
-        final scale = 1.0 + 0.02 * math.sin(_controller.value * math.pi);
+        final t = _controller.value;
+        // Pulsation ease-in-out smooth : grossissement bien visible sans
+        // coloration. Pic à scale 1.12 puis retour.
+        final pulse = math.sin(t * math.pi);
+        final eased = Curves.easeInOutSine.transform(pulse.clamp(0.0, 1.0));
+        final scale = 1.0 + 0.12 * eased;
         return Transform.scale(scale: scale, child: child);
       },
       child: widget.child,

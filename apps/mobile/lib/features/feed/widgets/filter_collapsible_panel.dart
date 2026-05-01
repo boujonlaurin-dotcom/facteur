@@ -14,11 +14,13 @@ import '../../../config/theme.dart';
 class FilterCollapsiblePanel extends StatefulWidget {
   final int activeCount;
   final Widget chipsRow;
+  final Widget? leadingTrigger;
 
   const FilterCollapsiblePanel({
     super.key,
     required this.activeCount,
     required this.chipsRow,
+    this.leadingTrigger,
   });
 
   @override
@@ -37,7 +39,7 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final hasActive = widget.activeCount > 0;
-    final label = hasActive ? 'Filtres · ${widget.activeCount}' : 'Filtres';
+    final label = hasActive ? '${widget.activeCount}' : '';
 
     return SizedBox(
       height: 32,
@@ -80,20 +82,28 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
                         )),
             ),
           ),
+          if (widget.leadingTrigger != null) ...[
+            widget.leadingTrigger!,
+            const SizedBox(width: 8),
+          ],
           GestureDetector(
             onTap: _toggle,
             behavior: HitTestBehavior.opaque,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               height: 32,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              padding: EdgeInsets.symmetric(
+                horizontal: hasActive && !_expanded ? 12 : 10,
+              ),
               decoration: BoxDecoration(
                 color: (_expanded || hasActive)
                     ? colors.primary.withOpacity(0.12)
-                    : Colors.transparent,
-                border: (_expanded || hasActive)
-                    ? Border.all(color: colors.primary)
-                    : null,
+                    : colors.surface,
+                border: Border.all(
+                  color: (_expanded || hasActive)
+                      ? colors.primary
+                      : colors.border,
+                ),
                 borderRadius: BorderRadius.circular(FacteurRadius.full),
               ),
               child: Row(
@@ -103,21 +113,19 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
                     _expanded
                         ? PhosphorIcons.x(PhosphorIconsStyle.bold)
                         : PhosphorIcons.funnel(PhosphorIconsStyle.regular),
-                    size: 14,
+                    size: 16,
                     color: (_expanded || hasActive)
                         ? colors.primary
                         : colors.textSecondary,
                   ),
-                  if (!_expanded) ...[
-                    const SizedBox(width: 6),
+                  if (!_expanded && hasActive) ...[
+                    const SizedBox(width: 4),
                     Text(
                       label,
                       style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: hasActive
-                            ? colors.primary
-                            : colors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: colors.primary,
                       ),
                     ),
                   ],
