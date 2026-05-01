@@ -149,7 +149,9 @@ class FacteurWidget : AppWidgetProvider() {
         )
         rv.setTextViewText(R.id.row_title, article.title)
 
-        val thumb = loadBitmap(article.thumbnailPath)?.let { roundCorners(context, it, 8f) }
+        val thumb = loadBitmap(context, article.thumbnailPath, 60)?.let {
+            roundCorners(context, it, 8f)
+        }
         if (thumb != null) {
             rv.setImageViewBitmap(R.id.row_thumbnail, thumb)
             rv.setViewVisibility(R.id.row_thumbnail, View.VISIBLE)
@@ -157,7 +159,7 @@ class FacteurWidget : AppWidgetProvider() {
             rv.setViewVisibility(R.id.row_thumbnail, View.GONE)
         }
 
-        val logo = loadBitmap(article.sourceLogoPath)
+        val logo = loadBitmap(context, article.sourceLogoPath, 16)
         if (logo != null) {
             rv.setImageViewBitmap(R.id.row_source_logo, logo)
             rv.setViewVisibility(R.id.row_source_logo, View.VISIBLE)
@@ -245,11 +247,35 @@ class FacteurWidget : AppWidgetProvider() {
         val publishedAtIso: String,
     )
 
-    private fun loadBitmap(path: String?): Bitmap? {
+    /**
+     * Decode a bitmap downscaled to fit within [targetSizeDp]² to keep the
+     * RemoteViews payload small. Inlining 5 unscaled article thumbnails into
+     * a single RemoteViews trips Binder's ~1 MB IPC limit, surfacing as
+     * "Impossible d'ajouter le widget" on the host launcher.
+     */
+    private fun loadBitmap(context: Context, path: String?, targetSizeDp: Int): Bitmap? {
         if (path.isNullOrBlank()) return null
         return try {
             val file = File(path)
-            if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
+            if (!file.exists()) return null
+
+            val targetPx = (targetSizeDp * context.resources.displayMetrics.density).toInt()
+                .coerceAtLeast(1)
+
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+            var sample = 1
+            while (
+                bounds.outWidth / (sample * 2) >= targetPx &&
+                bounds.outHeight / (sample * 2) >= targetPx
+            ) {
+                sample *= 2
+            }
+
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            BitmapFactory.decodeFile(file.absolutePath, opts)
         } catch (e: Exception) {
             Log.w(TAG, "Bitmap decode failed: $path", e)
             null
