@@ -36,8 +36,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install alembic + driver
-        run: pip install alembic 'psycopg[binary]' sqlalchemy structlog python-dotenv
+      - name: Install API runtime
+        # env.py imports `from app.database import Base` and `from app.models import *`,
+        # which transitively pulls in pydantic / fastapi / structlog / etc.
+        # Installing requirements.txt avoids the whack-a-mole of adding deps one by one.
+        run: pip install -r packages/api/requirements.txt
 
       - name: alembic upgrade head
         working-directory: packages/api
