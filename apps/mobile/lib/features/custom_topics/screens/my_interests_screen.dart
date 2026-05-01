@@ -99,7 +99,8 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
         children: [
           const Flexible(
             child: FabNudgeBubble(
-              text: 'Suivez n\'importe quel sujet pour le faire ressortir dans votre flux !',
+              text: 'Suivez vos sujets pour les booster',
+              dismissKey: 'nudge_custom_topic_v1',
             ),
           ),
           const SizedBox(width: 6),

@@ -66,8 +66,8 @@ class SourceListItem extends StatelessWidget {
         opacity: isMuted ? 0.5 : 1.0,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          margin: const EdgeInsets.only(bottom: 14),
-          padding: const EdgeInsets.all(18),
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
             color: isMuted
                 ? colors.surface
@@ -87,10 +87,10 @@ class SourceListItem extends StatelessWidget {
             children: [
               SourceLogoAvatar(
                 source: source,
-                size: 60,
-                radius: 12,
+                size: 48,
+                radius: 10,
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 10),
 
               // Info
               Expanded(
@@ -152,7 +152,7 @@ class SourceListItem extends StatelessWidget {
 
               // Priority slider for trusted, non-muted sources
               if (!isMuted && isTrusted && onWeightChanged != null) ...[
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 PrioritySlider(
                   key: ValueKey(source.priorityMultiplier),
                   currentMultiplier: source.priorityMultiplier,
