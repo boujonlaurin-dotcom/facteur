@@ -665,7 +665,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                     context.push(RoutePaths.settings),
                               ),
                             ),
-                            const Align(
+                            Align(
                               alignment: Alignment.centerRight,
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
