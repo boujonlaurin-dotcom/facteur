@@ -7,6 +7,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:home_widget/home_widget.dart';
+import 'package:flutter_downloader/flutter_downloader.dart';
 
 import 'app.dart';
 import 'config/constants.dart';
@@ -69,6 +70,14 @@ Future<void> _bootstrap() async {
 
   // Initialiser Hive (storage local)
   await Hive.initFlutter();
+
+  // Initialiser flutter_downloader (Android DownloadManager) pour la mise
+  // à jour APK : permet au téléchargement de continuer en arrière-plan.
+  try {
+    await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
+  } catch (e) {
+    debugPrint('Main: FlutterDownloader init failed (non-critical): $e');
+  }
 
   // Pré-ouvrir les boxes et vérifier leur contenu
   // Try-catch avec fallback : si un box est corrompu, on le recrée vide
