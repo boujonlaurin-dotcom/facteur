@@ -659,6 +659,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                               child: const StreakIndicator(),
                             ),
                             Align(
+                              alignment: Alignment.centerLeft,
+                              child: ProfileAvatarButton(
+                                onTap: () =>
+                                    context.push(RoutePaths.settings),
+                              ),
+                            ),
+                            const Align(
                               alignment: Alignment.centerRight,
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,

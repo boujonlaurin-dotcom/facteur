@@ -127,6 +127,7 @@ class _CarouselCard extends StatelessWidget {
     required this.articleCount,
     required this.targetDate,
     required this.onTap,
+    this.avatarOpacity = 1.0,
   });
 
   @override
@@ -171,10 +172,13 @@ class _CarouselCard extends StatelessWidget {
             right: 0,
             bottom: 0,
             child: IgnorePointer(
-              child: Image.asset(
-                'assets/notifications/facteur_avatar.png',
-                height: 130,
-                fit: BoxFit.contain,
+              child: Opacity(
+                opacity: avatarOpacity,
+                child: Image.asset(
+                  'assets/notifications/facteur_avatar.png',
+                  height: 130,
+                  fit: BoxFit.contain,
+                ),
               ),
             ),
           ),
