@@ -16,7 +16,6 @@ import '../widgets/smart_search_field.dart';
 import '../widgets/source_detail_modal.dart';
 import '../widgets/source_result_card.dart';
 import '../widgets/source_result_skeleton.dart';
-import '../widgets/theme_explorer.dart';
 
 class AddSourceScreen extends ConsumerStatefulWidget {
   const AddSourceScreen({super.key});
@@ -32,12 +31,18 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
   bool _expanded = false;
   bool _sourceAdded = false;
   final Set<String> _addedSourceIds = {};
+  String? _lastAddedName;
   late final TextEditingController _searchController;
+  late final FocusNode _searchFocusNode;
+  bool _searchActive = false;
 
   @override
   void initState() {
     super.initState();
     _searchController = TextEditingController();
+    _searchFocusNode = FocusNode();
+    _searchFocusNode.addListener(_handleSearchActivity);
+    _searchController.addListener(_handleSearchActivity);
   }
 
   @override
@@ -46,8 +51,19 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     if (query.isNotEmpty && !_sourceAdded) {
       ref.read(sourcesRepositoryProvider).logSearchAbandoned(query);
     }
+    _searchFocusNode.removeListener(_handleSearchActivity);
+    _searchController.removeListener(_handleSearchActivity);
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _handleSearchActivity() {
+    final active =
+        _searchFocusNode.hasFocus || _searchController.text.isNotEmpty;
+    if (active != _searchActive) {
+      setState(() => _searchActive = active);
+    }
   }
 
   SmartSearchQuery get _searchParams => (
@@ -107,6 +123,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
         setState(() {
           _addedSourceIds.add(sourceId);
           _sourceAdded = true;
+          _lastAddedName = result.name;
         });
       } else {
         if (result.feedUrl.isEmpty) {
@@ -114,7 +131,10 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
           return;
         }
         await repository.addCustomSource(result.feedUrl, name: result.name);
-        setState(() => _sourceAdded = true);
+        setState(() {
+          _sourceAdded = true;
+          _lastAddedName = result.name;
+        });
       }
 
       if (!mounted) return;
@@ -137,10 +157,13 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
           isTrusted: true,
           priorityMultiplier: 2.0,
         );
-        _showSourceModal(source, recentItems: result.recentItems);
+        await _showSourceModal(source, recentItems: result.recentItems);
+        if (!mounted) return;
+        _resetForNextAdd();
       } else {
         NotificationService.showSuccess(
             'Source ajoutee ! Ses contenus apparaitront dans ton feed.');
+        _resetForNextAdd();
       }
     } catch (e) {
       if (mounted) {
@@ -196,11 +219,19 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     }
   }
 
-  void _showSourceModal(
+  void _resetForNextAdd() {
+    _searchController.clear();
+    setState(() {
+      _currentQuery = '';
+      _expanded = false;
+    });
+  }
+
+  Future<void> _showSourceModal(
     Source source, {
     List<SmartSearchRecentItem>? recentItems,
   }) {
-    showModalBottomSheet<void>(
+    return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -257,25 +288,62 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
           icon: Icon(PhosphorIcons.x(PhosphorIconsStyle.regular)),
           onPressed: () => context.pop(),
         ),
-        title: Text(
-          'Ajouter une source',
-          style: Theme.of(context).textTheme.displaySmall,
-        ),
+        title: const Text('Ajouter une source'),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(
+          FacteurSpacing.space4,
+          FacteurSpacing.space2,
+          FacteurSpacing.space4,
+          FacteurSpacing.space8,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SmartSearchField(
-              controller: _searchController,
-              onSubmit: (value) => _runSearch(value),
-              onClear: _clearSearch,
-              onSearch: () => _runSearch(),
-            ),
-            const SizedBox(height: 16),
+            if (_currentQuery.isEmpty) ...[
+              const SizedBox(height: FacteurSpacing.space6),
+              _buildSearchIntro(),
+              const SizedBox(height: FacteurSpacing.space6),
+            ],
+            _buildBreathingSearch(colors),
+            SizedBox(
+                height: _currentQuery.isEmpty
+                    ? FacteurSpacing.space8
+                    : FacteurSpacing.space4),
             _buildContent(),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBreathingSearch(FacteurColors colors) {
+    final glow = _searchActive ? colors.primary.withValues(alpha: 0.18) : Colors.transparent;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+        boxShadow: [
+          BoxShadow(
+            color: glow,
+            blurRadius: _searchActive ? 28 : 0,
+            spreadRadius: _searchActive ? 2 : 0,
+          ),
+        ],
+      ),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 1.0, end: _searchActive ? 1.01 : 1.0),
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOut,
+        builder: (context, scale, child) =>
+            Transform.scale(scale: scale, child: child),
+        child: SmartSearchField(
+          controller: _searchController,
+          focusNode: _searchFocusNode,
+          onSubmit: (value) => _runSearch(value),
+          onClear: _clearSearch,
+          onSearch: () => _runSearch(),
         ),
       ),
     );
@@ -325,28 +393,144 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     ref.read(analyticsServiceProvider).trackAddSourceExampleTap(text);
   }
 
-  Widget _buildEmptyState() => _buildUrlRssEmptyState();
-
-  Widget _buildUrlRssEmptyState() {
+  Widget _buildEmptyState() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildSourceTypesRow(),
-        const SizedBox(height: 20),
+        if (_sourceAdded) ...[
+          _buildAddedNudge(),
+          const SizedBox(height: FacteurSpacing.space6),
+        ],
         ExampleChips(onTap: _onExampleTap),
-        const SizedBox(height: 24),
-        const ThemeExplorer(),
-        const SizedBox(height: 24),
+        const SizedBox(height: FacteurSpacing.space8),
         CommunityGemsStrip(
           onSourceTap: _showSourceModal,
           onGemTap: (sourceId) {
             ref.read(analyticsServiceProvider).trackAddSourceGemTap(sourceId);
           },
         ),
-        const SizedBox(height: 24),
-        _buildInspirationHints(),
-        const SizedBox(height: 24),
       ],
+    );
+  }
+
+  Widget _buildAddedNudge() {
+    final colors = context.facteurColors;
+    final name = _lastAddedName;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+        onTap: () {
+          setState(() {
+            _sourceAdded = false;
+            _lastAddedName = null;
+          });
+          _searchFocusNode.requestFocus();
+        },
+        child: Container(
+          padding: const EdgeInsets.all(FacteurSpacing.space4),
+          decoration: BoxDecoration(
+            color: colors.primary.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(FacteurRadius.large),
+            border: Border.all(color: colors.primary.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            children: [
+              Icon(PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+                  size: 22, color: colors.primary),
+              const SizedBox(width: FacteurSpacing.space3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name != null
+                          ? '« $name » ajoutée'
+                          : 'Source ajoutée',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: colors.textPrimary,
+                          ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Une autre à ajouter ?',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textSecondary,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: FacteurSpacing.space2),
+              Icon(PhosphorIcons.arrowRight(PhosphorIconsStyle.regular),
+                  size: 18, color: colors.primary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchIntro() {
+    final colors = context.facteurColors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          'Que veux-tu suivre ?',
+          textAlign: TextAlign.center,
+          style: FacteurTypography.serifTitle(colors.textPrimary)
+              .copyWith(fontSize: 28, height: 1.15),
+        ),
+        const SizedBox(height: FacteurSpacing.space2),
+        Text(
+          'Tape un nom de média ou colle son URL.\nOn l\'amène dans ton app.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: colors.textSecondary,
+                height: 1.45,
+              ),
+        ),
+        const SizedBox(height: FacteurSpacing.space4),
+        _buildSupportedTypesInfo(colors),
+      ],
+    );
+  }
+
+  Widget _buildSupportedTypesInfo(FacteurColors colors) {
+    const items = <({String label, int iconIndex})>[
+      (label: 'Médias', iconIndex: 0),
+      (label: 'Newsletters', iconIndex: 1),
+      (label: 'YouTube', iconIndex: 2),
+      (label: 'Reddit', iconIndex: 3),
+      (label: 'Podcasts', iconIndex: 4),
+    ];
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 14,
+      runSpacing: 6,
+      children: items.map((it) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _iconForContentType(it.iconIndex),
+              size: 13,
+              color: colors.textTertiary,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              it.label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colors.textTertiary,
+                  ),
+            ),
+          ],
+        );
+      }).toList(),
     );
   }
 
@@ -461,51 +645,6 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
 
   // ─── Shared Widgets ────────────────────────────────────────────
 
-  Widget _buildHelpCard({
-    required String title,
-    String? description,
-  }) {
-    final colors = context.facteurColors;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(PhosphorIcons.lightbulb(PhosphorIconsStyle.regular),
-                  size: 18, color: colors.primary),
-              const SizedBox(width: 8),
-              Text(
-                title,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: colors.textPrimary,
-                    ),
-              ),
-            ],
-          ),
-          if (description != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              description,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colors.textSecondary,
-                    height: 1.4,
-                  ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   static const _contentTypeOptions =
       <({String label, String apiValue, int iconIndex})>[
     (label: 'Médias', apiValue: 'article', iconIndex: 0),
@@ -565,170 +704,4 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     );
   }
 
-  Widget _buildSourceTypesRow() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Ajoutez n\'importe quelle source à Facteur !',
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: context.facteurColors.textPrimary,
-                fontWeight: FontWeight.w600,
-              ),
-        ),
-        const SizedBox(height: 10),
-        _buildFilterChips(),
-      ],
-    );
-  }
-
-  Widget _buildInspirationHints() {
-    final colors = context.facteurColors;
-    const hints = <String>[
-      'Une newsletter qui s\'accumule dans la boîte mail',
-      'Une chaîne YouTube recommandée par un proche',
-      'Un compte Instagram ou LinkedIn d\'expert',
-      'Un subreddit qui revient souvent dans les conversations',
-    ];
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(PhosphorIcons.lightbulb(PhosphorIconsStyle.fill),
-                  size: 18, color: colors.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Quelques conseils',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colors.textPrimary,
-                      ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ...hints.map((hint) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 7),
-                      child: Container(
-                        width: 4,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: colors.textTertiary,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        hint,
-                        style:
-                            Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: colors.textSecondary,
-                                  height: 1.4,
-                                ),
-                      ),
-                    ),
-                  ],
-                ),
-              )),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSourceListTile(Source source) {
-    final colors = context.facteurColors;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.border),
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(12),
-        leading: source.logoUrl != null
-            ? Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  image: DecorationImage(
-                    image: NetworkImage(source.logoUrl!),
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              )
-            : Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: colors.backgroundSecondary,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                    PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
-                    color: colors.primary),
-              ),
-        title: Text(source.name,
-            style: Theme.of(context).textTheme.titleSmall,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-                source.description?.isNotEmpty == true
-                    ? source.description!
-                    : source.getThemeLabel(),
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: colors.textSecondary),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis),
-            if (source.followerCount > 0) ...[
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Icon(PhosphorIcons.users(PhosphorIconsStyle.regular),
-                      size: 11, color: colors.textTertiary),
-                  const SizedBox(width: 3),
-                  Text(
-                    '${source.followerCount} ${source.followerCount == 1 ? 'lecteur' : 'lecteurs'}',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: colors.textTertiary,
-                          fontSize: 11,
-                        ),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
-        trailing: source.isTrusted
-            ? Icon(PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
-                color: colors.success)
-            : Icon(PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
-                color: colors.textTertiary),
-        onTap: () => _showSourceModal(source),
-      ),
-    );
-  }
 }

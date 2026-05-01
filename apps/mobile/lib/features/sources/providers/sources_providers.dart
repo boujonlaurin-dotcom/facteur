@@ -29,7 +29,7 @@ final smartSearchProvider = FutureProvider.family<SmartSearchResponse,
 
 final trendingSourcesProvider = FutureProvider<List<Source>>((ref) async {
   final repository = ref.watch(sourcesRepositoryProvider);
-  return repository.getTrendingSources(limit: 10);
+  return repository.getTrendingSources(limit: 30);
 });
 
 final themesFollowedProvider =

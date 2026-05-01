@@ -16,6 +16,7 @@ class SmartSearchField extends StatelessWidget {
   final VoidCallback onClear;
   final VoidCallback? onSearch;
   final bool enabled;
+  final FocusNode? focusNode;
 
   const SmartSearchField({
     super.key,
@@ -24,6 +25,7 @@ class SmartSearchField extends StatelessWidget {
     required this.onClear,
     this.onSearch,
     this.enabled = true,
+    this.focusNode,
   });
 
   @override
@@ -32,10 +34,11 @@ class SmartSearchField extends StatelessWidget {
 
     return TextField(
       controller: controller,
+      focusNode: focusNode,
       decoration: InputDecoration(
-        hintText: 'Rechercher une source...',
-        prefixIcon: Icon(
-            PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular)),
+        hintText: 'Une URL, un nom de média...',
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
         suffixIcon: ValueListenableBuilder<TextEditingValue>(
           valueListenable: controller,
           builder: (_, value, __) {
