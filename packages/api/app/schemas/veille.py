@@ -166,13 +166,33 @@ class VeilleDeliveryListItem(BaseModel):
     created_at: datetime
 
 
+class VeilleDeliveryArticle(BaseModel):
+    """Article référencé dans un cluster d'une livraison veille."""
+
+    content_id: UUID
+    source_id: UUID
+    title: str
+    url: str
+    excerpt: str = ""
+    published_at: datetime
+
+
+class VeilleDeliveryItem(BaseModel):
+    """Cluster thématique exposé au front (Story 18.2)."""
+
+    cluster_id: str
+    title: str
+    articles: list[VeilleDeliveryArticle] = Field(default_factory=list)
+    why_it_matters: str = ""
+
+
 class VeilleDeliveryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     veille_config_id: UUID
     target_date: date
-    items: list[dict]
+    items: list[VeilleDeliveryItem] = Field(default_factory=list)
     generation_state: Literal["pending", "running", "succeeded", "failed"]
     attempts: int
     started_at: datetime | None = None

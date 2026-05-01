@@ -1,7 +1,8 @@
 """Configuration de la base de données avec SQLAlchemy async."""
 
 import time
-from contextlib import asynccontextmanager
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -163,6 +164,10 @@ async_session_maker = async_sessionmaker(
 # sur le hot path /api/feed.
 _DEFAULT_STATEMENT_TIMEOUT_MS = 30_000
 _DEFAULT_IDLE_IN_TX_TIMEOUT_MS = 10_000
+
+
+SessionMaker = Callable[..., AbstractAsyncContextManager[AsyncSession]]
+"""Type alias pour une factory `safe_async_session` injectable (tests)."""
 
 
 async def _push_session_timeouts(
