@@ -57,8 +57,6 @@ class CompactSourceChip extends StatelessWidget {
             )
           : _InactiveChip(
               key: const ValueKey('source_inactive'),
-              topSources: _topSources,
-              remainingCount: followedSources.length - _topSources.length,
               onTap: () {
                 HapticFeedback.mediumImpact();
                 _openSheet(context);
@@ -78,14 +76,10 @@ class CompactSourceChip extends StatelessWidget {
 
 class _InactiveChip extends StatelessWidget {
   final VoidCallback onTap;
-  final List<Source> topSources;
-  final int remainingCount;
 
   const _InactiveChip({
     super.key,
     required this.onTap,
-    required this.topSources,
-    required this.remainingCount,
   });
 
   @override
