@@ -53,7 +53,6 @@ import '../widgets/feed_carousel.dart';
 import '../widgets/profile_avatar_button.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../app_update/providers/app_update_provider.dart';
-import '../../app_update/widgets/update_button.dart';
 import '../../app_update/widgets/update_modal.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../notifications/widgets/notification_activation_modal.dart';
@@ -654,30 +653,46 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           alignment: Alignment.center,
                           children: [
                             const FacteurLogo(size: 22, showIcon: false),
-                            Align(
+                            const Align(
                               alignment: Alignment.centerLeft,
-                              child: const StreakIndicator(),
-                            ),
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: ProfileAvatarButton(
-                                onTap: () =>
-                                    context.push(RoutePaths.settings),
-                              ),
+                              child: StreakIndicator(),
                             ),
                             Align(
                               alignment: Alignment.centerRight,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const UpdateButton(),
-                                  const SizedBox(width: 8),
-                                  ProfileAvatarButton(
-                                    onTap: () =>
-                                        context.push(RoutePaths.settings),
-                                  ),
-                                ],
-                              ),
+                              child: Consumer(builder: (context, ref, _) {
+                                final hasUpdate = ref
+                                        .watch(appUpdateProvider)
+                                        .valueOrNull
+                                        ?.updateAvailable ==
+                                    true;
+                                final settingsButton = ProfileAvatarButton(
+                                  onTap: () =>
+                                      context.push(RoutePaths.settings),
+                                );
+                                if (!hasUpdate) return settingsButton;
+                                return Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    settingsButton,
+                                    Positioned(
+                                      top: -2,
+                                      right: -2,
+                                      child: Container(
+                                        width: 12,
+                                        height: 12,
+                                        decoration: BoxDecoration(
+                                          color: colors.error,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: colors.backgroundPrimary,
+                                            width: 2,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }),
                             ),
                           ],
                         ),

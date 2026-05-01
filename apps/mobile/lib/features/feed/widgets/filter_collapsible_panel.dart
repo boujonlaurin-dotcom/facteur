@@ -4,11 +4,13 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 
-/// "Filtrer" button + inline expand panel.
+/// Filter row with the trigger button on the RIGHT.
 ///
-/// Collapsed: a pill button labelled "Filtres" (with active count when ≥1
-/// filter is set). Expanded: the [chipsRow] is rendered below the button
-/// using AnimatedSize.
+/// - Collapsed + no active filter: "Flux continu" label + thin grey rule fills
+///   the left side ; "Filtres" pill sits on the right.
+/// - Collapsed + active filter(s): empty space on the left ; pill shows count.
+/// - Expanded: pills slide in to the left ; the trigger morphs into a pill of
+///   the same shape with an × icon (primary, "selected" look).
 class FilterCollapsiblePanel extends StatefulWidget {
   final int activeCount;
   final Widget chipsRow;
@@ -37,22 +39,59 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
     final hasActive = widget.activeCount > 0;
     final label = hasActive ? 'Filtres · ${widget.activeCount}' : 'Filtres';
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: GestureDetector(
+    return SizedBox(
+      height: 32,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              transitionBuilder: (child, anim) =>
+                  FadeTransition(opacity: anim, child: child),
+              child: _expanded
+                  ? Padding(
+                      key: const ValueKey('chips'),
+                      padding: const EdgeInsets.only(right: 8),
+                      child: widget.chipsRow,
+                    )
+                  : (hasActive
+                      ? const SizedBox.shrink(key: ValueKey('idle'))
+                      : Padding(
+                          key: const ValueKey('flux-continu'),
+                          padding: const EdgeInsets.only(right: 12),
+                          child: Row(
+                            children: [
+                              Text(
+                                'FLUX CONTINU',
+                                style: FacteurTypography.stamp(
+                                        colors.textTertiary)
+                                    .copyWith(letterSpacing: 1.2),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Container(
+                                  height: 1,
+                                  color: colors.border.withOpacity(0.5),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )),
+            ),
+          ),
+          GestureDetector(
             onTap: _toggle,
             behavior: HitTestBehavior.opaque,
-            child: Container(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
               height: 32,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
-                color: hasActive
+                color: (_expanded || hasActive)
                     ? colors.primary.withOpacity(0.12)
                     : Colors.transparent,
-                border: hasActive
+                border: (_expanded || hasActive)
                     ? Border.all(color: colors.primary)
                     : null,
                 borderRadius: BorderRadius.circular(FacteurRadius.full),
@@ -61,50 +100,33 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    PhosphorIcons.funnel(PhosphorIconsStyle.regular),
+                    _expanded
+                        ? PhosphorIcons.x(PhosphorIconsStyle.bold)
+                        : PhosphorIcons.funnel(PhosphorIconsStyle.regular),
                     size: 14,
-                    color: hasActive ? colors.primary : colors.textSecondary,
+                    color: (_expanded || hasActive)
+                        ? colors.primary
+                        : colors.textSecondary,
                   ),
-                  const SizedBox(width: 6),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: hasActive
-                          ? colors.primary
-                          : colors.textSecondary,
+                  if (!_expanded) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: hasActive
+                            ? colors.primary
+                            : colors.textSecondary,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  AnimatedRotation(
-                    turns: _expanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 220),
-                    child: Icon(
-                      PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
-                      size: 11,
-                      color: hasActive
-                          ? colors.primary
-                          : colors.textSecondary,
-                    ),
-                  ),
+                  ],
                 ],
               ),
             ),
           ),
-        ),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.topLeft,
-          child: _expanded
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: widget.chipsRow,
-                )
-              : const SizedBox(width: double.infinity),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

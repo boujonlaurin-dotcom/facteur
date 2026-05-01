@@ -29,24 +29,6 @@ class CompactSourceChip extends StatelessWidget {
 
   bool get _isActive => selectedSourceId != null;
 
-  /// Top 3 favorites sorted: real logo first, then hasSubscription, then priorityMultiplier desc.
-  List<Source> get _topSources {
-    final sorted = [...followedSources];
-    sorted.sort((a, b) {
-      // 1. Prefer sources with a real logo image
-      final aHasLogo = a.logoUrl != null && a.logoUrl!.isNotEmpty;
-      final bHasLogo = b.logoUrl != null && b.logoUrl!.isNotEmpty;
-      if (aHasLogo != bHasLogo) return bHasLogo ? 1 : -1;
-      // 2. Then hasSubscription
-      if (a.hasSubscription != b.hasSubscription) {
-        return b.hasSubscription ? 1 : -1;
-      }
-      // 3. Then priorityMultiplier desc
-      return b.priorityMultiplier.compareTo(a.priorityMultiplier);
-    });
-    return sorted.take(3).toList();
-  }
-
   @override
   Widget build(BuildContext context) {
     return AnimatedSwitcher(
@@ -109,7 +91,6 @@ class _InactiveChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final muted = colors.textSecondary;
 
     return GestureDetector(
       onTap: onTap,
@@ -124,56 +105,19 @@ class _InactiveChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (topSources.isEmpty) ...[
-              Text(
-                'Sources',
-                style: TextStyle(
-                    fontSize: 12,
-                    color: colors.textPrimary,
-                    fontWeight: FontWeight.w500),
+            Text(
+              'Mes sources',
+              style: TextStyle(
+                fontSize: 12,
+                color: colors.textPrimary,
+                fontWeight: FontWeight.w500,
               ),
-              const SizedBox(width: 4),
-            ] else ...[
-              // Avatar stack — overlap adapts to screen width
-              Builder(builder: (context) {
-                final screenW = MediaQuery.of(context).size.width;
-                // step ranges from 13 (small, ~320px) to 16 (large, ≥430px)
-                final step = (screenW / 35).clamp(13.0, 16.0);
-                final stackW = 18.0 + (topSources.length - 1) * step;
-                return Opacity(
-                  opacity: 0.65,
-                  child: SizedBox(
-                    width: stackW,
-                    height: 18,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        for (int i = 0; i < topSources.length; i++)
-                          Positioned(
-                            left: i * step,
-                            child: _SourceAvatar(
-                              source: topSources[i],
-                              size: 18,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
-              const SizedBox(width: 6),
-              if (remainingCount > 0) ...[
-                Text(
-                  '+$remainingCount',
-                  style: TextStyle(fontSize: 11, color: muted),
-                ),
-                const SizedBox(width: 2),
-              ],
-            ],
+            ),
+            const SizedBox(width: 4),
             Icon(
               PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
               size: 10,
-              color: muted,
+              color: colors.textSecondary,
             ),
           ],
         ),
