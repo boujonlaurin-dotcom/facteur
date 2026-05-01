@@ -117,7 +117,7 @@
             android:textColor="@color/facteur_accent"
             android:visibility="gone" />
 
-        <View
+        <Space
             android:layout_width="0dp"
             android:layout_height="1dp"
             android:layout_weight="1" />
@@ -130,7 +130,7 @@
             android:textColor="@color/facteur_text_tertiary" />
     </LinearLayout>
 
-    <View
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:layout_marginTop="8dp"
