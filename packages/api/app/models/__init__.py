@@ -24,6 +24,17 @@ from app.models.user import UserInterest, UserPreference, UserProfile, UserStrea
 from app.models.user_notification_preferences import UserNotificationPreferences
 from app.models.user_personalization import UserPersonalization
 from app.models.user_topic_profile import UserTopicProfile
+from app.models.veille import (
+    VeilleConfig,
+    VeilleDelivery,
+    VeilleFrequency,
+    VeilleGenerationState,
+    VeilleSource,
+    VeilleSourceKind,
+    VeilleStatus,
+    VeilleTopic,
+    VeilleTopicKind,
+)
 from app.models.waitlist import WaitlistEntry
 from app.models.waitlist_survey import WaitlistSurveyResponse
 from app.models.well_informed_rating import UserWellInformedRating
@@ -86,4 +97,14 @@ __all__ = [
     "UserEntityPreference",
     # Self-reported "well-informed" score (Story 14.3)
     "UserWellInformedRating",
+    # Ma veille (Epic 18)
+    "VeilleConfig",
+    "VeilleTopic",
+    "VeilleSource",
+    "VeilleDelivery",
+    "VeilleFrequency",
+    "VeilleStatus",
+    "VeilleTopicKind",
+    "VeilleSourceKind",
+    "VeilleGenerationState",
 ]

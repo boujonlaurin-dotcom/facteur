@@ -51,6 +51,7 @@ import '../../custom_topics/widgets/topic_chip.dart';
 import '../widgets/digest_entry_card.dart';
 import '../widgets/feed_carousel.dart';
 import '../widgets/profile_avatar_button.dart';
+import '../../gamification/widgets/streak_indicator.dart';
 import '../../app_update/providers/app_update_provider.dart';
 import '../../app_update/widgets/update_button.dart';
 import '../../app_update/widgets/update_modal.dart';
@@ -89,6 +90,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   static const int _caughtUpMinScrolled = 15;
   final ScrollController _scrollController = ScrollController();
   double _maxScrollPercent = 0.0;
+  bool _userHasScrolled = false;
   final int _itemsViewed = 0;
 
   bool _hasNudged = false;
@@ -315,6 +317,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
     final maxScroll = _scrollController.position.maxScrollExtent;
     final currentScroll = _scrollController.position.pixels;
+
+    // Bonus: nudge animations only after the user has scrolled a bit.
+    if (!_userHasScrolled && currentScroll > 40) {
+      setState(() => _userHasScrolled = true);
+    }
 
     // Sticky filter bar visibility
     final delta = currentScroll - _lastScrollPos;
@@ -649,6 +656,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             const FacteurLogo(size: 22, showIcon: false),
                             Align(
                               alignment: Alignment.centerLeft,
+                              child: const StreakIndicator(),
+                            ),
+                            Align(
+                              alignment: Alignment.centerLeft,
                               child: ProfileAvatarButton(
                                 onTap: () =>
                                     context.push(RoutePaths.settings),
@@ -656,7 +667,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             ),
                             const Align(
                               alignment: Alignment.centerRight,
-                              child: UpdateButton(),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const UpdateButton(),
+                                  const SizedBox(width: 8),
+                                  ProfileAvatarButton(
+                                    onTap: () =>
+                                        context.push(RoutePaths.settings),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
@@ -1142,8 +1163,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 final progressionTopic =
                                     _activeProgressions[content.id];
 
-                                final showHint =
-                                    !_swipeHintSeen && contentIndex <= 1;
+                                final showHint = !_swipeHintSeen &&
+                                    _userHasScrolled &&
+                                    contentIndex <= 1;
 
                                 Widget cardWidget = SwipeToOpenCard(
                                   onSwipeOpen: () => _showArticleModal(content),
@@ -1538,9 +1560,8 @@ class _FeedTourneeHeader extends ConsumerWidget {
     final colors = context.facteurColors;
     final profile = ref.watch(userProfileProvider);
     final firstName = (profile.displayName ?? '').trim().split(' ').first;
-    final greeting = firstName.isEmpty
-        ? 'Bonjour,'
-        : 'Bonjour $firstName,';
+    final hello = DateTime.now().hour >= 18 ? 'Bonsoir' : 'Bonjour';
+    final greeting = firstName.isEmpty ? '$hello,' : '$hello $firstName,';
     final now = DateTime.now();
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -1569,28 +1590,12 @@ class _FeedTourneeHeader extends ConsumerWidget {
   }
 
   static const List<String> _frDays = [
-    'LUNDI',
-    'MARDI',
-    'MERCREDI',
-    'JEUDI',
-    'VENDREDI',
-    'SAMEDI',
-    'DIMANCHE',
+    'LUNDI', 'MARDI', 'MERCREDI', 'JEUDI', 'VENDREDI', 'SAMEDI', 'DIMANCHE',
   ];
 
   static const List<String> _frMonthsAbbr = [
-    'JANV.',
-    'FÉVR.',
-    'MARS',
-    'AVR.',
-    'MAI',
-    'JUIN',
-    'JUIL.',
-    'AOÛT',
-    'SEPT.',
-    'OCT.',
-    'NOV.',
-    'DÉC.',
+    'JANV.', 'FÉVR.', 'MARS', 'AVR.', 'MAI', 'JUIN',
+    'JUIL.', 'AOÛT', 'SEPT.', 'OCT.', 'NOV.', 'DÉC.',
   ];
 
   static String _formatStamp(DateTime d) {

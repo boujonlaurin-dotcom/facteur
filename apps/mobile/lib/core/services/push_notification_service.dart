@@ -19,6 +19,7 @@ enum NotifVariant { variantA, variantB, variantC }
 class _NotifIds {
   static const dailyDigest = 0;
   static const weeklyCommunityPick = 1;
+  static const dailyGoodNews = 2;
 }
 
 /// Service de notifications push locales (FCM non utilisé en v1).
@@ -125,18 +126,23 @@ class PushNotificationService {
   static const String senderName = 'Ton facteur';
 
   /// Variante A — défaut, sans teaser éditorial.
-  static const String defaultTitle = 'Le facteur est là';
+  static const String defaultTitle = 'Facteur';
   static const String defaultBody = "Ton récap du jour t'attend quand tu veux.";
 
   /// Variante C — déclenchée manuellement par l'éditorial (hors v1).
-  static const String calmTitle = 'Le facteur est là';
+  static const String calmTitle = 'Facteur';
   static const String calmBody =
       "Rien d'important dans l'actu aujourd'hui. Belle journée !";
 
   /// Pépite communauté hebdo (vendredi 18:00, préset Curieux).
-  static const String communityTitle = 'Le facteur est là';
+  static const String communityTitle = 'Facteur';
   static const String communityBody =
       "Les Fact·eur·isses adorent cet article. Jette-y un œil quand tu as 2 min !";
+
+  /// Bonnes nouvelles du jour — canal opt-in indépendant du digest principal.
+  static const String goodNewsTitle = '🌱 Vos bonnes nouvelles du jour';
+  static const String goodNewsBody =
+      "Une dose d'espoir, sélectionnée avec soin.";
 
   /// Construit le triplet (title, body, bigText) selon la variante.
   ///
@@ -166,7 +172,7 @@ class PushNotificationService {
         return (
           title: defaultTitle,
           body: 'À la une : $clipped',
-          bigText: bullets,
+          bigText: "À la une dans l'Essentiel :\n$bullets",
         );
       case NotifVariant.variantC:
         return (title: calmTitle, body: calmBody, bigText: calmBody);
@@ -212,7 +218,6 @@ class PushNotificationService {
       color: const Color(0xFFD35400),
       styleInformation: MessagingStyleInformation(
         const Person(name: 'Toi'),
-        conversationTitle: copy.title,
         groupConversation: false,
         messages: [
           Message(copy.bigText, DateTime.now(), sender),
@@ -232,7 +237,7 @@ class PushNotificationService {
       ),
       androidScheduleMode: scheduleMode,
       matchDateTimeComponents: DateTimeComponents.time,
-      payload: 'route:/feed',
+      payload: 'route:/digest',
     );
 
     debugPrint(
@@ -298,6 +303,68 @@ class PushNotificationService {
 
     return _isScheduled(_NotifIds.weeklyCommunityPick);
   }
+
+  /// Planifie le push « Bonnes nouvelles du jour » — canal séparé du digest
+  /// principal pour permettre un horaire dédié sans coupler les opt-ins.
+  Future<bool> scheduleDailyGoodNewsNotification({
+    NotifTimeSlot timeSlot = NotifTimeSlot.evening,
+  }) async {
+    final time = _timeOfDayFor(timeSlot);
+    final scheduledDate = _nextInstanceOf(time);
+
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    final canUseExact =
+        (await androidPlugin?.canScheduleExactNotifications()) ?? true;
+    final scheduleMode = canUseExact
+        ? AndroidScheduleMode.alarmClock
+        : AndroidScheduleMode.inexactAllowWhileIdle;
+
+    final androidDetails = AndroidNotificationDetails(
+      'good_news_channel',
+      'Bonnes nouvelles du jour',
+      channelDescription:
+          "Notification quotidienne des bonnes nouvelles sélectionnées",
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@drawable/ic_stat_facteur',
+      color: const Color(0xFFD35400),
+      largeIcon: const DrawableResourceAndroidBitmap('facteur_avatar'),
+      styleInformation: BigTextStyleInformation(
+        goodNewsBody,
+        contentTitle: goodNewsTitle,
+      ),
+    );
+    const iosDetails = DarwinNotificationDetails();
+
+    await _plugin.zonedSchedule(
+      id: _NotifIds.dailyGoodNews,
+      title: goodNewsTitle,
+      body: goodNewsBody,
+      scheduledDate: scheduledDate,
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
+      androidScheduleMode: scheduleMode,
+      matchDateTimeComponents: DateTimeComponents.time,
+      payload: 'route:/digest?serein=1',
+    );
+
+    debugPrint(
+      'PushNotificationService: good news scheduled @ $scheduledDate '
+      '(slot: $timeSlot)',
+    );
+
+    return _isScheduled(_NotifIds.dailyGoodNews);
+  }
+
+  Future<void> cancelGoodNewsNotification() async {
+    await _plugin.cancel(id: _NotifIds.dailyGoodNews);
+  }
+
+  Future<bool> isGoodNewsNotificationScheduled() =>
+      _isScheduled(_NotifIds.dailyGoodNews);
 
   Future<bool> _isScheduled(int id) async {
     final pending = await _plugin.pendingNotificationRequests();
@@ -390,7 +457,7 @@ class PushNotificationService {
   }
 
   static String _routeFromPayload(String? payload) {
-    if (payload == null || !payload.startsWith('route:')) return '/feed';
+    if (payload == null || !payload.startsWith('route:')) return '/digest';
     return payload.substring('route:'.length);
   }
 }

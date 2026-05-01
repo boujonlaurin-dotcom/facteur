@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/serein_colors.dart';
@@ -9,12 +10,13 @@ import '../../../widgets/design/facteur_card.dart';
 import '../../digest/providers/digest_provider.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/widgets/essentiel_pill.dart';
-import '../../digest/widgets/lecture_apaisee_pill.dart';
+import '../../digest/widgets/bonnes_nouvelles_pill.dart';
 
 /// Mini-carousel horizontal en tête du feed.
 ///
-/// Toujours 2 cartes : « L'essentiel du jour » et « Une lecture apaisée ».
-/// L'ordre dépend du toggle Serein (Lecture apaisée en tête quand activé).
+/// Toujours 2 cartes : « L'essentiel du jour » et « Les bonnes nouvelles
+/// du jour ». L'ordre dépend du toggle Serein (Bonnes nouvelles en tête
+/// quand activé).
 class DigestEntryCard extends ConsumerWidget {
   const DigestEntryCard({super.key});
 
@@ -38,18 +40,28 @@ class DigestEntryCard extends ConsumerWidget {
         (_horizontalPadding * 2) -
         _peek;
 
-    void openDigest({required bool requireSerein}) {
-      if (requireSerein != isSerein) {
-        ref.read(sereinToggleProvider.notifier).toggle();
+    Future<void> openDigest({required bool requireSerein}) async {
+      final original = ref.read(sereinToggleProvider).enabled;
+      final notifier = ref.read(sereinToggleProvider.notifier);
+      if (requireSerein != original) {
+        notifier.setEnabledLocal(requireSerein);
       }
-      context.push(RoutePaths.digest);
+      await context.push(RoutePaths.digest);
+      // Restore the user's persisted mode on return — visiting "Lecture
+      // apaisée" must not change the global preference.
+      if (requireSerein != original &&
+          ref.read(sereinToggleProvider).enabled != original) {
+        notifier.setEnabledLocal(original);
+      }
     }
+
+    final cardBackground =
+        isDark ? colors.surface : const Color(0xFFFBF5EE);
 
     final essentielCard = SizedBox(
       width: width,
       child: _CarouselCard(
-        backgroundColor:
-            isDark ? colors.surface : const Color(0xFFFBF5EE),
+        backgroundColor: cardBackground,
         perforationColor: colors.primary,
         pill: EssentielPill(colors: colors, isDark: isDark),
         title: "L'essentiel du jour",
@@ -64,16 +76,12 @@ class DigestEntryCard extends ConsumerWidget {
     final lectureApaiseeCard = SizedBox(
       width: width,
       child: _CarouselCard(
-        backgroundColor: isDark
-            ? SereinColors.sereinBackgroundColor
-            : SereinColors.sereinLightBackgroundColor,
+        backgroundColor: cardBackground,
         perforationColor: SereinColors.sereinColor,
-        pill: LectureApaiseePill(isDark: isDark),
-        title: 'Une lecture apaisée',
-        titleColor: isDark ? colors.textPrimary : Colors.white,
-        captionColor:
-            isDark ? colors.textTertiary : Colors.white.withOpacity(0.85),
-        avatarOpacity: isDark ? 0.6 : 0.9,
+        pill: BonnesNouvellesPill(isDark: isDark),
+        title: 'Les bonnes nouvelles du jour',
+        titleColor: colors.textPrimary,
+        captionColor: colors.textTertiary,
         articleCount: sereinCount,
         targetDate: targetDate,
         onTap: () => openDigest(requireSerein: true),
@@ -105,7 +113,6 @@ class _CarouselCard extends StatelessWidget {
   final String title;
   final Color titleColor;
   final Color captionColor;
-  final double avatarOpacity;
   final int articleCount;
   final DateTime targetDate;
   final VoidCallback onTap;
@@ -125,6 +132,7 @@ class _CarouselCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.facteurColors;
     return FacteurCard(
       onTap: onTap,
       backgroundColor: backgroundColor,
@@ -133,6 +141,27 @@ class _CarouselCard extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.hardEdge,
         children: [
+          // Subtle radial colour veil — top-right corner
+          Positioned(
+            top: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Container(
+                width: 180,
+                height: 120,
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.topRight,
+                    radius: 1.0,
+                    colors: [
+                      perforationColor.withOpacity(0.10),
+                      perforationColor.withOpacity(0.0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
           Positioned(
             left: 10,
             top: 16,
@@ -154,6 +183,15 @@ class _CarouselCard extends StatelessWidget {
             ),
           ),
           Positioned(top: 16, left: 28, child: pill),
+          Positioned(
+            top: 14,
+            right: 14,
+            child: Icon(
+              PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
+              size: 18,
+              color: colors.textSecondary,
+            ),
+          ),
           Positioned(
             left: 28,
             right: 120,

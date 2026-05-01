@@ -8,6 +8,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import get_settings
 from app.jobs.digest_generation_job import run_digest_generation
+from app.jobs.veille_generation_job import run_veille_generation
 from app.workers.rss_sync import sync_all_sources
 from app.workers.storage_cleanup import cleanup_old_articles
 from app.workers.top3_job import generate_daily_top3_job
@@ -222,6 +223,22 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
+    # Veille generation scanner — */30 min Paris.
+    # Scan ultra-léger (1 SELECT indexé sur next_scheduled_at) puis traitement
+    # par config avec session courte. Concurrence bornée à 5 (vs 10 du digest)
+    # car la veille tourne moins souvent → on peut être plus prudent côté
+    # pool DB (cf. bug-infinite-load-requests.md).
+    scheduler.add_job(
+        run_veille_generation,
+        trigger=CronTrigger(minute="*/30", timezone=_PARIS_TZ),
+        id="veille_generation",
+        name="Veille Generation Scanner",
+        replace_existing=True,
+        misfire_grace_time=900,
+        coalesce=True,
+        max_instances=1,
+    )
+
     scheduler.start()
     logger.info(
         "Scheduler started",
@@ -232,6 +249,7 @@ def start_scheduler() -> None:
             "digest_watchdog",
             "storage_cleanup",
             "zombie_session_sweeper",
+            "veille_generation",
         ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,
         digest_cron="06:00 Europe/Paris",

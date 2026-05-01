@@ -6,7 +6,7 @@ import '../../../config/theme.dart';
 
 /// "Filtrer" button + inline expand panel.
 ///
-/// Collapsed: a pill button labelled "Filtrer" (with active count when ≥1
+/// Collapsed: a pill button labelled "Filtres" (with active count when ≥1
 /// filter is set). Expanded: the [chipsRow] is rendered below the button
 /// using AnimatedSize.
 class FilterCollapsiblePanel extends StatefulWidget {
@@ -35,7 +35,7 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final hasActive = widget.activeCount > 0;
-    final label = hasActive ? 'Filtrer · ${widget.activeCount}' : 'Filtrer';
+    final label = hasActive ? 'Filtres · ${widget.activeCount}' : 'Filtres';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -51,10 +51,10 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
               decoration: BoxDecoration(
                 color: hasActive
                     ? colors.primary.withOpacity(0.12)
-                    : colors.surface,
-                border: Border.all(
-                  color: hasActive ? colors.primary : colors.border,
-                ),
+                    : Colors.transparent,
+                border: hasActive
+                    ? Border.all(color: colors.primary)
+                    : null,
                 borderRadius: BorderRadius.circular(FacteurRadius.full),
               ),
               child: Row(
@@ -63,7 +63,7 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
                   Icon(
                     PhosphorIcons.funnel(PhosphorIconsStyle.regular),
                     size: 14,
-                    color: hasActive ? colors.primary : colors.textPrimary,
+                    color: hasActive ? colors.primary : colors.textSecondary,
                   ),
                   const SizedBox(width: 6),
                   Text(
@@ -73,7 +73,7 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
                       fontWeight: FontWeight.w600,
                       color: hasActive
                           ? colors.primary
-                          : colors.textPrimary,
+                          : colors.textSecondary,
                     ),
                   ),
                   const SizedBox(width: 6),

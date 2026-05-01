@@ -207,6 +207,27 @@ def apply_serein_filter(
     return query
 
 
+def apply_good_news_filter(
+    query,
+    excluded_topics: list[ExcludedTopic] | None = None,
+):
+    """Hard filter "bonnes nouvelles" : ne garde que `is_good_news=True`.
+
+    Pas de fallback keywords ni de tolérance NULL — on préfère un digest
+    partiel à un faux positif. La promesse "bonnes nouvelles" prime sur la
+    quantité.
+
+    Les `excluded_topics` utilisateur (topic-level opt-out) restent appliqués
+    pour respecter les préférences personnelles.
+    """
+    query = query.where(Content.is_good_news == True)  # noqa: E712
+    if excluded_topics:
+        topic_exclusion = _topic_exclusion_condition(excluded_topics)
+        if topic_exclusion is not None:
+            query = query.where(topic_exclusion)
+    return query
+
+
 def _topic_exclusion_condition(excluded_topics: list[ExcludedTopic]):
     """Construit une clause NOT(match any excluded topic).
 

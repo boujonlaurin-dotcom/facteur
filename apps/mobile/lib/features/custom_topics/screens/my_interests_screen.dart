@@ -229,7 +229,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                     children: [
                       Text(
                         sereinMode
-                            ? 'Votre mode serein'
+                            ? 'Vos bonnes nouvelles'
                             : 'Vos centres d\'intérêt',
                         style: textTheme.displaySmall?.copyWith(
                           fontWeight: FontWeight.w700,
@@ -238,7 +238,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                       const SizedBox(height: FacteurSpacing.space2),
                       Text(
                         sereinMode
-                            ? 'Choisissez ce qui reste dans votre bulle apaisée. Cochez pour garder, décochez pour mettre de côté — votre digest ne gardera que l\'essentiel pour vous.'
+                            ? 'Choisissez ce qui reste dans vos bonnes nouvelles. Cochez pour garder, décochez pour mettre de côté — votre digest ne gardera que les nouvelles qui ont du sens pour vous.'
                             : 'Ajustez vos thèmes et sujets pour les voir plus ou moins apparaître dans l\'Essentiel du jour et votre flux.',
                         style: textTheme.bodyMedium?.copyWith(
                           color: colors.textSecondary,

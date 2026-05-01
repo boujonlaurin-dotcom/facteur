@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
+import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
 import '../../../shared/widgets/loaders/loading_view.dart';
 import '../../../shared/widgets/mode_accent.dart';
@@ -294,10 +295,38 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     });
 
     // Background is static — only the card changes color per mode
+    final veilColor = sereinState.enabled
+        ? SereinColors.sereinColor
+        : colors.primary;
+
     return Stack(
       children: [
         Container(
           color: colors.backgroundPrimary,
+        ),
+        // Subtle top-right veil — color of the active mode's card.
+        Positioned(
+          top: 0,
+          right: 0,
+          child: IgnorePointer(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeInOut,
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment.topRight,
+                  radius: 0.9,
+                  colors: [
+                    veilColor.withOpacity(0.14),
+                    veilColor.withOpacity(0.0),
+                  ],
+                  stops: const [0.0, 1.0],
+                ),
+              ),
+            ),
+          ),
         ),
         Positioned(
           top: 0,
@@ -334,12 +363,13 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                           _CircularBackButton(onTap: () => context.pop()),
                           const SizedBox(width: 12),
                           Text(
-                            "L'ESSENTIEL DU JOUR",
+                            'Revenir au flux',
                             style: FacteurTypography.stamp(
                                     colors.textTertiary)
                                 .copyWith(
-                              fontSize: 12,
-                              letterSpacing: 1.4,
+                              fontSize: 13,
+                              letterSpacing: 0.2,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
@@ -354,6 +384,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                           digestAsync.valueOrNull?.items.length ?? 5,
                       targetDate:
                           digestAsync.valueOrNull?.targetDate ?? DateTime.now(),
+                      isSerein: sereinState.enabled,
                     ),
                   ),
 
