@@ -103,8 +103,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
       appBar: _isSearching
           ? AppBar(
               leading: IconButton(
-                icon: Icon(
-                    PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular)),
+                icon: Icon(PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular)),
                 onPressed: _exitSearch,
               ),
               title: TextField(
@@ -121,8 +120,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
               actions: [
                 if (_searchQuery.isNotEmpty)
                   IconButton(
-                    icon: Icon(
-                        PhosphorIcons.x(PhosphorIconsStyle.regular)),
+                    icon: Icon(PhosphorIcons.x(PhosphorIconsStyle.regular)),
                     onPressed: () {
                       _searchController.clear();
                     },
@@ -140,8 +138,8 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                 Stack(
                   children: [
                     IconButton(
-                      icon: Icon(PhosphorIcons.funnel(
-                          PhosphorIconsStyle.regular)),
+                      icon: Icon(
+                          PhosphorIcons.funnel(PhosphorIconsStyle.regular)),
                       onPressed: () => _showFilterSheet(colors),
                     ),
                     if (_hasActiveFilter)
@@ -165,165 +163,163 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
         onRefresh: () => ref.refresh(userSourcesProvider.future),
         color: colors.primary,
         child: sourcesAsync.when(
-        loading: () => _scrollableCenter(
-          const Center(child: CircularProgressIndicator()),
-        ),
-        error: (err, stack) => _scrollableCenter(
-          _consecutiveErrorCount >= 2
-              ? LaurinFallbackView(
-                  onRetry: () {
-                    setState(() => _consecutiveErrorCount = 0);
-                    ref.invalidate(userSourcesProvider);
-                  },
-                )
-              : FriendlyErrorView(
-                  error: err,
-                  onRetry: () => ref.invalidate(userSourcesProvider),
-                ),
-        ),
-        data: (sources) {
-          // Sort alphabetically
-          var allSources = sources.toList()
-            ..sort(
-                (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-
-          // Apply search filter
-          if (_searchQuery.isNotEmpty) {
-            allSources = allSources
-                .where((s) =>
-                    s.name.toLowerCase().contains(_searchQuery.toLowerCase()))
-                .toList();
-          }
-
-          if (allSources.isEmpty && _searchQuery.isEmpty) {
-            return _scrollableCenter(
-              Text(
-                'Aucune source disponible',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: colors.textSecondary,
-                    ),
-              ),
-            );
-          }
-
-          // Apply theme + type filters for display
-          var filteredSources = allSources.toList();
-          if (_selectedTheme != null) {
-            filteredSources = filteredSources
-                .where((s) => s.theme?.toLowerCase() == _selectedTheme)
-                .toList();
-          }
-          if (_selectedType != null) {
-            filteredSources = filteredSources
-                .where((s) => s.type == _selectedType)
-                .toList();
-          }
-          // Split into 4 groups: premium, custom (non-muted), curated (non-muted), muted
-          final premiumSources = filteredSources
-              .where((s) => s.hasSubscription && !s.isMuted)
-              .toList();
-          final customSources = filteredSources
-              .where((s) => s.isCustom && !s.isMuted)
-              .toList();
-          final curatedSources = filteredSources
-              .where((s) => s.isCurated && !s.isMuted)
-              .toList();
-          final mutedSources =
-              filteredSources.where((s) => s.isMuted).toList();
-
-          final noResults = filteredSources.isEmpty && _hasActiveFilter;
-
-          if (noResults) {
-            return _scrollableCenter(
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    PhosphorIcons.funnel(PhosphorIconsStyle.regular),
-                    size: 40,
-                    color: colors.textTertiary,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Aucune source pour ces filtres',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(color: colors.textSecondary),
-                  ),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _selectedTheme = null;
-                        _selectedType = null;
-                      });
+          loading: () => _scrollableCenter(
+            const Center(child: CircularProgressIndicator()),
+          ),
+          error: (err, stack) => _scrollableCenter(
+            _consecutiveErrorCount >= 2
+                ? LaurinFallbackView(
+                    onRetry: () {
+                      setState(() => _consecutiveErrorCount = 0);
+                      ref.invalidate(userSourcesProvider);
                     },
-                    child: const Text('Réinitialiser les filtres'),
+                  )
+                : FriendlyErrorView(
+                    error: err,
+                    onRetry: () => ref.invalidate(userSourcesProvider),
                   ),
-                  ...mutedSources
-                      .map((source) => _buildSourceItem(source)),
-                ],
-              ),
-            );
-          }
+          ),
+          data: (sources) {
+            // Sort alphabetically
+            var allSources = sources.toList()
+              ..sort((a, b) =>
+                  a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            physics: const AlwaysScrollableScrollPhysics(),
-            children: [
-              _IntroBlock(colors: colors),
-              const SizedBox(height: 16),
-              if (premiumSources.isNotEmpty)
-                _buildCollapsibleSection(
-                  title: 'Mes abonnements Premium',
-                  count: premiumSources.length,
-                  isExpanded: _premiumExpanded,
-                  onToggle: () => setState(
-                      () => _premiumExpanded = !_premiumExpanded),
-                  sources: premiumSources,
-                  colors: colors,
-                  icon: PhosphorIcons.star(PhosphorIconsStyle.fill),
+            // Apply search filter
+            if (_searchQuery.isNotEmpty) {
+              allSources = allSources
+                  .where((s) =>
+                      s.name.toLowerCase().contains(_searchQuery.toLowerCase()))
+                  .toList();
+            }
+
+            if (allSources.isEmpty && _searchQuery.isEmpty) {
+              return _scrollableCenter(
+                Text(
+                  'Aucune source disponible',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: colors.textSecondary,
+                      ),
                 ),
-              const _HidePaidToggleCard(),
-              const SizedBox(height: 8),
-              if (customSources.isNotEmpty)
-                _buildCollapsibleSection(
-                  title: 'Mes sources personnalisees',
-                  count: customSources.length,
-                  isExpanded: _customExpanded,
-                  onToggle: () => setState(
-                      () => _customExpanded = !_customExpanded),
-                  sources: customSources,
-                  colors: colors,
+              );
+            }
+
+            // Apply theme + type filters for display
+            var filteredSources = allSources.toList();
+            if (_selectedTheme != null) {
+              filteredSources = filteredSources
+                  .where((s) => s.theme?.toLowerCase() == _selectedTheme)
+                  .toList();
+            }
+            if (_selectedType != null) {
+              filteredSources = filteredSources
+                  .where((s) => s.type == _selectedType)
+                  .toList();
+            }
+            // Split into 4 groups: premium, custom (non-muted), curated (non-muted), muted
+            final premiumSources = filteredSources
+                .where((s) => s.hasSubscription && !s.isMuted)
+                .toList();
+            final customSources =
+                filteredSources.where((s) => s.isCustom && !s.isMuted).toList();
+            final curatedSources = filteredSources
+                .where((s) => s.isCurated && !s.isMuted)
+                .toList();
+            final mutedSources =
+                filteredSources.where((s) => s.isMuted).toList();
+
+            final noResults = filteredSources.isEmpty && _hasActiveFilter;
+
+            if (noResults) {
+              return _scrollableCenter(
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      PhosphorIcons.funnel(PhosphorIconsStyle.regular),
+                      size: 40,
+                      color: colors.textTertiary,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Aucune source pour ces filtres',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(color: colors.textSecondary),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _selectedTheme = null;
+                          _selectedType = null;
+                        });
+                      },
+                      child: const Text('Réinitialiser les filtres'),
+                    ),
+                    ...mutedSources.map((source) => _buildSourceItem(source)),
+                  ],
                 ),
-              if (curatedSources.isNotEmpty)
-                _buildCollapsibleSection(
-                  title: 'Sources suggerees',
-                  count: curatedSources.length,
-                  isExpanded: _curatedExpanded,
-                  onToggle: () => setState(
-                      () => _curatedExpanded = !_curatedExpanded),
-                  sources: curatedSources,
-                  colors: colors,
-                ),
-              if (mutedSources.isNotEmpty) ...[
+              );
+            }
+
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                _IntroBlock(colors: colors),
+                const SizedBox(height: 16),
+                if (premiumSources.isNotEmpty)
+                  _buildCollapsibleSection(
+                    title: 'Mes abonnements Premium',
+                    count: premiumSources.length,
+                    isExpanded: _premiumExpanded,
+                    onToggle: () =>
+                        setState(() => _premiumExpanded = !_premiumExpanded),
+                    sources: premiumSources,
+                    colors: colors,
+                    icon: PhosphorIcons.star(PhosphorIconsStyle.fill),
+                  ),
+                const _HidePaidToggleCard(),
                 const SizedBox(height: 8),
-                _buildCollapsibleSection(
-                  title: 'Sources masquees',
-                  count: mutedSources.length,
-                  isExpanded: _mutedExpanded,
-                  onToggle: () => setState(
-                      () => _mutedExpanded = !_mutedExpanded),
-                  sources: mutedSources,
-                  colors: colors,
-                  icon: PhosphorIcons.eyeSlash(PhosphorIconsStyle.bold),
-                  isMuted: true,
-                ),
+                if (customSources.isNotEmpty)
+                  _buildCollapsibleSection(
+                    title: 'Mes sources personnalisees',
+                    count: customSources.length,
+                    isExpanded: _customExpanded,
+                    onToggle: () =>
+                        setState(() => _customExpanded = !_customExpanded),
+                    sources: customSources,
+                    colors: colors,
+                  ),
+                if (curatedSources.isNotEmpty)
+                  _buildCollapsibleSection(
+                    title: 'Sources suggerees',
+                    count: curatedSources.length,
+                    isExpanded: _curatedExpanded,
+                    onToggle: () =>
+                        setState(() => _curatedExpanded = !_curatedExpanded),
+                    sources: curatedSources,
+                    colors: colors,
+                  ),
+                if (mutedSources.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _buildCollapsibleSection(
+                    title: 'Sources masquees',
+                    count: mutedSources.length,
+                    isExpanded: _mutedExpanded,
+                    onToggle: () =>
+                        setState(() => _mutedExpanded = !_mutedExpanded),
+                    sources: mutedSources,
+                    colors: colors,
+                    icon: PhosphorIcons.eyeSlash(PhosphorIconsStyle.bold),
+                    isMuted: true,
+                  ),
+                ],
               ],
-            ],
-          );
-        },
+            );
+          },
         ),
       ),
       floatingActionButton: Row(
@@ -332,7 +328,8 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
         children: [
           const Flexible(
             child: FabNudgeBubble(
-              text: 'Ajoute n\'importe quelle source (média, newsletter, vidéos…)',
+              text: 'Ajoute média, newsletter, vidéo…',
+              dismissKey: 'nudge_add_source_v1',
             ),
           ),
           const SizedBox(width: 6),
@@ -455,7 +452,8 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
         ),
         AnimatedCrossFade(
           firstChild: Column(
-            children: sources.map((source) => _buildSourceItem(source)).toList(),
+            children:
+                sources.map((source) => _buildSourceItem(source)).toList(),
           ),
           secondChild: const SizedBox.shrink(),
           crossFadeState:
@@ -709,7 +707,7 @@ class _IntroBlock extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Choisissez les sources qui comptent pour vous : réglez leur fréquence d\'apparition de 1 (occasionnellement) à 3 (ne rien rater), masquez celles qui ne vous parlent pas, et ajoutez de nouvelles sources pour enrichir votre flux.',
+            'Réglez les fréquences d\'apparitions de vos sources de 1 (occasionnellement) à 3 (tout voir), masquez celles qui ne vous parlent pas, et ajoutez plus de sources pour enrichir votre flux.',
             style: textTheme.bodySmall?.copyWith(
               color: colors.textSecondary,
               height: 1.45,
@@ -737,9 +735,8 @@ class _HidePaidToggleCard extends ConsumerWidget {
         color: colors.surface,
         borderRadius: borderRadius,
         child: InkWell(
-          onTap: () => ref
-              .read(hidePaidContentProvider.notifier)
-              .toggle(!hidePaid),
+          onTap: () =>
+              ref.read(hidePaidContentProvider.notifier).toggle(!hidePaid),
           borderRadius: borderRadius,
           child: Container(
             decoration: BoxDecoration(
