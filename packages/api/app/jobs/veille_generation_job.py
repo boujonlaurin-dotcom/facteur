@@ -1,9 +1,7 @@
 """Génération des livraisons de veille — scanner */30 min.
 
-Pool DB : le scan est UN SELECT sur `ix_veille_configs_next_scheduled` puis
-session fermée AVANT tout traitement. Chaque config a une session dédiée
-bornée par un semaphore (incidents historiques de saturation pool, cf.
-`docs/bugs/bug-infinite-load-requests.md`).
+Invariant : aucune session DB tenue pendant l'appel LLM (3-5 s). Cf.
+incidents pool QueuePool docs/bugs/bug-infinite-load-requests.md (#363).
 """
 
 from __future__ import annotations
@@ -17,13 +15,15 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import safe_async_session
+from app.database import SessionMaker, safe_async_session
 from app.models.veille import (
     VeilleConfig,
     VeilleDelivery,
     VeilleGenerationState,
     VeilleStatus,
 )
+from app.services.editorial.llm_client import EditorialLLMClient
+from app.services.veille.digest_builder import VeilleDigestBuilder
 from app.services.veille.scheduling import compute_next_scheduled_at
 from app.utils.time import today_paris
 
@@ -61,11 +61,20 @@ async def run_veille_generation(target_date: date | None = None) -> None:
         logger.info("veille_generation_job_no_due", target_date=str(target))
         return
 
-    semaphore = asyncio.Semaphore(_CONCURRENCY_LIMIT)
-    results = await asyncio.gather(
-        *(_process_config_with_semaphore(semaphore, cid, target) for cid in config_ids),
-        return_exceptions=True,
-    )
+    llm = EditorialLLMClient()
+    builder = VeilleDigestBuilder(llm=llm, session_maker=safe_async_session)
+
+    try:
+        semaphore = asyncio.Semaphore(_CONCURRENCY_LIMIT)
+        results = await asyncio.gather(
+            *(
+                _process_config_with_semaphore(semaphore, cid, target, builder)
+                for cid in config_ids
+            ),
+            return_exceptions=True,
+        )
+    finally:
+        await llm.close()
 
     succeeded = sum(1 for r in results if r is True)
     failed = sum(1 for r in results if isinstance(r, Exception) or r is False)
@@ -83,16 +92,18 @@ async def _process_config_with_semaphore(
     semaphore: asyncio.Semaphore,
     config_id: UUID,
     target: date,
+    builder: VeilleDigestBuilder,
 ) -> bool:
-    async with semaphore, safe_async_session() as session:
+    async with semaphore:
         try:
             await run_veille_generation_for_config(
-                session, config_id, target_date=target
+                config_id,
+                target_date=target,
+                session_maker=safe_async_session,
+                builder=builder,
             )
-            await session.commit()
             return True
         except Exception as exc:
-            await session.rollback()
             logger.error(
                 "veille_generation_job_config_failed",
                 config_id=str(config_id),
@@ -102,15 +113,47 @@ async def _process_config_with_semaphore(
 
 
 async def run_veille_generation_for_config(
-    session: AsyncSession,
     config_id: UUID,
     target_date: date,
+    *,
+    session_maker: SessionMaker,
+    builder: VeilleDigestBuilder | None = None,
 ) -> VeilleDelivery:
     """Génère (ou met à jour) la livraison pour une config + date données.
 
-    Idempotent via UPSERT sur (`veille_config_id`, `target_date`). Le caller
-    assure le `commit()` (utilisé depuis le job ET depuis la route debug).
+    Pipeline 3-phase, sessions courtes — la session est commit + close
+    AVANT l'appel LLM pour que la connexion soit rendue au pool. `builder
+    is None` → `items=[]` (utilisé en tests).
     """
+    async with session_maker() as s:
+        delivery_id, _ = await _phase1_mark_running(s, config_id, target_date)
+        await s.commit()
+
+    items: list[dict] = []
+    if builder is not None:
+        items = await builder.build(config_id)
+
+    finished_at = datetime.now(UTC)
+    async with session_maker() as s:
+        delivery = await _phase3_persist(s, delivery_id, config_id, items, finished_at)
+        await s.commit()
+        await s.refresh(delivery)
+
+    logger.info(
+        "veille_generation_config_processed",
+        config_id=str(config_id),
+        target_date=str(target_date),
+        item_count=len(items),
+    )
+    return delivery
+
+
+async def _phase1_mark_running(
+    session: AsyncSession,
+    config_id: UUID,
+    target_date: date,
+) -> tuple[UUID, datetime]:
+    """UPSERT veille_deliveries en état RUNNING. Retourne (delivery_id, started_at)."""
     cfg = (
         (
             await session.execute(
@@ -124,7 +167,6 @@ async def run_veille_generation_for_config(
         raise ValueError(f"VeilleConfig introuvable: {config_id}")
 
     started_at = datetime.now(UTC)
-
     upsert_stmt = (
         pg_insert(VeilleDelivery)
         .values(
@@ -145,17 +187,30 @@ async def run_veille_generation_for_config(
         .returning(VeilleDelivery.id)
     )
     delivery_id = (await session.execute(upsert_stmt)).scalar_one()
-    delivery = await session.get(VeilleDelivery, delivery_id)
-    assert delivery is not None
+    return delivery_id, started_at
 
-    finished_at = datetime.now(UTC)
+
+async def _phase3_persist(
+    session: AsyncSession,
+    delivery_id: UUID,
+    config_id: UUID,
+    items: list[dict],
+    finished_at: datetime,
+) -> VeilleDelivery:
+    """UPDATE delivery SUCCEEDED + recalc next_scheduled_at."""
+    delivery = await session.get(VeilleDelivery, delivery_id)
+    if delivery is None:
+        raise ValueError(f"VeilleDelivery introuvable: {delivery_id}")
+
     delivery.generation_state = VeilleGenerationState.SUCCEEDED.value
-    delivery.items = []
+    delivery.items = items
     delivery.finished_at = finished_at
     delivery.generated_at = finished_at
     delivery.last_error = None
 
-    # Recalcule next_scheduled_at + last_delivered_at.
+    cfg = await session.get(VeilleConfig, config_id)
+    if cfg is None:
+        raise ValueError(f"VeilleConfig introuvable: {config_id}")
     cfg.last_delivered_at = finished_at
     cfg.next_scheduled_at = compute_next_scheduled_at(
         frequency=cfg.frequency,
@@ -167,14 +222,4 @@ async def run_veille_generation_for_config(
     )
 
     await session.flush()
-
-    logger.info(
-        "veille_generation_config_processed",
-        config_id=str(config_id),
-        target_date=str(target_date),
-        next_scheduled_at=cfg.next_scheduled_at.isoformat()
-        if cfg.next_scheduled_at
-        else None,
-    )
-
     return delivery

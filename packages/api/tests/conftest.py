@@ -1,5 +1,6 @@
 """Test configuration and fixtures for API tests."""
 
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import pytest
@@ -77,6 +78,23 @@ async def db_session(create_tables):
         finally:
             await session.rollback()
             await session.close()
+
+
+@pytest.fixture
+def fake_session_maker(db_session):
+    """Yield la session de test à chaque ouverture.
+
+    Pour les composants qui prennent un `session_maker` (factory de sessions
+    courtes ad-hoc, type `safe_async_session`). Singleton de test : tous les
+    `async with` retournent la même `db_session` pour persister sur la base
+    de test. À utiliser pour tester le pattern Option C sans pool réel.
+    """
+
+    @asynccontextmanager
+    async def _maker():
+        yield db_session
+
+    return _maker
 
 
 @pytest_asyncio.fixture

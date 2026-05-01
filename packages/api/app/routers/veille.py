@@ -17,7 +17,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.database import get_db
+from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
 from app.jobs.veille_generation_job import run_veille_generation_for_config
 from app.models.enums import SourceType
@@ -45,7 +45,9 @@ from app.schemas.veille import (
     VeilleTopicResponse,
     VeilleTopicSuggestion,
 )
+from app.services.editorial.llm_client import EditorialLLMClient
 from app.services.source_service import SourceService
+from app.services.veille.digest_builder import VeilleDigestBuilder
 from app.services.veille.scheduling import compute_next_scheduled_at
 from app.services.veille.source_suggester import (
     SourceSuggester,
@@ -502,7 +504,6 @@ async def get_delivery(
 @router.post("/deliveries/generate", response_model=VeilleDeliveryResponse)
 async def force_generate(
     req: VeilleGenerateRequest,
-    db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
     """Admin/debug : force la génération de la livraison du jour.
@@ -517,12 +518,25 @@ async def force_generate(
         )
 
     user_uuid = UUID(current_user_id)
-    cfg = await _get_active_config(db, user_uuid)
+    # Pas de Depends(get_db) — sinon la session resterait checked-out
+    # pendant tout l'appel LLM (3-5 s), annulant le bénéfice Option C.
+    async with safe_async_session() as s:
+        cfg = await _get_active_config(s, user_uuid)
     if cfg is None:
         raise HTTPException(status_code=404, detail="Aucune veille active à générer.")
 
     target = req.target_date or today_paris()
-    delivery = await run_veille_generation_for_config(db, cfg.id, target_date=target)
-    await db.commit()
-    await db.refresh(delivery)
+
+    llm = EditorialLLMClient()
+    try:
+        builder = VeilleDigestBuilder(llm=llm, session_maker=safe_async_session)
+        delivery = await run_veille_generation_for_config(
+            cfg.id,
+            target_date=target,
+            session_maker=safe_async_session,
+            builder=builder,
+        )
+    finally:
+        await llm.close()
+
     return VeilleDeliveryResponse.model_validate(delivery)
