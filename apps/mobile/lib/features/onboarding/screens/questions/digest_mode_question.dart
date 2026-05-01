@@ -25,127 +25,128 @@ class DigestModeQuestion extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 2),
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: FacteurSpacing.space8),
 
-          Text(
-            '🌿 Rester serein ?',
-            style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
-          ),
+                  Text(
+                    '🌿 Rester serein ?',
+                    style: Theme.of(context).textTheme.displayLarge,
+                    textAlign: TextAlign.center,
+                  ),
 
-          const SizedBox(height: FacteurSpacing.space3),
+                  const SizedBox(height: FacteurSpacing.space3),
 
-          Text.rich(
-            TextSpan(
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: colors.textSecondary),
-              children: const [
-                TextSpan(
-                    text: OnboardingStrings.digestModeSereinPart1),
-                TextSpan(
-                  text: OnboardingStrings.digestModeSereinBold1,
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                TextSpan(
-                    text: OnboardingStrings.digestModeSereinPart2),
-                TextSpan(
-                  text: OnboardingStrings.digestModeSereinBold2,
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                TextSpan(
-                    text: OnboardingStrings.digestModeSereinPart3),
-                TextSpan(
-                  text: OnboardingStrings.digestModeSereinBold3,
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                TextSpan(
-                    text: OnboardingStrings.digestModeSereinPart4),
-              ],
+                  Text.rich(
+                    TextSpan(
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(color: colors.textSecondary),
+                      children: const [
+                        TextSpan(text: OnboardingStrings.digestModeSereinPart1),
+                        TextSpan(
+                          text: OnboardingStrings.digestModeSereinBold1,
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        TextSpan(text: OnboardingStrings.digestModeSereinPart2),
+                        TextSpan(
+                          text: OnboardingStrings.digestModeSereinBold2,
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        TextSpan(text: OnboardingStrings.digestModeSereinPart3),
+                        TextSpan(
+                          text: OnboardingStrings.digestModeSereinBold3,
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        TextSpan(text: OnboardingStrings.digestModeSereinPart4),
+                      ],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const SizedBox(height: FacteurSpacing.space8),
+
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      ref.read(onboardingProvider.notifier).selectDigestMode('serein');
+                    },
+                    icon: Icon(SereinColors.sereinIcon, size: 18),
+                    label: const Text('Oui, rester serein'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: SereinColors.sereinColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(FacteurRadius.large),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: FacteurSpacing.space3),
+
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      ref
+                          .read(onboardingProvider.notifier)
+                          .selectDigestMode('pour_vous');
+                    },
+                    icon: Icon(SereinColors.normalIcon, size: 18),
+                    label: const Text('Non, tout voir'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: colors.textPrimary,
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      side: BorderSide(
+                        color: colors.textTertiary.withOpacity(0.3),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(FacteurRadius.large),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: FacteurSpacing.space2),
+
+                  TextButton(
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      ref
+                          .read(onboardingProvider.notifier)
+                          .markDigestMode('serein');
+                      context.pushNamed(
+                        RouteNames.myInterests,
+                        queryParameters: const {'serein': '1'},
+                      );
+                    },
+                    child: Text(
+                      OnboardingStrings.personalizeSereinCta,
+                      style: TextStyle(
+                        color: SereinColors.sereinColor,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: FacteurSpacing.space6),
+                ],
+              ),
             ),
-            textAlign: TextAlign.center,
           ),
-
-          const SizedBox(height: FacteurSpacing.space8),
-
-          // Primary: Oui, rester serein
-          ElevatedButton.icon(
-            onPressed: () {
-              HapticFeedback.lightImpact();
-              ref.read(onboardingProvider.notifier).selectDigestMode('serein');
-            },
-            icon: Icon(SereinColors.sereinIcon, size: 18),
-            label: const Text('Oui, rester serein'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: SereinColors.sereinColor,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              textStyle: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(FacteurRadius.large),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: FacteurSpacing.space3),
-
-          // Secondary: Non, tout voir
-          OutlinedButton.icon(
-            onPressed: () {
-              HapticFeedback.lightImpact();
-              ref
-                  .read(onboardingProvider.notifier)
-                  .selectDigestMode('pour_vous');
-            },
-            icon: Icon(SereinColors.normalIcon, size: 18),
-            label: const Text('Non, tout voir'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: colors.textPrimary,
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              textStyle: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-              side: BorderSide(
-                color: colors.textTertiary.withOpacity(0.3),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(FacteurRadius.large),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: FacteurSpacing.space2),
-
-          // Optional: personalise the serein filter before continuing.
-          TextButton(
-            onPressed: () {
-              HapticFeedback.selectionClick();
-              // Mark the choice but stay on this question so the user returns
-              // here after configuring exclusions.
-              ref
-                  .read(onboardingProvider.notifier)
-                  .markDigestMode('serein');
-              context.pushNamed(
-                RouteNames.myInterests,
-                queryParameters: const {'serein': '1'},
-              );
-            },
-            child: Text(
-              OnboardingStrings.personalizeSereinCta,
-              style: TextStyle(
-                color: SereinColors.sereinColor,
-                fontWeight: FontWeight.w600,
-                decoration: TextDecoration.underline,
-              ),
-            ),
-          ),
-
-          const Spacer(flex: 3),
 
           DelayedContinueButton(
             visible: selectedMode != null,
