@@ -27,10 +27,10 @@ class StreakIndicator extends ConsumerWidget {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
-            color: colors.primary.withOpacity(isActive ? 0.1 : 0.06),
+            color: colors.primary.withOpacity(isActive ? 0.04 : 0.02),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: colors.primary.withOpacity(0.2),
+              color: colors.primary.withOpacity(0.10),
               width: 1,
             ),
           ),

@@ -32,8 +32,8 @@ class RingAvatar extends StatelessWidget {
     final clamped = (progress ?? 0).clamp(0.0, 1.0);
 
     final avatar = Container(
-      width: 32,
-      height: 32,
+      width: 35,
+      height: 35,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: colors.textPrimary,
@@ -43,7 +43,7 @@ class RingAvatar extends StatelessWidget {
         initials,
         style: TextStyle(
           fontFamily: 'DMSans',
-          fontSize: 13,
+          fontSize: 14,
           fontWeight: FontWeight.w600,
           height: 1,
           color: colors.backgroundPrimary,
@@ -53,15 +53,15 @@ class RingAvatar extends StatelessWidget {
 
     if (!hasRing) {
       return SizedBox(
-        width: 38,
-        height: 38,
+        width: 42,
+        height: 42,
         child: Center(child: avatar),
       );
     }
 
     return SizedBox(
-      width: 38,
-      height: 38,
+      width: 42,
+      height: 42,
       child: TweenAnimationBuilder<double>(
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeOutCubic,
@@ -87,7 +87,7 @@ class _RingPainter extends CustomPainter {
 
   _RingPainter({required this.progress, required this.progressColor});
 
-  static const double _radius = 17.0;
+  static const double _radius = 18.7;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -95,7 +95,7 @@ class _RingPainter extends CustomPainter {
 
     final track = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
+      ..strokeWidth = 2.4
       ..color = Colors.black.withValues(alpha: 0.07);
     canvas.drawCircle(center, _radius, track);
 
@@ -103,7 +103,7 @@ class _RingPainter extends CustomPainter {
 
     final progressPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6
+      ..strokeWidth = 1.75
       ..strokeCap = StrokeCap.round
       ..color = progressColor;
 

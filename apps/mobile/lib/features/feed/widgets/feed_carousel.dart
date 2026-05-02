@@ -81,12 +81,15 @@ class _FeedCarouselState extends State<FeedCarousel> {
     super.dispose();
   }
 
-  // Layout constants (matches TopicSection)
-  static const double _footerHeight = 57.0;
-  static const double _bodyPadding = 24.0;
-  static const double _metaRowHeight = 20.0;
+  // Compact layout constants — tighter than TopicSection's so feed carousels
+  // fit more content above the fold.
+  static const double _footerHeight = 36.0;
+  static const double _bodyPadding = 16.0;
+  static const double _metaRowHeight = 18.0;
   static const double _spacer = 8.0;
-  static const double _badgeHeight = 30.0; // Badge chip above card
+  static const double _badgeHeight = 24.0;
+  // Letter-box images slightly tighter than 16:9 to shave ~30 px per card.
+  static const double _imageAspectRatio = 2.1;
 
   bool _imageWillRender(Content article) {
     final url = article.thumbnailUrl;
@@ -133,7 +136,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
       }
     }
 
-    final imageHeight = hasImage ? cardWidth / (16 / 9) : 0.0;
+    final imageHeight = hasImage ? cardWidth / _imageAspectRatio : 0.0;
     return imageHeight + bodyHeight + _footerHeight + _badgeHeight;
   }
 
@@ -242,6 +245,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
           alwaysShowDescription: !imageVisible,
           descriptionFontSize: 15,
           titleMaxLines: 5,
+          imageAspectRatio: _imageAspectRatio,
           onImageError: () => _onImageError(article.id),
           onTap: () => widget.onArticleTap(article),
           // T1: Full card feature parity
@@ -341,6 +345,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
       alwaysShowDescription: !imageVisible,
       descriptionFontSize: 15,
       titleMaxLines: 5,
+      imageAspectRatio: _imageAspectRatio,
       onImageError: () => _onImageError(article.id),
       onTap: () => widget.onArticleTap(article),
       // T1: Full card feature parity
