@@ -18,7 +18,7 @@ class QuoteBlock extends StatelessWidget {
     final separatorColor = colors.primary.withOpacity(isDark ? 0.45 : 0.38);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -78,7 +78,7 @@ class QuoteBlock extends StatelessWidget {
               color: colors.textSecondary.withOpacity(0.65),
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 8),
           // Bottom separator
           Center(
             child: Container(

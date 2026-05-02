@@ -97,12 +97,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
   void _openArticle(DigestItem item) async {
     HapticFeedback.mediumImpact();
 
-    // Mark as read on tap, before navigation — gives immediate feedback on
-    // the progress micro-bars without waiting for the user to pop back.
-    if (!item.isRead && !item.isDismissed) {
-      ref.read(digestProvider.notifier).applyAction(item.contentId, 'read');
-    }
-
     // Premium source → open in external browser for authenticated access
     final sources = ref.read(userSourcesProvider).valueOrNull ?? [];
     final isPremium = item.source?.id != null &&
@@ -115,10 +109,20 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       }
     }
 
-    // Navigate to article detail
+    // Navigate first so the Cupertino transition starts immediately. The
+    // mark-as-read state mutation (which rebuilds the digest tree) is deferred
+    // to a microtask so it doesn't compete with the push for the next frame.
     final content = _convertToContent(item);
-    final updated = await context
+    final pushFuture = context
         .push<Content?>('/feed/content/${item.contentId}', extra: content);
+
+    if (!item.isRead && !item.isDismissed) {
+      Future.microtask(() {
+        ref.read(digestProvider.notifier).applyAction(item.contentId, 'read');
+      });
+    }
+
+    final updated = await pushFuture;
 
     // Sync bookmark + note state back to digest
     if (updated != null) {
@@ -354,9 +358,11 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                   // Header : back rond + titre majuscules
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: FacteurSpacing.space4,
-                        vertical: FacteurSpacing.space2,
+                      padding: const EdgeInsets.fromLTRB(
+                        FacteurSpacing.space4,
+                        4,
+                        FacteurSpacing.space4,
+                        4,
                       ),
                       child: Row(
                         children: [
