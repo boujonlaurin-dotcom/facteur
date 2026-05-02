@@ -1,82 +1,53 @@
-# PR — Story 18.3 « Ma veille » end-to-end (front wiring + historique + push notifs)
+# PR1 — Lettres du Facteur (backend) · Story 19.1
 
-## Why
+## Summary
 
-Phase E2E de la feature « Ma veille ». Le backend pipeline (18.1 + 18.2,
-PR #524 + #535) produit des `items[]` réels avec clusters + `why_it_matters`
-LLM. Côté front Flutter, le flow 4-steps était encore 100 % mock :
+PR1 sur 3 pour la feature « Lettres du Facteur » (soft onboarding gamifié, anti-FOMO).
 
-- `submit()` no-op à `apps/mobile/lib/features/veille/providers/veille_config_provider.dart:142` ;
-- aucun écran historique livraisons ni détail livraison ;
-- aucune notif planifiée à la livraison.
+- Nouvelle table `user_letter_progress` (Alembic `lf01`) — stocke uniquement la progression utilisateur.
+- 3 lettres en constantes Python (`app/services/letters/catalog.py`) : L0 « Bienvenue » (archivée par défaut), L1 « Tes premières sources » (4 actions auto-détectées), L2 « Ton rythme idéal » (upcoming, débloquée au classement de L1).
+- 2 endpoints :
+  - `GET /api/letters` → état complet, idempotent (init silencieux pour new user).
+  - `POST /api/letters/{letter_id}/refresh-status` → recalcule auto-détection + chaînage.
+- Auto-détection serveur des 4 actions de L1 :
+  - `define_editorial_line` → `count(user_topic_profiles)` ≥ 3.
+  - `add_5_sources` → `count(user_sources)` ≥ 5.
+  - `add_2_personal_sources` → `count(user_sources WHERE is_custom)` ≥ 2.
+  - `first_perspectives_open` → ≥1 `analytics_events` `event_type='perspectives_opened'` (event ajouté de manière non-bloquante dans `routers/contents.py:get_perspectives`).
 
-Cette PR ferme la boucle « configuration → livraison → consommation » sur
-l'app et planifie une notif locale (pas de FCM côté projet) pour rappeler
-au user que sa veille est tombée.
+## Décisions architecturales
 
-## What
-
-### Front wiring
-
-- `submit()` étape 4 → POST `/api/veille/config` (real `VeilleRepository`).
-- Suggestions topics/sources réelles à l'entrée des étapes 2 et 3 (POST
-  `/api/veille/suggestions/{topics,sources}` avec spinner bloquant +
-  fallback mock UX si erreur réseau).
-- Redirect automatique `/veille/config` → `/veille/dashboard` quand
-  `GET /api/veille/config` retourne 200 (au lieu de relancer le flow).
-- Filtrage des sources mock-only au submit (sans `apiSourceId` UUID API,
-  elles ne peuvent pas être ingérées par le backend).
-
-### Nouveaux écrans
-
-- **Dashboard** `/veille/dashboard` : thème, topics, sources, schedule,
-  countdown next_scheduled_at, boutons Modifier / Pause / Supprimer / Historique.
-- **Historique** `/veille/deliveries` : liste 20 dernières livraisons,
-  pull-to-refresh, empty state.
-- **Détail livraison** `/veille/deliveries/:id` : clusters + `why_it_matters` +
-  articles → tap ouvre InAppWebView (`launchUrl` mode `inAppBrowserView`).
-  Gère les états `running`/`pending` (loader) et `failed` (state d'erreur sympa).
-
-### Push notif locale + deeplink
-
-- `PushNotificationService.scheduleVeilleNotification(scheduledAt)` (NotifId=3,
-  channel `veille_channel`). Planifié à `next_scheduled_at + 30 min` pour
-  laisser le scanner */30 min générer la livraison avant que la notif tombe.
-- Cancel automatique sur PATCH status=paused / DELETE.
-- Mapping deeplink `io.supabase.facteur://veille/dashboard` ajouté à
-  `DeepLinkService.parse` (`WidgetDeepLinkTarget.veille`).
-
-### Architecture
-
-- Pas de modif backend (la pipeline fait déjà tout).
-- Patterns réutilisés : `digest_repository.dart` (Dio + exceptions typées),
-  `digest_provider.dart` (AsyncNotifier — simplifié load-on-enter),
-  `scheduleDailyDigestNotification` (zonedSchedule local).
-- Retries bornés (interceptor existant : 2 retries sur 5xx ≠503, 0 sur 4xx) —
-  pas de retries cascadés type stale-fallback du digest (anti-cascade pool DB).
-- Story doc : `docs/stories/core/18.3.veille-e2e.md`.
+- **FK** : `user_profiles.user_id` (cohérent avec `veille_configs`), pas `auth.users(id)`.
+- **RLS** : non activée — scoping par FastAPI auth (cohérent avec les autres tables user-scoped).
+- **Lettres = constantes** : V1 = 3 lettres en dur, rotation = redeploy. Pas de surface d'admin pour V1.
+- **Migration** : Alembic + apply manuel Supabase. **Application Supabase TODO** : `mcp__supabase__apply_migration` est en read-only mode dans cet environnement. À exécuter manuellement via Supabase SQL Editor (le SQL est dans le commit + dans `docs/stories/core/19.1.lettres-facteur.md`).
 
 ## Test plan
 
-- [x] `flutter analyze lib/features/veille` → 1 info-level lint, 0 erreur.
-- [x] `flutter test test/features/veille/models/veille_models_test.dart` →
-  15 tests verts (parsing fromJson + sérialisation toJson).
-- [x] `flutter test test/core/services/{deep_link_service,push_notification_service_copy}_test.dart`
-  → 14 tests verts (anti-régression, +2 tests pour le mapping veille deep link).
-- [x] `pytest -q` backend (anti-régression) : 838 passed, 85 errors —
-  TOUTES les errors sont `psycopg.OperationalError` (DB locale Supabase non
-  démarrée, infra), aucune cassée par cette PR.
-- [ ] `/validate-feature` (Chrome MCP, viewport 390x844) — scénarios :
-  happy path, redirect dashboard, pause/reprendre, suppression, livraison
-  failed, erreur réseau suggestions, tap notif. Cf. `.context/qa-handoff.md`.
-- [ ] Smoke API local : `uvicorn app.main:app --port 8080`, configure une
-  veille, vérifier POST /config + log `PushNotificationService: veille scheduled @ ...`,
-  POST /deliveries/generate (debug), refresh historique.
+- [x] `pytest tests/routers/test_letters_routes.py -v` — 11/11 PASSED (init, 4 détecteurs, chaînage, idempotence x2, cross-tenant, 404).
+- [x] Suite complète `pytest -v --ignore=tests/routers/test_notification_preferences.py` — 934 passed, 13 skipped.
+- [x] `ruff format --check` + `ruff check` — verts sur tous les fichiers touchés.
+- [x] `bash docs/qa/scripts/verify_letters.sh` — pytest pass + smoke routes wired.
+- [x] `alembic heads` → 1 head unique (`lf01`).
+- [ ] **Manuel post-merge** : appliquer la migration `lf01_create_user_letter_progress` sur Supabase via SQL Editor (MCP read-only en local).
 
-## Out of scope
+### Test ignoré
 
-- Multi-veilles par user (V2/V3).
-- Carte « Ma veille » sur le feed (entry point — tranché en brainstorming PO).
-- Push serveur (FCM/APNS) — pas de stockage push_token côté backend, hors V1.
-- Cache disque persistant pour livraisons (load-on-enter mémoire suffit).
-- Pagination historique > 20.
+`tests/routers/test_notification_preferences.py::test_patch_increments_refusal_count` est en échec **pré-existant** (TZ-dépendant Paris été : assertion sur string `2026-04-28T12:00:00` qui matche pas `2026-04-28T14:00:00+02:00`). Pas de lien avec cette PR — confirmé en stashant les changements.
+
+## Suite — PR2 et PR3
+
+Cette PR ne touche **pas** au mobile. Suivi dans `docs/stories/core/19.1.lettres-facteur.md`.
+
+- PR2 = data layer mobile (modèles Dart + provider + RingAvatar + ProfileAvatarButton).
+- PR3 = UI mobile (7 widgets, 2 screens, route, banner feed, /validate-feature).
+
+## Forme JSON `GET /api/letters` (pour PR2)
+
+```json
+[
+  {"id":"letter_0","num":"00","title":"Bienvenue chez Facteur","message":"...","signature":"Le Facteur","actions":[],"status":"archived","completed_actions":[],"progress":1.0,"started_at":null,"archived_at":"2026-05-02T..."},
+  {"id":"letter_1","num":"01","title":"Tes premières sources","message":"Bienvenue. Avant de t'emmener plus loin...","signature":"Le Facteur","actions":[{"id":"define_editorial_line","label":"...","help":"..."}, ...],"status":"active","completed_actions":["define_editorial_line"],"progress":0.25,"started_at":"2026-05-02T...","archived_at":null},
+  {"id":"letter_2","num":"02","title":"Ton rythme idéal","message":"...","signature":"Le Facteur","actions":[{"id":"set_frequency","label":"...","help":"..."}],"status":"upcoming","completed_actions":[],"progress":0.0,"started_at":null,"archived_at":null}
+]
+```
