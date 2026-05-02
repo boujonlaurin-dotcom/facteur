@@ -312,7 +312,7 @@ class _ContentShortcuts extends StatelessWidget {
           _ShortcutTile(
             icon: PhosphorIcons.chartLineUp(PhosphorIconsStyle.regular),
             label: 'Progression',
-            onTap: () => context.pushNamed(RouteNames.lettres),
+            onTap: () => context.pushNamed(RouteNames.progress),
           ),
           const _Divider(),
           _ShortcutTile(
