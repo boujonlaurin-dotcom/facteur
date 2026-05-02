@@ -310,6 +310,12 @@ class _ContentShortcuts extends StatelessWidget {
       child: Column(
         children: [
           _ShortcutTile(
+            icon: PhosphorIcons.chartLineUp(PhosphorIconsStyle.regular),
+            label: 'Progression',
+            onTap: () => context.pushNamed(RouteNames.lettres),
+          ),
+          const _Divider(),
+          _ShortcutTile(
             icon: PhosphorIcons.bookOpen(PhosphorIconsStyle.regular),
             label: 'Mes sources',
             onTap: () => context.pushNamed(RouteNames.sources),
@@ -473,4 +479,3 @@ class _SheetCard extends StatelessWidget {
     );
   }
 }
-

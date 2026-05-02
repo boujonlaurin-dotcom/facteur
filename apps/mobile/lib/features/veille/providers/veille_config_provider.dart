@@ -87,7 +87,7 @@ class VeilleConfigState {
     required this.lastError,
   });
 
-  factory VeilleConfigState.initial() => const VeilleConfigState(
+  factory VeilleConfigState.initial() => VeilleConfigState(
         step: 1,
         loadingFrom: null,
         selectedTheme: null,
@@ -148,6 +148,18 @@ class VeilleConfigState {
         lastError:
             lastError == _Sentinel.value ? this.lastError : lastError as String?,
       );
+
+  static Map<String, String> _initialTopicLabels() {
+    final out = <String, String>{};
+    for (final t in VeilleMockData.presetTopics) {
+      out[t.id] = t.label;
+    }
+    for (final t in VeilleMockData.suggestedTopics) {
+      out[t.id] = t.label;
+    }
+    return out;
+  }
+
 }
 
 enum _Sentinel { value }

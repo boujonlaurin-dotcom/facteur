@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Required for flutter_local_notifications scheduled notifications -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
@@ -56,6 +57,43 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/facteur_widget_info" />
         </receiver>
+
+        <!-- flutter_downloader : provider FileProvider pour partager l'APK
+             téléchargé avec l'installeur Android, et init custom pour limiter
+             à 1 tâche concurrente (téléchargement APK uniquement). -->
+        <provider
+            android:name="vn.hunghd.flutterdownloader.DownloadedFileProvider"
+            android:authorities="${applicationId}.flutter_downloader.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/provider_paths"/>
+        </provider>
+        <provider
+            android:name="vn.hunghd.flutterdownloader.FlutterDownloaderInitializer"
+            android:authorities="${applicationId}.flutter-downloader-init"
+            android:exported="false">
+            <meta-data
+                android:name="vn.hunghd.flutterdownloader.MAX_CONCURRENT_TASKS"
+                android:value="1" />
+        </provider>
+
+        <!-- Désactive le WorkManagerInitializer par défaut d'androidx.startup :
+             flutter_downloader initialise lui-même WorkManager via son
+             FlutterDownloaderInitializer ci-dessus. Sans ce remove, les deux
+             tentent l'init au démarrage et lèvent IllegalStateException
+             "WorkManager is already initialized" → crash systématique au boot. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
 
         <!-- Required for flutter_local_notifications scheduled notifications -->
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />

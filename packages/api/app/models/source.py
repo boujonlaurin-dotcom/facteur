@@ -136,8 +136,11 @@ class Source(Base):
         ARRAY(Text), nullable=True
     )
 
-    # Note éditoriale "Pourquoi on apprécie" — affichée dans la modal source.
-    editorial_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Recommandation équipe Facteur — affichée dans la modal source ouverte.
+    # `recommended_by` : prénom du membre de l'équipe (Laurin/Anh-Dao/Django/Lucas).
+    # `recommendation_reason` : raison personnelle, ton de l'équipe.
+    recommended_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    recommendation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relations
     contents: Mapped[list["Content"]] = relationship(

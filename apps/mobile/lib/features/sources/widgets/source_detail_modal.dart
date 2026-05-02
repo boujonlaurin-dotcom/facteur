@@ -217,8 +217,8 @@ class SourceDetailModal extends ConsumerWidget {
               ),
             ),
           ],
-          if (displaySource.editorialNote != null &&
-              displaySource.editorialNote!.trim().isNotEmpty) ...[
+          if (displaySource.recommendedBy != null &&
+              displaySource.recommendedBy!.trim().isNotEmpty) ...[
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(16),
@@ -240,24 +240,34 @@ class SourceDetailModal extends ConsumerWidget {
                         fit: BoxFit.contain,
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        'Pourquoi on apprécie',
-                        style:
-                            Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  color: colors.textPrimary,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                      Expanded(
+                        child: Text(
+                          'Recommandé par ${displaySource.recommendedBy} '
+                          '— équipe Facteur',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(
+                                color: colors.textPrimary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    displaySource.editorialNote!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.textSecondary,
-                          height: 1.5,
-                        ),
-                  ),
+                  if (displaySource.recommendationReason != null &&
+                      displaySource.recommendationReason!
+                          .trim()
+                          .isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      displaySource.recommendationReason!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textSecondary,
+                            height: 1.5,
+                          ),
+                    ),
+                  ],
                 ],
               ),
             ),

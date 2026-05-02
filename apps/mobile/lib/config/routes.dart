@@ -338,8 +338,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'add', // /settings/sources/add
                 name: RouteNames.addSource,
-                pageBuilder: (context, state) =>
-                    const FullSwipeCupertinoPage(
+                pageBuilder: (context, state) => const FullSwipeCupertinoPage(
                   child: AddSourceScreen(),
                 ),
               ),
@@ -384,8 +383,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: 'interests', // /settings/interests
             name: RouteNames.myInterests,
             pageBuilder: (context, state) {
-              final forceSereinOn =
-                  state.uri.queryParameters['serein'] == '1';
+              final forceSereinOn = state.uri.queryParameters['serein'] == '1';
               return FullSwipeCupertinoPage(
                 child: MyInterestsScreen(forceSereinOn: forceSereinOn),
               );

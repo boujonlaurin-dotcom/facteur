@@ -49,6 +49,9 @@ class FeedCard extends StatefulWidget {
   /// tight, scannable layout. Digest singleton cards override to 5 so
   /// long titles can breathe on the "closure" moment of the app.
   final int titleMaxLines;
+  /// Aspect ratio used for the header image. Default 16:9 ; carousel cards
+  /// override to a tighter ratio (~2.1) for a more compact stack height.
+  final double imageAspectRatio;
   final bool denseLayout;
   /// Optional GlobalKey attached to the first long-pressable badge (topic
   /// chip preferred, source badge fallback). Used by `NudgeHost` to position
@@ -90,6 +93,7 @@ class FeedCard extends StatefulWidget {
     this.onImageError,
     this.descriptionFontSize,
     this.titleMaxLines = 3,
+    this.imageAspectRatio = 16 / 9,
     this.denseLayout = false,
     this.badgeAnchorKey,
     this.cardAnchorKey,
@@ -187,6 +191,7 @@ class _FeedCardState extends State<FeedCard>
                         // 1. Image (Header)
                         FacteurThumbnail(
                           imageUrl: widget.content.thumbnailUrl,
+                          aspectRatio: widget.imageAspectRatio,
                           borderRadius: isVideo
                               ? BorderRadius.zero
                               : const BorderRadius.vertical(

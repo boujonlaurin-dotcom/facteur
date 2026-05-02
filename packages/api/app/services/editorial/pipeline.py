@@ -45,6 +45,10 @@ from app.services.perspective_service import Perspective, PerspectiveService
 
 logger = structlog.get_logger()
 
+# Curation oversample : on demande +N sujets de plus que la cible pour
+# absorber les échecs d'actu/deep matching et toujours servir 5 sujets.
+_SUBJECT_BUFFER = 2
+
 
 class EditorialPipelineService:
     """Orchestrates the editorial digest pipeline."""
@@ -163,21 +167,22 @@ class EditorialPipelineService:
             )
 
         # ÉTAPE 1B: Pré-sélection "À la Une" — cluster le plus couvert.
-        # Mode "serein" (Bonnes nouvelles) : seuil multi-sources ≥2 pour
-        # garantir la promesse "couverte par au moins quelques sources" — si
-        # aucun cluster ne répond, pas d'À la Une (le rang 1 reste une bonne
-        # nouvelle simple).
+        # Cas standard : on prend parmi les clusters "trending" (≥3 sources).
+        # Cas creux (week-end / jours fériés) : si aucun cluster ≥3, on
+        # rétrograde sur le seuil "multi_source" (≥2) pour ne PAS perdre
+        # la promesse revue de presse — un sujet repris par 2 médias reste
+        # plus fort qu'un singleton. Cf. bug-digest-pipeline-fallbacks.md.
         step_start = time.time()
         trending_clusters = [c for c in clusters if c.is_trending]
+        multi_source_clusters = [c for c in clusters if c.is_multi_source]
+        a_la_une_pool = trending_clusters or multi_source_clusters
+        a_la_une_fallback = not trending_clusters and bool(multi_source_clusters)
         a_la_une_topic = None
 
         if mode == "serein":
-            multi_source_clusters = [
-                c for c in trending_clusters if len(c.source_ids) >= 2
-            ]
-            if multi_source_clusters:
+            if a_la_une_pool:
                 top3 = sorted(
-                    multi_source_clusters,
+                    a_la_une_pool,
                     key=lambda c: len(c.source_ids),
                     reverse=True,
                 )[:3]
@@ -189,10 +194,10 @@ class EditorialPipelineService:
                     "editorial_pipeline.bonne_nouvelle_no_multi_source_cluster",
                     trending=len(trending_clusters),
                 )
-        elif trending_clusters:
-            top3 = sorted(
-                trending_clusters, key=lambda c: len(c.source_ids), reverse=True
-            )[:3]
+        elif a_la_une_pool:
+            top3 = sorted(a_la_une_pool, key=lambda c: len(c.source_ids), reverse=True)[
+                :3
+            ]
 
             if len(top3) == 1:
                 a_la_une_topic = _cluster_to_une_topic(top3[0])
@@ -200,6 +205,14 @@ class EditorialPipelineService:
                 a_la_une_topic = await self.curation.select_a_la_une(top3)
                 if not a_la_une_topic:
                     a_la_une_topic = _cluster_to_une_topic(top3[0])
+
+        if a_la_une_topic and a_la_une_fallback:
+            logger.info(
+                "editorial_pipeline.a_la_une_fallback_multi_source",
+                source_count=a_la_une_topic.source_count,
+                trending_count=len(trending_clusters),
+                multi_source_count=len(multi_source_clusters),
+            )
 
         if a_la_une_topic:
             logger.info(
@@ -211,13 +224,21 @@ class EditorialPipelineService:
 
         une_time = time.time() - step_start
 
-        # ÉTAPE 2: LLM curation — select remaining topics
+        # ÉTAPE 2: LLM curation — select remaining topics + buffer.
+        # On oversample de `_SUBJECT_BUFFER` clusters supplémentaires : si
+        # actu/deep matching échoue sur un sujet (cluster sans article éligible
+        # < 24h, deep_match LLM négatif), on a une réserve pour garder le
+        # digest à 5 sujets sans replonger en LLM. Cf. bug-digest-pipeline-fallbacks.md.
         step_start = time.time()
         excluded_ids = {a_la_une_topic.topic_id} if a_la_une_topic else set()
-        remaining_count = 4 if a_la_une_topic else 5
+        target_subject_count = 5
+        remaining_count = (
+            (target_subject_count - 1) if a_la_une_topic else target_subject_count
+        )
+        oversample_count = remaining_count + _SUBJECT_BUFFER
         selected_topics = await self.curation.select_topics(
             clusters,
-            subjects_count=remaining_count,
+            subjects_count=oversample_count,
             excluded_cluster_ids=excluded_ids,
         )
 
@@ -310,14 +331,56 @@ class EditorialPipelineService:
             duration_ms=round(actu_time * 1000, 2),
         )
 
-        # Warn about subjects with no articles at all
+        # ÉTAPE 3A-bis: trim au target_subject_count.
+        # On a oversamplé de _SUBJECT_BUFFER ; on conserve les sujets avec au
+        # moins un actu OU un deep article, dans l'ordre, jusqu'à atteindre
+        # `target_subject_count`. Les sujets vides sont droppés ici (loggés
+        # en warning), mais le buffer permet généralement de combler.
+        # Si on retombe quand même < target, on logge en error pour visibilité.
+        empty_dropped: list[str] = []
+        kept: list[EditorialSubject] = []
         for s in subjects:
             if s.actu_article is None and s.deep_article is None:
+                empty_dropped.append(s.label or s.topic_id)
                 logger.warning(
                     "editorial_pipeline.subject_no_articles",
                     topic_id=s.topic_id,
                     label=s.label,
                 )
+                continue
+            kept.append(s)
+            if len(kept) >= target_subject_count:
+                break
+
+        # Renumérotation : les rangs doivent être 1..len(kept) après le trim,
+        # sinon le mobile affiche "Sujet 1, 3, 4" si rang 2 a été droppé.
+        renumbered: list[EditorialSubject] = []
+        for new_rank, s in enumerate(kept, start=1):
+            renumbered.append(
+                s.model_copy(
+                    update={
+                        "rank": new_rank,
+                        # is_a_la_une reste vrai uniquement si on est rang 1
+                        # ET que c'était bien le sujet À la Une initial.
+                        "is_a_la_une": s.is_a_la_une and new_rank == 1,
+                    }
+                )
+            )
+        subjects = renumbered
+
+        if len(subjects) < target_subject_count:
+            logger.error(
+                "editorial_pipeline.subjects_under_target",
+                kept=len(subjects),
+                target=target_subject_count,
+                dropped=empty_dropped,
+            )
+        elif empty_dropped:
+            logger.info(
+                "editorial_pipeline.subjects_buffer_used",
+                kept=len(subjects),
+                dropped_count=len(empty_dropped),
+            )
 
         # ÉTAPE 3C: Perspective analysis (batch, parallel)
         # Pass session_maker: chaque resolve_bias / search_internal s'exécute

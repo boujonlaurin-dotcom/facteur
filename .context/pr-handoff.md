@@ -1,6 +1,6 @@
 # PR — Story 18.3 « Ma veille » end-to-end (front wiring + historique + push notifs)
 
-## Why
+## Summary
 
 Phase E2E de la feature « Ma veille ». Le backend pipeline (18.1 + 18.2,
 PR #524 + #535) produit des `items[]` réels avec clusters + `why_it_matters`
@@ -56,7 +56,7 @@ au user que sa veille est tombée.
   pas de retries cascadés type stale-fallback du digest (anti-cascade pool DB).
 - Story doc : `docs/stories/core/18.3.veille-e2e.md`.
 
-## Test plan
+## Hors scope (PR3)
 
 - [x] `flutter analyze lib/features/veille` → 1 info-level lint, 0 erreur.
 - [x] `flutter test test/features/veille/models/veille_models_test.dart` →
