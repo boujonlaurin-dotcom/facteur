@@ -1,31 +1,38 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../config/theme.dart';
+import '../../lettres/providers/letters_provider.dart';
+import '../../lettres/widgets/ring_avatar.dart';
+import '../../settings/providers/user_profile_provider.dart';
 
-/// Gear icon button — opens settings from the feed header.
-class ProfileAvatarButton extends StatelessWidget {
-  final double size;
+/// Initials avatar with optional onboarding progress ring; opens settings.
+class ProfileAvatarButton extends ConsumerWidget {
   final VoidCallback? onTap;
 
   const ProfileAvatarButton({
     super.key,
     required VoidCallback this.onTap,
-    this.size = 32,
   });
 
-  const ProfileAvatarButton.display({super.key, this.size = 32}) : onTap = null;
+  const ProfileAvatarButton.display({super.key}) : onTap = null;
 
   @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final displayName = ref.watch(userProfileProvider).displayName;
+    final lettersAsync = ref.watch(lettersProvider);
 
-    final avatar = Icon(
-      PhosphorIcons.gear(PhosphorIconsStyle.regular),
-      size: size,
-      color: colors.textSecondary,
+    final progress = lettersAsync.maybeWhen(
+      data: (state) {
+        final active = state.activeLetter;
+        if (active == null) return null;
+        // Force a min visible dash even at 0/N so the ring is perceivable.
+        return active.progress < 0.02 ? 0.02 : active.progress;
+      },
+      orElse: () => null,
     );
+
+    final avatar = RingAvatar.fromName(displayName, progress);
 
     if (onTap == null) return avatar;
 

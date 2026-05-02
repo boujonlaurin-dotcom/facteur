@@ -1,53 +1,27 @@
-# PR1 — Lettres du Facteur (backend) · Story 19.1
+# PR2 — Lettres du Facteur (mobile data layer) · Story 19.1
 
 ## Summary
 
-PR1 sur 3 pour la feature « Lettres du Facteur » (soft onboarding gamifié, anti-FOMO).
-
-- Nouvelle table `user_letter_progress` (Alembic `lf01`) — stocke uniquement la progression utilisateur.
-- 3 lettres en constantes Python (`app/services/letters/catalog.py`) : L0 « Bienvenue » (archivée par défaut), L1 « Tes premières sources » (4 actions auto-détectées), L2 « Ton rythme idéal » (upcoming, débloquée au classement de L1).
-- 2 endpoints :
-  - `GET /api/letters` → état complet, idempotent (init silencieux pour new user).
-  - `POST /api/letters/{letter_id}/refresh-status` → recalcule auto-détection + chaînage.
-- Auto-détection serveur des 4 actions de L1 :
-  - `define_editorial_line` → `count(user_topic_profiles)` ≥ 3.
-  - `add_5_sources` → `count(user_sources)` ≥ 5.
-  - `add_2_personal_sources` → `count(user_sources WHERE is_custom)` ≥ 2.
-  - `first_perspectives_open` → ≥1 `analytics_events` `event_type='perspectives_opened'` (event ajouté de manière non-bloquante dans `routers/contents.py:get_perspectives`).
-
-## Décisions architecturales
-
-- **FK** : `user_profiles.user_id` (cohérent avec `veille_configs`), pas `auth.users(id)`.
-- **RLS** : non activée — scoping par FastAPI auth (cohérent avec les autres tables user-scoped).
-- **Lettres = constantes** : V1 = 3 lettres en dur, rotation = redeploy. Pas de surface d'admin pour V1.
-- **Migration** : Alembic + apply manuel Supabase. **Application Supabase TODO** : `mcp__supabase__apply_migration` est en read-only mode dans cet environnement. À exécuter manuellement via Supabase SQL Editor (le SQL est dans le commit + dans `docs/stories/core/19.1.lettres-facteur.md`).
+- Couche data Flutter pour les Lettres du Facteur : models (`Letter`, `LetterAction`, enums), `LettersRepository` (Dio sur `/api/letters`), `lettersProvider` (`AsyncNotifier` avec `refresh`, `silentRefresh`, `refreshLetterStatus`).
+- `ProfileAvatarButton` réécrit en `ConsumerWidget` : initiales du user (fallback `'F'`) + anneau de progression (`RingAvatar` CustomPainter, animation 400 ms `easeOutCubic`). L'anneau disparaît dès qu'aucune lettre n'est `active` — pas de FOMO.
+- Settings sheet gagne une entrée « Courrier » qui pousse `/lettres` (route placeholder `LettresPlaceholderScreen`, à remplacer en PR3 par l'écran complet).
 
 ## Test plan
 
-- [x] `pytest tests/routers/test_letters_routes.py -v` — 11/11 PASSED (init, 4 détecteurs, chaînage, idempotence x2, cross-tenant, 404).
-- [x] Suite complète `pytest -v --ignore=tests/routers/test_notification_preferences.py` — 934 passed, 13 skipped.
-- [x] `ruff format --check` + `ruff check` — verts sur tous les fichiers touchés.
-- [x] `bash docs/qa/scripts/verify_letters.sh` — pytest pass + smoke routes wired.
-- [x] `alembic heads` → 1 head unique (`lf01`).
-- [ ] **Manuel post-merge** : appliquer la migration `lf01_create_user_letter_progress` sur Supabase via SQL Editor (MCP read-only en local).
+- [x] `flutter test test/features/lettres/` — 14 tests verts (5 provider + 5 unit RingAvatar + 4 goldens).
+- [x] `flutter analyze lib/features/lettres lib/features/feed/widgets/profile_avatar_button.dart lib/config/routes.dart` — 0 issue (warnings préexistants hors scope).
+- [ ] Smoke test : login → feed → profile button affiche initiales + anneau (lettre L1 active après PR1).
+- [ ] Settings → tap « Courrier » → ouvre `/lettres` (placeholder).
+- [ ] Logout → profile button affiche `'F'` sans anneau.
 
-### Test ignoré
+## Décisions
 
-`tests/routers/test_notification_preferences.py::test_patch_increments_refusal_count` est en échec **pré-existant** (TZ-dépendant Paris été : assertion sur string `2026-04-28T12:00:00` qui matche pas `2026-04-28T14:00:00+02:00`). Pas de lien avec cette PR — confirmé en stashant les changements.
+- **Statut par action calculé client-side** : `Letter.fromJson` dérive `LetterActionStatus` (done si `id ∈ completed_actions`, sinon `active` pour la 1ère non-complétée d'une lettre `active`, sinon `todo`). Le serveur ne renvoie que `completed_actions[]`.
+- **`letterNum` au lieu de `num`** : le champ `num` shadow le type Dart `num` dans `Letter.fromJson`. Côté JSON la clé reste `num`.
+- **Cap min 0.02** sur le progress : sinon dash invisible quand 0/N actions cochées.
+- **Pas de `GoogleFonts.dmSans` dans `RingAvatar`** : casse en environnement de test (HTTP fetch). Utilise `TextStyle(fontFamily: 'DMSans', …)` directement — la font est déjà déclarée dans `pubspec.yaml`.
+- **`.display()` ctor** sur `ProfileAvatarButton` conservé par prudence ; aucune utilisation externe trouvée — peut être supprimé en PR3 si confirmé.
 
-## Suite — PR2 et PR3
+## Hors scope (PR3)
 
-Cette PR ne touche **pas** au mobile. Suivi dans `docs/stories/core/19.1.lettres-facteur.md`.
-
-- PR2 = data layer mobile (modèles Dart + provider + RingAvatar + ProfileAvatarButton).
-- PR3 = UI mobile (7 widgets, 2 screens, route, banner feed, /validate-feature).
-
-## Forme JSON `GET /api/letters` (pour PR2)
-
-```json
-[
-  {"id":"letter_0","num":"00","title":"Bienvenue chez Facteur","message":"...","signature":"Le Facteur","actions":[],"status":"archived","completed_actions":[],"progress":1.0,"started_at":null,"archived_at":"2026-05-02T..."},
-  {"id":"letter_1","num":"01","title":"Tes premières sources","message":"Bienvenue. Avant de t'emmener plus loin...","signature":"Le Facteur","actions":[{"id":"define_editorial_line","label":"...","help":"..."}, ...],"status":"active","completed_actions":["define_editorial_line"],"progress":0.25,"started_at":"2026-05-02T...","archived_at":null},
-  {"id":"letter_2","num":"02","title":"Ton rythme idéal","message":"...","signature":"Le Facteur","actions":[{"id":"set_frequency","label":"...","help":"..."}],"status":"upcoming","completed_actions":[],"progress":0.0,"started_at":null,"archived_at":null}
-]
-```
+Écran Courrier complet, écran lettre ouverte, banner notification feed, empty state, animation cachetDrop, branchement `silentRefresh()` après action utilisateur (ajout source / Perspectives ouvert).
