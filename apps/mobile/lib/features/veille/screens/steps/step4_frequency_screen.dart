@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -90,12 +92,10 @@ class Step4FrequencyScreen extends ConsumerWidget {
             border: Border(top: BorderSide(color: Color(0xFFE6E1D6))),
           ),
           child: VeilleCtaButton(
-            label: 'Lancer ma veille',
+            label: state.isSubmitting ? 'Envoi en cours…' : 'Lancer ma veille',
             leadingIcon: PhosphorIcons.check(),
-            onPressed: () async {
-              await notifier.submit();
-              await onSubmit();
-            },
+            onPressed:
+                state.isSubmitting ? null : () => unawaited(onSubmit()),
           ),
         ),
       ],

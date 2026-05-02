@@ -28,6 +28,9 @@ import '../features/progress/screens/quiz_screen.dart';
 import '../features/subscription/screens/paywall_screen.dart';
 import '../features/digest/screens/digest_screen.dart';
 import '../features/veille/screens/veille_config_screen.dart';
+import '../features/veille/screens/veille_dashboard_screen.dart';
+import '../features/veille/screens/veille_deliveries_screen.dart';
+import '../features/veille/screens/veille_delivery_detail_screen.dart';
 import '../features/digest/screens/closure_screen.dart';
 import '../features/saved/screens/saved_screen.dart';
 import '../features/saved/screens/saved_all_screen.dart';
@@ -67,6 +70,9 @@ class RouteNames {
   static const String topicExplorer = 'topic-explorer';
   static const String themeSources = 'theme-sources';
   static const String veilleConfig = 'veille-config';
+  static const String veilleDashboard = 'veille-dashboard';
+  static const String veilleDeliveries = 'veille-deliveries';
+  static const String veilleDeliveryDetail = 'veille-delivery-detail';
 }
 
 /// Chemins des routes
@@ -96,6 +102,9 @@ class RoutePaths {
   static const String paywall = '/paywall';
   static const String emailConfirmation = '/email-confirmation';
   static const String veilleConfig = '/veille/config';
+  static const String veilleDashboard = '/veille/dashboard';
+  static const String veilleDeliveries = '/veille/deliveries';
+  static const String veilleDeliveryDetail = '/veille/deliveries/:id';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -392,6 +401,35 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: RouteNames.veilleConfig,
         pageBuilder: (context, state) => const FullSwipeCupertinoPage(
           child: VeilleConfigScreen(),
+        ),
+      ),
+
+      // Veille Dashboard — vue de la config existante (édit/pause/delete).
+      GoRoute(
+        path: RoutePaths.veilleDashboard,
+        name: RouteNames.veilleDashboard,
+        pageBuilder: (context, state) => const FullSwipeCupertinoPage(
+          child: VeilleDashboardScreen(),
+        ),
+      ),
+
+      // Veille Deliveries — historique des livraisons.
+      GoRoute(
+        path: RoutePaths.veilleDeliveries,
+        name: RouteNames.veilleDeliveries,
+        pageBuilder: (context, state) => const FullSwipeCupertinoPage(
+          child: VeilleDeliveriesScreen(),
+        ),
+      ),
+
+      // Veille Delivery Detail — clusters + articles.
+      GoRoute(
+        path: RoutePaths.veilleDeliveryDetail,
+        name: RouteNames.veilleDeliveryDetail,
+        pageBuilder: (context, state) => FullSwipeCupertinoPage(
+          child: VeilleDeliveryDetailScreen(
+            deliveryId: state.pathParameters['id']!,
+          ),
         ),
       ),
 

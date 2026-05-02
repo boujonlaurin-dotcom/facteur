@@ -20,6 +20,7 @@ class _NotifIds {
   static const dailyDigest = 0;
   static const weeklyCommunityPick = 1;
   static const dailyGoodNews = 2;
+  static const veilleDelivery = 3;
 }
 
 /// Service de notifications push locales (FCM non utilisé en v1).
@@ -143,6 +144,11 @@ class PushNotificationService {
   static const String goodNewsTitle = '🌱 Vos bonnes nouvelles du jour';
   static const String goodNewsBody =
       "Une dose d'espoir, sélectionnée avec soin.";
+
+  /// Livraison « Ma veille » — notif locale planifiée à `next_scheduled_at + 30 min`.
+  static const String veilleTitle = 'Ta veille est arrivée';
+  static const String veilleBody =
+      "Découvre les sujets phares de ta période, sélectionnés pour toi.";
 
   /// Construit le triplet (title, body, bigText) selon la variante.
   ///
@@ -373,6 +379,77 @@ class PushNotificationService {
 
   Future<bool> isGoodNewsNotificationScheduled() =>
       _isScheduled(_NotifIds.dailyGoodNews);
+
+  /// Planifie la notification locale « Ma veille » pour [scheduledAt].
+  ///
+  /// Le caller doit ajouter une marge (≈30 min) à `next_scheduled_at` reçu du
+  /// backend pour laisser le scanner `*/30 min` générer la livraison avant
+  /// que la notif ne tombe.
+  ///
+  /// Retourne `true` si la notif a bien été enregistrée auprès du système, ou
+  /// `false` si la date est dans le passé (évite le crash sur Android, qui
+  /// refuse de planifier dans le passé).
+  Future<bool> scheduleVeilleNotification({
+    required DateTime scheduledAt,
+  }) async {
+    final tzScheduled = tz.TZDateTime.from(scheduledAt, tz.local);
+    if (!tzScheduled.isAfter(tz.TZDateTime.now(tz.local))) {
+      debugPrint(
+        'PushNotificationService: skip veille schedule — past date $scheduledAt',
+      );
+      return false;
+    }
+
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    final canUseExact =
+        (await androidPlugin?.canScheduleExactNotifications()) ?? true;
+    final scheduleMode = canUseExact
+        ? AndroidScheduleMode.alarmClock
+        : AndroidScheduleMode.inexactAllowWhileIdle;
+
+    final androidDetails = AndroidNotificationDetails(
+      'veille_channel',
+      'Ma veille',
+      channelDescription:
+          'Notification quand ta veille personnalisée est prête.',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@drawable/ic_stat_facteur',
+      color: const Color(0xFFD35400),
+      styleInformation: const BigTextStyleInformation(
+        veilleBody,
+        contentTitle: veilleTitle,
+      ),
+    );
+    const iosDetails = DarwinNotificationDetails();
+
+    await _plugin.zonedSchedule(
+      id: _NotifIds.veilleDelivery,
+      title: veilleTitle,
+      body: veilleBody,
+      scheduledDate: tzScheduled,
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
+      androidScheduleMode: scheduleMode,
+      payload: 'route:/veille/dashboard',
+    );
+
+    debugPrint(
+      'PushNotificationService: veille scheduled @ $tzScheduled',
+    );
+
+    return _isScheduled(_NotifIds.veilleDelivery);
+  }
+
+  Future<void> cancelVeilleNotification() async {
+    await _plugin.cancel(id: _NotifIds.veilleDelivery);
+  }
+
+  Future<bool> isVeilleNotificationScheduled() =>
+      _isScheduled(_NotifIds.veilleDelivery);
 
   Future<bool> _isScheduled(int id) async {
     final pending = await _plugin.pendingNotificationRequests();

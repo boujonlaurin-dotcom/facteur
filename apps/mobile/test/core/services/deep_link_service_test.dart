@@ -33,6 +33,22 @@ void main() {
       expect(action.topicId, 'international');
     });
 
+    test('veille/dashboard → veille target', () {
+      final action = DeepLinkService.parse(
+        Uri.parse('io.supabase.facteur://veille/dashboard'),
+      );
+      expect(action.target, WidgetDeepLinkTarget.veille);
+      expect(action.route, '/veille/dashboard');
+    });
+
+    test('veille bare host → veille target (fallback dashboard)', () {
+      final action = DeepLinkService.parse(
+        Uri.parse('io.supabase.facteur://veille'),
+      );
+      expect(action.target, WidgetDeepLinkTarget.veille);
+      expect(action.route, '/veille/dashboard');
+    });
+
     test('feed host → feed target', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://feed'),

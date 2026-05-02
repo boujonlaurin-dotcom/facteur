@@ -1,14 +1,19 @@
-# QA Handoff — « Bonnes nouvelles du jour » : mobile + push notification
+# QA Handoff — Story 18.3 « Ma veille » end-to-end
+
+> Rempli par l'agent dev en fin de développement, après validation du PO.
+> Sert d'input à `/validate-feature`.
 
 ## Feature développée
 
-Repositionnement mobile du digest serein de « Lecture apaisée » → « Bonnes
-nouvelles du jour ». Ajoute (1) un renommage end-to-end de la pill, des
-titres et de la copy interests ; (2) un badge « À LA UNE · N sources » sur
-le sujet rang 1 multi-sources ; (3) un canal de notification push local
-dédié, opt-in indépendant du push principal (modal d'activation + écran
-profil > notifications), avec règle stricte d'absence de couplage entre
-les deux opt-ins.
+Câblage end-to-end du flow « Ma veille » sur l'app mobile :
+- Wiring du submit étape 4 → POST `/api/veille/config` (suppression du no-op).
+- Suggestions topics/sources réelles (POST `/api/veille/suggestions/{topics,sources}`) à l'entrée des étapes 2 et 3 (au lieu du mock).
+- Nouvel écran « Ma veille déjà configurée » (dashboard) — affiché si `GET /api/veille/config` = 200 ; redirige automatiquement depuis `/veille/config` au lieu de relancer le flow 4-steps.
+- Nouvel écran historique livraisons (`/veille/deliveries`) — liste 20 dernières.
+- Nouvel écran détail livraison (`/veille/deliveries/:id`) — clusters + `why_it_matters` + articles cliquables (InAppWebView).
+- Notif locale planifiée côté front au submit (`flutter_local_notifications`, NotifId=3, à `next_scheduled_at + 30 min`), deeplink `io.supabase.facteur://veille/dashboard`.
+
+Aucune modif backend (pipeline déjà livrée en 18.1/18.2).
 
 ## PR associée
 
@@ -18,150 +23,146 @@ les deux opt-ins.
 
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Feed (carte d'entrée digest) | `/feed` | Modifié — pill + titre carte serein |
-| Digest (hero) | `/digest` | Modifié — pill + titre adaptés au mode |
-| Digest (sujets) | `/digest` | Modifié — badge « À LA UNE · N sources » |
-| Mes Intérêts (mode serein) | `/interests` | Modifié — copy renommée |
-| Modal d'activation notif | n/a (overlay) | Modifié — section indépendante « Bonnes nouvelles » |
-| Profil > Notifications | `/profile/notifications` | Modifié — toggle Bonnes nouvelles + horaire |
+| Flow Veille — Étape 1 (thème) | `/veille/config` | Modifié — redirect dashboard si config existe |
+| Flow Veille — Étape 2 (suggestions topics) | `/veille/config` | Modifié — POST `/suggestions/topics` au mount |
+| Flow Veille — Étape 3 (sources) | `/veille/config` | Modifié — POST `/suggestions/sources` au mount |
+| Flow Veille — Étape 4 (fréquence + submit) | `/veille/config` | Modifié — POST `/config` réel + planif notif locale |
+| Dashboard « Ma veille déjà configurée » | `/veille/dashboard` | **Nouveau** |
+| Historique livraisons | `/veille/deliveries` | **Nouveau** |
+| Détail livraison | `/veille/deliveries/:id` | **Nouveau** |
 
 ## Scénarios de test
 
-### Scénario 1 : Renommage carte feed (happy path)
-**Parcours** :
-1. Aller sur `/feed`
-2. Observer la 2e carte d'entrée digest
-**Résultat attendu** :
-- Pill `BONNES NOUVELLES` (couleur serein verte conservée)
-- Titre `Les bonnes nouvelles du jour`
-- Tap → ouvre `/digest` en mode serein
+### Scénario 1 : Happy path — première config & livraison
 
-### Scénario 2 : Renommage hero digest serein
 **Parcours** :
-1. Tap la carte « Bonnes nouvelles » depuis le feed
-2. Observer le hero du digest
-**Résultat attendu** :
-- Pill `BONNES NOUVELLES` (au lieu de `L'ESSENTIEL`)
-- Titre `Les bonnes nouvelles du jour`
-- Si on bascule vers le mode normal (toggle serein OFF) : pill et titre
-  reviennent à `L'ESSENTIEL` + `L'essentiel du jour`.
+1. Auth dans l'app. Aucune veille configurée.
+2. Naviguer vers `/veille/config` (depuis settings ou route directe).
+3. Étape 1 : choisir thème « IA & éducation ».
+4. Étape 2 : observer le spinner pendant 1-3s, puis suggestions LLM affichées (différentes du mock figé). Sélectionner 3 topics.
+5. Étape 3 : spinner puis sources `followed` + `niche` réelles. Sélectionner 4 sources.
+6. Étape 4 : fréquence weekly · lundi · 7h. Tap « Configurer ma veille ».
+7. Vérifier : POST `/api/veille/config` → 200 dans logs uvicorn.
+8. Vérifier : redirection vers `/veille/dashboard` (pas le SnackBar mock).
+9. Vérifier (Android Studio Logcat ou debug print) : `PushNotificationService: scheduled veilleDelivery for <next_scheduled_at + 30min>`.
+10. (debug local) `POST /api/veille/deliveries/generate` → 200 succeeded.
+11. Re-ouvrir l'app → dashboard → bouton « Historique » → liste 1 livraison.
+12. Tap livraison → détail → 1+ cluster avec titre + `why_it_matters` + articles.
+13. Tap article → InAppWebView s'ouvre.
 
-### Scénario 3 : Badge « À LA UNE · N sources » (rang 1 multi-sources)
-**Parcours** :
-1. Ouvrir le digest avec un sujet rang 1 ayant `is_une=true` et
-   `source_count >= 2`
-2. Observer la zone des badges sous le titre du sujet
 **Résultat attendu** :
-- Badge terracotta `À LA UNE · 4 sources` (count = `source_count` API,
-  pas `articles.length`)
-- Couleur clairement distincte de la pill `BONNES NOUVELLES` (verte)
-  et de la pill `L'ESSENTIEL` (orange/primary)
+- Aucune erreur réseau ni 4xx visible dans les logs.
+- La notif locale est bien planifiée (vérifiable via Logcat ou `flutter logs`).
+- Le dashboard affiche le thème, topics, sources, fréquence et un countdown vers `next_scheduled_at`.
+- Le détail livraison montre des clusters réels (ou fallback déterministe si `MISTRAL_API_KEY` absent localement, sans badge visible).
 
-### Scénario 4 : Badge absent quand single-source
-**Parcours** :
-1. Ouvrir un digest dont le rang 1 a `is_une=true` mais `source_count=1`
-2. Observer
-**Résultat attendu** :
-- Aucun badge « À LA UNE » affiché — le sujet rang 1 est rendu comme un
-  sujet ordinaire.
+### Scénario 2 : Veille déjà configurée — redirect dashboard
 
-### Scénario 5 : Modal d'activation — opt-in indépendant (CRITIQUE)
 **Parcours** :
-1. Première ouverture de l'app (état: `modal_seen=false`)
-2. Modal d'activation s'affiche
-3. **Sans toucher au toggle Bonnes nouvelles**, choisir préset + horaire
-   du push principal, taper `Activer ton Facteur`
-4. Aller dans Profil > Notifications
-**Résultat attendu** :
-- Push principal activé (préset + horaire enregistrés)
-- Toggle « Bonnes nouvelles du jour » reste **OFF** dans Profil
-- AUCUNE notification Bonnes nouvelles planifiée
+1. Avoir une veille active (cf. Scénario 1).
+2. Tap depuis settings le bouton « Configurer ma veille » (ou navigate manuel `/veille/config`).
+3. Observer.
 
-### Scénario 6 : Modal — opt-in Bonnes nouvelles
-**Parcours** :
-1. Réinitialiser, ouvrir la modal
-2. Activer le switch « 🌱 Bonnes nouvelles du jour », choisir un horaire
-   (par défaut soir)
-3. Taper `Activer ton Facteur`
 **Résultat attendu** :
-- Les 2 canaux sont activés (digest principal + bonnes nouvelles)
-- L'horaire bonnes nouvelles est indépendant de l'horaire principal
+- L'utilisateur voit le dashboard `/veille/dashboard`, pas le flow 4-steps (Step1).
+- Si l'utilisateur tap « Modifier ma veille » sur le dashboard → flow 4-steps relancé avec le state preset (thème, topics, sources cochés).
 
-### Scénario 7 : Profil > Notifications — découvrabilité
-**Parcours** :
-1. Utilisateur a activé uniquement le push principal au scénario 5
-2. Quelques jours plus tard, va dans Profil > Notifications
-3. Observer
-**Résultat attendu** :
-- Section « 🌱 Bonnes nouvelles du jour » visible avec son toggle
-  (même si le push principal est ON)
-- Tap toggle → demande de permission OS si nécessaire, puis
-  `TimeSlotSelector` apparaît
+### Scénario 3 : Pause & Reprendre
 
-### Scénario 8 : Désactivation Bonnes nouvelles
 **Parcours** :
-1. Bonnes nouvelles activées avec horaire `evening`
-2. Profil > Notifications → toggle Bonnes nouvelles OFF
-**Résultat attendu** :
-- Notification Bonnes nouvelles annulée
-- Push principal et community pick non impactés
+1. Dashboard avec veille active.
+2. Tap « Mettre en pause ».
+3. Observer.
 
-### Scénario 9 : Copy mes intérêts (mode serein)
-**Parcours** :
-1. Activer le mode serein
-2. Aller sur Mes Intérêts
 **Résultat attendu** :
-- Titre `Vos bonnes nouvelles` (au lieu de `Votre mode serein`)
-- Sous-titre `Choisissez ce qui reste dans vos bonnes nouvelles…`
-  (sans mention « bulle apaisée »)
+- PATCH `/api/veille/config` → 200, `status="paused"`.
+- Le bouton devient « Reprendre ».
+- Le countdown disparaît (ou affiche « En pause »).
+- La notif locale précédemment planifiée est cancelled (vérifiable via debug print).
+- Tap « Reprendre » → PATCH status="active" + reschedule notif.
+
+### Scénario 4 : Suppression
+
+**Parcours** :
+1. Dashboard avec veille active.
+2. Tap « Supprimer ma veille » → confirm dialog → confirmer.
+3. Observer.
+
+**Résultat attendu** :
+- DELETE `/api/veille/config` → 204.
+- L'utilisateur est redirigé vers `/feed` (ou la route de fallback).
+- Re-ouvrir `/veille/config` → flow 4-steps de nouveau (état GET /config = 404).
+- Notif locale cancelled.
+
+### Scénario 5 : Détail livraison failed
+
+**Parcours** :
+1. Forcer une livraison `failed` (peut nécessiter un seed DB côté QA — alternative : mocker côté UI test).
+2. Ouvrir l'historique → tap la livraison.
+
+**Résultat attendu** :
+- Le détail affiche un état d'erreur sympa (« La livraison a échoué — le scanner réessaiera bientôt »).
+- Pas de crash, pas d'erreur dans les logs front.
+
+### Scénario 6 : Erreur réseau pendant suggestions
+
+**Parcours** :
+1. Étape 2 (suggestions topics) : couper le wifi.
+2. Re-tenter le mount (back puis re-forward).
+
+**Résultat attendu** :
+- Toast `« Suggestions indisponibles, conserve ta sélection »`.
+- La grille reste fonctionnelle avec mock data (pas de crash).
+- Bouton « Réessayer » disponible.
+
+### Scénario 7 : Tap notification locale
+
+**Parcours** :
+1. Avoir une veille active avec notif schedulée.
+2. (Debug Android) déclencher la notif manuellement OU avancer la date système.
+3. Tap la notif depuis l'écran de verrouillage.
+
+**Résultat attendu** :
+- L'app s'ouvre sur `/veille/dashboard` (deeplink `io.supabase.facteur://veille/dashboard`).
+- Si `target_date` du jour a une livraison `succeeded`, le bouton « Historique » l'affiche en haut.
 
 ## Critères d'acceptation
 
-- [ ] Toutes occurrences `LECTURE APAISÉE` / `Une lecture apaisée` ont
-      disparu de l'UI mobile (sauf comments internes ou la copy filter
-      bar « Rester serein » du feed, hors scope).
-- [ ] Pill `BONNES NOUVELLES` rendue dans la carte feed et dans le hero
-      digest mode serein.
-- [ ] `DigestTopic.sourceCount` lit la valeur API `source_count` (pas
-      `articles.length`).
-- [ ] Badge « À LA UNE · N sources » affiché si et seulement si
-      `topic.isUne == true && topic.sourceCount >= 2`.
-- [ ] Toggle « Bonnes nouvelles » présent dans la modal d'activation +
-      l'écran Profil > Notifications.
-- [ ] Activer le push principal n'active jamais le canal Bonnes
-      nouvelles (et inversement).
-- [ ] `flutter test` sur les fichiers touchés passe : digest_entry_card,
-      a_la_une_badge, push_notification_service_copy.
-- [ ] `flutter analyze` ne crée pas de NOUVEAU error / warning par
-      rapport à la baseline (info-level OK).
+- [ ] Submit étape 4 fait un vrai POST `/api/veille/config` (plus de SnackBar mock).
+- [ ] Étapes 2 et 3 appellent les endpoints suggestions avec spinner bloquant.
+- [ ] Toute config existante (GET 200) déclenche un redirect vers `/veille/dashboard` au lieu du flow.
+- [ ] Dashboard rend thème, topics, sources, fréquence, countdown.
+- [ ] Boutons dashboard (Modifier/Pause/Supprimer/Voir historique) tous fonctionnels.
+- [ ] Historique liste 20 livraisons max, empty state si 0.
+- [ ] Détail livraison rend les clusters avec `why_it_matters` + articles.
+- [ ] Tap article ouvre InAppWebView (pas le navigateur externe).
+- [ ] Notif locale planifiée au submit, cancellée au pause/delete, re-schedulée au PATCH frequency.
+- [ ] Deeplink `io.supabase.facteur://veille/dashboard` mappé.
+- [ ] `flutter test` vert sur les fichiers touchés/créés.
+- [ ] `flutter analyze` ne crée pas de NOUVEAU error/warning.
 
 ## Zones de risque
 
-1. **Modèle `DigestTopic.sourceCount` : changement de getter → champ
-   API.** Tous les endroits qui construisaient un `DigestTopic` dans des
-   tests sans passer `sourceCount` recevront `0` par défaut (au lieu de
-   `articles.length`). Vérifier qu'aucun test fixture ne dépend
-   implicitement de l'ancien comportement.
-2. **Couplage opt-in (CRITIQUE).** Toute régression qui pré-coche le
-   toggle Bonnes nouvelles automatiquement (par ex. en lisant
-   `serein_enabled` du provider) viole la règle. Ne PAS modifier
-   `_GoodNewsSection` pour qu'elle écoute autre chose que son propre
-   état.
-3. **Push notification permission.** Sur Android, `setGoodNewsEnabled`
-   re-demande la permission OS. Si le user a déjà accordé pour le push
-   principal, le système devrait répondre immédiatement sans re-prompt.
-   À vérifier sur device réel.
-4. **Persistance Hive.** Les nouvelles clés `notif_good_news_enabled`
-   et `notif_good_news_time_slot` n'existent pas pour les users
-   existants — fallback `false` / `evening` côté `_loadFromHive`.
-5. **Backend non touché** — l'API expose déjà `is_une` + `source_count`
-   sur `DigestTopic`. Si l'un des deux disparaît côté pipeline (par ex.
-   refactor), le badge ne s'affichera jamais.
+1. **UUIDs vs slugs mock** — le mock `veille_mock_data.dart` utilise des slugs (`s-lm`, `t-eval`) qui n'existent pas en DB. Le wiring API n'envoie QUE les UUIDs renvoyés par les endpoints suggestions. Vérifier qu'AUCUNE source mock-only (sans `apiSourceId`) ne fuit dans le POST /config (sinon 400 ou faux source ingéré).
+2. **Notif locale & timezone** — utiliser `tz.TZDateTime.from(when, tz.local)` (pattern `scheduleDailyDigestNotification`). Sinon DST Paris peut décaler la notif d'1h.
+3. **Retries cascadés** — la règle « max 1 sur 5xx, 0 sur 4xx » est CRITIQUE. Pas de retry cascadé type `digest_provider._loadBothDigests` (mémoire `bug-infinite-load-requests` : pool DB déjà saturé en prod).
+4. **Mistral KO côté backend** — `why_it_matters` reçoit alors un fallback déterministe (« 4 articles de 2 sources couvrent ce sujet »). À considérer comme valide, pas un état d'erreur. Pas de badge.
+5. **Multi-device** — la notif est purement locale. Si l'utilisateur configure depuis device A, device B ne recevra pas la notif. Documenté hors scope V1.
+6. **`generation_state == "running"`** — au moment où la notif tombe, le scanner peut encore tourner. Le détail doit gérer ce cas (afficher un loader « génération en cours, refresh dans X s »).
+7. **InAppWebView** — vérifier qu'on réutilise le même helper que le digest (`Grep "InAppWebView"` côté `features/digest/` ou `features/feed/`). Sinon implémenter un fallback `url_launcher` propre.
 
 ## Dépendances
 
-- Endpoint API : `GET /api/digest/both` (ne change pas — déjà expose
-  `is_une` + `source_count` sur les topics serein).
+- Endpoints API (déjà livrés en 18.1/18.2) :
+  - `GET /api/veille/config`
+  - `POST /api/veille/config`
+  - `PATCH /api/veille/config`
+  - `DELETE /api/veille/config`
+  - `POST /api/veille/suggestions/topics`
+  - `POST /api/veille/suggestions/sources`
+  - `GET /api/veille/deliveries?limit=20`
+  - `GET /api/veille/deliveries/{id}`
+  - `POST /api/veille/deliveries/generate` (debug, dev only)
 - Pas de migration backend.
-- Pas de sender FCM/APNS (push 100% local via
-  `flutter_local_notifications`).
+- Pas de FCM/APNS (push 100% local via `flutter_local_notifications`).
+- Scanner backend `*/30 min` (déjà schedulé via APScheduler).
