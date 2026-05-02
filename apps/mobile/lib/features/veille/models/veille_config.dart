@@ -9,12 +9,14 @@ class VeilleTheme {
   final String label;
   final String meta;
   final String iconKey;
+  final String? emoji;
   final bool hot;
   const VeilleTheme({
     required this.id,
     required this.label,
     required this.meta,
     required this.iconKey,
+    this.emoji,
     this.hot = false,
   });
 }

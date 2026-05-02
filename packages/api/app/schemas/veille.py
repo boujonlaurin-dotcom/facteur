@@ -8,6 +8,24 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# Slugs autorisés pour `theme_id` dans les requêtes de suggestion. Doit
+# rester aligné avec la contrainte SQL `ck_source_theme_valid` (cf.
+# alembic/versions/*_add_*_to_constraint.py) ET avec la liste des thèmes
+# Facteur côté front (`kVeilleFacteurThemes`) + onboarding
+# (`user_service.py:170`). Un slug hors liste → 422 immédiat.
+VeilleThemeSlug = Literal[
+    "tech",
+    "society",
+    "environment",
+    "economy",
+    "politics",
+    "culture",
+    "science",
+    "international",
+    "sport",
+]
+
+
 # ─── Sub-objects ─────────────────────────────────────────────────────────────
 
 
@@ -125,7 +143,7 @@ class VeilleTopicSuggestion(BaseModel):
 
 
 class VeilleSuggestTopicsRequest(BaseModel):
-    theme_id: str = Field(min_length=1, max_length=50)
+    theme_id: VeilleThemeSlug
     theme_label: str = Field(min_length=1, max_length=120)
     selected_topic_ids: list[str] = Field(default_factory=list)
     exclude_topic_ids: list[str] = Field(default_factory=list)
@@ -146,7 +164,7 @@ class VeilleSourceSuggestionsResponse(BaseModel):
 
 
 class VeilleSuggestSourcesRequest(BaseModel):
-    theme_id: str = Field(min_length=1, max_length=50)
+    theme_id: VeilleThemeSlug
     topic_labels: list[str] = Field(default_factory=list)
     exclude_source_ids: list[UUID] = Field(default_factory=list)
 

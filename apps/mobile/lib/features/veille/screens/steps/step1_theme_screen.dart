@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-import '../../data/veille_mock_data.dart';
+import '../../models/veille_config.dart';
 import '../../providers/veille_config_provider.dart';
+import '../../providers/veille_preset_topics_provider.dart';
+import '../../providers/veille_themes_provider.dart';
 import '../../widgets/veille_widgets.dart';
 
 class Step1ThemeScreen extends ConsumerStatefulWidget {
@@ -15,34 +18,35 @@ class Step1ThemeScreen extends ConsumerStatefulWidget {
 }
 
 class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
-  final GlobalKey _preciseKey = GlobalKey();
-  bool _didReveal = false;
+  final GlobalKey _q2BodyKey = GlobalKey();
+  int _openSection = 1;
+  bool _didAutoOpenQ2 = false;
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(veilleConfigProvider);
     final notifier = ref.read(veilleConfigProvider.notifier);
     final hasTheme = state.selectedTheme != null;
-    final selectedThemeLabel = VeilleMockData.themes
-        .firstWhere(
-          (t) => t.id == state.selectedTheme,
-          orElse: () => VeilleMockData.themes.first,
-        )
-        .label;
+    final selectedThemeLabel = state.selectedTheme == null
+        ? ''
+        : veilleThemeLabelForSlug(state.selectedTheme!);
+
+    final themesAsync = ref.watch(veilleThemesProvider);
 
     ref.listen<String?>(
       veilleConfigProvider.select((s) => s.selectedTheme),
       (prev, next) {
-        if (!_didReveal && prev == null && next != null) {
-          _didReveal = true;
+        if (!_didAutoOpenQ2 && prev == null && next != null) {
+          _didAutoOpenQ2 = true;
+          setState(() => _openSection = 2);
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            final ctx = _preciseKey.currentContext;
+            final ctx = _q2BodyKey.currentContext;
             if (ctx != null) {
               Scrollable.ensureVisible(
                 ctx,
-                duration: const Duration(milliseconds: 350),
+                duration: const Duration(milliseconds: 380),
                 curve: Curves.easeOutCubic,
-                alignment: 0.1,
+                alignment: 0.05,
               );
             }
           });
@@ -63,63 +67,87 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const VeilleFlowH1('Sur quel sujet veux-tu une veille ?'),
-                const SizedBox(height: 22),
-                _ThemeGrid(
-                  selected: state.selectedTheme,
-                  onSelect: notifier.selectTheme,
+                VeilleToggleSection(
+                  index: 1,
+                  title: 'Sur quel sujet veux-tu une veille ?',
+                  subtitleWhenCollapsed:
+                      hasTheme ? selectedThemeLabel.toUpperCase() : null,
+                  expanded: _openSection == 1,
+                  onToggle: () => setState(() => _openSection = 1),
+                  child: themesAsync.when(
+                    loading: () => const _ThemeGridSkeleton(),
+                    error: (_, __) => _ThemeGrid(
+                      themes: const [],
+                      selected: state.selectedTheme,
+                      onSelect: notifier.selectTheme,
+                      errorState: true,
+                    ),
+                    data: (themes) => _ThemeGrid(
+                      themes: themes,
+                      selected: state.selectedTheme,
+                      onSelect: notifier.selectTheme,
+                    ),
+                  ),
                 ),
-                ClipRect(
-                  child: AnimatedAlign(
-                    alignment: Alignment.topCenter,
-                    duration: const Duration(milliseconds: 320),
-                    curve: Curves.easeOutCubic,
-                    heightFactor: hasTheme ? 1 : 0,
-                    child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 280),
-                      opacity: hasTheme ? 1 : 0,
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 24),
-                        child: Column(
-                          key: _preciseKey,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const VeilleBlockLabel(
-                              'Précise ce qui t\'intéresse',
-                            ),
-                            VeilleHelpHint(
-                              spans: [
-                                const TextSpan(
-                                  text: 'Préchargé depuis tes lectures sur ',
-                                ),
-                                TextSpan(
-                                  text: '« $selectedThemeLabel »',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const TextSpan(text: '.'),
-                              ],
-                            ),
-                            for (int i = 0;
-                                i < VeilleMockData.presetTopics.length;
-                                i++) ...[
-                              if (i > 0) const SizedBox(height: 6),
-                              CheckRow(
-                                label: VeilleMockData.presetTopics[i].label,
-                                reason: VeilleMockData.presetTopics[i].reason,
-                                selected: state.selectedTopics.contains(
-                                  VeilleMockData.presetTopics[i].id,
-                                ),
-                                onTap: () => notifier.toggleTopic(
-                                  VeilleMockData.presetTopics[i].id,
-                                ),
-                              ),
-                            ],
-                          ],
+                const SizedBox(height: 18),
+                VeilleToggleSection(
+                  index: 2,
+                  title: 'Précise ce qui t\'intéresse',
+                  expanded: _openSection == 2 && hasTheme,
+                  enabled: hasTheme,
+                  onToggle: () {
+                    if (!hasTheme) return;
+                    setState(() => _openSection = 2);
+                  },
+                  child: Column(
+                    key: _q2BodyKey,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Indique les sujets précis sur lesquels tu aimerais '
+                        'qu\'on focalise ta veille. Ça permet à Facteur '
+                        'd\'orienter la recherche sur les meilleures sources '
+                        'et articles, et de t\'aider à comprendre les angles '
+                        'qui t\'intéressent vraiment sur le sujet.',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13,
+                          height: 1.45,
+                          color: const Color(0xFF5D5B5A),
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 16),
+                      VeilleHelpHint(
+                        spans: [
+                          const TextSpan(
+                            text: 'Préchargé depuis tes lectures sur ',
+                          ),
+                          TextSpan(
+                            text: '« $selectedThemeLabel »',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const TextSpan(text: '.'),
+                        ],
+                      ),
+                      if (state.selectedTheme != null)
+                        _PresetTopicsList(themeSlug: state.selectedTheme!),
+                      const SizedBox(height: 10),
+                      AddTopicCard(
+                        label: 'Ajouter un sujet',
+                        reason: 'Décris un angle précis qui te manque',
+                        onTap: () => _openAddTopicSheet(
+                          context,
+                          (label) => notifier.addCustomTopic(label),
+                        ),
+                      ),
+                      _CustomTopicsList(
+                        customTopics: state.customTopics,
+                        selected: state.selectedTopics,
+                        onToggle: notifier.toggleTopic,
+                        onRemove: notifier.removeCustomTopic,
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -145,13 +173,30 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
 }
 
 class _ThemeGrid extends StatelessWidget {
+  final List<VeilleTheme> themes;
   final String? selected;
   final ValueChanged<String> onSelect;
-  const _ThemeGrid({required this.selected, required this.onSelect});
+  final bool errorState;
+  const _ThemeGrid({
+    required this.themes,
+    required this.selected,
+    required this.onSelect,
+    this.errorState = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    const themes = VeilleMockData.themes;
+    if (themes.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Text(
+          errorState
+              ? 'Impossible de charger tes thèmes. Vérifie ta connexion et reviens.'
+              : 'Aucun thème disponible.',
+          style: const TextStyle(color: Color(0xFF8B7E63), fontSize: 13),
+        ),
+      );
+    }
     return GridView.count(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -169,6 +214,227 @@ class _ThemeGrid extends StatelessWidget {
       ],
     );
   }
+}
+
+class _ThemeGridSkeleton extends StatelessWidget {
+  const _ThemeGridSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      mainAxisSpacing: 8,
+      crossAxisSpacing: 8,
+      childAspectRatio: 1.55,
+      children: List.generate(
+        6,
+        (_) => DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF5F0E5),
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PresetTopicsList extends ConsumerWidget {
+  final String themeSlug;
+  const _PresetTopicsList({required this.themeSlug});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(veilleConfigProvider);
+    final notifier = ref.read(veilleConfigProvider.notifier);
+    final asyncTopics = ref.watch(veillePresetTopicsProvider(themeSlug));
+
+    // Hydrate `topicLabels` pour le payload backend — appliqué après le
+    // build pour éviter le "ref.read inside build" warning. Idempotent.
+    asyncTopics.whenData((topics) {
+      if (topics.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          notifier.registerPresetTopicLabels(topics);
+        });
+      }
+    });
+
+    return asyncTopics.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (_, __) => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Text(
+          'Impossible de charger les sujets préchargés. Tu peux quand même ajouter les tiens ci-dessous.',
+          style: TextStyle(fontSize: 12, color: Color(0xFF8B7E63)),
+        ),
+      ),
+      data: (topics) {
+        if (topics.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'Pas encore d\'angles préchargés pour ce thème — ajoute-en un ci-dessous.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF8B7E63)),
+            ),
+          );
+        }
+        return Column(
+          children: [
+            for (int i = 0; i < topics.length; i++) ...[
+              if (i > 0) const SizedBox(height: 6),
+              CheckRow(
+                label: topics[i].label,
+                reason: topics[i].reason,
+                selected: state.selectedTopics.contains(topics[i].id),
+                onTap: () => notifier.toggleTopic(topics[i].id),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _CustomTopicsList extends StatelessWidget {
+  final List<VeilleTopic> customTopics;
+  final Set<String> selected;
+  final ValueChanged<String> onToggle;
+  final ValueChanged<String> onRemove;
+  const _CustomTopicsList({
+    required this.customTopics,
+    required this.selected,
+    required this.onToggle,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (customTopics.isEmpty) return const SizedBox.shrink();
+    return Column(
+      children: [
+        for (int i = 0; i < customTopics.length; i++) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: CheckRow(
+                  label: customTopics[i].label,
+                  reason: customTopics[i].reason,
+                  selected: selected.contains(customTopics[i].id),
+                  onTap: () => onToggle(customTopics[i].id),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Retirer ce sujet',
+                onPressed: () => onRemove(customTopics[i].id),
+                icon: Icon(
+                  PhosphorIcons.x(),
+                  size: 16,
+                  color: const Color(0xFF8B7E63),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+Future<void> _openAddTopicSheet(
+  BuildContext context,
+  ValueChanged<String> onAdd,
+) async {
+  final controller = TextEditingController();
+  final formKey = GlobalKey<FormState>();
+
+  final result = await showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+    ),
+    builder: (ctx) {
+      final viewInsets = MediaQuery.of(ctx).viewInsets;
+      return Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          16,
+          20,
+          16 + viewInsets.bottom,
+        ),
+        child: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Ajouter un sujet',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Ex : « robotique molle », « accessibilité numérique »',
+                style: TextStyle(fontSize: 12, color: Color(0xFF8B7E63)),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: controller,
+                autofocus: true,
+                textCapitalization: TextCapitalization.sentences,
+                maxLength: 60,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Ton sujet',
+                ),
+                validator: (v) {
+                  final t = (v ?? '').trim();
+                  if (t.isEmpty) return 'Renseigne un sujet';
+                  if (t.length < 2) return 'Trop court';
+                  return null;
+                },
+                onFieldSubmitted: (_) {
+                  if (formKey.currentState?.validate() ?? false) {
+                    Navigator.of(ctx).pop(controller.text.trim());
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Annuler'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () {
+                      if (formKey.currentState?.validate() ?? false) {
+                        Navigator.of(ctx).pop(controller.text.trim());
+                      }
+                    },
+                    child: const Text('Ajouter'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+
+  controller.dispose();
+  if (result != null && result.isNotEmpty) onAdd(result);
 }
 
 class _Footer extends StatelessWidget {

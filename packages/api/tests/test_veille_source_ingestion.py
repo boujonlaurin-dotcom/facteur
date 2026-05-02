@@ -11,7 +11,6 @@ Couvre :
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
-import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
@@ -42,7 +41,7 @@ async def followed_source(db_session, test_user):
         url="https://cafepedago.example.com",
         feed_url=f"https://cafepedago.example.com/feed-{uuid4()}.xml",
         type=SourceType.ARTICLE,
-        theme="education",
+        theme="science",
         is_active=True,
         is_curated=True,
     )
@@ -94,7 +93,7 @@ def _detect_response(name: str, feed_url: str, source_type: str = "article"):
         name=name,
         description=f"{name} — média indé",
         logo_url=None,
-        theme="education",
+        theme="science",
         preview={"item_count": 0, "latest_titles": []},
         bias_stance="unknown",
         reliability_score="unknown",
@@ -117,7 +116,7 @@ class TestFollowed:
         result = await suggester.suggest_sources(
             session=db_session,
             user_id=test_user.user_id,
-            theme_id="education",
+            theme_id="science",
             topic_labels=["evaluations"],
         )
 
@@ -125,9 +124,7 @@ class TestFollowed:
         assert followed_source.id in followed_ids
         assert offtheme_followed_source.id not in followed_ids
 
-    async def test_excludes_specified(
-        self, db_session, test_user, followed_source
-    ):
+    async def test_excludes_specified(self, db_session, test_user, followed_source):
         llm = AsyncMock()
         llm.is_ready = False
         suggester = SourceSuggester(llm=llm)
@@ -135,7 +132,7 @@ class TestFollowed:
         result = await suggester.suggest_sources(
             session=db_session,
             user_id=test_user.user_id,
-            theme_id="education",
+            theme_id="science",
             topic_labels=[],
             excluded_source_ids=[followed_source.id],
         )
@@ -165,15 +162,13 @@ class TestNicheIngestion:
         with patch(
             "app.services.veille.source_suggester.SourceService.detect_source",
             new=AsyncMock(
-                return_value=_detect_response(
-                    "Mediapart Education", new_feed
-                )
+                return_value=_detect_response("Mediapart Education", new_feed)
             ),
         ):
             result = await suggester.suggest_sources(
                 session=db_session,
                 user_id=test_user.user_id,
-                theme_id="education",
+                theme_id="science",
                 topic_labels=["politiques"],
             )
 
@@ -182,29 +177,35 @@ class TestNicheIngestion:
 
         # Source row créée avec is_curated=False.
         ingested = (
-            await db_session.execute(
-                select(Source).where(Source.feed_url == new_feed)
+            (
+                await db_session.execute(
+                    select(Source).where(Source.feed_url == new_feed)
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         assert ingested is not None
         assert ingested.is_curated is False
         assert ingested.is_active is True
-        assert ingested.theme == "education"
+        assert ingested.theme == "science"
 
         # Pas de UserSource créée (c'est une niche, pas un follow).
         link = (
-            await db_session.execute(
-                select(UserSource).where(
-                    UserSource.user_id == test_user.user_id,
-                    UserSource.source_id == ingested.id,
+            (
+                await db_session.execute(
+                    select(UserSource).where(
+                        UserSource.user_id == test_user.user_id,
+                        UserSource.source_id == ingested.id,
+                    )
                 )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         assert link is None
 
-    async def test_reuse_existing_source(
-        self, db_session, test_user, followed_source
-    ):
+    async def test_reuse_existing_source(self, db_session, test_user, followed_source):
         """Si le feed_url existe déjà → on renvoie la row existante (pas de doublon)."""
         llm = AsyncMock()
         llm.is_ready = True
@@ -232,7 +233,7 @@ class TestNicheIngestion:
             result = await suggester.suggest_sources(
                 session=db_session,
                 user_id=test_user.user_id,
-                theme_id="education",
+                theme_id="science",
                 topic_labels=[],
             )
 
@@ -242,19 +243,70 @@ class TestNicheIngestion:
         # éviter le doublon ; le service fait confiance à cette liste.
         # On vérifie ici qu'AUCUNE nouvelle row Source n'a été créée.
         all_with_feed = (
-            await db_session.execute(
-                select(Source).where(Source.feed_url == followed_source.feed_url)
+            (
+                await db_session.execute(
+                    select(Source).where(Source.feed_url == followed_source.feed_url)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(list(all_with_feed)) == 1
         # Et que la niche pointe sur la row existante.
         assert result.niche[0].source_id == followed_source.id
 
 
+class TestThemeGuard:
+    async def test_invalid_theme_skips_ingest(self, db_session, test_user):
+        """`_hydrate_or_ingest` doit lever ValueError avant l'INSERT si le
+        theme_id viole `ck_source_theme_valid`. Sans ce garde-fou, l'INSERT
+        empoisonne la session (PendingRollbackError sur tout commit suivant).
+        """
+        llm = AsyncMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(
+            return_value={
+                "sources": [
+                    {
+                        "name": "Climat Info",
+                        "url": "https://climat.example.com",
+                        "why": "Spécialisé climat",
+                    }
+                ]
+            }
+        )
+        suggester = SourceSuggester(llm=llm)
+
+        new_feed = "https://climat.example.com/feed.xml"
+        with patch(
+            "app.services.veille.source_suggester.SourceService.detect_source",
+            new=AsyncMock(return_value=_detect_response("Climat Info", new_feed)),
+        ):
+            result = await suggester.suggest_sources(
+                session=db_session,
+                user_id=test_user.user_id,
+                theme_id="climat",  # legacy slug, hors contrainte
+                topic_labels=[],
+            )
+
+        # Le candidat doit être skippé (try/except dans _niche), pas crasher
+        # toute la requête. La niche reste vide et aucune row Source n'est
+        # créée avec theme='climat'.
+        assert result.niche == []
+        leftover = (
+            (
+                await db_session.execute(
+                    select(Source).where(Source.feed_url == new_feed)
+                )
+            )
+            .scalars()
+            .first()
+        )
+        assert leftover is None
+
+
 class TestFallback:
-    async def test_no_llm_returns_curated_same_theme(
-        self, db_session, test_user
-    ):
+    async def test_no_llm_returns_curated_same_theme(self, db_session, test_user):
         # Crée 6 sources curées thème education ; le fallback en renvoie 5 max.
         for i in range(6):
             db_session.add(
@@ -264,7 +316,7 @@ class TestFallback:
                     url=f"https://edu{i}.example.com",
                     feed_url=f"https://edu{i}.example.com/feed-{uuid4()}.xml",
                     type=SourceType.ARTICLE,
-                    theme="education",
+                    theme="science",
                     is_active=True,
                     is_curated=True,
                 )
@@ -278,7 +330,7 @@ class TestFallback:
         result = await suggester.suggest_sources(
             session=db_session,
             user_id=test_user.user_id,
-            theme_id="education",
+            theme_id="science",
             topic_labels=[],
         )
 

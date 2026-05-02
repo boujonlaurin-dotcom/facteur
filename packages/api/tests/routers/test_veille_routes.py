@@ -7,7 +7,6 @@ LLM Mistral mocké via AsyncMock sur les singletons des suggesters.
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
@@ -22,7 +21,7 @@ from app.services.veille.source_suggester import (
     SourceSuggestionItem,
     SourceSuggestions,
 )
-from app.services.veille.topic_suggester import TopicSuggester, TopicSuggestion
+from app.services.veille.topic_suggester import TopicSuggester
 
 
 @pytest_asyncio.fixture
@@ -79,9 +78,7 @@ class TestConfigCRUD:
             resp = await ac.get("/api/veille/config")
         assert resp.status_code == 404
 
-    async def test_post_creates_config(
-        self, auth_user, curated_education_source
-    ):
+    async def test_post_creates_config(self, auth_user, curated_education_source):
         body = {
             "theme_id": "education",
             "theme_label": "Éducation",
@@ -164,9 +161,7 @@ class TestConfigCRUD:
         assert len(data["topics"]) == 1
         assert data["topics"][0]["topic_id"] == "t-neuro"
 
-    async def test_patch_updates_frequency(
-        self, auth_user, curated_education_source
-    ):
+    async def test_patch_updates_frequency(self, auth_user, curated_education_source):
         async with _client() as ac:
             await ac.post(
                 "/api/veille/config",
@@ -195,9 +190,7 @@ class TestConfigCRUD:
         data = resp.json()
         assert data["frequency"] == "monthly"
 
-    async def test_delete_archives(
-        self, auth_user, curated_education_source
-    ):
+    async def test_delete_archives(self, auth_user, curated_education_source):
         async with _client() as ac:
             await ac.post(
                 "/api/veille/config",
@@ -251,8 +244,8 @@ class TestSuggestions:
                 resp = await ac.post(
                     "/api/veille/suggestions/topics",
                     json={
-                        "theme_id": "education",
-                        "theme_label": "Éducation",
+                        "theme_id": "science",
+                        "theme_label": "Science",
                         "selected_topic_ids": ["t-eval"],
                     },
                 )
@@ -272,7 +265,11 @@ class TestSuggestions:
 
         class StubSuggester(SourceSuggester):
             async def suggest_sources(  # type: ignore[override]
-                self, session, user_id, theme_id, topic_labels,
+                self,
+                session,
+                user_id,
+                theme_id,
+                topic_labels,
                 excluded_source_ids=None,
             ):
                 return SourceSuggestions(
@@ -295,7 +292,7 @@ class TestSuggestions:
                 resp = await ac.post(
                     "/api/veille/suggestions/sources",
                     json={
-                        "theme_id": "education",
+                        "theme_id": "science",
                         "topic_labels": ["evaluations"],
                         "exclude_source_ids": [],
                     },
@@ -307,6 +304,32 @@ class TestSuggestions:
             assert data["niche"] == []
         finally:
             ss_module._source_suggester = original
+
+    async def test_sources_invalid_theme_returns_422(self, auth_user):
+        # Slug legacy / hors `ck_source_theme_valid` → 422 immédiat,
+        # plus jamais 500 (qui empoisonnerait la session SQLAlchemy).
+        async with _client() as ac:
+            resp = await ac.post(
+                "/api/veille/suggestions/sources",
+                json={
+                    "theme_id": "climat",
+                    "topic_labels": ["climat"],
+                    "exclude_source_ids": [],
+                },
+            )
+        assert resp.status_code == 422
+
+    async def test_topics_invalid_theme_returns_422(self, auth_user):
+        async with _client() as ac:
+            resp = await ac.post(
+                "/api/veille/suggestions/topics",
+                json={
+                    "theme_id": "climat",
+                    "theme_label": "Climat",
+                    "selected_topic_ids": [],
+                },
+            )
+        assert resp.status_code == 422
 
 
 class TestDeliveries:
