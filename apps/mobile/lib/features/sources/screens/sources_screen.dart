@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../shared/widgets/fab_nudge_bubble.dart';
 import '../../../shared/widgets/states/friendly_error_view.dart';
@@ -334,7 +335,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
           ),
           const SizedBox(width: 6),
           FloatingActionButton.extended(
-            onPressed: () => context.go('/settings/sources/add'),
+            onPressed: () => context.pushNamed(RouteNames.addSource),
             icon: Icon(PhosphorIcons.plus(PhosphorIconsStyle.bold)),
             label: const Text('Ajouter une source'),
             backgroundColor: colors.primary,
