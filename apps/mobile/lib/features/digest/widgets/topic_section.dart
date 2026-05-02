@@ -92,8 +92,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   PageController? _expandedPageController;
   int _expandedPage = 0;
 
-  bool get _effectiveExpanded =>
-      _isExpanded || (widget.editorialMode && widget.isSerene);
+  bool get _effectiveExpanded => _isExpanded;
 
   /// Content IDs whose images failed to load (detected at runtime).
   final Set<String> _collapsedImages = {};
@@ -948,7 +947,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   color: colors.success,
                 ),
               ),
-            if (_isExpanded && !widget.isSerene)
+            if (_isExpanded)
               GestureDetector(
                 onTap: () => setState(() => _isExpanded = false),
                 behavior: HitTestBehavior.opaque,

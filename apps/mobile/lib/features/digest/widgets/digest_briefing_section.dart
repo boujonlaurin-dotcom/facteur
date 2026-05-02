@@ -163,25 +163,30 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       height: 1.45,
       color: colors.textSecondary,
     );
-    // En serein éditorial, les dots sont rendus après QuoteBlock
-    // (cf. _buildEditorialLayout) — on les omet du haut.
-    final showDotsAtTop = widget.dailyGoal > 0 &&
-        !(widget.isSerein && widget.usesEditorial && _usesTopics);
+    final showDotsAtTop = widget.dailyGoal > 0;
+    final showQuoteAtTop = widget.isSerein &&
+        widget.usesEditorial &&
+        _usesTopics &&
+        widget.digest?.quote != null;
 
     return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 8),
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (!widget.isSerein)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
-              child: Text(
-                "L'Essentiel est une synthèse des sujets les plus couverts en France aujourd'hui. Facteur compare les points de vues, et t'amène vers des articles pour t'aider à prendre du recul sur l'actualité.",
-                style: introTextStyle,
-              ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+            child: Text(
+              widget.isSerein
+                  ? "Chaque matin, nous analysons l'actu pour en sortir les quelques nouvelles qui nous redonnent (un petit peu) foi en l'humanité et en l'avenir. Bonne lecture !"
+                  : "L'Essentiel est une synthèse des sujets les plus couverts en France aujourd'hui. Facteur compare les points de vues, et t'amène vers des articles pour t'aider à prendre du recul sur l'actualité.",
+              style: introTextStyle,
             ),
-          if (!widget.isSerein) const SizedBox(height: 16),
+          ),
+          const SizedBox(height: 16),
+          // Quote block (serein editorial only) — rendered above the counter
+          // so the gap counter→first-card matches Essentiel exactly (16px).
+          if (showQuoteAtTop) QuoteBlock(quote: widget.digest!.quote!),
           // Compact progress counter (after description, before topics)
           if (showDotsAtTop) ...[
             Padding(
@@ -287,22 +292,8 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     final isSerene = widget.isSerein;
     final sections = <Widget>[];
 
-    // Quote block first in serein mode — sets the tone for the reading.
-    // The dots gauge then sits between the quote and the first topic so the
-    // reader sees: citation → progression → topics.
-    if (isSerene && widget.digest?.quote != null) {
-      sections.add(QuoteBlock(quote: widget.digest!.quote!));
-      if (widget.dailyGoal > 0) {
-        sections.add(const SizedBox(height: 4));
-        sections.add(
-          Padding(
-            padding: const EdgeInsets.only(left: 14),
-            child: _buildCompactCounter(context.facteurColors),
-          ),
-        );
-        sections.add(const SizedBox(height: 16));
-      }
-    }
+    // Quote + counter for serein mode are rendered above this widget (in
+    // build()) so the spacing counter→first-topic matches Essentiel exactly.
 
     // Topics with intro text, editorial DigestCards, and transition text
     for (int i = 0; i < widget.topics!.length; i++) {

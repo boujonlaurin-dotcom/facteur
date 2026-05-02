@@ -26,7 +26,7 @@ class DigestHero extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return SizedBox(
-      height: 170,
+      height: 140,
       child: Stack(
         clipBehavior: Clip.hardEdge,
         children: [
@@ -38,14 +38,14 @@ class DigestHero extends StatelessWidget {
                 isSerein
                     ? 'assets/notifications/facteur_goodnews.png'
                     : 'assets/notifications/facteur_avatar.png',
-                height: 140,
+                height: 110,
                 fit: BoxFit.contain,
               ),
             ),
           ),
           // Pill identifiant le mode actif, en haut à gauche.
           Positioned(
-            top: 16,
+            top: 10,
             left: 16,
             child: isSerein
                 ? BonnesNouvellesPill(isDark: isDark)
@@ -54,8 +54,8 @@ class DigestHero extends StatelessWidget {
           // Titre + caption en bas à gauche.
           Positioned(
             left: 16,
-            right: 140,
-            bottom: 18,
+            right: 130,
+            bottom: 10,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -65,11 +65,11 @@ class DigestHero extends StatelessWidget {
                       ? 'Les bonnes nouvelles'
                       : "L'essentiel du jour",
                   style: FacteurTypography.serifTitle(colors.textPrimary)
-                      .copyWith(fontSize: 32, height: 1.1),
+                      .copyWith(fontSize: 28, height: 1.1),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 8),
                 Text(
                   '$articleCount articles · ${formatDigestDate(targetDate)}',
                   style:
