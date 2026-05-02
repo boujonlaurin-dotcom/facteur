@@ -245,7 +245,8 @@ def _source_to_response(
         score_independence=s.score_independence,
         score_rigor=s.score_rigor,
         score_ux=s.score_ux,
-        editorial_note=getattr(s, "editorial_note", None),
+        recommended_by=getattr(s, "recommended_by", None),
+        recommendation_reason=getattr(s, "recommendation_reason", None),
     )
 
 

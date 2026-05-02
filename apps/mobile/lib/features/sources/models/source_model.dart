@@ -32,7 +32,8 @@ class Source {
   final int followerCount;
   final double priorityMultiplier;
   final bool hasSubscription;
-  final String? editorialNote;
+  final String? recommendedBy;
+  final String? recommendationReason;
 
   Source({
     required this.id,
@@ -58,7 +59,8 @@ class Source {
     this.followerCount = 0,
     this.priorityMultiplier = 1.0,
     this.hasSubscription = false,
-    this.editorialNote,
+    this.recommendedBy,
+    this.recommendationReason,
   });
 
   Source copyWith({
@@ -85,7 +87,8 @@ class Source {
     int? followerCount,
     double? priorityMultiplier,
     bool? hasSubscription,
-    String? editorialNote,
+    String? recommendedBy,
+    String? recommendationReason,
   }) {
     return Source(
       id: id ?? this.id,
@@ -111,7 +114,8 @@ class Source {
       followerCount: followerCount ?? this.followerCount,
       priorityMultiplier: priorityMultiplier ?? this.priorityMultiplier,
       hasSubscription: hasSubscription ?? this.hasSubscription,
-      editorialNote: editorialNote ?? this.editorialNote,
+      recommendedBy: recommendedBy ?? this.recommendedBy,
+      recommendationReason: recommendationReason ?? this.recommendationReason,
     );
   }
 
@@ -152,7 +156,8 @@ class Source {
         priorityMultiplier:
             (json['priority_multiplier'] as num?)?.toDouble() ?? 1.0,
         hasSubscription: (json['has_subscription'] as bool?) ?? false,
-        editorialNote: json['editorial_note'] as String?,
+        recommendedBy: json['recommended_by'] as String?,
+        recommendationReason: json['recommendation_reason'] as String?,
       );
     } catch (e) {
       debugPrint('Source.fromJson: [ERROR] Failed to parse: $e');
