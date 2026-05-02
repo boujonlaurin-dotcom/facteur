@@ -28,7 +28,13 @@ def _make_content_mock(title="Test article"):
     return c
 
 
-def _make_cluster_mock(cluster_id="c1", label="Test cluster", contents=None, source_ids=None, theme="politique"):
+def _make_cluster_mock(
+    cluster_id="c1",
+    label="Test cluster",
+    contents=None,
+    source_ids=None,
+    theme="politique",
+):
     cluster = MagicMock()
     cluster.cluster_id = cluster_id
     cluster.label = label
@@ -36,6 +42,7 @@ def _make_cluster_mock(cluster_id="c1", label="Test cluster", contents=None, sou
     cluster.source_ids = source_ids or {uuid4()}
     cluster.theme = theme
     cluster.is_trending = True
+    cluster.is_multi_source = True
     return cluster
 
 
@@ -60,10 +67,13 @@ def mock_dependencies():
         patch("app.services.editorial.pipeline.CurationService") as mock_curation_cls,
         patch("app.services.editorial.pipeline.DeepMatcher") as mock_deep_cls,
         patch("app.services.editorial.pipeline.ActuMatcher") as mock_actu_cls,
-        patch("app.services.editorial.pipeline.PerspectiveService") as mock_perspective_cls,
+        patch(
+            "app.services.editorial.pipeline.PerspectiveService"
+        ) as mock_perspective_cls,
     ):
         # Config
         from app.services.editorial.config import EditorialConfig, PipelineConfig
+
         config = EditorialConfig(
             pipeline=PipelineConfig(),
         )
@@ -123,21 +133,40 @@ class TestComputeGlobalContext:
             _make_cluster_mock("c4", "Education", theme="societe"),
             _make_cluster_mock("c5", "Tech", theme="technologie"),
         ]
-        with patch("app.services.editorial.pipeline.ImportanceDetector") as mock_detector_cls:
+        with patch(
+            "app.services.editorial.pipeline.ImportanceDetector"
+        ) as mock_detector_cls:
             mock_detector = MagicMock()
             mock_detector.build_topic_clusters.return_value = clusters
             mock_detector_cls.return_value = mock_detector
 
             # Mock curation: À la Une picks c1, LLM picks remaining 4
             mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
-                topic_id="c1", label="Retraites", selection_reason="Traité par 1 sources",
-                deep_angle="D", source_count=1,
+                topic_id="c1",
+                label="Retraites",
+                selection_reason="Traité par 1 sources",
+                deep_angle="D",
+                source_count=1,
             )
             remaining_topics = [
-                SelectedTopic(topic_id="c2", label="Inflation", selection_reason="R", deep_angle="D"),
-                SelectedTopic(topic_id="c3", label="Climat", selection_reason="R", deep_angle="D"),
-                SelectedTopic(topic_id="c4", label="Education", selection_reason="R", deep_angle="D"),
-                SelectedTopic(topic_id="c5", label="Tech", selection_reason="R", deep_angle="D"),
+                SelectedTopic(
+                    topic_id="c2",
+                    label="Inflation",
+                    selection_reason="R",
+                    deep_angle="D",
+                ),
+                SelectedTopic(
+                    topic_id="c3", label="Climat", selection_reason="R", deep_angle="D"
+                ),
+                SelectedTopic(
+                    topic_id="c4",
+                    label="Education",
+                    selection_reason="R",
+                    deep_angle="D",
+                ),
+                SelectedTopic(
+                    topic_id="c5", label="Tech", selection_reason="R", deep_angle="D"
+                ),
             ]
             mock_dependencies["curation"].select_topics.return_value = remaining_topics
 
@@ -156,10 +185,21 @@ class TestComputeGlobalContext:
                 "c5": None,
             }
 
-            # match_global is now called in global phase — pass subjects through
-            mock_dependencies["actu"].match_global.side_effect = (
-                lambda subjects, clusters, excluded_source_ids=None, excluded_content_ids=None: subjects
-            )
+            # match_global populate un actu_article pour chaque sujet (cas
+            # nominal). Sans ça, le trim post-matching de la pipeline drop
+            # les sujets sans actu ni deep — comportement attendu.
+            def _populate_actus(
+                subjects, clusters, excluded_source_ids=None, excluded_content_ids=None
+            ):
+                out = []
+                for s in subjects:
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies["actu"].match_global.side_effect = _populate_actus
 
             contents = [_make_content_mock() for _ in range(10)]
             result = await svc.compute_global_context(contents)
@@ -182,8 +222,12 @@ class TestComputeGlobalContext:
 
         cluster = _make_cluster_mock("c1", "Mort d'une célébrité")
         cluster.is_trending = False
+        # Singleton faits-divers : pas de fallback À la Une attendu.
+        cluster.is_multi_source = False
 
-        with patch("app.services.editorial.pipeline.ImportanceDetector") as mock_detector_cls:
+        with patch(
+            "app.services.editorial.pipeline.ImportanceDetector"
+        ) as mock_detector_cls:
             mock_detector = MagicMock()
             mock_detector.build_topic_clusters.return_value = [cluster]
             mock_detector_cls.return_value = mock_detector
@@ -198,9 +242,22 @@ class TestComputeGlobalContext:
                 )
             ]
             mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
-            mock_dependencies["actu"].match_global.side_effect = (
-                lambda subjects, clusters, excluded_source_ids=None, excluded_content_ids=None: subjects
-            )
+
+            # Sans actu ni deep, le sujet serait droppé par le trim de la
+            # pipeline ; on simule la présence d'une actu pour que le trim
+            # le conserve et qu'on puisse asserter `deep_angle is None`.
+            def _populate_actu(
+                subjects, clusters, excluded_source_ids=None, excluded_content_ids=None
+            ):
+                out = []
+                for s in subjects:
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies["actu"].match_global.side_effect = _populate_actu
 
             result = await svc.compute_global_context([_make_content_mock()])
 
@@ -214,7 +271,9 @@ class TestComputeGlobalContext:
         session = AsyncMock()
         svc = EditorialPipelineService(session)
 
-        with patch("app.services.editorial.pipeline.ImportanceDetector") as mock_detector_cls:
+        with patch(
+            "app.services.editorial.pipeline.ImportanceDetector"
+        ) as mock_detector_cls:
             mock_detector = MagicMock()
             mock_detector.build_topic_clusters.return_value = []
             mock_detector_cls.return_value = mock_detector
@@ -230,11 +289,15 @@ class TestComputeGlobalContext:
         session = AsyncMock()
         svc = EditorialPipelineService(session)
 
-        # Non-trending cluster — no À la Une fallback
+        # Singleton cluster (ni trending ni multi_source) — aucun fallback
+        # À la Une, donc si curation rend [], on retombe sur 0 sujet → None.
         cluster = _make_cluster_mock()
         cluster.is_trending = False
+        cluster.is_multi_source = False
 
-        with patch("app.services.editorial.pipeline.ImportanceDetector") as mock_detector_cls:
+        with patch(
+            "app.services.editorial.pipeline.ImportanceDetector"
+        ) as mock_detector_cls:
             mock_detector = MagicMock()
             mock_detector.build_topic_clusters.return_value = [cluster]
             mock_detector_cls.return_value = mock_detector
@@ -244,6 +307,197 @@ class TestComputeGlobalContext:
             result = await svc.compute_global_context([_make_content_mock()])
 
         assert result is None
+
+
+class TestALaUneFallback:
+    """Cf. bug-digest-pipeline-fallbacks.md C1 — quand aucun cluster ≥3 sources
+    n'existe (jours creux), l'À la Une retombe sur le top cluster ≥2 sources
+    pour préserver la promesse revue de presse."""
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_multi_source_when_no_trending(self, mock_dependencies):
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        session = AsyncMock()
+        svc = EditorialPipelineService(session)
+
+        # 3 clusters multi_source (≥2 sources), aucun trending (≥3).
+        clusters = []
+        for i in range(3):
+            c = _make_cluster_mock(f"c{i + 1}", f"Cluster {i + 1}")
+            c.is_trending = False
+            c.is_multi_source = True
+            clusters.append(c)
+
+        with patch(
+            "app.services.editorial.pipeline.ImportanceDetector"
+        ) as mock_detector_cls:
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = clusters
+            mock_detector_cls.return_value = mock_detector
+
+            mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
+                topic_id="c1",
+                label="Top fallback",
+                selection_reason="2 médias",
+                deep_angle="D",
+                source_count=2,
+            )
+            mock_dependencies["curation"].select_topics.return_value = [
+                SelectedTopic(
+                    topic_id="c2", label="C2", selection_reason="r", deep_angle="D"
+                ),
+                SelectedTopic(
+                    topic_id="c3", label="C3", selection_reason="r", deep_angle="D"
+                ),
+            ]
+            mock_dependencies["deep"].match_for_topics.return_value = {
+                "c1": None,
+                "c2": None,
+                "c3": None,
+            }
+
+            def _populate(
+                subjects, clusters, excluded_source_ids=None, excluded_content_ids=None
+            ):
+                out = []
+                for s in subjects:
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies["actu"].match_global.side_effect = _populate
+
+            result = await svc.compute_global_context([_make_content_mock()])
+
+        assert result is not None
+        # Rang 1 = À la Une de fallback (le top cluster multi_source).
+        assert result.subjects[0].is_a_la_une is True
+        assert result.subjects[0].topic_id == "c1"
+
+    @pytest.mark.asyncio
+    async def test_no_fallback_when_only_singletons(self, mock_dependencies):
+        """Si tous les clusters sont des singletons, aucun A la Une n'est
+        promu (ni trending ni multi_source). Comportement préservé."""
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        session = AsyncMock()
+        svc = EditorialPipelineService(session)
+
+        clusters = []
+        for i in range(3):
+            c = _make_cluster_mock(f"c{i + 1}", f"Singleton {i + 1}")
+            c.is_trending = False
+            c.is_multi_source = False
+            clusters.append(c)
+
+        with patch(
+            "app.services.editorial.pipeline.ImportanceDetector"
+        ) as mock_detector_cls:
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = clusters
+            mock_detector_cls.return_value = mock_detector
+
+            mock_dependencies["curation"].select_topics.return_value = [
+                SelectedTopic(
+                    topic_id="c1", label="C1", selection_reason="r", deep_angle="D"
+                ),
+            ]
+            mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
+
+            def _populate(
+                subjects, clusters, excluded_source_ids=None, excluded_content_ids=None
+            ):
+                out = []
+                for s in subjects:
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies["actu"].match_global.side_effect = _populate
+
+            result = await svc.compute_global_context([_make_content_mock()])
+
+        assert result is not None
+        assert all(s.is_a_la_une is False for s in result.subjects)
+
+
+class TestSubjectTrimAndRenumber:
+    """Cf. bug-digest-pipeline-fallbacks.md C2 — sujets sans actu/deep sont
+    droppés au pipeline (et non plus au persist) ; les rangs sont
+    renumérotés pour ne pas afficher 'Sujet 1, 3, 4'."""
+
+    @pytest.mark.asyncio
+    async def test_drops_empty_subject_and_renumbers(self, mock_dependencies):
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        session = AsyncMock()
+        svc = EditorialPipelineService(session)
+
+        clusters = [_make_cluster_mock(f"c{i}", f"Cluster {i}") for i in range(1, 7)]
+
+        with patch(
+            "app.services.editorial.pipeline.ImportanceDetector"
+        ) as mock_detector_cls:
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = clusters
+            mock_detector_cls.return_value = mock_detector
+
+            # À la Une: c1 ; curation oversample → c2..c7 (6 = 4 + buffer 2).
+            mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
+                topic_id="c1",
+                label="A la une",
+                selection_reason="r",
+                deep_angle="D",
+                source_count=3,
+            )
+            mock_dependencies["curation"].select_topics.return_value = [
+                SelectedTopic(
+                    topic_id=f"c{i}",
+                    label=f"C{i}",
+                    selection_reason="r",
+                    deep_angle="D",
+                )
+                for i in range(2, 8)  # c2..c7
+            ]
+            mock_dependencies["deep"].match_for_topics.return_value = {
+                f"c{i}": None for i in range(1, 8)
+            }
+
+            # match_global donne actu pour c1, c2, c3, c4 mais PAS c5 (pour
+            # tester le drop+remplacement par le buffer c6).
+            def _selective_actu(
+                subjects, clusters, excluded_source_ids=None, excluded_content_ids=None
+            ):
+                out = []
+                for s in subjects:
+                    if s.topic_id == "c5":
+                        out.append(s)  # vide volontairement
+                        continue
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies["actu"].match_global.side_effect = _selective_actu
+
+            result = await svc.compute_global_context([_make_content_mock()])
+
+        assert result is not None
+        # On garde 5 sujets : c1, c2, c3, c4, c6 (c5 droppé, c7 ignoré au-delà).
+        topic_ids = [s.topic_id for s in result.subjects]
+        assert "c5" not in topic_ids
+        assert len(result.subjects) == 5
+        # Rangs renumérotés sans trou : 1..5
+        assert [s.rank for s in result.subjects] == [1, 2, 3, 4, 5]
+        # is_a_la_une reste sur le rang 1 uniquement.
+        assert result.subjects[0].is_a_la_une is True
+        assert all(s.is_a_la_une is False for s in result.subjects[1:])
 
 
 class TestRunForUser:
@@ -325,7 +579,12 @@ class TestRunForUser:
 class _StubPerspective:
     """Stand-in matching the attributes the pipeline reads on a Perspective."""
 
-    def __init__(self, bias_stance: str, source_name: str = "Stub", source_domain: str = "stub.example"):
+    def __init__(
+        self,
+        bias_stance: str,
+        source_name: str = "Stub",
+        source_domain: str = "stub.example",
+    ):
         self.bias_stance = bias_stance
         self.source_name = source_name
         self.source_domain = source_domain
@@ -428,9 +687,21 @@ class TestPerspectiveCountAlignment:
             )
             mock_dependencies["curation"].select_topics.return_value = []
             mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
-            mock_dependencies["actu"].match_global.side_effect = (
-                lambda subjects, clusters, excluded_source_ids=None, excluded_content_ids=None: subjects
-            )
+
+            # Le trim post-matching de la pipeline drop les sujets sans
+            # actu ni deep ; on populate des actus pour préserver les sujets.
+            def _populate_actus(
+                subjects, clusters, excluded_source_ids=None, excluded_content_ids=None
+            ):
+                out = []
+                for s in subjects:
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies["actu"].match_global.side_effect = _populate_actus
 
             result = await svc.compute_global_context([older, newer])
 
@@ -488,7 +759,9 @@ class TestPerspectiveCountAlignment:
 
         # Every resolved bias is unknown (neither outlet in DOMAIN_BIAS_MAP,
         # no DB match). Also pass through Google News articles unknown.
-        mock_dependencies["perspective"].resolve_bias = AsyncMock(return_value="unknown")
+        mock_dependencies["perspective"].resolve_bias = AsyncMock(
+            return_value="unknown"
+        )
         mock_dependencies["perspective"].get_perspectives_hybrid = AsyncMock(
             return_value=([], [])
         )
@@ -525,9 +798,21 @@ class TestPerspectiveCountAlignment:
             )
             mock_dependencies["curation"].select_topics.return_value = []
             mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
-            mock_dependencies["actu"].match_global.side_effect = (
-                lambda subjects, clusters, excluded_source_ids=None, excluded_content_ids=None: subjects
-            )
+
+            # Le trim post-matching de la pipeline drop les sujets sans
+            # actu ni deep ; on populate des actus pour préserver les sujets.
+            def _populate_actus(
+                subjects, clusters, excluded_source_ids=None, excluded_content_ids=None
+            ):
+                out = []
+                for s in subjects:
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies["actu"].match_global.side_effect = _populate_actus
 
             result = await svc.compute_global_context([article_a, article_b])
 
