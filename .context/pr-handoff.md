@@ -1,27 +1,82 @@
-# PR2 — Lettres du Facteur (mobile data layer) · Story 19.1
+# PR — Story 18.3 « Ma veille » end-to-end (front wiring + historique + push notifs)
 
 ## Summary
 
-- Couche data Flutter pour les Lettres du Facteur : models (`Letter`, `LetterAction`, enums), `LettersRepository` (Dio sur `/api/letters`), `lettersProvider` (`AsyncNotifier` avec `refresh`, `silentRefresh`, `refreshLetterStatus`).
-- `ProfileAvatarButton` réécrit en `ConsumerWidget` : initiales du user (fallback `'F'`) + anneau de progression (`RingAvatar` CustomPainter, animation 400 ms `easeOutCubic`). L'anneau disparaît dès qu'aucune lettre n'est `active` — pas de FOMO.
-- Settings sheet gagne une entrée « Courrier » qui pousse `/lettres` (route placeholder `LettresPlaceholderScreen`, à remplacer en PR3 par l'écran complet).
+Phase E2E de la feature « Ma veille ». Le backend pipeline (18.1 + 18.2,
+PR #524 + #535) produit des `items[]` réels avec clusters + `why_it_matters`
+LLM. Côté front Flutter, le flow 4-steps était encore 100 % mock :
 
-## Test plan
+- `submit()` no-op à `apps/mobile/lib/features/veille/providers/veille_config_provider.dart:142` ;
+- aucun écran historique livraisons ni détail livraison ;
+- aucune notif planifiée à la livraison.
 
-- [x] `flutter test test/features/lettres/` — 14 tests verts (5 provider + 5 unit RingAvatar + 4 goldens).
-- [x] `flutter analyze lib/features/lettres lib/features/feed/widgets/profile_avatar_button.dart lib/config/routes.dart` — 0 issue (warnings préexistants hors scope).
-- [ ] Smoke test : login → feed → profile button affiche initiales + anneau (lettre L1 active après PR1).
-- [ ] Settings → tap « Courrier » → ouvre `/lettres` (placeholder).
-- [ ] Logout → profile button affiche `'F'` sans anneau.
+Cette PR ferme la boucle « configuration → livraison → consommation » sur
+l'app et planifie une notif locale (pas de FCM côté projet) pour rappeler
+au user que sa veille est tombée.
 
-## Décisions
+## What
 
-- **Statut par action calculé client-side** : `Letter.fromJson` dérive `LetterActionStatus` (done si `id ∈ completed_actions`, sinon `active` pour la 1ère non-complétée d'une lettre `active`, sinon `todo`). Le serveur ne renvoie que `completed_actions[]`.
-- **`letterNum` au lieu de `num`** : le champ `num` shadow le type Dart `num` dans `Letter.fromJson`. Côté JSON la clé reste `num`.
-- **Cap min 0.02** sur le progress : sinon dash invisible quand 0/N actions cochées.
-- **Pas de `GoogleFonts.dmSans` dans `RingAvatar`** : casse en environnement de test (HTTP fetch). Utilise `TextStyle(fontFamily: 'DMSans', …)` directement — la font est déjà déclarée dans `pubspec.yaml`.
-- **`.display()` ctor** sur `ProfileAvatarButton` conservé par prudence ; aucune utilisation externe trouvée — peut être supprimé en PR3 si confirmé.
+### Front wiring
+
+- `submit()` étape 4 → POST `/api/veille/config` (real `VeilleRepository`).
+- Suggestions topics/sources réelles à l'entrée des étapes 2 et 3 (POST
+  `/api/veille/suggestions/{topics,sources}` avec spinner bloquant +
+  fallback mock UX si erreur réseau).
+- Redirect automatique `/veille/config` → `/veille/dashboard` quand
+  `GET /api/veille/config` retourne 200 (au lieu de relancer le flow).
+- Filtrage des sources mock-only au submit (sans `apiSourceId` UUID API,
+  elles ne peuvent pas être ingérées par le backend).
+
+### Nouveaux écrans
+
+- **Dashboard** `/veille/dashboard` : thème, topics, sources, schedule,
+  countdown next_scheduled_at, boutons Modifier / Pause / Supprimer / Historique.
+- **Historique** `/veille/deliveries` : liste 20 dernières livraisons,
+  pull-to-refresh, empty state.
+- **Détail livraison** `/veille/deliveries/:id` : clusters + `why_it_matters` +
+  articles → tap ouvre InAppWebView (`launchUrl` mode `inAppBrowserView`).
+  Gère les états `running`/`pending` (loader) et `failed` (state d'erreur sympa).
+
+### Push notif locale + deeplink
+
+- `PushNotificationService.scheduleVeilleNotification(scheduledAt)` (NotifId=3,
+  channel `veille_channel`). Planifié à `next_scheduled_at + 30 min` pour
+  laisser le scanner */30 min générer la livraison avant que la notif tombe.
+- Cancel automatique sur PATCH status=paused / DELETE.
+- Mapping deeplink `io.supabase.facteur://veille/dashboard` ajouté à
+  `DeepLinkService.parse` (`WidgetDeepLinkTarget.veille`).
+
+### Architecture
+
+- Pas de modif backend (la pipeline fait déjà tout).
+- Patterns réutilisés : `digest_repository.dart` (Dio + exceptions typées),
+  `digest_provider.dart` (AsyncNotifier — simplifié load-on-enter),
+  `scheduleDailyDigestNotification` (zonedSchedule local).
+- Retries bornés (interceptor existant : 2 retries sur 5xx ≠503, 0 sur 4xx) —
+  pas de retries cascadés type stale-fallback du digest (anti-cascade pool DB).
+- Story doc : `docs/stories/core/18.3.veille-e2e.md`.
 
 ## Hors scope (PR3)
 
-Écran Courrier complet, écran lettre ouverte, banner notification feed, empty state, animation cachetDrop, branchement `silentRefresh()` après action utilisateur (ajout source / Perspectives ouvert).
+- [x] `flutter analyze lib/features/veille` → 1 info-level lint, 0 erreur.
+- [x] `flutter test test/features/veille/models/veille_models_test.dart` →
+  15 tests verts (parsing fromJson + sérialisation toJson).
+- [x] `flutter test test/core/services/{deep_link_service,push_notification_service_copy}_test.dart`
+  → 14 tests verts (anti-régression, +2 tests pour le mapping veille deep link).
+- [x] `pytest -q` backend (anti-régression) : 838 passed, 85 errors —
+  TOUTES les errors sont `psycopg.OperationalError` (DB locale Supabase non
+  démarrée, infra), aucune cassée par cette PR.
+- [ ] `/validate-feature` (Chrome MCP, viewport 390x844) — scénarios :
+  happy path, redirect dashboard, pause/reprendre, suppression, livraison
+  failed, erreur réseau suggestions, tap notif. Cf. `.context/qa-handoff.md`.
+- [ ] Smoke API local : `uvicorn app.main:app --port 8080`, configure une
+  veille, vérifier POST /config + log `PushNotificationService: veille scheduled @ ...`,
+  POST /deliveries/generate (debug), refresh historique.
+
+## Out of scope
+
+- Multi-veilles par user (V2/V3).
+- Carte « Ma veille » sur le feed (entry point — tranché en brainstorming PO).
+- Push serveur (FCM/APNS) — pas de stockage push_token côté backend, hors V1.
+- Cache disque persistant pour livraisons (load-on-enter mémoire suffit).
+- Pagination historique > 20.

@@ -11,6 +11,7 @@ import '../models/veille_suggestion.dart';
 import '../repositories/veille_repository.dart';
 import 'veille_active_config_provider.dart';
 import 'veille_repository_provider.dart';
+import 'veille_themes_provider.dart';
 
 /// Métadonnées attachées à une source dans le state du flow. Permet de
 /// distinguer les sources catalogue (UUID API) des sources mock-only ; au
@@ -52,6 +53,11 @@ class VeilleConfigState {
   final VeilleFrequency frequency;
   final VeilleDay day;
 
+  /// Topics « custom » saisis par le user dans Step 1 (input libre).
+  /// Ils sont matérialisés en `VeilleTopic` côté front pour l'affichage,
+  /// puis envoyés au backend avec `kind='custom'` dans `selectedTopics`.
+  final List<VeilleTopic> customTopics;
+
   /// Mapping slug → label pour topics (mock défauts + override API).
   final Map<String, String> topicLabels;
 
@@ -74,6 +80,7 @@ class VeilleConfigState {
     required this.nicheSources,
     required this.frequency,
     required this.day,
+    required this.customTopics,
     required this.topicLabels,
     required this.sourcesMeta,
     required this.isSubmitting,
@@ -84,14 +91,15 @@ class VeilleConfigState {
         step: 1,
         loadingFrom: null,
         selectedTheme: null,
-        selectedTopics: VeilleMockData.defaultTopics,
-        selectedSuggestions: VeilleMockData.defaultSuggestions,
+        selectedTopics: {},
+        selectedSuggestions: {},
         followedSources: VeilleMockData.defaultFollowedSources,
         nicheSources: VeilleMockData.defaultNicheSources,
         frequency: VeilleFrequency.weekly,
         day: VeilleDay.mon,
-        topicLabels: _initialTopicLabels(),
-        sourcesMeta: const {},
+        customTopics: [],
+        topicLabels: {},
+        sourcesMeta: {},
         isSubmitting: false,
         lastError: null,
       );
@@ -113,6 +121,7 @@ class VeilleConfigState {
     Set<String>? nicheSources,
     VeilleFrequency? frequency,
     VeilleDay? day,
+    List<VeilleTopic>? customTopics,
     Map<String, String>? topicLabels,
     Map<String, VeilleSourceMeta>? sourcesMeta,
     bool? isSubmitting,
@@ -132,6 +141,7 @@ class VeilleConfigState {
         nicheSources: nicheSources ?? this.nicheSources,
         frequency: frequency ?? this.frequency,
         day: day ?? this.day,
+        customTopics: customTopics ?? this.customTopics,
         topicLabels: topicLabels ?? this.topicLabels,
         sourcesMeta: sourcesMeta ?? this.sourcesMeta,
         isSubmitting: isSubmitting ?? this.isSubmitting,
@@ -165,7 +175,81 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
   Timer? _loadingTimer;
 
   void selectTheme(String id) {
-    state = state.copyWith(selectedTheme: id);
+    // Changer de thème reset les topics pré-sélectionnés (les preset topics
+    // dépendent du thème). Les customTopics, eux, persistent (le user les
+    // a saisis manuellement).
+    if (state.selectedTheme == id) return;
+    state = state.copyWith(
+      selectedTheme: id,
+      selectedTopics: const {},
+    );
+  }
+
+  /// Hydrate `topicLabels` pour les preset topics rendus par Step 1 — sans
+  /// quoi `_buildUpsertRequest` enverrait juste les slugs comme labels.
+  void registerPresetTopicLabels(List<VeilleTopic> presetTopics) {
+    if (presetTopics.isEmpty) return;
+    final next = Map<String, String>.from(state.topicLabels);
+    var changed = false;
+    for (final t in presetTopics) {
+      if (next[t.id] != t.label) {
+        next[t.id] = t.label;
+        changed = true;
+      }
+    }
+    if (changed) state = state.copyWith(topicLabels: next);
+  }
+
+  /// Ajoute un sujet custom saisi par le user. Le slug est dérivé du
+  /// label, préfixé `custom-` pour éviter toute collision avec un
+  /// AvailableSubtopic. Idempotent : un même label normalisé n'ajoute
+  /// pas de doublon. Le topic est immédiatement sélectionné.
+  void addCustomTopic(String rawLabel) {
+    final label = rawLabel.trim();
+    if (label.isEmpty) return;
+    final id = _slugifyCustom(label);
+    if (state.customTopics.any((t) => t.id == id)) {
+      // Déjà présent → s'assurer juste qu'il est coché.
+      if (!state.selectedTopics.contains(id)) {
+        state = state.copyWith(
+          selectedTopics: {...state.selectedTopics, id},
+        );
+      }
+      return;
+    }
+    final topic = VeilleTopic(id: id, label: label, reason: 'sujet ajouté');
+    final nextLabels = Map<String, String>.from(state.topicLabels)
+      ..[id] = label;
+    state = state.copyWith(
+      customTopics: [...state.customTopics, topic],
+      selectedTopics: {...state.selectedTopics, id},
+      topicLabels: nextLabels,
+    );
+  }
+
+  void removeCustomTopic(String id) {
+    final next = state.customTopics.where((t) => t.id != id).toList();
+    final selection = Set<String>.from(state.selectedTopics)..remove(id);
+    state = state.copyWith(customTopics: next, selectedTopics: selection);
+  }
+
+  static String _slugifyCustom(String input) {
+    final lowered = input.toLowerCase().trim();
+    final cleaned = lowered
+        .replaceAll(RegExp(r'[àâä]'), 'a')
+        .replaceAll(RegExp(r'[éèêë]'), 'e')
+        .replaceAll(RegExp(r'[îï]'), 'i')
+        .replaceAll(RegExp(r'[ôö]'), 'o')
+        .replaceAll(RegExp(r'[ûüù]'), 'u')
+        .replaceAll(RegExp(r'[ç]'), 'c')
+        .replaceAll(RegExp(r'[^a-z0-9\s-]'), '')
+        .replaceAll(RegExp(r'\s+'), '-')
+        .replaceAll(RegExp(r'-+'), '-');
+    final trimmed = cleaned.replaceAll(RegExp(r'^-|-$'), '');
+    final base = trimmed.isEmpty ? 'sujet' : trimmed;
+    // Cap à 60 chars pour rester confortable côté backend (max 80).
+    final capped = base.length > 60 ? base.substring(0, 60) : base;
+    return 'custom-$capped';
   }
 
   void toggleTopic(String id) =>
@@ -326,13 +410,11 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
   }
 
   VeilleConfigUpsertRequest _buildUpsertRequest(VeilleConfigState s) {
-    final themeId = s.selectedTheme ?? VeilleMockData.defaultTheme;
-    final themeLabel = VeilleMockData.themes
-            .firstWhere(
-              (t) => t.id == themeId,
-              orElse: () => VeilleMockData.themes.first,
-            )
-            .label;
+    // selectedTheme est garanti non-null avant l'appel à submit() (les
+    // CTA Step 1→Step 2 sont gardés par `hasTheme`). On garde un fallback
+    // défensif sur 'tech' pour ne jamais envoyer un slug vide au backend.
+    final themeId = s.selectedTheme ?? 'tech';
+    final themeLabel = veilleThemeLabelForSlug(themeId);
 
     final topics = <VeilleTopicSelectionRequest>[];
     var pos = 0;
@@ -341,7 +423,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
         VeilleTopicSelectionRequest(
           topicId: slug,
           label: s.topicLabels[slug] ?? slug,
-          kind: 'preset',
+          kind: slug.startsWith('custom-') ? 'custom' : 'preset',
           position: pos++,
         ),
       );

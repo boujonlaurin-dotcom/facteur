@@ -7,6 +7,7 @@ import '../../models/veille_config.dart';
 import '../../models/veille_suggestion.dart';
 import '../../providers/veille_config_provider.dart';
 import '../../providers/veille_suggestions_provider.dart';
+import '../../providers/veille_themes_provider.dart';
 import '../../widgets/veille_widgets.dart';
 
 class Step2SuggestionsScreen extends ConsumerWidget {
@@ -19,14 +20,7 @@ class Step2SuggestionsScreen extends ConsumerWidget {
     final notifier = ref.read(veilleConfigProvider.notifier);
 
     final themeId = state.selectedTheme;
-    final themeLabel = themeId == null
-        ? null
-        : VeilleMockData.themes
-            .firstWhere(
-              (t) => t.id == themeId,
-              orElse: () => VeilleMockData.themes.first,
-            )
-            .label;
+    final themeLabel = themeId == null ? null : veilleThemeLabelForSlug(themeId);
 
     final params = (themeId != null && themeLabel != null)
         ? VeilleTopicsSuggestionParams(
@@ -113,7 +107,9 @@ class Step2SuggestionsScreen extends ConsumerWidget {
                   icon: PhosphorIcons.arrowsClockwise(),
                   onTap: () {
                     if (params != null) {
-                      ref.invalidate(veilleTopicSuggestionsProvider(params));
+                      ref
+                          .read(veilleTopicSuggestionsProvider(params).notifier)
+                          .refreshKeepingChecked(state.selectedSuggestions);
                     }
                   },
                 ),

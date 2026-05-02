@@ -91,7 +91,9 @@ class Step3SourcesScreen extends ConsumerWidget {
                   icon: PhosphorIcons.arrowsClockwise(),
                   onTap: () {
                     if (params != null) {
-                      ref.invalidate(veilleSourceSuggestionsProvider(params));
+                      ref
+                          .read(veilleSourceSuggestionsProvider(params).notifier)
+                          .refreshKeepingChecked(state.nicheSources);
                     }
                   },
                 ),

@@ -241,11 +241,17 @@ class ThemeCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    phosphorThemeIcon(theme.iconKey),
-                    size: 20,
-                    color: FacteurColors.veille,
-                  ),
+                  if (theme.emoji != null && theme.emoji!.isNotEmpty)
+                    Text(
+                      theme.emoji!,
+                      style: const TextStyle(fontSize: 20, height: 1),
+                    )
+                  else
+                    Icon(
+                      phosphorThemeIcon(theme.iconKey),
+                      size: 20,
+                      color: FacteurColors.veille,
+                    ),
                   const SizedBox(height: 6),
                   Text(
                     theme.label,
@@ -898,6 +904,233 @@ class VeilleCtaButton extends StatelessWidget {
                 ],
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ===== Section toggleable (header tap → expand/collapse animé) =====
+class VeilleToggleSection extends StatelessWidget {
+  final int index;
+  final String title;
+  final String? subtitleWhenCollapsed;
+  final bool expanded;
+  final bool enabled;
+  final VoidCallback onToggle;
+  final Widget child;
+
+  const VeilleToggleSection({
+    super.key,
+    required this.index,
+    required this.title,
+    required this.expanded,
+    required this.onToggle,
+    required this.child,
+    this.subtitleWhenCollapsed,
+    this.enabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const disabledColor = Color(0xFFB8B0A0);
+    final headerColor =
+        enabled ? const Color(0xFF2C2A29) : disabledColor;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: enabled ? onToggle : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionIndexBadge(index: index, enabled: enabled),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: GoogleFonts.fraunces(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.5,
+                          height: 1.2,
+                          color: headerColor,
+                        ),
+                      ),
+                      if (!expanded &&
+                          subtitleWhenCollapsed != null &&
+                          subtitleWhenCollapsed!.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          subtitleWhenCollapsed!,
+                          style: GoogleFonts.courierPrime(
+                            fontSize: 11,
+                            letterSpacing: 0.4,
+                            fontWeight: FontWeight.w700,
+                            color: FacteurColors.veille,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                AnimatedRotation(
+                  turns: expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  child: Icon(
+                    PhosphorIcons.caretDown(),
+                    size: 18,
+                    color: enabled
+                        ? const Color(0xFF5D5B5A)
+                        : disabledColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        ClipRect(
+          child: AnimatedAlign(
+            alignment: Alignment.topCenter,
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOutCubic,
+            heightFactor: expanded ? 1 : 0,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 260),
+              opacity: expanded ? 1 : 0,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: child,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SectionIndexBadge extends StatelessWidget {
+  final int index;
+  final bool enabled;
+  const _SectionIndexBadge({required this.index, required this.enabled});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 26,
+      height: 26,
+      margin: const EdgeInsets.only(top: 2),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: enabled ? FacteurColors.veilleTint : const Color(0xFFEDE7D8),
+        border: Border.all(
+          color: enabled
+              ? FacteurColors.veille.withValues(alpha: 0.4)
+              : const Color(0xFFD2C9BB),
+          width: 1.2,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        '$index',
+        style: GoogleFonts.courierPrime(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: enabled ? FacteurColors.veille : const Color(0xFFB8B0A0),
+        ),
+      ),
+    );
+  }
+}
+
+/// ===== Add topic card (même look que CheckRow, avec un + à la place du checkbox) =====
+class AddTopicCard extends StatelessWidget {
+  final String label;
+  final String reason;
+  final VoidCallback onTap;
+  const AddTopicCard({
+    super.key,
+    required this.label,
+    required this.reason,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: FacteurColors.veille.withValues(alpha: 0.55),
+              width: 1.5,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 18,
+                height: 18,
+                margin: const EdgeInsets.only(top: 1),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(5),
+                  color: Colors.white,
+                  border: Border.all(
+                    color: FacteurColors.veille,
+                    width: 1.5,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  PhosphorIcons.plus(),
+                  size: 11,
+                  color: FacteurColors.veille,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        height: 1.3,
+                        color: const Color(0xFF2C2A29),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      reason,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11.5,
+                        height: 1.4,
+                        color: const Color(0xFF959392),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),

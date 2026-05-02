@@ -20,10 +20,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import SourceType
 from app.models.source import Source, UserSource
+from app.schemas.veille import VeilleThemeSlug
 from app.services.editorial.llm_client import EditorialLLMClient
 from app.services.source_service import SourceService
 
 logger = structlog.get_logger()
+
+# Doit rester aligné avec `VeilleThemeSlug` et la contrainte SQL
+# `ck_source_theme_valid` : un INSERT avec un theme hors liste empoisonne
+# la session (PendingRollbackError sur tout commit ultérieur).
+_ALLOWED_SOURCE_THEMES = frozenset(VeilleThemeSlug.__args__)
 
 
 @dataclass(frozen=True)
@@ -199,6 +205,14 @@ class SourceSuggester:
         existing = (await session.execute(existing_stmt)).scalars().first()
         if existing:
             return existing
+
+        if theme_id not in _ALLOWED_SOURCE_THEMES:
+            # Sans ce garde-fou, l'INSERT viole `ck_source_theme_valid`
+            # et le rollback empoisonne toute la requête HTTP en cours.
+            raise ValueError(
+                f"Invalid theme_id '{theme_id}' — must be one of "
+                f"{sorted(_ALLOWED_SOURCE_THEMES)}"
+            )
 
         try:
             source_type = SourceType(detected.detected_type)
