@@ -8,11 +8,12 @@ session avant le LLM).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from cachetools import TTLCache
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,11 +22,13 @@ from app.data.veille_presets import get_presets
 from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
 from app.jobs.veille_generation_job import run_veille_generation_for_config
+from app.models.content import Content
 from app.models.enums import SourceType
 from app.models.source import Source
 from app.models.veille import (
     VeilleConfig,
     VeilleDelivery,
+    VeilleGenerationState,
     VeilleSource,
     VeilleStatus,
     VeilleTopic,
@@ -36,8 +39,10 @@ from app.schemas.veille import (
     VeilleConfigUpsert,
     VeilleDeliveryListItem,
     VeilleDeliveryResponse,
+    VeilleGenerateFirstResponse,
     VeilleGenerateRequest,
     VeillePresetResponse,
+    VeilleSourceExample,
     VeilleSourceLite,
     VeilleSourceResponse,
     VeilleSourceSuggestion,
@@ -48,6 +53,7 @@ from app.schemas.veille import (
     VeilleTopicSuggestion,
 )
 from app.services.editorial.llm_client import EditorialLLMClient
+from app.services.rss_parser import RSSParser
 from app.services.source_service import SourceService
 from app.services.veille.digest_builder import VeilleDigestBuilder
 from app.services.veille.scheduling import compute_next_scheduled_at
@@ -64,6 +70,14 @@ from app.utils.time import today_paris
 logger = structlog.get_logger()
 
 router = APIRouter()
+
+# Cache examples sources : in-process (suffit V1), à migrer Redis si scale
+# horizontal — cf. memory note. TTL 24 h aligné avec la fraîcheur attendue
+# d'un aperçu de feed.
+_SOURCE_EXAMPLES_CACHE: TTLCache = TTLCache(maxsize=512, ttl=86400)
+_SOURCE_EXAMPLES_LIMIT = 2
+_SOURCE_EXAMPLES_LOOKBACK_DAYS = 30
+_SOURCE_EXAMPLES_EXCERPT_MAX = 120
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -604,3 +618,206 @@ async def force_generate(
         await llm.close()
 
     return VeilleDeliveryResponse.model_validate(delivery)
+
+
+# ─── First delivery (génération immédiate post-onboarding) ───────────────────
+
+
+async def _run_first_delivery(config_id: UUID, target_date: date) -> None:
+    """BackgroundTask : owns LLM client + digest builder lifecycle.
+
+    Appelé après le 202 du POST /generate-first. La row VeilleDelivery a déjà
+    été créée en PENDING par le handler ; le job interne fait son propre UPSERT
+    sur (veille_config_id, target_date) et la passe à RUNNING puis SUCCEEDED.
+    """
+    llm = EditorialLLMClient()
+    try:
+        builder = VeilleDigestBuilder(llm=llm, session_maker=safe_async_session)
+        await run_veille_generation_for_config(
+            config_id,
+            target_date=target_date,
+            session_maker=safe_async_session,
+            builder=builder,
+        )
+    except Exception as exc:
+        logger.error(
+            "veille.first_delivery_failed",
+            config_id=str(config_id),
+            error=str(exc),
+        )
+    finally:
+        await llm.close()
+
+
+@router.post(
+    "/deliveries/generate-first",
+    status_code=202,
+    response_model=VeilleGenerateFirstResponse,
+)
+async def generate_first_delivery(
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Lance la génération immédiate du premier digest après l'onboarding.
+
+    Crée une row VeilleDelivery en PENDING tout de suite pour que le mobile
+    puisse poll GET /deliveries/{id} pendant que le BackgroundTask tourne.
+    Refuse si une livraison existe déjà pour cette config (anti-doublon).
+    """
+    user_uuid = UUID(current_user_id)
+    cfg = await _get_active_config(db, user_uuid)
+    if cfg is None:
+        raise HTTPException(status_code=404, detail="Aucune veille active.")
+
+    existing = (
+        await db.execute(
+            select(VeilleDelivery.id)
+            .where(VeilleDelivery.veille_config_id == cfg.id)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(status_code=403, detail="Première livraison déjà générée.")
+
+    target = today_paris()
+    delivery_id = uuid4()
+    db.add(
+        VeilleDelivery(
+            id=delivery_id,
+            veille_config_id=cfg.id,
+            target_date=target,
+            generation_state=VeilleGenerationState.PENDING.value,
+        )
+    )
+    await db.commit()
+
+    background_tasks.add_task(
+        _run_first_delivery,
+        config_id=cfg.id,
+        target_date=target,
+    )
+    return VeilleGenerateFirstResponse(
+        delivery_id=delivery_id,
+        estimated_seconds=60,
+    )
+
+
+# ─── Source examples (preview Step 3) ────────────────────────────────────────
+
+
+async def _fetch_source_examples(
+    db: AsyncSession, source_id: UUID
+) -> list[VeilleSourceExample]:
+    """Renvoie jusqu'à 2 exemples récents d'une source. Cache TTL 24 h.
+
+    1. Tente le catalogue local `contents` (filtré 30 j) — chemin nominal.
+    2. Si vide, fallback RSS via `RSSParser.parse(feed_url)` pour les sources
+       fraîchement ingérées (niche).
+    3. Cache la réponse 24 h en mémoire (cf. limites scaling : à migrer Redis
+       si N workers > 2).
+    """
+    cache_key = str(source_id)
+    if cache_key in _SOURCE_EXAMPLES_CACHE:
+        return _SOURCE_EXAMPLES_CACHE[cache_key]
+
+    cutoff = datetime.now(UTC) - timedelta(days=_SOURCE_EXAMPLES_LOOKBACK_DAYS)
+    contents = (
+        (
+            await db.execute(
+                select(Content)
+                .where(
+                    Content.source_id == source_id,
+                    Content.published_at >= cutoff,
+                )
+                .order_by(Content.published_at.desc())
+                .limit(_SOURCE_EXAMPLES_LIMIT)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if contents:
+        examples = [
+            VeilleSourceExample(
+                title=c.title,
+                url=c.url,
+                published_at=c.published_at,
+                excerpt=(c.description or "")[:_SOURCE_EXAMPLES_EXCERPT_MAX],
+            )
+            for c in contents
+        ]
+        _SOURCE_EXAMPLES_CACHE[cache_key] = examples
+        return examples
+
+    # Fallback RSS pour sources niche fraîchement ingérées (pas encore
+    # crawlées par le scanner).
+    source = (
+        (await db.execute(select(Source).where(Source.id == source_id)))
+        .scalars()
+        .first()
+    )
+    if source is None or not source.feed_url:
+        _SOURCE_EXAMPLES_CACHE[cache_key] = []
+        return []
+
+    parser = RSSParser()
+    try:
+        feed = await parser.parse(source.feed_url)
+    except Exception as exc:
+        logger.info(
+            "veille.source_examples_rss_failed",
+            source_id=str(source_id),
+            feed_url=source.feed_url,
+            error=str(exc),
+        )
+        _SOURCE_EXAMPLES_CACHE[cache_key] = []
+        return []
+    finally:
+        await parser.close()
+
+    # feedparser renvoie un FeedParserDict (attr-access) ; les tests mock un
+    # dict standard. On couvre les deux formes.
+    entries = (
+        getattr(feed, "entries", None)
+        or (feed.get("entries") if isinstance(feed, dict) else None)
+        or []
+    )
+    examples = []
+    for entry in entries[:_SOURCE_EXAMPLES_LIMIT]:
+        title = entry.get("title") or ""
+        link = entry.get("link") or ""
+        if not title or not link:
+            continue
+        published_at: datetime | None = None
+        published_parsed = entry.get("published_parsed")
+        if published_parsed:
+            try:
+                published_at = datetime(*published_parsed[:6], tzinfo=UTC)
+            except (TypeError, ValueError):
+                published_at = None
+        excerpt = (entry.get("summary") or "")[:_SOURCE_EXAMPLES_EXCERPT_MAX]
+        examples.append(
+            VeilleSourceExample(
+                title=title,
+                url=link,
+                published_at=published_at,
+                excerpt=excerpt,
+            )
+        )
+    _SOURCE_EXAMPLES_CACHE[cache_key] = examples
+    return examples
+
+
+@router.get(
+    "/sources/{source_id}/examples",
+    response_model=list[VeilleSourceExample],
+)
+async def get_source_examples(
+    source_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Renvoie un aperçu (≤2 articles) pour rassurer l'utilisateur au Step 3."""
+    UUID(current_user_id)  # validate JWT subject
+    return await _fetch_source_examples(db, source_id)

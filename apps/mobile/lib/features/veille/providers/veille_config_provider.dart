@@ -461,6 +461,31 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     }
   }
 
+  /// Soumet la config puis lance la génération immédiate du premier digest.
+  /// Renvoie le `delivery_id` à poll côté UI. Si une livraison existe déjà
+  /// (403 — anti-doublon backend), on récupère la dernière via
+  /// `listDeliveries` plutôt que de remonter une erreur.
+  Future<String?> submitAndGenerateFirst() async {
+    await submit();
+    final repo = _ref.read(veilleRepositoryProvider);
+    try {
+      final res = await repo.generateFirstDelivery();
+      return res.deliveryId;
+    } on VeilleApiException catch (e) {
+      if (e.statusCode == 403) {
+        final list = await repo.listDeliveries(limit: 1);
+        return list.isEmpty ? null : list.first.id;
+      }
+      rethrow;
+    }
+  }
+
+  /// Affiche/masque le loading screen `from=4` (post-submit, en attente de la
+  /// première livraison). `null` = sortir du loading.
+  void setLoadingFrom(int? from) {
+    state = state.copyWith(loadingFrom: from);
+  }
+
   /// Affiche l'écran preview pré-set (Step 1.5). Le step courant reste à 1
   /// sous le capot — le screen orchestrator détecte `previewPresetId != null`.
   void openPresetPreview(String presetSlug) {

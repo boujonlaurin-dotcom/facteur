@@ -248,6 +248,22 @@ class VeilleGenerateRequest(BaseModel):
     target_date: date | None = None
 
 
+class VeilleGenerateFirstResponse(BaseModel):
+    """Réponse 202 du POST /deliveries/generate-first."""
+
+    delivery_id: UUID
+    estimated_seconds: int = 60
+
+
+class VeilleSourceExample(BaseModel):
+    """Aperçu d'article récent d'une source — Step 3 du flow veille."""
+
+    title: str
+    url: str
+    published_at: datetime | None = None
+    excerpt: str = ""
+
+
 # ─── Presets (V1 onboarding) ─────────────────────────────────────────────────
 
 

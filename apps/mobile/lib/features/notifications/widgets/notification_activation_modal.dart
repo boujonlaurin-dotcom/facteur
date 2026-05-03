@@ -10,14 +10,31 @@ import 'preset_selector.dart';
 import 'time_slot_selector.dart';
 
 /// Trigger d'affichage de la modal — utilisé pour l'event tracking.
-enum ActivationTrigger { onboarding, update, renudge }
+///
+/// `veille` est un canal opt-in distinct du digest principal : titre/bullets/
+/// CTA dédiés, sections preset/time-slot/good-news masquées, et appel à
+/// `setNotifVeilleEnabled` au lieu de `confirmActivation`.
+enum ActivationTrigger { onboarding, update, renudge, veille }
 
 /// Affiche la modal d'activation comme dialogue flottant translucide.
+///
+/// Pour `ActivationTrigger.veille`, si l'OS-level push est déjà accordé
+/// (`pushEnabled == true`), on skip la modal et on opt-in directement —
+/// inutile de redemander une permission déjà donnée.
 Future<void> showNotificationActivationModal(
   BuildContext context,
   WidgetRef ref, {
   required ActivationTrigger trigger,
-}) {
+}) async {
+  if (trigger == ActivationTrigger.veille) {
+    final settings = ref.read(notificationsSettingsProvider);
+    if (settings.pushEnabled) {
+      await ref
+          .read(notificationsSettingsProvider.notifier)
+          .setNotifVeilleEnabled(true);
+      return;
+    }
+  }
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
@@ -84,24 +101,32 @@ class _NotificationActivationModalState
       await PushNotificationService().requestExactAlarmPermission();
     }
 
-    await notifier.confirmActivation(
-      preset: _preset,
-      timeSlot: _timeSlot,
-      osGranted: granted,
-    );
-
-    if (_goodNewsEnabled) {
-      await notifier.confirmGoodNewsActivation(
-        timeSlot: _goodNewsTimeSlot,
+    if (widget.trigger == ActivationTrigger.veille) {
+      // Canal séparé du digest — on n'écrit jamais `confirmActivation` ici
+      // pour ne pas activer le digest sans consentement explicite.
+      if (granted) {
+        await notifier.setNotifVeilleEnabled(true);
+      }
+    } else {
+      await notifier.confirmActivation(
+        preset: _preset,
+        timeSlot: _timeSlot,
         osGranted: granted,
       );
-    }
 
-    analytics.trackModalNotifConfirmed(
-      preset: _preset,
-      timeSlot: _timeSlot,
-      osPermissionGranted: granted,
-    );
+      if (_goodNewsEnabled) {
+        await notifier.confirmGoodNewsActivation(
+          timeSlot: _goodNewsTimeSlot,
+          osGranted: granted,
+        );
+      }
+
+      analytics.trackModalNotifConfirmed(
+        preset: _preset,
+        timeSlot: _timeSlot,
+        osPermissionGranted: granted,
+      );
+    }
 
     if (!mounted) return;
     Navigator.of(context).pop();
@@ -133,6 +158,7 @@ class _NotificationActivationModalState
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final theme = Theme.of(context);
+    final isVeille = widget.trigger == ActivationTrigger.veille;
 
     return Material(
       color: colors.backgroundPrimary,
@@ -154,7 +180,9 @@ class _NotificationActivationModalState
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                "Mieux s'informer, à son rythme",
+                isVeille
+                    ? 'Te prévenir quand ta veille est prête ?'
+                    : "Mieux s'informer, à son rythme",
                 style: theme.textTheme.displaySmall
                     ?.copyWith(fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
@@ -168,67 +196,82 @@ class _NotificationActivationModalState
                 ),
               ),
               const SizedBox(height: FacteurSpacing.space3),
-              Text(
-                "Du mal à suivre l'essentiel ?",
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: colors.textSecondary),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: FacteurSpacing.space4),
-              _BulletPoint(
-                text: "Un message par jour, à l'heure que tu préfères.",
-              ),
-              const SizedBox(height: FacteurSpacing.space2),
-              _BulletPoint(
-                text: "Pas de breaking news, pas de scroll inutile.",
-              ),
-              const SizedBox(height: FacteurSpacing.space2),
-              _BulletPoint(
-                text: "L'essentiel filtré pour toi, quand tu veux le recevoir.",
-              ),
-              const SizedBox(height: FacteurSpacing.space4),
-              Text(
-                "Un exemple de ce que Facteur t'envoie :",
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colors.textSecondary,
-                  fontStyle: FontStyle.italic,
+              if (!isVeille) ...[
+                Text(
+                  "Du mal à suivre l'essentiel ?",
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: colors.textSecondary),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: FacteurSpacing.space2),
-              _NotificationPreview(timeSlot: _timeSlot),
-              const SizedBox(height: FacteurSpacing.space6),
-              const _SectionHeader(label: 'Définis ton rythme'),
-              const SizedBox(height: FacteurSpacing.space3),
-              PresetSelector(
-                value: _preset,
-                onChanged: (p) {
-                  setState(() => _preset = p);
-                  ref
-                      .read(analyticsServiceProvider)
-                      .trackModalNotifPresetChanged(preset: p);
-                },
-              ),
-              const SizedBox(height: FacteurSpacing.space4),
-              const _SectionHeader(label: 'À quel moment ?'),
-              const SizedBox(height: FacteurSpacing.space3),
-              TimeSlotSelector(
-                value: _timeSlot,
-                onChanged: (s) {
-                  setState(() => _timeSlot = s);
-                  ref
-                      .read(analyticsServiceProvider)
-                      .trackModalNotifTimeChanged(timeSlot: s);
-                },
-              ),
-              const SizedBox(height: FacteurSpacing.space6),
-              _GoodNewsSection(
-                enabled: _goodNewsEnabled,
-                timeSlot: _goodNewsTimeSlot,
-                onToggle: (v) => setState(() => _goodNewsEnabled = v),
-                onTimeSlotChanged: (s) =>
-                    setState(() => _goodNewsTimeSlot = s),
-              ),
+                const SizedBox(height: FacteurSpacing.space4),
+                _BulletPoint(
+                  text: "Un message par jour, à l'heure que tu préfères.",
+                ),
+                const SizedBox(height: FacteurSpacing.space2),
+                _BulletPoint(
+                  text: "Pas de breaking news, pas de scroll inutile.",
+                ),
+                const SizedBox(height: FacteurSpacing.space2),
+                _BulletPoint(
+                  text:
+                      "L'essentiel filtré pour toi, quand tu veux le recevoir.",
+                ),
+                const SizedBox(height: FacteurSpacing.space4),
+                Text(
+                  "Un exemple de ce que Facteur t'envoie :",
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.textSecondary,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: FacteurSpacing.space2),
+                _NotificationPreview(timeSlot: _timeSlot),
+                const SizedBox(height: FacteurSpacing.space6),
+                const _SectionHeader(label: 'Définis ton rythme'),
+                const SizedBox(height: FacteurSpacing.space3),
+                PresetSelector(
+                  value: _preset,
+                  onChanged: (p) {
+                    setState(() => _preset = p);
+                    ref
+                        .read(analyticsServiceProvider)
+                        .trackModalNotifPresetChanged(preset: p);
+                  },
+                ),
+                const SizedBox(height: FacteurSpacing.space4),
+                const _SectionHeader(label: 'À quel moment ?'),
+                const SizedBox(height: FacteurSpacing.space3),
+                TimeSlotSelector(
+                  value: _timeSlot,
+                  onChanged: (s) {
+                    setState(() => _timeSlot = s);
+                    ref
+                        .read(analyticsServiceProvider)
+                        .trackModalNotifTimeChanged(timeSlot: s);
+                  },
+                ),
+                const SizedBox(height: FacteurSpacing.space6),
+                _GoodNewsSection(
+                  enabled: _goodNewsEnabled,
+                  timeSlot: _goodNewsTimeSlot,
+                  onToggle: (v) => setState(() => _goodNewsEnabled = v),
+                  onTimeSlotChanged: (s) =>
+                      setState(() => _goodNewsTimeSlot = s),
+                ),
+              ] else ...[
+                _BulletPoint(
+                  text: 'Notif quand ton digest est livré.',
+                ),
+                const SizedBox(height: FacteurSpacing.space2),
+                _BulletPoint(
+                  text: "Pas de spam, juste l'arrivée du courrier.",
+                ),
+                const SizedBox(height: FacteurSpacing.space2),
+                _BulletPoint(
+                  text: 'Activable/désactivable à tout moment.',
+                ),
+              ],
               const SizedBox(height: FacteurSpacing.space6),
               SizedBox(
                 height: 48,
@@ -240,9 +283,12 @@ class _NotificationActivationModalState
                       borderRadius: BorderRadius.circular(FacteurRadius.large),
                     ),
                   ),
-                  child: const Text(
-                    'Activer ton Facteur',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  child: Text(
+                    isVeille ? "M'en informer" : 'Activer ton Facteur',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
