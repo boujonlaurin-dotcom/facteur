@@ -56,6 +56,7 @@ import '../../app_update/providers/app_update_provider.dart';
 import '../../app_update/widgets/update_modal.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../notifications/widgets/notification_activation_modal.dart';
+import '../../lettres/widgets/lettres_notification_banner.dart';
 import '../../notifications/widgets/notification_renudge_banner.dart';
 import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../widgets/feed_refresh_undo_banner.dart';
@@ -787,6 +788,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                       child: impressionSlot == FirstImpressionSlot.wellInformed
                           ? const WellInformedPrompt()
                           : const SizedBox.shrink(),
+                    ),
+                    // Story 19.1 — Lettres du Facteur. Banner indépendant,
+                    // gating local (active letter + route + dismiss session).
+                    const SliverToBoxAdapter(
+                      child: LettresNotificationBanner(),
                     ),
                     const SliverToBoxAdapter(
                       child: Padding(

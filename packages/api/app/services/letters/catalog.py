@@ -8,7 +8,7 @@ utilisateur.
 LETTER_0: dict = {
     "id": "letter_0",
     "num": "00",
-    "title": "Bienvenue chez Facteur",
+    "title": "Bienvenue sur Facteur !",
     "default_status": "archived",
     "actions": [],
     "message": (
