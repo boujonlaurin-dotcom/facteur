@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../../config/theme.dart';
@@ -155,22 +156,39 @@ class _FeedCarouselState extends State<FeedCarousel> {
 
     final isMulti = data.items.length > 1;
 
+    final readCount = data.items
+        .where((c) =>
+            c.status == ContentStatus.consumed || c.readingProgress > 0)
+        .length;
+    final total = data.items.length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            data.title,
-            style: TextStyle(
-              color: colors.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              height: 1.2,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text(
+                  data.title,
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (readCount > 0) ...[
+                const SizedBox(width: 8),
+                _buildCompletionBadge(context, readCount, total),
+              ],
+            ],
           ),
         ),
         const SizedBox(height: 12),
@@ -402,6 +420,40 @@ class _FeedCarouselState extends State<FeedCarousel> {
             wrappedCard,
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCompletionBadge(BuildContext context, int readCount, int total) {
+    final colors = context.facteurColors;
+    final allRead = readCount == total;
+    final bgColor =
+        allRead ? colors.success : colors.success.withOpacity(0.12);
+    final fgColor = allRead ? Colors.white : colors.success;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (allRead) ...[
+            Icon(PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
+                size: 10, color: fgColor),
+            const SizedBox(width: 3),
+          ],
+          Text(
+            '$readCount/$total',
+            style: TextStyle(
+              color: fgColor,
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+            ),
+          ),
+        ],
       ),
     );
   }

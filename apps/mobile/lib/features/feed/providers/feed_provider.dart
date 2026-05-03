@@ -918,32 +918,41 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       if (c.id != updated.id) return c;
       return updated.copyWith(status: c.status);
     }).toList();
-    state = AsyncData(FeedState(items: items, carousels: state.value?.carousels ?? const []));
+
+    final updatedCarousels = _updateCarouselItem(
+      currentState.carousels,
+      updated.id,
+      (c) => updated.copyWith(status: c.status),
+    );
+
+    state = AsyncData(FeedState(items: items, carousels: updatedCarousels));
   }
 
   Future<void> markContentAsConsumed(Content content) async {
     final currentState = state.value;
     if (currentState == null) return;
 
-    // Check if it's in the feed items
     final feedIndex = currentState.items.indexWhere((c) => c.id == content.id);
 
+    final updatedItems = List<Content>.from(currentState.items);
     if (feedIndex != -1) {
-      // Update the item status in the list directly
-      final updatedItems = List<Content>.from(currentState.items);
       updatedItems[feedIndex] =
           updatedItems[feedIndex].copyWith(status: ContentStatus.consumed);
+    }
 
-      state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
+    final updatedCarousels = _updateCarouselItem(
+      currentState.carousels,
+      content.id,
+      (c) => c.copyWith(status: ContentStatus.consumed),
+    );
 
-      // Call Generic API immediately (Fire and forget)
-      try {
-        final repository = ref.read(feedRepositoryProvider);
-        await repository.updateContentStatus(
-            content.id, ContentStatus.consumed);
-      } catch (e) {
-        // Silent failure, state is already updated optimistically
-      }
+    state = AsyncData(FeedState(items: updatedItems, carousels: updatedCarousels));
+
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.updateContentStatus(content.id, ContentStatus.consumed);
+    } catch (e) {
+      // Silent failure, state is already updated optimistically
     }
   }
 }
