@@ -129,6 +129,10 @@ async def _hydrate_response(
         next_scheduled_at=cfg.next_scheduled_at,
         created_at=cfg.created_at,
         updated_at=cfg.updated_at,
+        purpose=cfg.purpose,
+        purpose_other=cfg.purpose_other,
+        editorial_brief=cfg.editorial_brief,
+        preset_id=cfg.preset_id,
         topics=[
             VeilleTopicResponse(
                 id=t.id,

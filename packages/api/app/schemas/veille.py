@@ -86,8 +86,6 @@ class VeilleConfigResponse(BaseModel):
     updated_at: datetime
     topics: list[VeilleTopicResponse] = []
     sources: list[VeilleSourceResponse] = []
-    # V1 personalization (migration vp01) — toujours None tant que la PR B
-    # ne câble pas la persistance dans le router /config.
     purpose: str | None = None
     purpose_other: str | None = None
     editorial_brief: str | None = None
