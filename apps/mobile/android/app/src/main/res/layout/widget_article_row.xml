@@ -117,7 +117,10 @@
             android:textColor="@color/facteur_accent"
             android:visibility="gone" />
 
-        <Space
+        <!-- Empty TextView used as a flexible spacer.
+             Note: <Space> is not in the RemoteViews whitelist and triggers
+             "Class not allowed to be inflated" on Samsung One UI launchers. -->
+        <TextView
             android:layout_width="0dp"
             android:layout_height="1dp"
             android:layout_weight="1" />
