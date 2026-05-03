@@ -86,6 +86,12 @@ class VeilleConfigResponse(BaseModel):
     updated_at: datetime
     topics: list[VeilleTopicResponse] = []
     sources: list[VeilleSourceResponse] = []
+    # V1 personalization (migration vp01) — toujours None tant que la PR B
+    # ne câble pas la persistance dans le router /config.
+    purpose: str | None = None
+    purpose_other: str | None = None
+    editorial_brief: str | None = None
+    preset_id: str | None = None
 
 
 class VeilleTopicSelection(BaseModel):
@@ -123,6 +129,12 @@ class VeilleConfigUpsert(BaseModel):
     day_of_week: int | None = Field(default=None, ge=0, le=6)
     delivery_hour: int = Field(default=7, ge=0, le=23)
     timezone: str = Field(default="Europe/Paris", max_length=64)
+    # V1 personalization — acceptés par le schéma (PR A) mais persistance
+    # cablée plus tard (PR B).
+    purpose: str | None = Field(default=None, max_length=80)
+    purpose_other: str | None = Field(default=None, max_length=80)
+    editorial_brief: str | None = Field(default=None, max_length=280)
+    preset_id: str | None = Field(default=None, max_length=80)
 
 
 class VeilleConfigPatch(BaseModel):
@@ -131,6 +143,10 @@ class VeilleConfigPatch(BaseModel):
     delivery_hour: int | None = Field(default=None, ge=0, le=23)
     timezone: str | None = Field(default=None, max_length=64)
     status: Literal["active", "paused", "archived"] | None = None
+    purpose: str | None = Field(default=None, max_length=80)
+    purpose_other: str | None = Field(default=None, max_length=80)
+    editorial_brief: str | None = Field(default=None, max_length=280)
+    preset_id: str | None = Field(default=None, max_length=80)
 
 
 # ─── Suggestions ─────────────────────────────────────────────────────────────
@@ -226,3 +242,25 @@ class VeilleGenerateRequest(BaseModel):
     """Force une génération pour la config courante au target_date=today."""
 
     target_date: date | None = None
+
+
+# ─── Presets (V1 onboarding) ─────────────────────────────────────────────────
+
+
+class VeillePresetResponse(BaseModel):
+    """Pré-set d'inspiration affiché en bas du Step 1 du flow veille.
+
+    Les `sources` sont hydratées au runtime depuis la table `sources` (filtre
+    `theme + is_curated`) plutôt que d'être hardcodées en UUIDs : ainsi un
+    re-seed du catalogue ne casse pas la liste.
+    """
+
+    slug: str
+    label: str
+    accroche: str
+    theme_id: str
+    theme_label: str
+    topics: list[str] = Field(default_factory=list)
+    purposes: list[str] = Field(default_factory=list)
+    editorial_brief: str = ""
+    sources: list[VeilleSourceLite] = Field(default_factory=list)

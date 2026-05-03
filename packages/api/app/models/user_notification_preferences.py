@@ -50,6 +50,11 @@ class UserNotificationPreferences(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
 
+    # Opt-in spécifique notif veille (migration vp01) — câblage en PR C.
+    notif_veille_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

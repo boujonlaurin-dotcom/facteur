@@ -17,6 +17,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.data.veille_presets import get_presets
 from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
 from app.jobs.veille_generation_job import run_veille_generation_for_config
@@ -36,6 +37,7 @@ from app.schemas.veille import (
     VeilleDeliveryListItem,
     VeilleDeliveryResponse,
     VeilleGenerateRequest,
+    VeillePresetResponse,
     VeilleSourceLite,
     VeilleSourceResponse,
     VeilleSourceSuggestion,
@@ -355,6 +357,50 @@ async def delete_config(
     cfg.status = VeilleStatus.ARCHIVED.value
     await db.commit()
     return None
+
+
+# ─── Endpoints presets ───────────────────────────────────────────────────────
+
+
+@router.get("/presets", response_model=list[VeillePresetResponse])
+async def list_presets(db: AsyncSession = Depends(get_db)):
+    """Liste les pré-sets V1 affichés en bas du Step 1 (« Inspirations »).
+
+    Pas d'auth : la liste est publique (utilisée pendant l'onboarding).
+    Les sources curées sont résolues au runtime depuis la table `sources`.
+    """
+    out: list[VeillePresetResponse] = []
+    for preset in get_presets():
+        srcs = (
+            (
+                await db.execute(
+                    select(Source)
+                    .where(
+                        Source.theme == preset["theme_id"],
+                        Source.is_curated.is_(True),
+                        Source.is_active.is_(True),
+                    )
+                    .order_by(Source.name)
+                    .limit(6)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        out.append(
+            VeillePresetResponse(
+                slug=preset["slug"],
+                label=preset["label"],
+                accroche=preset["accroche"],
+                theme_id=preset["theme_id"],
+                theme_label=preset["theme_label"],
+                topics=preset["topics"],
+                purposes=preset["purposes"],
+                editorial_brief=preset["editorial_brief"],
+                sources=[VeilleSourceLite.model_validate(s) for s in srcs],
+            )
+        )
+    return out
 
 
 # ─── Endpoints suggestions ───────────────────────────────────────────────────

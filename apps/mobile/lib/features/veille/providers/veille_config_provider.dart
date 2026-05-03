@@ -45,6 +45,11 @@ class VeilleConfigState {
   final int step;
   final int? loadingFrom;
 
+  /// Slug du pré-set en cours de prévisualisation (Step 1.5). Quand non-null,
+  /// `veille_config_screen` rend `Step1_5PresetPreviewScreen` au lieu du
+  /// step courant. PR A : sentinel uniquement, persistance push en PR B.
+  final String? previewPresetId;
+
   final String? selectedTheme;
   final Set<String> selectedTopics;
   final Set<String> selectedSuggestions;
@@ -64,6 +69,12 @@ class VeilleConfigState {
   /// Mapping slug → metadata pour sources (mock défauts + override API).
   final Map<String, VeilleSourceMeta> sourcesMeta;
 
+  /// V1 personalization (PR A : capturés via applyPreset, push backend en PR B).
+  final String? purpose;
+  final String? purposeOther;
+  final String? editorialBrief;
+  final String? presetId;
+
   /// Submit en cours — empêche les double-tap.
   final bool isSubmitting;
 
@@ -73,6 +84,7 @@ class VeilleConfigState {
   const VeilleConfigState({
     required this.step,
     required this.loadingFrom,
+    required this.previewPresetId,
     required this.selectedTheme,
     required this.selectedTopics,
     required this.selectedSuggestions,
@@ -83,6 +95,10 @@ class VeilleConfigState {
     required this.customTopics,
     required this.topicLabels,
     required this.sourcesMeta,
+    required this.purpose,
+    required this.purposeOther,
+    required this.editorialBrief,
+    required this.presetId,
     required this.isSubmitting,
     required this.lastError,
   });
@@ -90,6 +106,7 @@ class VeilleConfigState {
   factory VeilleConfigState.initial() => VeilleConfigState(
         step: 1,
         loadingFrom: null,
+        previewPresetId: null,
         selectedTheme: null,
         selectedTopics: {},
         selectedSuggestions: {},
@@ -100,6 +117,10 @@ class VeilleConfigState {
         customTopics: [],
         topicLabels: {},
         sourcesMeta: {},
+        purpose: null,
+        purposeOther: null,
+        editorialBrief: null,
+        presetId: null,
         isSubmitting: false,
         lastError: null,
       );
@@ -114,6 +135,7 @@ class VeilleConfigState {
   VeilleConfigState copyWith({
     int? step,
     Object? loadingFrom = _Sentinel.value,
+    Object? previewPresetId = _Sentinel.value,
     Object? selectedTheme = _Sentinel.value,
     Set<String>? selectedTopics,
     Set<String>? selectedSuggestions,
@@ -124,6 +146,10 @@ class VeilleConfigState {
     List<VeilleTopic>? customTopics,
     Map<String, String>? topicLabels,
     Map<String, VeilleSourceMeta>? sourcesMeta,
+    Object? purpose = _Sentinel.value,
+    Object? purposeOther = _Sentinel.value,
+    Object? editorialBrief = _Sentinel.value,
+    Object? presetId = _Sentinel.value,
     bool? isSubmitting,
     Object? lastError = _Sentinel.value,
   }) =>
@@ -132,6 +158,9 @@ class VeilleConfigState {
         loadingFrom: loadingFrom == _Sentinel.value
             ? this.loadingFrom
             : loadingFrom as int?,
+        previewPresetId: previewPresetId == _Sentinel.value
+            ? this.previewPresetId
+            : previewPresetId as String?,
         selectedTheme: selectedTheme == _Sentinel.value
             ? this.selectedTheme
             : selectedTheme as String?,
@@ -144,6 +173,16 @@ class VeilleConfigState {
         customTopics: customTopics ?? this.customTopics,
         topicLabels: topicLabels ?? this.topicLabels,
         sourcesMeta: sourcesMeta ?? this.sourcesMeta,
+        purpose:
+            purpose == _Sentinel.value ? this.purpose : purpose as String?,
+        purposeOther: purposeOther == _Sentinel.value
+            ? this.purposeOther
+            : purposeOther as String?,
+        editorialBrief: editorialBrief == _Sentinel.value
+            ? this.editorialBrief
+            : editorialBrief as String?,
+        presetId:
+            presetId == _Sentinel.value ? this.presetId : presetId as String?,
         isSubmitting: isSubmitting ?? this.isSubmitting,
         lastError:
             lastError == _Sentinel.value ? this.lastError : lastError as String?,
@@ -392,6 +431,69 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       );
       rethrow;
     }
+  }
+
+  /// Affiche l'écran preview pré-set (Step 1.5). Le step courant reste à 1
+  /// sous le capot — le screen orchestrator détecte `previewPresetId != null`.
+  void openPresetPreview(String presetSlug) {
+    if (state.previewPresetId == presetSlug) return;
+    state = state.copyWith(previewPresetId: presetSlug);
+  }
+
+  /// Ferme l'écran preview sans appliquer le pré-set (retour Step 1).
+  void closePresetPreview() {
+    if (state.previewPresetId == null) return;
+    state = state.copyWith(previewPresetId: null);
+  }
+
+  /// Hydrate le state depuis un pré-set : thème, topics (matérialisés en
+  /// custom topics + cochés), sources curées (followed + apiSourceId), purpose
+  /// + brief éditorial. Si `jumpToStep4` → bascule direct au rythme
+  /// (« Continuer avec ce pré-set »). Sinon retour Step 1 personnalisable.
+  void applyPreset(VeillePreset preset, {required bool jumpToStep4}) {
+    final topicSlugs = <String>{};
+    final newCustomTopics = <VeilleTopic>[];
+    final nextLabels = Map<String, String>.from(state.topicLabels);
+    for (final label in preset.topics) {
+      final slug = _slugifyCustom(label);
+      topicSlugs.add(slug);
+      nextLabels[slug] = label;
+      if (!state.customTopics.any((t) => t.id == slug)) {
+        newCustomTopics.add(
+          VeilleTopic(id: slug, label: label, reason: 'depuis « ${preset.label} »'),
+        );
+      }
+    }
+
+    final nextMeta = Map<String, VeilleSourceMeta>.from(state.sourcesMeta);
+    final followed = <String>{};
+    for (final s in preset.sources) {
+      nextMeta[s.id] = VeilleSourceMeta(
+        slug: s.id,
+        name: s.name,
+        kind: 'followed',
+        apiSourceId: s.id,
+        url: s.url,
+      );
+      followed.add(s.id);
+    }
+
+    state = state.copyWith(
+      step: jumpToStep4 ? 4 : 1,
+      previewPresetId: null,
+      selectedTheme: preset.themeId,
+      selectedTopics: topicSlugs,
+      selectedSuggestions: const <String>{},
+      customTopics: [...state.customTopics, ...newCustomTopics],
+      topicLabels: nextLabels,
+      followedSources: followed,
+      nicheSources: const <String>{},
+      sourcesMeta: nextMeta,
+      purpose: preset.purposes.isNotEmpty ? preset.purposes.first : null,
+      purposeOther: null,
+      editorialBrief: preset.editorialBrief.isEmpty ? null : preset.editorialBrief,
+      presetId: preset.slug,
+    );
   }
 
   void clearError() => state = state.copyWith(lastError: null);

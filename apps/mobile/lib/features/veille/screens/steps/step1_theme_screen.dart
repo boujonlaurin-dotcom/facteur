@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../models/veille_config.dart';
 import '../../providers/veille_config_provider.dart';
 import '../../providers/veille_preset_topics_provider.dart';
+import '../../providers/veille_presets_provider.dart';
 import '../../providers/veille_themes_provider.dart';
 import '../../widgets/veille_widgets.dart';
 
@@ -150,6 +151,8 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(height: 28),
+                const _InspirationsSection(),
               ],
             ),
           ),
@@ -435,6 +438,77 @@ Future<void> _openAddTopicSheet(
 
   controller.dispose();
   if (result != null && result.isNotEmpty) onAdd(result);
+}
+
+class _InspirationsSection extends ConsumerWidget {
+  const _InspirationsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final asyncPresets = ref.watch(veillePresetsProvider);
+    final notifier = ref.read(veilleConfigProvider.notifier);
+
+    return asyncPresets.when(
+      loading: () => const _PresetCardSkeleton(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (presets) {
+        if (presets.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'INSPIRATIONS',
+              style: GoogleFonts.courierPrime(
+                fontSize: 11,
+                letterSpacing: 0.5,
+                color: const Color(0xFF8B7E63),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Pas sûr·e par où commencer ? Pioche un pré-set.',
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                color: const Color(0xFF5D5B5A),
+              ),
+            ),
+            const SizedBox(height: 12),
+            for (var i = 0; i < presets.length; i++) ...[
+              if (i > 0) const SizedBox(height: 8),
+              PresetCard(
+                label: presets[i].label,
+                accroche: presets[i].accroche,
+                icon: phosphorThemeIcon(presets[i].themeId),
+                onTap: () => notifier.openPresetPreview(presets[i].slug),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _PresetCardSkeleton extends StatelessWidget {
+  const _PresetCardSkeleton();
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: List.generate(
+        3,
+        (i) => Padding(
+          padding: EdgeInsets.only(top: i == 0 ? 0 : 8),
+          child: Container(
+            height: 70,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F0E5),
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _Footer extends StatelessWidget {

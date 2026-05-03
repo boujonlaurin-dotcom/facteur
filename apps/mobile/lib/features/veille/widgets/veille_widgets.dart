@@ -1188,3 +1188,90 @@ class GhostLink extends StatelessWidget {
     );
   }
 }
+
+/// Carte d'« Inspirations » affichée en bas du Step 1 — propose un pré-set
+/// V1 (label + accroche). Tap → ouvre l'écran preview Step 1.5.
+class PresetCard extends StatelessWidget {
+  final String label;
+  final String accroche;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const PresetCard({
+    super.key,
+    required this.label,
+    required this.accroche,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: FacteurColors.veilleLineSoft,
+              width: 1.5,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: const BoxDecoration(
+                  color: FacteurColors.veilleTint,
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: Icon(icon, size: 18, color: FacteurColors.veille),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                        color: const Color(0xFF2C2A29),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      accroche,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12,
+                        height: 1.4,
+                        color: const Color(0xFF5D5B5A),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                PhosphorIcons.arrowRight(),
+                size: 16,
+                color: const Color(0xFF8B7E63),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

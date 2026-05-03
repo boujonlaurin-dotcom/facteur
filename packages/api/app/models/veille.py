@@ -118,6 +118,12 @@ class VeilleConfig(Base):
         onupdate=text("now()"),
     )
 
+    # V1 personalization (migration vp01) — câblage router en PR B.
+    purpose: Mapped[str | None] = mapped_column(Text, nullable=True)
+    purpose_other: Mapped[str | None] = mapped_column(Text, nullable=True)
+    editorial_brief: Mapped[str | None] = mapped_column(Text, nullable=True)
+    preset_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+
 
 class VeilleTopic(Base):
     """Topic rattaché à une veille_config."""
