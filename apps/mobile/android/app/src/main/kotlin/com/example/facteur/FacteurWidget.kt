@@ -55,12 +55,17 @@ class FacteurWidget : AppWidgetProvider() {
                 Log.d(TAG, "onUpdate id=$appWidgetId json.len=${json?.length ?: -1}")
 
                 renderHeader(views, prefs)
+                Log.d(TAG, "header rendered id=$appWidgetId")
                 renderArticles(context, views, json)
+                Log.d(TAG, "articles rendered id=$appWidgetId")
                 wireClickIntents(context, views, appWidgetId)
+                Log.d(TAG, "intents wired id=$appWidgetId")
 
+                Log.d(TAG, "calling updateAppWidget id=$appWidgetId")
                 appWidgetManager.updateAppWidget(appWidgetId, views)
-            } catch (e: Exception) {
-                Log.e(TAG, "Widget update failed for id=$appWidgetId", e)
+                Log.d(TAG, "updateAppWidget returned id=$appWidgetId")
+            } catch (t: Throwable) {
+                Log.e(TAG, "Widget update failed for id=$appWidgetId", t)
             }
         }
     }
@@ -92,6 +97,7 @@ class FacteurWidget : AppWidgetProvider() {
         views.removeAllViews(R.id.articles_container)
 
         val articles = parseArticles(json)
+        Log.d(TAG, "parseArticles count=${articles.size}")
         if (articles.isEmpty()) {
             views.addView(
                 R.id.articles_container,
@@ -101,11 +107,10 @@ class FacteurWidget : AppWidgetProvider() {
         }
 
         for ((index, article) in articles.withIndex()) {
+            Log.d(TAG, "buildArticleRow idx=$index id=${article.id} thumb=${article.thumbnailPath.isNotBlank()} logo=${article.sourceLogoPath.isNotBlank()}")
             val row = buildArticleRow(context, article)
             views.addView(R.id.articles_container, row)
-            if (index < articles.size - 1) {
-                // Separators are baked into widget_article_row.xml.
-            }
+            Log.d(TAG, "addView ok idx=$index")
         }
     }
 
