@@ -47,7 +47,7 @@ const RESOURCES = {"assets/assets/notifications/facteur_avatar.png": "77a7e9c310
 "canvaskit/skwasm_heavy.wasm": "b0be7910760d205ea4e011458df6ee01",
 "canvaskit/skwasm.js": "8060d46e9a4901ca9991edd3a26be4f0",
 "flutter.js": "24bc71911b75b5f8135c949e27a2984e",
-"flutter_bootstrap.js": "3805559e0eef582f03b4310caecee526",
+"flutter_bootstrap.js": "7857883c381607bcf79abc3aa4cd2c8a",
 "main.dart.js": "a8fa5e12f29aff671f28561abf643c24",
 "version.json": "23790d96eb676a5e9516ef2c8bac14dd",
 "icons/Icon-maskable-512.png": "cae642f390c6970d03aaa5134ddbee18",
