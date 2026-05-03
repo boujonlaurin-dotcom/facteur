@@ -31,6 +31,7 @@ import '../features/veille/screens/veille_config_screen.dart';
 import '../features/veille/screens/veille_dashboard_screen.dart';
 import '../features/veille/screens/veille_deliveries_screen.dart';
 import '../features/veille/screens/veille_delivery_detail_screen.dart';
+import '../features/lettres/screens/lettres_placeholder_screen.dart';
 import '../features/digest/screens/closure_screen.dart';
 import '../features/saved/screens/saved_screen.dart';
 import '../features/saved/screens/saved_all_screen.dart';
@@ -73,6 +74,7 @@ class RouteNames {
   static const String veilleDashboard = 'veille-dashboard';
   static const String veilleDeliveries = 'veille-deliveries';
   static const String veilleDeliveryDetail = 'veille-delivery-detail';
+  static const String lettres = 'lettres';
 }
 
 /// Chemins des routes
@@ -105,6 +107,7 @@ class RoutePaths {
   static const String veilleDashboard = '/veille/dashboard';
   static const String veilleDeliveries = '/veille/deliveries';
   static const String veilleDeliveryDetail = '/veille/deliveries/:id';
+  static const String lettres = '/lettres';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -428,6 +431,15 @@ final routerProvider = Provider<GoRouter>((ref) {
           child: VeilleDeliveryDetailScreen(
             deliveryId: state.pathParameters['id']!,
           ),
+        ),
+      ),
+
+      // Lettres du Facteur — onboarding doux. PR2 = placeholder, PR3 livre l'écran complet.
+      GoRoute(
+        path: RoutePaths.lettres,
+        name: RouteNames.lettres,
+        pageBuilder: (context, state) => const FullSwipeCupertinoPage(
+          child: LettresPlaceholderScreen(),
         ),
       ),
 
