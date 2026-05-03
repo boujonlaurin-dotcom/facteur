@@ -30,6 +30,9 @@ class Step3SourcesScreen extends ConsumerWidget {
         : VeilleSourcesSuggestionParams(
             themeId: themeId,
             topicLabels: topicLabels,
+            purpose: state.purpose,
+            purposeOther: state.purposeOther,
+            editorialBrief: state.editorialBrief,
           );
 
     final asyncSuggestions = params == null

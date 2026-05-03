@@ -86,8 +86,6 @@ class VeilleConfigResponse(BaseModel):
     updated_at: datetime
     topics: list[VeilleTopicResponse] = []
     sources: list[VeilleSourceResponse] = []
-    # V1 personalization (migration vp01) — toujours None tant que la PR B
-    # ne câble pas la persistance dans le router /config.
     purpose: str | None = None
     purpose_other: str | None = None
     editorial_brief: str | None = None
@@ -163,6 +161,9 @@ class VeilleSuggestTopicsRequest(BaseModel):
     theme_label: str = Field(min_length=1, max_length=120)
     selected_topic_ids: list[str] = Field(default_factory=list)
     exclude_topic_ids: list[str] = Field(default_factory=list)
+    purpose: str | None = Field(default=None, max_length=80)
+    purpose_other: str | None = Field(default=None, max_length=80)
+    editorial_brief: str | None = Field(default=None, max_length=280)
 
 
 class VeilleSourceSuggestion(BaseModel):
@@ -183,6 +184,9 @@ class VeilleSuggestSourcesRequest(BaseModel):
     theme_id: VeilleThemeSlug
     topic_labels: list[str] = Field(default_factory=list)
     exclude_source_ids: list[UUID] = Field(default_factory=list)
+    purpose: str | None = Field(default=None, max_length=80)
+    purpose_other: str | None = Field(default=None, max_length=80)
+    editorial_brief: str | None = Field(default=None, max_length=280)
 
 
 # ─── Deliveries ──────────────────────────────────────────────────────────────

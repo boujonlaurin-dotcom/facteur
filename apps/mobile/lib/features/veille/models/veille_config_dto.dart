@@ -113,6 +113,10 @@ class VeilleConfigDto {
   final DateTime updatedAt;
   final List<VeilleTopicDto> topics;
   final List<VeilleSourceDto> sources;
+  final String? purpose;
+  final String? purposeOther;
+  final String? editorialBrief;
+  final String? presetId;
 
   const VeilleConfigDto({
     required this.id,
@@ -130,6 +134,10 @@ class VeilleConfigDto {
     required this.updatedAt,
     required this.topics,
     required this.sources,
+    this.purpose,
+    this.purposeOther,
+    this.editorialBrief,
+    this.presetId,
   });
 
   factory VeilleConfigDto.fromJson(Map<String, dynamic> json) {
@@ -159,6 +167,10 @@ class VeilleConfigDto {
           .whereType<Map<String, dynamic>>()
           .map(VeilleSourceDto.fromJson)
           .toList(),
+      purpose: json['purpose'] as String?,
+      purposeOther: json['purpose_other'] as String?,
+      editorialBrief: json['editorial_brief'] as String?,
+      presetId: json['preset_id'] as String?,
     );
   }
 }
@@ -244,6 +256,10 @@ class VeilleConfigUpsertRequest {
   final int? dayOfWeek;
   final int deliveryHour;
   final String timezone;
+  final String? purpose;
+  final String? purposeOther;
+  final String? editorialBrief;
+  final String? presetId;
 
   const VeilleConfigUpsertRequest({
     required this.themeId,
@@ -254,6 +270,10 @@ class VeilleConfigUpsertRequest {
     required this.dayOfWeek,
     this.deliveryHour = 7,
     this.timezone = 'Europe/Paris',
+    this.purpose,
+    this.purposeOther,
+    this.editorialBrief,
+    this.presetId,
   });
 
   Map<String, dynamic> toJson() => {
@@ -265,6 +285,11 @@ class VeilleConfigUpsertRequest {
         if (dayOfWeek != null) 'day_of_week': dayOfWeek,
         'delivery_hour': deliveryHour,
         'timezone': timezone,
+        // Toujours envoyés (même si null) : permet de clear côté serveur.
+        'purpose': purpose,
+        'purpose_other': purposeOther,
+        'editorial_brief': editorialBrief,
+        'preset_id': presetId,
       };
 }
 

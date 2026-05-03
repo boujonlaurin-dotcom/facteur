@@ -23,6 +23,7 @@ from app.models.source import Source, UserSource
 from app.schemas.veille import VeilleThemeSlug
 from app.services.editorial.llm_client import EditorialLLMClient
 from app.services.source_service import SourceService
+from app.services.veille.topic_suggester import purpose_line
 
 logger = structlog.get_logger()
 
@@ -83,6 +84,9 @@ class SourceSuggester:
         theme_id: str,
         topic_labels: list[str],
         excluded_source_ids: list[UUID] | None = None,
+        purpose: str | None = None,
+        purpose_other: str | None = None,
+        editorial_brief: str | None = None,
     ) -> SourceSuggestions:
         """Renvoie sources `followed` + `niche` pour la veille en cours.
 
@@ -92,6 +96,9 @@ class SourceSuggester:
             theme_id: slug du thème.
             topic_labels: labels des topics retenus (pour aider le LLM).
             excluded_source_ids: sources à exclure (déjà rattachées, refusées).
+            purpose: slug de l'usage souhaité (V1, optionnel).
+            purpose_other: free-text quand `purpose='autre'`.
+            editorial_brief: brief libre décrivant la veille idéale.
 
         Returns:
             `SourceSuggestions(followed=..., niche=...)`.
@@ -99,7 +106,15 @@ class SourceSuggester:
         excluded = set(excluded_source_ids or [])
 
         followed = await self._followed(session, user_id, theme_id, excluded)
-        niche = await self._niche(session, theme_id, topic_labels, excluded)
+        niche = await self._niche(
+            session,
+            theme_id,
+            topic_labels,
+            excluded,
+            purpose=purpose,
+            purpose_other=purpose_other,
+            editorial_brief=editorial_brief,
+        )
 
         return SourceSuggestions(followed=followed, niche=niche)
 
@@ -141,13 +156,18 @@ class SourceSuggester:
         theme_id: str,
         topic_labels: list[str],
         excluded: set[UUID],
+        purpose: str | None = None,
+        purpose_other: str | None = None,
+        editorial_brief: str | None = None,
     ) -> list[SourceSuggestionItem]:
         if not self._llm.is_ready:
             return await self._fallback_niche(session, theme_id, excluded)
 
         user_message = (
             f"Thème : {theme_id}\n"
-            f"Topics retenus : {', '.join(topic_labels) if topic_labels else '(aucun)'}\n\n"
+            f"Topics retenus : {', '.join(topic_labels) if topic_labels else '(aucun)'}\n"
+            f"Usage souhaité : {purpose_line(purpose, purpose_other)}\n"
+            f"Brief éditorial : {editorial_brief or '(aucun)'}\n\n"
             f"Propose 6 à 8 sources de niche pour ce thème."
         )
         raw = await self._llm.chat_json(

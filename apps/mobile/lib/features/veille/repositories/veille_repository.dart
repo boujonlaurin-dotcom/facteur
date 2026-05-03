@@ -89,6 +89,9 @@ class VeilleRepository {
     required String themeLabel,
     List<String> selectedTopicIds = const [],
     List<String> excludeTopicIds = const [],
+    String? purpose,
+    String? purposeOther,
+    String? editorialBrief,
   }) async {
     try {
       final response = await _dio.post<dynamic>(
@@ -98,6 +101,9 @@ class VeilleRepository {
           'theme_label': themeLabel,
           'selected_topic_ids': selectedTopicIds,
           'exclude_topic_ids': excludeTopicIds,
+          if (purpose != null) 'purpose': purpose,
+          if (purposeOther != null) 'purpose_other': purposeOther,
+          if (editorialBrief != null) 'editorial_brief': editorialBrief,
         },
       );
       final raw = response.data as List<dynamic>;
@@ -114,6 +120,9 @@ class VeilleRepository {
     required String themeId,
     List<String> topicLabels = const [],
     List<String> excludeSourceIds = const [],
+    String? purpose,
+    String? purposeOther,
+    String? editorialBrief,
   }) async {
     try {
       final response = await _dio.post<dynamic>(
@@ -122,6 +131,9 @@ class VeilleRepository {
           'theme_id': themeId,
           'topic_labels': topicLabels,
           'exclude_source_ids': excludeSourceIds,
+          if (purpose != null) 'purpose': purpose,
+          if (purposeOther != null) 'purpose_other': purposeOther,
+          if (editorialBrief != null) 'editorial_brief': editorialBrief,
         },
       );
       return VeilleSourceSuggestionsResponse.fromJson(
