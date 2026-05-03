@@ -71,6 +71,76 @@ class VeilleSource {
   }
 }
 
+@immutable
+class VeillePresetSource {
+  final String id;
+  final String name;
+  final String url;
+  final String? logoUrl;
+
+  const VeillePresetSource({
+    required this.id,
+    required this.name,
+    required this.url,
+    this.logoUrl,
+  });
+
+  factory VeillePresetSource.fromJson(Map<String, dynamic> json) {
+    return VeillePresetSource(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      url: json['url'] as String,
+      logoUrl: json['logo_url'] as String?,
+    );
+  }
+}
+
+@immutable
+class VeillePreset {
+  final String slug;
+  final String label;
+  final String accroche;
+  final String themeId;
+  final String themeLabel;
+  final List<String> topics;
+  final List<String> purposes;
+  final String editorialBrief;
+  final List<VeillePresetSource> sources;
+
+  const VeillePreset({
+    required this.slug,
+    required this.label,
+    required this.accroche,
+    required this.themeId,
+    required this.themeLabel,
+    required this.topics,
+    required this.purposes,
+    required this.editorialBrief,
+    required this.sources,
+  });
+
+  factory VeillePreset.fromJson(Map<String, dynamic> json) {
+    return VeillePreset(
+      slug: json['slug'] as String,
+      label: json['label'] as String,
+      accroche: json['accroche'] as String,
+      themeId: json['theme_id'] as String,
+      themeLabel: json['theme_label'] as String,
+      topics: ((json['topics'] as List?) ?? const [])
+          .whereType<String>()
+          .toList(),
+      purposes: ((json['purposes'] as List?) ?? const [])
+          .whereType<String>()
+          .toList(),
+      editorialBrief: (json['editorial_brief'] as String?) ?? '',
+      sources: ((json['sources'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(VeillePresetSource.fromJson)
+          .toList(),
+    );
+  }
+}
+
 enum VeilleFrequency {
   weekly('weekly', 'Chaque semaine', recommended: true),
   biweekly('biweek', 'Tous les 15 jours'),

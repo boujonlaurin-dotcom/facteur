@@ -7,6 +7,7 @@ import '../../../config/theme.dart';
 import '../providers/veille_active_config_provider.dart';
 import '../providers/veille_config_provider.dart';
 import '../repositories/veille_repository.dart';
+import 'steps/step1_5_preset_preview_screen.dart';
 import 'steps/step1_theme_screen.dart';
 import 'steps/step2_suggestions_screen.dart';
 import 'steps/step3_sources_screen.dart';
@@ -73,8 +74,16 @@ class VeilleConfigScreen extends ConsumerWidget {
     }
 
     Widget body;
+    String key;
     if (state.isLoading) {
       body = FlowLoadingScreen(from: state.loadingFrom!);
+      key = 'load-${state.loadingFrom}';
+    } else if (state.previewPresetId != null) {
+      body = Step15PresetPreviewScreen(
+        presetSlug: state.previewPresetId!,
+        onClose: close,
+      );
+      key = 'preset-${state.previewPresetId}';
     } else {
       switch (state.step) {
         case 1:
@@ -93,6 +102,7 @@ class VeilleConfigScreen extends ConsumerWidget {
             onSubmit: handleSubmit,
           );
       }
+      key = 'step-${state.step}';
     }
 
     return Scaffold(
@@ -104,9 +114,7 @@ class VeilleConfigScreen extends ConsumerWidget {
           switchInCurve: Curves.easeOut,
           switchOutCurve: Curves.easeIn,
           child: KeyedSubtree(
-            key: ValueKey(
-              state.isLoading ? 'load-${state.loadingFrom}' : 'step-${state.step}',
-            ),
+            key: ValueKey(key),
             child: body,
           ),
         ),
