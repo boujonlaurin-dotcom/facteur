@@ -31,7 +31,8 @@ import '../features/veille/screens/veille_config_screen.dart';
 import '../features/veille/screens/veille_dashboard_screen.dart';
 import '../features/veille/screens/veille_deliveries_screen.dart';
 import '../features/veille/screens/veille_delivery_detail_screen.dart';
-import '../features/lettres/screens/lettres_placeholder_screen.dart';
+import '../features/lettres/screens/courrier_screen.dart';
+import '../features/lettres/screens/open_letter_screen.dart';
 import '../features/digest/screens/closure_screen.dart';
 import '../features/saved/screens/saved_screen.dart';
 import '../features/saved/screens/saved_all_screen.dart';
@@ -75,6 +76,7 @@ class RouteNames {
   static const String veilleDeliveries = 'veille-deliveries';
   static const String veilleDeliveryDetail = 'veille-delivery-detail';
   static const String lettres = 'lettres';
+  static const String openLetter = 'open-letter';
 }
 
 /// Chemins des routes
@@ -108,6 +110,7 @@ class RoutePaths {
   static const String veilleDeliveries = '/veille/deliveries';
   static const String veilleDeliveryDetail = '/veille/deliveries/:id';
   static const String lettres = '/lettres';
+  static const String openLetter = '/lettres/:id';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -434,13 +437,22 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
 
-      // Lettres du Facteur — onboarding doux. PR2 = placeholder, PR3 livre l'écran complet.
+      // Lettres du Facteur — onboarding doux (story 19.1).
       GoRoute(
         path: RoutePaths.lettres,
         name: RouteNames.lettres,
         pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-          child: LettresPlaceholderScreen(),
+          child: CourrierScreen(),
         ),
+        routes: [
+          GoRoute(
+            path: ':id',
+            name: RouteNames.openLetter,
+            pageBuilder: (context, state) => FullSwipeCupertinoPage(
+              child: OpenLetterScreen(letterId: state.pathParameters['id']!),
+            ),
+          ),
+        ],
       ),
 
       // Digest (Essentiel) - opened from the feed card or widget. Lives

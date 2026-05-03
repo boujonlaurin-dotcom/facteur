@@ -23,6 +23,7 @@ import '../../../core/providers/navigation_providers.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
+import '../../lettres/providers/letters_provider.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../feed/widgets/perspectives_pill.dart';
 import '../../../widgets/sunflower_icon.dart';
@@ -1425,6 +1426,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // If data already pre-loaded, show directly
     if (_perspectivesResponse != null) {
       _showPerspectivesSheet(context, _perspectivesResponse!);
+      // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
+      unawaited(ref.read(lettersProvider.notifier).silentRefresh());
       return;
     }
 
@@ -1463,6 +1466,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         setState(() => _perspectivesResponse = response);
         _showPerspectivesSheet(context, response);
       }
+      // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
+      unawaited(ref.read(lettersProvider.notifier).silentRefresh());
     } catch (e) {
       debugPrint('Error fetching perspectives: $e');
       if (context.mounted) Navigator.pop(context);

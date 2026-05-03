@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/api/api_client.dart';
 import '../../feed/repositories/personalization_repository.dart';
+import '../../lettres/providers/letters_provider.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../models/theme_source_model.dart';
@@ -164,6 +167,8 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
     try {
       await repository.updateSourceSubscription(
           sourceId, !currentlySubscribed);
+      // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
+      unawaited(ref.read(lettersProvider.notifier).silentRefresh());
     } catch (e, stack) {
       // ignore: avoid_print
       print(
