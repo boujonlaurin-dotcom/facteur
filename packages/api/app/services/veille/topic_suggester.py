@@ -21,6 +21,30 @@ _DEFAULT_CACHE_SIZE = 256
 _DEFAULT_CACHE_TTL_SECONDS = 600  # 10 min
 _SUGGESTIONS_PER_CALL = 5
 
+# Slugs partagés avec le mobile (Step 1 « Pour quoi faire ? »). Doit rester
+# aligné avec `apps/mobile/lib/features/veille/widgets/veille_widgets.dart`.
+PURPOSE_LABELS: dict[str, str] = {
+    "me_tenir_au_courant": "Me tenir à jour de l'actu",
+    "progresser_au_travail": "M'améliorer dans mon travail",
+    "culture_generale": "Développer ma culture générale",
+    "preparer_projet": "Préparer un projet / une décision",
+    "approfondir_passion": "Approfondir un sujet de passion",
+    "autre": "Autre",
+}
+
+
+def purpose_label(slug: str | None) -> str:
+    """Retourne le label fr d'un slug purpose, ou '(non précisé)' si inconnu."""
+    if not slug:
+        return "(non précisé)"
+    return PURPOSE_LABELS.get(slug, slug)
+
+
+def purpose_line(slug: str | None, other: str | None) -> str:
+    """Format `<label> (<other>)` pour le user_message LLM."""
+    base = purpose_label(slug)
+    return f"{base} ({other})" if other else base
+
 
 @dataclass(frozen=True)
 class TopicSuggestion:
@@ -100,9 +124,25 @@ class TopicSuggester:
         )
 
     @staticmethod
-    def _cache_key(theme_id: str, selected: list[str], excluded: list[str]) -> str:
-        payload = (
-            f"{theme_id}|{','.join(sorted(selected))}|{','.join(sorted(excluded))}"
+    def _cache_key(
+        theme_id: str,
+        selected: list[str],
+        excluded: list[str],
+        purpose: str | None,
+        purpose_other: str | None,
+        editorial_brief: str | None,
+    ) -> str:
+        # Inclus purpose + brief : 2 users avec mêmes topics mais purpose
+        # différent doivent recevoir des suggestions différentes.
+        payload = "|".join(
+            [
+                theme_id,
+                ",".join(sorted(selected)),
+                ",".join(sorted(excluded)),
+                purpose or "",
+                purpose_other or "",
+                editorial_brief or "",
+            ]
         )
         return hashlib.sha256(payload.encode()).hexdigest()
 
@@ -112,6 +152,9 @@ class TopicSuggester:
         theme_label: str,
         selected_topic_ids: list[str],
         excluded_topic_ids: list[str] | None = None,
+        purpose: str | None = None,
+        purpose_other: str | None = None,
+        editorial_brief: str | None = None,
     ) -> list[TopicSuggestion]:
         """Renvoie 5 suggestions de topics pour `theme_id`.
 
@@ -120,12 +163,22 @@ class TopicSuggester:
             theme_label: label affichable (ex: 'Éducation').
             selected_topic_ids: topics déjà choisis (à éviter).
             excluded_topic_ids: topics à exclure (ex: refusés précédemment).
+            purpose: slug de l'usage souhaité (V1, optionnel).
+            purpose_other: free-text quand `purpose='autre'`.
+            editorial_brief: brief libre (≤280 chars) décrivant la veille idéale.
 
         Returns:
             Exactement 5 `TopicSuggestion`. Fallback déterministe si LLM KO.
         """
         excluded = excluded_topic_ids or []
-        cache_key = self._cache_key(theme_id, selected_topic_ids, excluded)
+        cache_key = self._cache_key(
+            theme_id,
+            selected_topic_ids,
+            excluded,
+            purpose,
+            purpose_other,
+            editorial_brief,
+        )
         if cached := self._cache.get(cache_key):
             return cached
 
@@ -144,7 +197,9 @@ class TopicSuggester:
             f"Topics déjà sélectionnés : "
             f"{', '.join(selected_topic_ids) if selected_topic_ids else '(aucun)'}\n"
             f"Topics à exclure : "
-            f"{', '.join(excluded) if excluded else '(aucun)'}\n\n"
+            f"{', '.join(excluded) if excluded else '(aucun)'}\n"
+            f"Usage souhaité : {purpose_line(purpose, purpose_other)}\n"
+            f"Brief éditorial : {editorial_brief or '(aucun)'}\n\n"
             f"Propose 5 topics supplémentaires."
         )
 

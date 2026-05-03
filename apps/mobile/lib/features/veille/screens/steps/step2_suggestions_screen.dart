@@ -27,6 +27,9 @@ class Step2SuggestionsScreen extends ConsumerWidget {
             themeId: themeId,
             themeLabel: themeLabel,
             selectedTopicIds: state.selectedTopics.toList()..sort(),
+            purpose: state.purpose,
+            purposeOther: state.purposeOther,
+            editorialBrief: state.editorialBrief,
           )
         : null;
 

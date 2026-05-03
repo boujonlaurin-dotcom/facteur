@@ -308,6 +308,34 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
   void setFrequency(VeilleFrequency f) => state = state.copyWith(frequency: f);
   void setDay(VeilleDay d) => state = state.copyWith(day: d);
 
+  /// Quand on choisit un purpose autre que 'autre', on clear `purposeOther`
+  /// pour éviter qu'un free-text orphelin soit envoyé au LLM.
+  void setPurpose(String? slug) {
+    if (slug == state.purpose) return;
+    if (slug == 'autre') {
+      state = state.copyWith(purpose: slug);
+    } else {
+      state = state.copyWith(purpose: slug, purposeOther: null);
+    }
+  }
+
+  void setPurposeOther(String? value) {
+    final normalized = _emptyToNull(value);
+    if (normalized == state.purposeOther) return;
+    state = state.copyWith(purposeOther: normalized);
+  }
+
+  void setEditorialBrief(String? value) {
+    final normalized = _emptyToNull(value);
+    if (normalized == state.editorialBrief) return;
+    state = state.copyWith(editorialBrief: normalized);
+  }
+
+  static String? _emptyToNull(String? value) {
+    final trimmed = (value ?? '').trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
   /// Avance d'une étape, en passant par un loading screen IA (sauf si on est
   /// déjà sur la dernière étape — auquel cas `submit()` doit être appelé).
   void goNext() {
@@ -575,6 +603,10 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       sourceSelections: sourceSelections,
       frequency: _frequencyToWire(s.frequency),
       dayOfWeek: _dayToWire(s.day, s.frequency),
+      purpose: s.purpose,
+      purposeOther: s.purposeOther,
+      editorialBrief: s.editorialBrief,
+      presetId: s.presetId,
     );
   }
 

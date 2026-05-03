@@ -328,4 +328,108 @@ void main() {
       expect(json, {'status': 'paused'});
     });
   });
+
+  group('VeilleConfigUpsertRequest — purpose + brief (PR B)', () {
+    test('omits keys absent → still includes null purpose/brief/preset', () {
+      // Backwards compat : on envoie toujours les 4 clés (même null), pour
+      // permettre au backend de les clear si l'utilisateur les efface.
+      final body = VeilleConfigUpsertRequest(
+        themeId: 'tech',
+        themeLabel: 'Tech',
+        topics: const [],
+        sourceSelections: const [],
+        frequency: 'weekly',
+        dayOfWeek: 0,
+      );
+      final json = body.toJson();
+      expect(json.containsKey('purpose'), isTrue);
+      expect(json['purpose'], isNull);
+      expect(json['purpose_other'], isNull);
+      expect(json['editorial_brief'], isNull);
+      expect(json['preset_id'], isNull);
+    });
+
+    test('serializes purpose + brief + preset_id', () {
+      final body = VeilleConfigUpsertRequest(
+        themeId: 'tech',
+        themeLabel: 'Tech',
+        topics: const [],
+        sourceSelections: const [],
+        frequency: 'weekly',
+        dayOfWeek: 0,
+        purpose: 'preparer_projet',
+        editorialBrief: 'Plutôt analyses long format',
+        presetId: 'ia_agentique',
+      );
+      final json = body.toJson();
+      expect(json['purpose'], 'preparer_projet');
+      expect(json['purpose_other'], isNull);
+      expect(json['editorial_brief'], 'Plutôt analyses long format');
+      expect(json['preset_id'], 'ia_agentique');
+    });
+
+    test('serializes purpose=autre with purpose_other', () {
+      final body = VeilleConfigUpsertRequest(
+        themeId: 'tech',
+        themeLabel: 'Tech',
+        topics: const [],
+        sourceSelections: const [],
+        frequency: 'weekly',
+        dayOfWeek: 0,
+        purpose: 'autre',
+        purposeOther: 'Préparer un livre',
+      );
+      final json = body.toJson();
+      expect(json['purpose'], 'autre');
+      expect(json['purpose_other'], 'Préparer un livre');
+    });
+  });
+
+  group('VeilleConfigDto.fromJson — purpose + brief (PR B)', () {
+    test('parses purpose/purpose_other/editorial_brief/preset_id', () {
+      final dto = VeilleConfigDto.fromJson({
+        'id': 'cfg-1',
+        'user_id': 'u-1',
+        'theme_id': 'tech',
+        'theme_label': 'Tech',
+        'frequency': 'weekly',
+        'day_of_week': 0,
+        'delivery_hour': 7,
+        'timezone': 'Europe/Paris',
+        'status': 'active',
+        'created_at': '2026-05-01T07:00:00Z',
+        'updated_at': '2026-05-01T07:00:00Z',
+        'topics': [],
+        'sources': [],
+        'purpose': 'preparer_projet',
+        'purpose_other': null,
+        'editorial_brief': 'Long format',
+        'preset_id': 'ia_agentique',
+      });
+      expect(dto.purpose, 'preparer_projet');
+      expect(dto.purposeOther, isNull);
+      expect(dto.editorialBrief, 'Long format');
+      expect(dto.presetId, 'ia_agentique');
+    });
+
+    test('handles missing purpose/brief fields gracefully', () {
+      final dto = VeilleConfigDto.fromJson({
+        'id': 'cfg-1',
+        'user_id': 'u-1',
+        'theme_id': 'tech',
+        'theme_label': 'Tech',
+        'frequency': 'weekly',
+        'day_of_week': 0,
+        'delivery_hour': 7,
+        'timezone': 'Europe/Paris',
+        'status': 'active',
+        'created_at': '2026-05-01T07:00:00Z',
+        'updated_at': '2026-05-01T07:00:00Z',
+        'topics': [],
+        'sources': [],
+      });
+      expect(dto.purpose, isNull);
+      expect(dto.editorialBrief, isNull);
+    });
+  });
 }

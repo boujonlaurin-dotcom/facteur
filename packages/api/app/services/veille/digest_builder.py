@@ -21,6 +21,7 @@ from app.models.content import Content
 from app.models.veille import VeilleConfig, VeilleSource, VeilleTopic
 from app.services.briefing.importance_detector import ImportanceDetector, TopicCluster
 from app.services.editorial.llm_client import EditorialLLMClient
+from app.services.veille.topic_suggester import purpose_line
 
 logger = structlog.get_logger()
 
@@ -40,6 +41,9 @@ class VeilleDigestInput:
     last_delivered_at: datetime | None
     theme_id: str
     theme_label: str
+    purpose: str | None = None
+    purpose_other: str | None = None
+    editorial_brief: str | None = None
 
 
 class VeilleDigestBuilder:
@@ -148,6 +152,9 @@ class VeilleDigestBuilder:
             last_delivered_at=cfg.last_delivered_at,
             theme_id=cfg.theme_id,
             theme_label=cfg.theme_label,
+            purpose=cfg.purpose,
+            purpose_other=cfg.purpose_other,
+            editorial_brief=cfg.editorial_brief,
         )
 
     async def _fetch_contents(
@@ -237,6 +244,8 @@ class VeilleDigestBuilder:
         payload = {
             "theme": ctx.theme_label,
             "topics": ctx.user_topic_labels,
+            "purpose": purpose_line(ctx.purpose, ctx.purpose_other),
+            "editorial_brief": ctx.editorial_brief or "",
             "clusters": [
                 {
                     "cluster_id": c.cluster_id,

@@ -305,6 +305,47 @@ class TestThemeGuard:
         assert leftover is None
 
 
+class TestPurposeAndBriefInjection:
+    async def test_purpose_and_brief_in_user_message(self, db_session, test_user):
+        llm = AsyncMock()
+        llm.is_ready = True
+        # On ne se soucie pas de la réponse — on capture juste l'appel.
+        llm.chat_json = AsyncMock(return_value={"sources": []})
+        suggester = SourceSuggester(llm=llm)
+
+        await suggester.suggest_sources(
+            session=db_session,
+            user_id=test_user.user_id,
+            theme_id="science",
+            topic_labels=["climat"],
+            purpose="preparer_projet",
+            editorial_brief="Plutôt analyses long format",
+        )
+
+        assert llm.chat_json.await_count == 1
+        user_msg = llm.chat_json.call_args.kwargs["user_message"]
+        assert "Préparer un projet / une décision" in user_msg
+        assert "Brief éditorial : Plutôt analyses long format" in user_msg
+
+    async def test_purpose_other_in_user_message(self, db_session, test_user):
+        llm = AsyncMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(return_value={"sources": []})
+        suggester = SourceSuggester(llm=llm)
+
+        await suggester.suggest_sources(
+            session=db_session,
+            user_id=test_user.user_id,
+            theme_id="science",
+            topic_labels=[],
+            purpose="autre",
+            purpose_other="préparer un livre",
+        )
+
+        user_msg = llm.chat_json.call_args.kwargs["user_message"]
+        assert "Autre (préparer un livre)" in user_msg
+
+
 class TestFallback:
     async def test_no_llm_returns_curated_same_theme(self, db_session, test_user):
         # Crée 6 sources curées thème education ; le fallback en renvoie 5 max.

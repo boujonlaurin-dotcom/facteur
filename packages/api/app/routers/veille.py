@@ -246,6 +246,10 @@ async def upsert_config(
             delivery_hour=body.delivery_hour,
             timezone=body.timezone,
             status=VeilleStatus.ACTIVE.value,
+            purpose=body.purpose,
+            purpose_other=body.purpose_other,
+            editorial_brief=body.editorial_brief,
+            preset_id=body.preset_id,
         )
         db.add(cfg)
         await db.flush()
@@ -256,6 +260,10 @@ async def upsert_config(
         cfg.day_of_week = body.day_of_week
         cfg.delivery_hour = body.delivery_hour
         cfg.timezone = body.timezone
+        cfg.purpose = body.purpose
+        cfg.purpose_other = body.purpose_other
+        cfg.editorial_brief = body.editorial_brief
+        cfg.preset_id = body.preset_id
 
     # Replace topics + sources atomically.
     await db.execute(delete(VeilleTopic).where(VeilleTopic.veille_config_id == cfg.id))
@@ -421,6 +429,9 @@ async def suggest_topics(
         theme_label=req.theme_label,
         selected_topic_ids=req.selected_topic_ids,
         excluded_topic_ids=req.exclude_topic_ids,
+        purpose=req.purpose,
+        purpose_other=req.purpose_other,
+        editorial_brief=req.editorial_brief,
     )
     return [
         VeilleTopicSuggestion(topic_id=it.topic_id, label=it.label, reason=it.reason)
@@ -445,6 +456,9 @@ async def suggest_sources(
         theme_id=req.theme_id,
         topic_labels=req.topic_labels,
         excluded_source_ids=req.exclude_source_ids,
+        purpose=req.purpose,
+        purpose_other=req.purpose_other,
+        editorial_brief=req.editorial_brief,
     )
     await db.commit()  # persiste les éventuelles ingestions niche
 

@@ -1275,3 +1275,228 @@ class PresetCard extends StatelessWidget {
     );
   }
 }
+
+// ─── Purpose & brief — Step 1 sections 3 & 4 ──────────────────────────────
+
+/// Options « Pour quoi faire ? » du Step 1. Slugs alignés avec
+/// `packages/api/app/services/veille/topic_suggester.py:PURPOSE_LABELS`.
+class VeillePurposeOption {
+  final String slug;
+  final String label;
+  const VeillePurposeOption(this.slug, this.label);
+}
+
+const List<VeillePurposeOption> kVeillePurposeOptions = [
+  VeillePurposeOption('me_tenir_au_courant', "Me tenir à jour de l'actu"),
+  VeillePurposeOption('progresser_au_travail', "M'améliorer dans mon travail"),
+  VeillePurposeOption('culture_generale', 'Développer ma culture générale'),
+  VeillePurposeOption('preparer_projet', 'Préparer un projet / une décision'),
+  VeillePurposeOption('approfondir_passion', 'Approfondir un sujet de passion'),
+  VeillePurposeOption('autre', 'Autre…'),
+];
+
+/// Single-select chips pour la section « Pour quoi faire ? ». Quand l'option
+/// `autre` est sélectionnée, le caller affiche un TextField pour le
+/// `purposeOther` libre.
+class VeillePurposeSelector extends StatelessWidget {
+  final String? selected;
+  final ValueChanged<String?> onSelect;
+
+  const VeillePurposeSelector({
+    super.key,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final opt in kVeillePurposeOptions)
+          _PurposeChip(
+            label: opt.label,
+            selected: selected == opt.slug,
+            // Re-tap = désélection (le champ est optionnel).
+            onTap: () => onSelect(selected == opt.slug ? null : opt.slug),
+          ),
+      ],
+    );
+  }
+}
+
+class _PurposeChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _PurposeChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? FacteurColors.veilleTint : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? FacteurColors.veille
+                : FacteurColors.veilleLineSoft,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.dmSans(
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            color: selected ? FacteurColors.veille : const Color(0xFF2C2A29),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// TextField multiline pour la section « Décris ta veille idéale »
+/// (max 280 chars). Optionnel, contrôlé par le caller via `value` + `onChanged`.
+class VeilleEditorialBriefField extends StatelessWidget {
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  const VeilleEditorialBriefField({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _VeilleStyledTextField(
+      value: value,
+      onChanged: onChanged,
+      maxLength: 280,
+      maxLines: 4,
+      minLines: 3,
+      hintText:
+          'Ex : "Plutôt analyses long format que breaking news, avec un '
+          'focus sur les implications pour les PME"',
+    );
+  }
+}
+
+/// TextField court (max 80 chars) utilisé pour `purposeOther` quand l'option
+/// `autre` est sélectionnée. Pas de label, juste un champ inline sous les chips.
+class VeillePurposeOtherField extends StatelessWidget {
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  const VeillePurposeOtherField({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _VeilleStyledTextField(
+      value: value,
+      onChanged: onChanged,
+      maxLength: 80,
+      maxLines: 1,
+      minLines: 1,
+      hintText: 'Précise ton usage en quelques mots',
+    );
+  }
+}
+
+class _VeilleStyledTextField extends StatefulWidget {
+  final String? value;
+  final ValueChanged<String?> onChanged;
+  final int maxLength;
+  final int maxLines;
+  final int minLines;
+  final String hintText;
+
+  const _VeilleStyledTextField({
+    required this.value,
+    required this.onChanged,
+    required this.maxLength,
+    required this.maxLines,
+    required this.minLines,
+    required this.hintText,
+  });
+
+  @override
+  State<_VeilleStyledTextField> createState() =>
+      _VeilleStyledTextFieldState();
+}
+
+class _VeilleStyledTextFieldState extends State<_VeilleStyledTextField> {
+  late final TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.value ?? '');
+  }
+
+  @override
+  void didUpdateWidget(covariant _VeilleStyledTextField old) {
+    super.didUpdateWidget(old);
+    // Sync only when external value changed AND differs (évite clobber typing).
+    if (widget.value != old.value && widget.value != _ctrl.text) {
+      _ctrl.text = widget.value ?? '';
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(10),
+      borderSide: const BorderSide(color: Color(0xFFE6E1D6), width: 1),
+    );
+    final isMultiline = widget.maxLines > 1;
+    return TextField(
+      controller: _ctrl,
+      maxLength: widget.maxLength,
+      maxLines: widget.maxLines,
+      minLines: widget.minLines,
+      textCapitalization: TextCapitalization.sentences,
+      onChanged: widget.onChanged,
+      style: GoogleFonts.dmSans(fontSize: 14, height: isMultiline ? 1.4 : 1.2),
+      decoration: InputDecoration(
+        hintText: widget.hintText,
+        hintStyle: GoogleFonts.dmSans(
+          fontSize: 13,
+          color: const Color(0xFF8B7E63),
+          height: isMultiline ? 1.4 : null,
+        ),
+        contentPadding: isMultiline
+            ? const EdgeInsets.all(12)
+            : const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        border: border,
+        enabledBorder: border,
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: FacteurColors.veille, width: 1.5),
+        ),
+      ),
+    );
+  }
+}

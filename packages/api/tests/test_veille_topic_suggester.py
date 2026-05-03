@@ -6,8 +6,6 @@ Couvre : succès LLM, parsing strict, fallback déterministe, cache TTL.
 
 from unittest.mock import AsyncMock
 
-import pytest
-
 from app.services.veille.topic_suggester import (
     TopicSuggester,
     _fallback_topics,
@@ -157,6 +155,101 @@ class TestSuggestTopics:
         )
 
         assert result == _fallback_topics("Éducation")
+
+
+class TestPurposeAndBriefInjection:
+    async def test_purpose_and_brief_appear_in_user_message(self):
+        llm = AsyncMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(
+            return_value=_llm_response(
+                [
+                    {"topic_id": f"t{i}", "label": f"T{i}", "reason": None}
+                    for i in range(5)
+                ]
+            )
+        )
+        suggester = TopicSuggester(llm=llm)
+
+        await suggester.suggest_topics(
+            theme_id="tech",
+            theme_label="Tech",
+            selected_topic_ids=[],
+            purpose="preparer_projet",
+            editorial_brief="Plutôt analyses long format",
+        )
+
+        assert llm.chat_json.await_count == 1
+        user_msg = llm.chat_json.call_args.kwargs["user_message"]
+        # Label fr humain (pas le slug brut).
+        assert "Préparer un projet / une décision" in user_msg
+        assert "Brief éditorial : Plutôt analyses long format" in user_msg
+
+    async def test_purpose_other_appears_in_user_message(self):
+        llm = AsyncMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(
+            return_value=_llm_response(
+                [
+                    {"topic_id": f"t{i}", "label": f"T{i}", "reason": None}
+                    for i in range(5)
+                ]
+            )
+        )
+        suggester = TopicSuggester(llm=llm)
+
+        await suggester.suggest_topics(
+            theme_id="tech",
+            theme_label="Tech",
+            selected_topic_ids=[],
+            purpose="autre",
+            purpose_other="préparer un livre",
+            editorial_brief=None,
+        )
+
+        user_msg = llm.chat_json.call_args.kwargs["user_message"]
+        assert "Autre (préparer un livre)" in user_msg
+        assert "Brief éditorial : (aucun)" in user_msg
+
+    async def test_no_purpose_renders_non_precise(self):
+        llm = AsyncMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(
+            return_value=_llm_response(
+                [
+                    {"topic_id": f"t{i}", "label": f"T{i}", "reason": None}
+                    for i in range(5)
+                ]
+            )
+        )
+        suggester = TopicSuggester(llm=llm)
+
+        await suggester.suggest_topics(
+            theme_id="tech",
+            theme_label="Tech",
+            selected_topic_ids=[],
+        )
+
+        user_msg = llm.chat_json.call_args.kwargs["user_message"]
+        assert "Usage souhaité : (non précisé)" in user_msg
+
+    async def test_different_purpose_misses_cache(self):
+        llm = AsyncMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(
+            return_value=_llm_response(
+                [
+                    {"topic_id": f"t{i}", "label": f"T{i}", "reason": None}
+                    for i in range(5)
+                ]
+            )
+        )
+        suggester = TopicSuggester(llm=llm)
+
+        await suggester.suggest_topics("tech", "Tech", [], purpose="preparer_projet")
+        await suggester.suggest_topics("tech", "Tech", [], purpose="culture_generale")
+        # Cache key différente → 2 appels LLM.
+        assert llm.chat_json.await_count == 2
 
 
 class TestCacheTTL:

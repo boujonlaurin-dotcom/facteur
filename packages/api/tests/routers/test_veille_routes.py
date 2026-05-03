@@ -117,6 +117,64 @@ class TestConfigCRUD:
         assert data["sources"][0]["source"]["name"] == "Café Pédago"
         assert data["next_scheduled_at"] is not None
 
+    async def test_post_persists_purpose_and_brief(
+        self, auth_user, curated_education_source
+    ):
+        body = {
+            "theme_id": "education",
+            "theme_label": "Éducation",
+            "topics": [],
+            "source_selections": [
+                {
+                    "kind": "followed",
+                    "source_id": str(curated_education_source.id),
+                }
+            ],
+            "frequency": "weekly",
+            "day_of_week": 0,
+            "delivery_hour": 7,
+            "purpose": "preparer_projet",
+            "purpose_other": None,
+            "editorial_brief": "Plutôt analyses long format que breaking news",
+            "preset_id": "ia_agentique",
+        }
+        async with _client() as ac:
+            resp = await ac.post("/api/veille/config", json=body)
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["purpose"] == "preparer_projet"
+            assert data["purpose_other"] is None
+            assert (
+                data["editorial_brief"]
+                == "Plutôt analyses long format que breaking news"
+            )
+            assert data["preset_id"] == "ia_agentique"
+
+            # GET re-confirme la persistance.
+            after = await ac.get("/api/veille/config")
+            assert after.status_code == 200
+            data2 = after.json()
+            assert data2["purpose"] == "preparer_projet"
+            assert (
+                data2["editorial_brief"]
+                == "Plutôt analyses long format que breaking news"
+            )
+            assert data2["preset_id"] == "ia_agentique"
+
+            # Update : on peut clear le brief en envoyant null.
+            update = {
+                **body,
+                "editorial_brief": None,
+                "purpose": "autre",
+                "purpose_other": "veille perso",
+            }
+            resp2 = await ac.post("/api/veille/config", json=update)
+            assert resp2.status_code == 200
+            data3 = resp2.json()
+            assert data3["purpose"] == "autre"
+            assert data3["purpose_other"] == "veille perso"
+            assert data3["editorial_brief"] is None
+
     async def test_post_upsert_replaces_topics(
         self, auth_user, curated_education_source
     ):
@@ -271,6 +329,9 @@ class TestSuggestions:
                 theme_id,
                 topic_labels,
                 excluded_source_ids=None,
+                purpose=None,
+                purpose_other=None,
+                editorial_brief=None,
             ):
                 return SourceSuggestions(
                     followed=[

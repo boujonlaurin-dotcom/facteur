@@ -70,7 +70,9 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
               children: [
                 VeilleToggleSection(
                   index: 1,
-                  title: 'Sur quel sujet veux-tu une veille ?',
+                  title:
+                      'Sur quel thème aimerais-tu recevoir un condensé des '
+                      'meilleurs articles récents ?',
                   subtitleWhenCollapsed:
                       hasTheme ? selectedThemeLabel.toUpperCase() : null,
                   expanded: _openSection == 1,
@@ -151,6 +153,86 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(height: 18),
+                VeilleToggleSection(
+                  index: 3,
+                  title: 'Pour quoi faire ?',
+                  enabled: hasTheme,
+                  expanded: _openSection == 3 && hasTheme,
+                  subtitleWhenCollapsed:
+                      _purposeSubtitle(state.purpose, state.purposeOther),
+                  onToggle: () {
+                    if (!hasTheme) return;
+                    setState(() => _openSection = 3);
+                  },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Ça nous aide à choisir la bonne profondeur d'analyse.",
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13,
+                          height: 1.45,
+                          color: const Color(0xFF5D5B5A),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      VeillePurposeSelector(
+                        selected: state.purpose,
+                        onSelect: (slug) {
+                          notifier.setPurpose(slug);
+                          // Auto-bascule vers la section brief dès qu'un
+                          // purpose ≠ 'autre' est choisi (un purpose=autre
+                          // demande encore le free-text).
+                          if (slug != null && slug != 'autre') {
+                            setState(() => _openSection = 4);
+                          }
+                        },
+                      ),
+                      if (state.purpose == 'autre') ...[
+                        const SizedBox(height: 12),
+                        VeillePurposeOtherField(
+                          value: state.purposeOther,
+                          onChanged: notifier.setPurposeOther,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                VeilleToggleSection(
+                  index: 4,
+                  title: 'Décris ta veille idéale',
+                  enabled: hasTheme,
+                  expanded: _openSection == 4 && hasTheme,
+                  subtitleWhenCollapsed:
+                      (state.editorialBrief ?? '').trim().isEmpty
+                          ? null
+                          : 'BRIEF RENSEIGNÉ',
+                  onToggle: () {
+                    if (!hasTheme) return;
+                    setState(() => _openSection = 4);
+                  },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'En quelques mots, à quoi elle ressemblerait pour toi. '
+                        "C'est optionnel mais ça aide vraiment le facteur.",
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13,
+                          height: 1.45,
+                          color: const Color(0xFF5D5B5A),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      VeilleEditorialBriefField(
+                        value: state.editorialBrief,
+                        onChanged: notifier.setEditorialBrief,
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 28),
                 const _InspirationsSection(),
               ],
@@ -173,6 +255,20 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
       ],
     );
   }
+}
+
+String? _purposeSubtitle(String? purpose, String? purposeOther) {
+  if (purpose == null) return null;
+  final option = kVeillePurposeOptions.firstWhere(
+    (o) => o.slug == purpose,
+    orElse: () => const VeillePurposeOption('', ''),
+  );
+  if (option.slug.isEmpty) return null;
+  if (option.slug == 'autre') {
+    final other = (purposeOther ?? '').trim();
+    return other.isEmpty ? 'AUTRE' : 'AUTRE — $other'.toUpperCase();
+  }
+  return option.label.toUpperCase();
 }
 
 class _ThemeGrid extends StatelessWidget {

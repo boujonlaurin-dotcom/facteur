@@ -12,11 +12,17 @@ class VeilleTopicsSuggestionParams {
   final String themeId;
   final String themeLabel;
   final List<String> selectedTopicIds;
+  final String? purpose;
+  final String? purposeOther;
+  final String? editorialBrief;
 
   const VeilleTopicsSuggestionParams({
     required this.themeId,
     required this.themeLabel,
     required this.selectedTopicIds,
+    this.purpose,
+    this.purposeOther,
+    this.editorialBrief,
   });
 
   @override
@@ -25,22 +31,37 @@ class VeilleTopicsSuggestionParams {
     return other is VeilleTopicsSuggestionParams &&
         other.themeId == themeId &&
         other.themeLabel == themeLabel &&
-        listEquals(other.selectedTopicIds, selectedTopicIds);
+        listEquals(other.selectedTopicIds, selectedTopicIds) &&
+        other.purpose == purpose &&
+        other.purposeOther == purposeOther &&
+        other.editorialBrief == editorialBrief;
   }
 
   @override
-  int get hashCode =>
-      Object.hash(themeId, themeLabel, Object.hashAll(selectedTopicIds));
+  int get hashCode => Object.hash(
+        themeId,
+        themeLabel,
+        Object.hashAll(selectedTopicIds),
+        purpose,
+        purposeOther,
+        editorialBrief,
+      );
 }
 
 @immutable
 class VeilleSourcesSuggestionParams {
   final String themeId;
   final List<String> topicLabels;
+  final String? purpose;
+  final String? purposeOther;
+  final String? editorialBrief;
 
   const VeilleSourcesSuggestionParams({
     required this.themeId,
     required this.topicLabels,
+    this.purpose,
+    this.purposeOther,
+    this.editorialBrief,
   });
 
   @override
@@ -48,11 +69,20 @@ class VeilleSourcesSuggestionParams {
     if (identical(this, other)) return true;
     return other is VeilleSourcesSuggestionParams &&
         other.themeId == themeId &&
-        listEquals(other.topicLabels, topicLabels);
+        listEquals(other.topicLabels, topicLabels) &&
+        other.purpose == purpose &&
+        other.purposeOther == purposeOther &&
+        other.editorialBrief == editorialBrief;
   }
 
   @override
-  int get hashCode => Object.hash(themeId, Object.hashAll(topicLabels));
+  int get hashCode => Object.hash(
+        themeId,
+        Object.hashAll(topicLabels),
+        purpose,
+        purposeOther,
+        editorialBrief,
+      );
 }
 
 // ─── Topics ──────────────────────────────────────────────────────────────────
@@ -83,6 +113,9 @@ class VeilleTopicsSuggestionsNotifier
         themeLabel: _params.themeLabel,
         selectedTopicIds: _params.selectedTopicIds,
         excludeTopicIds: excludeIds,
+        purpose: _params.purpose,
+        purposeOther: _params.purposeOther,
+        editorialBrief: _params.editorialBrief,
       );
       final keptIds = _kept.map((t) => t.topicId).toSet();
       final fresh = items.where((t) => !keptIds.contains(t.topicId)).toList();
@@ -134,6 +167,9 @@ class VeilleSourcesSuggestionsNotifier
         themeId: _params.themeId,
         topicLabels: _params.topicLabels,
         excludeSourceIds: excludeIds,
+        purpose: _params.purpose,
+        purposeOther: _params.purposeOther,
+        editorialBrief: _params.editorialBrief,
       );
       final keptIds = _keptNiche.map((s) => s.sourceId).toSet();
       final freshNiche =
