@@ -4,6 +4,7 @@ Couvre les endpoints CRUD config + suggestions + deliveries avec auth mockée.
 LLM Mistral mocké via AsyncMock sur les singletons des suggesters.
 """
 
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -13,9 +14,16 @@ from httpx import ASGITransport, AsyncClient
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.main import app
-from app.models.enums import SourceType
+from app.models.content import Content
+from app.models.enums import ContentType, SourceType
 from app.models.source import Source
 from app.models.user import UserProfile
+from app.models.veille import (
+    VeilleConfig,
+    VeilleDelivery,
+    VeilleGenerationState,
+    VeilleStatus,
+)
 from app.services.veille.source_suggester import (
     SourceSuggester,
     SourceSuggestionItem,
@@ -409,3 +417,185 @@ class TestAuth:
             resp = await ac.get("/api/veille/config")
         # 401 (Unauthorized) ou 403 (Forbidden) — on accepte les deux.
         assert resp.status_code in (401, 403)
+
+
+@pytest_asyncio.fixture
+async def active_veille_config(db_session, auth_user):
+    cfg = VeilleConfig(
+        id=uuid4(),
+        user_id=auth_user,
+        theme_id="education",
+        theme_label="Éducation",
+        frequency="weekly",
+        day_of_week=0,
+        delivery_hour=7,
+        timezone="Europe/Paris",
+        status=VeilleStatus.ACTIVE.value,
+    )
+    db_session.add(cfg)
+    await db_session.commit()
+    return cfg
+
+
+class TestGenerateFirstDelivery:
+    async def test_creates_pending_delivery(
+        self, monkeypatch, auth_user, active_veille_config
+    ):
+        # Empêche le BackgroundTask de toucher le LLM réel.
+        from app.routers import veille as veille_module
+
+        bg_calls: list[tuple] = []
+
+        def _capture_add_task(self, func, *args, **kwargs):
+            bg_calls.append((func, args, kwargs))
+
+        monkeypatch.setattr(
+            "fastapi.BackgroundTasks.add_task",
+            _capture_add_task,
+            raising=True,
+        )
+
+        async with _client() as ac:
+            resp = await ac.post("/api/veille/deliveries/generate-first")
+
+        assert resp.status_code == 202
+        body = resp.json()
+        assert body["estimated_seconds"] == 60
+        assert body["delivery_id"] is not None
+
+        # BackgroundTask scheduled avec _run_first_delivery.
+        assert any(call[0] is veille_module._run_first_delivery for call in bg_calls), (
+            bg_calls
+        )
+
+    async def test_refuses_when_delivery_exists(
+        self, db_session, auth_user, active_veille_config
+    ):
+        existing = VeilleDelivery(
+            id=uuid4(),
+            veille_config_id=active_veille_config.id,
+            target_date=datetime.now(UTC).date(),
+            generation_state=VeilleGenerationState.SUCCEEDED.value,
+        )
+        db_session.add(existing)
+        await db_session.commit()
+
+        async with _client() as ac:
+            resp = await ac.post("/api/veille/deliveries/generate-first")
+
+        assert resp.status_code == 403
+
+    async def test_refuses_when_no_config(self, auth_user):
+        async with _client() as ac:
+            resp = await ac.post("/api/veille/deliveries/generate-first")
+        assert resp.status_code == 404
+
+
+class TestSourceExamples:
+    async def test_returns_two_most_recent_from_db(
+        self, db_session, auth_user, curated_education_source
+    ):
+        # Reset le cache module-level pour isoler le test.
+        from app.routers.veille import _SOURCE_EXAMPLES_CACHE
+
+        _SOURCE_EXAMPLES_CACHE.clear()
+
+        now = datetime.now(UTC)
+        for i in range(3):
+            db_session.add(
+                Content(
+                    id=uuid4(),
+                    source_id=curated_education_source.id,
+                    title=f"Article {i}",
+                    url=f"https://example.com/a{i}",
+                    description=f"Excerpt {i}",
+                    published_at=now - timedelta(days=i),
+                    content_type=ContentType.ARTICLE,
+                    guid=f"g{i}",
+                )
+            )
+        await db_session.commit()
+
+        async with _client() as ac:
+            resp = await ac.get(
+                f"/api/veille/sources/{curated_education_source.id}/examples"
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["title"] == "Article 0"
+        assert data[1]["title"] == "Article 1"
+        assert data[0]["url"] == "https://example.com/a0"
+        assert data[0]["excerpt"] == "Excerpt 0"
+
+    async def test_falls_back_to_rss_when_db_empty(
+        self, monkeypatch, auth_user, curated_education_source
+    ):
+        from app.routers.veille import _SOURCE_EXAMPLES_CACHE
+
+        _SOURCE_EXAMPLES_CACHE.clear()
+
+        fake_feed = {
+            "entries": [
+                {
+                    "title": "Niche Article 1",
+                    "link": "https://niche.example.com/1",
+                    "summary": "Summary 1",
+                    "published_parsed": (2026, 4, 28, 9, 0, 0, 0, 118, 0),
+                },
+                {
+                    "title": "Niche Article 2",
+                    "link": "https://niche.example.com/2",
+                    "summary": "Summary 2",
+                    "published_parsed": (2026, 4, 27, 9, 0, 0, 0, 117, 0),
+                },
+            ]
+        }
+
+        async def fake_parse(self, url):
+            return fake_feed
+
+        async def fake_close(self):
+            return None
+
+        from app.services.rss_parser import RSSParser
+
+        monkeypatch.setattr(RSSParser, "parse", fake_parse)
+        monkeypatch.setattr(RSSParser, "close", fake_close)
+
+        async with _client() as ac:
+            resp = await ac.get(
+                f"/api/veille/sources/{curated_education_source.id}/examples"
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["title"] == "Niche Article 1"
+        assert data[0]["url"] == "https://niche.example.com/1"
+
+    async def test_returns_empty_when_rss_fails(
+        self, monkeypatch, auth_user, curated_education_source
+    ):
+        from app.routers.veille import _SOURCE_EXAMPLES_CACHE
+
+        _SOURCE_EXAMPLES_CACHE.clear()
+
+        async def fake_parse(self, url):
+            raise ValueError("RSS unreachable")
+
+        async def fake_close(self):
+            return None
+
+        from app.services.rss_parser import RSSParser
+
+        monkeypatch.setattr(RSSParser, "parse", fake_parse)
+        monkeypatch.setattr(RSSParser, "close", fake_close)
+
+        async with _client() as ac:
+            resp = await ac.get(
+                f"/api/veille/sources/{curated_education_source.id}/examples"
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == []

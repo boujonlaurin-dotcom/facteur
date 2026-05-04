@@ -35,6 +35,7 @@ class NotificationPreferencesResponse(BaseModel):
     last_renudge_at: datetime | None
     renudge_shown_count: int
     modal_seen: bool
+    notif_veille_enabled: bool
 
 
 class NotificationPreferencesPatch(BaseModel):
@@ -47,6 +48,7 @@ class NotificationPreferencesPatch(BaseModel):
     last_renudge_at: datetime | None = None
     renudge_shown_count: int | None = Field(default=None, ge=0)
     modal_seen: bool | None = None
+    notif_veille_enabled: bool | None = None
 
 
 def _to_response(row: UserNotificationPreferences) -> NotificationPreferencesResponse:
@@ -60,6 +62,7 @@ def _to_response(row: UserNotificationPreferences) -> NotificationPreferencesRes
         last_renudge_at=row.last_renudge_at,
         renudge_shown_count=row.renudge_shown_count,
         modal_seen=row.modal_seen,
+        notif_veille_enabled=row.notif_veille_enabled,
     )
 
 

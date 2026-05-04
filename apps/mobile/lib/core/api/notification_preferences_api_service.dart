@@ -38,6 +38,7 @@ class NotificationPreferencesDto {
   final DateTime? lastRenudgeAt;
   final int renudgeShownCount;
   final bool modalSeen;
+  final bool notifVeilleEnabled;
 
   const NotificationPreferencesDto({
     required this.pushEnabled,
@@ -49,6 +50,7 @@ class NotificationPreferencesDto {
     required this.lastRenudgeAt,
     required this.renudgeShownCount,
     required this.modalSeen,
+    required this.notifVeilleEnabled,
   });
 
   factory NotificationPreferencesDto.fromJson(Map<String, dynamic> json) =>
@@ -62,6 +64,7 @@ class NotificationPreferencesDto {
         lastRenudgeAt: _parseDate(json['last_renudge_at']),
         renudgeShownCount: json['renudge_shown_count'] as int? ?? 0,
         modalSeen: json['modal_seen'] as bool? ?? false,
+        notifVeilleEnabled: json['notif_veille_enabled'] as bool? ?? false,
       );
 
   static DateTime? _parseDate(dynamic v) =>
@@ -96,6 +99,7 @@ class NotificationPreferencesApiService {
     DateTime? lastRenudgeAt,
     int? renudgeShownCount,
     bool? modalSeen,
+    bool? notifVeilleEnabled,
   }) async {
     final body = <String, dynamic>{};
     if (pushEnabled != null) body['push_enabled'] = pushEnabled;
@@ -113,6 +117,9 @@ class NotificationPreferencesApiService {
       body['renudge_shown_count'] = renudgeShownCount;
     }
     if (modalSeen != null) body['modal_seen'] = modalSeen;
+    if (notifVeilleEnabled != null) {
+      body['notif_veille_enabled'] = notifVeilleEnabled;
+    }
 
     if (body.isEmpty) return null;
 

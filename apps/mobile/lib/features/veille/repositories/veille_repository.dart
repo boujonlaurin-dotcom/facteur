@@ -173,6 +173,38 @@ class VeilleRepository {
     }
   }
 
+  /// Lance la génération immédiate du premier digest. 202 → on poll
+  /// `getDelivery(deliveryId)`. 403 si déjà générée → caller décide quoi faire.
+  Future<VeilleGenerateFirstResponse> generateFirstDelivery() async {
+    try {
+      final response = await _dio.post<dynamic>(
+        'veille/deliveries/generate-first',
+      );
+      return VeilleGenerateFirstResponse.fromJson(
+        response.data as Map<String, dynamic>,
+      );
+    } on DioException catch (e) {
+      throw _wrap(e);
+    }
+  }
+
+  /// `GET /api/veille/sources/{id}/examples` — preview ≤2 articles récents
+  /// (Step 3 du flow). Le backend cache déjà 24 h ; ici pas de cache local.
+  Future<List<VeilleSourceExample>> getSourceExamples(String sourceId) async {
+    try {
+      final response = await _dio.get<dynamic>(
+        'veille/sources/$sourceId/examples',
+      );
+      final raw = response.data as List<dynamic>;
+      return raw
+          .whereType<Map<String, dynamic>>()
+          .map(VeilleSourceExample.fromJson)
+          .toList();
+    } on DioException catch (e) {
+      throw _wrap(e);
+    }
+  }
+
   VeilleApiException _wrap(DioException e) {
     final code = e.response?.statusCode;
     final detail = e.response?.data is Map

@@ -1,17 +1,36 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
+import '../../providers/veille_suggestions_provider.dart';
 import '../../widgets/halo_loader.dart';
 import '../../widgets/veille_widgets.dart';
 
-class FlowLoadingScreen extends StatelessWidget {
-  /// `from` = étape qu'on quitte (1, 2 ou 3).
+class FlowLoadingScreen extends ConsumerStatefulWidget {
+  /// `from` = étape qu'on quitte (1, 2, 3) ou 4 = première livraison.
   final int from;
-  const FlowLoadingScreen({super.key, required this.from});
 
-  static const _labels = {
+  /// Pré-loading actif de l'étape suivante : si fourni, déclenche un fetch
+  /// en arrière-plan dès l'affichage du loading pour que l'écran cible soit
+  /// prêt à la fin de l'animation.
+  final VeilleTopicsSuggestionParams? topicsParams;
+  final VeilleSourcesSuggestionParams? sourcesParams;
+
+  const FlowLoadingScreen({
+    super.key,
+    required this.from,
+    this.topicsParams,
+    this.sourcesParams,
+  });
+
+  @override
+  ConsumerState<FlowLoadingScreen> createState() => _FlowLoadingScreenState();
+}
+
+class _FlowLoadingScreenState extends ConsumerState<FlowLoadingScreen> {
+  static const _labels = <int, _LoadingLabels>{
     1: _LoadingLabels(
       eyebrow: 'Le facteur écoute…',
       h: 'Analyse de ton thème',
@@ -48,11 +67,39 @@ class FlowLoadingScreen extends StatelessWidget {
         _Check.todo('Justifications & biais'),
       ],
     ),
+    4: _LoadingLabels(
+      eyebrow: 'Le facteur prépare ta première livraison…',
+      h: 'Première veille en cours',
+      s:
+          'Quelques secondes pour rassembler les articles, justifier les angles et préparer la livraison.',
+      checks: [
+        _Check.done('Sources interrogées'),
+        _Check.done('Articles collectés'),
+        _Check.running('Sélection éditoriale…'),
+        _Check.todo('Mise en forme finale'),
+      ],
+    ),
   };
 
   @override
+  void initState() {
+    super.initState();
+    // Pré-loading actif : best-effort, on ignore silencieusement si
+    // les params ne sont pas fournis (ex : appelant qui n'utilise pas
+    // les suggestions ou qui veut juste l'animation cosmétique).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.topicsParams != null) {
+        ref.read(veilleTopicSuggestionsProvider(widget.topicsParams!));
+      }
+      if (widget.sourcesParams != null) {
+        ref.read(veilleSourceSuggestionsProvider(widget.sourcesParams!));
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final cur = _labels[from] ?? _labels[1]!;
+    final cur = _labels[widget.from] ?? _labels[1]!;
     return Column(
       children: [
         // Header simplifié (pills uniquement, pas de back/close — le loading
@@ -67,7 +114,7 @@ class FlowLoadingScreen extends StatelessWidget {
                 child: Row(
                   children: List.generate(4, (i) {
                     final n = i + 1;
-                    final done = n <= from;
+                    final done = n <= widget.from;
                     return Expanded(
                       child: Container(
                         margin: EdgeInsets.only(right: i == 3 ? 0 : 5),

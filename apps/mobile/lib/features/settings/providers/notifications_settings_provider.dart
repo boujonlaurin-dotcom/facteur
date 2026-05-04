@@ -22,6 +22,7 @@ class NotificationsSettings {
   final bool emailDigestEnabled;
   final bool goodNewsEnabled;
   final NotifTimeSlot goodNewsTimeSlot;
+  final bool notifVeilleEnabled;
 
   /// True dès que la phase load Hive + sync backend (succès OU échec) est
   /// terminée. Tant que false, ne pas déclencher la modal d'activation
@@ -40,6 +41,7 @@ class NotificationsSettings {
     this.emailDigestEnabled = false,
     this.goodNewsEnabled = false,
     this.goodNewsTimeSlot = NotifTimeSlot.evening,
+    this.notifVeilleEnabled = false,
     this.synced = false,
   });
 
@@ -55,6 +57,7 @@ class NotificationsSettings {
     bool? emailDigestEnabled,
     bool? goodNewsEnabled,
     NotifTimeSlot? goodNewsTimeSlot,
+    bool? notifVeilleEnabled,
     bool? synced,
   }) {
     return NotificationsSettings(
@@ -69,6 +72,7 @@ class NotificationsSettings {
       emailDigestEnabled: emailDigestEnabled ?? this.emailDigestEnabled,
       goodNewsEnabled: goodNewsEnabled ?? this.goodNewsEnabled,
       goodNewsTimeSlot: goodNewsTimeSlot ?? this.goodNewsTimeSlot,
+      notifVeilleEnabled: notifVeilleEnabled ?? this.notifVeilleEnabled,
       synced: synced ?? this.synced,
     );
   }
@@ -107,6 +111,7 @@ class NotificationsSettingsNotifier
   static const _kPendingSync = 'notif_prefs_pending_sync';
   static const _kGoodNewsEnabled = 'notif_good_news_enabled';
   static const _kGoodNewsTimeSlot = 'notif_good_news_time_slot';
+  static const _kNotifVeilleEnabled = 'notif_veille_enabled';
 
   Future<Box<dynamic>> _box() => Hive.openBox<dynamic>(_boxName);
 
@@ -128,6 +133,8 @@ class NotificationsSettingsNotifier
       goodNewsTimeSlot: NotifTimeSlotX.fromWire(
         box.get(_kGoodNewsTimeSlot) as String?,
       ),
+      notifVeilleEnabled:
+          box.get(_kNotifVeilleEnabled, defaultValue: false) as bool,
     );
   }
 
@@ -150,6 +157,7 @@ class NotificationsSettingsNotifier
       _kEmailDigest: s.emailDigestEnabled,
       _kGoodNewsEnabled: s.goodNewsEnabled,
       _kGoodNewsTimeSlot: s.goodNewsTimeSlot.wire,
+      _kNotifVeilleEnabled: s.notifVeilleEnabled,
     });
   }
 
@@ -168,6 +176,7 @@ class NotificationsSettingsNotifier
         lastRefusalAt: dto.lastRefusalAt,
         lastRenudgeAt: dto.lastRenudgeAt,
         renudgeShownCount: dto.renudgeShownCount,
+        notifVeilleEnabled: dto.notifVeilleEnabled,
       );
       state = fresh;
       await _persist(fresh);
@@ -198,6 +207,7 @@ class NotificationsSettingsNotifier
         lastRefusalAt: s.lastRefusalAt,
         lastRenudgeAt: s.lastRenudgeAt,
         renudgeShownCount: s.renudgeShownCount,
+        notifVeilleEnabled: s.notifVeilleEnabled,
       );
       if (result == null) {
         final box = await _box();
@@ -324,6 +334,21 @@ class NotificationsSettingsNotifier
       goodNewsEnabled: osGranted,
       goodNewsTimeSlot: timeSlot,
     ));
+  }
+
+  /// Active/désactive la notif "Ta veille est prête".
+  ///
+  /// Canal séparé du push digest et bonnes nouvelles : on ne couple jamais
+  /// deux opt-ins. À la première activation, demande la permission OS si
+  /// pas déjà accordée.
+  Future<void> setNotifVeilleEnabled(bool value) async {
+    if (value && !state.pushEnabled) {
+      final pushService = PushNotificationService();
+      final granted = await pushService.requestPermission();
+      if (!granted) return;
+      await pushService.requestExactAlarmPermission();
+    }
+    await _commit(state.copyWith(notifVeilleEnabled: value));
   }
 }
 
