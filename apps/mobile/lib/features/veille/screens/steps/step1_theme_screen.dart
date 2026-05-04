@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../../config/theme.dart';
 import '../../models/veille_config.dart';
 import '../../providers/veille_config_provider.dart';
 import '../../providers/veille_preset_topics_provider.dart';
@@ -62,6 +63,7 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
           canGoBack: false,
           onClose: widget.onClose,
         ),
+        _PresetTeaserLink(onTap: () => _openPresetSheet(context)),
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
@@ -233,8 +235,7 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 28),
-                const _InspirationsSection(),
+                const SizedBox(height: 16),
               ],
             ),
           ),
@@ -536,51 +537,173 @@ Future<void> _openAddTopicSheet(
   if (result != null && result.isNotEmpty) onAdd(result);
 }
 
-class _InspirationsSection extends ConsumerWidget {
-  const _InspirationsSection();
+/// Lien teaser sous le header Step1 — visible sans scroll. Tap → ouvre
+/// la bottom sheet `VeillePresetsSheet`.
+class _PresetTeaserLink extends StatelessWidget {
+  final VoidCallback onTap;
+  const _PresetTeaserLink({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      child: Material(
+        color: FacteurColors.veilleTint,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                Icon(
+                  PhosphorIcons.sparkle(),
+                  size: 16,
+                  color: FacteurColors.veille,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Pas inspiré ? Pioche un pré-set',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: FacteurColors.veille,
+                    ),
+                  ),
+                ),
+                Icon(
+                  PhosphorIcons.arrowRight(),
+                  size: 14,
+                  color: FacteurColors.veille,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _openPresetSheet(BuildContext context) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: const Color(0xFFF2E8D5),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+    ),
+    builder: (_) => const _VeillePresetsSheet(),
+  );
+}
+
+class _VeillePresetsSheet extends ConsumerWidget {
+  const _VeillePresetsSheet();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final asyncPresets = ref.watch(veillePresetsProvider);
     final notifier = ref.read(veilleConfigProvider.notifier);
 
-    return asyncPresets.when(
-      loading: () => const _PresetCardSkeleton(),
-      error: (_, __) => const SizedBox.shrink(),
-      data: (presets) {
-        if (presets.isEmpty) return const SizedBox.shrink();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return SafeArea(
+      top: false,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'INSPIRATIONS',
-              style: GoogleFonts.courierPrime(
-                fontSize: 11,
-                letterSpacing: 0.5,
-                color: const Color(0xFF8B7E63),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2C2A29).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Pas sûr·e par où commencer ? Pioche un pré-set.',
-              style: GoogleFonts.dmSans(
-                fontSize: 13,
-                color: const Color(0xFF5D5B5A),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Pré-sets',
+                    style: GoogleFonts.fraunces(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.4,
+                      color: const Color(0xFF2C2A29),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Une veille curée prête à l\'emploi.',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13,
+                      color: const Color(0xFF5D5B5A),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
-            for (var i = 0; i < presets.length; i++) ...[
-              if (i > 0) const SizedBox(height: 8),
-              PresetCard(
-                label: presets[i].label,
-                accroche: presets[i].accroche,
-                icon: phosphorThemeIcon(presets[i].themeId),
-                onTap: () => notifier.openPresetPreview(presets[i].slug),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                child: asyncPresets.when(
+                  loading: () => const _PresetCardSkeleton(),
+                  error: (_, __) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'Pré-sets indisponibles. Réessaie dans un instant.',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 13,
+                        color: const Color(0xFF8B7E63),
+                      ),
+                    ),
+                  ),
+                  data: (presets) {
+                    if (presets.isEmpty) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Text(
+                          'Aucun pré-set disponible pour l\'instant.',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 13,
+                            color: const Color(0xFF8B7E63),
+                          ),
+                        ),
+                      );
+                    }
+                    return Column(
+                      children: [
+                        for (var i = 0; i < presets.length; i++) ...[
+                          if (i > 0) const SizedBox(height: 8),
+                          PresetCard(
+                            label: presets[i].label,
+                            accroche: presets[i].accroche,
+                            icon: phosphorThemeIcon(presets[i].themeId),
+                            onTap: () {
+                              Navigator.of(context).pop();
+                              notifier.openPresetPreview(presets[i].slug);
+                            },
+                          ),
+                        ],
+                      ],
+                    );
+                  },
+                ),
               ),
-            ],
+            ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 }

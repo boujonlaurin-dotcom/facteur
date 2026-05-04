@@ -11,6 +11,7 @@ import '../models/veille_suggestion.dart';
 import '../repositories/veille_repository.dart';
 import 'veille_active_config_provider.dart';
 import 'veille_repository_provider.dart';
+import 'veille_suggestions_provider.dart';
 import 'veille_themes_provider.dart';
 
 /// Métadonnées attachées à une source dans le state du flow. Permet de
@@ -44,6 +45,11 @@ class VeilleSourceMeta {
 class VeilleConfigState {
   final int step;
   final int? loadingFrom;
+
+  /// Vrai après que l'utilisateur a passé l'écran d'introduction (« C'est
+  /// parti »). Tant que `false` et qu'il n'y a pas de config active, le
+  /// host rend `VeilleIntroScreen` au lieu de Step1.
+  final bool introCompleted;
 
   /// Slug du pré-set en cours de prévisualisation (Step 1.5). Quand non-null,
   /// `veille_config_screen` rend `Step1_5PresetPreviewScreen` au lieu du
@@ -85,6 +91,7 @@ class VeilleConfigState {
   const VeilleConfigState({
     required this.step,
     required this.loadingFrom,
+    required this.introCompleted,
     required this.previewPresetId,
     required this.selectedTheme,
     required this.selectedTopics,
@@ -106,6 +113,7 @@ class VeilleConfigState {
   factory VeilleConfigState.initial() => VeilleConfigState(
         step: 1,
         loadingFrom: null,
+        introCompleted: false,
         previewPresetId: null,
         selectedTheme: null,
         selectedTopics: const {},
@@ -137,6 +145,7 @@ class VeilleConfigState {
   VeilleConfigState copyWith({
     int? step,
     Object? loadingFrom = _Sentinel.value,
+    bool? introCompleted,
     Object? previewPresetId = _Sentinel.value,
     Object? selectedTheme = _Sentinel.value,
     Set<String>? selectedTopics,
@@ -159,6 +168,7 @@ class VeilleConfigState {
         loadingFrom: loadingFrom == _Sentinel.value
             ? this.loadingFrom
             : loadingFrom as int?,
+        introCompleted: introCompleted ?? this.introCompleted,
         previewPresetId: previewPresetId == _Sentinel.value
             ? this.previewPresetId
             : previewPresetId as String?,
@@ -208,10 +218,17 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
   final Ref _ref;
 
-  static const Duration _loadingDuration = Duration(milliseconds: 2500);
-  static const Duration _veilleNotificationLeadTime = Duration(minutes: 30);
+  /// Durée minimale d'affichage de l'animation halo (`FlowLoadingScreen`)
+  /// entre deux steps. En-dessous, la transition flashe et l'animation
+  /// halo + checklist n'a pas le temps de jouer.
+  static const Duration _loadingMinDuration = Duration(milliseconds: 1500);
 
-  Timer? _loadingTimer;
+  /// Cap maximal d'attente du provider pré-fetché. Au-delà, on laisse
+  /// passer à l'étape suivante : Step2/Step3 affichera son skeleton
+  /// normal le temps que le LLM réponde.
+  static const Duration _loadingMaxDuration = Duration(seconds: 8);
+
+  static const Duration _veilleNotificationLeadTime = Duration(minutes: 30);
 
   void selectTheme(String id) {
     // Changer de thème reset les topics pré-sélectionnés (les preset topics
@@ -335,15 +352,137 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
   /// Avance d'une étape, en passant par un loading screen IA (sauf si on est
   /// déjà sur la dernière étape — auquel cas `submit()` doit être appelé).
+  ///
+  /// Durée adaptive : `min(_loadingMinDuration, attente du provider cible
+  /// jusqu'à `data|error`, cap `_loadingMaxDuration`)`. L'animation halo
+  /// joue toujours au moins 1.5 s pour la perception ; au-delà, on
+  /// attend que le pré-fetch (déclenché par `FlowLoadingScreen` via les
+  /// params) soit terminé pour arriver sur Step2/Step3 avec les
+  /// suggestions déjà chargées.
+  /// Subscriptions actives au provider pré-fetché pendant `_waitAndAdvance`.
+  /// On les garde sur le notifier pour pouvoir les `close()` proprement
+  /// si l'utilisateur quitte le flow (close, reset, dispose) pendant
+  /// l'animation halo — sinon le `Completer` sous-jacent ne complète
+  /// jamais et la subscription leak.
+  ProviderSubscription<Object?>? _pendingSub;
+  Completer<void>? _pendingCompleter;
+
   void goNext() {
     if (state.isLoading || state.step >= 4) return;
     final from = state.step;
     state = state.copyWith(loadingFrom: from);
-    _loadingTimer?.cancel();
-    _loadingTimer = Timer(_loadingDuration, () {
-      if (!mounted) return;
-      state = state.copyWith(step: from + 1, loadingFrom: null);
-    });
+    _waitAndAdvance(from);
+  }
+
+  Future<void> _waitAndAdvance(int from) async {
+    final minDelay = Future<void>.delayed(_loadingMinDuration);
+    final providerReady = _waitProviderReady(from);
+
+    await minDelay;
+    if (providerReady != null) {
+      await providerReady.timeout(
+        _loadingMaxDuration,
+        onTimeout: () {},
+      );
+    }
+    _disposePending();
+
+    if (!mounted) return;
+    // Sécurité : si entre-temps un autre flow a modifié `loadingFrom`
+    // (close, reset, submit…), on ne pousse pas une transition stale.
+    if (state.loadingFrom != from) return;
+    state = state.copyWith(step: from + 1, loadingFrom: null);
+  }
+
+  /// Renvoie un Future qui complète quand le provider de suggestions
+  /// ciblé pour le prochain step a `data|error`. `null` si pas de
+  /// pré-fetch à attendre (entre Step3 et Step4).
+  Future<void>? _waitProviderReady(int from) {
+    if (from == 1) {
+      final params = topicsParamsFromState();
+      if (params == null) return null;
+      return _awaitAsyncSettled(veilleTopicSuggestionsProvider(params));
+    }
+    if (from == 2) {
+      final params = sourcesParamsFromState();
+      if (params == null) return null;
+      return _awaitAsyncSettled(veilleSourceSuggestionsProvider(params));
+    }
+    return null;
+  }
+
+  /// Attend que `provider` sorte du `loading` (`data` ou `error`). Court-circuite
+  /// si l'état est déjà settled. La subscription est stockée sur le notifier
+  /// pour permettre `_disposePending()` de l'annuler en cas de sortie de flow.
+  Future<void> _awaitAsyncSettled<T>(
+    ProviderListenable<AsyncValue<T>> provider,
+  ) {
+    final current = _ref.read(provider);
+    if (current.hasValue || current.hasError) return Future.value();
+
+    _disposePending();
+    final completer = Completer<void>();
+    _pendingCompleter = completer;
+    _pendingSub = _ref.listen<AsyncValue<T>>(
+      provider,
+      (_, next) {
+        if (!completer.isCompleted &&
+            (next.hasValue || next.hasError)) {
+          completer.complete();
+        }
+      },
+      fireImmediately: true,
+    );
+    return completer.future;
+  }
+
+  void _disposePending() {
+    _pendingSub?.close();
+    _pendingSub = null;
+    if (_pendingCompleter != null && !_pendingCompleter!.isCompleted) {
+      _pendingCompleter!.complete();
+    }
+    _pendingCompleter = null;
+  }
+
+  /// Construit les params topics depuis le state courant. Utilisé par
+  /// `goNext()` pour pré-fetcher pendant l'animation halo, ET par
+  /// `veille_config_screen` pour passer les mêmes params au
+  /// `FlowLoadingScreen` (sinon double instance via `family.autoDispose`).
+  ///
+  /// **Doit produire des params strictement identiques** à ceux instanciés
+  /// dans `step2_suggestions_screen.dart` (theme + topics triés).
+  VeilleTopicsSuggestionParams? topicsParamsFromState() {
+    final themeId = state.selectedTheme;
+    if (themeId == null) return null;
+    return VeilleTopicsSuggestionParams(
+      themeId: themeId,
+      themeLabel: veilleThemeLabelForSlug(themeId),
+      selectedTopicIds: state.selectedTopics.toList()..sort(),
+      purpose: state.purpose,
+      purposeOther: state.purposeOther,
+      editorialBrief: state.editorialBrief,
+    );
+  }
+
+  /// Construit les params sources depuis le state courant. **Doit produire
+  /// des params strictement identiques** à ceux instanciés dans
+  /// `step3_sources_screen.dart` (theme + topicLabels en ordre
+  /// d'insertion Set : selectedTopics puis selectedSuggestions).
+  VeilleSourcesSuggestionParams? sourcesParamsFromState() {
+    final themeId = state.selectedTheme;
+    if (themeId == null) return null;
+    final topicLabels = <String>[
+      ...state.selectedTopics.map((id) => state.topicLabels[id] ?? id),
+      ...state.selectedSuggestions.map((id) => state.topicLabels[id] ?? id),
+    ];
+    return VeilleSourcesSuggestionParams(
+      themeId: themeId,
+      topicLabels: topicLabels,
+      purpose: state.purpose,
+      purposeOther: state.purposeOther,
+      editorialBrief: state.editorialBrief,
+    );
   }
 
   /// Recul instantané (pas de loading).
@@ -505,6 +644,13 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     state = state.copyWith(loadingFrom: from);
   }
 
+  /// L'utilisateur a tapé « C'est parti » sur l'écran d'introduction —
+  /// l'intro disparaît, on bascule sur Step1.
+  void completeIntro() {
+    if (state.introCompleted) return;
+    state = state.copyWith(introCompleted: true);
+  }
+
   /// Affiche l'écran preview pré-set (Step 1.5). Le step courant reste à 1
   /// sous le capot — le screen orchestrator détecte `previewPresetId != null`.
   void openPresetPreview(String presetSlug) {
@@ -552,6 +698,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
     state = state.copyWith(
       step: jumpToStep4 ? 4 : 1,
+      introCompleted: true,
       previewPresetId: null,
       selectedTheme: preset.themeId,
       selectedTopics: topicSlugs,
@@ -616,6 +763,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
     state = state.copyWith(
       step: 1,
+      introCompleted: true,
       selectedTheme: cfg.themeId,
       selectedTopics: selectedTopics,
       selectedSuggestions: selectedSuggestions,
@@ -651,8 +799,14 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
   /// Réinitialise le flow (utilisé après suppression / pour repartir d'une
   /// nouvelle config depuis le dashboard).
   void reset() {
-    _loadingTimer?.cancel();
+    _disposePending();
     state = VeilleConfigState.initial();
+  }
+
+  @override
+  void dispose() {
+    _disposePending();
+    super.dispose();
   }
 
   Set<String> _toggle(Set<String> set, String id) {
@@ -739,11 +893,6 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     };
   }
 
-  @override
-  void dispose() {
-    _loadingTimer?.cancel();
-    super.dispose();
-  }
 }
 
 final veilleConfigProvider =
