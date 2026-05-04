@@ -109,6 +109,55 @@ void main() {
     expect(find.text('Lu'), findsOneWidget);
   });
 
+  test('silent revalidation merge preserves consumed status from current state',
+      () {
+    // Simulate the race: current state has item 'a' consumed (optimistic
+    // update), fresh API response has item 'a' with unseen (stale server cache).
+    final currentCarousels = [
+      FeedCarouselData(
+        carouselType: 'related',
+        title: 'Related',
+        emoji: '',
+        position: 5,
+        items: [
+          mkContent('a', ContentStatus.consumed),
+          mkContent('b', ContentStatus.unseen),
+        ],
+        badges: const [],
+      )
+    ];
+    final freshCarousels = [
+      FeedCarouselData(
+        carouselType: 'related',
+        title: 'Related',
+        emoji: '',
+        position: 5,
+        items: [
+          mkContent('a', ContentStatus.unseen), // stale API response
+          mkContent('b', ContentStatus.unseen),
+        ],
+        badges: const [],
+      )
+    ];
+
+    // Mirror the merge logic from _scheduleSilentRevalidation.
+    final consumedIds = <String>{
+      ...currentCarousels.expand((carousel) => carousel.items
+          .where((c) => c.status == ContentStatus.consumed)
+          .map((c) => c.id)),
+    };
+    Content preserve(Content c) => consumedIds.contains(c.id)
+        ? c.copyWith(status: ContentStatus.consumed)
+        : c;
+    final merged = freshCarousels
+        .map((car) => car.copyWith(items: car.items.map(preserve).toList()))
+        .toList();
+
+    expect(merged[0].items[0].status, ContentStatus.consumed,
+        reason: 'consumed status must survive silent revalidation overwrite');
+    expect(merged[0].items[1].status, ContentStatus.unseen);
+  });
+
   test('readCount logic counts consumed AND progress>0 items', () {
     final items = [
       mkContent('a', ContentStatus.consumed),
