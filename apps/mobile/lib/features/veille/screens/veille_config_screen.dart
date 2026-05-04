@@ -27,7 +27,13 @@ import 'transitions/flow_loading_screen.dart';
 /// - Si erreur API, affiche le flow normal et laisse le user tenter de
 ///   créer une veille (l'erreur sera relevée au submit).
 class VeilleConfigScreen extends ConsumerWidget {
-  const VeilleConfigScreen({super.key});
+  const VeilleConfigScreen({super.key, this.editMode = false});
+
+  /// Mode édition : `true` quand la route reçoit `?mode=edit` depuis le
+  /// bouton « Modifier ma veille » du dashboard. En mode edit, la guard
+  /// redirect-vers-dashboard est désactivée et le state est hydraté depuis
+  /// la config active.
+  final bool editMode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -35,12 +41,19 @@ class VeilleConfigScreen extends ConsumerWidget {
     final notifier = ref.read(veilleConfigProvider.notifier);
     final activeConfig = ref.watch(veilleActiveConfigProvider);
 
-    // Si une config est déjà active, le user n'a rien à reconfigurer →
-    // redirect vers le dashboard. context.go est idempotent, donc même si le
-    // postFrameCallback se ré-arme à chaque rebuild, GoRouter dédupe.
-    if (activeConfig.valueOrNull != null) {
+    final activeCfgValue = activeConfig.valueOrNull;
+    if (!editMode && activeCfgValue != null) {
+      // Si une config est déjà active, le user n'a rien à reconfigurer →
+      // redirect vers le dashboard. context.go est idempotent, donc même si le
+      // postFrameCallback se ré-arme à chaque rebuild, GoRouter dédupe.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (context.mounted) context.go(RoutePaths.veilleDashboard);
+      });
+    } else if (editMode && activeCfgValue != null && state.selectedTheme == null) {
+      // Mode édition : hydrate l'état une seule fois depuis la config active.
+      // Idempotent côté notifier (no-op si selectedTheme déjà set).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifier.hydrateFromActiveConfig(activeCfgValue);
       });
     }
 
@@ -54,6 +67,18 @@ class VeilleConfigScreen extends ConsumerWidget {
 
     Future<void> handleSubmit() async {
       try {
+        if (editMode) {
+          // Mode édition : pas de génération première livraison ni de modal
+          // notif (le user n'est plus en onboarding). Juste UPSERT + retour
+          // dashboard avec confirmation.
+          await notifier.submit();
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Veille mise à jour')),
+          );
+          context.go(RoutePaths.veilleDashboard);
+          return;
+        }
         final deliveryId = await notifier.submitAndGenerateFirst();
         if (!context.mounted) return;
         notifier.setLoadingFrom(4);

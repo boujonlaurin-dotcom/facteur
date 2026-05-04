@@ -414,9 +414,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePaths.veilleConfig,
         name: RouteNames.veilleConfig,
-        pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-          child: VeilleConfigScreen(),
-        ),
+        pageBuilder: (context, state) {
+          final isEdit = state.uri.queryParameters['mode'] == 'edit';
+          return FullSwipeCupertinoPage(
+            child: VeilleConfigScreen(editMode: isEdit),
+          );
+        },
       ),
 
       // Veille Dashboard — vue de la config existante (édit/pause/delete).

@@ -388,6 +388,66 @@ class TestSuggestions:
             )
         assert resp.status_code == 422
 
+    async def test_sources_db_error_returns_503(self, auth_user):
+        """T2 — SQLAlchemyError pendant suggest/commit → 503 propre, pas 500."""
+        from sqlalchemy.exc import OperationalError
+
+        from app.services.veille import source_suggester as ss_module
+
+        original = ss_module._source_suggester
+
+        class FailingSuggester(SourceSuggester):
+            async def suggest_sources(  # type: ignore[override]
+                self, *_a, **_kw
+            ):
+                raise OperationalError("INSERT", {}, Exception("EDBHANDLEREXITED"))
+
+        ss_module._source_suggester = FailingSuggester()
+        try:
+            async with _client() as ac:
+                resp = await ac.post(
+                    "/api/veille/suggestions/sources",
+                    json={
+                        "theme_id": "education",
+                        "topic_labels": ["evaluations"],
+                        "exclude_source_ids": [],
+                    },
+                )
+            assert resp.status_code == 503
+            assert "indisponible" in resp.json()["detail"].lower()
+        finally:
+            ss_module._source_suggester = original
+
+    async def test_sources_llm_timeout_returns_503(self, auth_user):
+        """T2 — httpx.TimeoutException du LLM → 503 propre."""
+        import httpx
+
+        from app.services.veille import source_suggester as ss_module
+
+        original = ss_module._source_suggester
+
+        class TimeoutSuggester(SourceSuggester):
+            async def suggest_sources(  # type: ignore[override]
+                self, *_a, **_kw
+            ):
+                raise httpx.TimeoutException("LLM timed out")
+
+        ss_module._source_suggester = TimeoutSuggester()
+        try:
+            async with _client() as ac:
+                resp = await ac.post(
+                    "/api/veille/suggestions/sources",
+                    json={
+                        "theme_id": "education",
+                        "topic_labels": ["evaluations"],
+                        "exclude_source_ids": [],
+                    },
+                )
+            assert resp.status_code == 503
+            assert "llm" in resp.json()["detail"].lower()
+        finally:
+            ss_module._source_suggester = original
+
     async def test_topics_invalid_theme_returns_422(self, auth_user):
         async with _client() as ac:
             resp = await ac.post(
@@ -463,10 +523,10 @@ class TestGenerateFirstDelivery:
         assert body["estimated_seconds"] == 60
         assert body["delivery_id"] is not None
 
-        # BackgroundTask scheduled avec _run_first_delivery.
-        assert any(call[0] is veille_module._run_first_delivery for call in bg_calls), (
-            bg_calls
-        )
+        # BackgroundTask scheduled avec _run_first_delivery_with_retry.
+        assert any(
+            call[0] is veille_module._run_first_delivery_with_retry for call in bg_calls
+        ), bg_calls
 
     async def test_refuses_when_delivery_exists(
         self, db_session, auth_user, active_veille_config
