@@ -208,6 +208,11 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
               .where((c) => c.status == ContentStatus.consumed)
               .map((c) => c.id))),
         };
+        if (consumedIds.isEmpty) {
+          state = AsyncData(
+              FeedState(items: response.items, carousels: response.carousels));
+          return;
+        }
         Content preserve(Content c) => consumedIds.contains(c.id)
             ? c.copyWith(status: ContentStatus.consumed)
             : c;
