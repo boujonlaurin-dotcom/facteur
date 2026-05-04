@@ -1,168 +1,128 @@
-# QA Handoff — Story 18.3 « Ma veille » end-to-end
+# QA Handoff — Lettre 2 « Tes premières lectures » (Story 19.1, PR4)
 
 > Rempli par l'agent dev en fin de développement, après validation du PO.
 > Sert d'input à `/validate-feature`.
 
 ## Feature développée
 
-Câblage end-to-end du flow « Ma veille » sur l'app mobile :
-- Wiring du submit étape 4 → POST `/api/veille/config` (suppression du no-op).
-- Suggestions topics/sources réelles (POST `/api/veille/suggestions/{topics,sources}`) à l'entrée des étapes 2 et 3 (au lieu du mock).
-- Nouvel écran « Ma veille déjà configurée » (dashboard) — affiché si `GET /api/veille/config` = 200 ; redirige automatiquement depuis `/veille/config` au lieu de relancer le flow 4-steps.
-- Nouvel écran historique livraisons (`/veille/deliveries`) — liste 20 dernières.
-- Nouvel écran détail livraison (`/veille/deliveries/:id`) — clusters + `why_it_matters` + articles cliquables (InAppWebView).
-- Notif locale planifiée côté front au submit (`flutter_local_notifications`, NotifId=3, à `next_scheduled_at + 30 min`), deeplink `io.supabase.facteur://veille/dashboard`.
-
-Aucune modif backend (pipeline déjà livrée en 18.1/18.2).
+Remplace la Lettre 2 placeholder (1 action `set_frequency`) par 5 actions auto-détectées qui marquent un J+1 d'usage naturel : lire L'essentiel, lire Les bonnes nouvelles, lire 3 articles jusqu'au bout, consommer une vidéo/podcast (≥4min), recommander un article (like 🌻). Ajout d'une dimension narrative anti-FOMO : `intro_palier` (lettre), `completion_palier` (toast par action), `completion_voeu` (overlay cachet final). Aucun chiffre, aucune comparaison sociale, un seul toast à la fois.
 
 ## PR associée
 
-À créer via `/go` (PR vers `main`).
+À créer après validation QA (cible `main`).
 
 ## Écrans impactés
 
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Flow Veille — Étape 1 (thème) | `/veille/config` | Modifié — redirect dashboard si config existe |
-| Flow Veille — Étape 2 (suggestions topics) | `/veille/config` | Modifié — POST `/suggestions/topics` au mount |
-| Flow Veille — Étape 3 (sources) | `/veille/config` | Modifié — POST `/suggestions/sources` au mount |
-| Flow Veille — Étape 4 (fréquence + submit) | `/veille/config` | Modifié — POST `/config` réel + planif notif locale |
-| Dashboard « Ma veille déjà configurée » | `/veille/dashboard` | **Nouveau** |
-| Historique livraisons | `/veille/deliveries` | **Nouveau** |
-| Détail livraison | `/veille/deliveries/:id` | **Nouveau** |
+| Feed (carrousel haut) | `/feed` | Modifié — 2è carte « Bonnes nouvelles » émet désormais un event |
+| Liste des lettres (Mon Courrier) | `/lettres` | Inchangé visuellement |
+| Lettre ouverte (L2) | `/lettres/letter_2` | Modifié — nouveau message, 5 actions, intro_palier, toasts paliers |
+| Overlay cachet final | (overlay sur `/lettres/letter_2` quand archivée) | Modifié — affiche `completion_voeu` au lieu du fallback |
 
 ## Scénarios de test
 
-### Scénario 1 : Happy path — première config & livraison
-
+### Scénario 1 — Forme de la Lettre 2 ouverte (état initial)
 **Parcours** :
-1. Auth dans l'app. Aucune veille configurée.
-2. Naviguer vers `/veille/config` (depuis settings ou route directe).
-3. Étape 1 : choisir thème « IA & éducation ».
-4. Étape 2 : observer le spinner pendant 1-3s, puis suggestions LLM affichées (différentes du mock figé). Sélectionner 3 topics.
-5. Étape 3 : spinner puis sources `followed` + `niche` réelles. Sélectionner 4 sources.
-6. Étape 4 : fréquence weekly · lundi · 7h. Tap « Configurer ma veille ».
-7. Vérifier : POST `/api/veille/config` → 200 dans logs uvicorn.
-8. Vérifier : redirection vers `/veille/dashboard` (pas le SnackBar mock).
-9. Vérifier (Android Studio Logcat ou debug print) : `PushNotificationService: scheduled veilleDelivery for <next_scheduled_at + 30min>`.
-10. (debug local) `POST /api/veille/deliveries/generate` → 200 succeeded.
-11. Re-ouvrir l'app → dashboard → bouton « Historique » → liste 1 livraison.
-12. Tap livraison → détail → 1+ cluster avec titre + `why_it_matters` + articles.
-13. Tap article → InAppWebView s'ouvre.
-
+1. Provisionner un user avec L2 active (DB ou faire passer par le chaînage L1→L2 standard).
+2. Naviguer vers `/lettres` puis ouvrir Lettre 2.
 **Résultat attendu** :
-- Aucune erreur réseau ni 4xx visible dans les logs.
-- La notif locale est bien planifiée (vérifiable via Logcat ou `flutter logs`).
-- Le dashboard affiche le thème, topics, sources, fréquence et un countdown vers `next_scheduled_at`.
-- Le détail livraison montre des clusters réels (ou fallback déterministe si `MISTRAL_API_KEY` absent localement, sans badge visible).
+- Titre « Tes premières lectures ».
+- Message principal en 2 paragraphes.
+- Sous le dernier paragraphe : phrase italique secondaire (`intro_palier`) « Ta sélection est posée. Voyons maintenant si tu sais en faire bon usage. »
+- 5 actions visibles : Lire L'essentiel / Découvrir Les bonnes nouvelles / Lire 3 articles jusqu'au bout / Écouter un podcast ou regarder une vidéo / Recommander un article.
+- Compteur en haut « 0/5 ».
 
-### Scénario 2 : Veille déjà configurée — redirect dashboard
-
+### Scénario 2 — Action « Lire L'essentiel » détectée
 **Parcours** :
-1. Avoir une veille active (cf. Scénario 1).
-2. Tap depuis settings le bouton « Configurer ma veille » (ou navigate manuel `/veille/config`).
-3. Observer.
-
+1. Sur `/lettres/letter_2` ouverte, retour au feed.
+2. Tap sur la carte « L'essentiel du jour ».
+3. Revenir aux lettres et rouvrir Lettre 2.
 **Résultat attendu** :
-- L'utilisateur voit le dashboard `/veille/dashboard`, pas le flow 4-steps (Step1).
-- Si l'utilisateur tap « Modifier ma veille » sur le dashboard → flow 4-steps relancé avec le state preset (thème, topics, sources cochés).
+- L'action « Lire L'essentiel du jour » apparaît cochée (strikethrough).
+- Compteur « 1/5 ».
+- Toast bottom (Fraunces italique) « Premier rendez-vous tenu. Ça commence ici. » s'affiche brièvement (≈4s).
 
-### Scénario 3 : Pause & Reprendre
-
+### Scénario 3 — Action « Bonnes nouvelles » détectée
 **Parcours** :
-1. Dashboard avec veille active.
-2. Tap « Mettre en pause ».
-3. Observer.
-
+1. Sur le feed, tap sur la 2è carte du carrousel « Les bonnes nouvelles ».
+2. Revenir aux lettres et rouvrir Lettre 2.
 **Résultat attendu** :
-- PATCH `/api/veille/config` → 200, `status="paused"`.
-- Le bouton devient « Reprendre ».
-- Le countdown disparaît (ou affiche « En pause »).
-- La notif locale précédemment planifiée est cancelled (vérifiable via debug print).
-- Tap « Reprendre » → PATCH status="active" + reschedule notif.
+- L'action « Découvrir Les bonnes nouvelles » cochée.
+- Toast « Tu sais maintenant que la lecture peut aussi faire du bien. ».
 
-### Scénario 4 : Suppression
-
+### Scénario 4 — Action « 3 articles jusqu'au bout »
 **Parcours** :
-1. Dashboard avec veille active.
-2. Tap « Supprimer ma veille » → confirm dialog → confirmer.
-3. Observer.
-
+1. Lire 3 articles de type `article` jusqu'au bout (scroll ≥90 % et passer ≥60 s sur chacun).
+2. Revenir aux lettres et rouvrir Lettre 2.
 **Résultat attendu** :
-- DELETE `/api/veille/config` → 204.
-- L'utilisateur est redirigé vers `/feed` (ou la route de fallback).
-- Re-ouvrir `/veille/config` → flow 4-steps de nouveau (état GET /config = 404).
-- Notif locale cancelled.
+- Action cochée.
+- Toast « Trois lectures menées au bout. C'est ce qui te distingue déjà. ».
+- Note : si 2 articles seulement OU 1 article avec time_spent <60s → action **non cochée** (régression à éviter).
 
-### Scénario 5 : Détail livraison failed
-
+### Scénario 5 — Action « Vidéo / podcast »
 **Parcours** :
-1. Forcer une livraison `failed` (peut nécessiter un seed DB côté QA — alternative : mocker côté UI test).
-2. Ouvrir l'historique → tap la livraison.
-
+1. Ouvrir un contenu de type `youtube` ou `podcast`, le consommer ≥4 minutes (240 s cumulés serveur).
+2. Rouvrir Lettre 2.
 **Résultat attendu** :
-- Le détail affiche un état d'erreur sympa (« La livraison a échoué — le scanner réessaiera bientôt »).
-- Pas de crash, pas d'erreur dans les logs front.
+- Action cochée.
+- Toast « Tu varies les formats. C'est comme ça qu'on s'enrichit. ».
 
-### Scénario 6 : Erreur réseau pendant suggestions
-
+### Scénario 6 — Action « Recommander un article »
 **Parcours** :
-1. Étape 2 (suggestions topics) : couper le wifi.
-2. Re-tenter le mount (back puis re-forward).
-
+1. Sur n'importe quel article, tap sur le bouton like (🌻).
+2. Rouvrir Lettre 2.
 **Résultat attendu** :
-- Toast `« Suggestions indisponibles, conserve ta sélection »`.
-- La grille reste fonctionnelle avec mock data (pas de crash).
-- Bouton « Réessayer » disponible.
+- Action cochée.
+- Toast « Un signal envoyé. Le Facteur écoute. ».
 
-### Scénario 7 : Tap notification locale
-
+### Scénario 7 — Anti-cascade (rafale)
 **Parcours** :
-1. Avoir une veille active avec notif schedulée.
-2. (Debug Android) déclencher la notif manuellement OU avancer la date système.
-3. Tap la notif depuis l'écran de verrouillage.
-
+1. Pré-remplir 4/5 actions L2 hors session.
+2. Ouvrir Lettre 2 (snapshot initial = 4 done).
+3. Déclencher la 5è action depuis l'écran.
 **Résultat attendu** :
-- L'app s'ouvre sur `/veille/dashboard` (deeplink `io.supabase.facteur://veille/dashboard`).
-- Si `target_date` du jour a une livraison `succeeded`, le bouton « Historique » l'affiche en haut.
+- L'overlay cachet final s'affiche avec `completion_voeu` (« Tu as appris à lire avec attention. C'est déjà beaucoup. La suite peut attendre. »).
+- **Aucun toast palier** ne s'affiche en plus (l'overlay remplace le dernier toast).
+
+Variante : 2 actions complétées simultanément (refresh + 2 nouveaux done) → **un seul toast** s'affiche (celui de la dernière action de la rafale), pas 2.
+
+### Scénario 8 — Anti-FOMO (vérification visuelle)
+**Parcours** :
+1. Inspecter visuellement Lettre 2 dans tous ses états (todo, partiellement done, archivée).
+2. Inspecter le toast palier et l'overlay cachet.
+**Résultat attendu** :
+- **Aucun pourcentage** affiché (pas de « 60 % » ni « top 10 % »).
+- **Aucun classement** ni comparaison sociale (pas de « comme 80 % des utilisateurs »).
+- **Aucun chiffre de performance** dans les wordings (le « 1/5 » du compteur d'actions reste OK, c'est neutre).
+- Grep automatisé : `grep -rE '\b\d+\s?%|percentile|classement|comme \d+%' apps/mobile/lib/features/lettres/ packages/api/app/services/letters/` doit retourner 0 résultat.
 
 ## Critères d'acceptation
 
-- [ ] Submit étape 4 fait un vrai POST `/api/veille/config` (plus de SnackBar mock).
-- [ ] Étapes 2 et 3 appellent les endpoints suggestions avec spinner bloquant.
-- [ ] Toute config existante (GET 200) déclenche un redirect vers `/veille/dashboard` au lieu du flow.
-- [ ] Dashboard rend thème, topics, sources, fréquence, countdown.
-- [ ] Boutons dashboard (Modifier/Pause/Supprimer/Voir historique) tous fonctionnels.
-- [ ] Historique liste 20 livraisons max, empty state si 0.
-- [ ] Détail livraison rend les clusters avec `why_it_matters` + articles.
-- [ ] Tap article ouvre InAppWebView (pas le navigateur externe).
-- [ ] Notif locale planifiée au submit, cancellée au pause/delete, re-schedulée au PATCH frequency.
-- [ ] Deeplink `io.supabase.facteur://veille/dashboard` mappé.
-- [ ] `flutter test` vert sur les fichiers touchés/créés.
-- [ ] `flutter analyze` ne crée pas de NOUVEAU error/warning.
+- [ ] L2 active retourne 5 actions, `intro_palier` non vide, `completion_voeu` non vide.
+- [ ] Chaque action a un `completion_palier` non vide.
+- [ ] Les 5 détecteurs s'évaluent correctement (cf. tests `TestLetter2Detection`).
+- [ ] L1 ne contient PAS les champs narratifs L2 (régression backward-compat).
+- [ ] L2 archivée reste archivée après refresh (idempotence).
+- [ ] Toast s'affiche bottom 32, fade in/out 250 ms, hold 4 s, max 2 lignes.
+- [ ] Anti-cascade : rafale de 2+ actions done = 1 seul toast.
+- [ ] Complétion totale : overlay cachet à la place du toast.
+- [ ] Aucune stat chiffrée dans les wordings.
 
 ## Zones de risque
 
-1. **UUIDs vs slugs mock** — le mock `veille_mock_data.dart` utilise des slugs (`s-lm`, `t-eval`) qui n'existent pas en DB. Le wiring API n'envoie QUE les UUIDs renvoyés par les endpoints suggestions. Vérifier qu'AUCUNE source mock-only (sans `apiSourceId`) ne fuit dans le POST /config (sinon 400 ou faux source ingéré).
-2. **Notif locale & timezone** — utiliser `tz.TZDateTime.from(when, tz.local)` (pattern `scheduleDailyDigestNotification`). Sinon DST Paris peut décaler la notif d'1h.
-3. **Retries cascadés** — la règle « max 1 sur 5xx, 0 sur 4xx » est CRITIQUE. Pas de retry cascadé type `digest_provider._loadBothDigests` (mémoire `bug-infinite-load-requests` : pool DB déjà saturé en prod).
-4. **Mistral KO côté backend** — `why_it_matters` reçoit alors un fallback déterministe (« 4 articles de 2 sources couvrent ce sujet »). À considérer comme valide, pas un état d'erreur. Pas de badge.
-5. **Multi-device** — la notif est purement locale. Si l'utilisateur configure depuis device A, device B ne recevra pas la notif. Documenté hors scope V1.
-6. **`generation_state == "running"`** — au moment où la notif tombe, le scanner peut encore tourner. Le détail doit gérer ce cas (afficher un loader « génération en cours, refresh dans X s »).
-7. **InAppWebView** — vérifier qu'on réutilise le même helper que le digest (`Grep "InAppWebView"` côté `features/digest/` ou `features/feed/`). Sinon implémenter un fallback `url_launcher` propre.
+- **`reading_progress` côté serveur** : la détection « 3 articles jusqu'au bout » dépend du PATCH `POST /contents/{id}/status` (`feed_repository.dart:824`) qui est fire-and-forget. Si l'utilisateur ferme l'app avant le sync, l'action peut tarder à se cocher. Pas un bug — c'est cohérent avec la détection backend.
+- **Listener `_seenDoneActionIds`** : le snapshot est par-instance d'écran. Si l'utilisateur quitte puis ré-ouvre Lettre 2, le snapshot est refait → pas de toast pour les actions déjà done avant la session. Comportement voulu.
+- **Wording éditorial** : les 7 chaînes (`intro_palier`, `completion_voeu`, 5 × `completion_palier`) sont rédigées par l'agent dans l'esprit Facteur, à valider par PO avant merge.
 
 ## Dépendances
 
-- Endpoints API (déjà livrés en 18.1/18.2) :
-  - `GET /api/veille/config`
-  - `POST /api/veille/config`
-  - `PATCH /api/veille/config`
-  - `DELETE /api/veille/config`
-  - `POST /api/veille/suggestions/topics`
-  - `POST /api/veille/suggestions/sources`
-  - `GET /api/veille/deliveries?limit=20`
-  - `GET /api/veille/deliveries/{id}`
-  - `POST /api/veille/deliveries/generate` (debug, dev only)
-- Pas de migration backend.
-- Pas de FCM/APNS (push 100% local via `flutter_local_notifications`).
-- Scanner backend `*/30 min` (déjà schedulé via APScheduler).
+- Endpoints réutilisés (aucun nouveau) : `POST /analytics/events`, `POST /contents/{id}/status`, `POST /contents/{id}/like`.
+- Migration DB : aucune.
+- Models touchés : `Letter`, `LetterAction` (mobile, +3 champs nullable).
+
+## Tests automatisés
+
+- Backend : `pytest tests/routers/test_letters_routes.py` → 20/20.
+- Mobile : `flutter test test/features/lettres/` → 34/34 (incluant `palier_toast_test`, `letter_test` backward-compat).
+- Suite mobile complète : 543 passed / 37 failed — les 37 failures sont pré-existantes sur staging, sans rapport avec L2 (vérifié par stash + run baseline).

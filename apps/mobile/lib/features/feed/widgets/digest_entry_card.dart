@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,11 +8,13 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/routes.dart';
 import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../../widgets/design/facteur_card.dart';
 import '../../digest/providers/digest_provider.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/widgets/essentiel_pill.dart';
 import '../../digest/widgets/bonnes_nouvelles_pill.dart';
+import '../../lettres/providers/letters_provider.dart';
 
 /// Mini-carousel horizontal en tête du feed.
 ///
@@ -41,6 +45,14 @@ class DigestEntryCard extends ConsumerWidget {
         _peek;
 
     Future<void> openDigest({required bool requireSerein}) async {
+      if (requireSerein) {
+        unawaited(
+          ref.read(analyticsServiceProvider).trackBonnesNouvellesOpened(
+                targetDate: targetDate,
+              ),
+        );
+        unawaited(ref.read(lettersProvider.notifier).silentRefresh());
+      }
       final original = ref.read(sereinToggleProvider).enabled;
       final notifier = ref.read(sereinToggleProvider.notifier);
       if (requireSerein != original) {

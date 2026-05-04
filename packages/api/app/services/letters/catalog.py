@@ -58,17 +58,61 @@ LETTER_1: dict = {
 LETTER_2: dict = {
     "id": "letter_2",
     "num": "02",
-    "title": "Ton rythme idéal",
+    "title": "Tes premières lectures",
     "default_status": "upcoming",
+    "intro_palier": (
+        "Ta sélection est posée. Voyons maintenant si tu sais en faire bon usage."
+    ),
     "actions": [
         {
-            "id": "set_frequency",
-            "label": "Choisir ta fréquence de digest",
-            "help": "Quotidien, hebdomadaire, ou à la demande.",
+            "id": "read_first_essentiel",
+            "label": "Lire L'essentiel du jour",
+            "help": "Cinq articles, choisis pour toi. C'est le rendez-vous quotidien.",
+            "completion_palier": "Premier rendez-vous tenu. Ça commence ici.",
+        },
+        {
+            "id": "read_first_bonnes_nouvelles",
+            "label": "Découvrir Les bonnes nouvelles",
+            "help": "Quand l'actu pèse, va voir ce qui s'allège.",
+            "completion_palier": (
+                "Tu sais maintenant que la lecture peut aussi faire du bien."
+            ),
+        },
+        {
+            "id": "read_3_long_articles",
+            "label": "Lire 3 articles jusqu'au bout",
+            "help": "Pas de scroll express. Prends le temps de finir.",
+            "completion_palier": (
+                "Trois lectures menées au bout. C'est ce qui te distingue déjà."
+            ),
+        },
+        {
+            "id": "read_first_video_podcast",
+            "label": "Écouter un podcast ou regarder une vidéo",
+            "help": "Au moins quatre minutes. Le temps que ça t'apporte quelque chose.",
+            "completion_palier": (
+                "Tu varies les formats. C'est comme ça qu'on s'enrichit."
+            ),
+        },
+        {
+            "id": "recommend_first_article",
+            "label": "Recommander un article",
+            "help": (
+                "Un like (🌻), c'est un signal. Il oriente ta sélection et celle des autres."
+            ),
+            "completion_palier": "Un signal envoyé. Le Facteur écoute.",
         },
     ],
-    "message": ("Maintenant que ta sélection est posée, choisissons ton rythme."),
+    "message": (
+        "Ta sélection est prête. Maintenant, faisons connaissance avec ce qu'elle "
+        "peut t'apporter au quotidien.\n\n"
+        "Pas de course à la lecture, pas de chiffres à atteindre — "
+        "juste cinq gestes simples pour entrer dans le rythme."
+    ),
     "signature": "Le Facteur",
+    "completion_voeu": (
+        "Tu as appris à lire avec attention. C'est déjà beaucoup. La suite peut attendre."
+    ),
 }
 
 LETTERS_ORDER: list[dict] = [LETTER_0, LETTER_1, LETTER_2]

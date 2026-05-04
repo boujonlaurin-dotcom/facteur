@@ -12,6 +12,7 @@ import '../providers/letters_provider.dart';
 import '../widgets/envelope_thumb.dart';
 import '../widgets/letter_action_tile.dart';
 import '../widgets/letter_completion_overlay.dart';
+import '../widgets/palier_toast.dart';
 
 class OpenLetterScreen extends ConsumerStatefulWidget {
   final String letterId;
@@ -24,6 +25,10 @@ class OpenLetterScreen extends ConsumerStatefulWidget {
 
 class _OpenLetterScreenState extends ConsumerState<OpenLetterScreen> {
   bool _completionShown = false;
+  // Anti-cascade : on snapshot les actions déjà done au premier load pour ne
+  // pas afficher de toast pour des paliers déjà acquis avant cette session.
+  final Set<String> _seenDoneActionIds = <String>{};
+  bool _seenInitialized = false;
 
   @override
   void initState() {
@@ -58,6 +63,38 @@ class _OpenLetterScreenState extends ConsumerState<OpenLetterScreen> {
     });
   }
 
+  void _maybeShowPalierToast(LetterProgressState state) {
+    final letter = state.letters
+        .where((l) => l.id == widget.letterId)
+        .cast<Letter?>()
+        .firstOrNull;
+    if (letter == null) return;
+
+    final doneActions = letter.actions
+        .where((a) => a.status == LetterActionStatus.done)
+        .toList();
+
+    if (!_seenInitialized) {
+      _seenInitialized = true;
+      _seenDoneActionIds.addAll(doneActions.map((a) => a.id));
+      return;
+    }
+
+    final newlyDone =
+        doneActions.where((a) => !_seenDoneActionIds.contains(a.id)).toList();
+    if (newlyDone.isEmpty) return;
+    _seenDoneActionIds.addAll(newlyDone.map((a) => a.id));
+
+    // Anti-cascade : on n'affiche QUE le palier de la dernière action de la
+    // rafale. La complétion totale est traitée par _maybeShowCompletion
+    // (overlay cachet) — pas de toast en plus dans ce cas.
+    if (letter.status == LetterStatus.archived) return;
+    final last = newlyDone.last;
+    final msg = last.completionPalier;
+    if (msg == null || msg.isEmpty) return;
+    showPalierToast(context, msg);
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
@@ -65,7 +102,9 @@ class _OpenLetterScreenState extends ConsumerState<OpenLetterScreen> {
 
     ref.listen<AsyncValue<LetterProgressState>>(lettersProvider, (_, next) {
       final v = next.valueOrNull;
-      if (v != null) _maybeShowCompletion(v);
+      if (v == null) return;
+      _maybeShowPalierToast(v);
+      _maybeShowCompletion(v);
     });
 
     return Scaffold(
@@ -253,6 +292,18 @@ class _Body extends ConsumerWidget {
                     const SizedBox(height: 12),
                   ],
                 ),
+                if (letter.introPalier != null && letter.introPalier!.isNotEmpty) ...[
+                  Text(
+                    letter.introPalier!,
+                    style: GoogleFonts.fraunces(
+                      fontSize: 14.5,
+                      fontStyle: FontStyle.italic,
+                      height: 1.55,
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 _Signature(letter: letter, colors: colors),
                 const SizedBox(height: 24),
                 Row(
