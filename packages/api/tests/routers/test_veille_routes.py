@@ -408,7 +408,7 @@ class TestSuggestions:
                 resp = await ac.post(
                     "/api/veille/suggestions/sources",
                     json={
-                        "theme_id": "education",
+                        "theme_id": "science",
                         "topic_labels": ["evaluations"],
                         "exclude_source_ids": [],
                     },
@@ -438,7 +438,7 @@ class TestSuggestions:
                 resp = await ac.post(
                     "/api/veille/suggestions/sources",
                     json={
-                        "theme_id": "education",
+                        "theme_id": "science",
                         "topic_labels": ["evaluations"],
                         "exclude_source_ids": [],
                     },
