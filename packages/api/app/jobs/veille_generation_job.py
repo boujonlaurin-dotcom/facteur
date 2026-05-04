@@ -10,6 +10,7 @@ import asyncio
 from datetime import UTC, date, datetime
 from uuid import UUID
 
+import sentry_sdk
 import structlog
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -103,13 +104,64 @@ async def _process_config_with_semaphore(
                 builder=builder,
             )
             return True
-        except Exception as exc:
-            logger.error(
-                "veille_generation_job_config_failed",
-                config_id=str(config_id),
-                error=str(exc),
-            )
+        except Exception as exc:  # noqa: BLE001 — catch-all pour persister FAILED
+            await _mark_scanner_delivery_failed(config_id, target, exc)
             return False
+
+
+async def _mark_scanner_delivery_failed(
+    config_id: UUID,
+    target: date,
+    exc: BaseException,
+) -> None:
+    """UPSERT veille_deliveries → FAILED + sentry capture (best-effort).
+
+    Invariant : la row a déjà été créée RUNNING par `_phase1_mark_running`
+    si on est arrivés au LLM. Si l'exception est levée avant phase 1
+    (cas rare), on UPSERT avec un id généré pour matérialiser l'échec
+    côté table.
+    """
+    error_class = type(exc).__name__
+    error_msg = f"{error_class}: {str(exc)[:480]}"
+    try:
+        async with safe_async_session() as s:
+            delivery = (
+                await s.execute(
+                    select(VeilleDelivery).where(
+                        VeilleDelivery.veille_config_id == config_id,
+                        VeilleDelivery.target_date == target,
+                    )
+                )
+            ).scalar_one_or_none()
+            if delivery is None:
+                logger.error(
+                    "veille_generation_job_failed_row_missing",
+                    config_id=str(config_id),
+                    target_date=str(target),
+                    error_class=error_class,
+                )
+            else:
+                delivery.generation_state = VeilleGenerationState.FAILED.value
+                delivery.last_error = error_msg
+                delivery.finished_at = datetime.now(UTC)
+                delivery.attempts = (delivery.attempts or 0) + 1
+                await s.commit()
+    except Exception as commit_exc:  # noqa: BLE001 — best-effort
+        logger.error(
+            "veille_generation_job_failed_persist_error",
+            config_id=str(config_id),
+            target_date=str(target),
+            error=str(commit_exc),
+        )
+
+    sentry_sdk.capture_exception(exc)
+    logger.error(
+        "veille.scanner_delivery_failed_terminal",
+        config_id=str(config_id),
+        target_date=str(target),
+        error_class=error_class,
+        error_msg=str(exc)[:480],
+    )
 
 
 async def run_veille_generation_for_config(

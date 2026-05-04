@@ -551,6 +551,92 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
   void clearError() => state = state.copyWith(lastError: null);
 
+  /// Hydrate l'état depuis une config existante (mode édition).
+  ///
+  /// Appelée par `VeilleConfigScreen` quand `editMode == true` et que le
+  /// state notifier vient de naître (autoDispose) avec ses valeurs initiales.
+  /// Idempotent : si le thème est déjà sélectionné, ne re-hydrate pas.
+  void hydrateFromActiveConfig(VeilleConfigDto cfg) {
+    if (state.selectedTheme != null) return;
+
+    final selectedTopics = <String>{};
+    final selectedSuggestions = <String>{};
+    final customTopics = <VeilleTopic>[];
+    final topicLabels = <String, String>{};
+    for (final t in cfg.topics) {
+      topicLabels[t.topicId] = t.label;
+      switch (t.kind) {
+        case 'custom':
+          customTopics.add(
+            VeilleTopic(
+              id: t.topicId,
+              label: t.label,
+              reason: t.reason ?? 'sujet ajouté',
+            ),
+          );
+          selectedTopics.add(t.topicId);
+        case 'suggested':
+          selectedSuggestions.add(t.topicId);
+        default:
+          selectedTopics.add(t.topicId);
+      }
+    }
+
+    final followedSources = <String>{};
+    final nicheSources = <String>{};
+    final sourcesMeta = <String, VeilleSourceMeta>{};
+    for (final s in cfg.sources) {
+      final meta = VeilleSourceMeta(
+        slug: s.source.id,
+        name: s.source.name,
+        kind: s.kind,
+        apiSourceId: s.source.id,
+        url: s.source.url,
+        why: s.why,
+      );
+      sourcesMeta[s.source.id] = meta;
+      if (s.kind == 'niche') {
+        nicheSources.add(s.source.id);
+      } else {
+        followedSources.add(s.source.id);
+      }
+    }
+
+    state = state.copyWith(
+      step: 1,
+      selectedTheme: cfg.themeId,
+      selectedTopics: selectedTopics,
+      selectedSuggestions: selectedSuggestions,
+      customTopics: customTopics,
+      topicLabels: topicLabels,
+      followedSources: followedSources,
+      nicheSources: nicheSources,
+      sourcesMeta: sourcesMeta,
+      frequency: _frequencyFromWire(cfg.frequency),
+      day: _dayFromWire(cfg.dayOfWeek),
+      purpose: cfg.purpose,
+      purposeOther: cfg.purposeOther,
+      editorialBrief: cfg.editorialBrief,
+      presetId: cfg.presetId,
+    );
+  }
+
+  static VeilleFrequency _frequencyFromWire(String wire) => switch (wire) {
+        'biweekly' => VeilleFrequency.biweekly,
+        'monthly' => VeilleFrequency.monthly,
+        _ => VeilleFrequency.weekly,
+      };
+
+  static VeilleDay _dayFromWire(int? day) => switch (day) {
+        1 => VeilleDay.tue,
+        2 => VeilleDay.wed,
+        3 => VeilleDay.thu,
+        4 => VeilleDay.fri,
+        5 => VeilleDay.sat,
+        6 => VeilleDay.sun,
+        _ => VeilleDay.mon,
+      };
+
   /// Réinitialise le flow (utilisé après suppression / pour repartir d'une
   /// nouvelle config depuis le dashboard).
   void reset() {

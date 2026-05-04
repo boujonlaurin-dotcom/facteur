@@ -8,13 +8,17 @@ session avant le LLM).
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
+import httpx
+import sentry_sdk
 import structlog
 from cachetools import TTLCache
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import delete, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -468,17 +472,33 @@ async def suggest_sources(
     current_user_id: str = Depends(get_current_user_id),
 ):
     user_uuid = UUID(current_user_id)
-    result = await suggester.suggest_sources(
-        session=db,
-        user_id=user_uuid,
-        theme_id=req.theme_id,
-        topic_labels=req.topic_labels,
-        excluded_source_ids=req.exclude_source_ids,
-        purpose=req.purpose,
-        purpose_other=req.purpose_other,
-        editorial_brief=req.editorial_brief,
-    )
-    await db.commit()  # persiste les éventuelles ingestions niche
+    try:
+        result = await suggester.suggest_sources(
+            session=db,
+            user_id=user_uuid,
+            theme_id=req.theme_id,
+            topic_labels=req.topic_labels,
+            excluded_source_ids=req.exclude_source_ids,
+            purpose=req.purpose,
+            purpose_other=req.purpose_other,
+            editorial_brief=req.editorial_brief,
+        )
+        await db.commit()  # persiste les éventuelles ingestions niche
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        sentry_sdk.capture_exception(exc)
+        logger.error("veille.suggest_sources_db_error", error=str(exc))
+        raise HTTPException(
+            status_code=503,
+            detail="Service temporairement indisponible.",
+        ) from exc
+    except (httpx.TimeoutException, httpx.HTTPError) as exc:
+        sentry_sdk.capture_exception(exc)
+        logger.error("veille.suggest_sources_llm_error", error=str(exc))
+        raise HTTPException(
+            status_code=503,
+            detail="Suggestions LLM indisponibles.",
+        ) from exc
 
     return VeilleSourceSuggestionsResponse(
         followed=[
@@ -623,28 +643,108 @@ async def force_generate(
 # ─── First delivery (génération immédiate post-onboarding) ───────────────────
 
 
-async def _run_first_delivery(config_id: UUID, target_date: date) -> None:
-    """BackgroundTask : owns LLM client + digest builder lifecycle.
+_FIRST_DELIVERY_RETRY_DELAY_SECONDS = 60
+
+
+async def _mark_delivery_failed(
+    delivery_id: UUID,
+    exc: BaseException,
+    *,
+    log_event: str,
+    extra_log: dict,
+) -> None:
+    """UPDATE veille_deliveries → FAILED + sentry capture (idempotent best-effort).
+
+    Best-effort : si l'UPDATE lui-même échoue (pool dead, DB down) on log
+    sans re-raise pour ne pas masquer l'exception métier. Le cleanup script
+    périodique (hors scope, issue #cleanup-stuck-rows) servira de filet.
+    """
+    error_class = type(exc).__name__
+    error_msg = f"{error_class}: {str(exc)[:480]}"
+    try:
+        async with safe_async_session() as s:
+            delivery = (
+                await s.execute(
+                    select(VeilleDelivery).where(VeilleDelivery.id == delivery_id)
+                )
+            ).scalar_one_or_none()
+            if delivery is None:
+                logger.error(
+                    "veille.delivery_failed_row_missing",
+                    delivery_id=str(delivery_id),
+                    **extra_log,
+                )
+                return
+            delivery.generation_state = VeilleGenerationState.FAILED.value
+            delivery.last_error = error_msg
+            delivery.finished_at = datetime.now(UTC)
+            delivery.attempts = (delivery.attempts or 0) + 1
+            await s.commit()
+    except Exception as commit_exc:  # noqa: BLE001 — best-effort
+        logger.error(
+            "veille.delivery_failed_persist_error",
+            delivery_id=str(delivery_id),
+            error=str(commit_exc),
+            **extra_log,
+        )
+
+    sentry_sdk.capture_exception(exc)
+    logger.error(
+        log_event,
+        delivery_id=str(delivery_id),
+        error_class=error_class,
+        error_msg=str(exc)[:480],
+        **extra_log,
+    )
+
+
+async def _run_first_delivery_with_retry(
+    config_id: UUID,
+    target_date: date,
+    delivery_id: UUID,
+) -> None:
+    """BackgroundTask : retry 1× T+60s puis FAILED + sentry si 2e échec.
 
     Appelé après le 202 du POST /generate-first. La row VeilleDelivery a déjà
-    été créée en PENDING par le handler ; le job interne fait son propre UPSERT
-    sur (veille_config_id, target_date) et la passe à RUNNING puis SUCCEEDED.
+    été créée en PENDING par le handler ; `run_veille_generation_for_config`
+    fait son propre UPSERT et la passe à RUNNING puis SUCCEEDED.
+
+    Si la 1re tentative échoue (typiquement EDBHANDLEREXITED transitoire),
+    on attend 60 s et on retente une seule fois. La 2e ouverture de session
+    via `safe_async_session` repart sur une connexion saine.
     """
     llm = EditorialLLMClient()
     try:
-        builder = VeilleDigestBuilder(llm=llm, session_maker=safe_async_session)
-        await run_veille_generation_for_config(
-            config_id,
-            target_date=target_date,
-            session_maker=safe_async_session,
-            builder=builder,
-        )
-    except Exception as exc:
-        logger.error(
-            "veille.first_delivery_failed",
-            config_id=str(config_id),
-            error=str(exc),
-        )
+        for attempt in (1, 2):
+            try:
+                builder = VeilleDigestBuilder(llm=llm, session_maker=safe_async_session)
+                await run_veille_generation_for_config(
+                    config_id,
+                    target_date=target_date,
+                    session_maker=safe_async_session,
+                    builder=builder,
+                )
+                return
+            except Exception as exc:  # noqa: BLE001 — terminal handler ci-dessous
+                if attempt == 1:
+                    logger.warning(
+                        "veille.first_delivery_failed_will_retry",
+                        config_id=str(config_id),
+                        delivery_id=str(delivery_id),
+                        error=str(exc),
+                    )
+                    await asyncio.sleep(_FIRST_DELIVERY_RETRY_DELAY_SECONDS)
+                    continue
+                await _mark_delivery_failed(
+                    delivery_id,
+                    exc,
+                    log_event="veille.first_delivery_failed_terminal",
+                    extra_log={
+                        "config_id": str(config_id),
+                        "attempts": attempt,
+                    },
+                )
+                return
     finally:
         await llm.close()
 
@@ -693,9 +793,10 @@ async def generate_first_delivery(
     await db.commit()
 
     background_tasks.add_task(
-        _run_first_delivery,
+        _run_first_delivery_with_retry,
         config_id=cfg.id,
         target_date=target,
+        delivery_id=delivery_id,
     )
     return VeilleGenerateFirstResponse(
         delivery_id=delivery_id,

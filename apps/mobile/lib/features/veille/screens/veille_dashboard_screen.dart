@@ -162,7 +162,7 @@ class _DashboardBody extends ConsumerWidget {
         _SecondaryButton(
           icon: PhosphorIcons.pencilSimple(),
           label: 'Modifier ma veille',
-          onTap: () => context.go(RoutePaths.veilleConfig),
+          onTap: () => context.go('${RoutePaths.veilleConfig}?mode=edit'),
         ),
         const SizedBox(height: 10),
         _SecondaryButton(
