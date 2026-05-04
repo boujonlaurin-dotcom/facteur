@@ -122,25 +122,24 @@ class SourceSuggester:
         excluded = set(excluded_source_ids or [])
         followed_ids = await self._followed_source_ids(session, user_id)
 
-        if not self._llm.is_ready:
-            sources = await self._fallback(session, theme_id, excluded, followed_ids)
-            return SourceSuggestions(sources=sources)
+        candidates: list[_LLMSourceCandidate] = []
+        if self._llm.is_ready:
+            user_message = (
+                f"Thème : {theme_id}\n"
+                f"Topics retenus : {', '.join(topic_labels) if topic_labels else '(aucun)'}\n"
+                f"Usage souhaité : {purpose_line(purpose, purpose_other)}\n"
+                f"Brief éditorial : {editorial_brief or '(aucun)'}\n\n"
+                f"Propose 8 à 12 sources rankées par pertinence pour ces topics et ce brief."
+            )
+            raw = await self._llm.chat_json(
+                system=_SOURCES_SYSTEM_PROMPT,
+                user_message=user_message,
+                model="mistral-large-latest",
+                temperature=0.4,
+                max_tokens=1500,
+            )
+            candidates = self._parse_candidates(raw)
 
-        user_message = (
-            f"Thème : {theme_id}\n"
-            f"Topics retenus : {', '.join(topic_labels) if topic_labels else '(aucun)'}\n"
-            f"Usage souhaité : {purpose_line(purpose, purpose_other)}\n"
-            f"Brief éditorial : {editorial_brief or '(aucun)'}\n\n"
-            f"Propose 8 à 12 sources rankées par pertinence pour ces topics et ce brief."
-        )
-        raw = await self._llm.chat_json(
-            system=_SOURCES_SYSTEM_PROMPT,
-            user_message=user_message,
-            model="mistral-large-latest",
-            temperature=0.4,
-            max_tokens=1500,
-        )
-        candidates = self._parse_candidates(raw)
         if not candidates:
             sources = await self._fallback(session, theme_id, excluded, followed_ids)
             return SourceSuggestions(sources=sources)

@@ -304,8 +304,6 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
     );
   }
 
-  // ─── Build ─────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;

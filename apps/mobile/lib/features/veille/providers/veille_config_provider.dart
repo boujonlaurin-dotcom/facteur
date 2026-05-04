@@ -103,23 +103,22 @@ class VeilleConfigState {
     required this.lastError,
   });
 
-  static const Set<String> _initialSelectedSourceIds = {
-    's-lm', 's-cp', 's-tc', 's-ife', 's-bsf', 's-eds',
-  };
-
-  factory VeilleConfigState.initial() => const VeilleConfigState(
+  factory VeilleConfigState.initial() => VeilleConfigState(
         step: 1,
         loadingFrom: null,
         previewPresetId: null,
         selectedTheme: null,
-        selectedTopics: {},
-        selectedSuggestions: {},
-        selectedSourceIds: _initialSelectedSourceIds,
+        selectedTopics: const {},
+        selectedSuggestions: const {},
+        selectedSourceIds: {
+          ...VeilleMockData.defaultFollowedSources,
+          ...VeilleMockData.defaultNicheSources,
+        },
         frequency: VeilleFrequency.weekly,
         day: VeilleDay.mon,
-        customTopics: [],
-        topicLabels: {},
-        sourcesMeta: {},
+        customTopics: const [],
+        topicLabels: const {},
+        sourcesMeta: const {},
         purpose: null,
         purposeOther: null,
         editorialBrief: null,
@@ -373,8 +372,19 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
   /// aucune sélection user ne référence un UUID API). Une invalidation ulté-
   /// rieure (« Proposer plus de sources ») ne doit pas wipe les choix user.
   void applySourceSuggestions(VeilleSourceSuggestionsResponse apiSources) {
-    final nextMeta = Map<String, VeilleSourceMeta>.from(state.sourcesMeta);
+    // Guard : si toutes les sources sont déjà dans `sourcesMeta` à l'identique,
+    // on évite une réallocation + notify (ref.listen de step3 fire à chaque
+    // emission AsyncValue.data même quand rien n'a changé).
+    final allAlreadyApplied = apiSources.sources.every((s) {
+      final existing = state.sourcesMeta[s.sourceId];
+      return existing != null &&
+          existing.name == s.name &&
+          existing.url == s.url &&
+          existing.why == s.why;
+    });
+    if (allAlreadyApplied) return;
 
+    final nextMeta = Map<String, VeilleSourceMeta>.from(state.sourcesMeta);
     for (final s in apiSources.sources) {
       nextMeta[s.sourceId] = VeilleSourceMeta(
         slug: s.sourceId,

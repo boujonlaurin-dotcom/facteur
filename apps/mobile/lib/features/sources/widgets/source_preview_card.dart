@@ -228,8 +228,6 @@ class SourcePreviewCard extends StatelessWidget {
   }
 }
 
-/// Badge RSS qui surface si la source dispose d'un flux : vert "RSS détecté",
-/// orange "Pas de flux RSS — articles peuvent manquer".
 class _RssBadge extends StatelessWidget {
   final String feedUrl;
   const _RssBadge({required this.feedUrl});

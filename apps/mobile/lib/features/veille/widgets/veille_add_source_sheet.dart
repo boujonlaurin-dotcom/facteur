@@ -10,16 +10,6 @@ import '../../sources/widgets/source_add_panel.dart';
 /// Délègue le moteur de recherche / preview / ajout à [SourceAddPanel] —
 /// quand l'ajout réussit, on remonte la `SmartSearchResult` au parent qui
 /// décide d'injecter la source dans le state Step 3 et de fermer le sheet.
-///
-/// À ouvrir via :
-/// ```dart
-/// showModalBottomSheet(
-///   context: context,
-///   isScrollControlled: true,
-///   backgroundColor: Colors.transparent,
-///   builder: (_) => VeilleAddSourceSheet(onSourceAdded: ...),
-/// );
-/// ```
 class VeilleAddSourceSheet extends ConsumerWidget {
   final ValueChanged<SmartSearchResult> onSourceAdded;
 
