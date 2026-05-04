@@ -144,15 +144,14 @@ final veilleTopicSuggestionsProvider = StateNotifierProvider.autoDispose
 
 // ─── Sources ─────────────────────────────────────────────────────────────────
 
-/// StateNotifier des suggestions sources (Step 3). Même logique de
-/// remplacement « non-cochés uniquement » que les topics, mais appliquée
-/// uniquement aux **niches** : les `followed` viennent du catalogue de
-/// l'utilisateur, ils ne sont pas regénérés par le LLM.
+/// StateNotifier des suggestions sources (Step 3). Liste unique rankée
+/// par pertinence. `refreshKeepingChecked` conserve les sources cochées,
+/// remplace les non-cochées par de nouvelles propositions LLM.
 class VeilleSourcesSuggestionsNotifier
     extends StateNotifier<AsyncValue<VeilleSourceSuggestionsResponse>> {
   final Ref _ref;
   final VeilleSourcesSuggestionParams _params;
-  List<VeilleSourceSuggestion> _keptNiche = const [];
+  List<VeilleSourceSuggestion> _kept = const [];
 
   VeilleSourcesSuggestionsNotifier(this._ref, this._params)
       : super(const AsyncValue.loading()) {
@@ -171,29 +170,26 @@ class VeilleSourcesSuggestionsNotifier
         purposeOther: _params.purposeOther,
         editorialBrief: _params.editorialBrief,
       );
-      final keptIds = _keptNiche.map((s) => s.sourceId).toSet();
-      final freshNiche =
-          resp.niche.where((s) => !keptIds.contains(s.sourceId)).toList();
+      final keptIds = _kept.map((s) => s.sourceId).toSet();
+      final fresh =
+          resp.sources.where((s) => !keptIds.contains(s.sourceId)).toList();
       state = AsyncValue.data(
-        VeilleSourceSuggestionsResponse(
-          followed: resp.followed,
-          niche: [..._keptNiche, ...freshNiche],
-        ),
+        VeilleSourceSuggestionsResponse(sources: [..._kept, ...fresh]),
       );
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     }
   }
 
-  /// Remplace les niches non cochées par de nouvelles. Les niches cochées
-  /// (présentes dans `checkedNicheIds`) sont conservées ; les ids des
-  /// niches actuellement affichées sont passés en `excludeSourceIds`.
-  Future<void> refreshKeepingChecked(Set<String> checkedNicheIds) async {
+  /// Remplace les sources non cochées par de nouvelles. Les sources cochées
+  /// (présentes dans `checkedIds`) sont conservées ; les ids actuellement
+  /// affichés sont passés en `excludeSourceIds`.
+  Future<void> refreshKeepingChecked(Set<String> checkedIds) async {
     final current = state.valueOrNull;
-    final currentNiche = current?.niche ?? const <VeilleSourceSuggestion>[];
-    _keptNiche =
-        currentNiche.where((s) => checkedNicheIds.contains(s.sourceId)).toList();
-    final excludeIds = currentNiche.map((s) => s.sourceId).toList();
+    final currentSources = current?.sources ?? const <VeilleSourceSuggestion>[];
+    _kept =
+        currentSources.where((s) => checkedIds.contains(s.sourceId)).toList();
+    final excludeIds = currentSources.map((s) => s.sourceId).toList();
     await _fetch(excludeIds: excludeIds);
   }
 }

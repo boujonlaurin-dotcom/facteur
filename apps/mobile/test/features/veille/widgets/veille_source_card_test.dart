@@ -46,7 +46,7 @@ Widget _wrap(ProviderContainer container) {
         body: VeilleSourceCard(
           source: _source,
           inVeille: true,
-          isNiche: false,
+          isAlreadyFollowed: false,
           onToggle: () {},
         ),
       ),

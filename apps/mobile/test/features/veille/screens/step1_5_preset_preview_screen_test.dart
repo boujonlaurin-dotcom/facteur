@@ -86,7 +86,7 @@ void main() {
     expect(state.presetId, 'ia_agentique');
     expect(state.purpose, 'progresser_au_travail');
     expect(state.editorialBrief, 'Plutôt analyses concrètes.');
-    expect(state.followedSources.contains('11111111-1111-1111-1111-111111111111'), isTrue);
+    expect(state.selectedSourceIds.contains('11111111-1111-1111-1111-111111111111'), isTrue);
 
     container.dispose();
     await tester.pumpWidget(const SizedBox.shrink());

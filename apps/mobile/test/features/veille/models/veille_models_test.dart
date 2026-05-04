@@ -180,9 +180,9 @@ void main() {
   });
 
   group('VeilleSourceSuggestionsResponse.fromJson', () {
-    test('parses both followed and niche lists', () {
+    test('parses flat sources list with is_already_followed + relevance', () {
       final r = VeilleSourceSuggestionsResponse.fromJson({
-        'followed': [
+        'sources': [
           {
             'source_id': 's1',
             'name': 'Le Monde',
@@ -190,9 +190,9 @@ void main() {
             'feed_url': 'https://lemonde.fr/rss',
             'theme': 'edu',
             'why': null,
+            'is_already_followed': true,
+            'relevance_score': 0.92,
           },
-        ],
-        'niche': [
           {
             'source_id': 's2',
             'name': 'EdSurge',
@@ -200,12 +200,16 @@ void main() {
             'feed_url': 'https://edsurge.com/rss',
             'theme': 'edu',
             'why': 'innovations US',
+            'is_already_followed': false,
+            'relevance_score': 0.7,
           },
         ],
       });
-      expect(r.followed, hasLength(1));
-      expect(r.niche, hasLength(1));
-      expect(r.niche.first.why, 'innovations US');
+      expect(r.sources, hasLength(2));
+      expect(r.sources.first.isAlreadyFollowed, isTrue);
+      expect(r.sources.first.relevanceScore, 0.92);
+      expect(r.sources[1].why, 'innovations US');
+      expect(r.sources[1].isAlreadyFollowed, isFalse);
     });
   });
 

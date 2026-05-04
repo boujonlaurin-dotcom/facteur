@@ -173,11 +173,12 @@ class VeilleSourceSuggestion(BaseModel):
     feed_url: str
     theme: str
     why: str | None = None
+    is_already_followed: bool = False
+    relevance_score: float | None = None
 
 
 class VeilleSourceSuggestionsResponse(BaseModel):
-    followed: list[VeilleSourceSuggestion]
-    niche: list[VeilleSourceSuggestion]
+    sources: list[VeilleSourceSuggestion]
 
 
 class VeilleSuggestSourcesRequest(BaseModel):
