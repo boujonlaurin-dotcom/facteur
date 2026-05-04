@@ -57,6 +57,10 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/facteur_widget_info" />
         </receiver>
+        <service
+            android:name=".FacteurWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
 
         <!-- flutter_downloader : provider FileProvider pour partager l'APK
              téléchargé avec l'installeur Android, et init custom pour limiter
