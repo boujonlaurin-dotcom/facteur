@@ -483,7 +483,7 @@ async def suggest_sources(
             purpose_other=req.purpose_other,
             editorial_brief=req.editorial_brief,
         )
-        await db.commit()  # persiste les éventuelles ingestions niche
+        await db.commit()  # persiste les éventuelles ingestions à la volée
     except SQLAlchemyError as exc:
         await db.rollback()
         sentry_sdk.capture_exception(exc)
@@ -501,7 +501,7 @@ async def suggest_sources(
         ) from exc
 
     return VeilleSourceSuggestionsResponse(
-        followed=[
+        sources=[
             VeilleSourceSuggestion(
                 source_id=it.source_id,
                 name=it.name,
@@ -509,19 +509,10 @@ async def suggest_sources(
                 feed_url=it.feed_url,
                 theme=it.theme,
                 why=it.why,
+                is_already_followed=it.is_already_followed,
+                relevance_score=it.relevance_score,
             )
-            for it in result.followed
-        ],
-        niche=[
-            VeilleSourceSuggestion(
-                source_id=it.source_id,
-                name=it.name,
-                url=it.url,
-                feed_url=it.feed_url,
-                theme=it.theme,
-                why=it.why,
-            )
-            for it in result.niche
+            for it in result.sources
         ],
     )
 

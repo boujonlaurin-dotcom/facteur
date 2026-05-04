@@ -53,8 +53,9 @@ class VeilleConfigState {
   final String? selectedTheme;
   final Set<String> selectedTopics;
   final Set<String> selectedSuggestions;
-  final Set<String> followedSources;
-  final Set<String> nicheSources;
+  /// Sources sélectionnées par le user pour cette veille (liste unique).
+  /// `sourcesMeta[id].kind` distingue 'followed' / 'niche' pour le wire backend.
+  final Set<String> selectedSourceIds;
   final VeilleFrequency frequency;
   final VeilleDay day;
 
@@ -88,8 +89,7 @@ class VeilleConfigState {
     required this.selectedTheme,
     required this.selectedTopics,
     required this.selectedSuggestions,
-    required this.followedSources,
-    required this.nicheSources,
+    required this.selectedSourceIds,
     required this.frequency,
     required this.day,
     required this.customTopics,
@@ -108,15 +108,17 @@ class VeilleConfigState {
         loadingFrom: null,
         previewPresetId: null,
         selectedTheme: null,
-        selectedTopics: {},
-        selectedSuggestions: {},
-        followedSources: VeilleMockData.defaultFollowedSources,
-        nicheSources: VeilleMockData.defaultNicheSources,
+        selectedTopics: const {},
+        selectedSuggestions: const {},
+        selectedSourceIds: {
+          ...VeilleMockData.defaultFollowedSources,
+          ...VeilleMockData.defaultNicheSources,
+        },
         frequency: VeilleFrequency.weekly,
         day: VeilleDay.mon,
-        customTopics: [],
-        topicLabels: {},
-        sourcesMeta: {},
+        customTopics: const [],
+        topicLabels: const {},
+        sourcesMeta: const {},
         purpose: null,
         purposeOther: null,
         editorialBrief: null,
@@ -129,7 +131,7 @@ class VeilleConfigState {
 
   int get totalSelectedAngles =>
       selectedTopics.length + selectedSuggestions.length;
-  int get totalSelectedSources => followedSources.length + nicheSources.length;
+  int get totalSelectedSources => selectedSourceIds.length;
   int get totalSelectedTopics => selectedTopics.length;
 
   VeilleConfigState copyWith({
@@ -139,8 +141,7 @@ class VeilleConfigState {
     Object? selectedTheme = _Sentinel.value,
     Set<String>? selectedTopics,
     Set<String>? selectedSuggestions,
-    Set<String>? followedSources,
-    Set<String>? nicheSources,
+    Set<String>? selectedSourceIds,
     VeilleFrequency? frequency,
     VeilleDay? day,
     List<VeilleTopic>? customTopics,
@@ -166,8 +167,7 @@ class VeilleConfigState {
             : selectedTheme as String?,
         selectedTopics: selectedTopics ?? this.selectedTopics,
         selectedSuggestions: selectedSuggestions ?? this.selectedSuggestions,
-        followedSources: followedSources ?? this.followedSources,
-        nicheSources: nicheSources ?? this.nicheSources,
+        selectedSourceIds: selectedSourceIds ?? this.selectedSourceIds,
         frequency: frequency ?? this.frequency,
         day: day ?? this.day,
         customTopics: customTopics ?? this.customTopics,
@@ -298,12 +298,9 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
         selectedSuggestions: _toggle(state.selectedSuggestions, id),
       );
 
-  void toggleFollowedSource(String id) => state = state.copyWith(
-        followedSources: _toggle(state.followedSources, id),
+  void toggleSource(String id) => state = state.copyWith(
+        selectedSourceIds: _toggle(state.selectedSourceIds, id),
       );
-
-  void toggleNicheSource(String id) =>
-      state = state.copyWith(nicheSources: _toggle(state.nicheSources, id));
 
   void setFrequency(VeilleFrequency f) => state = state.copyWith(frequency: f);
   void setDay(VeilleDay d) => state = state.copyWith(day: d);
@@ -375,33 +372,32 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
   /// aucune sélection user ne référence un UUID API). Une invalidation ulté-
   /// rieure (« Proposer plus de sources ») ne doit pas wipe les choix user.
   void applySourceSuggestions(VeilleSourceSuggestionsResponse apiSources) {
+    // Guard : si toutes les sources sont déjà dans `sourcesMeta` à l'identique,
+    // on évite une réallocation + notify (ref.listen de step3 fire à chaque
+    // emission AsyncValue.data même quand rien n'a changé).
+    final allAlreadyApplied = apiSources.sources.every((s) {
+      final existing = state.sourcesMeta[s.sourceId];
+      return existing != null &&
+          existing.name == s.name &&
+          existing.url == s.url &&
+          existing.why == s.why;
+    });
+    if (allAlreadyApplied) return;
+
     final nextMeta = Map<String, VeilleSourceMeta>.from(state.sourcesMeta);
-
-    for (final s in apiSources.followed) {
+    for (final s in apiSources.sources) {
       nextMeta[s.sourceId] = VeilleSourceMeta(
         slug: s.sourceId,
         name: s.name,
-        kind: 'followed',
-        apiSourceId: s.sourceId,
-        url: s.url,
-        why: s.why,
-      );
-    }
-    for (final s in apiSources.niche) {
-      nextMeta[s.sourceId] = VeilleSourceMeta(
-        slug: s.sourceId,
-        name: s.name,
-        kind: 'niche',
+        kind: s.isAlreadyFollowed ? 'followed' : 'niche',
         apiSourceId: s.sourceId,
         url: s.url,
         why: s.why,
       );
     }
 
-    final hasUserApiSelection = state.followedSources
-            .any((slug) => state.sourcesMeta[slug]?.apiSourceId != null) ||
-        state.nicheSources
-            .any((slug) => state.sourcesMeta[slug]?.apiSourceId != null);
+    final hasUserApiSelection = state.selectedSourceIds
+        .any((slug) => state.sourcesMeta[slug]?.apiSourceId != null);
 
     if (hasUserApiSelection) {
       state = state.copyWith(sourcesMeta: nextMeta);
@@ -410,8 +406,31 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
     state = state.copyWith(
       sourcesMeta: nextMeta,
-      followedSources: apiSources.followed.map((s) => s.sourceId).toSet(),
-      nicheSources: apiSources.niche.map((s) => s.sourceId).toSet(),
+      selectedSourceIds: apiSources.sources.map((s) => s.sourceId).toSet(),
+    );
+  }
+
+  /// Ajoute une source custom (ajoutée via le sheet "+ Ajouter une source")
+  /// au state Step 3. La source est immédiatement sélectionnée pour la veille.
+  /// `kind='followed'` : c'est une source explicitement adoptée par le user.
+  void addCustomSourceToVeille({
+    required String sourceId,
+    required String name,
+    required String url,
+    String? why,
+  }) {
+    final nextMeta = Map<String, VeilleSourceMeta>.from(state.sourcesMeta);
+    nextMeta[sourceId] = VeilleSourceMeta(
+      slug: sourceId,
+      name: name,
+      kind: 'followed',
+      apiSourceId: sourceId,
+      url: url,
+      why: why,
+    );
+    state = state.copyWith(
+      sourcesMeta: nextMeta,
+      selectedSourceIds: {...state.selectedSourceIds, sourceId},
     );
   }
 
@@ -539,8 +558,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       selectedSuggestions: const <String>{},
       customTopics: [...state.customTopics, ...newCustomTopics],
       topicLabels: nextLabels,
-      followedSources: followed,
-      nicheSources: const <String>{},
+      selectedSourceIds: followed,
       sourcesMeta: nextMeta,
       purpose: preset.purposes.isNotEmpty ? preset.purposes.first : null,
       purposeOther: null,
@@ -582,11 +600,10 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       }
     }
 
-    final followedSources = <String>{};
-    final nicheSources = <String>{};
+    final selectedSourceIds = <String>{};
     final sourcesMeta = <String, VeilleSourceMeta>{};
     for (final s in cfg.sources) {
-      final meta = VeilleSourceMeta(
+      sourcesMeta[s.source.id] = VeilleSourceMeta(
         slug: s.source.id,
         name: s.source.name,
         kind: s.kind,
@@ -594,12 +611,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
         url: s.source.url,
         why: s.why,
       );
-      sourcesMeta[s.source.id] = meta;
-      if (s.kind == 'niche') {
-        nicheSources.add(s.source.id);
-      } else {
-        followedSources.add(s.source.id);
-      }
+      selectedSourceIds.add(s.source.id);
     }
 
     state = state.copyWith(
@@ -609,8 +621,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       selectedSuggestions: selectedSuggestions,
       customTopics: customTopics,
       topicLabels: topicLabels,
-      followedSources: followedSources,
-      nicheSources: nicheSources,
+      selectedSourceIds: selectedSourceIds,
       sourcesMeta: sourcesMeta,
       frequency: _frequencyFromWire(cfg.frequency),
       day: _dayFromWire(cfg.dayOfWeek),
@@ -682,25 +693,13 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
     final sourceSelections = <VeilleSourceSelectionRequest>[];
     var spos = 0;
-    for (final slug in s.followedSources) {
+    for (final slug in s.selectedSourceIds) {
       final meta = s.sourcesMeta[slug];
       if (meta?.apiSourceId == null) continue; // mock-only — drop
       sourceSelections.add(
         VeilleSourceSelectionRequest(
-          kind: 'followed',
-          sourceId: meta!.apiSourceId,
-          why: meta.why,
-          position: spos++,
-        ),
-      );
-    }
-    for (final slug in s.nicheSources) {
-      final meta = s.sourcesMeta[slug];
-      if (meta?.apiSourceId == null) continue;
-      sourceSelections.add(
-        VeilleSourceSelectionRequest(
-          kind: 'niche',
-          sourceId: meta!.apiSourceId,
+          kind: meta!.kind, // 'followed' | 'niche'
+          sourceId: meta.apiSourceId,
           why: meta.why,
           position: spos++,
         ),

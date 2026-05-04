@@ -1,123 +1,131 @@
-# QA Handoff — Veille V3 PR1 Critical Fixes (T1+T2+T3)
+# QA Handoff — Veille V3 PR2 « Sources quality + custom sources »
 
 ## Feature développée
 
-Trois correctifs critiques sur le flow Veille V3 :
-- **T1** Backend : la première livraison veille atterrit maintenant en `succeeded` ou `failed` (jamais stuck en `running`). Retry transparent 1× après 60 s, capture Sentry + persistance `last_error`. Symétrie côté scanner périodique.
-- **T2** Résilience : `/api/veille/suggestions/sources` retourne un 503 propre quand la DB ou le LLM lèvent — au lieu d'un 500 + session SQLAlchemy empoisonnée. Step 3 mobile expose un bouton « Réessayer » dans le fallback mock.
-- **T3** Mobile : le bouton « Modifier ma veille » ouvre le flow en mode édition (`?mode=edit`) avec hydratation complète du state (thème, topics, sources, fréquence/jour, purpose, brief). Submit court-circuite la première livraison.
+PR2 du V3 veille : refonte du suggesteur de sources (le LLM produit
+maintenant **une seule liste rankée par pertinence**, plus la séparation
+followed/niche), nouveau wording « Connecter / Connectée », badge
+« CONFIANCE » sur les sources déjà suivies, et bouton « + Ajouter une
+source » dans Step 3 qui ouvre un sheet de recherche réutilisant le moteur
+de `add_source_screen`. Badge RSS (vert / orange) ajouté sur la preview
+d'ajout d'une source.
 
 ## PR associée
 
-À ouvrir vers `main` : `boujonlaurin-dotcom/veille-v3-pr1-critical-fixes`. Lien `gh pr view --web` après push.
+À créer via `/go` — base = `main`, branche
+`boujonlaurin-dotcom/veille-v3-pr2-sources-quality`.
 
 ## Écrans impactés
 
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Step 3 Sources (onboarding veille) | `/veille/config` step 3 | Modifié — bouton retry sur fallback erreur |
-| Veille Config Screen | `/veille/config?mode=edit` | Modifié — mode édition (hydrate, court-circuit submit) |
-| Veille Dashboard | `/veille/dashboard` | Modifié — bouton « Modifier ma veille » route avec `?mode=edit` |
-| Veille Delivery Detail | `/veille/deliveries/{id}` | Inchangé — `_DeliveryFailedView` déjà existant, vérifier qu'il rend après T1 |
+| Veille flow Step 3 (sélection sources) | `/veille/config` (étape 3) | Modifié |
+| Sheet « Ajouter une source » (depuis Step 3) | (sheet) | Nouveau |
+| Add source (catalogue global) | `/sources/add` | Refacto interne (UI ≃ inchangée) |
+| Source detail modal (preview avant ajout) | (modale) | Modifié — badge RSS |
 
 ## Scénarios de test
 
-### S1 — T1 : Première livraison qui échoue passe à FAILED
+### Scénario 1 : Step 3 — liste flat triée par pertinence (happy path)
 
-**Préparation** :
-1. App locale + API locale (`uvicorn app.main:app --port 8080`).
-2. Mock `app.jobs.veille_generation_job.run_veille_generation_for_config` pour `raise RuntimeError("boom")` à chaque appel (modifier temporairement le code, ou monkey-patch via test fixture). Alternativement : faire planter le LLM (variable env `MISTRAL_API_KEY=invalid`).
-
-**Parcours** :
-1. Login avec un compte sans veille active.
-2. Lancer l'onboarding veille (Step 1 → 4) jusqu'au submit.
-3. Observer le loading screen post-step-4.
-4. Attendre ~60 s (le retry interne) puis ~60 s de plus (la 2e tentative qui échoue).
-5. Au bout de ~120 s, observer le poll s'arrêter sur `failed`.
+1. Démarrer un nouveau flow Veille → choisir un thème (ex. « Tech »).
+2. Step 2 : cocher quelques topics, optionnellement remplir un brief.
+3. Step 3 : attendre le chargement des suggestions.
 
 **Résultat attendu** :
-- Mobile : le snackbar « La génération a échoué. On retentera à la prochaine livraison. » apparaît, puis redirection vers le dashboard.
-- DB : `SELECT generation_state, last_error, finished_at, attempts FROM veille_deliveries WHERE veille_config_id = '<id>'` → `failed` + `last_error` non-null contenant `RuntimeError: boom` + `finished_at` non-null + `attempts >= 1`.
-- Sentry : 1 événement capturé (terminal handler après les 2 tentatives).
+- Une seule liste de sources (8–12 items typiquement), pas de section.
+- Sous-titre « Classées par pertinence pour ta veille ».
+- Les sources que l'utilisateur suit déjà ont un badge **CONFIANCE**.
+- Toutes les cards ont un CTA « Connecter » (ou « Connectée » si pré-cochée).
+- Pas d'overflow sur le bouton « Connectée » (viewport 390x844).
 
-**Cas alternatif (succès au retry)** : mock `run_veille_generation_for_config` pour `raise` 1×, puis `return` succès. La row doit passer à `succeeded` après ~60 s et le mobile sortir du poll proprement.
+### Scénario 2 : Toggle Connecter / Connectée
 
-### S2 — T2 : Step 3 Sources résilient sur erreur backend
+1. Sur Step 3, tap sur « Connecter » d'une source non sélectionnée → devient
+   « Connectée ».
+2. Re-tap → repasse à « Connecter ».
 
-**Préparation** :
-1. Mock backend : modifier temporairement le router pour `raise OperationalError("test")` ou `raise httpx.TimeoutException("test")` dans `suggest_sources`.
+**Résultat attendu** : compteur de sources reflète l'état, pas de glitch.
 
-**Parcours** :
-1. Login + onboarding veille jusqu'au Step 3.
-2. Sélectionner thème + topics (Step 1 + 2), atteindre Step 3.
-3. Observer le rendu de Step 3.
+### Scénario 3 : Ajouter une source custom depuis Step 3 (happy path)
 
-**Résultat attendu** :
-- Mobile : le widget `_MockSourcesFallback` est rendu avec le message « Suggestions indisponibles, conserve ta sélection. » + un bouton « Réessayer ».
-- Tap sur « Réessayer » → relance l'appel `/suggestions/sources`. Si le mock backend est désactivé entre temps, les suggestions API doivent charger normalement.
-- Backend : `curl -X POST /api/veille/suggestions/sources` retourne **503** avec `detail` contenant `Service temporairement indisponible.` (SQL error) ou `Suggestions LLM indisponibles.` (LLM timeout).
-- Console Flutter : pas d'erreur unhandled, le state `AsyncError` est correctement géré.
-
-### S3 — T3 : Mode édition « Modifier ma veille »
-
-**Préparation** :
-1. Compte avec une veille déjà active (config existante avec topics, sources, purpose).
-
-**Parcours** :
-1. Login → /veille/dashboard (vue de la config existante).
-2. Tap sur « Modifier ma veille ».
-3. Vérifier la route : URL `/veille/config?mode=edit`.
-4. Step 1 doit s'afficher (PAS de redirect dashboard) avec le thème pré-sélectionné.
-5. Naviguer Step 1 → 2 → 3 → 4 : vérifier que les topics, sources (followed + niche), fréquence, jour, purpose, brief sont tous pré-cochés/remplis.
-6. Modifier au moins une valeur (ex. changer le jour de la semaine de Mar à Jeu).
-7. Tap « Continuer » au Step 4 (submit).
+1. Sur Step 3, scroller jusqu'au bouton **« Ajouter une source »**.
+2. Tap → un sheet s'ouvre (≈92% de la hauteur) avec champ de recherche +
+   drag handle + bouton close.
+3. Taper « next inpact » → résultats apparaissent.
+4. Tap résultat → modale détail s'ouvre avec badge RSS.
+5. Tap « Ajouter ».
 
 **Résultat attendu** :
-- Pas de loading screen « première livraison ».
-- Snackbar « Veille mise à jour ».
-- Redirection immédiate vers `/veille/dashboard`.
-- DB : `SELECT day_of_week FROM veille_configs WHERE user_id = '<id>'` reflète la modification.
-- Tap « X » du header en mode edit → retour dashboard, config existante intacte (pas de delete, pas de modif).
+- Modale fermée, sheet fermé.
+- La nouvelle source apparaît dans la liste Step 3, **pré-cochée**
+  (« Connectée »).
+- Pas de duplication si la source était déjà dans la liste.
+
+### Scénario 4 : Badge RSS sur la preview
+
+**Parcours A — RSS détecté** :
+1. Step 3 → bouton « Ajouter une source ».
+2. Coller une URL d'un média avec flux RSS (ex. `https://www.lemonde.fr`).
+3. Tap résultat → preview.
+
+**Résultat A** : pill **verte** « RSS détecté ».
+
+**Parcours B — Pas de flux RSS** :
+1. Idem avec une URL sans RSS.
+
+**Résultat B** : pill **orange** « Pas de flux RSS — articles peuvent manquer ».
+
+### Scénario 5 : Edge — fallback mock si API down
+
+1. Couper la connexion / faire échouer `/veille/suggestions/sources`.
+2. Atteindre Step 3.
+
+**Résultat attendu** : message « Suggestions indisponibles, conserve ta
+sélection. » + liste mock unique (followed + niche fusionnés). Les sources
+mock followed (`s-lm`, `s-cp`, `s-tc`) ont un badge CONFIANCE.
+
+### Scénario 6 : Add source screen catalogue (régression)
+
+1. Ouvrir l'écran catalogue `/sources/add`.
+2. Effectuer une recherche, ajouter une source.
+
+**Résultat attendu** : comportement identique à avant la refacto. Le badge
+RSS apparaît sur la preview.
 
 ## Critères d'acceptation
 
-### T1
-- [ ] Row `veille_deliveries` passe à `failed` (jamais stuck en `running`) quand la génération échoue 2 fois.
-- [ ] `last_error` contient le type + msg de l'exception (≤ 500 chars).
-- [ ] Sentry capture l'exception via `sentry_sdk.capture_exception`.
-- [ ] Mobile sort du poll sur `failed` et affiche le snackbar.
-- [ ] Scanner périodique applique la même politique (pas de retry, FAILED direct).
-
-### T2
-- [ ] `POST /api/veille/suggestions/sources` retourne 503 (jamais 500) sur SQLAlchemyError.
-- [ ] `POST /api/veille/suggestions/sources` retourne 503 sur httpx.TimeoutException / HTTPError.
-- [ ] Step 3 mobile affiche un bouton « Réessayer » fonctionnel sur erreur.
-
-### T3
-- [ ] `?mode=edit` ouvre le flow sans redirect.
-- [ ] State pré-rempli : thème, topics (preset/custom/suggested), sources (followed/niche), fréquence, jour, purpose, brief.
-- [ ] Submit en mode edit → POST UPSERT + snackbar « Veille mise à jour » + retour dashboard.
-- [ ] Cancel → retour dashboard, config intacte.
+- [ ] Liste unique flat sur Step 3 (pas de section followed/niche).
+- [ ] Sources `is_already_followed=true` → badge CONFIANCE.
+- [ ] CTA « Connecter / Connectée » sans overflow.
+- [ ] Bouton « Ajouter une source » ouvre un sheet avec drag handle + close.
+- [ ] Source ajoutée via le sheet → pré-cochée dans Step 3.
+- [ ] Badge RSS visible sur la preview source detail (vert ou orange).
+- [ ] AddSourceScreen catalogue : aucune régression.
 
 ## Zones de risque
 
-- **T1 Sentry capture en BackgroundTask** : FastAPI BackgroundTask n'a pas le middleware Sentry du request lifecycle. La capture explicite est obligatoire et doit être testée en prod (vérifier l'apparition d'un événement après un fail volontaire).
-- **T2 SQLAlchemy session après rollback** : vérifier qu'aucune query subséquente sur la même session n'est tentée après le rollback (sinon `PendingRollbackError`). Le `raise HTTPException` après `await db.rollback()` est testé.
-- **T3 hydratation idempotente** : le `addPostFrameCallback` peut se ré-exécuter à chaque rebuild. Le notifier est gardé idempotent par le check `state.selectedTheme != null` → no-op après la 1re hydratation.
-- **T3 état autoDispose** : le `veilleConfigProvider` est `autoDispose`. Si le user ouvre /veille/config?mode=edit puis revient au dashboard puis re-ouvre, le state est reset → 1re hydratation s'applique à nouveau (correct, pas de leak d'état pré-cédent).
+1. **State migration** : les tests `step1_5_preset_preview_screen_test`,
+   `veille_config_provider_test`, `veille_models_test`,
+   `veille_source_card_test` ont été adaptés. Le feed
+   (`compact_source_chip.dart`, `feed_screen.dart`) utilise un nom homonyme
+   `followedSources` mais NON-relié au state veille — vérifier en QA visuel
+   que le feed n'est pas cassé.
+2. **Preset application** : `applyPreset` place toutes les sources d'un
+   preset dans `selectedSourceIds`, avec `kind='followed'` dans `sourcesMeta`.
+   Le wire backend reste identique.
+3. **Hydratation édition** : `hydrateFromActiveConfig` (mode édition d'une
+   veille existante) préserve le `kind` côté `sourcesMeta`, donc
+   l'aller-retour API doit rester stable.
+4. **Bordure card Step 3** : la couleur dépend maintenant de
+   `isAlreadyFollowed` (avant : `isNiche`).
 
 ## Dépendances
 
-- Backend endpoints : `POST /api/veille/suggestions/sources`, `POST /api/veille/deliveries/generate-first`, `POST /api/veille/config` (UPSERT).
-- Sentry SDK (`sentry_sdk.capture_exception`).
-- Provider Riverpod : `veilleActiveConfigProvider`, `veilleConfigProvider`, `veilleSourceSuggestionsProvider`.
-- GoRouter `state.uri.queryParameters` pour lire `?mode=edit`.
-
-## Tests automatisés livrés
-
-- `packages/api/tests/test_veille_first_delivery_failure.py` (3 cas) — T1 retry + FAILED + scanner.
-- `packages/api/tests/routers/test_veille_routes.py::TestSuggestions::test_sources_db_error_returns_503` — T2.
-- `packages/api/tests/routers/test_veille_routes.py::TestSuggestions::test_sources_llm_timeout_returns_503` — T2.
-- `apps/mobile/test/features/veille/providers/veille_config_provider_test.dart` (3 nouveaux cas) — T3 hydrateFromActiveConfig.
-
-Test widget UI Step3 (T2 mobile) **non livré** côté unitaire — couvert par S2 Playwright + le test backend 503 garantit le contrat. À ajouter en suivi si récurrence.
+- API endpoint :
+  - `POST /veille/suggestions/sources` — réponse changée
+    `{sources: [...]}` (au lieu de `{followed, niche}`). Chaque item porte
+    `is_already_followed: bool` + `relevance_score: float | None`.
+- Backend tests : `test_veille_source_ingestion.py` +
+  `test_veille_source_suggester_eval.py` (10 fixtures structurelles).
+- Mobile tests : `flutter test` — 51 tests passants.

@@ -342,7 +342,7 @@ class TestSuggestions:
                 editorial_brief=None,
             ):
                 return SourceSuggestions(
-                    followed=[
+                    sources=[
                         SourceSuggestionItem(
                             source_id=curated_education_source.id,
                             name=curated_education_source.name,
@@ -350,9 +350,10 @@ class TestSuggestions:
                             feed_url=curated_education_source.feed_url,
                             theme="education",
                             why=None,
+                            is_already_followed=True,
+                            relevance_score=0.9,
                         )
                     ],
-                    niche=[],
                 )
 
         ss_module._source_suggester = StubSuggester()
@@ -368,9 +369,8 @@ class TestSuggestions:
                 )
             assert resp.status_code == 200
             data = resp.json()
-            assert len(data["followed"]) == 1
-            assert data["followed"][0]["name"] == "Café Pédago"
-            assert data["niche"] == []
+            assert len(data["sources"]) == 1
+            assert data["sources"][0]["name"] == "Café Pédago"
         finally:
             ss_module._source_suggester = original
 

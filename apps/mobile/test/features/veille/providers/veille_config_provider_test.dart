@@ -171,8 +171,8 @@ void main() {
       expect(s.selectedSuggestions, contains('didactique-numerique'));
       expect(s.customTopics.map((t) => t.id), contains('custom-cnl'));
       expect(s.topicLabels['custom-cnl'], 'CNL');
-      expect(s.followedSources, contains('src-followed-1'));
-      expect(s.nicheSources, contains('src-niche-1'));
+      expect(s.selectedSourceIds, contains('src-followed-1'));
+      expect(s.selectedSourceIds, contains('src-niche-1'));
       expect(s.sourcesMeta['src-niche-1']?.kind, 'niche');
       expect(s.sourcesMeta['src-niche-1']?.apiSourceId, 'src-niche-1');
       expect(s.frequency, VeilleFrequency.biweekly);

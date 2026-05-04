@@ -13,20 +13,21 @@ import '../models/veille_delivery.dart';
 import '../providers/veille_source_examples_provider.dart';
 
 /// Carte source pour le flow Veille — palette sépia, logo réel,
-/// CTA "Suivre/Suivi" unifié, tap → SourceDetailModal en consultation.
+/// CTA "Connecter/Connectée" unifié, badge "Source de confiance" pour les
+/// sources déjà suivies par l'user. Tap → SourceDetailModal en consultation.
 /// Footer expansible "Voir 2 exemples récents" qui charge à la demande
 /// les derniers articles de la source via [veilleSourceExamplesProvider].
 class VeilleSourceCard extends ConsumerStatefulWidget {
   final VeilleSource source;
   final bool inVeille;
-  final bool isNiche;
+  final bool isAlreadyFollowed;
   final VoidCallback onToggle;
 
   const VeilleSourceCard({
     super.key,
     required this.source,
     required this.inVeille,
-    required this.isNiche,
+    required this.isAlreadyFollowed,
     required this.onToggle,
   });
 
@@ -68,9 +69,9 @@ class _VeilleSourceCardState extends ConsumerState<VeilleSourceCard> {
             border: Border.all(
               color: widget.inVeille
                   ? FacteurColors.veille
-                  : (widget.isNiche
-                      ? FacteurColors.veilleLine
-                      : FacteurColors.veilleLineSoft),
+                  : (widget.isAlreadyFollowed
+                      ? FacteurColors.veilleLineSoft
+                      : FacteurColors.veilleLine),
               width: 1.5,
             ),
           ),
@@ -116,9 +117,9 @@ class _VeilleSourceCardState extends ConsumerState<VeilleSourceCard> {
                                 ),
                               ),
                             ],
-                            if (!widget.isNiche) ...[
+                            if (widget.isAlreadyFollowed) ...[
                               const SizedBox(width: 6),
-                              const _SuivieStamp(),
+                              const _SourceDeConfianceBadge(),
                             ],
                           ],
                         ),
@@ -135,7 +136,7 @@ class _VeilleSourceCardState extends ConsumerState<VeilleSourceCard> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ],
-                        if (widget.isNiche && source.why != null) ...[
+                        if (source.why != null) ...[
                           const SizedBox(height: 4),
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -167,7 +168,7 @@ class _VeilleSourceCardState extends ConsumerState<VeilleSourceCard> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  _FollowButton(
+                  _ConnectButton(
                     active: widget.inVeille,
                     onTap: widget.onToggle,
                   ),
@@ -372,8 +373,8 @@ class _ExamplesEmpty extends StatelessWidget {
   }
 }
 
-class _SuivieStamp extends StatelessWidget {
-  const _SuivieStamp();
+class _SourceDeConfianceBadge extends StatelessWidget {
+  const _SourceDeConfianceBadge();
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -384,7 +385,7 @@ class _SuivieStamp extends StatelessWidget {
         border: Border.all(color: FacteurColors.veilleLine, width: 1),
       ),
       child: Text(
-        'SUIVIE',
+        'CONFIANCE',
         style: GoogleFonts.courierPrime(
           fontSize: 9,
           fontWeight: FontWeight.w700,
@@ -396,10 +397,10 @@ class _SuivieStamp extends StatelessWidget {
   }
 }
 
-class _FollowButton extends StatelessWidget {
+class _ConnectButton extends StatelessWidget {
   final bool active;
   final VoidCallback onTap;
-  const _FollowButton({required this.active, required this.onTap});
+  const _ConnectButton({required this.active, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -410,7 +411,7 @@ class _FollowButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(100),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(100),
             border: Border.all(
@@ -430,7 +431,7 @@ class _FollowButton extends StatelessWidget {
               ),
               const SizedBox(width: 5),
               Text(
-                active ? 'Suivie' : 'Suivre',
+                active ? 'Connectée' : 'Connecter',
                 style: GoogleFonts.dmSans(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,

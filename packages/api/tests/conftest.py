@@ -71,13 +71,25 @@ def create_tables():
 
 @pytest_asyncio.fixture
 async def db_session(create_tables):
-    """Create a test database session with automatic rollback."""
-    async with TestSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.rollback()
-            await session.close()
+    """Test session isolated via a connection-level transaction + savepoints.
+
+    session.commit() inside a test releases a savepoint (not a real COMMIT),
+    so conn.rollback() at teardown restores the DB to a clean state regardless
+    of how many commits the test or its fixtures called.
+    """
+    conn = await test_engine.connect()
+    await conn.begin()
+    session = AsyncSession(
+        bind=conn,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
+    try:
+        yield session
+    finally:
+        await session.close()
+        await conn.rollback()
+        await conn.close()
 
 
 @pytest.fixture

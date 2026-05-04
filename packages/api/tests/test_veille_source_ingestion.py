@@ -1,10 +1,12 @@
-"""Tests pour SourceSuggester (Story 18.1) — ingestion à la volée des niches.
+"""Tests pour SourceSuggester — liste unique rankée + ingestion à la volée.
 
 Mocke `SourceService.detect_source` (pas d'appel HTTP réel) + `EditorialLLMClient.chat_json`.
 Couvre :
-- Followed : SELECT user_sources filtré par thème.
-- Niche : ingestion d'une nouvelle source si feed_url absent du catalogue.
-- Niche : réutilisation de la row existante si feed_url déjà connu.
+- Followed source : retournée dans la liste avec `is_already_followed=True`.
+- Ingestion : nouvelle source si feed_url absent du catalogue.
+- Réutilisation : row existante si feed_url déjà connu.
+- Theme guard : INSERT skipped si theme_id hors contrainte SQL.
+- Injection purpose + editorial_brief dans le user_message LLM.
 - Fallback déterministe sans `MISTRAL_API_KEY`.
 """
 
@@ -57,31 +59,6 @@ async def followed_source(db_session, test_user):
     return src
 
 
-@pytest_asyncio.fixture
-async def offtheme_followed_source(db_session, test_user):
-    """Source suivie mais sur un autre thème — ne doit PAS apparaître."""
-    src = Source(
-        id=uuid4(),
-        name="Tech Daily",
-        url="https://techdaily.example.com",
-        feed_url=f"https://techdaily.example.com/feed-{uuid4()}.xml",
-        type=SourceType.ARTICLE,
-        theme="tech",
-        is_active=True,
-        is_curated=True,
-    )
-    db_session.add(src)
-    db_session.add(
-        UserSource(
-            id=uuid4(),
-            user_id=test_user.user_id,
-            source_id=src.id,
-        )
-    )
-    await db_session.commit()
-    return src
-
-
 def _detect_response(name: str, feed_url: str, source_type: str = "article"):
     """Simule un SourceDetectResponse minimal."""
     from app.schemas.source import SourceDetectResponse
@@ -101,57 +78,91 @@ def _detect_response(name: str, feed_url: str, source_type: str = "article"):
     )
 
 
-class TestFollowed:
-    async def test_returns_only_theme_matching(
-        self,
-        db_session,
-        test_user,
-        followed_source,
-        offtheme_followed_source,
+def _candidate(name: str, url: str, score: float = 0.7, why: str | None = None) -> dict:
+    return {
+        "name": name,
+        "url": url,
+        "why": why or f"{name} — média pertinent",
+        "relevance_score": score,
+    }
+
+
+class TestAlreadyFollowedFlag:
+    async def test_returns_followed_with_flag(
+        self, db_session, test_user, followed_source
     ):
+        """Une source déjà rattachée via UserSource ressort avec
+        `is_already_followed=True` dans la liste flat."""
         llm = AsyncMock()
-        llm.is_ready = False  # niche → fallback (vide ici car pas de curated)
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(
+            return_value={
+                "sources": [_candidate(followed_source.name, followed_source.url, 0.9)]
+            }
+        )
         suggester = SourceSuggester(llm=llm)
 
-        result = await suggester.suggest_sources(
-            session=db_session,
-            user_id=test_user.user_id,
-            theme_id="science",
-            topic_labels=["evaluations"],
-        )
+        with patch(
+            "app.services.veille.source_suggester.SourceService.detect_source",
+            new=AsyncMock(
+                return_value=_detect_response(
+                    followed_source.name, followed_source.feed_url
+                )
+            ),
+        ):
+            result = await suggester.suggest_sources(
+                session=db_session,
+                user_id=test_user.user_id,
+                theme_id="science",
+                topic_labels=[],
+            )
 
-        followed_ids = [s.source_id for s in result.followed]
-        assert followed_source.id in followed_ids
-        assert offtheme_followed_source.id not in followed_ids
+        assert len(result.sources) == 1
+        item = result.sources[0]
+        assert item.source_id == followed_source.id
+        assert item.is_already_followed is True
 
     async def test_excludes_specified(self, db_session, test_user, followed_source):
         llm = AsyncMock()
-        llm.is_ready = False
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(
+            return_value={
+                "sources": [_candidate(followed_source.name, followed_source.url, 0.9)]
+            }
+        )
         suggester = SourceSuggester(llm=llm)
 
-        result = await suggester.suggest_sources(
-            session=db_session,
-            user_id=test_user.user_id,
-            theme_id="science",
-            topic_labels=[],
-            excluded_source_ids=[followed_source.id],
-        )
+        with patch(
+            "app.services.veille.source_suggester.SourceService.detect_source",
+            new=AsyncMock(
+                return_value=_detect_response(
+                    followed_source.name, followed_source.feed_url
+                )
+            ),
+        ):
+            result = await suggester.suggest_sources(
+                session=db_session,
+                user_id=test_user.user_id,
+                theme_id="science",
+                topic_labels=[],
+                excluded_source_ids=[followed_source.id],
+            )
 
-        assert result.followed == []
+        assert result.sources == []
 
 
-class TestNicheIngestion:
+class TestIngestion:
     async def test_ingest_new_source(self, db_session, test_user):
         llm = AsyncMock()
         llm.is_ready = True
         llm.chat_json = AsyncMock(
             return_value={
                 "sources": [
-                    {
-                        "name": "Mediapart Education",
-                        "url": "https://mediapart-edu.example.com",
-                        "why": "Investigation sur les politiques éducatives",
-                    }
+                    _candidate(
+                        "Mediapart Education",
+                        "https://mediapart-edu.example.com",
+                        0.85,
+                    )
                 ]
             }
         )
@@ -172,10 +183,11 @@ class TestNicheIngestion:
                 topic_labels=["politiques"],
             )
 
-        assert len(result.niche) == 1
-        assert result.niche[0].feed_url == new_feed
+        assert len(result.sources) == 1
+        assert result.sources[0].feed_url == new_feed
+        assert result.sources[0].is_already_followed is False
+        assert result.sources[0].relevance_score == 0.85
 
-        # Source row créée avec is_curated=False.
         ingested = (
             (
                 await db_session.execute(
@@ -190,7 +202,7 @@ class TestNicheIngestion:
         assert ingested.is_active is True
         assert ingested.theme == "science"
 
-        # Pas de UserSource créée (c'est une niche, pas un follow).
+        # Pas de UserSource créée (le LLM ne crée pas de follow).
         link = (
             (
                 await db_session.execute(
@@ -206,18 +218,12 @@ class TestNicheIngestion:
         assert link is None
 
     async def test_reuse_existing_source(self, db_session, test_user, followed_source):
-        """Si le feed_url existe déjà → on renvoie la row existante (pas de doublon)."""
+        """Si feed_url existe déjà → on renvoie la row existante (pas de doublon)."""
         llm = AsyncMock()
         llm.is_ready = True
         llm.chat_json = AsyncMock(
             return_value={
-                "sources": [
-                    {
-                        "name": followed_source.name,
-                        "url": followed_source.url,
-                        "why": "Spécialisé éducation",
-                    }
-                ]
+                "sources": [_candidate(followed_source.name, followed_source.url, 0.8)]
             }
         )
         suggester = SourceSuggester(llm=llm)
@@ -237,11 +243,6 @@ class TestNicheIngestion:
                 topic_labels=[],
             )
 
-        # La niche ne doit PAS dupliquer la source.
-        # Note : la source existante est aussi `followed` ici → dans la vraie
-        # vie le caller passe `excluded_source_ids` avec les followed pour
-        # éviter le doublon ; le service fait confiance à cette liste.
-        # On vérifie ici qu'AUCUNE nouvelle row Source n'a été créée.
         all_with_feed = (
             (
                 await db_session.execute(
@@ -252,8 +253,78 @@ class TestNicheIngestion:
             .all()
         )
         assert len(list(all_with_feed)) == 1
-        # Et que la niche pointe sur la row existante.
-        assert result.niche[0].source_id == followed_source.id
+        assert result.sources[0].source_id == followed_source.id
+
+
+class TestDedupByDomain:
+    async def test_dedup_keeps_highest_score(self, db_session, test_user):
+        """Deux candidats sur le même domaine racine → on garde le meilleur score."""
+        llm = AsyncMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(
+            return_value={
+                "sources": [
+                    _candidate("Foo", "https://foo.example.com", 0.4),
+                    _candidate("Foo Plus", "https://www.foo.example.com/plus", 0.9),
+                    _candidate("Bar", "https://bar.example.com", 0.6),
+                ]
+            }
+        )
+        suggester = SourceSuggester(llm=llm)
+
+        # detect_source retourne un feed_url DIFFÉRENT par URL appelée
+        async def _detect(url):
+            return _detect_response(url, f"{url}/feed.xml")
+
+        with patch(
+            "app.services.veille.source_suggester.SourceService.detect_source",
+            new=AsyncMock(side_effect=_detect),
+        ):
+            result = await suggester.suggest_sources(
+                session=db_session,
+                user_id=test_user.user_id,
+                theme_id="science",
+                topic_labels=[],
+            )
+
+        # 2 domaines distincts → 2 résultats. Foo gagne avec score 0.9.
+        domains = {s.url for s in result.sources}
+        assert len(result.sources) == 2
+        # Tri par score desc
+        scores = [s.relevance_score for s in result.sources]
+        assert scores == sorted(scores, reverse=True)
+        assert any("foo.example.com" in d for d in domains)
+
+    async def test_sort_by_relevance_desc(self, db_session, test_user):
+        llm = AsyncMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(
+            return_value={
+                "sources": [
+                    _candidate("A", "https://a.example.com", 0.5),
+                    _candidate("B", "https://b.example.com", 0.95),
+                    _candidate("C", "https://c.example.com", 0.7),
+                ]
+            }
+        )
+        suggester = SourceSuggester(llm=llm)
+
+        async def _detect(url):
+            return _detect_response(url, f"{url}/feed.xml")
+
+        with patch(
+            "app.services.veille.source_suggester.SourceService.detect_source",
+            new=AsyncMock(side_effect=_detect),
+        ):
+            result = await suggester.suggest_sources(
+                session=db_session,
+                user_id=test_user.user_id,
+                theme_id="science",
+                topic_labels=[],
+            )
+
+        names = [s.name for s in result.sources]
+        assert names == ["B", "C", "A"]
 
 
 class TestThemeGuard:
@@ -267,11 +338,7 @@ class TestThemeGuard:
         llm.chat_json = AsyncMock(
             return_value={
                 "sources": [
-                    {
-                        "name": "Climat Info",
-                        "url": "https://climat.example.com",
-                        "why": "Spécialisé climat",
-                    }
+                    _candidate("Climat Info", "https://climat.example.com", 0.7)
                 ]
             }
         )
@@ -289,10 +356,7 @@ class TestThemeGuard:
                 topic_labels=[],
             )
 
-        # Le candidat doit être skippé (try/except dans _niche), pas crasher
-        # toute la requête. La niche reste vide et aucune row Source n'est
-        # créée avec theme='climat'.
-        assert result.niche == []
+        assert result.sources == []
         leftover = (
             (
                 await db_session.execute(
@@ -309,7 +373,6 @@ class TestPurposeAndBriefInjection:
     async def test_purpose_and_brief_in_user_message(self, db_session, test_user):
         llm = AsyncMock()
         llm.is_ready = True
-        # On ne se soucie pas de la réponse — on capture juste l'appel.
         llm.chat_json = AsyncMock(return_value={"sources": []})
         suggester = SourceSuggester(llm=llm)
 
@@ -348,14 +411,14 @@ class TestPurposeAndBriefInjection:
 
 class TestFallback:
     async def test_no_llm_returns_curated_same_theme(self, db_session, test_user):
-        # Crée 6 sources curées thème education ; le fallback en renvoie 5 max.
-        for i in range(6):
+        # Crée 10 sources curées thème science ; le fallback en renvoie max 8.
+        for i in range(10):
             db_session.add(
                 Source(
                     id=uuid4(),
-                    name=f"Edu Source {i}",
-                    url=f"https://edu{i}.example.com",
-                    feed_url=f"https://edu{i}.example.com/feed-{uuid4()}.xml",
+                    name=f"Sci Source {i}",
+                    url=f"https://sci{i}.example.com",
+                    feed_url=f"https://sci{i}.example.com/feed-{uuid4()}.xml",
                     type=SourceType.ARTICLE,
                     theme="science",
                     is_active=True,
@@ -375,4 +438,6 @@ class TestFallback:
             topic_labels=[],
         )
 
-        assert len(result.niche) == 5
+        assert len(result.sources) == 8
+        assert all(s.relevance_score is None for s in result.sources)
+        assert all(s.is_already_followed is False for s in result.sources)

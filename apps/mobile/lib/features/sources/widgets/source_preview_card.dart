@@ -127,7 +127,9 @@ class SourcePreviewCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          _RssBadge(feedUrl: (data['feed_url'] as String?) ?? ''),
+          const SizedBox(height: 12),
           Text(
             description,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -223,5 +225,49 @@ class SourcePreviewCard extends StatelessWidget {
         if (slug == 'custom' || slug.isEmpty) return 'Général';
         return slug[0].toUpperCase() + slug.substring(1);
     }
+  }
+}
+
+class _RssBadge extends StatelessWidget {
+  final String feedUrl;
+  const _RssBadge({required this.feedUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasFeed = feedUrl.isNotEmpty;
+    final bg = hasFeed ? const Color(0xFFE6F4EA) : const Color(0xFFFFF4E5);
+    final fg = hasFeed ? const Color(0xFF188038) : const Color(0xFFB45309);
+    final icon = hasFeed
+        ? PhosphorIcons.checkCircle(PhosphorIconsStyle.fill)
+        : PhosphorIcons.warning(PhosphorIconsStyle.fill);
+    final label = hasFeed
+        ? 'RSS détecté'
+        : 'Pas de flux RSS — articles peuvent manquer';
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: fg),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: fg,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
