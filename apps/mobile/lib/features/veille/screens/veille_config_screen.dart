@@ -18,6 +18,7 @@ import 'steps/step2_suggestions_screen.dart';
 import 'steps/step3_sources_screen.dart';
 import 'steps/step4_frequency_screen.dart';
 import 'transitions/flow_loading_screen.dart';
+import 'veille_intro_screen.dart';
 
 /// Host du flow de configuration de la veille.
 ///
@@ -130,9 +131,32 @@ class VeilleConfigScreen extends ConsumerWidget {
 
     Widget body;
     String key;
-    if (state.isLoading) {
-      body = FlowLoadingScreen(from: state.loadingFrom!);
-      key = 'load-${state.loadingFrom}';
+    if (!editMode &&
+        !state.introCompleted &&
+        activeCfgValue == null &&
+        !activeConfig.isLoading) {
+      // Premier accès sans config : on cadre via l'intro avant Step1.
+      // En mode édition ou quand un preset a déjà hydraté le state,
+      // `introCompleted` vaut déjà `true` → cette branche est skipée.
+      body = VeilleIntroScreen(
+        onClose: close,
+        onStart: notifier.completeIntro,
+      );
+      key = 'intro';
+    } else if (state.isLoading) {
+      final from = state.loadingFrom!;
+      body = FlowLoadingScreen(
+        from: from,
+        // Pré-fetch des suggestions du step suivant pendant l'animation.
+        // Les params doivent être strictement identiques à ceux que
+        // Step2/Step3 instancient ensuite (sinon `family.autoDispose`
+        // crée deux instances et le pré-fetch ne sert à rien).
+        topicsParams:
+            from == 1 ? notifier.topicsParamsFromState() : null,
+        sourcesParams:
+            from == 2 ? notifier.sourcesParamsFromState() : null,
+      );
+      key = 'load-$from';
     } else if (state.previewPresetId != null) {
       body = Step15PresetPreviewScreen(
         presetSlug: state.previewPresetId!,

@@ -1,131 +1,114 @@
-# QA Handoff — Veille V3 PR2 « Sources quality + custom sources »
+# QA Handoff — Veille V3 PR3 « UX polish »
 
 ## Feature développée
 
-PR2 du V3 veille : refonte du suggesteur de sources (le LLM produit
-maintenant **une seule liste rankée par pertinence**, plus la séparation
-followed/niche), nouveau wording « Connecter / Connectée », badge
-« CONFIANCE » sur les sources déjà suivies, et bouton « + Ajouter une
-source » dans Step 3 qui ouvre un sheet de recherche réutilisant le moteur
-de `add_source_screen`. Badge RSS (vert / orange) ajouté sur la preview
-d'ajout d'une source.
+Trois améliorations UX du flow de configuration veille (mobile, 4 étapes) :
+- **T4** — Pré-loading actif des suggestions LLM entre les steps (animation halo + checklist déclenche désormais le fetch en arrière-plan, durée adaptive 1.5 s min → data|error).
+- **T5** — Nouvel écran d'introduction veille au premier accès (single-page : pitch + halo + CTA « C'est parti »), affiché avant Step1.
+- **T6** — Repositionnement des pré-sets : suppression de la section bas de Step1, ajout d'un teaser tappable haut + bottom sheet listant tous les pré-sets.
 
 ## PR associée
 
-À créer via `/go` — base = `main`, branche
-`boujonlaurin-dotcom/veille-v3-pr2-sources-quality`.
+À créer via `/go` — base `main`.
 
 ## Écrans impactés
 
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Veille flow Step 3 (sélection sources) | `/veille/config` (étape 3) | Modifié |
-| Sheet « Ajouter une source » (depuis Step 3) | (sheet) | Nouveau |
-| Add source (catalogue global) | `/sources/add` | Refacto interne (UI ≃ inchangée) |
-| Source detail modal (preview avant ajout) | (modale) | Modifié — badge RSS |
+| `VeilleIntroScreen` | `/veille/config` (état pré-Step1) | NOUVEAU (T5) |
+| `VeilleConfigScreen` | `/veille/config` | Modifié (T4 + T5) |
+| `Step1ThemeScreen` | `/veille/config` (étape 1) | Modifié (T6) |
+| `VeillePresetsSheet` | bottom sheet de Step1 | NOUVEAU (T6) |
+| `FlowLoadingScreen` | écran de transition | Inchangé (déjà multi-step) |
 
 ## Scénarios de test
 
-### Scénario 1 : Step 3 — liste flat triée par pertinence (happy path)
+### Scénario 1 — Happy path complet (premier accès)
 
-1. Démarrer un nouveau flow Veille → choisir un thème (ex. « Tech »).
-2. Step 2 : cocher quelques topics, optionnellement remplir un brief.
-3. Step 3 : attendre le chargement des suggestions.
+**Parcours** :
+1. Aller sur `/veille/config` (compte sans config active).
+2. Vérifier qu'on voit l'écran **VeilleIntroScreen** (eyebrow « Le facteur prépare ta veille » + titre « Une veille pensée pour toi » + halo animé + CTA « C'est parti »).
+3. Tap « C'est parti ».
+4. Sur Step1 : vérifier le **teaser pré-sets** (« Pas inspiré ? Pioche un pré-set ») visible dès l'ouverture (sans scroll).
+5. Sélectionner un thème (ex. Tech).
+6. Sélectionner un sujet pré-suggéré, tap « Continuer ».
+7. **Animation halo** + checklist (FlowLoadingScreen) ≥ 1.5 s.
+8. Step2 affiché : suggestions topics **déjà chargées** (pas de spinner secondaire en cas nominal).
+9. Cocher 1-2 suggestions, tap « Continuer ».
+10. **Animation halo** vers Step3 puis sources **déjà chargées**.
+11. Tap « Continuer ».
+12. Step4 (rythme), tap « Démarrer ma veille ».
+13. Animation post-submit (from=4) + redirection dashboard.
 
-**Résultat attendu** :
-- Une seule liste de sources (8–12 items typiquement), pas de section.
-- Sous-titre « Classées par pertinence pour ta veille ».
-- Les sources que l'utilisateur suit déjà ont un badge **CONFIANCE**.
-- Toutes les cards ont un CTA « Connecter » (ou « Connectée » si pré-cochée).
-- Pas d'overflow sur le bouton « Connectée » (viewport 390x844).
+**Résultat attendu** : flow ininterrompu, halo entre chaque step, pas de spinner secondaire à l'arrivée sur Step2/Step3.
 
-### Scénario 2 : Toggle Connecter / Connectée
+### Scénario 2 — Pré-set via bottom sheet
 
-1. Sur Step 3, tap sur « Connecter » d'une source non sélectionnée → devient
-   « Connectée ».
-2. Re-tap → repasse à « Connecter ».
+**Parcours** :
+1. Aller sur `/veille/config` (sans config), passer l'intro.
+2. Sur Step1, tap teaser « Pas inspiré ? Pioche un pré-set ».
+3. Vérifier la **bottom sheet** : titre « Pré-sets », liste des PresetCard.
+4. Tap sur un pré-set.
+5. Vérifier que la sheet se ferme et que **Step1.5 preview** s'affiche (label + accroche + topics + sources).
+6. Tap « Utiliser ce pré-set » → bascule Step4 (jumpToStep4).
+7. Tap « Démarrer ma veille » → submit.
 
-**Résultat attendu** : compteur de sources reflète l'état, pas de glitch.
+**Résultat attendu** : workflow preview→use inchangé. Pas d'intro réaffichée pendant la session.
 
-### Scénario 3 : Ajouter une source custom depuis Step 3 (happy path)
+### Scénario 3 — Mode édition (skip intro)
 
-1. Sur Step 3, scroller jusqu'au bouton **« Ajouter une source »**.
-2. Tap → un sheet s'ouvre (≈92% de la hauteur) avec champ de recherche +
-   drag handle + bouton close.
-3. Taper « next inpact » → résultats apparaissent.
-4. Tap résultat → modale détail s'ouvre avec badge RSS.
-5. Tap « Ajouter ».
+**Parcours** :
+1. Avoir une config active.
+2. Naviguer sur `/veille/config?mode=edit`.
+3. Vérifier que **Step1 est affiché directement** (pas d'intro).
+4. Vérifier que les sélections sont hydratées depuis la config existante.
 
-**Résultat attendu** :
-- Modale fermée, sheet fermé.
-- La nouvelle source apparaît dans la liste Step 3, **pré-cochée**
-  (« Connectée »).
-- Pas de duplication si la source était déjà dans la liste.
+**Résultat attendu** : intro skipped, hydratation OK.
 
-### Scénario 4 : Badge RSS sur la preview
+### Scénario 4 — Config active sans edit (redirect)
 
-**Parcours A — RSS détecté** :
-1. Step 3 → bouton « Ajouter une source ».
-2. Coller une URL d'un média avec flux RSS (ex. `https://www.lemonde.fr`).
-3. Tap résultat → preview.
+**Parcours** :
+1. Avoir une config active.
+2. Naviguer sur `/veille/config` (sans `?mode=edit`).
 
-**Résultat A** : pill **verte** « RSS détecté ».
+**Résultat attendu** : redirect immédiat vers `/veille/dashboard`. Pas d'intro affichée.
 
-**Parcours B — Pas de flux RSS** :
-1. Idem avec une URL sans RSS.
+### Scénario 5 — LLM lent (>1.5 s)
 
-**Résultat B** : pill **orange** « Pas de flux RSS — articles peuvent manquer ».
+**Parcours** :
+1. Throttler le réseau (Chrome devtools → Slow 3G), repasser le happy path Step1→Step2.
 
-### Scénario 5 : Edge — fallback mock si API down
+**Résultat attendu** : animation halo dépasse 1.5 s, attend le provider jusqu'à `data|error` (cap 8 s). Au-delà, Step2 affiche son skeleton normal — pas de blocage.
 
-1. Couper la connexion / faire échouer `/veille/suggestions/sources`.
-2. Atteindre Step 3.
+### Scénario 6 — Close depuis l'intro
 
-**Résultat attendu** : message « Suggestions indisponibles, conserve ta
-sélection. » + liste mock unique (followed + niche fusionnés). Les sources
-mock followed (`s-lm`, `s-cp`, `s-tc`) ont un badge CONFIANCE.
+**Parcours** :
+1. Sur l'intro, tap la croix (haut droite).
 
-### Scénario 6 : Add source screen catalogue (régression)
-
-1. Ouvrir l'écran catalogue `/sources/add`.
-2. Effectuer une recherche, ajouter une source.
-
-**Résultat attendu** : comportement identique à avant la refacto. Le badge
-RSS apparaît sur la preview.
+**Résultat attendu** : retour `/feed` (pas de pop si pas de history).
 
 ## Critères d'acceptation
 
-- [ ] Liste unique flat sur Step 3 (pas de section followed/niche).
-- [ ] Sources `is_already_followed=true` → badge CONFIANCE.
-- [ ] CTA « Connecter / Connectée » sans overflow.
-- [ ] Bouton « Ajouter une source » ouvre un sheet avec drag handle + close.
-- [ ] Source ajoutée via le sheet → pré-cochée dans Step 3.
-- [ ] Badge RSS visible sur la preview source detail (vert ou orange).
-- [ ] AddSourceScreen catalogue : aucune régression.
+- [ ] Premier accès `/veille/config` sans config → intro affichée.
+- [ ] Tap « C'est parti » → bascule Step1 (animation AnimatedSwitcher).
+- [ ] `?mode=edit` → intro skipped (Step1 directement).
+- [ ] `activeConfig != null` → redirect dashboard.
+- [ ] Step1 : teaser pré-sets visible sans scroll.
+- [ ] Tap teaser → bottom sheet liste tous les pré-sets.
+- [ ] Tap pré-set → sheet ferme + Step1.5 preview.
+- [ ] Plus aucune section "Inspirations" en bas du scroll Step1.
+- [ ] Step1→Step2 : animation halo ≥ 1.5 s + suggestions topics chargées à l'arrivée (cas nominal).
+- [ ] Step2→Step3 : animation halo ≥ 1.5 s + sources chargées à l'arrivée (cas nominal).
+- [ ] Si LLM lent : on attend jusqu'à 8 s puis on passe (skeleton normal).
 
 ## Zones de risque
 
-1. **State migration** : les tests `step1_5_preset_preview_screen_test`,
-   `veille_config_provider_test`, `veille_models_test`,
-   `veille_source_card_test` ont été adaptés. Le feed
-   (`compact_source_chip.dart`, `feed_screen.dart`) utilise un nom homonyme
-   `followedSources` mais NON-relié au state veille — vérifier en QA visuel
-   que le feed n'est pas cassé.
-2. **Preset application** : `applyPreset` place toutes les sources d'un
-   preset dans `selectedSourceIds`, avec `kind='followed'` dans `sourcesMeta`.
-   Le wire backend reste identique.
-3. **Hydratation édition** : `hydrateFromActiveConfig` (mode édition d'une
-   veille existante) préserve le `kind` côté `sourcesMeta`, donc
-   l'aller-retour API doit rester stable.
-4. **Bordure card Step 3** : la couleur dépend maintenant de
-   `isAlreadyFollowed` (avant : `isNiche`).
+- **Params identiques entre `goNext()`/`FlowLoadingScreen` et Step2/Step3** : si différents (ordre topicLabels, sort des topicIds), `family.autoDispose` créera deux instances → double-fetch et perte du préload. Helpers `topicsParamsFromState` / `sourcesParamsFromState` sont la single source of truth, alignés sur l'instanciation des Steps.
+- **`introCompleted` marqué dans `applyPreset` et `hydrateFromActiveConfig`** : critique pour ne pas réafficher l'intro après un preset apply ou en mode édition.
+- **Annulation du loading** : si l'utilisateur close le flow pendant l'animation halo, la guard `state.loadingFrom != from` dans `_waitAndAdvance` évite un push de transition stale.
 
 ## Dépendances
 
-- API endpoint :
-  - `POST /veille/suggestions/sources` — réponse changée
-    `{sources: [...]}` (au lieu de `{followed, niche}`). Chaque item porte
-    `is_already_followed: bool` + `relevance_score: float | None`.
-- Backend tests : `test_veille_source_ingestion.py` +
-  `test_veille_source_suggester_eval.py` (10 fixtures structurelles).
-- Mobile tests : `flutter test` — 51 tests passants.
+- Backend : aucune modif (les endpoints `/api/veille/suggestions/topics` et `/sources` sont inchangés).
+- Mobile : `flutter_riverpod` (ProviderSubscription, déjà utilisé).
+- Pas de migration DB.
