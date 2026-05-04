@@ -129,7 +129,7 @@ class _LetterCompletionOverlayState extends State<LetterCompletionOverlay>
               ),
               const SizedBox(height: 10),
               Text(
-                'On te prépare la suite !',
+                widget.letter.completionVoeu ?? 'On te prépare la suite !',
                 style: GoogleFonts.dmSans(
                   fontSize: 14.5,
                   height: 1.5,

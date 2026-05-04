@@ -4,8 +4,12 @@
 # Stratégie : on n'a pas de moyen simple de fabriquer un JWT Supabase valide
 # en local. On valide donc la chaîne :
 #   1. Smoke : la route est enregistrée et exige un token (401 sans auth).
-#   2. Logique : on lance la suite pytest dédiée — qui couvre les 8 cas
-#      (init, 4 détecteurs, chaînage, idempotence, cross-tenant, 404).
+#   2. Logique : on lance la suite pytest dédiée — qui couvre :
+#      - L1 : init, 4 détecteurs, chaînage, idempotence, cross-tenant, 404.
+#      - L2 (PR4) : 5 détecteurs (digest_opened, bonnes_nouvelles_opened,
+#        ≥3 long articles, vidéo/podcast 4min, like 🌻), shape JSON
+#        (intro_palier + completion_voeu + completion_palier par action),
+#        idempotence post-archivage.
 #
 # Usage:
 #   ./docs/qa/scripts/verify_letters.sh [API_BASE_URL]
@@ -54,7 +58,7 @@ else
 fi
 echo ""
 
-# --- 3. Smoke refresh-status route ---
+# --- 3. Smoke refresh-status route (L1) ---
 info "3. POST /api/letters/letter_1/refresh-status without auth → expect 401/403..."
 HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API/letters/letter_1/refresh-status" 2>/dev/null || true)
 if [ "$HTTP" = "401" ] || [ "$HTTP" = "403" ]; then
@@ -63,6 +67,18 @@ elif [ -z "$HTTP" ] || [ "$HTTP" = "000" ]; then
   info "API not reachable — skipping smoke"
 else
   red "POST refresh-status returned unexpected $HTTP"
+fi
+echo ""
+
+# --- 4. Smoke refresh-status route (L2 — PR4) ---
+info "4. POST /api/letters/letter_2/refresh-status without auth → expect 401/403..."
+HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API/letters/letter_2/refresh-status" 2>/dev/null || true)
+if [ "$HTTP" = "401" ] || [ "$HTTP" = "403" ]; then
+  green "POST /api/letters/letter_2/refresh-status returns $HTTP"
+elif [ -z "$HTTP" ] || [ "$HTTP" = "000" ]; then
+  info "API not reachable — skipping smoke"
+else
+  red "POST refresh-status (L2) returned unexpected $HTTP"
 fi
 echo ""
 

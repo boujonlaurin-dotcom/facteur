@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analytics import AnalyticsEvent
+from app.models.content import Content, UserContentStatus
 from app.models.source import UserSource
 from app.models.user_letter_progress import UserLetterProgress
 from app.models.user_topic_profile import UserTopicProfile
@@ -62,13 +63,64 @@ async def _detect_add_2_personal_sources(user_id: UUID, db: AsyncSession) -> boo
     return ((await db.execute(stmt)).scalar() or 0) >= 2
 
 
-async def _detect_first_perspectives_open(user_id: UUID, db: AsyncSession) -> bool:
-    """Au moins un AnalyticsEvent event_type='perspectives_opened'."""
+def _first_event_detector(event_type: str):
+    async def _detect(user_id: UUID, db: AsyncSession) -> bool:
+        stmt = (
+            select(AnalyticsEvent.id)
+            .where(
+                AnalyticsEvent.user_id == user_id,
+                AnalyticsEvent.event_type == event_type,
+            )
+            .limit(1)
+        )
+        return (await db.execute(stmt)).scalar() is not None
+
+    return _detect
+
+
+_detect_first_perspectives_open = _first_event_detector("perspectives_opened")
+_detect_read_first_essentiel = _first_event_detector("digest_opened")
+_detect_read_first_bonnes_nouvelles = _first_event_detector("bonnes_nouvelles_opened")
+
+
+async def _detect_read_3_long_articles(user_id: UUID, db: AsyncSession) -> bool:
+    """≥3 contenus articles avec reading_progress≥90 et time_spent_seconds≥60."""
     stmt = (
-        select(AnalyticsEvent.id)
+        select(func.count(func.distinct(UserContentStatus.content_id)))
+        .select_from(UserContentStatus)
+        .join(Content, Content.id == UserContentStatus.content_id)
         .where(
-            AnalyticsEvent.user_id == user_id,
-            AnalyticsEvent.event_type == "perspectives_opened",
+            UserContentStatus.user_id == user_id,
+            UserContentStatus.reading_progress >= 90,
+            UserContentStatus.time_spent_seconds >= 60,
+            Content.content_type == "article",
+        )
+    )
+    return ((await db.execute(stmt)).scalar() or 0) >= 3
+
+
+async def _detect_read_first_video_podcast(user_id: UUID, db: AsyncSession) -> bool:
+    """Au moins un contenu podcast/youtube avec time_spent_seconds≥240."""
+    stmt = (
+        select(UserContentStatus.id)
+        .join(Content, Content.id == UserContentStatus.content_id)
+        .where(
+            UserContentStatus.user_id == user_id,
+            UserContentStatus.time_spent_seconds >= 240,
+            Content.content_type.in_(["podcast", "youtube"]),
+        )
+        .limit(1)
+    )
+    return (await db.execute(stmt)).scalar() is not None
+
+
+async def _detect_recommend_first_article(user_id: UUID, db: AsyncSession) -> bool:
+    """Au moins un UserContentStatus avec is_liked=True."""
+    stmt = (
+        select(UserContentStatus.id)
+        .where(
+            UserContentStatus.user_id == user_id,
+            UserContentStatus.is_liked.is_(True),
         )
         .limit(1)
     )
@@ -80,7 +132,11 @@ DETECTORS = {
     "add_5_sources": _detect_add_5_sources,
     "add_2_personal_sources": _detect_add_2_personal_sources,
     "first_perspectives_open": _detect_first_perspectives_open,
-    # `set_frequency` (L2) : à brancher quand l'UI sera prête (PR2/PR3).
+    "read_first_essentiel": _detect_read_first_essentiel,
+    "read_first_bonnes_nouvelles": _detect_read_first_bonnes_nouvelles,
+    "read_3_long_articles": _detect_read_3_long_articles,
+    "read_first_video_podcast": _detect_read_first_video_podcast,
+    "recommend_first_article": _detect_recommend_first_article,
 }
 
 
@@ -96,19 +152,32 @@ def _serialize(row: UserLetterProgress, catalog: dict) -> dict:
         if actions
         else 1.0
     )
-    return {
+    serialized_actions = [
+        {
+            k: a[k]
+            for k in ("id", "label", "help", "completion_palier")
+            if k in a and a[k] is not None
+        }
+        for a in actions
+    ]
+    payload: dict = {
         "id": catalog["id"],
         "num": catalog["num"],
         "title": catalog["title"],
         "message": catalog["message"],
         "signature": catalog["signature"],
-        "actions": actions,
+        "actions": serialized_actions,
         "status": row.status,
         "completed_actions": completed,
         "progress": round(progress, 4),
         "started_at": row.started_at.isoformat() if row.started_at else None,
         "archived_at": row.archived_at.isoformat() if row.archived_at else None,
     }
+    if catalog.get("intro_palier"):
+        payload["intro_palier"] = catalog["intro_palier"]
+    if catalog.get("completion_voeu"):
+        payload["completion_voeu"] = catalog["completion_voeu"]
+    return payload
 
 
 async def _get_rows(user_id: UUID, db: AsyncSession) -> dict[str, UserLetterProgress]:

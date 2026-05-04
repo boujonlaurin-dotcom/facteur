@@ -235,6 +235,15 @@ class AnalyticsService {
     await _capturePostHog('digest_opened', props);
   }
 
+  Future<void> trackBonnesNouvellesOpened({DateTime? targetDate}) async {
+    final props = {
+      'session_id': _sessionId,
+      'target_date': targetDate?.toIso8601String(),
+    };
+    await _logEvent('bonnes_nouvelles_opened', props);
+    await _capturePostHog('bonnes_nouvelles_opened', props);
+  }
+
   Future<void> trackDigestItemViewed({
     required String digestDate,
     required String contentId,

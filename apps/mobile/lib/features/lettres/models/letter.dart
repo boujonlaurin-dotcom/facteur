@@ -23,12 +23,14 @@ class LetterAction {
   final String label;
   final String help;
   final LetterActionStatus status;
+  final String? completionPalier;
 
   const LetterAction({
     required this.id,
     required this.label,
     required this.help,
     required this.status,
+    this.completionPalier,
   });
 }
 
@@ -45,6 +47,8 @@ class Letter {
   final double progress;
   final DateTime? startedAt;
   final DateTime? archivedAt;
+  final String? introPalier;
+  final String? completionVoeu;
 
   const Letter({
     required this.id,
@@ -58,6 +62,8 @@ class Letter {
     required this.progress,
     required this.startedAt,
     required this.archivedAt,
+    this.introPalier,
+    this.completionVoeu,
   });
 
   factory Letter.fromJson(Map<String, dynamic> json) {
@@ -92,6 +98,7 @@ class Letter {
         label: raw['label'] as String? ?? '',
         help: raw['help'] as String? ?? '',
         status: actionStatus,
+        completionPalier: raw['completion_palier'] as String?,
       ));
     }
 
@@ -112,6 +119,8 @@ class Letter {
       progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
       startedAt: parseTs(json['started_at']),
       archivedAt: parseTs(json['archived_at']),
+      introPalier: json['intro_palier'] as String?,
+      completionVoeu: json['completion_voeu'] as String?,
     );
   }
 }
