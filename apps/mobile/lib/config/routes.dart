@@ -39,6 +39,7 @@ import '../features/saved/screens/saved_all_screen.dart';
 import '../features/saved/screens/collection_detail_screen.dart';
 import '../core/auth/auth_state.dart';
 import '../core/nudges/widgets/nudge_host.dart';
+import '../core/services/deep_link_service.dart';
 import '../core/ui/notification_service.dart';
 import '../shared/widgets/navigation/modal_bottom_sheet_page.dart';
 
@@ -130,6 +131,16 @@ final routerProvider = Provider<GoRouter>((ref) {
     debugLogDiagnostics: true,
     refreshListenable: refreshNotifier,
     redirect: (context, state) {
+      // Intercept widget deep links pushed by PlatformRouteInformationProvider.
+      // Without this, a raw `io.supabase.facteur://digest/<id>` URI lands in
+      // GoRouter and falls through to errorBuilder ("Page non trouvée") before
+      // DeepLinkService (app_links) can route. Idempotent with DeepLinkService:
+      // both ultimately call router.go on the same in-app path.
+      if (state.uri.scheme == 'io.supabase.facteur') {
+        final action = DeepLinkService.parse(state.uri);
+        return action.route ?? RoutePaths.feed;
+      }
+
       final authState = ref.read(authStateProvider);
 
       // Attendre que l'auth state soit initialisé

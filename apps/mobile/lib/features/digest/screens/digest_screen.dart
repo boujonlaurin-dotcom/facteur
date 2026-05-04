@@ -62,12 +62,23 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
   void initState() {
     super.initState();
     WidgetService.initWidgetIfNeeded();
-    // Nudge to pin the Android widget once after first display.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        WidgetPinNudge.show(context, ref);
-      }
-    });
+  }
+
+  /// Intercept exit from the digest to nudge the user (once) to pin the
+  /// Android widget before returning to the feed. Nothing happens on iOS or
+  /// after the nudge has already been seen — `WidgetPinNudge.shouldShow`
+  /// gates both.
+  Future<void> _handleBack() async {
+    final shouldShow = await WidgetPinNudge.shouldShow();
+    if (shouldShow && mounted) {
+      await WidgetPinNudge.show(context, ref);
+    }
+    if (!mounted) return;
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(RoutePaths.feed);
+    }
   }
 
   /// Show the closure screen as a modal (slides up from bottom) instead of
@@ -113,8 +124,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     // mark-as-read state mutation (which rebuilds the digest tree) is deferred
     // to a microtask so it doesn't compete with the push for the next frame.
     final content = _convertToContent(item);
-    final pushFuture = context
-        .push<Content?>('/feed/content/${item.contentId}', extra: content);
+    final pushFuture = context.push<Content?>('/feed/content/${item.contentId}',
+        extra: content);
 
     if (!item.isRead && !item.isDismissed) {
       Future.microtask(() {
@@ -142,7 +153,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
   /// backend deduplicates Feed↔Digest carousels, but a digest article picked
   /// for the carousel would still look duplicated to the user.
   List<CommunityCarouselItem> _filterCommunityCarousel(DigestResponse digest) {
-    final all = ref.watch(communityCarouselProvider).valueOrNull?.digestCarousel;
+    final all =
+        ref.watch(communityCarouselProvider).valueOrNull?.digestCarousel;
     if (all == null || all.isEmpty) return const [];
     final shownIds = <String>{
       for (final it in digest.items) it.contentId,
@@ -299,329 +311,350 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     });
 
     // Background is static — only the card changes color per mode
-    final veilColor = sereinState.enabled
-        ? SereinColors.sereinColor
-        : colors.primary;
+    final veilColor =
+        sereinState.enabled ? SereinColors.sereinColor : colors.primary;
 
-    return Stack(
-      children: [
-        Container(
-          color: colors.backgroundPrimary,
-        ),
-        // Subtle top-right veil — color of the active mode's card.
-        Positioned(
-          top: 0,
-          right: 0,
-          child: IgnorePointer(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeInOut,
-              width: 220,
-              height: 220,
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment.topRight,
-                  radius: 0.9,
-                  colors: [
-                    veilColor.withOpacity(0.14),
-                    veilColor.withOpacity(0.0),
-                  ],
-                  stops: const [0.0, 1.0],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        unawaited(_handleBack());
+      },
+      child: Stack(
+        children: [
+          Container(
+            color: colors.backgroundPrimary,
+          ),
+          // Subtle top-right veil — color of the active mode's card.
+          Positioned(
+            top: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeInOut,
+                width: 220,
+                height: 220,
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.topRight,
+                    radius: 0.9,
+                    colors: [
+                      veilColor.withOpacity(0.14),
+                      veilColor.withOpacity(0.0),
+                    ],
+                    stops: const [0.0, 1.0],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: SafeArea(
-            bottom: false,
-            child: ModeAccent(isSerein: sereinState.enabled),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: ModeAccent(isSerein: sereinState.enabled),
+            ),
           ),
-        ),
-        Scaffold(
-          backgroundColor: Colors.transparent,
-          body: SafeArea(
-            child: RefreshIndicator(
-              onRefresh: () async {
-                // Refresh both the digest itself and the community 🌻 carousel
-                // so newly-sunflowered articles appear after a pull-to-refresh.
-                ref.invalidate(communityCarouselProvider);
-                await ref.read(digestProvider.notifier).refreshDigest();
-              },
-              color: colors.primary,
-              child: CustomScrollView(
-                controller: _scrollController,
-                slivers: [
-                  // Header : back rond + titre majuscules
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        FacteurSpacing.space4,
-                        4,
-                        FacteurSpacing.space4,
-                        4,
-                      ),
-                      child: Row(
-                        children: [
-                          _CircularBackButton(onTap: () => context.pop()),
-                          const SizedBox(width: 12),
-                          Text(
-                            'Revenir au flux',
-                            style: FacteurTypography.stamp(
-                                    colors.textTertiary)
-                                .copyWith(
-                              fontSize: 13,
-                              letterSpacing: 0.2,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  // Hero : pill + titre + meta + illustration facteur
-                  SliverToBoxAdapter(
-                    child: DigestHero(
-                      articleCount:
-                          digestAsync.valueOrNull?.items.length ?? 5,
-                      targetDate:
-                          digestAsync.valueOrNull?.targetDate ?? DateTime.now(),
-                      isSerein: sereinState.enabled,
-                    ),
-                  ),
-
-                  // Success banner when digest is completed
-                  SliverToBoxAdapter(
-                    child: Builder(
-                      builder: (context) {
-                        // Check if completed using valueOrNull to avoid loading state issues
-                        final digest = digestAsync.valueOrNull;
-                        final isLoading = digestAsync.isLoading;
-
-                        if (digest?.isCompleted == true) {
-                          return Stack(
-                            children: [
-                              Container(
-                                margin: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 8,
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 16,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: colors.success.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color:
-                                        colors.success.withOpacity(0.3),
-                                  ),
-                                ),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Icon(
-                                      PhosphorIcons.checkCircle(
-                                          PhosphorIconsStyle.fill),
-                                      color: colors.success,
-                                      size: 24,
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Briefing terminé !',
-                                            style: TextStyle(
-                                              color: colors.textPrimary,
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 16,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            'Revenez demain à 8h pour votre prochaine sélection.',
-                                            style: TextStyle(
-                                              color: colors.textSecondary,
-                                              fontWeight: FontWeight.w400,
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
+          Scaffold(
+            backgroundColor: Colors.transparent,
+            body: SafeArea(
+              child: RefreshIndicator(
+                onRefresh: () async {
+                  // Refresh both the digest itself and the community 🌻 carousel
+                  // so newly-sunflowered articles appear after a pull-to-refresh.
+                  ref.invalidate(communityCarouselProvider);
+                  await ref.read(digestProvider.notifier).refreshDigest();
+                },
+                color: colors.primary,
+                child: CustomScrollView(
+                  controller: _scrollController,
+                  slivers: [
+                    // Header : back rond + titre majuscules
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          FacteurSpacing.space4,
+                          4,
+                          FacteurSpacing.space4,
+                          4,
+                        ),
+                        child: Row(
+                          children: [
+                            _CircularBackButton(
+                                onTap: () => unawaited(_handleBack())),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Revenir au flux',
+                              style:
+                                  FacteurTypography.stamp(colors.textTertiary)
+                                      .copyWith(
+                                fontSize: 13,
+                                letterSpacing: 0.2,
+                                fontWeight: FontWeight.w600,
                               ),
-                              // Refresh button - top right (disabled during loading)
-                              if (!isLoading)
-                                Positioned(
-                                  top: 16,
-                                  right: 24,
-                                  child: Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      onTap: () async {
-                                        // Show confirmation dialog before regenerating
-                                        final confirmed =
-                                            await showDialog<bool>(
-                                          context: context,
-                                          builder: (context) => AlertDialog(
-                                            title: const Text(
-                                                'Générer un nouvel essentiel ?'),
-                                            content: const Text(
-                                              'Votre essentiel actuel sera remplacé par 5 nouveaux articles. Cette action est irréversible.',
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () => Navigator.pop(
-                                                    context, false),
-                                                child: const Text('Annuler'),
-                                              ),
-                                              FilledButton(
-                                                onPressed: () => Navigator.pop(
-                                                    context, true),
-                                                child: const Text('Confirmer'),
-                                              ),
-                                            ],
-                                          ),
-                                        );
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
 
-                                        if (confirmed == true &&
-                                            context.mounted) {
-                                          final notifier =
-                                              ref.read(digestProvider.notifier);
-                                          notifier.forceRegenerate();
-                                        }
-                                      },
-                                      borderRadius: BorderRadius.circular(16),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(
-                                          color: colors.textSecondary
-                                              .withOpacity(0.15),
-                                          borderRadius:
-                                              BorderRadius.circular(16),
+                    // Hero : pill + titre + meta + illustration facteur
+                    SliverToBoxAdapter(
+                      child: DigestHero(
+                        articleCount:
+                            digestAsync.valueOrNull?.items.length ?? 5,
+                        targetDate: digestAsync.valueOrNull?.targetDate ??
+                            DateTime.now(),
+                        isSerein: sereinState.enabled,
+                      ),
+                    ),
+
+                    // Success banner when digest is completed
+                    SliverToBoxAdapter(
+                      child: Builder(
+                        builder: (context) {
+                          // Check if completed using valueOrNull to avoid loading state issues
+                          final digest = digestAsync.valueOrNull;
+                          final isLoading = digestAsync.isLoading;
+
+                          if (digest?.isCompleted == true) {
+                            return Stack(
+                              children: [
+                                Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 8,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 16,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: colors.success.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: colors.success.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        PhosphorIcons.checkCircle(
+                                            PhosphorIconsStyle.fill),
+                                        color: colors.success,
+                                        size: 24,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Briefing terminé !',
+                                              style: TextStyle(
+                                                color: colors.textPrimary,
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 16,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              'Revenez demain à 8h pour votre prochaine sélection.',
+                                              style: TextStyle(
+                                                color: colors.textSecondary,
+                                                fontWeight: FontWeight.w400,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        child: Icon(
-                                          PhosphorIcons.arrowClockwise(
-                                              PhosphorIconsStyle.bold),
-                                          color: colors.textSecondary,
-                                          size: 16,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                // Refresh button - top right (disabled during loading)
+                                if (!isLoading)
+                                  Positioned(
+                                    top: 16,
+                                    right: 24,
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        onTap: () async {
+                                          // Show confirmation dialog before regenerating
+                                          final confirmed =
+                                              await showDialog<bool>(
+                                            context: context,
+                                            builder: (context) => AlertDialog(
+                                              title: const Text(
+                                                  'Générer un nouvel essentiel ?'),
+                                              content: const Text(
+                                                'Votre essentiel actuel sera remplacé par 5 nouveaux articles. Cette action est irréversible.',
+                                              ),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                          context, false),
+                                                  child: const Text('Annuler'),
+                                                ),
+                                                FilledButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                          context, true),
+                                                  child:
+                                                      const Text('Confirmer'),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+
+                                          if (confirmed == true &&
+                                              context.mounted) {
+                                            final notifier = ref
+                                                .read(digestProvider.notifier);
+                                            notifier.forceRegenerate();
+                                          }
+                                        },
+                                        borderRadius: BorderRadius.circular(16),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(6),
+                                          decoration: BoxDecoration(
+                                            color: colors.textSecondary
+                                                .withOpacity(0.15),
+                                            borderRadius:
+                                                BorderRadius.circular(16),
+                                          ),
+                                          child: Icon(
+                                            PhosphorIcons.arrowClockwise(
+                                                PhosphorIconsStyle.bold),
+                                            color: colors.textSecondary,
+                                            size: 16,
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                ),
-                            ],
-                          );
-                        }
-                        return const SizedBox.shrink();
-                      },
-                    ),
-                  ),
-
-                  // Digest Briefing Section
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: digestAsync.when(
-                        data: (digest) {
-                          if (digest == null ||
-                              (digest.items.isEmpty && digest.topics.isEmpty)) {
-                            return _buildEmptyState(colors);
+                              ],
+                            );
                           }
-
-                          final notifier = ref.read(digestProvider.notifier);
-                          final total = notifier.totalCount;
-                          final userPref = ref.watch(onboardingProvider).answers.dailyArticleCount ?? 5;
-                          final denominator = total < userPref ? total : userPref;
-
-                          return DigestBriefingSection(
-                            digest: digest,
-                            items: digest.items,
-                            topics: digest.usesTopics ? digest.topics : null,
-                            processedCount: notifier.processedCount,
-                            dailyGoal: denominator,
-                            onItemTap: _openArticle,
-                            onLike: _handleLike,
-                            onSave: _handleSave,
-                            onNotInterested: _handleNotInterested,
-                            onReportNotSerene: sereinState.enabled
-                                ? _handleReportNotSerene
-                                : null,
-                            onSwipeDismiss: _handleSwipeDismiss,
-                            onSourceTap: (sourceId) {
-                              ref.read(feedProvider.notifier).setSource(sourceId);
-                              context.goNamed(RouteNames.feed);
-                            },
-                            onMuteSource: (sourceId) => ref
-                                .read(feedProvider.notifier)
-                                .muteSourceById(sourceId),
-                            onMuteTopic: (topic) => ref
-                                .read(feedProvider.notifier)
-                                .muteTopic(topic),
-                            isSerein: sereinState.enabled,
-                            usesEditorial: digest.usesEditorial,
-                            pepite: digest.usesEditorial ? digest.pepite : null,
-                            coupDeCoeur: digest.usesEditorial
-                                ? digest.coupDeCoeur
-                                : null,
-                            actuDecalee: digest.usesEditorial
-                                ? digest.actuDecalee
-                                : null,
-                            headerText:
-                                digest.usesEditorial ? digest.headerText : null,
-                            closureText: digest.usesEditorial
-                                ? digest.closureText
-                                : null,
-                            ctaText:
-                                digest.usesEditorial ? digest.ctaText : null,
-                            communityCarousel:
-                                _filterCommunityCarousel(digest),
-                            onCommunityArticleTap: (item) {
-                              // Convert community carousel item to Content for navigation
-                              final content = Content(
-                                id: item.contentId,
-                                title: item.title,
-                                url: item.url,
-                                thumbnailUrl: item.thumbnailUrl,
-                                source: Source(
-                                  id: item.sourceId ?? '',
-                                  name: item.sourceName,
-                                  type: SourceType.article,
-                                  logoUrl: item.sourceLogoUrl,
-                                ),
-                                contentType: ContentType.article,
-                                publishedAt: item.publishedAt ?? DateTime.now(),
-                              );
-                              context.pushNamed(
-                                RouteNames.contentDetail,
-                                pathParameters: {'id': item.contentId},
-                                extra: content,
-                              );
-                            },
-                          );
+                          return const SizedBox.shrink();
                         },
-                        loading: () => _buildLoadingState(),
-                        error: (error, stack) =>
-                            _buildErrorState(context, ref, error),
                       ),
                     ),
-                  ),
-                ],
+
+                    // Digest Briefing Section
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: digestAsync.when(
+                          data: (digest) {
+                            if (digest == null ||
+                                (digest.items.isEmpty &&
+                                    digest.topics.isEmpty)) {
+                              return _buildEmptyState(colors);
+                            }
+
+                            final notifier = ref.read(digestProvider.notifier);
+                            final total = notifier.totalCount;
+                            final userPref = ref
+                                    .watch(onboardingProvider)
+                                    .answers
+                                    .dailyArticleCount ??
+                                5;
+                            final denominator =
+                                total < userPref ? total : userPref;
+
+                            return DigestBriefingSection(
+                              digest: digest,
+                              items: digest.items,
+                              topics: digest.usesTopics ? digest.topics : null,
+                              processedCount: notifier.processedCount,
+                              dailyGoal: denominator,
+                              onItemTap: _openArticle,
+                              onLike: _handleLike,
+                              onSave: _handleSave,
+                              onNotInterested: _handleNotInterested,
+                              onReportNotSerene: sereinState.enabled
+                                  ? _handleReportNotSerene
+                                  : null,
+                              onSwipeDismiss: _handleSwipeDismiss,
+                              onSourceTap: (sourceId) {
+                                ref
+                                    .read(feedProvider.notifier)
+                                    .setSource(sourceId);
+                                context.goNamed(RouteNames.feed);
+                              },
+                              onMuteSource: (sourceId) => ref
+                                  .read(feedProvider.notifier)
+                                  .muteSourceById(sourceId),
+                              onMuteTopic: (topic) => ref
+                                  .read(feedProvider.notifier)
+                                  .muteTopic(topic),
+                              isSerein: sereinState.enabled,
+                              usesEditorial: digest.usesEditorial,
+                              pepite:
+                                  digest.usesEditorial ? digest.pepite : null,
+                              coupDeCoeur: digest.usesEditorial
+                                  ? digest.coupDeCoeur
+                                  : null,
+                              actuDecalee: digest.usesEditorial
+                                  ? digest.actuDecalee
+                                  : null,
+                              headerText: digest.usesEditorial
+                                  ? digest.headerText
+                                  : null,
+                              closureText: digest.usesEditorial
+                                  ? digest.closureText
+                                  : null,
+                              ctaText:
+                                  digest.usesEditorial ? digest.ctaText : null,
+                              communityCarousel:
+                                  _filterCommunityCarousel(digest),
+                              onCommunityArticleTap: (item) {
+                                // Convert community carousel item to Content for navigation
+                                final content = Content(
+                                  id: item.contentId,
+                                  title: item.title,
+                                  url: item.url,
+                                  thumbnailUrl: item.thumbnailUrl,
+                                  source: Source(
+                                    id: item.sourceId ?? '',
+                                    name: item.sourceName,
+                                    type: SourceType.article,
+                                    logoUrl: item.sourceLogoUrl,
+                                  ),
+                                  contentType: ContentType.article,
+                                  publishedAt:
+                                      item.publishedAt ?? DateTime.now(),
+                                );
+                                context.pushNamed(
+                                  RouteNames.contentDetail,
+                                  pathParameters: {'id': item.contentId},
+                                  extra: content,
+                                );
+                              },
+                            );
+                          },
+                          loading: () => _buildLoadingState(),
+                          error: (error, stack) =>
+                              _buildErrorState(context, ref, error),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

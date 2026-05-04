@@ -41,13 +41,11 @@ class WidgetPinNudge {
     final analytics = ref.read(analyticsServiceProvider);
     unawaited(analytics.trackWidgetPinNudgeShown());
 
-    unawaited(
-      showModalBottomSheet<void>(
-        context: context,
-        backgroundColor: Colors.transparent,
-        isScrollControlled: true,
-        builder: (_) => _WidgetPinSheet(analytics: analytics),
-      ),
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _WidgetPinSheet(analytics: analytics),
     );
   }
 }
