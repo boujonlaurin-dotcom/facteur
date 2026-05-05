@@ -10,11 +10,13 @@ Couvre :
 - Fallback déterministe sans `MISTRAL_API_KEY`.
 """
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest_asyncio
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.models.enums import SourceType
 from app.models.source import Source, UserSource
@@ -441,3 +443,148 @@ class TestFallback:
         assert len(result.sources) == 8
         assert all(s.relevance_score is None for s in result.sources)
         assert all(s.is_already_followed is False for s in result.sources)
+
+
+class TestSavepointIsolation:
+    """Sans savepoint, une `IntegrityError` au `flush()` empoisonne la session ;
+    tous les candidats suivants lèvent `PendingRollbackError` → 503 + 0 source
+    ingérée. Avec savepoint, seul le candidat fautif est rollback."""
+
+    async def test_session_recovers_from_integrity_error(self, db_session, test_user):
+        """Force une `IntegrityError` directe au flush() du candidat #2 et
+        vérifie que le candidat #3 réussit + que la session reste utilisable."""
+        llm = AsyncMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(
+            return_value={
+                "sources": [
+                    _candidate("First", "https://first.example.com", 0.9),
+                    _candidate("Boom", "https://boom.example.com", 0.5),
+                    _candidate("Third", "https://third.example.com", 0.7),
+                ]
+            }
+        )
+        suggester = SourceSuggester(llm=llm)
+
+        async def _detect(url):
+            return _detect_response(url, f"{url}/feed.xml")
+
+        original_flush = db_session.flush
+        flush_calls = {"count": 0}
+
+        async def _flush_failing_on_second(*args, **kwargs):
+            flush_calls["count"] += 1
+            if flush_calls["count"] == 2:
+                raise IntegrityError("simulated", {}, Exception("constraint X"))
+            return await original_flush(*args, **kwargs)
+
+        with (
+            patch(
+                "app.services.veille.source_suggester.SourceService.detect_source",
+                new=AsyncMock(side_effect=_detect),
+            ),
+            patch.object(db_session, "flush", new=_flush_failing_on_second),
+        ):
+            result = await suggester.suggest_sources(
+                session=db_session,
+                user_id=test_user.user_id,
+                theme_id="science",
+                topic_labels=[],
+            )
+
+        names = {s.name for s in result.sources}
+        assert "Boom" not in names
+        assert len(result.sources) == 2
+
+        # La session doit être saine : un commit final ne lève pas.
+        await db_session.commit()
+
+
+class TestCandidateTimeout:
+    """Cap par candidat à 8 s : un URL qui hang dans RSSParser ne doit pas
+    geler le pipeline pour les autres candidats."""
+
+    async def test_slow_candidate_is_skipped(self, db_session, test_user, monkeypatch):
+        # On baisse le timeout à 0.1 s pour ne pas allonger la suite de tests.
+        monkeypatch.setattr(
+            "app.services.veille.source_suggester._HYDRATE_TIMEOUT_S", 0.1
+        )
+
+        llm = AsyncMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(
+            return_value={
+                "sources": [
+                    _candidate("Fast", "https://fast.example.com", 0.9),
+                    _candidate("Slow", "https://slow.example.com", 0.8),
+                ]
+            }
+        )
+        suggester = SourceSuggester(llm=llm)
+
+        async def _detect(url: str):
+            if "slow" in url:
+                await asyncio.sleep(2.0)  # bien au-dessus du timeout patché
+            return _detect_response(url, f"{url}/feed.xml")
+
+        with patch(
+            "app.services.veille.source_suggester.SourceService.detect_source",
+            new=AsyncMock(side_effect=_detect),
+        ):
+            result = await suggester.suggest_sources(
+                session=db_session,
+                user_id=test_user.user_id,
+                theme_id="science",
+                topic_labels=[],
+            )
+
+        names = {s.name for s in result.sources}
+        assert "Slow" not in names
+        assert len(result.sources) == 1
+        assert result.sources[0].name == "Fast"
+
+
+class TestLLMTimeout:
+    """Cap global LLM à 20 s : sur timeout → fallback curé."""
+
+    async def test_llm_timeout_falls_back_to_curated(
+        self, db_session, test_user, monkeypatch
+    ):
+        monkeypatch.setattr("app.services.veille.source_suggester._LLM_TIMEOUT_S", 0.1)
+
+        # Crée 3 sources curées du thème pour vérifier le fallback.
+        for i in range(3):
+            db_session.add(
+                Source(
+                    id=uuid4(),
+                    name=f"Curated {i}",
+                    url=f"https://curated{i}.example.com",
+                    feed_url=f"https://curated{i}.example.com/feed-{uuid4()}.xml",
+                    type=SourceType.ARTICLE,
+                    theme="science",
+                    is_active=True,
+                    is_curated=True,
+                )
+            )
+        await db_session.commit()
+
+        llm = AsyncMock()
+        llm.is_ready = True
+
+        async def _slow_chat(*args, **kwargs):
+            await asyncio.sleep(2.0)
+            return {"sources": []}
+
+        llm.chat_json = _slow_chat
+        suggester = SourceSuggester(llm=llm)
+
+        result = await suggester.suggest_sources(
+            session=db_session,
+            user_id=test_user.user_id,
+            theme_id="science",
+            topic_labels=[],
+        )
+
+        # Bascule sur le fallback curé.
+        assert len(result.sources) == 3
+        assert all(s.relevance_score is None for s in result.sources)
