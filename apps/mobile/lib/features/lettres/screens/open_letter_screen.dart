@@ -12,7 +12,7 @@ import '../providers/letters_provider.dart';
 import '../widgets/envelope_thumb.dart';
 import '../widgets/letter_action_tile.dart';
 import '../widgets/letter_completion_overlay.dart';
-import '../widgets/palier_toast.dart';
+import '../widgets/progress_toast.dart';
 
 class OpenLetterScreen extends ConsumerStatefulWidget {
   final String letterId;
@@ -49,16 +49,25 @@ class _OpenLetterScreenState extends ConsumerState<OpenLetterScreen> {
     _completionShown = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      Navigator.of(context).push<void>(
-        PageRouteBuilder<void>(
-          opaque: true,
-          fullscreenDialog: true,
-          transitionDuration: const Duration(milliseconds: 280),
-          pageBuilder: (_, __, ___) => LetterCompletionOverlay(
-            letter: letter,
-            onDismiss: () {},
-          ),
-        ),
+      showProgressToast(
+        context,
+        level: ProgressToastLevel.step,
+        stepNum: letter.letterNum.padLeft(2, '0'),
+        stepTitle: letter.title,
+        onOpen: () {
+          if (!mounted) return;
+          Navigator.of(context).push<void>(
+            PageRouteBuilder<void>(
+              opaque: true,
+              fullscreenDialog: true,
+              transitionDuration: const Duration(milliseconds: 280),
+              pageBuilder: (_, __, ___) => LetterCompletionOverlay(
+                letter: letter,
+                onDismiss: () {},
+              ),
+            ),
+          );
+        },
       );
     });
   }
@@ -87,12 +96,21 @@ class _OpenLetterScreenState extends ConsumerState<OpenLetterScreen> {
 
     // Anti-cascade : on n'affiche QUE le palier de la dernière action de la
     // rafale. La complétion totale est traitée par _maybeShowCompletion
-    // (overlay cachet) — pas de toast en plus dans ce cas.
+    // (toast étape cliquable) — pas de toast micro en plus dans ce cas.
     if (letter.status == LetterStatus.archived) return;
     final last = newlyDone.last;
-    final msg = last.completionPalier;
-    if (msg == null || msg.isEmpty) return;
-    showPalierToast(context, msg);
+    final total = letter.actions.length;
+    final doneCount = doneActions.length;
+    if (total == 0) return;
+    showProgressToast(
+      context,
+      level: ProgressToastLevel.micro,
+      current: doneCount,
+      total: total,
+      label: last.completionPalier?.trim().isNotEmpty == true
+          ? last.completionPalier
+          : 'Action validée',
+    );
   }
 
   @override
