@@ -9,6 +9,7 @@ import time
 import httpx
 import structlog
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import RedirectResponse
 
 from app.config import get_settings
 
@@ -135,3 +136,16 @@ async def get_download_url() -> dict[str, str]:
         headers=dict(resp.headers),
     )
     raise HTTPException(status_code=502, detail="Failed to get download URL")
+
+
+@router.get("/update/apk", include_in_schema=False)
+async def download_apk_redirect() -> RedirectResponse:
+    """Redirige (302) vers l'APK pré-signé de la dernière release.
+
+    URL stable et publique destinée à être partagée hors-app aux utilisateurs
+    bloqués par un in-app updater défaillant : un tap dans le navigateur
+    Android déclenche un download direct + install in-place (même clé de
+    signing → données préservées, pas de désinstallation).
+    """
+    payload = await get_download_url()
+    return RedirectResponse(url=payload["url"], status_code=302)
