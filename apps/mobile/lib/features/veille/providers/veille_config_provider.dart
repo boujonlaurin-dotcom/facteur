@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/push_notification_service.dart';
@@ -385,13 +386,23 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
         onTimeout: () {},
       );
     }
-    _disposePending();
 
-    if (!mounted) return;
-    // Sécurité : si entre-temps un autre flow a modifié `loadingFrom`
-    // (close, reset, submit…), on ne pousse pas une transition stale.
-    if (state.loadingFrom != from) return;
+    // Sortie de flow (close/reset/submit) ou state stale → on ferme la
+    // subscription tout de suite et on ne pousse pas la transition.
+    if (!mounted || state.loadingFrom != from) {
+      _disposePending();
+      return;
+    }
     state = state.copyWith(step: from + 1, loadingFrom: null);
+
+    // Garde la subscription helper vivante jusqu'au frame suivant : sinon
+    // le provider `family.autoDispose` perd son seul subscriber entre la
+    // fermeture ici et le `ref.watch` du Step suivant, est disposé, puis
+    // recréé → l'utilisateur voit un skeleton au lieu des données
+    // pré-fetchées.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _disposePending();
+    });
   }
 
   /// Renvoie un Future qui complète quand le provider de suggestions
