@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import apply_session_timeouts
 from app.models.enums import SourceType
 from app.models.source import Source, UserSource
 from app.schemas.veille import VeilleThemeSlug
@@ -131,9 +132,17 @@ class SourceSuggester:
         """
         excluded = set(excluded_source_ids or [])
 
-        # LLM AVANT toute requête DB : une SELECT ouvre une tx, l'idle
-        # pendant l'appel Mistral dépasse `idle_in_transaction_session_timeout`
-        # (10s, cf. database.py:166) → connexion tuée → PendingRollbackError.
+        # Aucune tx ouverte pendant l'await LLM. `safe_async_session` (via
+        # `Depends(get_db)`) émet 2× `SET LOCAL` au début de la session, ce
+        # qui ouvre la tx implicite. Sans ce rollback, l'await Mistral
+        # (~13 s observés) dépasse `idle_in_transaction_session_timeout`
+        # (10 s, database.py:166) → Postgres tue la connexion server-side
+        # → la prochaine query lève `IdleInTransactionSessionTimeout`
+        # (Sentry PYTHON-3Z post-#568, event c5c381eb…). Rollback ferme
+        # la tx ; les SET LOCAL sont perdus mais ré-appliqués juste après
+        # le LLM avant la première query DB.
+        await session.rollback()
+
         candidates: list[_LLMSourceCandidate] = []
         if self._llm.is_ready:
             user_message = (
@@ -163,6 +172,11 @@ class SourceSuggester:
                 )
                 # Fallback curé — pas de sentry capture (timeout LLM = condition
                 # business connue, pas un bug applicatif).
+
+        # Re-pousse SET LOCAL sur la nouvelle tx que la prochaine query
+        # va ouvrir : sans ça, le filet anti-zombie côté Postgres est
+        # perdu pour la suite (boucle d'ingestion + commit final).
+        await apply_session_timeouts(session)
 
         followed_ids = await self._followed_source_ids(session, user_id)
 
