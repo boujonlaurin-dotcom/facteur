@@ -138,7 +138,8 @@ Le container Docker `facteur-postgres-test` (port 54322) est la DB de référenc
 1. **Pas de SQL manuel sur prod via Supabase SQL Editor.** Tout DDL (ALTER TABLE, CREATE INDEX, etc.) DOIT atterrir comme migration Alembic dans la même PR. Si un hot-fix manuel est appliqué en urgence, il doit être back-fillé en migration sous 24h.
 2. **Toute nouvelle migration chaîne après le head courant.** Génère via `alembic revision --autogenerate -m "<description>"` (jamais d'ID manuel — cf. `docs/maintenance/maintenance-alembic-revision-collisions-feb26.md`).
 3. **Vérifie `alembic heads` avant de commit.** Doit retourner exactement 1 ligne. La CI (`alembic-smoke.yml`) la rejouera contre une DB vide à chaque PR.
-4. **La baseline est gelée.** `00000_baseline.py` est un snapshot de prod (cf. `docs/maintenance/maintenance-alembic-baseline-squash.md`). Ne la modifie pas — ajoute une migration forward à la place. Les anciennes migrations dans `_archive/` sont là pour la lecture archéologique uniquement.
+4. **La baseline est gelée.** `00000_baseline.py` est un snapshot de prod (cf. [`docs/maintenance/maintenance-alembic-baseline-squash.md`](docs/maintenance/maintenance-alembic-baseline-squash.md)). Ne la modifie pas — ajoute une migration forward à la place. Les anciennes migrations dans `_archive/` sont là pour la lecture archéologique uniquement.
+5. **Si la chaîne re-drift** (symptômes : `make bootstrap` plante sur les migrations, `alembic upgrade head` échoue contre une DB vide, `--autogenerate` produit un diff massif) → suis le [runbook de récupération](docs/runbooks/recover-from-alembic-drift.md). C'est le playbook qu'on a appliqué en mai 2026 ; il marche.
 
 ---
 
