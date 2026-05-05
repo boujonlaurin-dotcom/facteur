@@ -73,6 +73,8 @@ jobs:
             --dart-define="REVENUECAT_IOS_KEY=${{ secrets.REVENUECAT_IOS_KEY }}" \
             --dart-define="POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}" \
             --dart-define="POSTHOG_HOST=${{ vars.POSTHOG_HOST || 'https://eu.i.posthog.com' }}" \
+            --dart-define="SENTRY_DSN=${{ secrets.SENTRY_DSN_FLUTTER }}" \
+            --dart-define="SENTRY_ENVIRONMENT=${{ vars.SENTRY_ENVIRONMENT || 'production' }}" \
             --dart-define="APP_RELEASE_TAG=${{ steps.version.outputs.version }}"
 
       - name: Upload APK as artifact
