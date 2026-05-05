@@ -189,3 +189,80 @@ LLM, ce test bloque.
 
 10 s = filet global anti-zombies posé après incident 2026-04-28
 (`database.py:151-156`). L'augmenter recrée le risque. Hors scope.
+
+---
+
+## Itération 3 — pourquoi #568 n'a pas suffi (2026-05-05 14:38 UTC)
+
+Hotfix #568 (commit `f85b1da8` / merge `a7550f47`, release prod
+`ade40a80` déployée 14:25 UTC) a déplacé
+`await self._followed_source_ids(...)` APRÈS le call LLM.
+**Le bug a re-fire 12 minutes après le déploiement** :
+
+- Sentry **PYTHON-3Z** `IdleInTransactionSessionTimeout` (1 user, 2 events,
+  first 14:37:46 UTC, last 14:38:03 UTC)
+- Sentry **PYTHON-40** `HTTPException 503` (1 user, 2 events, first 14:37:46 UTC)
+  — couplé 1:1 avec PYTHON-3Z
+
+Sentry a indexé le bug sous deux NOUVELLES issues (fingerprint différent
+de PYTHON-3P/3Q/3R/3S de l'Itération 2) — confirmation que le chemin
+d'erreur a muté avec la release.
+
+### Cause racine réelle (verrouillée par breadcrumbs)
+
+Event Sentry `c5c381ebf5a74fbfa285bfa37e0698c7` (release `ade40a80`,
+user `c959d7ef`, transaction `app.routers.veille.suggest_sources`) :
+
+| t (UTC) | event |
+|---|---|
+| 14:37:50.785 | `SET LOCAL statement_timeout = 30000` — **ouvre la tx implicite** |
+| 14:37:50.829 | `SET LOCAL idle_in_transaction_session_timeout = 10000` |
+| 14:37:50 → 14:38:03 | `httpx` POST `api.mistral.ai` (≈12.85 s, AUCUNE activité DB) |
+| ~14:38:00.829 | (côté PG) idle > 10 s → connexion tuée serveur-side |
+| 14:38:03.685 | `SELECT user_sources WHERE user_id=…` (`_followed_source_ids`) → `IdleInTransactionSessionTimeout` |
+| → finally | `db.commit()` → `PendingRollbackError` → **503** |
+
+**Ce que l'Itération 2 a manqué :** l'agent qui a écrit la section
+précédente a accusé la SELECT `_followed_source_ids` d'ouvrir la tx.
+**C'était les `SET LOCAL` eux-mêmes :**
+
+- `safe_async_session()` (`database.py:204-234`) appelle
+  `apply_session_timeouts(session, …)` *immédiatement* après l'ouverture
+  du context, AVANT `yield`.
+- `apply_session_timeouts` exécute deux `SET LOCAL` qui, en SQLAlchemy
+  2.x async (lazy autobegin), **ouvrent la tx implicite**.
+- À partir de ce moment, toute pause `await` non-DB (LLM, HTTP) est de
+  l'idle-in-transaction. Déplacer la SELECT après le LLM ne change rien :
+  la tx était déjà ouverte par les SET LOCAL.
+
+### Fix réel
+
+`source_suggester.py:133-179` — encadrer le call LLM par :
+
+1. **AVANT** le bloc LLM : `await session.rollback()` ferme la tx
+   implicite ouverte par les SET LOCAL. Aucun travail user n'a été
+   committé entre-temps, le rollback est sans effet métier.
+2. **APRÈS** le bloc LLM (et avant la première query DB suivante) :
+   `await apply_session_timeouts(session)` ré-émet les SET LOCAL sur la
+   nouvelle tx que la prochaine query ouvrira → filet anti-zombie
+   restauré pour la boucle d'ingestion + commit final.
+
+Le helper `_push_session_timeouts` est promu en `apply_session_timeouts`
+(public) pour être importable depuis le service.
+
+### Test anti-régression
+
+`tests/test_veille_source_ingestion.py::TestNoTxDuringLLM::test_rollback_before_llm_then_timeouts_reapplied`
+verrouille l'ordre :
+`session.rollback() → llm → apply_session_timeouts → followed_ids`.
+Toute régression future qui retire le rollback avant LLM ou le re-push
+après bloque ce test.
+
+### Pourquoi pas la refacto architecturale (event listener `after_begin`) ?
+
+Plus propre : émettre SET LOCAL automatiquement à chaque nouvelle tx
+via un `event.listens_for(SyncSession, "after_begin")` éliminerait le
+foot-gun pour TOUS les endpoints qui font du long I/O sous `Depends(get_db)`.
+Hors scope du hotfix : changement architectural plus large, à sortir en
+story dédiée. Lister les autres endpoints à risque (rg `Depends\(get_db\)`
++ grep `httpx`/`mistral`/`anthropic` dans le même handler) avant.

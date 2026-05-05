@@ -628,3 +628,71 @@ class TestNoTxDuringLLM:
             "LLM doit être appelé AVANT la SELECT user_sources, sinon la tx "
             "reste idle pendant l'appel Mistral et PG tue la connexion."
         )
+
+    async def test_rollback_before_llm_then_timeouts_reapplied(self):
+        """Anti-régression PYTHON-3Z (post-#568) : `safe_async_session`
+        émet 2× SET LOCAL au début de la session → tx implicite ouverte.
+        Sans rollback explicite avant l'appel LLM, l'await Mistral
+        (~13 s observés) dépasse `idle_in_transaction_session_timeout=10s`
+        → PG tue la connexion → IdleInTransactionSessionTimeout sur la
+        SELECT suivante (event Sentry c5c381eb…). Verrouille l'ordre :
+            session.rollback() → llm → apply_session_timeouts → followed_ids
+
+        Pure mock (pas de db_session) : on teste l'ordre des appels, pas
+        l'exécution SQL réelle.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        order: list[str] = []
+
+        session = AsyncMock(spec=AsyncSession)
+
+        async def _record_rollback():
+            order.append("rollback")
+
+        session.rollback = _record_rollback
+
+        llm = AsyncMock()
+        llm.is_ready = True
+
+        async def _record_chat(*args, **kwargs):
+            order.append("llm")
+            return {"sources": []}
+
+        llm.chat_json = _record_chat
+        suggester = SourceSuggester(llm=llm)
+
+        async def _record_followed(s, user_id):
+            order.append("followed_ids")
+            return set()
+
+        suggester._followed_source_ids = _record_followed
+
+        async def _record_fallback(s, theme_id, excluded, followed_ids):
+            order.append("fallback")
+            return []
+
+        suggester._fallback = _record_fallback
+
+        async def _record_apply_timeouts(s, *args, **kwargs):
+            order.append("apply_timeouts")
+
+        with patch(
+            "app.services.veille.source_suggester.apply_session_timeouts",
+            new=_record_apply_timeouts,
+        ):
+            await suggester.suggest_sources(
+                session=session,
+                user_id=uuid4(),
+                theme_id="science",
+                topic_labels=[],
+            )
+
+        # Le suggester va aussi appeler _fallback (candidates vide), peu
+        # importe ici — on verrouille le PRÉFIXE d'ordre.
+        assert order[:4] == [
+            "rollback",
+            "llm",
+            "apply_timeouts",
+            "followed_ids",
+        ], order

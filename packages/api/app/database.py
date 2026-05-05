@@ -170,18 +170,25 @@ SessionMaker = Callable[..., AbstractAsyncContextManager[AsyncSession]]
 """Type alias pour une factory `safe_async_session` injectable (tests)."""
 
 
-async def _push_session_timeouts(
+async def apply_session_timeouts(
     session: AsyncSession,
-    statement_timeout_ms: int,
-    idle_in_tx_timeout_ms: int,
+    statement_timeout_ms: int = _DEFAULT_STATEMENT_TIMEOUT_MS,
+    idle_in_tx_timeout_ms: int = _DEFAULT_IDLE_IN_TX_TIMEOUT_MS,
 ) -> None:
-    """Pousse `SET LOCAL` au début de la tx pour cap server-side.
+    """Pousse `SET LOCAL` sur la tx en cours (l'ouvre si besoin) pour cap
+    server-side.
 
     Les `SET LOCAL` ne s'appliquent qu'à la transaction en cours →
     n'écrasent pas les valeurs des autres sessions du pool. Best-effort :
     si le SET échoue (DB down, pooler en panique), on laisse passer pour
     ne pas bloquer la requête utilisateur — `handle_error` se chargera
     de la connexion morte.
+
+    Use-case (en plus de l'appel auto par `safe_async_session`) :
+    après un `await session.rollback()` qui ferme la tx implicite (ex.
+    pour ne pas la laisser idle pendant un long await LLM), il faut
+    re-pousser ces timeouts sur la NOUVELLE tx que la prochaine query
+    ouvrira — sans ça, on perd le filet anti-zombie côté Postgres.
     """
     try:
         await session.execute(
@@ -228,7 +235,7 @@ async def safe_async_session(
     """
     async with async_session_maker() as session:
         try:
-            await _push_session_timeouts(
+            await apply_session_timeouts(
                 session, statement_timeout_ms, idle_in_tx_timeout_ms
             )
             yield session
