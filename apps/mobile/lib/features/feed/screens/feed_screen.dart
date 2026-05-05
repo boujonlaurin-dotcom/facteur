@@ -770,9 +770,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         ),
                       ),
                     ),
-                    SliverToBoxAdapter(
-                      child: _FeedTourneeHeader(),
-                    ),
                     // Re-nudge banner (≥7j après refus, cap 3, espacement
                     // 14j) — gaté par l'orchestrateur (1 nudge max, pas en
                     // parallèle d'une modal).
@@ -1884,38 +1881,6 @@ class _PullToRefreshHintState extends State<_PullToRefreshHint>
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Header "Bonjour {prénom}, votre tournée du jour" en haut du feed,
-/// avec une overline date façon tampon postal et le toggle Normal/Serein
-/// aligné à droite.
-class _FeedTourneeHeader extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.facteurColors;
-    final profile = ref.watch(userProfileProvider);
-    final firstName = (profile.displayName ?? '').trim().split(' ').first;
-    final hello = DateTime.now().hour >= 18 ? 'Bonsoir' : 'Bonjour';
-    final greeting = firstName.isEmpty ? '$hello,' : '$hello $firstName,';
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            greeting,
-            style: FacteurTypography.serifTitle(colors.textPrimary)
-                .copyWith(fontSize: 22, height: 1.1),
-          ),
-          Text(
-            'voici vos nouvelles du jour',
-            style: FacteurTypography.serifTitle(colors.textPrimary)
-                .copyWith(fontSize: 22, height: 1.1),
-          ),
-        ],
       ),
     );
   }

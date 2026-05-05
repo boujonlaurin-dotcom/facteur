@@ -1443,6 +1443,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         setState(() {
           _perspectivesResponse = response;
           _perspectivesLoading = false;
+          if (response.perspectives.isEmpty) _perspectivesExpanded = false;
         });
         _maybeTriggerPerspectivesCta();
       }
@@ -2300,7 +2301,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                       final label = isWebViewMode
                           ? 'Lire via Navigateur'
-                          : 'Lire sur ${content.source.name}';
+                          : 'Article complet';
                       final showLogo = !isWebViewMode &&
                           content.source.logoUrl != null;
                       final iconData = isWebViewMode
