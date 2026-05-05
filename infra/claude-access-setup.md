@@ -23,6 +23,7 @@ Principes :
 | **Supabase — DB directe** | Lancer requêtes SQL (analytics, debug) | Rôle PG `claude_analytics_ro` (SELECT only) | `DATABASE_URL_RO` |
 | **Railway** | Lire les logs prod, inspecter variables | Project Token scope **read-only** | `RAILWAY_TOKEN`, `RAILWAY_PROJECT_ID`, `RAILWAY_SERVICE_ID` |
 | **Sentry** | Lire issues, events, session replay | Auth Token scope `event:read`, `project:read`, `org:read` | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` |
+| **Sentry — DSN mobile** | Capter les crashs Flutter en prod (injecté à build-time) | Client Key (DSN) du projet `flutter` | `SENTRY_DSN_FLUTTER` |
 | **PostHog** | Lire insights, cohortes, events | Personal API key scope `insight:read`, `cohort:read`, `event:read` | `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, `POSTHOG_HOST` |
 | **GitHub** | PR, issues, checks | Déjà géré via MCP côté Claude (app installée sur le repo) | *(rien à faire côté dev)* |
 
@@ -112,6 +113,27 @@ sentry-cli issues list --project $SENTRY_PROJECT --org $SENTRY_ORG
 sentry-cli events list --project $SENTRY_PROJECT --org $SENTRY_ORG --max-rows 10
 ```
 
+### 2.4.bis Sentry — DSN client mobile (`SENTRY_DSN_FLUTTER`)
+
+Le DSN n'est **pas un token d'API** : c'est la clé publique côté SDK qui dit
+au runtime Flutter « envoie tes crashs vers ce projet Sentry ». Il est
+embarqué dans l'APK/IPA via `--dart-define=SENTRY_DSN=…` au build, jamais
+appelé depuis un script agent.
+
+1. sentry.io → projet **flutter** → **Settings** → **Client Keys (DSN)**.
+2. Copie la valeur `https://<key>@o<org>.ingest.<region>.sentry.io/<project>`.
+3. Stocke-la dans `SENTRY_DSN_FLUTTER` (`.env` local + GitHub Secret).
+4. Les workflows `build-apk.yml` / `build-ipa.yml` la passent automatiquement
+   au build via `--dart-define="SENTRY_DSN=${{ secrets.SENTRY_DSN_FLUTTER }}"`.
+5. Côté app, c'est lu par `SentryConstants.dsn` dans
+   `apps/mobile/lib/config/constants.dart` ; si la valeur est vide,
+   `SentryFlutter.init()` est skipé silencieusement (pas de crash en dev).
+
+> Pourquoi un nom distinct (`SENTRY_DSN_FLUTTER`) plutôt que `SENTRY_DSN` tout
+> court : le backend FastAPI a déjà sa propre variable `SENTRY_DSN` (projet
+> `python-fastapi`) ; cohabiter dans le même environnement nécessite des noms
+> séparés. Le renommage en `SENTRY_DSN` se fait au moment du `--dart-define`.
+
 ### 2.5 PostHog — Personal API key scoped
 
 1. eu.posthog.com → **Settings** → **Personal API keys** → *Create*.
@@ -170,7 +192,7 @@ session est déclenchée sur ce repo.
    - `SUPABASE_ACCESS_TOKEN`
    - `DATABASE_URL_RO`
    - `RAILWAY_TOKEN`, `RAILWAY_PROJECT_ID`, `RAILWAY_SERVICE_ID`
-   - `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`
+   - `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_DSN_FLUTTER`
    - `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, `POSTHOG_HOST`
 4. (Pas dans Secrets mais dans **Variables**) : tout ce qui n'est **pas
    sensible** peut aller dans **Variables** plutôt que Secrets — ex.
@@ -207,6 +229,8 @@ jobs:
           SENTRY_AUTH_TOKEN:        ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG:               ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT:           ${{ vars.SENTRY_PROJECT }}
+          # SENTRY_DSN_FLUTTER : utilisé uniquement par les workflows de build
+          # (build-apk.yml / build-ipa.yml), pas par les agents au runtime.
           POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
           POSTHOG_PROJECT_ID:       ${{ vars.POSTHOG_PROJECT_ID }}
           POSTHOG_HOST:             ${{ vars.POSTHOG_HOST }}
@@ -307,6 +331,7 @@ Après rotation :
 - [ ] Lancer le SQL §2.2 → noter la `DATABASE_URL_RO`
 - [ ] Créer Project Token Railway (scope Read) → `RAILWAY_TOKEN` + IDs
 - [ ] Créer Auth Token Sentry (scopes read uniquement) → `SENTRY_AUTH_TOKEN`
+- [ ] Récupérer le DSN du projet Sentry `flutter` → `SENTRY_DSN_FLUTTER`
 - [ ] Créer Personal API key PostHog (read-only) → `POSTHOG_PERSONAL_API_KEY`
 - [ ] Remplir `.env` local (copier depuis `.env.example`)
 - [ ] `direnv allow` (ou `export $(grep -v '^#' .env | xargs)`)
