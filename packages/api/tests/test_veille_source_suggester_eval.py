@@ -156,22 +156,17 @@ async def pre_followed_source(db_session, eval_user):
 
 def _detect_response_factory():
     """Pour chaque URL, renvoie un feed_url unique stable (basé sur l'URL)."""
-    from app.schemas.source import SourceDetectResponse
+    from app.services.rss_parser import DetectedFeed
 
-    async def _detect(url: str) -> SourceDetectResponse:
+    async def _detect(url: str) -> DetectedFeed:
         feed_url = f"{url.rstrip('/')}/feed.xml"
-        return SourceDetectResponse(
-            source_id=None,
-            detected_type="article",
+        return DetectedFeed(
             feed_url=feed_url,
-            name=url,
+            title=url,
             description=f"{url} — auto-detected",
+            feed_type="rss",
             logo_url=None,
-            theme="science",
-            preview={"item_count": 0, "latest_titles": []},
-            bias_stance="unknown",
-            reliability_score="unknown",
-            bias_origin="unknown",
+            entries=[],
         )
 
     return _detect
@@ -181,16 +176,17 @@ def _detect_response_factory():
 async def test_eval_case_structural(db_session, eval_user, pre_followed_source, case):
     """Pour chaque fixture, vérifie les invariants structurels."""
     # Pour les fixtures society/economy etc., on doit aligner le theme du
-    # pre_followed_source car _hydrate_or_ingest réutilise sa row si l'url
-    # match. On utilise un user secondaire ici via excluded_source_ids pour
-    # éviter la pollution croisée — mais on garde la row de mediapart.
+    # pre_followed_source car `_persist_detected` réutilise sa row si la
+    # feed_url match. On utilise un user secondaire ici via
+    # excluded_source_ids pour éviter la pollution croisée — mais on garde
+    # la row de mediapart.
     llm = AsyncMock()
     llm.is_ready = True
     llm.chat_json = AsyncMock(return_value={"sources": _canned_candidates()})
     suggester = SourceSuggester(llm=llm)
 
     with patch(
-        "app.services.veille.source_suggester.SourceService.detect_source",
+        "app.services.veille.source_suggester.RSSParser.detect",
         new=AsyncMock(side_effect=_detect_response_factory()),
     ):
         result = await suggester.suggest_sources(

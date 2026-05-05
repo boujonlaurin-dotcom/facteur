@@ -207,4 +207,37 @@ void main() {
       expect(s.day, VeilleDay.mon);
     });
   });
+
+  group('VeilleConfigNotifier — loadingMaxDurationFor (Iter 4)', () {
+    test('Step1 → Step2 reste à 8 s (pré-fetch topics rapide)', () {
+      expect(
+        VeilleConfigNotifier.loadingMaxDurationFor(1),
+        const Duration(seconds: 8),
+      );
+    });
+
+    test('Step2 → Step3 monte à 25 s (LLM 16s + boucle)', () {
+      // Décalage budget client/serveur documenté dans
+      // docs/bugs/bug-veille-suggestions-sources-pending-rollback.md (Iter 4) :
+      // la requête /suggestions/sources prend ~19-24 s typique, donc 8 s
+      // est trop court et l'utilisateur basculait sur Step3 spinner au
+      // lieu de la transition halo. 25 s laisse 5 s de marge sous le
+      // Dio.timeout = 30 s.
+      expect(
+        VeilleConfigNotifier.loadingMaxDurationFor(2),
+        const Duration(seconds: 25),
+      );
+    });
+
+    test('autres steps tombent sur le défaut 8 s', () {
+      expect(
+        VeilleConfigNotifier.loadingMaxDurationFor(0),
+        const Duration(seconds: 8),
+      );
+      expect(
+        VeilleConfigNotifier.loadingMaxDurationFor(3),
+        const Duration(seconds: 8),
+      );
+    });
+  });
 }

@@ -227,7 +227,20 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
   /// Cap maximal d'attente du provider pré-fetché. Au-delà, on laisse
   /// passer à l'étape suivante : Step2/Step3 affichera son skeleton
   /// normal le temps que le LLM réponde.
-  static const Duration _loadingMaxDuration = Duration(seconds: 8);
+  ///
+  /// Step1 → Step2 (`from=1`) : pré-fetch topics rapide (~3-5 s observés),
+  /// 8 s suffisent.
+  ///
+  /// Step2 → Step3 (`from=2`) : la requête `/suggestions/sources` enchaîne
+  /// LLM Mistral (~16 s) + boucle d'ingestion HTTP parallèle (~3-8 s),
+  /// donc ~19-24 s typique. On porte le cap à 25 s pour que la transition
+  /// halo joue toute la durée du fetch (5 s de marge sous le `Dio.timeout`
+  /// de 30 s — `apps/mobile/lib/config/constants.dart:31`). Au-delà, le
+  /// `_awaitAsyncSettled` complète sur la branche error de Dio et la
+  /// transition se ferme proprement.
+  @visibleForTesting
+  static Duration loadingMaxDurationFor(int from) =>
+      from == 2 ? const Duration(seconds: 25) : const Duration(seconds: 8);
 
   static const Duration _veilleNotificationLeadTime = Duration(minutes: 30);
 
@@ -355,7 +368,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
   /// déjà sur la dernière étape — auquel cas `submit()` doit être appelé).
   ///
   /// Durée adaptive : `min(_loadingMinDuration, attente du provider cible
-  /// jusqu'à `data|error`, cap `_loadingMaxDuration`)`. L'animation halo
+  /// jusqu'à `data|error`, cap `loadingMaxDurationFor(from)`)`. L'animation halo
   /// joue toujours au moins 1.5 s pour la perception ; au-delà, on
   /// attend que le pré-fetch (déclenché par `FlowLoadingScreen` via les
   /// params) soit terminé pour arriver sur Step2/Step3 avec les
@@ -382,7 +395,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     await minDelay;
     if (providerReady != null) {
       await providerReady.timeout(
-        _loadingMaxDuration,
+        loadingMaxDurationFor(from),
         onTimeout: () {},
       );
     }

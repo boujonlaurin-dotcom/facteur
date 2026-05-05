@@ -1,6 +1,6 @@
 """Tests pour SourceSuggester — liste unique rankée + ingestion à la volée.
 
-Mocke `SourceService.detect_source` (pas d'appel HTTP réel) + `EditorialLLMClient.chat_json`.
+Mocke `RSSParser.detect` (pas d'appel HTTP réel) + `EditorialLLMClient.chat_json`.
 Couvre :
 - Followed source : retournée dans la liste avec `is_already_followed=True`.
 - Ingestion : nouvelle source si feed_url absent du catalogue.
@@ -61,22 +61,17 @@ async def followed_source(db_session, test_user):
     return src
 
 
-def _detect_response(name: str, feed_url: str, source_type: str = "article"):
-    """Simule un SourceDetectResponse minimal."""
-    from app.schemas.source import SourceDetectResponse
+def _detect_response(name: str, feed_url: str, feed_type: str = "rss"):
+    """Simule un DetectedFeed minimal (retour de `RSSParser.detect`)."""
+    from app.services.rss_parser import DetectedFeed
 
-    return SourceDetectResponse(
-        source_id=None,
-        detected_type=source_type,
+    return DetectedFeed(
         feed_url=feed_url,
-        name=name,
+        title=name,
         description=f"{name} — média indé",
+        feed_type=feed_type,
         logo_url=None,
-        theme="science",
-        preview={"item_count": 0, "latest_titles": []},
-        bias_stance="unknown",
-        reliability_score="unknown",
-        bias_origin="unknown",
+        entries=[],
     )
 
 
@@ -105,7 +100,7 @@ class TestAlreadyFollowedFlag:
         suggester = SourceSuggester(llm=llm)
 
         with patch(
-            "app.services.veille.source_suggester.SourceService.detect_source",
+            "app.services.veille.source_suggester.RSSParser.detect",
             new=AsyncMock(
                 return_value=_detect_response(
                     followed_source.name, followed_source.feed_url
@@ -135,7 +130,7 @@ class TestAlreadyFollowedFlag:
         suggester = SourceSuggester(llm=llm)
 
         with patch(
-            "app.services.veille.source_suggester.SourceService.detect_source",
+            "app.services.veille.source_suggester.RSSParser.detect",
             new=AsyncMock(
                 return_value=_detect_response(
                     followed_source.name, followed_source.feed_url
@@ -173,7 +168,7 @@ class TestIngestion:
         new_feed = "https://mediapart-edu.example.com/feed.xml"
 
         with patch(
-            "app.services.veille.source_suggester.SourceService.detect_source",
+            "app.services.veille.source_suggester.RSSParser.detect",
             new=AsyncMock(
                 return_value=_detect_response("Mediapart Education", new_feed)
             ),
@@ -231,7 +226,7 @@ class TestIngestion:
         suggester = SourceSuggester(llm=llm)
 
         with patch(
-            "app.services.veille.source_suggester.SourceService.detect_source",
+            "app.services.veille.source_suggester.RSSParser.detect",
             new=AsyncMock(
                 return_value=_detect_response(
                     followed_source.name, followed_source.feed_url
@@ -279,7 +274,7 @@ class TestDedupByDomain:
             return _detect_response(url, f"{url}/feed.xml")
 
         with patch(
-            "app.services.veille.source_suggester.SourceService.detect_source",
+            "app.services.veille.source_suggester.RSSParser.detect",
             new=AsyncMock(side_effect=_detect),
         ):
             result = await suggester.suggest_sources(
@@ -315,7 +310,7 @@ class TestDedupByDomain:
             return _detect_response(url, f"{url}/feed.xml")
 
         with patch(
-            "app.services.veille.source_suggester.SourceService.detect_source",
+            "app.services.veille.source_suggester.RSSParser.detect",
             new=AsyncMock(side_effect=_detect),
         ):
             result = await suggester.suggest_sources(
@@ -331,7 +326,7 @@ class TestDedupByDomain:
 
 class TestThemeGuard:
     async def test_invalid_theme_skips_ingest(self, db_session, test_user):
-        """`_hydrate_or_ingest` doit lever ValueError avant l'INSERT si le
+        """`_persist_detected` doit lever ValueError avant l'INSERT si le
         theme_id viole `ck_source_theme_valid`. Sans ce garde-fou, l'INSERT
         empoisonne la session (PendingRollbackError sur tout commit suivant).
         """
@@ -348,7 +343,7 @@ class TestThemeGuard:
 
         new_feed = "https://climat.example.com/feed.xml"
         with patch(
-            "app.services.veille.source_suggester.SourceService.detect_source",
+            "app.services.veille.source_suggester.RSSParser.detect",
             new=AsyncMock(return_value=_detect_response("Climat Info", new_feed)),
         ):
             result = await suggester.suggest_sources(
@@ -480,7 +475,7 @@ class TestSavepointIsolation:
 
         with (
             patch(
-                "app.services.veille.source_suggester.SourceService.detect_source",
+                "app.services.veille.source_suggester.RSSParser.detect",
                 new=AsyncMock(side_effect=_detect),
             ),
             patch.object(db_session, "flush", new=_flush_failing_on_second),
@@ -528,7 +523,7 @@ class TestCandidateTimeout:
             return _detect_response(url, f"{url}/feed.xml")
 
         with patch(
-            "app.services.veille.source_suggester.SourceService.detect_source",
+            "app.services.veille.source_suggester.RSSParser.detect",
             new=AsyncMock(side_effect=_detect),
         ):
             result = await suggester.suggest_sources(
@@ -696,3 +691,124 @@ class TestNoTxDuringLLM:
             "apply_timeouts",
             "followed_ids",
         ], order
+
+
+class TestParallelDetect:
+    """Anti-régression Iter 4 : la phase HTTP detect doit s'exécuter en
+    parallèle (`_DETECT_CONCURRENCY=4`) pour que 12 candidats lents
+    finissent en ⌈12/4⌉ × delay et non 12 × delay. Sans la
+    parallélisation, le wall-clock dépassait le timeout Dio mobile (30 s)
+    et l'utilisateur tombait sur le fallback mock alors que les sources
+    finissaient par être ingérées en DB côté serveur."""
+
+    async def test_detect_runs_concurrently_within_semaphore(self):
+        from app.models.source import Source as SourceModel
+        from app.services.rss_parser import DetectedFeed
+        from app.services.veille.source_suggester import _DETECT_CONCURRENCY
+
+        in_flight = {"current": 0, "max_observed": 0}
+
+        async def _slow_detect(url: str) -> DetectedFeed:
+            in_flight["current"] += 1
+            in_flight["max_observed"] = max(
+                in_flight["max_observed"], in_flight["current"]
+            )
+            try:
+                await asyncio.sleep(0.5)
+            finally:
+                in_flight["current"] -= 1
+            return DetectedFeed(
+                feed_url=f"{url}/feed.xml",
+                title=url,
+                description="t",
+                feed_type="rss",
+                logo_url=None,
+                entries=[],
+            )
+
+        llm = AsyncMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(
+            return_value={
+                "sources": [
+                    _candidate(f"S{i}", f"https://s{i}.example.com", 0.5 + i * 0.01)
+                    for i in range(12)
+                ]
+            }
+        )
+
+        suggester = SourceSuggester(llm=llm)
+
+        # Bypass DB : pas de followed, persist stub renvoie un Source en
+        # mémoire. Évite la dépendance Postgres pour ce test perf.
+        async def _no_followed(s, user_id):
+            return set()
+
+        suggester._followed_source_ids = _no_followed
+
+        async def _stub_persist(s, cand, detected, theme_id):
+            return SourceModel(
+                id=uuid4(),
+                name=cand.name,
+                url=cand.url,
+                feed_url=detected.feed_url,
+                type=SourceType.ARTICLE,
+                theme=theme_id,
+                description=None,
+                logo_url=None,
+                is_curated=False,
+                is_active=True,
+            )
+
+        suggester._persist_detected = _stub_persist
+
+        # AsyncSession factice : seules `rollback` + `begin_nested` (async
+        # context manager) sont effectivement awaited par suggest_sources.
+        class _FakeNested:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+        class _FakeSession:
+            async def rollback(self):
+                return None
+
+            def begin_nested(self):
+                return _FakeNested()
+
+        session = _FakeSession()
+
+        with (
+            patch(
+                "app.services.veille.source_suggester.RSSParser.detect",
+                new=AsyncMock(side_effect=_slow_detect),
+            ),
+            patch(
+                "app.services.veille.source_suggester.apply_session_timeouts",
+                new=AsyncMock(),
+            ),
+        ):
+            loop = asyncio.get_event_loop()
+            t0 = loop.time()
+            result = await suggester.suggest_sources(
+                session=session,
+                user_id=uuid4(),
+                theme_id="science",
+                topic_labels=[],
+            )
+            elapsed = loop.time() - t0
+
+        assert len(result.sources) == 12
+        # Sémaphore 4 ⇒ ⌈12/4⌉ × 0.5 = 1.5 s wall-clock idéal.
+        # En séquentiel : 12 × 0.5 = 6 s. Marge × 2 pour CI : assert <3 s.
+        assert elapsed < 3.0, (
+            f"detect loop took {elapsed:.2f}s, expected ~1.5s parallel "
+            f"(régression de la parallélisation Iter 4 ?)"
+        )
+        # La concurrence atteinte doit être exactement le sémaphore.
+        assert in_flight["max_observed"] == _DETECT_CONCURRENCY, (
+            f"max in-flight = {in_flight['max_observed']}, "
+            f"expected {_DETECT_CONCURRENCY}"
+        )

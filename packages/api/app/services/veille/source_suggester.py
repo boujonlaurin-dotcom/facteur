@@ -2,8 +2,8 @@
 
 Le LLM produit une seule liste de sources francophones (médias établis pertinents
 au topic + niches indé), notées par `relevance_score`. Post-traitement :
-- hydrate / ingère via `SourceService.detect_source` ;
-- dédoublonne par domaine racine (keep highest score) ;
+- detect HTTP en parallèle (`RSSParser.detect`, sémaphore polite) ;
+- ingest DB séquentiel + dédoublonne par domaine racine (keep highest score) ;
 - flag `is_already_followed` calculé contre les `UserSource` du user ;
 - trie par `relevance_score` desc.
 
@@ -28,7 +28,7 @@ from app.models.enums import SourceType
 from app.models.source import Source, UserSource
 from app.schemas.veille import VeilleThemeSlug
 from app.services.editorial.llm_client import EditorialLLMClient
-from app.services.source_service import SourceService
+from app.services.rss_parser import DetectedFeed, RSSParser
 from app.services.veille.topic_suggester import purpose_line
 
 logger = structlog.get_logger()
@@ -45,6 +45,11 @@ _HYDRATE_TIMEOUT_S = 8.0
 
 # Cap global sur l'appel LLM (Mistral). Sur timeout → fallback curé.
 _LLM_TIMEOUT_S = 20.0
+
+# Phase 1 (HTTP detect) parallèle, borne polie côté sites cibles. Aligné
+# sur le sémaphore interne de RSSParser stage 4 suffix probe (4) pour
+# éviter d'amplifier la pression aval.
+_DETECT_CONCURRENCY = 4
 
 
 @dataclass(frozen=True)
@@ -101,8 +106,13 @@ def _root_domain(url: str) -> str:
 class SourceSuggester:
     """Suggère une liste unique de sources rankées pour une veille."""
 
-    def __init__(self, llm: EditorialLLMClient | None = None) -> None:
+    def __init__(
+        self,
+        llm: EditorialLLMClient | None = None,
+        rss_parser: RSSParser | None = None,
+    ) -> None:
         self._llm = llm or EditorialLLMClient()
+        self._rss_parser = rss_parser or RSSParser()
 
     async def suggest_sources(
         self,
@@ -132,15 +142,11 @@ class SourceSuggester:
         """
         excluded = set(excluded_source_ids or [])
 
-        # Aucune tx ouverte pendant l'await LLM. `safe_async_session` (via
-        # `Depends(get_db)`) émet 2× `SET LOCAL` au début de la session, ce
-        # qui ouvre la tx implicite. Sans ce rollback, l'await Mistral
-        # (~13 s observés) dépasse `idle_in_transaction_session_timeout`
-        # (10 s, database.py:166) → Postgres tue la connexion server-side
-        # → la prochaine query lève `IdleInTransactionSessionTimeout`
-        # (Sentry PYTHON-3Z post-#568, event c5c381eb…). Rollback ferme
-        # la tx ; les SET LOCAL sont perdus mais ré-appliqués juste après
-        # le LLM avant la première query DB.
+        # `safe_async_session` émet `SET LOCAL` au démarrage, ce qui ouvre
+        # une tx implicite. Sans rollback, l'await LLM dépasse
+        # `idle_in_transaction_session_timeout` (10 s) et Postgres tue la
+        # connexion. Les SET LOCAL sont ré-appliqués via
+        # `apply_session_timeouts` après le LLM.
         await session.rollback()
 
         candidates: list[_LLMSourceCandidate] = []
@@ -184,37 +190,40 @@ class SourceSuggester:
             sources = await self._fallback(session, theme_id, excluded, followed_ids)
             return SourceSuggestions(sources=sources)
 
-        # Hydrate / ingère + dédup par domaine (keep highest score).
-        # Chaque candidat est isolé dans un SAVEPOINT : sans ça, une
-        # `IntegrityError` au flush() (feed_url unique, name overflow…)
+        # Phase 1 — detect HTTP en parallèle (cap `_DETECT_CONCURRENCY` pour
+        # rester poli vers les sites cibles). RSSParser fait les requêtes
+        # via un `httpx.AsyncClient` partagé qui supporte la concurrence ;
+        # les sémaphores internes (stage 4 suffix probe) bornent la fan-out
+        # par hostname. La session DB n'est PAS touchée ici : SQLAlchemy
+        # AsyncSession n'est pas safe pour des opérations concurrentes,
+        # donc le SELECT existing + INSERT restent en Phase 2 séquentielle.
+        detect_sem = asyncio.Semaphore(_DETECT_CONCURRENCY)
+        detect_results = await asyncio.gather(
+            *(self._detect_candidate(detect_sem, cand) for cand in candidates),
+        )
+
+        # Phase 2 — ingest DB séquentiel + dédup par domaine (keep highest
+        # score). Chaque candidat reste isolé dans un SAVEPOINT : sans ça,
+        # une `IntegrityError` au flush() (feed_url unique, name overflow…)
         # empoisonne la session pour tous les candidats suivants
         # (PendingRollbackError au commit final).
         by_domain: dict[str, tuple[Source, _LLMSourceCandidate]] = {}
-        source_service = SourceService(session)
-        for cand in candidates:
+        for result in detect_results:
+            if result is None:
+                continue
+            cand, detected = result
             try:
                 async with session.begin_nested():
-                    hydrated = await asyncio.wait_for(
-                        self._hydrate_or_ingest(
-                            session, source_service, cand, theme_id
-                        ),
-                        timeout=_HYDRATE_TIMEOUT_S,
+                    hydrated = await self._persist_detected(
+                        session, cand, detected, theme_id
                     )
-            except TimeoutError:
-                logger.warning(
-                    "source_suggester.candidate_timeout",
-                    name=cand.name,
-                    url=cand.url,
-                    timeout_s=_HYDRATE_TIMEOUT_S,
-                )
-                continue
             except Exception as exc:
                 # Sentry capture obligatoire : le `logger.warning` seul ne
                 # remonte pas la stack ; sans ça on perd la cause racine
                 # des flush() qui foirent et on ne peut pas itérer dessus.
                 sentry_sdk.capture_exception(exc)
                 logger.warning(
-                    "source_suggester.hydrate_failed",
+                    "source_suggester.persist_failed",
                     name=cand.name,
                     url=cand.url,
                     error_class=type(exc).__name__,
@@ -253,16 +262,64 @@ class SourceSuggester:
         result = await session.execute(stmt)
         return set(result.scalars().all())
 
-    async def _hydrate_or_ingest(
+    async def _detect_candidate(
+        self,
+        sem: asyncio.Semaphore,
+        cand: _LLMSourceCandidate,
+    ) -> tuple[_LLMSourceCandidate, DetectedFeed] | None:
+        """Phase 1 — detect HTTP par candidat, sans toucher la session DB.
+
+        Wrap `_HYDRATE_TIMEOUT_S` pour cap par candidat ; les exceptions
+        sont avalées (logguées + capture Sentry pour les non-Value/Timeout)
+        de sorte que `asyncio.gather` ne propage pas une seule défaillance
+        et tue les autres candidats en cours.
+        """
+        async with sem:
+            try:
+                detected = await asyncio.wait_for(
+                    self._rss_parser.detect(cand.url),
+                    timeout=_HYDRATE_TIMEOUT_S,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "source_suggester.candidate_timeout",
+                    name=cand.name,
+                    url=cand.url,
+                    timeout_s=_HYDRATE_TIMEOUT_S,
+                )
+                return None
+            except ValueError as exc:
+                # ValueError = échec de détection RSS (404, 403, no feed,
+                # DNS fail). Cas business attendu, pas une stack à
+                # remonter à Sentry — un warning structuré suffit.
+                logger.warning(
+                    "source_suggester.detect_failed",
+                    name=cand.name,
+                    url=cand.url,
+                    error=str(exc),
+                )
+                return None
+            except Exception as exc:
+                # Inattendu — capture obligatoire pour pouvoir itérer.
+                sentry_sdk.capture_exception(exc)
+                logger.warning(
+                    "source_suggester.detect_unexpected",
+                    name=cand.name,
+                    url=cand.url,
+                    error_class=type(exc).__name__,
+                    error=str(exc),
+                )
+                return None
+        return cand, detected
+
+    async def _persist_detected(
         self,
         session: AsyncSession,
-        source_service: SourceService,
         cand: _LLMSourceCandidate,
+        detected: DetectedFeed,
         theme_id: str,
     ) -> Source:
-        """Ingest la source à la volée si absente du catalogue."""
-        detected = await source_service.detect_source(cand.url)
-
+        """Phase 2 — persiste une source détectée en DB (idempotent par feed_url)."""
         existing_stmt = select(Source).where(Source.feed_url == detected.feed_url)
         existing = (await session.execute(existing_stmt)).scalars().first()
         if existing:
@@ -276,14 +333,20 @@ class SourceSuggester:
                 f"{sorted(_ALLOWED_SOURCE_THEMES)}"
             )
 
+        # `RSSParser.detect()` retourne un feed_type dans
+        # {"rss","atom","youtube","podcast","reddit"}. SourceType n'a pas
+        # de valeur "rss"/"atom" → mapper vers ARTICLE comme dans
+        # `SourceService.detect_source`.
+        feed_type = detected.feed_type
+        source_type_str = "article" if feed_type in ("rss", "atom") else feed_type
         try:
-            source_type = SourceType(detected.detected_type)
+            source_type = SourceType(source_type_str)
         except ValueError:
             source_type = SourceType.ARTICLE
 
         new_source = Source(
             id=uuid4(),
-            name=cand.name or detected.name,
+            name=cand.name or detected.title,
             url=cand.url,
             feed_url=detected.feed_url,
             type=source_type,
