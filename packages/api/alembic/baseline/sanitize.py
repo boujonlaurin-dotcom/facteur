@@ -57,8 +57,9 @@ def _strip_multiline_blocks(lines: list[str]) -> Iterator[str]:
     while i < len(lines):
         line = lines[i]
 
-        # Drop the entire CREATE FUNCTION ... handle_new_user_notion_sync ... $$; block.
-        if "CREATE OR REPLACE FUNCTION" in line and "handle_new_user_notion_sync" in line:
+        # Drop the entire CREATE [OR REPLACE] FUNCTION ... handle_new_user_notion_sync ... $$; block.
+        # Newer pg_dump versions emit `CREATE FUNCTION` rather than `CREATE OR REPLACE FUNCTION`.
+        if re.search(r"\bCREATE (OR REPLACE )?FUNCTION\b", line) and "handle_new_user_notion_sync" in line:
             # Skip until the closing `$$;`
             while i < len(lines) and not lines[i].rstrip().endswith("$$;"):
                 i += 1
@@ -70,8 +71,9 @@ def _strip_multiline_blocks(lines: list[str]) -> Iterator[str]:
                 i += 1
             continue
 
-        # Drop the ALTER TABLE ONLY ... ADD CONSTRAINT nps_responses_user_id_fkey FOREIGN KEY ... REFERENCES "auth"."users" block.
-        if 'REFERENCES "auth"."users"' in line:
+        # Drop the ALTER TABLE ONLY ... ADD CONSTRAINT nps_responses_user_id_fkey FOREIGN KEY ... REFERENCES auth.users block.
+        # Match both quoted (`"auth"."users"`) and unquoted (`auth.users`) forms — newer pg_dump emits the latter.
+        if re.search(r'REFERENCES\s+"?auth"?\."?users"?', line):
             # Walk backward to find the start of the ALTER TABLE statement (cheap: it's on a recent prior line).
             # Then walk forward until the terminating `;`.
             # In this dump the ALTER TABLE ONLY is 1 line above, and the ADD CONSTRAINT is the line before this one.
@@ -106,7 +108,7 @@ def _drop_auth_users_fk(lines: list[str]) -> list[str]:
                     break
                 j += 1
             block_text = "".join(block)
-            if 'REFERENCES "auth"."users"' in block_text:
+            if re.search(r'REFERENCES\s+"?auth"?\."?users"?', block_text):
                 i = j + 1
                 continue
             if '"public"."alembic_version"' in block_text or '"alembic_version"' in block_text:
@@ -141,10 +143,33 @@ def _drop_alembic_version_table(lines: list[str]) -> list[str]:
     return out
 
 
+def _drop_orphan_section_header(lines: list[str], object_name: str) -> list[str]:
+    """Drop the 3-line `--\\n-- Name: <object_name>...; Type: ...; ...\\n--\\n` block
+    that pg_dump emits before each object. Use after stripping the object body to
+    avoid leaving an orphan comment header behind.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        if (
+            i + 2 < len(lines)
+            and lines[i].strip() == "--"
+            and object_name in lines[i + 1]
+            and lines[i + 1].lstrip().startswith("-- Name:")
+            and lines[i + 2].strip() == "--"
+        ):
+            i += 3
+            continue
+        out.append(lines[i])
+        i += 1
+    return out
+
+
 def sanitize(raw: str) -> str:
     lines = raw.splitlines(keepends=True)
     lines = _drop_auth_users_fk(lines)
     lines = _drop_alembic_version_table(lines)
+    lines = _drop_orphan_section_header(lines, "handle_new_user_notion_sync")
 
     out: list[str] = []
     out.append("-- Sanitized prod schema snapshot — see sanitize.py for what was stripped.\n")
