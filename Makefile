@@ -4,8 +4,9 @@
 
 REPO_ROOT := $(shell git rev-parse --show-toplevel)
 VENV       := $(REPO_ROOT)/packages/api/.venv
+API_PORT  ?= 8080
 
-.PHONY: help bootstrap doctor test-api test-mobile lint-api fmt-api db-up db-down db-reset env
+.PHONY: help bootstrap doctor test-api test-mobile lint-api fmt-api db-up db-down db-reset env api-serve api-stop
 
 help:
 	@echo "Facteur — cibles disponibles :"
@@ -18,6 +19,10 @@ help:
 	@echo "  make test-mobile  Lance les tests Flutter"
 	@echo "  make lint-api     Ruff check sur app/"
 	@echo "  make fmt-api      Ruff format sur app/"
+	@echo ""
+	@echo "  make api-serve    Tue le process sur :$(API_PORT) puis lance uvicorn --reload"
+	@echo "                    (override : make api-serve API_PORT=8090)"
+	@echo "  make api-stop     Tue le process uvicorn sur :$(API_PORT) (no-op si rien)"
 	@echo ""
 	@echo "  make db-up        Démarre la DB test (Docker)"
 	@echo "  make db-down      Arrête la DB test"
@@ -57,3 +62,22 @@ db-reset:
 	@set -a && . $(REPO_ROOT)/.env && set +a && cd $(REPO_ROOT)/packages/api && \
 		DATABASE_URL="postgresql+psycopg://$${POSTGRES_TEST_USER}:$${POSTGRES_TEST_PASSWORD}@localhost:$${POSTGRES_TEST_PORT:-54322}/$${POSTGRES_TEST_DB}" \
 		$(VENV)/bin/alembic upgrade head
+
+api-serve:
+	@PIDS=$$(lsof -iTCP:$(API_PORT) -sTCP:LISTEN -t 2>/dev/null || true); \
+		if [ -n "$$PIDS" ]; then \
+			echo "→ Killing process(es) on :$(API_PORT) ($$PIDS)"; \
+			kill $$PIDS 2>/dev/null || true; \
+			sleep 1; \
+		fi
+	@test -x $(VENV)/bin/uvicorn || { echo "❌ venv manquant — lance d'abord : make bootstrap"; exit 1; }
+	@cd $(REPO_ROOT)/packages/api && $(VENV)/bin/uvicorn app.main:app --reload --port $(API_PORT)
+
+api-stop:
+	@PIDS=$$(lsof -iTCP:$(API_PORT) -sTCP:LISTEN -t 2>/dev/null || true); \
+		if [ -n "$$PIDS" ]; then \
+			echo "→ Killing process(es) on :$(API_PORT) ($$PIDS)"; \
+			kill $$PIDS 2>/dev/null || true; \
+		else \
+			echo "→ Rien à tuer sur :$(API_PORT)"; \
+		fi

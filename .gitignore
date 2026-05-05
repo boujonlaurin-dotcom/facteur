@@ -18,6 +18,15 @@ secrets.yaml
 credentials.json
 .claude/settings.local.json
 
+# Raw schema dumps (un-sanitized — must NOT be committed). Sanitized snapshots
+# under packages/api/alembic/baseline/ ARE committed.
+packages/api/alembic/baseline/*-raw.sql
+
+# Supabase CLI per-machine link state (contains user tokens / linked project ref).
+# Each contributor links the Facteur project on their own machine — see CONTRIBUTING.md.
+supabase/.temp/
+supabase/.branches/
+
 # IDEs and editors
 .vscode/*
 !.vscode/extensions.json
