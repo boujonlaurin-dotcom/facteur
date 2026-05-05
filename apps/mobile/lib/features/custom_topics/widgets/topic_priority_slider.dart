@@ -10,6 +10,7 @@ class TopicPrioritySlider extends StatelessWidget {
   final ValueChanged<double> onChanged;
   final double? usageWeight;
   final VoidCallback? onReset;
+  final bool fillWidth;
 
   const TopicPrioritySlider({
     super.key,
@@ -17,6 +18,7 @@ class TopicPrioritySlider extends StatelessWidget {
     required this.onChanged,
     this.usageWeight,
     this.onReset,
+    this.fillWidth = false,
   });
 
   @override
@@ -27,6 +29,7 @@ class TopicPrioritySlider extends StatelessWidget {
       labels: const ['Moins', 'Normal', 'Plus'],
       usageWeight: usageWeight,
       onReset: onReset,
+      fillWidth: fillWidth,
     );
   }
 }

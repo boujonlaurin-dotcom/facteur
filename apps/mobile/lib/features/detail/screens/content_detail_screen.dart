@@ -1729,7 +1729,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     _headerOffset.value = 0.0;
                     _footerOffset.value = 0.0;
                   }
-                  
+
                   _onScrollDelta(delta);
                   // Gate the perspectives RenderObject walk on (a) the
                   // section actually existing and (b) the user having
@@ -2899,38 +2899,87 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
-  /// Returns individual entity chip widgets (no wrapper) for use in Wrap layouts.
-  /// Tapping any chip opens the full entities sheet.
-  List<Widget> _buildArticleTagWidgets(BuildContext context, Content content) {
+  double _measureChipWidth(String text, TextStyle? style,
+      {bool isEntity = false}) {
+    const chipHPad = 16.0;
+    const followIconExtra = 13.0; // icon 10px + gap 3px
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout(maxWidth: isEntity ? 100.0 : double.infinity);
+    return tp.width + chipHPad + (isEntity ? followIconExtra : 0);
+  }
+
+  /// Greedy Wrap simulation: returns how many items from [widths] fit within
+  /// [maxLines] lines of [availWidth], using [spacing] between items.
+  int _simulateWrapVisible(
+    List<double> widths,
+    double availWidth, {
+    double spacing = 6.0,
+    int maxLines = 2,
+  }) {
+    int line = 1;
+    double x = 0;
+    int count = 0;
+    for (final w in widths) {
+      final newX = x == 0 ? w : x + spacing + w;
+      if (newX <= availWidth) {
+        x = newX;
+      } else {
+        if (line >= maxLines) break;
+        line++;
+        x = w;
+      }
+      count++;
+    }
+    return count;
+  }
+
+  /// Builds a 2-line-max Wrap of article chips: Aperçu (if partial) + topic
+  /// chips + entity chips, followed by a +X overflow chip if needed.
+  Widget _buildTagsWrap(BuildContext context, Content content,
+      {bool isPartial = false}) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+    final labelStyle = textTheme.labelSmall;
     final topicsAsync = ref.watch(customTopicsProvider);
     final followedNames = (topicsAsync.valueOrNull ?? [])
         .where((t) => t.canonicalName != null)
         .map((t) => t.canonicalName!.toLowerCase())
         .toSet();
 
-    // Dense layout: 4 tags max across macro-theme + topic + entities.
-    // Remaining entities are grouped into a "+X" overflow chip.
-    const maxTotalVisible = 6;
+    // Build ordered chip list: (widget, estimatedWidth)
+    final chips = <({Widget widget, double width})>[];
 
-    final hasMacroTheme = content.topics.isNotEmpty &&
-        getTopicMacroTheme(content.topics.first) != null;
-    final hasTopic = content.topics.isNotEmpty;
-    final reservedForTopics = (hasMacroTheme ? 1 : 0) + (hasTopic ? 1 : 0);
-    final entities = content.entities;
-    final maxEntitiesVisible =
-        (maxTotalVisible - reservedForTopics).clamp(0, entities.length);
-    final visible = entities.take(maxEntitiesVisible).toList();
-    final overflow = entities.length - maxEntitiesVisible;
+    if (isPartial) {
+      const label = 'Aperçu — contenu partiel';
+      chips.add((
+        widget: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: colors.warning.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            label,
+            style: labelStyle?.copyWith(
+              color: colors.warning,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        width: _measureChipWidth(label, labelStyle),
+      ));
+    }
 
-    return [
-      // Macro-theme chip (thème du sujet, ex: Cinéma)
-      if (hasMacroTheme)
-        Builder(builder: (context) {
-          final macroTheme = getTopicMacroTheme(content.topics.first)!;
-          final emoji = getMacroThemeEmoji(macroTheme);
-          return GestureDetector(
+    if (content.topics.isNotEmpty) {
+      final macroTheme = getTopicMacroTheme(content.topics.first);
+      if (macroTheme != null) {
+        final emoji = getMacroThemeEmoji(macroTheme);
+        final label = '${emoji.isNotEmpty ? '$emoji ' : ''}$macroTheme';
+        chips.add((
+          widget: GestureDetector(
             onTap: () => TopicChip.showArticleSheet(context, content,
                 initialSection: ArticleSheetSection.topic),
             child: Container(
@@ -2940,8 +2989,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                '${emoji.isNotEmpty ? '$emoji ' : ''}$macroTheme',
-                style: textTheme.labelSmall?.copyWith(
+                label,
+                style: labelStyle?.copyWith(
                   color: colors.textSecondary,
                   fontWeight: FontWeight.w500,
                 ),
@@ -2949,34 +2998,43 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-          );
-        }),
-      // Topic chip
-      if (hasTopic)
-        GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(context, content,
-              initialSection: ArticleSheetSection.topic),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: colors.textTertiary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              getTopicLabel(content.topics.first),
-              style: textTheme.labelSmall?.copyWith(
-                color: colors.textTertiary,
-                fontWeight: FontWeight.w500,
+          ),
+          width: _measureChipWidth(label, labelStyle),
+        ));
+      }
+      final topicLabel = getTopicLabel(content.topics.first);
+      // Skip topic chip when its label duplicates the macro-theme name.
+      if (topicLabel.toLowerCase() != macroTheme?.toLowerCase()) {
+        chips.add((
+          widget: GestureDetector(
+            onTap: () => TopicChip.showArticleSheet(context, content,
+                initialSection: ArticleSheetSection.topic),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: colors.textTertiary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              child: Text(
+                topicLabel,
+                style: labelStyle?.copyWith(
+                  color: colors.textTertiary,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ),
-        ),
-      // Entity chips
-      ...visible.map((entity) {
-        final isFollowed = followedNames.contains(entity.text.toLowerCase());
-        return GestureDetector(
+          width: _measureChipWidth(topicLabel, labelStyle),
+        ));
+      }
+    }
+
+    for (final entity in content.entities) {
+      final isFollowed = followedNames.contains(entity.text.toLowerCase());
+      chips.add((
+        widget: GestureDetector(
           onTap: () => TopicChip.showArticleSheet(context, content,
               initialSection: ArticleSheetSection.entities),
           child: Container(
@@ -2994,7 +3052,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   constraints: const BoxConstraints(maxWidth: 100),
                   child: Text(
                     entity.text,
-                    style: textTheme.labelSmall?.copyWith(
+                    style: labelStyle?.copyWith(
                       color: isFollowed
                           ? const Color(0xFFE07A5F)
                           : colors.textTertiary,
@@ -3015,28 +3073,64 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               ],
             ),
           ),
-        );
-      }),
-      if (overflow > 0)
-        GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(context, content,
-              initialSection: ArticleSheetSection.entities),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: colors.textTertiary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              '+$overflow',
-              style: textTheme.labelSmall?.copyWith(
-                color: colors.textTertiary,
-                fontWeight: FontWeight.w500,
+        ),
+        width: _measureChipWidth(entity.text, labelStyle, isEntity: true),
+      ));
+    }
+
+    if (chips.isEmpty) return const SizedBox.shrink();
+
+    return LayoutBuilder(builder: (context, constraints) {
+      const spacing = 6.0;
+      final availWidth = constraints.maxWidth;
+      final widths = chips.map((c) => c.width).toList();
+
+      // How many chips fit in 2 lines without any overflow chip?
+      int visibleCount = _simulateWrapVisible(widths, availWidth);
+      final total = chips.length;
+
+      if (visibleCount < total) {
+        // Need an overflow chip — find the largest visibleCount such that
+        // [visibleCount chips + overflow chip] all fit within 2 lines.
+        // Use the max possible overflow width for a stable estimate.
+        final overflowChipW = _measureChipWidth('+$total', labelStyle);
+        while (visibleCount > 0) {
+          final test = [...widths.take(visibleCount), overflowChipW];
+          if (_simulateWrapVisible(test, availWidth) == test.length) break;
+          visibleCount--;
+        }
+      }
+
+      final overflow = total - visibleCount;
+
+      return Wrap(
+        spacing: spacing,
+        runSpacing: spacing,
+        children: [
+          ...chips.take(visibleCount).map((c) => c.widget),
+          if (overflow > 0)
+            GestureDetector(
+              onTap: () => TopicChip.showArticleSheet(context, content,
+                  initialSection: ArticleSheetSection.entities),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: colors.textTertiary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '+$overflow',
+                  style: labelStyle?.copyWith(
+                    color: colors.textTertiary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
-    ];
+        ],
+      );
+    });
   }
 
   Widget _buildReadingProgressBar(FacteurColors colors) {
@@ -3313,32 +3407,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 ),
                                 const SizedBox(height: FacteurSpacing.space3),
                               ],
-                              if (content.entities.isNotEmpty || isPartial) ...[
-                                _FadeScrollRow(
-                                  children: [
-                                    if (isPartial)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: colors.warning
-                                              .withValues(alpha: 0.12),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          'Aperçu — contenu partiel',
-                                          style: textTheme.labelSmall?.copyWith(
-                                            color: colors.warning,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    if (content.entities.isNotEmpty)
-                                      ..._buildArticleTagWidgets(
-                                          context, content),
-                                  ],
-                                ),
+                              if (isPartial ||
+                                  content.entities.isNotEmpty ||
+                                  content.topics.isNotEmpty) ...[
+                                _buildTagsWrap(context, content,
+                                    isPartial: isPartial),
                                 const SizedBox(height: FacteurSpacing.space4),
                               ],
                               Text(
@@ -3905,29 +3978,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             aspectRatio: 16 / 9,
                           ),
                         ),
-                      if (content.entities.isNotEmpty || isPartial)
-                        _FadeScrollRow(
-                          children: [
-                            if (isPartial)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: colors.warning.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  'Aperçu — contenu partiel',
-                                  style: textTheme.labelSmall?.copyWith(
-                                    color: colors.warning,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            if (content.entities.isNotEmpty)
-                              ..._buildArticleTagWidgets(context, content),
-                          ],
-                        ),
+                      if (isPartial ||
+                          content.entities.isNotEmpty ||
+                          content.topics.isNotEmpty)
+                        _buildTagsWrap(context, content, isPartial: isPartial),
                       Text(
                         content.title,
                         style: textTheme.displayLarge?.copyWith(fontSize: 24),
@@ -4133,12 +4187,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         SizedBox(height: headerHeight),
         // Extra breathing room so tag chips aren't clipped by the header overlay
         const SizedBox(height: FacteurSpacing.space2),
-        if (content.entities.isNotEmpty)
+        if (content.entities.isNotEmpty || content.topics.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: _FadeScrollRow(
-              children: _buildArticleTagWidgets(context, content),
-            ),
+            padding: const EdgeInsets.symmetric(
+                horizontal: FacteurSpacing.space4, vertical: 6),
+            child: _buildTagsWrap(context, content),
           ),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
       ],

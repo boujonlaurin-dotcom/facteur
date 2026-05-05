@@ -144,31 +144,11 @@ class ArticleSheet extends ConsumerStatefulWidget {
 }
 
 class _ArticleSheetState extends ConsumerState<ArticleSheet> {
-  late bool _topicExpanded;
-  late bool _sourceExpanded;
-  late bool _entitiesExpanded;
-  late bool _breakdownExpanded;
   bool _breakdownShowAll = false;
-  late bool _personalizeExpanded;
 
   @override
   void initState() {
     super.initState();
-    final reason = widget.content.recommendationReason;
-    _topicExpanded =
-        widget.initialSection == ArticleSheetSection.topic;
-    _sourceExpanded =
-        widget.initialSection == ArticleSheetSection.source;
-    _entitiesExpanded =
-        widget.initialSection == ArticleSheetSection.entities;
-    _breakdownExpanded =
-        widget.initialSection == ArticleSheetSection.breakdown &&
-            reason != null &&
-            reason.breakdown.isNotEmpty;
-    _personalizeExpanded =
-        widget.initialSection == ArticleSheetSection.personalize ||
-            widget.initialSection == ArticleSheetSection.source ||
-            widget.initialSection == ArticleSheetSection.topic;
   }
 
   @override
@@ -217,225 +197,59 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
               ),
               const SizedBox(height: FacteurSpacing.space3),
 
-              // ── Section 1: Topic ──
-              if (widget.topicSlug.isNotEmpty) ...[
-                _buildSectionHeader(
-                  context,
-                  titleWidget: RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: widget.topicLabel,
-                          style: textTheme.displaySmall?.copyWith(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        TextSpan(
-                          text: '  (sujet)',
-                          style: textTheme.labelSmall?.copyWith(
-                            color: colors.textTertiary,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  subtitle: parentLabel != null
-                      ? '${getMacroThemeEmoji(parentLabel)} $parentLabel'
-                      : null,
-                  isExpanded: _topicExpanded,
-                  onToggle: () =>
-                      setState(() => _topicExpanded = !_topicExpanded),
-                ),
-                if (_topicExpanded) ...[
-                  const SizedBox(height: FacteurSpacing.space4),
-                  _buildTopicContent(
-                    isFollowed: isFollowed,
-                    matchedTopic: matchedTopic,
-                    colorScheme: colorScheme,
-                    colors: colors,
-                    textTheme: textTheme,
-                    shouldHighlight: widget.highlightInitialSection &&
-                        widget.initialSection == ArticleSheetSection.topic,
-                  ),
-                ],
-              ],
+              // ── Groupes 1 & 2: SUJETS / SOURCE (order depends on entry point) ──
+              ..._buildSujetsAndSource(
+                isFollowed: isFollowed,
+                matchedTopic: matchedTopic,
+                colorScheme: colorScheme,
+                colors: colors,
+                textTheme: textTheme,
+                parentLabel: parentLabel,
+                topics: topics,
+              ),
 
-              // ── Section 2: Source ──
-              if (widget.content.source.name.isNotEmpty) ...[
-                const SizedBox(height: FacteurSpacing.space2),
-                Divider(color: colors.textTertiary.withOpacity(0.2)),
-                const SizedBox(height: FacteurSpacing.space3),
-                _buildSectionHeader(
-                  context,
-                  titleWidget: Row(
-                    children: [
-                      if (widget.content.source.logoUrl != null &&
-                          widget.content.source.logoUrl!.isNotEmpty) ...[
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: Image.network(
-                            widget.content.source.logoUrl!,
-                            width: 28,
-                            height: 28,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                const SizedBox.shrink(),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                      ],
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            RichText(
-                              text: TextSpan(
-                                children: [
-                                  TextSpan(
-                                    text: widget.content.source.name,
-                                    style: textTheme.displaySmall?.copyWith(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  TextSpan(
-                                    text: '  (source)',
-                                    style: textTheme.labelSmall?.copyWith(
-                                      color: colors.textTertiary,
-                                      fontWeight: FontWeight.w400,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (widget.content.source.theme != null &&
-                                widget.content.source.theme!.isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                widget.content.source.getThemeLabel(),
-                                style: textTheme.labelSmall?.copyWith(
-                                  color: colors.textTertiary,
-                                  letterSpacing: 1.0,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  isExpanded: _sourceExpanded,
-                  onToggle: () =>
-                      setState(() => _sourceExpanded = !_sourceExpanded),
-                ),
-                if (_sourceExpanded) ...[
-                  const SizedBox(height: FacteurSpacing.space3),
-                  _buildSourceContent(
-                    colorScheme: colorScheme,
-                    colors: colors,
-                    textTheme: textTheme,
-                    shouldHighlight: widget.highlightInitialSection &&
-                        widget.initialSection == ArticleSheetSection.source,
-                  ),
-                ],
-              ],
-
-              // ── Section 3: Entities ──
-              if (widget.content.entities.isNotEmpty) ...[
-                const SizedBox(height: FacteurSpacing.space2),
-                Divider(color: colors.textTertiary.withOpacity(0.2)),
-                const SizedBox(height: FacteurSpacing.space3),
-                _buildSectionHeader(
-                  context,
-                  icon: PhosphorIcons.userCircle(PhosphorIconsStyle.regular),
-                  iconColor: colors.textSecondary,
-                  title: 'Sujets de cet article',
-                  isExpanded: _entitiesExpanded,
-                  onToggle: () =>
-                      setState(() => _entitiesExpanded = !_entitiesExpanded),
-                ),
-                if (_entitiesExpanded) ...[
-                  const SizedBox(height: 12),
-                  _buildEntitiesContent(
-                      topics: topics, colors: colors, textTheme: textTheme),
-                ],
-              ],
-
-              // ── Section 4: "Pourquoi cet article ?" ──
+              // ── Groupe 3: RECOMMANDATION ──
               if (reason != null && reason.breakdown.isNotEmpty) ...[
-                const SizedBox(height: FacteurSpacing.space2),
-                Divider(color: colors.textTertiary.withOpacity(0.2)),
-                const SizedBox(height: FacteurSpacing.space3),
-                _buildSectionHeader(
-                  context,
-                  icon: PhosphorIcons.question(PhosphorIconsStyle.bold),
-                  iconColor: colors.primary,
-                  title: 'Pourquoi cet article ?',
-                  trailing: reason.scoreTotal > 0
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: colors.primary.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '${reason.scoreTotal.toInt()} pts',
-                            style: TextStyle(
-                              color: colors.primary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        )
-                      : null,
-                  isExpanded: _breakdownExpanded,
-                  onToggle: () =>
-                      setState(() => _breakdownExpanded = !_breakdownExpanded),
-                ),
-                if (_breakdownExpanded) ...[
-                  const SizedBox(height: 12),
-                  ..._buildBreakdownList(reason, colors),
-                ],
-              ],
-
-              // ── Section 5: "Personnaliser mon flux" ──
-              const SizedBox(height: FacteurSpacing.space2),
+              const SizedBox(height: FacteurSpacing.space3),
               Divider(color: colors.textTertiary.withOpacity(0.2)),
               const SizedBox(height: FacteurSpacing.space3),
-              _buildSectionHeader(
-                context,
-                title: 'PERSONNALISER MON FLUX',
-                isExpanded: _personalizeExpanded,
-                onToggle: () => setState(
-                    () => _personalizeExpanded = !_personalizeExpanded),
+              Row(
+                children: [
+                  Text(
+                    'RECOMMANDATION',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colors.textTertiary,
+                      letterSpacing: 1.2,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (reason != null && reason.scoreTotal > 0) ...[
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: colors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${reason.scoreTotal.toInt()} pts',
+                        style: TextStyle(
+                          color: colors.primary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              if (_personalizeExpanded) ...[
-                const SizedBox(height: 12),
-                _buildActionOption(
-                  context,
-                  icon: PhosphorIcons.eyeClosed(PhosphorIconsStyle.regular),
-                  label: "J'ai déjà vu cet article",
-                  onTap: () async {
-                    Navigator.pop(context);
-                    try {
-                      await ref
-                          .read(feedProvider.notifier)
-                          .impressContent(widget.content);
-                      NotificationService.showInfo(
-                          'Article marqué comme déjà vu');
-                    } catch (e) {
-                      NotificationService.showError(
-                          'Erreur réseau — réessaie dans un instant');
-                    }
-                  },
-                  colors: colors,
-                ),
+              const SizedBox(height: 12),
+              ..._buildBreakdownList(reason!, colors),
+              const SizedBox(height: FacteurSpacing.space2),
               ],
 
-              const SizedBox(height: FacteurSpacing.space2),
+              const SizedBox(height: FacteurSpacing.space4),
             ],
           ),
         ),
@@ -443,10 +257,92 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
     );
   }
 
-  // ── Compact badges row (unused for now) ──
-  // ignore: unused_element
-  Widget _buildCompactBadgesRow() => const SizedBox.shrink();
-  // ── Topic content ──
+  // ── Ordered SUJETS + SOURCE sections ──
+
+  List<Widget> _buildSujetsAndSource({
+    required bool isFollowed,
+    required UserTopicProfile? matchedTopic,
+    required ColorScheme colorScheme,
+    required FacteurColors colors,
+    required TextTheme textTheme,
+    required String? parentLabel,
+    required List<UserTopicProfile> topics,
+  }) {
+    final hasSujets =
+        widget.topicSlug.isNotEmpty || widget.content.entities.isNotEmpty;
+    final hasSource = widget.content.source.name.isNotEmpty;
+
+    final divider = [
+      const SizedBox(height: FacteurSpacing.space3),
+      Divider(color: colors.textTertiary.withOpacity(0.2)),
+      const SizedBox(height: FacteurSpacing.space3),
+    ];
+
+    final sujetsBlock = [
+      if (hasSujets) ...[
+        Text(
+          'SUJETS',
+          style: textTheme.labelSmall?.copyWith(
+            color: colors.textTertiary,
+            letterSpacing: 1.2,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: FacteurSpacing.space2),
+        _buildTopicContent(
+          isFollowed: isFollowed,
+          matchedTopic: matchedTopic,
+          colorScheme: colorScheme,
+          colors: colors,
+          textTheme: textTheme,
+          parentLabel: parentLabel,
+          shouldHighlight: widget.highlightInitialSection &&
+              widget.initialSection == ArticleSheetSection.topic,
+          topics: topics,
+        ),
+      ],
+    ];
+
+    final sourceBlock = [
+      if (hasSource) ...[
+        Text(
+          'SOURCE',
+          style: textTheme.labelSmall?.copyWith(
+            color: colors.textTertiary,
+            letterSpacing: 1.2,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: FacteurSpacing.space2),
+        _buildSourceContent(
+          colorScheme: colorScheme,
+          colors: colors,
+          textTheme: textTheme,
+          shouldHighlight: widget.highlightInitialSection &&
+              widget.initialSection == ArticleSheetSection.source,
+        ),
+      ],
+    ];
+
+    final sourceFirst =
+        widget.initialSection == ArticleSheetSection.source;
+
+    if (sourceFirst) {
+      return [
+        ...sourceBlock,
+        if (hasSujets && hasSource) ...divider,
+        ...sujetsBlock,
+      ];
+    } else {
+      return [
+        ...sujetsBlock,
+        if (hasSujets && hasSource) ...divider,
+        ...sourceBlock,
+      ];
+    }
+  }
+
+  // ── Topic + Entities content (SUJETS group) ──
 
   Widget _buildTopicContent({
     required bool isFollowed,
@@ -454,132 +350,270 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
     required ColorScheme colorScheme,
     required FacteurColors colors,
     required TextTheme textTheme,
+    required String? parentLabel,
+    required List<UserTopicProfile> topics,
     bool shouldHighlight = false,
   }) {
-    if (isFollowed && matchedTopic != null) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: _terracotta.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(FacteurRadius.medium),
-              border: Border.all(color: _terracotta.withOpacity(0.2)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Topic header: topicLabel on top, parentLabel below, Suivi right-aligned ──
+        if (widget.topicSlug.isNotEmpty) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.topicLabel,
+                      style: textTheme.displaySmall?.copyWith(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (parentLabel != null) ...[
+                      const SizedBox(height: 6),
                       Container(
-                        width: 7,
-                        height: 7,
-                        decoration: const BoxDecoration(
-                          color: _terracotta,
-                          shape: BoxShape.circle,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: colors.textTertiary.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(20),
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Suivi',
-                        style: textTheme.labelMedium?.copyWith(
-                          color: _terracotta,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '/',
-                        style: textTheme.labelSmall?.copyWith(
-                          color: colors.textTertiary,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      GestureDetector(
-                        onTap: () async {
-                          Navigator.pop(context);
-                          try {
-                            await ref
-                                .read(customTopicsProvider.notifier)
-                                .unfollowTopic(matchedTopic.id);
-                            NotificationService.showInfo(
-                              '${widget.topicLabel} retiré de vos sujets',
-                            );
-                          } catch (e) {
-                            NotificationService.showError(
-                              'Impossible de retirer le sujet',
-                            );
-                          }
-                        },
                         child: Text(
-                          'Ne plus suivre',
+                          '${getMacroThemeEmoji(parentLabel)} $parentLabel',
                           style: textTheme.labelSmall?.copyWith(
-                            color: colors.error,
+                            color: colors.textSecondary,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
                     ],
-                  ),
+                  ],
                 ),
-                const Spacer(),
-                Builder(builder: (context) {
-                  final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
-                  final topicSlug = matchedTopic.slugParent;
-                  final topicUsage = algoProfile != null &&
-                          algoProfile.subtopicWeights.containsKey(topicSlug)
-                      ? algoProfile.normalizeWeight(
-                          algoProfile.subtopicWeights[topicSlug]!)
-                      : null;
-                  return _PulseHighlight(
-                    active: shouldHighlight,
-                    child: TopicPrioritySlider(
-                      currentMultiplier: matchedTopic.priorityMultiplier,
-                      onChanged: (multiplier) async {
+              ),
+              const SizedBox(width: 12),
+              if (isFollowed && matchedTopic != null)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: const BoxDecoration(
+                        color: _terracotta,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Suivi',
+                      style: textTheme.labelMedium?.copyWith(
+                        color: _terracotta,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '/',
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colors.textTertiary,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: () async {
+                        Navigator.pop(context);
                         try {
                           await ref
                               .read(customTopicsProvider.notifier)
-                              .updatePriority(matchedTopic.id, multiplier);
-                        } on DioException catch (e) {
-                          if (context.mounted) {
-                            final detail = e.response?.data;
-                            final msg =
-                                (detail is Map && detail['detail'] is String)
-                                    ? detail['detail'] as String
-                                    : 'Erreur lors de la mise à jour';
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(msg),
-                                duration: const Duration(seconds: 3),
-                              ),
-                            );
-                          }
+                              .unfollowTopic(matchedTopic.id);
+                          NotificationService.showInfo(
+                            '${widget.topicLabel} retiré de vos sujets',
+                          );
+                        } catch (e) {
+                          NotificationService.showError(
+                            'Impossible de retirer le sujet',
+                          );
                         }
                       },
-                      usageWeight: topicUsage,
-                      onReset: topicUsage != null
-                          ? () async {
-                              final client = ref.read(apiClientProvider);
-                              await client.post('/users/subtopics/$topicSlug/reset');
-                              ref.invalidate(algorithmProfileProvider);
-                            }
-                          : null,
+                      child: Text(
+                        'Ne plus suivre',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: colors.error,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
-                  );
-                }),
-              ],
-            ),
+                  ],
+                ),
+            ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: FacteurSpacing.space2),
+
+          // ── Priority rectangle (followed) or Follow button (not followed) ──
+          if (isFollowed && matchedTopic != null)
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: _terracotta.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(FacteurRadius.medium),
+                border: Border.all(color: _terracotta.withOpacity(0.2)),
+              ),
+              child: Builder(builder: (context) {
+                final algoProfile =
+                    ref.watch(algorithmProfileProvider).valueOrNull;
+                final topicSlug = matchedTopic.slugParent;
+                final topicUsage = algoProfile != null &&
+                        algoProfile.subtopicWeights.containsKey(topicSlug)
+                    ? algoProfile.normalizeWeight(
+                        algoProfile.subtopicWeights[topicSlug]!)
+                    : null;
+                return _PulseHighlight(
+                  active: shouldHighlight,
+                  child: TopicPrioritySlider(
+                    currentMultiplier: matchedTopic.priorityMultiplier,
+                    fillWidth: true,
+                    onChanged: (multiplier) async {
+                      try {
+                        await ref
+                            .read(customTopicsProvider.notifier)
+                            .updatePriority(matchedTopic.id, multiplier);
+                      } on DioException catch (e) {
+                        if (context.mounted) {
+                          final detail = e.response?.data;
+                          final msg =
+                              (detail is Map && detail['detail'] is String)
+                                  ? detail['detail'] as String
+                                  : 'Erreur lors de la mise à jour';
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(msg),
+                              duration: const Duration(seconds: 3),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    usageWeight: topicUsage,
+                    onReset: topicUsage != null
+                        ? () async {
+                            final client = ref.read(apiClientProvider);
+                            await client
+                                .post('/users/subtopics/$topicSlug/reset');
+                            ref.invalidate(algorithmProfileProvider);
+                          }
+                        : null,
+                  ),
+                );
+              }),
+            )
+          else ...[
+            _PulseHighlight(
+              active: shouldHighlight,
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () async {
+                    try {
+                      await ref
+                          .read(customTopicsProvider.notifier)
+                          .followTopic(widget.topicLabel,
+                              slugParent: widget.topicSlug);
+                    } on DioException catch (e) {
+                      if (context.mounted) {
+                        final detail = e.response?.data;
+                        final msg = (detail is Map &&
+                                detail['detail'] is String)
+                            ? detail['detail'] as String
+                            : 'Erreur lors de l\'ajout de ${widget.topicLabel}';
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(msg),
+                            duration: const Duration(seconds: 3),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  icon: Icon(PhosphorIcons.plus(), size: 16, color: Colors.white),
+                  label: const Text(
+                    'Suivre ce sujet',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: colorScheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius:
+                          BorderRadius.circular(FacteurRadius.medium),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Center(
+              child: TextButton.icon(
+                style: TextButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  foregroundColor: colors.error,
+                ),
+                onPressed: () async {
+                  try {
+                    final repo = ref.read(personalizationRepositoryProvider);
+                    await repo.muteTopic(widget.topicSlug);
+                    NotificationService.showInfo('Sujet masqué');
+                    if (!mounted) return;
+                    ref.invalidate(personalizationProvider);
+                    Navigator.pop(context);
+                  } catch (e) {
+                    NotificationService.showError(
+                      'Impossible de masquer le sujet',
+                    );
+                  }
+                },
+                icon: Icon(
+                  PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
+                  size: 16,
+                  color: colors.error,
+                ),
+                label: Text(
+                  'Masquer ce sujet',
+                  style: textTheme.labelMedium?.copyWith(
+                    color: colors.error,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+
+        // ── Entities (always visible, no header) ──
+        if (widget.content.entities.isNotEmpty) ...[
+          const SizedBox(height: FacteurSpacing.space4),
+          _buildEntitiesContent(
+              topics: topics, colors: colors, textTheme: textTheme),
+        ],
+
+        // ── Gérer mes intérêts at bottom of SUJETS ──
+        if (widget.topicSlug.isNotEmpty) ...[
+          const SizedBox(height: 4),
           Center(
             child: TextButton.icon(
               style: TextButton.styleFrom(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
@@ -602,130 +636,11 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
             ),
           ),
         ],
-      );
-    }
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _PulseHighlight(
-          active: shouldHighlight,
-          child: SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () async {
-                try {
-                  await ref
-                      .read(customTopicsProvider.notifier)
-                      .followTopic(widget.topicLabel,
-                          slugParent: widget.topicSlug);
-                } on DioException catch (e) {
-                  if (context.mounted) {
-                    final detail = e.response?.data;
-                    final msg = (detail is Map && detail['detail'] is String)
-                        ? detail['detail'] as String
-                        : 'Erreur lors de l\'ajout de ${widget.topicLabel}';
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(msg),
-                        duration: const Duration(seconds: 3),
-                      ),
-                    );
-                  }
-                }
-              },
-              icon: Icon(
-                PhosphorIcons.plus(),
-                size: 16,
-                color: Colors.white,
-              ),
-              label: const Text(
-                'Suivre ce sujet',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 15,
-                ),
-              ),
-              style: FilledButton.styleFrom(
-                backgroundColor: colorScheme.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(FacteurRadius.medium),
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Center(
-          child: TextButton.icon(
-            style: TextButton.styleFrom(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              foregroundColor: colors.error,
-            ),
-            onPressed: () async {
-              try {
-                final repo = ref.read(personalizationRepositoryProvider);
-                await repo.muteTopic(widget.topicSlug);
-                NotificationService.showInfo('Sujet masqué');
-                if (!mounted) return;
-                ref.invalidate(personalizationProvider);
-                Navigator.pop(context);
-              } catch (e) {
-                NotificationService.showError(
-                  'Impossible de masquer le sujet',
-                );
-              }
-            },
-            icon: Icon(
-              PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
-              size: 16,
-              color: colors.error,
-            ),
-            label: Text(
-              'Masquer ce sujet',
-              style: textTheme.labelMedium?.copyWith(
-                color: colors.error,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Center(
-          child: TextButton.icon(
-            style: TextButton.styleFrom(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            onPressed: () {
-              final router = GoRouter.of(context);
-              Navigator.of(context).pop();
-              router.pushNamed(RouteNames.myInterests);
-            },
-            icon: Icon(
-              PhosphorIcons.gear(),
-              size: 14,
-              color: colors.textSecondary,
-            ),
-            label: Text(
-              'Gérer mes intérêts',
-              style: textTheme.labelMedium?.copyWith(
-                color: colors.textSecondary,
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }
 
-  // ── Source content ──
+  // ── Source content (MÉDIA group) ──
 
   Widget _buildSourceContent({
     required ColorScheme colorScheme,
@@ -745,10 +660,132 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
           sourceMatch?.isTrusted == true && sourceMatch?.isMuted != true;
       final isSubscribed = sourceMatch?.hasSubscription ?? false;
 
+      // ── Source header: logo + name/theme + Suivie/Suivre right-aligned ──
+      Widget sourceHeader = Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (widget.content.source.logoUrl != null &&
+              widget.content.source.logoUrl!.isNotEmpty) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.network(
+                widget.content.source.logoUrl!,
+                width: 28,
+                height: 28,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+            const SizedBox(width: 10),
+          ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.content.source.name,
+                  style: textTheme.displaySmall?.copyWith(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (widget.content.source.theme != null &&
+                    widget.content.source.theme!.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    widget.content.source.getThemeLabel(),
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colors.textTertiary,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          if (isTrustedAndActive)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: const BoxDecoration(
+                    color: _terracotta,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Suivie',
+                  style: textTheme.labelMedium?.copyWith(
+                    color: _terracotta,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '/',
+                  style: textTheme.labelSmall?.copyWith(
+                    color: colors.textTertiary,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: () async {
+                    Navigator.pop(context);
+                    try {
+                      await ref
+                          .read(userSourcesProvider.notifier)
+                          .toggleTrust(widget.content.source.id, true);
+                      NotificationService.showInfo(
+                        '${widget.content.source.name} retirée de vos sources',
+                      );
+                    } catch (e) {
+                      NotificationService.showError(
+                        'Impossible de retirer la source',
+                      );
+                    }
+                  },
+                  child: Text(
+                    'Ne plus suivre',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colors.error,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      );
+
+      final Widget manageButton = Center(
+        child: TextButton.icon(
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          onPressed: () {
+            Navigator.of(context).pop();
+            context.pushNamed(RouteNames.sources);
+          },
+          icon: Icon(PhosphorIcons.gear(), size: 14, color: colors.textSecondary),
+          label: Text(
+            'Gérer mes sources',
+            style: textTheme.labelMedium?.copyWith(color: colors.textSecondary),
+          ),
+        ),
+      );
+
       if (!isTrustedAndActive) {
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            sourceHeader,
+            const SizedBox(height: FacteurSpacing.space2),
             _PulseHighlight(
               active: shouldHighlight,
               child: SizedBox(
@@ -760,11 +797,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                         .toggleTrust(widget.content.source.id, false);
                     ref.invalidate(userSourcesProvider);
                   },
-                  icon: Icon(
-                    PhosphorIcons.plus(),
-                    size: 16,
-                    color: Colors.white,
-                  ),
+                  icon: Icon(PhosphorIcons.plus(), size: 16, color: Colors.white),
                   label: const Text(
                     'Suivre cette source',
                     style: TextStyle(
@@ -778,8 +811,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(FacteurRadius.medium),
+                      borderRadius: BorderRadius.circular(FacteurRadius.medium),
                     ),
                   ),
                 ),
@@ -807,31 +839,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
               colors: colors,
             ),
             const SizedBox(height: 8),
-            Center(
-              child: TextButton.icon(
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 4),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  context.pushNamed(RouteNames.sources);
-                },
-                icon: Icon(
-                  PhosphorIcons.gear(),
-                  size: 14,
-                  color: colors.textSecondary,
-                ),
-                label: Text(
-                  'Gérer mes sources',
-                  style: textTheme.labelMedium?.copyWith(
-                    color: colors.textSecondary,
-                  ),
-                ),
-              ),
-            ),
+            manageButton,
           ],
         );
       }
@@ -839,118 +847,48 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          sourceHeader,
+          const SizedBox(height: FacteurSpacing.space2),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: _terracotta.withOpacity(0.08),
               borderRadius: BorderRadius.circular(FacteurRadius.medium),
-              border:
-                  Border.all(color: _terracotta.withOpacity(0.2)),
+              border: Border.all(color: _terracotta.withOpacity(0.2)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 7,
-                              height: 7,
-                              decoration: const BoxDecoration(
-                                color: _terracotta,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Suivie',
-                              style: textTheme.labelMedium?.copyWith(
-                                color: _terracotta,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '/',
-                              style: textTheme.labelSmall?.copyWith(
-                                color: colors.textTertiary,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            GestureDetector(
-                              onTap: () async {
-                                Navigator.pop(context);
-                                try {
-                                  await ref
-                                      .read(userSourcesProvider.notifier)
-                                      .toggleTrust(
-                                          widget.content.source.id, true);
-                                  NotificationService.showInfo(
-                                    '${widget.content.source.name} retirée de vos sources',
-                                  );
-                                } catch (e) {
-                                  NotificationService.showError(
-                                    'Impossible de retirer la source',
-                                  );
-                                }
-                              },
-                              child: Text(
-                                'Ne plus suivre',
-                                style: textTheme.labelSmall?.copyWith(
-                                  color: colors.error,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                Builder(builder: (context) {
+                  final algoProfile =
+                      ref.watch(algorithmProfileProvider).valueOrNull;
+                  final sourceId = widget.content.source.id;
+                  final sourceUsage = algoProfile?.sourceAffinities[sourceId];
+                  return _PulseHighlight(
+                    active: shouldHighlight,
+                    child: PrioritySlider(
+                      currentMultiplier: currentMultiplier,
+                      fillWidth: true,
+                      onChanged: (multiplier) {
+                        ref
+                            .read(userSourcesProvider.notifier)
+                            .updateWeight(widget.content.source.id, multiplier);
+                      },
+                      usageWeight: sourceUsage,
                     ),
-                    Builder(builder: (context) {
-                      final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
-                      final sourceId = widget.content.source.id;
-                      final sourceUsage = algoProfile?.sourceAffinities[sourceId];
-                      return _PulseHighlight(
-                        active: shouldHighlight,
-                        child: PrioritySlider(
-                          currentMultiplier: currentMultiplier,
-                          onChanged: (multiplier) {
-                            ref
-                                .read(userSourcesProvider.notifier)
-                                .updateWeight(
-                                  widget.content.source.id,
-                                  multiplier,
-                                );
-                          },
-                          usageWeight: sourceUsage,
-                        ),
-                      );
-                    }),
-                  ],
-                ),
-                Divider(
-                  color: _terracotta.withOpacity(0.15),
-                  height: 1,
-                ),
+                  );
+                }),
+                Divider(color: _terracotta.withOpacity(0.15), height: 1),
                 const SizedBox(height: 8),
                 Row(
                   children: [
                     Icon(
                       isSubscribed
                           ? PhosphorIcons.crown(PhosphorIconsStyle.fill)
-                          : PhosphorIcons.crown(
-                              PhosphorIconsStyle.regular),
+                          : PhosphorIcons.crown(PhosphorIconsStyle.regular),
                       size: 18,
-                      color: isSubscribed
-                          ? colorScheme.primary
-                          : colors.textSecondary,
+                      color:
+                          isSubscribed ? colorScheme.primary : colors.textSecondary,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -968,9 +906,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                         ref
                             .read(userSourcesProvider.notifier)
                             .toggleSubscription(
-                              widget.content.source.id,
-                              isSubscribed,
-                            );
+                                widget.content.source.id, isSubscribed);
                       },
                       activeTrackColor: colorScheme.primary,
                     ),
@@ -980,31 +916,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
             ),
           ),
           const SizedBox(height: 8),
-          Center(
-            child: TextButton.icon(
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 4),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              onPressed: () {
-                Navigator.of(context).pop();
-                context.pushNamed(RouteNames.sources);
-              },
-              icon: Icon(
-                PhosphorIcons.gear(),
-                size: 14,
-                color: colors.textSecondary,
-              ),
-              label: Text(
-                'Gérer mes sources',
-                style: textTheme.labelMedium?.copyWith(
-                  color: colors.textSecondary,
-                ),
-              ),
-            ),
-          ),
+          manageButton,
         ],
       );
     });

@@ -18,12 +18,14 @@ const Color _terracotta = Color(0xFFE07A5F);
 /// - **Internal fill** = learned usage weight (proportional, theme primary color)
 ///
 /// If [usageWeight] is null, behaves exactly as before (no internal fill).
+/// If [fillWidth] is true, blocks expand to fill the available width (label hidden).
 class PrioritySlider extends StatefulWidget {
   final double currentMultiplier;
   final ValueChanged<double> onChanged;
   final List<String> labels;
   final double? usageWeight;
   final VoidCallback? onReset;
+  final bool fillWidth;
 
   const PrioritySlider({
     super.key,
@@ -32,6 +34,7 @@ class PrioritySlider extends StatefulWidget {
     this.labels = const ['Moins', 'Normal', 'Plus'],
     this.usageWeight,
     this.onReset,
+    this.fillWidth = false,
   });
 
   @override
@@ -109,25 +112,37 @@ class _PrioritySliderState extends State<PrioritySlider>
   }
 
   void _handleTap(TapDownDetails details) {
-    // Blocks are right-aligned; compute tap relative to block area
     final renderBox = context.findRenderObject() as RenderBox?;
     if (renderBox == null) return;
 
     final totalWidth = renderBox.size.width;
-    const blocksWidth = _blockWidth * 3 + _blockGap * 2;
-    final blocksStart = totalWidth - blocksWidth;
-    final tapX = details.localPosition.dx - blocksStart;
+    final tapX = details.localPosition.dx;
 
-    if (tapX < 0) return; // Tapped on label area, ignore
-
-    const blockArea = blocksWidth / 3;
     int tappedCran;
-    if (tapX < blockArea) {
-      tappedCran = 1;
-    } else if (tapX < 2 * blockArea) {
-      tappedCran = 2;
+    if (widget.fillWidth) {
+      // In full-width mode blocks cover the entire width equally
+      final zoneWidth = totalWidth / 3;
+      if (tapX < zoneWidth) {
+        tappedCran = 1;
+      } else if (tapX < 2 * zoneWidth) {
+        tappedCran = 2;
+      } else {
+        tappedCran = 3;
+      }
     } else {
-      tappedCran = 3;
+      // Compact mode: blocks are right-aligned
+      const blocksWidth = _blockWidth * 3 + _blockGap * 2;
+      final blocksStart = totalWidth - blocksWidth;
+      final localTapX = tapX - blocksStart;
+      if (localTapX < 0) return;
+      const blockArea = blocksWidth / 3;
+      if (localTapX < blockArea) {
+        tappedCran = 1;
+      } else if (localTapX < 2 * blockArea) {
+        tappedCran = 2;
+      } else {
+        tappedCran = 3;
+      }
     }
 
     if (tappedCran != _currentCran) {
@@ -140,6 +155,41 @@ class _PrioritySliderState extends State<PrioritySlider>
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+
+    if (widget.fillWidth) {
+      return GestureDetector(
+        onTapDown: _handleTap,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: AnimatedBuilder(
+            animation: _popAnimation,
+            builder: (context, _) {
+              return Row(
+                mainAxisSize: MainAxisSize.max,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    _label,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: _buildFlexBlock(1, colors)),
+                  const SizedBox(width: _blockGap),
+                  Expanded(child: _buildFlexBlock(2, colors)),
+                  const SizedBox(width: _blockGap),
+                  Expanded(child: _buildFlexBlock(3, colors)),
+                ],
+              );
+            },
+          ),
+        ),
+      );
+    }
 
     return GestureDetector(
       onTapDown: _handleTap,
@@ -211,7 +261,6 @@ class _PrioritySliderState extends State<PrioritySlider>
           borderRadius: BorderRadius.circular(3),
           child: Stack(
             children: [
-              // Base layer: border/background (existing behavior)
               Container(
                 width: _blockWidth,
                 height: _blockHeight,
@@ -219,13 +268,46 @@ class _PrioritySliderState extends State<PrioritySlider>
                     ? _terracotta
                     : colors.textTertiary.withOpacity(0.3),
               ),
-              // Overlay: internal fill proportional to usage weight
               if (fillRatio > 0)
                 Positioned(
                   left: 0,
                   top: 0,
                   bottom: 0,
                   width: _blockWidth * fillRatio,
+                  child: Container(
+                    color: colors.textSecondary.withOpacity(filled ? 0.5 : 0.3),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFlexBlock(int cran, FacteurColors colors) {
+    final filled = _currentCran >= cran;
+    final shouldPop = _poppedBlock == cran && _popController.isAnimating;
+    final scale = shouldPop ? _popAnimation.value : 1.0;
+    final fillRatio = _blockFillRatio(cran);
+    return Transform.scale(
+      scale: scale,
+      child: SizedBox(
+        height: _blockHeight,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Container(
+                color: filled
+                    ? _terracotta
+                    : colors.textTertiary.withOpacity(0.3),
+              ),
+              if (fillRatio > 0)
+                FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: fillRatio,
                   child: Container(
                     color: colors.textSecondary.withOpacity(filled ? 0.5 : 0.3),
                   ),
