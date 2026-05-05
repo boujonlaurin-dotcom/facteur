@@ -88,8 +88,16 @@ class Step3SourcesScreen extends ConsumerWidget {
                     padding: EdgeInsets.symmetric(vertical: 24),
                     child: Center(child: CircularProgressIndicator()),
                   ),
-                  error: (_, __) =>
-                      _MockSourcesFallback(state: state, notifier: notifier),
+                  error: (_, __) => _MockSourcesFallback(
+                    state: state,
+                    notifier: notifier,
+                    onRetry: params == null
+                        ? null
+                        : () => ref
+                            .read(veilleSourceSuggestionsProvider(params)
+                                .notifier)
+                            .refreshKeepingChecked(state.selectedSourceIds),
+                  ),
                   data: (resp) => _ApiSourceList(
                     resp: resp,
                     state: state,
@@ -213,7 +221,12 @@ class _ApiSourceList extends StatelessWidget {
 class _MockSourcesFallback extends StatelessWidget {
   final VeilleConfigState state;
   final VeilleConfigNotifier notifier;
-  const _MockSourcesFallback({required this.state, required this.notifier});
+  final VoidCallback? onRetry;
+  const _MockSourcesFallback({
+    required this.state,
+    required this.notifier,
+    this.onRetry,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -224,11 +237,27 @@ class _MockSourcesFallback extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.only(bottom: 12),
-          child: Text(
-            'Suggestions indisponibles, conserve ta sélection.',
-            style: TextStyle(fontSize: 12, color: Color(0xFF8B7E63)),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Suggestions indisponibles, conserve ta sélection.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF8B7E63)),
+                ),
+              ),
+              if (onRetry != null)
+                TextButton.icon(
+                  onPressed: onRetry,
+                  icon: Icon(PhosphorIcons.arrowClockwise(), size: 16),
+                  label: const Text('Réessayer'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF8B7E63),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                ),
+            ],
           ),
         ),
         for (int i = 0; i < allMockSources.length; i++) ...[

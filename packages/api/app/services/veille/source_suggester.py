@@ -12,10 +12,12 @@ Sans `MISTRAL_API_KEY`, fallback déterministe sur 5 sources curées du même th
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
+import sentry_sdk
 import structlog
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
@@ -34,6 +36,14 @@ logger = structlog.get_logger()
 # `ck_source_theme_valid` : un INSERT avec un theme hors liste empoisonne
 # la session (PendingRollbackError sur tout commit ultérieur).
 _ALLOWED_SOURCE_THEMES = frozenset(VeilleThemeSlug.__args__)
+
+# Cap par candidat (HTTP detect + flush DB). Au-delà, on skip pour ne pas
+# bloquer le pipeline sur un domaine qui hang (cf. bug-veille-suggestions
+# -sources-pending-rollback : binge.audio/feed/ retry 22× = 3min wall).
+_HYDRATE_TIMEOUT_S = 8.0
+
+# Cap global sur l'appel LLM (Mistral). Sur timeout → fallback curé.
+_LLM_TIMEOUT_S = 20.0
 
 
 @dataclass(frozen=True)
@@ -131,32 +141,67 @@ class SourceSuggester:
                 f"Brief éditorial : {editorial_brief or '(aucun)'}\n\n"
                 f"Propose 8 à 12 sources rankées par pertinence pour ces topics et ce brief."
             )
-            raw = await self._llm.chat_json(
-                system=_SOURCES_SYSTEM_PROMPT,
-                user_message=user_message,
-                model="mistral-large-latest",
-                temperature=0.4,
-                max_tokens=1500,
-            )
-            candidates = self._parse_candidates(raw)
+            try:
+                raw = await asyncio.wait_for(
+                    self._llm.chat_json(
+                        system=_SOURCES_SYSTEM_PROMPT,
+                        user_message=user_message,
+                        model="mistral-large-latest",
+                        temperature=0.4,
+                        max_tokens=1500,
+                    ),
+                    timeout=_LLM_TIMEOUT_S,
+                )
+                candidates = self._parse_candidates(raw)
+            except TimeoutError:
+                logger.warning(
+                    "source_suggester.llm_timeout",
+                    timeout_s=_LLM_TIMEOUT_S,
+                    theme_id=theme_id,
+                )
+                # Fallback curé — pas de sentry capture (timeout LLM = condition
+                # business connue, pas un bug applicatif).
 
         if not candidates:
             sources = await self._fallback(session, theme_id, excluded, followed_ids)
             return SourceSuggestions(sources=sources)
 
-        # Hydrate / ingère + dédup par domaine (keep highest score)
+        # Hydrate / ingère + dédup par domaine (keep highest score).
+        # Chaque candidat est isolé dans un SAVEPOINT + cappé à 8 s :
+        # - savepoint évite qu'une `IntegrityError` (feed_url unique, name >
+        #   200 chars) empoisonne la session pour les candidats suivants ;
+        # - timeout évite qu'un mauvais URL fasse hang RSSParser (cf. bug
+        #   binge.audio/feed/ retry 22× = 3 min wall).
         by_domain: dict[str, tuple[Source, _LLMSourceCandidate]] = {}
         source_service = SourceService(session)
         for cand in candidates:
             try:
-                hydrated = await self._hydrate_or_ingest(
-                    session, source_service, cand, theme_id
+                async with session.begin_nested():
+                    hydrated = await asyncio.wait_for(
+                        self._hydrate_or_ingest(
+                            session, source_service, cand, theme_id
+                        ),
+                        timeout=_HYDRATE_TIMEOUT_S,
+                    )
+            except TimeoutError:
+                logger.warning(
+                    "source_suggester.candidate_timeout",
+                    name=cand.name,
+                    url=cand.url,
+                    timeout_s=_HYDRATE_TIMEOUT_S,
                 )
+                continue
             except Exception as exc:
+                # Sentry capture obligatoire : sans ça on perd la cause
+                # racine des `flush()` qui foirent (ck_source_theme_valid,
+                # feed_url unique, name overflow…) et on ne peut pas
+                # itérer sur les vraies failures.
+                sentry_sdk.capture_exception(exc)
                 logger.warning(
                     "source_suggester.hydrate_failed",
                     name=cand.name,
                     url=cand.url,
+                    error_class=type(exc).__name__,
                     error=str(exc),
                 )
                 continue
