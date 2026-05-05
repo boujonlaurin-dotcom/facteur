@@ -64,7 +64,7 @@ Hotfix critique sur le bug "loading infini" perçu en Step 3 de l'onboarding vei
 - Le candidat fautif est remonté à Sentry via `sentry_sdk.capture_exception`.
 
 ## Critères d'acceptation
-- [ ] **Backend** : `pytest tests/test_veille_source_ingestion.py` → 16 tests verts (incluant 4 nouveaux : `test_failing_candidate_does_not_poison_others`, `test_session_recovers_from_integrity_error`, `test_slow_candidate_is_skipped`, `test_llm_timeout_falls_back_to_curated`).
+- [ ] **Backend** : `pytest tests/test_veille_source_ingestion.py` → tests verts (incluant 3 nouveaux : `test_session_recovers_from_integrity_error`, `test_slow_candidate_is_skipped`, `test_llm_timeout_falls_back_to_curated`).
 - [ ] **Mobile** : `flutter test test/features/veille/screens/step3_sources_screen_test.dart` → 1 test vert (bouton Réessayer présent + cliquable + déclenche fetch).
 - [ ] **Sentry** : zéro nouvelle occurrence PYTHON-3P 24 h après merge en prod.
 - [ ] **Supabase** : `SELECT count(*) FROM sources WHERE created_at > NOW() - INTERVAL '24 hours' AND is_curated = false` > 0 (preuve qu'au moins une ingestion réussit).

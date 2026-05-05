@@ -37,9 +37,9 @@ logger = structlog.get_logger()
 # la session (PendingRollbackError sur tout commit ultérieur).
 _ALLOWED_SOURCE_THEMES = frozenset(VeilleThemeSlug.__args__)
 
-# Cap par candidat (HTTP detect + flush DB). Au-delà, on skip pour ne pas
-# bloquer le pipeline sur un domaine qui hang (cf. bug-veille-suggestions
-# -sources-pending-rollback : binge.audio/feed/ retry 22× = 3min wall).
+# Cap par candidat (HTTP detect via RSSParser teste plusieurs variants
+# suffix avec httpx 7s + curl-cffi 10s). Sans cap, un seul URL qui hang
+# gèle le pipeline complet pour les 7-11 candidats restants.
 _HYDRATE_TIMEOUT_S = 8.0
 
 # Cap global sur l'appel LLM (Mistral). Sur timeout → fallback curé.
@@ -167,11 +167,10 @@ class SourceSuggester:
             return SourceSuggestions(sources=sources)
 
         # Hydrate / ingère + dédup par domaine (keep highest score).
-        # Chaque candidat est isolé dans un SAVEPOINT + cappé à 8 s :
-        # - savepoint évite qu'une `IntegrityError` (feed_url unique, name >
-        #   200 chars) empoisonne la session pour les candidats suivants ;
-        # - timeout évite qu'un mauvais URL fasse hang RSSParser (cf. bug
-        #   binge.audio/feed/ retry 22× = 3 min wall).
+        # Chaque candidat est isolé dans un SAVEPOINT : sans ça, une
+        # `IntegrityError` au flush() (feed_url unique, name overflow…)
+        # empoisonne la session pour tous les candidats suivants
+        # (PendingRollbackError au commit final).
         by_domain: dict[str, tuple[Source, _LLMSourceCandidate]] = {}
         source_service = SourceService(session)
         for cand in candidates:
@@ -192,10 +191,9 @@ class SourceSuggester:
                 )
                 continue
             except Exception as exc:
-                # Sentry capture obligatoire : sans ça on perd la cause
-                # racine des `flush()` qui foirent (ck_source_theme_valid,
-                # feed_url unique, name overflow…) et on ne peut pas
-                # itérer sur les vraies failures.
+                # Sentry capture obligatoire : le `logger.warning` seul ne
+                # remonte pas la stack ; sans ça on perd la cause racine
+                # des flush() qui foirent et on ne peut pas itérer dessus.
                 sentry_sdk.capture_exception(exc)
                 logger.warning(
                     "source_suggester.hydrate_failed",
