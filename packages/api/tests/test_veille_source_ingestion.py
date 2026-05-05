@@ -588,3 +588,43 @@ class TestLLMTimeout:
         # Bascule sur le fallback curé.
         assert len(result.sources) == 3
         assert all(s.relevance_score is None for s in result.sources)
+
+
+class TestNoTxDuringLLM:
+    """Anti-régression : aucune requête DB ne doit ouvrir une transaction
+    AVANT l'appel LLM. Sinon la tx reste idle pendant l'appel réseau et
+    `idle_in_transaction_session_timeout` (10 s, cf. database.py:166) tue
+    la connexion → PendingRollbackError au commit final (PYTHON-3P)."""
+
+    async def test_followed_ids_query_runs_after_llm(self, db_session, test_user):
+        order: list[str] = []
+
+        llm = AsyncMock()
+        llm.is_ready = True
+
+        async def _record_chat(*args, **kwargs):
+            order.append("llm")
+            return {"sources": []}
+
+        llm.chat_json = _record_chat
+        suggester = SourceSuggester(llm=llm)
+
+        original_followed = suggester._followed_source_ids
+
+        async def _record_followed(session, user_id):
+            order.append("followed_ids")
+            return await original_followed(session, user_id)
+
+        suggester._followed_source_ids = _record_followed
+
+        await suggester.suggest_sources(
+            session=db_session,
+            user_id=test_user.user_id,
+            theme_id="science",
+            topic_labels=[],
+        )
+
+        assert order == ["llm", "followed_ids"], (
+            "LLM doit être appelé AVANT la SELECT user_sources, sinon la tx "
+            "reste idle pendant l'appel Mistral et PG tue la connexion."
+        )
