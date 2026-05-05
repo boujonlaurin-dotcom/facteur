@@ -154,3 +154,24 @@ Aucune donnée ne change pendant le stamp ; seul `alembic_version` est touché. 
 - Plan complet : `~/.claude/plans/this-is-the-error-sharded-pine.md`
 - Doc associée NER : `docs/maintenance/maintenance-ner-disabled.md`
 - Doc historique des collisions Alembic : `docs/maintenance/maintenance-alembic-revision-collisions-feb26.md`
+
+---
+
+## Closure (2026-05-05)
+
+**Statut : LIVRÉ.** PR [#515](https://github.com/boujonlaurin-dotcom/facteur/pull/515) mergée le 2026-05-05. Prod stampée à `00000_baseline` ; déploiement Railway suivant : OK (alembic upgrade head = no-op, conteneur boote normalement).
+
+### Différences vs le plan original
+
+- **Refresh du snapshot.** Le `prod-schema-2026-04-30.sql` initialement préparé est devenu obsolète pendant les 5 jours où la PR a attendu une fenêtre calme : 8 migrations supplémentaires ont landé sur `main` (`en01`, `gn01`, `lf01`, `ls01`, `sp01`, `tr01`, `vl01`, `vp01`). On a re-dumpé prod le 2026-05-05 (`prod-schema-2026-05-05.sql`, 2004 lignes, 42 tables) et archivé ces 8 fichiers en plus → **81 migrations archivées au total** (vs 74 initialement prévues).
+- **Sanitize.py durci pour pg_dump 17.x.** Le snapshot 04-30 venait du dashboard Supabase (syntax `CREATE TABLE IF NOT EXISTS "public"."foo"`). Le 05-05 a été pris via `pg_dump 17.9` (Homebrew), qui produit `CREATE TABLE public.foo` — moins idempotent et avec des particularités (`\restrict`/`\unrestrict` meta-commands, identifiants non quotés, `CREATE FUNCTION` au lieu de `CREATE OR REPLACE FUNCTION`). `sanitize.py` a été élargi pour gérer les deux dialectes.
+- **`Dockerfile` exécute `alembic upgrade head` au boot.** La règle CLAUDE.md "jamais d'exécution sur Railway" était fausse depuis longtemps. Découvert pendant la cérémonie de stamp ; documenté dans le runbook + corrigé dans CLAUDE.md.
+- **`alembic stamp` a nécessité `--purge`.** Sans `--purge`, alembic essaie de résoudre la révision courante (`ls01`, archivée) et plante avec `Can't locate revision identified by 'ls01'`. `--purge` vide `alembic_version` puis insère le stamp, ce qui contourne la résolution.
+
+### Drift audit Phase 4 — encore à traiter
+
+Les findings listés plus haut (host_feed_resolutions manquant en prod, tables orphelines `app_config`/`article_feedback`/`source_search_cache`, alignements NOT NULL, etc.) ne sont **pas adressés** par la PR #515. Ils restent ouverts comme PRs forward de suivi.
+
+### Runbook de récupération
+
+Si la chaîne re-drift dans le futur, suivre [`docs/runbooks/recover-from-alembic-drift.md`](../runbooks/recover-from-alembic-drift.md) — basé directement sur ce qu'on a fait ce coup-ci.
