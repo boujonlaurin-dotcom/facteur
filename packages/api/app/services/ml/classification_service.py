@@ -45,7 +45,12 @@ def _validate_entities(raw_entities: list) -> list[dict]:
     return entities
 
 
-_EMPTY_RESULT: dict = {"topics": [], "serene": None, "entities": []}
+_EMPTY_RESULT: dict = {
+    "topics": [],
+    "serene": None,
+    "good_news": None,
+    "entities": [],
+}
 
 
 # 51 topic slugs in the Facteur taxonomy
@@ -260,6 +265,25 @@ serene = false : tout sujet susceptible de provoquer de l'anxiété chez le lect
 Règle : si le sujet principal de l'article est anxiogène, même partiellement, marque false.
 En cas de doute, marque false.
 
+## BONNE NOUVELLE
+Pour chaque article, détermine "good_news": true ou false.
+good_news = true UNIQUEMENT si l'article rapporte une VRAIE bonne nouvelle, c'est-à-dire :
+- Un progrès tangible et concret (avancée scientifique réalisée, traitement médical efficace, libération, sauvetage, réussite environnementale mesurée)
+- Un impact positif net sur la vie des gens, l'environnement ou la société
+- Quelque chose qui suscite un optimisme fondé, donne de l'espoir, donne envie d'en savoir plus
+
+good_news = false dans TOUS les autres cas, en particulier :
+- Sport (résultats de match, exploits sportifs anodins, transferts) → toujours false
+- Politique : votes, lois, déclarations, polémiques → false (sauf signal d'espoir EXPLICITE et MAJEUR : accord de paix signé, abolition concrète d'une oppression)
+- People, célébrités, buzz, divertissement médiatique, lifestyle léger → false
+- Annonces, intentions, promesses, projets sans réalisation → false
+- Nouveautés tech/produits commerciaux (sortie d'iPhone, IA d'OpenAI) → false sauf bénéfice humain direct et démontré
+- Sujets simplement "neutres" ou "non-anxiogènes" → false (l'absence de mauvaise nouvelle n'est PAS une bonne nouvelle)
+- Tout sujet anxiogène → false
+
+Règle d'or : en cas de doute, marque false. On préfère manquer une bonne nouvelle que d'en signaler une fausse.
+Une bonne nouvelle peut être marquée serene=true ET good_news=true. L'inverse n'est PAS automatique : la majorité des serene=true ne sont PAS good_news=true.
+
 ## ENTITÉS NOMMÉES
 Pour chaque article, extrais 3 à 5 entités nommées principales.
 Types autorisés : PERSON, ORG, EVENT, LOCATION, PRODUCT
@@ -281,7 +305,7 @@ Règles :
 
 ## FORMAT
 Réponds en JSON array. Chaque élément :
-{"topics": ["slug1", "slug2"], "serene": true/false, "entities": [{"name": "Nom Complet", "type": "PERSON"}]}
+{"topics": ["slug1", "slug2"], "serene": true/false, "good_news": true/false, "entities": [{"name": "Nom Complet", "type": "PERSON"}]}
 Pas de texte avant ou après."""
 
 CLASSIFICATION_MODEL = "mistral-small-latest"
@@ -552,9 +576,10 @@ class ClassificationService:
         return (
             f"Classifie chacun de ces {len(items)} articles.\n"
             f"Réponds en JSON array de exactement {len(items)} éléments.\n"
-            'Exemple pour 2 articles: [{"topics": ["politics", "europe"], "serene": false, '
+            'Exemple pour 2 articles: [{"topics": ["politics", "europe"], "serene": false, "good_news": false, '
             '"entities": [{"name": "Emmanuel Macron", "type": "PERSON"}]}, '
-            '{"topics": ["ai", "tech"], "serene": true, "entities": [{"name": "OpenAI", "type": "ORG"}]}]\n\n'
+            '{"topics": ["health", "science"], "serene": true, "good_news": true, '
+            '"entities": [{"name": "Institut Pasteur", "type": "ORG"}]}]\n\n'
             f"{articles_text}"
         )
 
@@ -574,10 +599,14 @@ class ClassificationService:
                 serene = parsed.get("serene")
                 if not isinstance(serene, bool):
                     serene = None
+                good_news = parsed.get("good_news")
+                if not isinstance(good_news, bool):
+                    good_news = None
                 entities = _validate_entities(parsed.get("entities", []))
                 return {
                     "topics": topics[:top_k],
                     "serene": serene,
+                    "good_news": good_news,
                     "entities": entities,
                 }
             if (
@@ -594,10 +623,14 @@ class ClassificationService:
                 serene = item.get("serene")
                 if not isinstance(serene, bool):
                     serene = None
+                good_news = item.get("good_news")
+                if not isinstance(good_news, bool):
+                    good_news = None
                 entities = _validate_entities(item.get("entities", []))
                 return {
                     "topics": topics[:top_k],
                     "serene": serene,
+                    "good_news": good_news,
                     "entities": entities,
                 }
         except (json.JSONDecodeError, TypeError):
@@ -607,7 +640,12 @@ class ClassificationService:
         clean = raw.strip('"').strip("'").strip("`")
         slugs = [s.strip().lower() for s in clean.split(",")]
         valid = [s for s in slugs if s in VALID_TOPIC_SLUGS]
-        return {"topics": valid[:top_k], "serene": None, "entities": []}
+        return {
+            "topics": valid[:top_k],
+            "serene": None,
+            "good_news": None,
+            "entities": [],
+        }
 
     def _parse_batch_response(
         self, raw: str, expected_count: int, top_k: int
@@ -639,11 +677,15 @@ class ClassificationService:
                             serene = item.get("serene")
                             if not isinstance(serene, bool):
                                 serene = None
+                            good_news = item.get("good_news")
+                            if not isinstance(good_news, bool):
+                                good_news = None
                             entities = _validate_entities(item.get("entities", []))
                             results.append(
                                 {
                                     "topics": topics[:top_k],
                                     "serene": serene,
+                                    "good_news": good_news,
                                     "entities": entities,
                                 }
                             )
@@ -670,6 +712,7 @@ class ClassificationService:
                                 {
                                     "topics": valid[:top_k],
                                     "serene": None,
+                                    "good_news": None,
                                     "entities": [],
                                 }
                             )
@@ -690,7 +733,14 @@ class ClassificationService:
             clean = line.strip("[]").strip()
             slugs = [s.strip().strip('"').strip("'").lower() for s in clean.split(",")]
             valid = [s for s in slugs if s in VALID_TOPIC_SLUGS]
-            results.append({"topics": valid[:top_k], "serene": None, "entities": []})
+            results.append(
+                {
+                    "topics": valid[:top_k],
+                    "serene": None,
+                    "good_news": None,
+                    "entities": [],
+                }
+            )
 
         while len(results) < expected_count:
             results.append(_EMPTY_RESULT)

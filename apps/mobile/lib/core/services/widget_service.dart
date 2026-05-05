@@ -24,31 +24,39 @@ class WidgetService {
   static const _maxArticles = 5;
   static final _dio = Dio();
 
-  /// Update the home screen widget with the latest digest and streak data.
+  /// Update the home screen widget with the latest digest and/or streak data.
+  ///
+  /// Each parameter is independent: passing only `streak` will refresh the
+  /// streak counter without touching `articles_json`. This avoids wiping
+  /// previously saved articles when streak refresh fires after digest fetch.
   static Future<void> updateWidget({
     DigestResponse? digest,
     StreakModel? streak,
   }) async {
     try {
-      final articles = await _buildArticleList(digest);
+      if (digest != null) {
+        final articles = await _buildArticleList(digest);
+        await HomeWidget.saveWidgetData(
+          'articles_json',
+          jsonEncode(articles),
+        );
+        await HomeWidget.saveWidgetData(
+          'articles_updated_at',
+          '${DateTime.now().millisecondsSinceEpoch}',
+        );
+        await HomeWidget.saveWidgetData(
+          'digest_status',
+          _computeStatus(digest),
+        );
+        await HomeWidget.saveWidgetData(
+          'digest_progress',
+          _computeProgress(digest),
+        );
+      }
 
-      await HomeWidget.saveWidgetData(
-        'articles_json',
-        jsonEncode(articles),
-      );
-      await HomeWidget.saveWidgetData(
-        'articles_updated_at',
-        '${DateTime.now().millisecondsSinceEpoch}',
-      );
-      await HomeWidget.saveWidgetData('digest_status', _computeStatus(digest));
-      await HomeWidget.saveWidgetData(
-        'digest_progress',
-        _computeProgress(digest),
-      );
-      await HomeWidget.saveWidgetData(
-        'streak',
-        '${streak?.currentStreak ?? 0}',
-      );
+      if (streak != null) {
+        await HomeWidget.saveWidgetData('streak', '${streak.currentStreak}');
+      }
 
       await HomeWidget.updateWidget(androidName: _androidName);
     } catch (e) {

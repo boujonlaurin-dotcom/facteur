@@ -83,12 +83,15 @@ from app.routers import (
     feed,
     images,
     internal,
+    letters,
+    notification_preferences,
     personalization,
     progress,
     sources,
     streaks,
     subscription,
     users,
+    veille,
     waitlist,
     webhooks,
     well_informed,
@@ -272,9 +275,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
             async with _STARTUP_CATCHUP_LOCK:
                 try:
-                    from datetime import datetime
-                    from zoneinfo import ZoneInfo
-
                     from sqlalchemy import func
                     from sqlalchemy import select as sa_select
 
@@ -282,11 +282,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     from app.jobs.digest_generation_job import run_digest_generation
                     from app.models.daily_digest import DailyDigest
                     from app.models.user import UserProfile
+                    from app.utils.time import now_paris
+                    from app.workers.scheduler import DIGEST_CRON_HOUR_PARIS
 
                     await asyncio.sleep(60)
 
+                    # Avant l'heure du cron, on laisse le scheduler générer à
+                    # 06:00 Paris : un deploy Railway entre 00:00 et 06:00
+                    # déclencherait sinon une génération à minuit avec un RSS
+                    # pas encore rafraîchi → digest pauvre.
+                    now = now_paris()
+                    if now.hour < DIGEST_CRON_HOUR_PARIS:
+                        logger.info(
+                            "digest_startup_catchup_too_early",
+                            now_paris=str(now),
+                            target_date=str(now.date()),
+                            cron_hour=DIGEST_CRON_HOUR_PARIS,
+                        )
+                        return
+
                     async with safe_async_session() as session:
-                        today = datetime.now(ZoneInfo("Europe/Paris")).date()
+                        today = now.date()
 
                         total_users = await session.scalar(
                             sa_select(func.count()).select_from(UserProfile)
@@ -428,6 +444,11 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"]
 app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
 app.include_router(progress.router, prefix="/api/progress", tags=["Progress"])
 app.include_router(
+    notification_preferences.router,
+    prefix="/api/notification-preferences",
+    tags=["NotificationPreferences"],
+)
+app.include_router(
     personalization.router,
     prefix="/api/users/personalization",
     tags=["Personalization"],
@@ -447,6 +468,8 @@ app.include_router(
     prefix="/api/well-informed",
     tags=["WellInformed"],
 )
+app.include_router(veille.router, prefix="/api/veille", tags=["Veille"])
+app.include_router(letters.router, prefix="/api/letters", tags=["Letters"])
 
 
 @app.exception_handler(Exception)

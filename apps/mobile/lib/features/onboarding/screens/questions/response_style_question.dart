@@ -21,53 +21,62 @@ class ResponseStyleQuestion extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 2),
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: FacteurSpacing.space8),
 
-          // Question
-          Text(
-            OnboardingStrings.q6Title,
-            style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space8),
-
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: BinarySelectionCard(
-                    emoji: '⚔️', // Tranché
-                    label: OnboardingStrings.q6DecisiveLabel,
-                    subtitle: OnboardingStrings.q6DecisiveSubtitle,
-                    isSelected: selectedStyle == 'decisive',
-                    onTap: () {
-                      ref
-                          .read(onboardingProvider.notifier)
-                          .selectResponseStyle('decisive');
-                    },
+                  Text(
+                    OnboardingStrings.q6Title,
+                    style: Theme.of(context).textTheme.displayLarge,
+                    textAlign: TextAlign.center,
                   ),
-                ),
-                const SizedBox(width: FacteurSpacing.space3),
-                Expanded(
-                  child: BinarySelectionCard(
-                    emoji: '⚖️', // Nuancé
-                    label: OnboardingStrings.q6NuancedLabel,
-                    subtitle: OnboardingStrings.q6NuancedSubtitle,
-                    isSelected: selectedStyle == 'nuanced',
-                    onTap: () {
-                      ref
-                          .read(onboardingProvider.notifier)
-                          .selectResponseStyle('nuanced');
-                    },
+
+                  const SizedBox(height: FacteurSpacing.space8),
+
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: BinarySelectionCard(
+                            emoji: '⚔️',
+                            label: OnboardingStrings.q6DecisiveLabel,
+                            subtitle: OnboardingStrings.q6DecisiveSubtitle,
+                            isSelected: selectedStyle == 'decisive',
+                            onTap: () {
+                              ref
+                                  .read(onboardingProvider.notifier)
+                                  .selectResponseStyle('decisive');
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: FacteurSpacing.space3),
+                        Expanded(
+                          child: BinarySelectionCard(
+                            emoji: '⚖️',
+                            label: OnboardingStrings.q6NuancedLabel,
+                            subtitle: OnboardingStrings.q6NuancedSubtitle,
+                            isSelected: selectedStyle == 'nuanced',
+                            onTap: () {
+                              ref
+                                  .read(onboardingProvider.notifier)
+                                  .selectResponseStyle('nuanced');
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+
+                  const SizedBox(height: FacteurSpacing.space6),
+                ],
+              ),
             ),
           ),
-
-          const Spacer(flex: 3),
 
           DelayedContinueButton(
             visible: selectedStyle != null,

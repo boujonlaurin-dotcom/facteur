@@ -203,6 +203,36 @@ class SourcesRepository {
     }
   }
 
+  Future<List<Source>> getPepites({int limit = 10}) async {
+    try {
+      final response = await _apiClient.dio
+          .get<dynamic>('sources/pepites', queryParameters: {'limit': limit});
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data is List) {
+          return data
+              .map((json) => Source.fromJson(json as Map<String, dynamic>))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      // ignore: avoid_print
+      print('SourcesRepository: [ERROR] getPepites: $e');
+      return [];
+    }
+  }
+
+  Future<void> dismissPepiteCarousel() async {
+    try {
+      await _apiClient.dio.post<dynamic>('sources/pepites/dismiss');
+    } catch (e) {
+      // ignore: avoid_print
+      print('SourcesRepository: [ERROR] dismissPepiteCarousel: $e');
+      rethrow;
+    }
+  }
+
   Future<ThemeSourcesResponse> getSourcesByTheme(String slug) async {
     try {
       final response =

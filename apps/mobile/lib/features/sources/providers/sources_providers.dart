@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/api/api_client.dart';
 import '../../feed/repositories/personalization_repository.dart';
+import '../../lettres/providers/letters_provider.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../models/theme_source_model.dart';
@@ -29,7 +32,7 @@ final smartSearchProvider = FutureProvider.family<SmartSearchResponse,
 
 final trendingSourcesProvider = FutureProvider<List<Source>>((ref) async {
   final repository = ref.watch(sourcesRepositoryProvider);
-  return repository.getTrendingSources(limit: 10);
+  return repository.getTrendingSources(limit: 30);
 });
 
 final themesFollowedProvider =
@@ -48,6 +51,34 @@ final userSourcesProvider =
     AsyncNotifierProvider<UserSourcesNotifier, List<Source>>(() {
   return UserSourcesNotifier();
 });
+
+/// Pépites — sources curées poussées dans le feed.
+/// Liste vide si aucun trigger actif, rate-limit, ou cool-down côté backend.
+final pepitesProvider =
+    AsyncNotifierProvider<PepitesNotifier, List<Source>>(() {
+  return PepitesNotifier();
+});
+
+class PepitesNotifier extends AsyncNotifier<List<Source>> {
+  @override
+  Future<List<Source>> build() async {
+    final repository = ref.watch(sourcesRepositoryProvider);
+    return repository.getPepites();
+  }
+
+  /// Dismiss le carousel côté backend + vide l'état local.
+  Future<void> dismiss() async {
+    final repository = ref.read(sourcesRepositoryProvider);
+    state = const AsyncValue.data([]);
+    try {
+      await repository.dismissPepiteCarousel();
+    } catch (e, stack) {
+      // ignore: avoid_print
+      print('PepitesNotifier: [ERROR] dismiss failed: $e\n$stack');
+    }
+  }
+
+}
 
 class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
   @override
@@ -136,6 +167,8 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
     try {
       await repository.updateSourceSubscription(
           sourceId, !currentlySubscribed);
+      // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
+      unawaited(ref.read(lettersProvider.notifier).silentRefresh());
     } catch (e, stack) {
       // ignore: avoid_print
       print(

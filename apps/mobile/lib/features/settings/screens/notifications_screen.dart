@@ -4,10 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/api/notification_preferences_api_service.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../notifications/widgets/preset_selector.dart';
+import '../../notifications/widgets/time_slot_selector.dart';
 import '../providers/notifications_settings_provider.dart';
 
-/// Écran de gestion des préférences de notifications
+/// Écran de gestion des préférences de notifications.
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
 
@@ -15,6 +18,7 @@ class NotificationsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     final settings = ref.watch(notificationsSettingsProvider);
+    final notifier = ref.read(notificationsSettingsProvider.notifier);
 
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
@@ -24,81 +28,71 @@ class NotificationsScreen extends ConsumerWidget {
         elevation: 0,
         titleTextStyle: Theme.of(context).textTheme.displaySmall,
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(FacteurSpacing.space4),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Section Toggles
-            Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: colors.surface,
-                borderRadius: BorderRadius.circular(FacteurRadius.large),
-                border: Border.all(color: colors.surfaceElevated),
-              ),
-              child: Column(
-                children: [
-                  // Push Notifications
-                  _buildToggleTile(
-                    context,
-                    icon: Icons.notifications_active_outlined,
-                    title: 'Notifications push',
-                    subtitle: 'Recevoir des alertes sur votre appareil',
-                    value: settings.pushEnabled,
-                    onChanged: (value) {
-                      final previous = settings.pushEnabled;
-                      ref
-                          .read(notificationsSettingsProvider.notifier)
-                          .setPushEnabled(value);
-                      // Sprint 2 PR1 — fire optimistically on the tap; the
-                      // actual setPushEnabled may bail if OS permission is
-                      // denied, but the intent-to-change is the metric we
-                      // want (engagement with the toggle).
-                      unawaited(
-                        ref.read(analyticsServiceProvider).trackPreferenceChanged(
-                              key: 'notifications_push_enabled',
-                              oldValue: previous,
-                              newValue: value,
-                            ),
-                      );
-                    },
-                  ),
-                  Divider(
-                    height: 1,
-                    color: colors.surfaceElevated,
-                    indent: FacteurSpacing.space4,
-                    endIndent: FacteurSpacing.space4,
-                  ),
-                  // Email Digest (disabled for now - feature not implemented)
-                  _buildToggleTile(
-                    context,
-                    icon: Icons.email_outlined,
-                    title: 'Résumé par email',
-                    subtitle: 'Newsletter hebdomadaire avec vos highlights',
-                    value: settings.emailDigestEnabled,
-                    onChanged: null,
-                    enabled: false,
-                  ),
-                ],
-              ),
+            _PushToggle(
+              value: settings.pushEnabled,
+              onChanged: (value) {
+                final wasEnabled = settings.pushEnabled;
+                unawaited(notifier.setPushEnabled(value));
+                if (wasEnabled && !value) {
+                  unawaited(
+                    ref
+                        .read(analyticsServiceProvider)
+                        .trackNotifDisabled(source: 'in_app'),
+                  );
+                }
+              },
             ),
-
             const SizedBox(height: FacteurSpacing.space4),
-
-            // Note explicative
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: FacteurSpacing.space2,
+            if (settings.pushEnabled) ...[
+              _SectionHeader(title: 'Rythme'),
+              const SizedBox(height: FacteurSpacing.space3),
+              PresetSelector(
+                value: settings.preset,
+                onChanged: (preset) {
+                  final from = settings.preset;
+                  unawaited(notifier.setPreset(preset));
+                  if (from != preset) {
+                    unawaited(
+                      ref
+                          .read(analyticsServiceProvider)
+                          .trackNotifSettingsChanged(
+                            fromPreset: from,
+                            toPreset: preset,
+                          ),
+                    );
+                  }
+                },
               ),
-              child: Text(
-                'Recevez une notification chaque matin à 8h '
-                'quand votre Essentiel du Jour est prêt.',
+              const SizedBox(height: FacteurSpacing.space6),
+              _SectionHeader(title: 'Horaire'),
+              const SizedBox(height: FacteurSpacing.space3),
+              TimeSlotSelector(
+                value: settings.timeSlot,
+                onChanged: (slot) => unawaited(notifier.setTimeSlot(slot)),
+              ),
+              const SizedBox(height: FacteurSpacing.space4),
+              Text(
+                _scheduleDescription(settings.preset, settings.timeSlot),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colors.textTertiary,
                       fontStyle: FontStyle.italic,
                     ),
+                textAlign: TextAlign.center,
               ),
+            ],
+            const SizedBox(height: FacteurSpacing.space6),
+            _GoodNewsToggle(
+              enabled: settings.goodNewsEnabled,
+              timeSlot: settings.goodNewsTimeSlot,
+              onToggle: (value) =>
+                  unawaited(notifier.setGoodNewsEnabled(value)),
+              onTimeSlotChanged: (slot) =>
+                  unawaited(notifier.setGoodNewsTimeSlot(slot)),
             ),
           ],
         ),
@@ -106,53 +100,156 @@ class NotificationsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildToggleTile(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required bool value,
-    required ValueChanged<bool>? onChanged,
-    bool enabled = true,
-  }) {
-    final colors = context.facteurColors;
-    final opacity = enabled ? 1.0 : 0.5;
+  String _scheduleDescription(NotifPreset preset, NotifTimeSlot slot) {
+    final hour = slot == NotifTimeSlot.morning ? '07:30' : '19:00';
+    if (preset == NotifPreset.curieux) {
+      return "Tu reçois ton récap chaque jour à $hour, "
+          "et la pépite des Fact·eur·isses le vendredi à 18:00.";
+    }
+    return "Tu reçois ton récap chaque jour à $hour. Rien d'autre.";
+  }
+}
 
-    return Opacity(
-      opacity: opacity,
-      child: Padding(
-        padding: const EdgeInsets.all(FacteurSpacing.space4),
-        child: Row(
-          children: [
-            Icon(icon, color: colors.primary, size: 24),
-            const SizedBox(width: FacteurSpacing.space4),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w500,
-                        ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.textSecondary,
-                        ),
-                  ),
-                ],
-              ),
+class _PushToggle extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _PushToggle({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+        border: Border.all(color: colors.surfaceElevated),
+      ),
+      padding: const EdgeInsets.all(FacteurSpacing.space4),
+      child: Row(
+        children: [
+          Icon(Icons.notifications_active_outlined,
+              color: colors.primary, size: 24),
+          const SizedBox(width: FacteurSpacing.space4),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Notifications push',
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  "Le Facteur passe sur ton téléphone à l'heure choisie.",
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: colors.textSecondary),
+                ),
+              ],
             ),
-            Switch.adaptive(
-              value: value,
-              onChanged: enabled ? onChanged : null,
-              activeColor: colors.primary,
+          ),
+          Switch.adaptive(
+            value: value,
+            onChanged: onChanged,
+            activeColor: colors.primary,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Toggle indépendant du canal « Bonnes nouvelles du jour ».
+///
+/// Vit séparément du toggle digest principal pour respecter la règle
+/// CRITIQUE : les deux opt-ins ne doivent jamais être couplés. Visible
+/// même quand le push principal est OFF, pour que la promesse reste
+/// découvrable depuis le profil.
+class _GoodNewsToggle extends StatelessWidget {
+  final bool enabled;
+  final NotifTimeSlot timeSlot;
+  final ValueChanged<bool> onToggle;
+  final ValueChanged<NotifTimeSlot> onTimeSlotChanged;
+
+  const _GoodNewsToggle({
+    required this.enabled,
+    required this.timeSlot,
+    required this.onToggle,
+    required this.onTimeSlotChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+        border: Border.all(color: colors.surfaceElevated),
+      ),
+      padding: const EdgeInsets.all(FacteurSpacing.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '🌱 Bonnes nouvelles du jour',
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "Une dose d'espoir, à un horaire dédié.",
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: colors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              Switch.adaptive(
+                value: enabled,
+                onChanged: onToggle,
+                activeColor: colors.primary,
+              ),
+            ],
+          ),
+          if (enabled) ...[
+            const SizedBox(height: FacteurSpacing.space4),
+            TimeSlotSelector(
+              value: timeSlot,
+              onChanged: onTimeSlotChanged,
             ),
           ],
-        ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+
+  const _SectionHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: colors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
       ),
     );
   }

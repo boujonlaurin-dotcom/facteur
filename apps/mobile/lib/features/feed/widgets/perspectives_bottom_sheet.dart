@@ -299,7 +299,7 @@ class _PerspectivesBottomSheetState
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Voir d\'autres points de vue',
+                                  'Couverture médiatique',
                                   style: textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.bold,
                                     color: colors.textPrimary,
@@ -401,7 +401,7 @@ class _PerspectivesBottomSheetState
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Voir d\'autres points de vue',
+                              'Couverture médiatique',
                               style: textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: colors.textPrimary,
@@ -588,7 +588,7 @@ class _PerspectiveCard extends ConsumerWidget {
                       Expanded(
                         child: Text(
                           perspective.title
-                              .replaceAll(RegExp(r'\s*[-–|]\s*[^-–|]+$'), '')
+                              .replaceAll(RegExp(r'\s+[-–|]\s+[^-–|]+$'), '')
                               .trim(),
                           style: textTheme.bodyMedium?.copyWith(
                             fontWeight: FontWeight.w500,
@@ -1384,7 +1384,7 @@ class _PerspectivesInlineSectionState
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Voir d\'autres points de vue',
+                      'Couverture médiatique',
                       style: textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: colors.textPrimary,
@@ -1535,7 +1535,7 @@ class _PerspectivesInlineSectionState
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Voir d\'autres points de vue',
+                    'Couverture médiatique',
                     style: textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: colors.textPrimary,

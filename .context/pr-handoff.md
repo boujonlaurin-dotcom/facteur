@@ -1,39 +1,30 @@
-# PR — bump DB pool 20→50 + restore stdout observability
+# PR — Veille V3 PR3 « UX polish (intro + presets + pré-loading) »
 
-## Why
-Prod (Railway, Supabase Pooler partagé 60 conn) sature dès ~6 requêtes feed concurrentes :
-- `pool_size=10 + max_overflow=10 = 20` → toute requête au-delà attend `pool_timeout=30s` puis timeout.
-- Sentry IDs : QueuePool TimeoutError (cf. `queue.QueuePool` dans Sentry, `db_pool_pressure_high`).
+## Summary
 
-En parallèle, les listeners d'observabilité existants (`long_session_checkout` `database.py`, `db_pool_pressure_high` `main.py`) émettent bien des `structlog.warning(...)` mais **n'apparaissent jamais dans Railway logs des 7 derniers jours** (audit). Avant de poser un kill-switch GH Action ou tout monitoring externe, il faut s'assurer que le pipeline stdout fonctionne.
+PR3 du V3 veille (suite de #561 PR1 critical fixes et #562 PR2 sources rankées). Trois améliorations UX du flow de configuration, focalisées sur la perception de fluidité et l'accès aux pré-sets :
 
-## What
+- **T4** — Pré-loading actif des suggestions LLM entre les steps. L'animation halo (`FlowLoadingScreen`) reçoit désormais `topicsParams` / `sourcesParams` et déclenche le pré-fetch en arrière-plan dès le tap « Continuer ». Durée adaptive : 1.5 s minimum d'animation, puis on attend `data|error` du provider (cap 8 s). À l'arrivée sur Step2/Step3, plus de spinner secondaire dans le cas nominal.
+- **T5** — Nouvel écran `VeilleIntroScreen` au premier accès `/veille/config` (pas de config active, pas de mode édition). Single-page minimaliste : pitch + halo animé + CTA « C'est parti ». Skipé en mode édition et après `applyPreset`.
+- **T6** — Repositionnement des pré-sets dans Step1. Suppression de la section `_InspirationsSection` en bas du scroll. Ajout d'un teaser tappable « Pas inspiré ? Pioche un pré-set → » sous le header (visible sans scroll), qui ouvre une bottom sheet `VeillePresetsSheet` listant tous les pré-sets via `PresetCard` (workflow Step1.5 preview inchangé).
 
-### `packages/api/app/database.py`
-- Capacité prod consolidée dans `PROD_POOL_KWARGS` (importable depuis tests).
-- `pool_size=25`, `max_overflow=25` → 50 conns max → ~16 requêtes feed concurrentes.
-- `pool_timeout=30 → 10s` : un slot bloqué cède vite au lieu de masquer la saturation.
-- Marge : 60 (Supabase) - 50 (app) = 10 conns pour le scheduler in-process.
-- `pool_recycle=180`, `pool_pre_ping=True` inchangés.
+## Fichiers modifiés
 
-### `packages/api/app/main.py`
-- Boot probe `logger.warning("startup_logger_check", level="warning_emitted")` juste après `structlog.configure`. Si absent du 1er log post-deploy → pipeline stdout cassé, on sait avant de chercher pourquoi `db_pool_pressure_high` ne sort pas. Confirme aussi que `LoggingIntegration` Sentry (filtre `logging.ERROR`) ne capture pas les warnings structlog.
-- `/api/health/pool` : `logger.info("pool_metrics_probed", **metrics)` avant return — base pour mesurer la fréquence de ping du futur kill-switch GH Action.
+- `apps/mobile/lib/features/veille/screens/veille_intro_screen.dart` (NOUVEAU)
+- `apps/mobile/lib/features/veille/screens/veille_config_screen.dart` (T4 + T5)
+- `apps/mobile/lib/features/veille/providers/veille_config_provider.dart` (T4 + T5 — durée adaptive, helpers params, `introCompleted`, `completeIntro`)
+- `apps/mobile/lib/features/veille/screens/steps/step1_theme_screen.dart` (T6 — teaser + bottom sheet, suppression `_InspirationsSection`)
+- `docs/stories/core/19.3.veille-v3-pr3-ux-polish.md` (NOUVEAU — story doc)
 
-### `packages/api/tests/test_health_pool.py`
-- `test_prod_pool_kwargs_capacity` lock 25/25/10/180 — toute modif future déclenche revue.
+## Tests
 
-## Risques & mitigations
-- **Saturation Supabase Pooler** : 50 conns app + éventuels workers pourraient frôler 60. Marge 10 explicite ; si plusieurs réplicas Railway → revoir avant scale horizontal.
-- **pool_timeout=10s** : plus agressif. Si symptôme "tout charge à l'infini" disparaît au profit de 5xx visibles → succès attendu (visibilité).
+- `flutter analyze` — pas de nouveau warning sur les fichiers veille.
+- `flutter test test/features/veille/` — 51/51 verts.
+- Suite complète : 554 verts. Les 37 échecs (digest, feed, custom_topics, etc.) sont **pré-existants** (vérifié sur `main` avant PR3, certains marqués « Test not implemented »).
+- Playwright MCP : flow complet validé (intro → Step1 → preset bottom sheet → Step1.5 preview → Step2/3 avec animation halo + données chargées → Step4 → submit).
 
-## Critères d'acceptation
-- [x] `pytest -v tests/test_health_pool.py` vert (2/2)
-- [ ] Au boot prod : `db_pool_config pool_type=AsyncAdaptedQueuePool` + `startup_logger_check` visibles dans `railway logs`
-- [ ] `curl /api/health/pool` retourne `size=25`
-- [ ] 50 requêtes parallèles → 0 timeout pool
+## Risques
 
-## Pas inclus
-- Pas de migration Alembic.
-- Pas de changement mobile.
-- Kill-switch GH Action séparé (hand-off #3).
+- **Cohérence des params** entre `goNext()` / `FlowLoadingScreen` / `step2_suggestions_screen` / `step3_sources_screen` : les helpers `notifier.topicsParamsFromState()` et `notifier.sourcesParamsFromState()` factorisent la construction et garantissent une clé `family.autoDispose` identique (sinon double fetch).
+- **`introCompleted: true` dans `applyPreset` et `hydrateFromActiveConfig`** : empêche l'intro de réapparaître après un preset apply ou en mode édition.
+- **Annulation pendant loading** : `_waitAndAdvance` vérifie `state.loadingFrom != from` avant de pousser la transition pour éviter un push stale si l'utilisateur close le flow ou submit pendant l'animation.

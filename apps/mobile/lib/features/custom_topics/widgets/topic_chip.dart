@@ -63,13 +63,13 @@ class TopicChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
         decoration: BoxDecoration(
-          color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.005)!,
+          color: colors.textTertiary.withOpacity(0.10),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Text(
           topicLabel,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: colors.textSecondary,
+                color: colors.textTertiary,
                 fontWeight: FontWeight.w500,
                 fontSize: 11,
               ),

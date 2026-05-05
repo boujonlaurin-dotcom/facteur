@@ -1,63 +1,114 @@
-# QA Handoff — Recherche de sources (qualité + observabilité)
-
-> Branche : `boujonlaurin-dotcom/source-search-fix` → cible `main`
-> Bug doc : `docs/bugs/bug-source-search-quality.md`
-> Diag : `.context/source-search-diag.md`
+# QA Handoff — Veille V3 PR3 « UX polish »
 
 ## Feature développée
 
-Refonte du pipeline `POST /sources/smart-search` : drop strict des résultats sans feed RSS détecté, filtre listicle/denylist, fallback root host, catalog accent-insensible + fuzzy `pg_trgm`, court-circuit dès 1 hit curated, log universel dans nouvelle table `source_search_logs`.
+Trois améliorations UX du flow de configuration veille (mobile, 4 étapes) :
+- **T4** — Pré-loading actif des suggestions LLM entre les steps (animation halo + checklist déclenche désormais le fetch en arrière-plan, durée adaptive 1.5 s min → data|error).
+- **T5** — Nouvel écran d'introduction veille au premier accès (single-page : pitch + halo + CTA « C'est parti »), affiché avant Step1.
+- **T6** — Repositionnement des pré-sets : suppression de la section bas de Step1, ajout d'un teaser tappable haut + bottom sheet listant tous les pré-sets.
 
-## Pré-requis QA — migration manuelle Supabase
+## PR associée
 
-À exécuter dans Supabase Studio Editor SQL **avant déploiement Railway** :
-
-```sql
-CREATE EXTENSION IF NOT EXISTS unaccent;
--- Puis le DDL de ssq01_create_source_search_logs (cf. alembic/versions)
-```
+À créer via `/go` — base `main`.
 
 ## Écrans impactés
 
-| Écran | Route mobile | Statut |
-|-------|--------------|--------|
-| Ajouter une source | `add_source_screen.dart` | Modifié (logique backend uniquement) |
+| Écran | Route | Modifié / Nouveau |
+|-------|-------|-------------------|
+| `VeilleIntroScreen` | `/veille/config` (état pré-Step1) | NOUVEAU (T5) |
+| `VeilleConfigScreen` | `/veille/config` | Modifié (T4 + T5) |
+| `Step1ThemeScreen` | `/veille/config` (étape 1) | Modifié (T6) |
+| `VeillePresetsSheet` | bottom sheet de Step1 | NOUVEAU (T6) |
+| `FlowLoadingScreen` | écran de transition | Inchangé (déjà multi-step) |
 
 ## Scénarios de test
 
-### S1 — Source curated mainstream (happy path)
-Taper `mediapart`. Attendu : Mediapart en tête, `layers_called == ["catalog"]`, latence < 500 ms, zéro listicle.
+### Scénario 1 — Happy path complet (premier accès)
 
-### S2 — Accent / typo
-Taper `arret sur images` (sans accent), puis `mediapar`. Attendu : `Arrêt sur Images` et `Mediapart` apparaissent — `unaccent + pg_trgm` doivent matcher.
+**Parcours** :
+1. Aller sur `/veille/config` (compte sans config active).
+2. Vérifier qu'on voit l'écran **VeilleIntroScreen** (eyebrow « Le facteur prépare ta veille » + titre « Une veille pensée pour toi » + halo animé + CTA « C'est parti »).
+3. Tap « C'est parti ».
+4. Sur Step1 : vérifier le **teaser pré-sets** (« Pas inspiré ? Pioche un pré-set ») visible dès l'ouverture (sans scroll).
+5. Sélectionner un thème (ex. Tech).
+6. Sélectionner un sujet pré-suggéré, tap « Continuer ».
+7. **Animation halo** + checklist (FlowLoadingScreen) ≥ 1.5 s.
+8. Step2 affiché : suggestions topics **déjà chargées** (pas de spinner secondaire en cas nominal).
+9. Cocher 1-2 suggestions, tap « Continuer ».
+10. **Animation halo** vers Step3 puis sources **déjà chargées**.
+11. Tap « Continuer ».
+12. Step4 (rythme), tap « Démarrer ma veille ».
+13. Animation post-submit (from=4) + redirection dashboard.
 
-### S2-bis — Sources FR indépendantes hors catalog (pipeline externe)
-Taper successivement `politis`, `disclose`, `le media`, `frustration magazine`, `mediacites`.
-Attendu pour chacun : la pipeline externe (Brave + Google News + root-host fallback) doit retrouver le site officiel et résoudre son feed RSS. Pas de listicle. Premier résultat = la source attendue (politis.fr, disclose.ngo, lemediatv.fr, frustrationmagazine.fr, mediacites.fr).
+**Résultat attendu** : flow ininterrompu, halo entre chaque step, pas de spinner secondaire à l'arrivée sur Step2/Step3.
 
-### S3 — Requête thématique large (anti-listicle)
-Taper `political news`. Attendu : **zéro** résultat type "60 Best…" / "Top 100…". Si rien n'est trouvable, liste vide + CTA "Élargir la recherche" plutôt que des articles SEO.
+### Scénario 2 — Pré-set via bottom sheet
 
-### S4 — YouTube handle
-Taper `@HugoDecrypte`. Attendu : chaîne résolue (layer `youtube`), feed présent.
+**Parcours** :
+1. Aller sur `/veille/config` (sans config), passer l'intro.
+2. Sur Step1, tap teaser « Pas inspiré ? Pioche un pré-set ».
+3. Vérifier la **bottom sheet** : titre « Pré-sets », liste des PresetCard.
+4. Tap sur un pré-set.
+5. Vérifier que la sheet se ferme et que **Step1.5 preview** s'affiche (label + accroche + topics + sources).
+6. Tap « Utiliser ce pré-set » → bascule Step4 (jumpToStep4).
+7. Tap « Démarrer ma veille » → submit.
 
-### S5 — Élargir la recherche
-Taper `mediapart` puis tap sur "Élargir la recherche". Attendu : pipeline complet, mais toujours aucun résultat sans `feed_url`.
+**Résultat attendu** : workflow preview→use inchangé. Pas d'intro réaffichée pendant la session.
 
-### S6 — Observabilité
-SQL :
-```sql
-SELECT query_raw, layers_called, result_count, cache_hit, abandoned, latency_ms
-FROM source_search_logs
-ORDER BY created_at DESC LIMIT 10;
-```
-Attendu : une ligne par recherche jouée, `top_results` rempli, `cache_hit` cohérent. Si l'utilisateur ferme l'écran sans ajouter, la dernière ligne a `abandoned = true`.
+### Scénario 3 — Mode édition (skip intro)
+
+**Parcours** :
+1. Avoir une config active.
+2. Naviguer sur `/veille/config?mode=edit`.
+3. Vérifier que **Step1 est affiché directement** (pas d'intro).
+4. Vérifier que les sélections sont hydratées depuis la config existante.
+
+**Résultat attendu** : intro skipped, hydratation OK.
+
+### Scénario 4 — Config active sans edit (redirect)
+
+**Parcours** :
+1. Avoir une config active.
+2. Naviguer sur `/veille/config` (sans `?mode=edit`).
+
+**Résultat attendu** : redirect immédiat vers `/veille/dashboard`. Pas d'intro affichée.
+
+### Scénario 5 — LLM lent (>1.5 s)
+
+**Parcours** :
+1. Throttler le réseau (Chrome devtools → Slow 3G), repasser le happy path Step1→Step2.
+
+**Résultat attendu** : animation halo dépasse 1.5 s, attend le provider jusqu'à `data|error` (cap 8 s). Au-delà, Step2 affiche son skeleton normal — pas de blocage.
+
+### Scénario 6 — Close depuis l'intro
+
+**Parcours** :
+1. Sur l'intro, tap la croix (haut droite).
+
+**Résultat attendu** : retour `/feed` (pas de pop si pas de history).
 
 ## Critères d'acceptation
 
-- [ ] Aucun résultat affiché sans `feed_url`
-- [ ] Aucun listicle/aggregator dans le top 5 sur 5 requêtes thématiques (`political news`, `actualité écologie`, `tech europe`, `crypto news`, `climate`)
-- [ ] Catalog ILIKE accent-insensible : `arret sur images` matche `Arrêt sur Images`
-- [ ] Court-circuit catalog observable (`layers_called == ["catalog"]`, latence < 500 ms) sur 6 sources curated connues
-- [ ] Table `source_search_logs` se remplit en prod
-- [ ] `failed_source_attempts` continue à recevoir les abandons (rétrocompat)
+- [ ] Premier accès `/veille/config` sans config → intro affichée.
+- [ ] Tap « C'est parti » → bascule Step1 (animation AnimatedSwitcher).
+- [ ] `?mode=edit` → intro skipped (Step1 directement).
+- [ ] `activeConfig != null` → redirect dashboard.
+- [ ] Step1 : teaser pré-sets visible sans scroll.
+- [ ] Tap teaser → bottom sheet liste tous les pré-sets.
+- [ ] Tap pré-set → sheet ferme + Step1.5 preview.
+- [ ] Plus aucune section "Inspirations" en bas du scroll Step1.
+- [ ] Step1→Step2 : animation halo ≥ 1.5 s + suggestions topics chargées à l'arrivée (cas nominal).
+- [ ] Step2→Step3 : animation halo ≥ 1.5 s + sources chargées à l'arrivée (cas nominal).
+- [ ] Si LLM lent : on attend jusqu'à 8 s puis on passe (skeleton normal).
+
+## Zones de risque
+
+- **Params identiques entre `goNext()`/`FlowLoadingScreen` et Step2/Step3** : si différents (ordre topicLabels, sort des topicIds), `family.autoDispose` créera deux instances → double-fetch et perte du préload. Helpers `topicsParamsFromState` / `sourcesParamsFromState` sont la single source of truth, alignés sur l'instanciation des Steps.
+- **`introCompleted` marqué dans `applyPreset` et `hydrateFromActiveConfig`** : critique pour ne pas réafficher l'intro après un preset apply ou en mode édition.
+- **Annulation du loading** : si l'utilisateur close le flow pendant l'animation halo, la guard `state.loadingFrom != from` dans `_waitAndAdvance` évite un push de transition stale.
+
+## Dépendances
+
+- Backend : aucune modif (les endpoints `/api/veille/suggestions/topics` et `/sources` sont inchangés).
+- Mobile : `flutter_riverpod` (ProviderSubscription, déjà utilisé).
+- Pas de migration DB.

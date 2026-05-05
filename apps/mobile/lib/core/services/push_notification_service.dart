@@ -5,13 +5,25 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:flutter_timezone/flutter_timezone.dart';
 
-/// Service de notifications push locales pour le digest quotidien.
+import '../api/notification_preferences_api_service.dart';
+
+/// Variante de copy de la notification quotidienne.
 ///
-/// Planifie une notification quotidienne à 8h Europe/Paris pour rappeler
-/// à l'utilisateur que son digest est prêt. Pas de FCM — local uniquement.
-///
-/// Le contenu de la notification peut être mis à jour dynamiquement
-/// avec les topics du digest via [scheduleDailyDigestNotification].
+/// - [variantA] : copy par défaut sans teaser éditorial.
+/// - [variantB] : copy avec teaser (titre du sujet phare).
+/// - [variantC] : *jour calme* — déclenchement manuel uniquement (hors v1).
+enum NotifVariant { variantA, variantB, variantC }
+
+/// IDs réservés pour les notifications planifiées (un ID = un slot dans
+/// `pendingNotificationRequests`). Garder stable pour permettre `cancel(id)`.
+class _NotifIds {
+  static const dailyDigest = 0;
+  static const weeklyCommunityPick = 1;
+  static const dailyGoodNews = 2;
+  static const veilleDelivery = 3;
+}
+
+/// Service de notifications push locales (FCM non utilisé en v1).
 class PushNotificationService {
   PushNotificationService._();
 
@@ -22,41 +34,32 @@ class PushNotificationService {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
 
-  /// Référence au navigateur global pour la navigation au tap
   static GlobalKey<NavigatorState>? _navigatorKey;
 
   bool _initialized = false;
 
-  /// Configure le navigatorKey pour la navigation au tap notification
   static void setNavigatorKey(GlobalKey<NavigatorState> key) {
     _navigatorKey = key;
   }
 
-  /// Initialise le plugin de notifications et les timezones.
   Future<void> init() async {
     if (_initialized) return;
 
-    // Initialiser les données de timezone
     tz_data.initializeTimeZones();
 
-    // Détecter le fuseau horaire local du device
     try {
       final timeZoneName = await FlutterTimezone.getLocalTimezone();
       tz.setLocalLocation(tz.getLocation(timeZoneName));
     } catch (e) {
       debugPrint('PushNotificationService: Could not detect timezone: $e');
-      // Fallback sur Europe/Paris (notre cible principale)
       tz.setLocalLocation(tz.getLocation('Europe/Paris'));
     }
 
-    // Configuration Android
-    // Note: notification small icon must be white/alpha on transparent background.
-    // ic_launcher_foreground is the Facteur logo foreground layer (correct format).
-    // Using @mipmap/ic_launcher would show the full-color icon as a gray blob.
+    // Small icon: silhouette monochrome dédiée — Android exige un asset
+    // blanc/alpha pour la status bar (sinon bloc coloré mal dimensionné).
     const androidSettings =
-        AndroidInitializationSettings('@drawable/ic_launcher_foreground');
+        AndroidInitializationSettings('@drawable/ic_stat_facteur');
 
-    // Configuration iOS
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -68,7 +71,6 @@ class PushNotificationService {
       iOS: iosSettings,
     );
 
-    // Initialiser avec le handler de tap (v20: named parameter 'settings:')
     await _plugin.initialize(
       settings: settings,
       onDidReceiveNotificationResponse: _onNotificationTapped,
@@ -78,10 +80,7 @@ class PushNotificationService {
     debugPrint('PushNotificationService: Initialized successfully');
   }
 
-  /// Demande la permission de notifications (Android 13+).
-  /// Sur iOS, la permission est demandée via DarwinInitializationSettings.
   Future<bool> requestPermission() async {
-    // Android 13+ nécessite une permission runtime
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin != null) {
@@ -91,13 +90,9 @@ class PushNotificationService {
           'PushNotificationService: Android notification permission: $granted');
       return granted;
     }
-
-    // iOS: permission demandée automatiquement lors de l'init
     return true;
   }
 
-  /// Demande la permission d'alarmes exactes (Android 14+/API 34+).
-  /// Nécessaire pour AndroidScheduleMode.alarmClock avec targetSdk >= 34.
   Future<bool> requestExactAlarmPermission() async {
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
@@ -111,150 +106,365 @@ class PushNotificationService {
             'PushNotificationService: Exact alarm permission requested: $granted');
         return granted;
       }
-      debugPrint(
-          'PushNotificationService: Exact alarm permission already granted');
       return true;
     }
-    return true; // Not Android
+    return true;
   }
 
-  /// Vérifie et demande la permission exact alarm si nécessaire.
-  /// Appelé au startup pour s'assurer que la permission n'a pas été révoquée.
   Future<bool> ensureExactAlarmPermission() async {
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
-    if (androidPlugin == null) return true; // Not Android
-
+    if (androidPlugin == null) return true;
     final canSchedule =
         await androidPlugin.canScheduleExactNotifications() ?? false;
     if (canSchedule) return true;
-
-    // Permission révoquée ou jamais accordée — demander
-    debugPrint(
-        'PushNotificationService: Exact alarm permission lost, re-requesting');
-    final granted =
-        await androidPlugin.requestExactAlarmsPermission() ?? false;
-    debugPrint(
-        'PushNotificationService: Exact alarm re-request result: $granted');
-    return granted;
+    return await androidPlugin.requestExactAlarmsPermission() ?? false;
   }
 
-  static const String defaultTitle = 'Ton essentiel est là';
-  static const String defaultBody =
-      'Tes actus et décryptages du jour t\'attendent';
+  // --- Copy variants -------------------------------------------------------
 
-  /// Construit le body de la notification à partir des labels de topics du digest.
+  /// Nom affiché comme expéditeur dans la notif Android (MessagingStyle).
+  static const String senderName = 'Ton facteur';
+
+  /// Variante A — défaut, sans teaser éditorial.
+  static const String defaultTitle = 'Facteur';
+  static const String defaultBody = "Ton récap du jour t'attend quand tu veux.";
+
+  /// Variante C — déclenchée manuellement par l'éditorial (hors v1).
+  static const String calmTitle = 'Facteur';
+  static const String calmBody =
+      "Rien d'important dans l'actu aujourd'hui. Belle journée !";
+
+  /// Pépite communauté hebdo (vendredi 18:00, préset Curieux).
+  static const String communityTitle = 'Facteur';
+  static const String communityBody =
+      "Les Fact·eur·isses adorent cet article. Jette-y un œil quand tu as 2 min !";
+
+  /// Bonnes nouvelles du jour — canal opt-in indépendant du digest principal.
+  static const String goodNewsTitle = '🌱 Vos bonnes nouvelles du jour';
+  static const String goodNewsBody =
+      "Une dose d'espoir, sélectionnée avec soin.";
+
+  /// Livraison « Ma veille » — notif locale planifiée à `next_scheduled_at + 30 min`.
+  static const String veilleTitle = 'Ta veille est arrivée';
+  static const String veilleBody =
+      "Découvre les sujets phares de ta période, sélectionnés pour toi.";
+
+  /// Construit le triplet (title, body, bigText) selon la variante.
   ///
-  /// Mode normal — avec topics : "Au programme : Trump, Retraites... Ou rester serein ! ;)"
-  /// Mode normal — sans topics : "Tes actus et décryptages du jour t'attendent"
-  /// Mode serein                : "Au programme : Bonne Nouvelle, Pépite du jour. C'est quand tu veux !"
-  static String buildNotificationBody(
-    List<String> topicLabels, {
-    bool serein = false,
+  /// - [variantB] requiert au moins un teaser dans [teasers]. Le premier
+  ///   teaser est utilisé pour le body collapsed (tronqué à 60c, brief §6.1) ;
+  ///   l'ensemble (max 3) est rendu en bullets dans le bigText Android.
+  static ({String title, String body, String bigText}) buildCopy({
+    required NotifVariant variant,
+    List<String>? teasers,
   }) {
-    if (serein) {
-      // En serein, le digest se concentre sur la Bonne Nouvelle et la Pépite —
-      // copy fixe, pas d'énumération anxiogène de topics d'actu.
-      return 'Au programme : Bonne Nouvelle, Pépite du jour. C\'est quand tu veux !';
+    switch (variant) {
+      case NotifVariant.variantA:
+        return (title: defaultTitle, body: defaultBody, bigText: defaultBody);
+      case NotifVariant.variantB:
+        final cleaned = (teasers ?? const <String>[])
+            .map((t) => t.trim())
+            .where((t) => t.isNotEmpty)
+            .take(3)
+            .toList();
+        if (cleaned.isEmpty) {
+          return (title: defaultTitle, body: defaultBody, bigText: defaultBody);
+        }
+        final first = cleaned.first;
+        final clipped =
+            first.length > 60 ? '${first.substring(0, 57)}…' : first;
+        final bullets = cleaned.map((t) => '• $t').join('\n');
+        return (
+          title: defaultTitle,
+          body: 'À la une : $clipped',
+          bigText: "À la une dans l'Essentiel :\n$bullets",
+        );
+      case NotifVariant.variantC:
+        return (title: calmTitle, body: calmBody, bigText: calmBody);
     }
-
-    if (topicLabels.isEmpty) return defaultBody;
-
-    // Prendre les 3 premiers topics max pour rester concis
-    final displayLabels = topicLabels.take(3).toList();
-    final topicsText = displayLabels.join(', ');
-    return 'Au programme : $topicsText... Ou rester serein ! ;)';
   }
 
-  /// Planifie la notification quotidienne de digest à 8h Europe/Paris.
-  /// Utilise alarmClock (le plus fiable) avec fallback sur inexactAllowWhileIdle.
-  /// Retourne true si la notification est effectivement planifiée.
+  // --- Daily digest --------------------------------------------------------
+
+  /// Planifie la notification quotidienne à l'heure correspondant à [timeSlot].
   ///
-  /// [body] optionnel — permet de personnaliser le message avec les topics du digest.
-  /// Si null, utilise [defaultBody].
-  Future<bool> scheduleDailyDigestNotification({String? body}) async {
+  /// Si [variant] vaut [NotifVariant.variantB], [teaser] est utilisé comme sujet
+  /// phare. Sinon, fallback variante A.
+  Future<bool> scheduleDailyDigestNotification({
+    NotifTimeSlot timeSlot = NotifTimeSlot.morning,
+    NotifVariant variant = NotifVariant.variantA,
+    List<String>? teasers,
+  }) async {
+    final time = _timeOfDayFor(timeSlot);
+    final scheduledDate = _nextInstanceOf(time);
+    final copy = buildCopy(variant: variant, teasers: teasers);
+
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
-    bool canUseExact = true;
-    if (androidPlugin != null) {
-      canUseExact =
-          await androidPlugin.canScheduleExactNotifications() ?? false;
-    }
-
-    final scheduledDate = _nextInstanceOf8AM();
-    final notificationBody = body ?? defaultBody;
-
-    // BigTextStyle permet l'affichage multi-ligne du body sur Android
-    // (au lieu d'être tronqué à une seule ligne après ~40 caractères).
-    final androidDetails = AndroidNotificationDetails(
-      'digest_channel',
-      'Digest quotidien',
-      channelDescription:
-          'Notification quotidienne quand votre digest est prêt',
-      importance: Importance.high,
-      priority: Priority.high,
-      icon: '@drawable/ic_launcher_foreground',
-      styleInformation: BigTextStyleInformation(
-        notificationBody,
-        contentTitle: defaultTitle,
-      ),
-    );
-
-    // iOS affiche déjà le body sur plusieurs lignes par défaut quand la
-    // notification est étendue.
-    const iosDetails = DarwinNotificationDetails();
-
-    final details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    // alarmClock est le plus fiable (pas affecté par Doze ni battery optimization OEM)
-    // Fallback sur inexactAllowWhileIdle si la permission exacte est refusée
+    final canUseExact =
+        (await androidPlugin?.canScheduleExactNotifications()) ?? true;
     final scheduleMode = canUseExact
         ? AndroidScheduleMode.alarmClock
         : AndroidScheduleMode.inexactAllowWhileIdle;
 
-    // v20: ALL parameters are named
+    const sender = Person(
+      name: senderName,
+      key: 'facteur',
+      important: true,
+      icon: DrawableResourceAndroidIcon('facteur_avatar'),
+    );
+    final androidDetails = AndroidNotificationDetails(
+      'digest_channel',
+      'Digest quotidien',
+      channelDescription: 'Notification quotidienne quand ton récap est prêt',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@drawable/ic_stat_facteur',
+      color: const Color(0xFFD35400),
+      styleInformation: MessagingStyleInformation(
+        const Person(name: 'Toi'),
+        groupConversation: false,
+        messages: [
+          Message(copy.bigText, DateTime.now(), sender),
+        ],
+      ),
+    );
+    const iosDetails = DarwinNotificationDetails();
+
     await _plugin.zonedSchedule(
-      id: 0,
-      title: defaultTitle,
-      body: notificationBody,
+      id: _NotifIds.dailyDigest,
+      title: copy.title,
+      body: copy.body,
       scheduledDate: scheduledDate,
-      notificationDetails: details,
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
       androidScheduleMode: scheduleMode,
       matchDateTimeComponents: DateTimeComponents.time,
+      payload: 'route:/digest',
     );
 
     debugPrint(
-      'PushNotificationService: Scheduled for $scheduledDate (mode: $scheduleMode, exact: $canUseExact, body: "$notificationBody")',
+      'PushNotificationService: daily scheduled @ $scheduledDate '
+      '(variant: $variant, slot: $timeSlot)',
     );
 
-    // Vérifier que la notification est bien dans la liste pending
-    final isScheduled = await isDigestNotificationScheduled();
-    if (!isScheduled) {
+    return _isScheduled(_NotifIds.dailyDigest);
+  }
+
+  /// Planifie la pépite communauté tous les vendredis à 18:00 (préset Curieux).
+  ///
+  /// [articleId] est joint au payload pour permettre l'ouverture directe de
+  /// l'article au tap. Si null, l'app retombe sur le digest.
+  Future<bool> scheduleWeeklyCommunityPick({String? articleId}) async {
+    final scheduledDate = _nextInstanceOfWeekday(
+      weekday: DateTime.friday,
+      time: const TimeOfDay(hour: 18, minute: 0),
+    );
+
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    final canUseExact =
+        (await androidPlugin?.canScheduleExactNotifications()) ?? true;
+    final scheduleMode = canUseExact
+        ? AndroidScheduleMode.alarmClock
+        : AndroidScheduleMode.inexactAllowWhileIdle;
+
+    final androidDetails = AndroidNotificationDetails(
+      'community_channel',
+      'Pépite communauté',
+      channelDescription: 'Recommandation hebdomadaire des Fact·eur·isses',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@drawable/ic_stat_facteur',
+      color: const Color(0xFFD35400),
+      largeIcon: const DrawableResourceAndroidBitmap('facteur_avatar'),
+      styleInformation: BigTextStyleInformation(
+        communityBody,
+        contentTitle: communityTitle,
+      ),
+    );
+    const iosDetails = DarwinNotificationDetails();
+
+    await _plugin.zonedSchedule(
+      id: _NotifIds.weeklyCommunityPick,
+      title: communityTitle,
+      body: communityBody,
+      scheduledDate: scheduledDate,
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
+      androidScheduleMode: scheduleMode,
+      matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+      payload:
+          articleId != null ? 'route:/article/$articleId' : 'route:/digest',
+    );
+
+    debugPrint(
+      'PushNotificationService: weekly community scheduled @ $scheduledDate',
+    );
+
+    return _isScheduled(_NotifIds.weeklyCommunityPick);
+  }
+
+  /// Planifie le push « Bonnes nouvelles du jour » — canal séparé du digest
+  /// principal pour permettre un horaire dédié sans coupler les opt-ins.
+  Future<bool> scheduleDailyGoodNewsNotification({
+    NotifTimeSlot timeSlot = NotifTimeSlot.evening,
+  }) async {
+    final time = _timeOfDayFor(timeSlot);
+    final scheduledDate = _nextInstanceOf(time);
+
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    final canUseExact =
+        (await androidPlugin?.canScheduleExactNotifications()) ?? true;
+    final scheduleMode = canUseExact
+        ? AndroidScheduleMode.alarmClock
+        : AndroidScheduleMode.inexactAllowWhileIdle;
+
+    const sender = Person(
+      name: senderName,
+      key: 'facteur_goodnews',
+      important: true,
+      icon: DrawableResourceAndroidIcon('facteur_goodnews'),
+    );
+    final androidDetails = AndroidNotificationDetails(
+      'good_news_channel',
+      'Bonnes nouvelles du jour',
+      channelDescription:
+          "Notification quotidienne des bonnes nouvelles sélectionnées",
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@drawable/ic_stat_facteur',
+      color: const Color(0xFFD35400),
+      styleInformation: MessagingStyleInformation(
+        const Person(name: 'Toi'),
+        groupConversation: false,
+        messages: [
+          Message(goodNewsBody, DateTime.now(), sender),
+        ],
+      ),
+    );
+    const iosDetails = DarwinNotificationDetails();
+
+    await _plugin.zonedSchedule(
+      id: _NotifIds.dailyGoodNews,
+      title: goodNewsTitle,
+      body: goodNewsBody,
+      scheduledDate: scheduledDate,
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
+      androidScheduleMode: scheduleMode,
+      matchDateTimeComponents: DateTimeComponents.time,
+      payload: 'route:/digest?serein=1',
+    );
+
+    debugPrint(
+      'PushNotificationService: good news scheduled @ $scheduledDate '
+      '(slot: $timeSlot)',
+    );
+
+    return _isScheduled(_NotifIds.dailyGoodNews);
+  }
+
+  Future<void> cancelGoodNewsNotification() async {
+    await _plugin.cancel(id: _NotifIds.dailyGoodNews);
+  }
+
+  Future<bool> isGoodNewsNotificationScheduled() =>
+      _isScheduled(_NotifIds.dailyGoodNews);
+
+  /// Planifie la notification locale « Ma veille » pour [scheduledAt].
+  ///
+  /// Le caller doit ajouter une marge (≈30 min) à `next_scheduled_at` reçu du
+  /// backend pour laisser le scanner `*/30 min` générer la livraison avant
+  /// que la notif ne tombe.
+  ///
+  /// Retourne `true` si la notif a bien été enregistrée auprès du système, ou
+  /// `false` si la date est dans le passé (évite le crash sur Android, qui
+  /// refuse de planifier dans le passé).
+  Future<bool> scheduleVeilleNotification({
+    required DateTime scheduledAt,
+  }) async {
+    final tzScheduled = tz.TZDateTime.from(scheduledAt, tz.local);
+    if (!tzScheduled.isAfter(tz.TZDateTime.now(tz.local))) {
       debugPrint(
-        'PushNotificationService: WARNING — notification NOT found in pending list after scheduling!',
+        'PushNotificationService: skip veille schedule — past date $scheduledAt',
       );
+      return false;
     }
 
-    return isScheduled;
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    final canUseExact =
+        (await androidPlugin?.canScheduleExactNotifications()) ?? true;
+    final scheduleMode = canUseExact
+        ? AndroidScheduleMode.alarmClock
+        : AndroidScheduleMode.inexactAllowWhileIdle;
+
+    final androidDetails = AndroidNotificationDetails(
+      'veille_channel',
+      'Ma veille',
+      channelDescription:
+          'Notification quand ta veille personnalisée est prête.',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@drawable/ic_stat_facteur',
+      color: const Color(0xFFD35400),
+      styleInformation: const BigTextStyleInformation(
+        veilleBody,
+        contentTitle: veilleTitle,
+      ),
+    );
+    const iosDetails = DarwinNotificationDetails();
+
+    await _plugin.zonedSchedule(
+      id: _NotifIds.veilleDelivery,
+      title: veilleTitle,
+      body: veilleBody,
+      scheduledDate: tzScheduled,
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
+      androidScheduleMode: scheduleMode,
+      payload: 'route:/veille/dashboard',
+    );
+
+    debugPrint(
+      'PushNotificationService: veille scheduled @ $tzScheduled',
+    );
+
+    return _isScheduled(_NotifIds.veilleDelivery);
   }
 
-  /// Vérifie si la notification digest (id=0) est dans la liste des notifications pending.
-  Future<bool> isDigestNotificationScheduled() async {
+  Future<void> cancelVeilleNotification() async {
+    await _plugin.cancel(id: _NotifIds.veilleDelivery);
+  }
+
+  Future<bool> isVeilleNotificationScheduled() =>
+      _isScheduled(_NotifIds.veilleDelivery);
+
+  Future<bool> _isScheduled(int id) async {
     final pending = await _plugin.pendingNotificationRequests();
-    return pending.any((n) => n.id == 0);
+    return pending.any((n) => n.id == id);
   }
 
-  /// Retourne l'état complet du système de notifications pour diagnostic.
+  Future<bool> isDigestNotificationScheduled() =>
+      _isScheduled(_NotifIds.dailyDigest);
+
   Future<Map<String, dynamic>> getDiagnostics() async {
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
 
     bool? notificationsEnabled;
     bool? exactAlarmsGranted;
-
     if (androidPlugin != null) {
       notificationsEnabled =
           await androidPlugin.areNotificationsEnabled() ?? false;
@@ -263,53 +473,76 @@ class PushNotificationService {
     }
 
     final pending = await _plugin.pendingNotificationRequests();
-    final digestScheduled = pending.any((n) => n.id == 0);
-    final nextScheduledDate = _nextInstanceOf8AM();
 
     return {
       'initialized': _initialized,
       'platform': defaultTargetPlatform.name,
       'notificationsEnabled': notificationsEnabled,
       'exactAlarmsGranted': exactAlarmsGranted,
-      'digestScheduled': digestScheduled,
+      'digestScheduled': pending.any((n) => n.id == _NotifIds.dailyDigest),
+      'communityScheduled':
+          pending.any((n) => n.id == _NotifIds.weeklyCommunityPick),
       'pendingCount': pending.length,
-      'nextScheduledDate': nextScheduledDate.toString(),
     };
   }
 
-  /// Annule la notification de digest (ID 0).
   Future<void> cancelDigestNotification() async {
-    await _plugin.cancel(id: 0);
-    debugPrint('PushNotificationService: Digest notification cancelled');
+    await _plugin.cancel(id: _NotifIds.dailyDigest);
   }
 
-  /// Calcule la prochaine occurrence de 8h00 Europe/Paris.
-  tz.TZDateTime _nextInstanceOf8AM() {
-    final paris = tz.getLocation('Europe/Paris');
-    final now = tz.TZDateTime.now(paris);
-    var scheduledDate = tz.TZDateTime(paris, now.year, now.month, now.day, 8);
+  Future<void> cancelWeeklyCommunityPick() async {
+    await _plugin.cancel(id: _NotifIds.weeklyCommunityPick);
+  }
 
-    if (scheduledDate.isBefore(now)) {
-      scheduledDate = scheduledDate.add(const Duration(days: 1));
+  // --- Time helpers --------------------------------------------------------
+
+  static TimeOfDay _timeOfDayFor(NotifTimeSlot slot) => switch (slot) {
+        NotifTimeSlot.morning => const TimeOfDay(hour: 7, minute: 30),
+        NotifTimeSlot.evening => const TimeOfDay(hour: 19, minute: 0),
+      };
+
+  tz.TZDateTime _nextInstanceOf(TimeOfDay time) {
+    final now = tz.TZDateTime.now(tz.local);
+    var scheduled = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      time.hour,
+      time.minute,
+    );
+    if (!scheduled.isAfter(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
     }
-
-    return scheduledDate;
+    return scheduled;
   }
 
-  /// Handler de tap sur la notification — navigue vers le DigestScreen.
+  tz.TZDateTime _nextInstanceOfWeekday({
+    required int weekday,
+    required TimeOfDay time,
+  }) {
+    var scheduled = _nextInstanceOf(time);
+    while (scheduled.weekday != weekday) {
+      scheduled = scheduled.add(const Duration(days: 1));
+    }
+    return scheduled;
+  }
+
   static void _onNotificationTapped(NotificationResponse response) {
+    final payload = response.payload;
     debugPrint(
-      'PushNotificationService: Notification tapped (id: ${response.id})',
+      'PushNotificationService: tapped (id: ${response.id}, payload: $payload)',
     );
 
-    // Naviguer vers le DigestScreen via le navigatorKey
     final navigator = _navigatorKey?.currentState;
-    if (navigator != null) {
-      navigator.pushNamedAndRemoveUntil('/digest', (route) => false);
-    } else {
-      debugPrint(
-        'PushNotificationService: Navigator key not available, cannot navigate',
-      );
-    }
+    if (navigator == null) return;
+
+    final route = _routeFromPayload(payload);
+    navigator.pushNamedAndRemoveUntil(route, (_) => false);
+  }
+
+  static String _routeFromPayload(String? payload) {
+    if (payload == null || !payload.startsWith('route:')) return '/digest';
+    return payload.substring('route:'.length);
   }
 }

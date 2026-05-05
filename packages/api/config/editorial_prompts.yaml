@@ -8,10 +8,17 @@ curation:
 
     Parmi les sujets detectes ce matin, selectionne les {subjects_count} plus importants.
 
-    Criteres de selection (par ordre de priorite) :
-    1. Impact reel sur la vie des gens (pas juste du bruit mediatique)
-    2. Diversite thematique (pas 3 sujets du meme domaine)
-    3. Interet citoyen (le lecteur sera content d'etre au courant)
+    Criteres de selection (par ordre de priorite STRICT) :
+    1. COUVERTURE MEDIATIQUE — c'est le critere principal. Privilegie les sujets
+       traites par le plus grand nombre de redactions francophones (champ
+       `source_count` fourni dans les donnees). Plus un sujet est couvert,
+       plus il doit apparaitre tot dans la liste. Si un sujet a un
+       `source_count` nettement superieur a un autre, il passe en premier
+       meme si l'autre te semble plus "important".
+    2. Diversite thematique : eviter d'avoir 3 sujets consecutifs du meme
+       domaine quand des alternatives bien couvertes existent.
+    3. Filtre minimal d'interet citoyen : exclure people / faits divers /
+       sport pur s'ils sont sur-represented uniquement par effet de buzz.
 
     Pour chaque sujet retenu, renvoie :
     - topic_id : l'identifiant du cluster (tel quel, ne pas inventer)
@@ -112,6 +119,18 @@ writing:
     pour un sujet, l'intro doit etre plus courte (1 phrase suffit).
     Mieux vaut une phrase vraie et courte que deux phrases inventees.
 
+    REGLE ABSOLUE — DEEP_ARTICLE NULL :
+    Si `deep_article` est null pour un sujet, INTERDICTION TOTALE de :
+    - mentionner un nom de media, de journaliste, ou de publication,
+    - utiliser les verbes "explique", "detaille", "decrypte", "revient sur",
+      "analyse", "decortique", "montre",
+    - utiliser les tournures "Selon X", "comme l'explique X", "d'apres X",
+      "un eclairage de X", "un article de X", "X precise que".
+    Aucune attribution. L'intro doit faire 1 phrase courte (8-15 mots) qui
+    se contente d'enrichir le titre actu sans inventer de pont vers une
+    source qui n'existe pas. C'est mieux d'avoir 1 phrase plate que d'inventer
+    une attribution.
+
     STRUCTURE :
     - header_text : toujours "Votre essentiel du [jour en francais]"
       (ex: "Votre essentiel du mardi")
@@ -128,7 +147,8 @@ writing:
         (label, deep_angle, description de l'article deep).
         Phrase 2 = ce qu'eclaire l'article de fond, en variant la formulation
         (voir PONTS ci-dessous).
-      * Sans article deep : 1 phrase courte de cadrage. Pas de remplissage.
+      * Sans article deep (`deep_article: null`) : 1 phrase courte de cadrage,
+        SANS aucune attribution a un media. Voir REGLE ABSOLUE ci-dessus.
       * NE PAS mentionner le nombre de sources ni les divergences
         mediatiques — ces infos sont affichees separement dans l'UI.
     - transition_text : toujours null (pas de transition entre sujets)
@@ -224,6 +244,17 @@ writing_serene:
     Si aucun article deep n'est fourni, l'intro doit etre plus courte (1 phrase).
     Mieux vaut une phrase vraie et courte que deux phrases inventees.
 
+    REGLE ABSOLUE — DEEP_ARTICLE NULL :
+    Si `deep_article` est null pour un sujet, INTERDICTION TOTALE de :
+    - mentionner un nom de media, de journaliste, ou de publication,
+    - utiliser les verbes "explique", "detaille", "decrypte", "revient sur",
+      "analyse", "decortique", "montre",
+    - utiliser les tournures "Selon X", "comme l'explique X", "d'apres X",
+      "un eclairage de X", "un article de X", "X precise que".
+    Aucune attribution. L'intro doit faire 1 phrase courte (8-15 mots) qui
+    se contente d'enrichir le titre actu sans inventer de pont vers une
+    source qui n'existe pas.
+
     STRUCTURE :
     - header_text : toujours "Votre essentiel du [jour en francais]"
     - intro_text (par sujet) :
@@ -238,7 +269,8 @@ writing_serene:
         Phrase 1 = un fait ou un contexte supplementaire tire des donnees.
         Phrase 2 = ce qu'eclaire l'article de fond (solutions, perspectives),
         en variant la formulation (voir PONTS ci-dessous).
-      * Sans article deep : 1 phrase courte de cadrage. Pas de remplissage.
+      * Sans article deep (`deep_article: null`) : 1 phrase courte de cadrage,
+        SANS aucune attribution a un media. Voir REGLE ABSOLUE ci-dessus.
       * NE PAS mentionner le nombre de sources ni les divergences
         mediatiques — ces infos sont affichees separement dans l'UI.
     - transition_text : toujours null
@@ -315,6 +347,12 @@ pepite:
     Selectionne la "pepite du jour" pour le digest Facteur :
     un article surprenant, original ou meconnu qui merite d'etre decouvert.
 
+    LANGUE — REGLE ABSOLUE :
+    L'article selectionne DOIT etre redige en francais. Tout article dont le
+    titre ou le contenu est en anglais (ou toute autre langue) est INELIGIBLE,
+    meme s'il est plus surprenant. Si AUCUN candidat n'est en francais,
+    reponds {{"selected_content_id": null, "mini_editorial": null}}.
+
     La pepite doit etre DIFFERENTE des 5 sujets principaux du digest.
     Elle apporte un angle inattendu, une decouverte, un sujet de niche interessant.
 
@@ -357,17 +395,20 @@ a_la_une:
 
 bonne_nouvelle:
   system: |
-    Parmi les sujets ci-dessous, tous issus d'actualites positives ou constructives,
-    selectionne celui qui represente la MEILLEURE nouvelle du jour
-    pour un citoyen francais.
+    Parmi les sujets ci-dessous, tous deja flagges comme bonnes nouvelles
+    et tous couverts par au moins 2 sources, selectionne celui qui merite
+    la position "A la Une" du digest "Bonnes nouvelles du jour".
 
     Criteres (par ordre) :
-    1. Progres tangible — une avancee concrete, pas juste une intention ou annonce
-    2. Impact positif — ameliore la vie des gens, l'environnement ou la societe
-    3. Caractere inspirant — suscite un optimisme fonde, donne envie d'en savoir plus
+    1. Progres tangible — une avancee concrete realisee, pas une simple annonce
+    2. Impact positif large — vie des gens, environnement, societe
+    3. Espoir fonde — suscite un optimisme legitime, donne envie d'en savoir plus
+    4. Convergence mediatique — preferer le sujet le plus largement couvert
+       a qualite egale (cf. nb_sources)
 
-    NE PAS choisir : sujets simplement neutres ou non-anxiogenes.
-    On cherche une VRAIE bonne nouvelle, pas juste l'absence de mauvaise nouvelle.
+    NE PAS choisir : sport, politique-loi-vote, people, buzz, sujets neutres,
+    annonces sans realisation. Si aucun ne semble robuste, prends celui
+    avec le plus de sources et explique brievement.
 
     Reponds UNIQUEMENT en JSON valide : {{"topic_id": "...", "reason": "1 phrase"}}
   model: mistral-small-latest

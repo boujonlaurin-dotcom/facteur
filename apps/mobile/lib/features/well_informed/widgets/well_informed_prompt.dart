@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../providers/well_informed_prompt_provider.dart';
 
@@ -39,6 +40,9 @@ class _WellInformedPromptState extends ConsumerState<WellInformedPrompt>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _shownTracked) return;
       _shownTracked = true;
+      // Consomme le slot nudge pour la session : aucun autre nudge ne
+      // s'affichera tant que l'app n'a pas redémarré.
+      ref.read(nudgeConsumedThisSessionProvider.notifier).state = true;
       unawaited(
         ref.read(wellInformedPromptControllerProvider).recordShown(),
       );

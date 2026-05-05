@@ -27,14 +27,6 @@ class NudgeRegistry {
   static final List<Nudge> _all = [
     // --- Existing nudges, migrated with legacy keys for backward compat. ---
     const Nudge(
-      id: NudgeIds.digestWelcome,
-      surface: NudgeSurface.digest,
-      placement: NudgePlacement.modal,
-      priority: NudgePriority.high,
-      frequency: NudgeFrequency.once,
-      legacySeenKey: 'has_seen_digest_welcome',
-    ),
-    const Nudge(
       id: NudgeIds.widgetPinAndroid,
       surface: NudgeSurface.digest,
       placement: NudgePlacement.bottomSheet,
@@ -61,14 +53,7 @@ class NudgeRegistry {
       legacyLastShownKey: 'saved_nudge_dismissed_at',
     ),
 
-    // --- Reserved for PR2/PR3 (declared now to lock ids + priorities). ---
-    const Nudge(
-      id: NudgeIds.welcomeTour,
-      surface: NudgeSurface.global,
-      placement: NudgePlacement.overlay,
-      priority: NudgePriority.critical,
-      frequency: NudgeFrequency.once,
-    ),
+    // --- Feed/article nudges.
     const Nudge(
       id: NudgeIds.feedSwipeHint,
       surface: NudgeSurface.feed,
@@ -83,7 +68,6 @@ class NudgeRegistry {
       placement: NudgePlacement.tooltip,
       priority: NudgePriority.high,
       frequency: NudgeFrequency.once,
-      prerequisites: [NudgeIds.welcomeTour],
     ),
     const Nudge(
       id: NudgeIds.feedPreviewLongpress,
@@ -99,7 +83,6 @@ class NudgeRegistry {
       placement: NudgePlacement.inlineBanner,
       priority: NudgePriority.normal,
       frequency: NudgeFrequency.once,
-      prerequisites: [NudgeIds.welcomeTour],
     ),
     const Nudge(
       id: NudgeIds.articleSaveNotes,
@@ -108,7 +91,6 @@ class NudgeRegistry {
       priority: NudgePriority.normal,
       frequency: NudgeFrequency.once,
       legacySeenKey: 'has_seen_note_welcome',
-      prerequisites: [NudgeIds.welcomeTour],
     ),
     const Nudge(
       id: NudgeIds.perspectivesCta,
@@ -116,7 +98,6 @@ class NudgeRegistry {
       placement: NudgePlacement.hintAnimation,
       priority: NudgePriority.low,
       frequency: NudgeFrequency.once,
-      prerequisites: [NudgeIds.welcomeTour],
     ),
     const Nudge(
       id: NudgeIds.articleReadOnSite,
@@ -124,7 +105,6 @@ class NudgeRegistry {
       placement: NudgePlacement.inlineBanner,
       priority: NudgePriority.low,
       frequency: NudgeFrequency.once,
-      prerequisites: [NudgeIds.welcomeTour],
     ),
 
     // Story 14.3 — well-informed NPS. Cooldown porté à 5j (skip) ; le

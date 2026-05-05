@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../../config/theme.dart';
@@ -81,12 +82,15 @@ class _FeedCarouselState extends State<FeedCarousel> {
     super.dispose();
   }
 
-  // Layout constants (matches TopicSection)
-  static const double _footerHeight = 57.0;
-  static const double _bodyPadding = 24.0;
-  static const double _metaRowHeight = 20.0;
+  // Compact layout constants — tighter than TopicSection's so feed carousels
+  // fit more content above the fold.
+  static const double _footerHeight = 36.0;
+  static const double _bodyPadding = 16.0;
+  static const double _metaRowHeight = 18.0;
   static const double _spacer = 8.0;
-  static const double _badgeHeight = 30.0; // Badge chip above card
+  static const double _badgeHeight = 24.0;
+  // Letter-box images slightly tighter than 16:9 to shave ~30 px per card.
+  static const double _imageAspectRatio = 2.1;
 
   bool _imageWillRender(Content article) {
     final url = article.thumbnailUrl;
@@ -133,7 +137,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
       }
     }
 
-    final imageHeight = hasImage ? cardWidth / (16 / 9) : 0.0;
+    final imageHeight = hasImage ? cardWidth / _imageAspectRatio : 0.0;
     return imageHeight + bodyHeight + _footerHeight + _badgeHeight;
   }
 
@@ -155,22 +159,39 @@ class _FeedCarouselState extends State<FeedCarousel> {
 
     final isMulti = data.items.length > 1;
 
+    final readCount = data.items
+        .where((c) =>
+            c.status == ContentStatus.consumed || c.readingProgress > 0)
+        .length;
+    final total = data.items.length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            data.title,
-            style: TextStyle(
-              color: colors.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              height: 1.2,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text(
+                  data.title,
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (readCount > 0) ...[
+                const SizedBox(width: 8),
+                _buildCompletionBadge(context, readCount, total),
+              ],
+            ],
           ),
         ),
         const SizedBox(height: 12),
@@ -242,6 +263,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
           alwaysShowDescription: !imageVisible,
           descriptionFontSize: 15,
           titleMaxLines: 5,
+          imageAspectRatio: _imageAspectRatio,
           onImageError: () => _onImageError(article.id),
           onTap: () => widget.onArticleTap(article),
           // T1: Full card feature parity
@@ -341,6 +363,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
       alwaysShowDescription: !imageVisible,
       descriptionFontSize: 15,
       titleMaxLines: 5,
+      imageAspectRatio: _imageAspectRatio,
       onImageError: () => _onImageError(article.id),
       onTap: () => widget.onArticleTap(article),
       // T1: Full card feature parity
@@ -402,6 +425,40 @@ class _FeedCarouselState extends State<FeedCarousel> {
             wrappedCard,
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCompletionBadge(BuildContext context, int readCount, int total) {
+    final colors = context.facteurColors;
+    final allRead = readCount == total;
+    final bgColor =
+        allRead ? colors.success : colors.success.withOpacity(0.12);
+    final fgColor = allRead ? Colors.white : colors.success;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (allRead) ...[
+            Icon(PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
+                size: 10, color: fgColor),
+            const SizedBox(width: 3),
+          ],
+          Text(
+            '$readCount/$total',
+            style: TextStyle(
+              color: fgColor,
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+            ),
+          ),
+        ],
       ),
     );
   }

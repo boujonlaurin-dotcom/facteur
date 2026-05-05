@@ -23,37 +23,32 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    // Seed welcome_tour as seen by default: the PR3 catalogue nudges declare
-    // it as a prerequisite, and most tests here exercise those nudges. Tests
-    // that specifically verify the gate override this in a nested setUp.
-    SharedPreferences.setMockInitialValues({
-      'nudge.welcome_tour.seen': true,
-    });
+    SharedPreferences.setMockInitialValues({});
   });
 
   group('NudgeCoordinator — single request', () {
     test('first request becomes active', () async {
       final c = _makeCoordinator();
-      final active = await c.request(NudgeIds.digestWelcome);
-      expect(active, NudgeIds.digestWelcome);
-      expect(c.activeId, NudgeIds.digestWelcome);
+      final active = await c.request(NudgeIds.widgetPinAndroid);
+      expect(active, NudgeIds.widgetPinAndroid);
+      expect(c.activeId, NudgeIds.widgetPinAndroid);
     });
 
     test('already-seen nudge is not activated', () async {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('nudge.digest_welcome.seen', true);
+      await prefs.setBool('nudge.widget_pin_android.seen', true);
       final c = _makeCoordinator();
-      final active = await c.request(NudgeIds.digestWelcome);
+      final active = await c.request(NudgeIds.widgetPinAndroid);
       expect(active, isNull);
     });
 
     test('dismiss advances to next queued nudge', () async {
       final c = _makeCoordinator();
-      await c.request(NudgeIds.digestWelcome);
       await c.request(NudgeIds.widgetPinAndroid);
-      expect(c.activeId, NudgeIds.digestWelcome);
-      await c.dismiss(markSeen: true);
+      await c.request(NudgeIds.feedBadgeLongpress);
       expect(c.activeId, NudgeIds.widgetPinAndroid);
+      await c.dismiss(markSeen: true);
+      expect(c.activeId, NudgeIds.feedBadgeLongpress);
     });
   });
 
@@ -62,17 +57,17 @@ void main() {
       final c = _makeCoordinator();
       await c.request(NudgeIds.articleSaveNotes); // normal
       expect(c.activeId, NudgeIds.articleSaveNotes);
-      await c.request(NudgeIds.digestWelcome); // high
-      expect(c.activeId, NudgeIds.digestWelcome);
-      // noteWelcome should have been pushed back to the queue.
+      await c.request(NudgeIds.widgetPinAndroid); // high
+      expect(c.activeId, NudgeIds.widgetPinAndroid);
+      // articleSaveNotes should have been pushed back to the queue.
       expect(c.queuedIds, contains(NudgeIds.articleSaveNotes));
     });
 
     test('lower priority request queues behind active', () async {
       final c = _makeCoordinator();
-      await c.request(NudgeIds.digestWelcome); // high
+      await c.request(NudgeIds.widgetPinAndroid); // high
       await c.request(NudgeIds.articleSaveNotes); // normal
-      expect(c.activeId, NudgeIds.digestWelcome);
+      expect(c.activeId, NudgeIds.widgetPinAndroid);
       expect(c.queuedIds.first, NudgeIds.articleSaveNotes);
     });
 
@@ -90,35 +85,28 @@ void main() {
   });
 
   group('NudgeCoordinator — prerequisites', () {
-    setUp(() {
-      // Override the top-level seed — these tests exercise the prereq gate
-      // directly, so they need a fresh store.
-      SharedPreferences.setMockInitialValues({});
-    });
-
     test('nudge with unmet prerequisite is rejected', () async {
       final c = _makeCoordinator();
-      // feedBadgeLongpress requires welcomeTour to be seen.
-      final active = await c.request(NudgeIds.feedBadgeLongpress);
+      // feedPreviewLongpress requires feedBadgeLongpress to be seen.
+      final active = await c.request(NudgeIds.feedPreviewLongpress);
       expect(active, isNull);
     });
 
     test('nudge becomes eligible once prerequisite marked seen', () async {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('nudge.welcome_tour.seen', true);
+      await prefs.setBool('nudge.feed_badge_longpress.seen', true);
       final c = _makeCoordinator();
-      final active = await c.request(NudgeIds.feedBadgeLongpress);
-      expect(active, NudgeIds.feedBadgeLongpress);
+      final active = await c.request(NudgeIds.feedPreviewLongpress);
+      expect(active, NudgeIds.feedPreviewLongpress);
     });
   });
 
   group('NudgeCoordinator — session budget & global cooldown', () {
-    test('critical / high nudges do NOT consume the session budget',
-        () async {
+    test('high priority nudges do NOT consume the session budget', () async {
       final c = _makeCoordinator();
-      await c.request(NudgeIds.digestWelcome); // high
-      await c.dismiss(markSeen: true);
       await c.request(NudgeIds.widgetPinAndroid); // high
+      await c.dismiss(markSeen: true);
+      await c.request(NudgeIds.feedBadgeLongpress); // high
       await c.dismiss(markSeen: true);
       // Normal nudge must still be eligible afterwards.
       final active = await c.request(NudgeIds.articleSaveNotes); // normal
@@ -159,19 +147,19 @@ void main() {
     test('once-frequency nudge marked seen on dismiss(markSeen=true)',
         () async {
       final c = _makeCoordinator();
-      await c.request(NudgeIds.digestWelcome);
+      await c.request(NudgeIds.widgetPinAndroid);
       await c.dismiss(markSeen: true);
-      final again = await c.request(NudgeIds.digestWelcome);
+      final again = await c.request(NudgeIds.widgetPinAndroid);
       expect(again, isNull);
     });
 
     test('dismiss(markSeen=false) allows nudge to show again', () async {
       final c = _makeCoordinator();
-      await c.request(NudgeIds.digestWelcome);
+      await c.request(NudgeIds.widgetPinAndroid);
       await c.dismiss(markSeen: false);
       c.resetSession();
-      final again = await c.request(NudgeIds.digestWelcome);
-      expect(again, NudgeIds.digestWelcome);
+      final again = await c.request(NudgeIds.widgetPinAndroid);
+      expect(again, NudgeIds.widgetPinAndroid);
     });
 
     test('cooldown-frequency nudge re-eligible after cooldown elapses',
@@ -196,77 +184,36 @@ void main() {
   group('NudgeCoordinator — kill switch', () {
     test('disabled: non-critical nudges are rejected', () async {
       final c = _makeCoordinator(isEnabled: () async => false);
-      final active = await c.request(NudgeIds.digestWelcome); // high
+      final active = await c.request(NudgeIds.widgetPinAndroid); // high
       expect(active, isNull);
-    });
-
-    test('disabled: critical nudge still activates', () async {
-      // welcome_tour can't re-activate if already seen; the outer setUp
-      // seeds that flag, so reset here.
-      SharedPreferences.setMockInitialValues({});
-      final c = _makeCoordinator(isEnabled: () async => false);
-      final active = await c.request(NudgeIds.welcomeTour); // critical
-      expect(active, NudgeIds.welcomeTour);
     });
 
     test('enabled flag flip allows a previously rejected nudge', () async {
       var enabled = false;
       final c = _makeCoordinator(isEnabled: () async => enabled);
-      expect(await c.request(NudgeIds.digestWelcome), isNull);
+      expect(await c.request(NudgeIds.widgetPinAndroid), isNull);
       enabled = true;
-      expect(await c.request(NudgeIds.digestWelcome), NudgeIds.digestWelcome);
-    });
-  });
-
-  group('NudgeCoordinator — catalogue nudges gated on welcome_tour', () {
-    setUp(() {
-      SharedPreferences.setMockInitialValues({});
-    });
-
-    const catalogueIds = [
-      NudgeIds.prioritySliderExplainer,
-      NudgeIds.articleSaveNotes,
-      NudgeIds.articleReadOnSite,
-      NudgeIds.perspectivesCta,
-      NudgeIds.feedBadgeLongpress,
-      NudgeIds.feedPreviewLongpress,
-    ];
-
-    for (final id in catalogueIds) {
-      test('$id is rejected when welcome_tour not seen', () async {
-        final c = _makeCoordinator();
-        expect(await c.request(id), isNull);
-      });
-    }
-
-    test('priority_slider_explainer unlocked once welcome_tour is seen',
-        () async {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('nudge.welcome_tour.seen', true);
-      final c = _makeCoordinator();
-      expect(
-        await c.request(NudgeIds.prioritySliderExplainer),
-        NudgeIds.prioritySliderExplainer,
-      );
+      expect(await c.request(NudgeIds.widgetPinAndroid),
+          NudgeIds.widgetPinAndroid);
     });
   });
 
   group('NudgeCoordinator — markConverted', () {
     test('markConverted dismisses + marks seen + does not re-show', () async {
       final c = _makeCoordinator();
-      await c.request(NudgeIds.digestWelcome);
-      final result = await c.markConverted(NudgeIds.digestWelcome);
+      await c.request(NudgeIds.widgetPinAndroid);
+      final result = await c.markConverted(NudgeIds.widgetPinAndroid);
       expect(result, isNull);
-      final again = await c.request(NudgeIds.digestWelcome);
+      final again = await c.request(NudgeIds.widgetPinAndroid);
       expect(again, isNull);
     });
 
     test('markConverted is a no-op when id does not match active', () async {
       final c = _makeCoordinator();
-      await c.request(NudgeIds.digestWelcome);
+      await c.request(NudgeIds.widgetPinAndroid);
       final result = await c.markConverted(NudgeIds.articleSaveNotes);
-      expect(result, NudgeIds.digestWelcome);
-      expect(c.activeId, NudgeIds.digestWelcome);
+      expect(result, NudgeIds.widgetPinAndroid);
+      expect(c.activeId, NudgeIds.widgetPinAndroid);
     });
   });
 }
