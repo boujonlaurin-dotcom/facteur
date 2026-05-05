@@ -130,8 +130,10 @@ class SourceSuggester:
             `SourceSuggestions(sources=...)` triée par pertinence.
         """
         excluded = set(excluded_source_ids or [])
-        followed_ids = await self._followed_source_ids(session, user_id)
 
+        # LLM AVANT toute requête DB : une SELECT ouvre une tx, l'idle
+        # pendant l'appel Mistral dépasse `idle_in_transaction_session_timeout`
+        # (10s, cf. database.py:166) → connexion tuée → PendingRollbackError.
         candidates: list[_LLMSourceCandidate] = []
         if self._llm.is_ready:
             user_message = (
@@ -161,6 +163,8 @@ class SourceSuggester:
                 )
                 # Fallback curé — pas de sentry capture (timeout LLM = condition
                 # business connue, pas un bug applicatif).
+
+        followed_ids = await self._followed_source_ids(session, user_id)
 
         if not candidates:
             sources = await self._fallback(session, theme_id, excluded, followed_ids)

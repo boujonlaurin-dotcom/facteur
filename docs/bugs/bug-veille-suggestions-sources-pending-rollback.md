@@ -136,3 +136,56 @@ Stack:
 ... (20 more)
 [8:57:06Z]  GET https://www.binge.audio/feed/  status=None
 ```
+
+---
+
+## Itération 2 — pourquoi #567 n'a pas suffi (2026-05-05 11:00 UTC)
+
+Hotfix #567 (commit `58a82e23`, déployé ~09:48 UTC) a ajouté
+`session.begin_nested()` + `asyncio.wait_for` autour de chaque candidat.
+**Le bug a continué à fire** : 6 nouveaux events sur cette release en
+5 min, dernier 10:53 UTC (même user `c959d7ef`).
+
+### Cause racine réelle (HIGH confidence)
+
+Breadcrumbs de l'event PYTHON-3P `97ac66340f6c4d92b8ec3cca928a0222` :
+
+| t (UTC) | event |
+|---|---|
+| 10:52:56.380 | `SET LOCAL idle_in_transaction_session_timeout = 10000` |
+| 10:52:56.403 | `SELECT user_sources WHERE user_id=…` (`_followed_source_ids`) — **ouvre une tx** |
+| 10:52:56 → 10:53:09 | appel LLM Mistral 13 s, AUCUNE activité DB → **tx idle > 10 s** |
+| ~10:53:06 | (côté PG) `IdleInTransactionSessionTimeout` → connexion tuée serveur-side (Sentry PYTHON-3R) |
+| 10:53:09.469 | `SAVEPOINT sa_savepoint_1` envoyé sur connexion morte |
+| 10:53:19 | `await db.commit()` (router) → `PendingRollbackError` (PYTHON-3P/3S) → 503 |
+
+Le SAVEPOINT du #567 protégeait la **boucle d'ingestion**, mais la
+session était déjà cramée AVANT d'y entrer. Cause directe : **une SELECT
+sur `user_sources` ouvrait une tx avant l'appel LLM**, qui restait idle
+13 s pendant le call Mistral, dépassant le `idle_in_transaction_session_timeout=10s`
+(filet anti-zombie posé après l'incident 2026-04-28, `database.py:166`).
+
+Règle déjà documentée : `docs/stories/core/18.1.veille-backend-foundations.md:53`
+— *« Pas de session ouverte pendant un appel LLM »*. `SourceSuggester.suggest_sources`
+la violait via `_followed_source_ids`.
+
+### Fix réel
+
+`source_suggester.py:131-167` — déplacer
+`await self._followed_source_ids(...)` de dessus le bloc LLM à dessous,
+juste avant le `if not candidates:`. Aucune autre modif.
+
+`followed_ids` n'est consommé que dans `_fallback` (purement DB) et la
+list-comp finale → ré-ordonnancement sûr.
+
+### Test anti-régression
+
+`tests/test_veille_source_ingestion.py::TestNoTxDuringLLM::test_followed_ids_query_runs_after_llm`
+enregistre l'ordre des appels (`llm`, `followed_ids`) et assert qu'ils
+sont dans cet ordre. Si une régression future remet une SELECT avant le
+LLM, ce test bloque.
+
+### Pourquoi pas relâcher `idle_in_transaction_session_timeout` ?
+
+10 s = filet global anti-zombies posé après incident 2026-04-28
+(`database.py:151-156`). L'augmenter recrée le risque. Hors scope.
