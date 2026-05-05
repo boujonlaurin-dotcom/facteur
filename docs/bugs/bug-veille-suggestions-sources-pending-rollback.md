@@ -266,3 +266,99 @@ foot-gun pour TOUS les endpoints qui font du long I/O sous `Depends(get_db)`.
 Hors scope du hotfix : changement architectural plus large, à sortir en
 story dédiée. Lister les autres endpoints à risque (rg `Depends\(get_db\)`
 + grep `httpx`/`mistral`/`anthropic` dans le même handler) avant.
+
+---
+
+## Itération 4 (2026-05-05) — décalage budget temps client / serveur
+
+### Symptômes restants post-#572
+
+L'utilisateur (`c959d7ef-d407-4a4a-a7cb-fdda6c065392`) signale :
+
+1. Step 3 reste en spinner > 1 min puis bascule sur le mock — au refresh,
+   les sources sont ingérées en DB (donc le serveur a fini, mais après le
+   timeout Dio de 30 s).
+2. La page de transition halo Step 2 → Step 3 (`flow_loading_screen`) ne
+   sert pas à faire patienter — l'utilisateur arrive directement sur
+   Step 3 en spinner.
+
+### Diagnostic Sentry post-#572
+
+Event PYTHON-41 (release `ecffd1bcff5dd0…`, post-merge #572) — timeline
+reconstituée à partir des breadcrumbs HTTP + queries :
+
+| t (UTC) | événement | Δ depuis t0 |
+|---------|-----------|-------------|
+| 15:45:32.315 | `SET LOCAL statement_timeout` (init `safe_async_session`) | 0 s |
+| 15:45:32.358 | `SET LOCAL idle_in_transaction_session_timeout` | +43 ms |
+| 15:45:48.437 | retour HTTP `api.mistral.ai` (LLM Mistral) | **+16.1 s** |
+| 15:45:48.459 | `apply_session_timeouts` — SET LOCAL #1 (pattern #572) | +16.1 s |
+| 15:45:48.523 | SELECT `user_sources` (`_followed_source_ids`) | +16.2 s |
+| 15:45:48.673 | candidat 1 (thestack) — début HTTP | +16.4 s |
+| 15:45:50.564 | candidat 4 (mediapart) — début | +18.2 s |
+| 15:45:54.099 | candidat 6 (iapratique substack) — INSERT nouvelle source | +21.7 s |
+| 15:45:54.618 | candidat 8 (usine-digitale) — 403, `sentry_sdk.capture_exception` puis `continue` | **+22.3 s** |
+
+**Constats** :
+- LLM Mistral seul : **~16 s**.
+- Boucle d'ingestion : **~6 s pour 7 candidats** (≈0.85 s/cand) — la
+  parallélisation interne de RSSParser (Stage 4 suffix probe semaphore=4,
+  `rss_parser.py:839`) tient son rôle.
+- `idle_in_transaction_session_timeout` : aucune occurrence post-`ecffd1bc`
+  (PYTHON-3Z/40 dernière fire à 14:38, instant du déploiement) — fix #572
+  verrouillé.
+- Pire cas réaliste : LLM 16-20 s + N candidats avec ≥4 timeouts à 8 s
+  (cap `_HYDRATE_TIMEOUT_S`) = **30-60 s wall-clock**.
+
+### Cause racine UX
+
+`apps/mobile/lib/features/veille/providers/veille_config_provider.dart:230`
+définit `_loadingMaxDuration = Duration(seconds: 8)` comme cap maximal
+d'attente du provider pré-fetché. Le LLM seul prend déjà 16 s, donc la
+transition halo expire **systématiquement** avant le retour API. La nav
+bascule sur Step 3 qui ré-watch le même provider → spinner Step 3 visible
+au lieu de la transition halo, jusqu'à `data` (ou `Dio.timeout = 30 s`,
+`apps/mobile/lib/config/constants.dart:31`, qui mène à la branche `error`
+puis fallback mock).
+
+### Fix Itération 4
+
+Deux fixes complémentaires shipped ensemble :
+
+1. **Backend — paralléliser la boucle d'ingestion** :
+   `source_suggester.py:194-229` séquentiel → asyncio.gather avec sémaphore
+   sur la phase HTTP `detect_source` (parallèle, hors session) puis ingest
+   DB séquentiel (préserve SAVEPOINT par candidat). Wall-clock typique :
+   ⌈12/4⌉ × 0.85 ≈ 3 s (au lieu de 10 s) ; pire cas avec 4 timeouts
+   simultanés : 8 s (au lieu de 32 s).
+
+2. **Mobile — aligner le budget transition** :
+   `veille_config_provider.dart:230` — `_loadingMaxDuration` constante
+   factorisée en `_maxDurationFor(int from)` qui renvoie 8 s pour
+   `from=1` (Step 1→2 reste rapide) et 25 s pour `from=2` (Step 2→3 a
+   besoin de 16-19 s avec Fix A). 25 s laisse 5 s de marge sous le
+   `Dio.timeout=30 s`.
+
+### Pourquoi pas un timeout serveur global
+
+L'option de capper côté serveur à 25 s avec fallback curé (option E des
+hypothèses) sacrifierait les sources LLM dans tous les cas dépassant 25 s.
+Avec Fix A, on ne dépasse quasi plus 25 s — préférable de garder la
+version LLM riche.
+
+### Hors scope (re-confirmé)
+
+- Cache négatif par hostname — gain marginal post-parallélisation.
+- Skip RSSParser pour candidats LLM — change la qualité du `feed_url`,
+  story dédiée si besoin.
+- Streaming SSE — refactor architectural lourd, pas justifié.
+- Refactor `safe_async_session` event-listener `after_begin` — déjà
+  hors scope #572, statu quo.
+
+### Test anti-régression
+
+- Backend : `tests/services/veille/test_source_suggester.py` — assert
+  que 12 candidats avec 4 mocks lents (`asyncio.sleep(2)`) finissent en
+  ≤ 4 s wall-clock (vs ≤ 24 s en séquentiel).
+- Mobile : `test/features/veille/providers/veille_config_provider_test.dart`
+  — assert `_maxDurationFor(2) == 25 s`, `_maxDurationFor(1) == 8 s`.
