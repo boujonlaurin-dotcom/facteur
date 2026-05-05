@@ -29,6 +29,11 @@ def _is_strip_line(line: str) -> bool:
     stripped = line.lstrip()
     if stripped.startswith(("SET ", "REVOKE ", "GRANT ")):
         return True
+    # pg_dump 17+ wraps the dump with `\restrict <token>` / `\unrestrict <token>`
+    # psql meta-commands. Alembic's `op.execute(sql)` runs SQL via psycopg, which
+    # doesn't understand backslash commands → "syntax error at or near \".
+    if stripped.startswith(("\\restrict", "\\unrestrict")):
+        return True
     if stripped.startswith("ALTER DEFAULT PRIVILEGES "):
         return True
     if re.match(r'ALTER (TABLE|FUNCTION|SCHEMA|SEQUENCE) "?\w+', stripped) and " OWNER TO " in line:
@@ -111,7 +116,9 @@ def _drop_auth_users_fk(lines: list[str]) -> list[str]:
             if re.search(r'REFERENCES\s+"?auth"?\."?users"?', block_text):
                 i = j + 1
                 continue
-            if '"public"."alembic_version"' in block_text or '"alembic_version"' in block_text:
+            # Match both quoted (`"public"."alembic_version"`) and unquoted
+            # (`public.alembic_version` / `alembic_version`) forms.
+            if re.search(r'\b"?(?:public"?\."?)?alembic_version\b', block_text):
                 i = j + 1
                 continue
             out.extend(block)
@@ -192,6 +199,13 @@ def sanitize(raw: str) -> str:
 
         if _is_strip_line(line):
             continue
+
+        # `CREATE SCHEMA public;` always errors — every Postgres DB ships with
+        # `public` already. Rewrite to idempotent form. (We deliberately leave
+        # `CREATE TABLE` alone: a baseline replay against a non-empty DB should
+        # fail loudly, since that signals drift.)
+        if line.strip() == "CREATE SCHEMA public;":
+            line = "CREATE SCHEMA IF NOT EXISTS public;\n"
 
         # Collapse runs of blank lines.
         if line.strip() == "" and out and out[-1].strip() == "":

@@ -9,8 +9,6 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
 -- PostgreSQL database dump
 --
 
-\restrict jf8K4albLtfvG21T3Ds57jSrwBEFDBbL8IdtDJoU6RcU58WoQhkdax4gXbstdT2
-
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.9 (Homebrew)
 
@@ -18,7 +16,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
 -- Name: public; Type: SCHEMA; Schema: -; Owner: -
 --
 
-CREATE SCHEMA public;
+CREATE SCHEMA IF NOT EXISTS public;
 
 --
 -- Name: set_updated_at(); Type: FUNCTION; Schema: public; Owner: -
@@ -737,9 +735,6 @@ CREATE TABLE public.waitlist_survey_responses (
 --
 -- Name: alembic_version alembic_version_pkc; Type: CONSTRAINT; Schema: public; Owner: -
 --
-
-ALTER TABLE ONLY public.alembic_version
-    ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 
 --
 -- Name: analytics_events analytics_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -1999,6 +1994,4 @@ ALTER TABLE ONLY public.waitlist_survey_responses
 --
 -- PostgreSQL database dump complete
 --
-
-\unrestrict jf8K4albLtfvG21T3Ds57jSrwBEFDBbL8IdtDJoU6RcU58WoQhkdax4gXbstdT2
 

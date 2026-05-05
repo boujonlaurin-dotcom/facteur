@@ -1,11 +1,11 @@
-"""baseline — prod schema snapshot 2026-04-30.
+"""baseline — prod schema snapshot 2026-05-05.
 
-Brownfield baseline. Replaces the 74 pre-existing migrations (now in `_archive/`)
+Brownfield baseline. Replaces the 81 pre-existing migrations (now in `_archive/`)
 which had drifted from prod due to manual SQL applied via Supabase SQL Editor
 and `--autogenerate` runs against drifted DBs.
 
-The SQL in `baseline/prod-schema-2026-04-30.sql` is a sanitized
-`pg_dump --schema-only --schema=public` snapshot of prod taken on 2026-04-30.
+The SQL in `baseline/prod-schema-2026-05-05.sql` is a sanitized
+`pg_dump --schema-only --schema=public` snapshot of prod taken on 2026-05-05.
 
 On prod, this revision is applied via `alembic stamp 00000_baseline` (no schema
 change). On a fresh local DB, `alembic upgrade head` runs the SQL to rebuild
@@ -25,7 +25,7 @@ depends_on: str | None = None
 
 
 _BASELINE_SQL_PATH = (
-    Path(__file__).resolve().parent.parent / "baseline" / "prod-schema-2026-04-30.sql"
+    Path(__file__).resolve().parent.parent / "baseline" / "prod-schema-2026-05-05.sql"
 )
 
 
