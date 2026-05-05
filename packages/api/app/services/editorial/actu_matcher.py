@@ -16,6 +16,23 @@ from app.services.editorial.schemas import EditorialSubject, MatchedActuArticle
 
 logger = structlog.get_logger()
 
+# Types de contenu non-textuels exclus du pass 1 actu matching.
+# La promesse "revue de presse" attend un article texte ; les vidéos
+# YouTube relaient souvent du contenu déjà couvert par d'autres sources
+# et trompent le source_count quand un cluster contient
+# {video YouTube + miroir Reddit qui partage la même URL}.
+# Le pass 2/3 relaxé les autorise comme dernier recours.
+_NON_TEXT_CONTENT_TYPES = frozenset({"youtube", "video"})
+
+
+def _is_non_text(content) -> bool:  # type: ignore[no-untyped-def]
+    ct = getattr(content, "content_type", None)
+    if ct is None:
+        return False
+    # content_type peut être un Enum ou une str selon la couche.
+    value = ct.value if hasattr(ct, "value") else str(ct)
+    return value in _NON_TEXT_CONTENT_TYPES
+
 
 class ActuMatcher:
     """Matches editorial topics to news articles from user's sources."""
@@ -184,6 +201,8 @@ class ActuMatcher:
         cutoff_relaxed = datetime.now(UTC) - timedelta(hours=self._max_age_hours * 2)
         # Intentionally empty: relaxed pass allows reusing sources from pass 1
         # for diversity. Content-level dedup (excluded_content_ids) is still enforced.
+        # Pass 2 reste strict sur le content_type (texte uniquement) ; pass 3
+        # relax la durée ET autorise les vidéos en dernier recours.
         relaxed_used: set[UUID] = set()
         for i, subject in enumerate(result):
             if subject.actu_article is not None:
@@ -191,7 +210,7 @@ class ActuMatcher:
             cluster = cluster_map.get(subject.topic_id)
             if not cluster:
                 continue
-            # Try without pass-1 diversity, but keep diversity among relaxed matches
+            # Pass 2 : drop diversity contrainte mais garder texte-only
             best = self._find_best_article_global(
                 cluster=cluster,
                 used_source_ids=relaxed_used,
@@ -199,12 +218,13 @@ class ActuMatcher:
                 excluded_content_ids=_excluded_content,
             )
             if not best:
-                # Try with relaxed recency (48h)
+                # Pass 3 : relax recency (48h) + autorise vidéos
                 best = self._find_best_article_global(
                     cluster=cluster,
                     used_source_ids=relaxed_used,
                     cutoff=cutoff_relaxed,
                     excluded_content_ids=_excluded_content,
+                    allow_non_text=True,
                 )
             if best:
                 relaxed_used.add(best.source_id)
@@ -238,6 +258,11 @@ class ActuMatcher:
             if content.id in excluded_content_ids:
                 continue
             if content.is_paid:
+                continue
+            if _is_non_text(content):
+                # Les "extra actus" affichés sous la carte sont aussi de la
+                # revue de presse texte ; les vidéos seraient redondantes
+                # (souvent miroir de la principale). Cf. bug-digest-pipeline-fallbacks.md.
                 continue
             if content.published_at.replace(tzinfo=UTC) < cutoff:
                 continue
@@ -276,6 +301,7 @@ class ActuMatcher:
         used_source_ids: set[UUID],
         cutoff: datetime,
         excluded_content_ids: set[UUID] | None = None,
+        allow_non_text: bool = False,
     ) -> MatchedActuArticle | None:
         """Best article from ANY source (not just user's).
 
@@ -284,6 +310,8 @@ class ActuMatcher:
         - is_paid = false
         - Source not already used (diversity)
         - Content ID not in excluded set (dedup with deep articles)
+        - allow_non_text=False (pass 1) : exclut les vidéos/YouTube. Pass 2/3
+          (relaxé) passe `True` pour autoriser une vidéo si rien de mieux.
         """
         _excluded = excluded_content_ids or set()
         candidates = []
@@ -291,6 +319,8 @@ class ActuMatcher:
             if content.id in _excluded:
                 continue
             if content.is_paid:
+                continue
+            if not allow_non_text and _is_non_text(content):
                 continue
             if content.published_at.replace(tzinfo=UTC) < cutoff:
                 continue
@@ -343,6 +373,8 @@ class ActuMatcher:
             if content.id in excluded_ids:
                 continue
             if content.is_paid:
+                continue
+            if _is_non_text(content):
                 continue
             if content.published_at.replace(tzinfo=UTC) < cutoff:
                 continue

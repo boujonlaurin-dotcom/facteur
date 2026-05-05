@@ -15,6 +15,7 @@ import 'analytics_service.dart';
 /// - `io.supabase.facteur://digest/<contentId>?pos=<n>&topicId=<id>`
 ///   → `/feed/content/<contentId>` (article reader)
 /// - `io.supabase.facteur://feed` → `/feed`
+/// - `io.supabase.facteur://veille/dashboard` → `/veille/dashboard`
 ///
 /// `io.supabase.facteur://login-callback` is intentionally ignored — Supabase
 /// SDK intercepts it before it reaches us. Anything else falls through to
@@ -180,6 +181,10 @@ class DeepLinkService {
         _analytics?.trackWidgetAppOpened(target: 'feed');
         router.go(action.route!);
         return;
+      case WidgetDeepLinkTarget.veille:
+        _analytics?.trackWidgetAppOpened(target: 'veille');
+        router.go(action.route!);
+        return;
       case WidgetDeepLinkTarget.ignored:
       case WidgetDeepLinkTarget.unhandled:
         debugPrint('DeepLinkService: unhandled uri=$uri');
@@ -207,6 +212,18 @@ class DeepLinkService {
         (host.isEmpty && segments.isNotEmpty && segments.first == 'digest');
     final isFeed = host == 'feed' ||
         (host.isEmpty && segments.isNotEmpty && segments.first == 'feed');
+    final isVeille = host == 'veille' ||
+        (host.isEmpty && segments.isNotEmpty && segments.first == 'veille');
+
+    if (isVeille) {
+      // `io.supabase.facteur://veille/dashboard` → `/veille/dashboard`.
+      // Toute autre cible veille (deliveries, …) inconnue tombe en fallback
+      // sur le dashboard plutôt que l'errorBuilder GoRouter.
+      return const WidgetDeepLinkAction(
+        target: WidgetDeepLinkTarget.veille,
+        route: RoutePaths.veilleDashboard,
+      );
+    }
 
     if (isDigest) {
       final articleId = _extractArticleIdFrom(host, segments);
@@ -253,7 +270,7 @@ class DeepLinkService {
   }
 }
 
-enum WidgetDeepLinkTarget { digest, article, feed, ignored, unhandled }
+enum WidgetDeepLinkTarget { digest, article, feed, veille, ignored, unhandled }
 
 class WidgetDeepLinkAction {
   final WidgetDeepLinkTarget target;

@@ -8,9 +8,11 @@ import 'package:flutter/gestures.dart';
 /// Drop-in replacement for [CupertinoPage] on pushed screens.
 class FullSwipeCupertinoPage<T> extends Page<T> {
   final Widget child;
+  final Duration? transitionDurationOverride;
 
   const FullSwipeCupertinoPage({
     required this.child,
+    this.transitionDurationOverride,
     super.key,
     super.name,
   });
@@ -39,6 +41,10 @@ class _FullSwipePageRoute<T> extends PageRoute<T>
 
   @override
   bool get maintainState => true;
+
+  @override
+  Duration get transitionDuration =>
+      _page.transitionDurationOverride ?? super.transitionDuration;
 
   @override
   Widget buildTransitions(

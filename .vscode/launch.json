@@ -78,9 +78,8 @@
       "type": "dart",
       "program": "apps/mobile/lib/main.dart",
       "preLaunchTask": "Launch Android Emulator",
+      "deviceId": "emulator-5554",
       "args": [
-        "-d",
-        "emulator-5554",
         "--dart-define=API_BASE_URL=https://facteur-production.up.railway.app/api/",
         "--dart-define=SUPABASE_URL=https://ykuadtelnzavrqzbfdve.supabase.co",
         "--dart-define=SUPABASE_ANON_KEY=sb_publishable_0L_kPMbe0Pk9eBdzeEsIZg_0pogzm3k"
@@ -92,9 +91,8 @@
       "type": "dart",
       "program": "apps/mobile/lib/main.dart",
       "preLaunchTask": "Android Emulator + Backend API",
+      "deviceId": "emulator-5554",
       "args": [
-        "-d",
-        "emulator-5554",
         // 10.0.2.2 = adresse du host machine depuis l'émulateur Android
         "--dart-define=API_BASE_URL=http://10.0.2.2:8080/api/",
         "--dart-define=SUPABASE_URL=https://ykuadtelnzavrqzbfdve.supabase.co",

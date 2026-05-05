@@ -1,11 +1,8 @@
 """Service "Pépites" — recommandations curées de sources dans le feed.
 
-Critères d'affichage :
-- Rate-limit adaptatif par palier de sources suivies :
-    - < 20 sources : max 1×/24h
-    - 20–50 sources : max 1×/7 jours
-    - > 50 sources : max 1×/14 jours
-- AND cool-down : si dismissé récemment, attendre 7j
+Critères d'affichage (uniformes pour tous les utilisateurs) :
+- Rate-limit : max 1×/24h
+- Cool-down : si dismissé récemment, attendre 7j
 """
 
 from datetime import UTC, datetime, timedelta
@@ -22,12 +19,8 @@ from app.schemas.source import SourceResponse
 
 logger = structlog.get_logger()
 
-LOW_SOURCES_THRESHOLD = 20
-HIGH_SOURCES_THRESHOLD = 50
 DISMISS_COOL_DOWN_DAYS = 7
-RATE_LIMIT_HOURS_LOW = 24
-RATE_LIMIT_HOURS_MEDIUM = 24 * 7
-RATE_LIMIT_HOURS_HIGH = 24 * 14
+RATE_LIMIT_HOURS = 24
 
 
 def _now() -> datetime:
@@ -49,32 +42,15 @@ class PepiteService:
             select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
         )
 
-    async def _source_count(self, user_uuid: UUID) -> int:
-        result = await self.db.execute(
-            select(func.count(UserSource.id)).where(UserSource.user_id == user_uuid)
-        )
-        return result.scalar() or 0
-
     @staticmethod
-    def _rate_limit_hours(source_count: int) -> int:
-        if source_count < LOW_SOURCES_THRESHOLD:
-            return RATE_LIMIT_HOURS_LOW
-        if source_count < HIGH_SOURCES_THRESHOLD:
-            return RATE_LIMIT_HOURS_MEDIUM
-        return RATE_LIMIT_HOURS_HIGH
-
-    @staticmethod
-    def _rate_limited(
-        personalization: UserPersonalization | None, source_count: int
-    ) -> bool:
+    def _rate_limited(personalization: UserPersonalization | None) -> bool:
         if (
             personalization is None
             or personalization.pepite_carousel_last_shown_at is None
         ):
             return False
         last_shown = _as_utc(personalization.pepite_carousel_last_shown_at)
-        hours = PepiteService._rate_limit_hours(source_count)
-        return last_shown > _now() - timedelta(hours=hours)
+        return last_shown > _now() - timedelta(hours=RATE_LIMIT_HOURS)
 
     @staticmethod
     def _in_cool_down(personalization: UserPersonalization | None) -> bool:
@@ -86,18 +62,15 @@ class PepiteService:
         dismissed_at = _as_utc(personalization.pepite_carousel_dismissed_at)
         return dismissed_at > _now() - timedelta(days=DISMISS_COOL_DOWN_DAYS)
 
-    async def _is_eligible(
-        self, user_uuid: UUID, personalization: UserPersonalization | None
-    ) -> bool:
+    def _is_eligible(self, personalization: UserPersonalization | None) -> bool:
         if self._in_cool_down(personalization):
             return False
-        source_count = await self._source_count(user_uuid)
-        return not self._rate_limited(personalization, source_count)
+        return not self._rate_limited(personalization)
 
     async def should_show_pepite_carousel(self, user_id: str) -> bool:
         user_uuid = UUID(user_id)
         personalization = await self._load_personalization(user_uuid)
-        return await self._is_eligible(user_uuid, personalization)
+        return self._is_eligible(personalization)
 
     async def _user_interest_slugs(self, user_uuid: UUID) -> set[str]:
         result = await self.db.execute(
@@ -130,7 +103,7 @@ class PepiteService:
         user_uuid = UUID(user_id)
         personalization = await self._load_personalization(user_uuid)
 
-        if not await self._is_eligible(user_uuid, personalization):
+        if not self._is_eligible(personalization):
             return []
 
         followed_ids = await self._user_followed_source_ids(user_uuid)
@@ -162,8 +135,15 @@ class PepiteService:
                 return 0
             return len(set(source.pepite_for_themes) & interest_slugs)
 
+        # Tri prioritaire : (1) source avec logo (les cartes sans logo
+        # sont moins "vendeuses" visuellement), (2) match thème user,
+        # (3) nb de followers.
         rows.sort(
-            key=lambda row: (_match_score(row[0]), row[1] or 0),
+            key=lambda row: (
+                1 if row[0].logo_url else 0,
+                _match_score(row[0]),
+                row[1] or 0,
+            ),
             reverse=True,
         )
 
@@ -199,6 +179,8 @@ class PepiteService:
                 score_independence=s.score_independence,
                 score_rigor=s.score_rigor,
                 score_ux=s.score_ux,
+                recommended_by=getattr(s, "recommended_by", None),
+                recommendation_reason=getattr(s, "recommendation_reason", None),
             )
             for s, follower_count in selected
         ]

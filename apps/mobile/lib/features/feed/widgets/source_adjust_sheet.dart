@@ -62,9 +62,6 @@ class _SourceAdjustSheetState extends ConsumerState<SourceAdjustSheet> {
   }
 
   Future<void> _requestExplainerNudge() async {
-    // welcome_tour gating is handled by the coordinator's prereq (device-
-    // scoped key, legacy fallback honored). This sheet can't be opened
-    // during the tour (overlay blocks the source long-press).
     final coordinator = ref.read(nudgeCoordinatorProvider);
     final active =
         await coordinator.request(NudgeIds.prioritySliderExplainer);

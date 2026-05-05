@@ -196,9 +196,32 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
             _selectedKeyword != null) {
           return;
         }
+        // Preserve consumed status for items that the user marked while the API
+        // call was in flight (race: tap → markContentAsConsumed sets optimistic
+        // state before response arrives and would overwrite it).
+        final currentState = state.value;
+        final consumedIds = <String>{
+          ...?(currentState?.items
+              .where((c) => c.status == ContentStatus.consumed)
+              .map((c) => c.id)),
+          ...?(currentState?.carousels.expand((carousel) => carousel.items
+              .where((c) => c.status == ContentStatus.consumed)
+              .map((c) => c.id))),
+        };
+        if (consumedIds.isEmpty) {
+          state = AsyncData(
+              FeedState(items: response.items, carousels: response.carousels));
+          return;
+        }
+        Content preserve(Content c) => consumedIds.contains(c.id)
+            ? c.copyWith(status: ContentStatus.consumed)
+            : c;
         state = AsyncData(FeedState(
-          items: response.items,
-          carousels: response.carousels,
+          items: response.items.map(preserve).toList(),
+          carousels: response.carousels
+              .map((car) =>
+                  car.copyWith(items: car.items.map(preserve).toList()))
+              .toList(),
         ));
       } catch (e) {
         // Silent: user still sees the cached feed.
@@ -918,32 +941,48 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       if (c.id != updated.id) return c;
       return updated.copyWith(status: c.status);
     }).toList();
-    state = AsyncData(FeedState(items: items, carousels: state.value?.carousels ?? const []));
+
+    final updatedCarousels = _updateCarouselItem(
+      currentState.carousels,
+      updated.id,
+      (c) => updated.copyWith(status: c.status),
+    );
+
+    state = AsyncData(FeedState(items: items, carousels: updatedCarousels));
   }
 
   Future<void> markContentAsConsumed(Content content) async {
     final currentState = state.value;
     if (currentState == null) return;
 
-    // Check if it's in the feed items
     final feedIndex = currentState.items.indexWhere((c) => c.id == content.id);
 
+    final updatedItems = List<Content>.from(currentState.items);
     if (feedIndex != -1) {
-      // Update the item status in the list directly
-      final updatedItems = List<Content>.from(currentState.items);
       updatedItems[feedIndex] =
           updatedItems[feedIndex].copyWith(status: ContentStatus.consumed);
+    }
 
-      state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
+    final updatedCarousels = _updateCarouselItem(
+      currentState.carousels,
+      content.id,
+      (c) => c.copyWith(status: ContentStatus.consumed),
+    );
 
-      // Call Generic API immediately (Fire and forget)
-      try {
-        final repository = ref.read(feedRepositoryProvider);
-        await repository.updateContentStatus(
-            content.id, ContentStatus.consumed);
-      } catch (e) {
-        // Silent failure, state is already updated optimistically
+    state = AsyncData(FeedState(items: updatedItems, carousels: updatedCarousels));
+
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.updateContentStatus(content.id, ContentStatus.consumed);
+      // Invalidate in-memory dedupe + Hive cache so the next fetch (silent
+      // revalidation or cold start) returns fresh data with the correct status.
+      FeedRepository.clearDefaultViewCache();
+      final userId = ref.read(authStateProvider).user?.id;
+      if (userId != null) {
+        unawaited(ref.read(feedCacheServiceProvider)?.clearForUser(userId));
       }
+    } catch (e) {
+      // Silent failure, state is already updated optimistically
     }
   }
 }

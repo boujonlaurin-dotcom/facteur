@@ -83,6 +83,7 @@ from app.routers import (
     feed,
     images,
     internal,
+    letters,
     notification_preferences,
     personalization,
     progress,
@@ -90,6 +91,7 @@ from app.routers import (
     streaks,
     subscription,
     users,
+    veille,
     waitlist,
     webhooks,
     well_informed,
@@ -466,6 +468,8 @@ app.include_router(
     prefix="/api/well-informed",
     tags=["WellInformed"],
 )
+app.include_router(veille.router, prefix="/api/veille", tags=["Veille"])
+app.include_router(letters.router, prefix="/api/letters", tags=["Letters"])
 
 
 @app.exception_handler(Exception)

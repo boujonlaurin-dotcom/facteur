@@ -235,6 +235,15 @@ class AnalyticsService {
     await _capturePostHog('digest_opened', props);
   }
 
+  Future<void> trackBonnesNouvellesOpened({DateTime? targetDate}) async {
+    final props = {
+      'session_id': _sessionId,
+      'target_date': targetDate?.toIso8601String(),
+    };
+    await _logEvent('bonnes_nouvelles_opened', props);
+    await _capturePostHog('bonnes_nouvelles_opened', props);
+  }
+
   Future<void> trackDigestItemViewed({
     required String digestDate,
     required String contentId,
@@ -449,6 +458,24 @@ class AnalyticsService {
     final props = {'session_id': _sessionId};
     await _logEvent('widget_pin_dismissed', props);
     await _capturePostHog('widget_pin_dismissed', props);
+  }
+
+  Future<void> trackDiscoverDisableStepShown() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('discover_disable_step_shown', props);
+    await _capturePostHog('discover_disable_step_shown', props);
+  }
+
+  Future<void> trackDiscoverDisableConfirmed() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('discover_disable_confirmed', props);
+    await _capturePostHog('discover_disable_confirmed', props);
+  }
+
+  Future<void> trackDiscoverDisableSkipped() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('discover_disable_skipped', props);
+    await _capturePostHog('discover_disable_skipped', props);
   }
 
   /// target: 'digest' | 'article' | 'feed'.

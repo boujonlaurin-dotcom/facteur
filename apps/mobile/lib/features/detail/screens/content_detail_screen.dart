@@ -1,10 +1,12 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:facteur/core/utils/html_utils.dart';
-import 'package:flutter/foundation.dart' show Factory, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show Factory, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:url_launcher/url_launcher.dart';
@@ -23,6 +25,7 @@ import '../../../core/providers/navigation_providers.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
+import '../../lettres/providers/letters_provider.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../feed/widgets/perspectives_pill.dart';
 import '../../../widgets/sunflower_icon.dart';
@@ -120,7 +123,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _webFallbackRedirectScheduled = false;
   late DateTime _startTime;
   WebViewController? _webViewController;
-  final bool _showWebView = false;
+  // Mutable: flipped to `true` from `_onReadOnSiteTap` when the in-app
+  // reader could not enter scroll-to-site mode (htmlContent missing or
+  // too short on Android race conditions). Forces `_buildWebViewFallback`
+  // to render and prevents an unwanted external browser jump.
+  bool _showWebView = false;
 
   // Scroll-to-site state
   final ScrollController _scrollController = ScrollController();
@@ -135,6 +142,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _ctaTapped = false;
   double _bridgeEndOffset = 0;
   bool _offsetsComputed = false;
+  // Once the WebView fade-in completes, drop the heavy article subtree from
+  // the tree so Flutter no longer rasterizes/composites it on top of the
+  // scrolling WebView (eliminates per-frame UI-thread cost).
+  bool _articleLayerMounted = true;
+  Timer? _articleLayerUnmountTimer;
+  // Last scroll position at which `_checkAtPerspectivesSection` was run.
+  // Per-frame `findRenderObject + localToGlobal` walks the RenderObject tree
+  // — gating on a 24px delta cuts that work to ~once per overscroll fling.
+  double _lastPerspCheckPixels = -1000;
 
   Timer? _readingTimer;
   Timer? _noteNudgeTimer;
@@ -174,6 +190,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   double _footerAutoStart = 0.0;
   double _footerAutoTarget = 0.0;
   late AnimationController _footerAutoController;
+  // Subtle scale-pop on the "Lire sur ..." CTA when it transitions to its
+  // primary (orange) state — signals the user has reached the end.
+  late AnimationController _ctaPulseController;
 
   // Video detail screen state
   bool _isDescriptionExpanded = false;
@@ -313,6 +332,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           (_footerAutoTarget - _footerAutoStart) * _footerAutoController.value;
     });
 
+    _ctaPulseController = AnimationController(
+      duration: const Duration(milliseconds: 280),
+      vsync: this,
+    );
+    _footerPermanent.addListener(_onFooterPermanentChanged);
+
     WidgetsBinding.instance.addObserver(this);
 
     // Show FAB after delay — start transparent, fade+scale in after 2s
@@ -326,10 +351,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }
     });
 
-    // First-time save+notes nudge — gating is enforced by the coordinator's
-    // prereq on welcome_tour (device-scoped key, legacy fallback honored).
-    // The article screen can't be reached during the tour (overlay blocks
-    // taps), so no extra "tour active" guard needed here.
+    // First-time save+notes nudge.
     _requestSaveNotesNudge();
 
     // Persist article open count for triggers (read_on_site 4th article,
@@ -381,8 +403,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Share FAB: show only after 90% reading on long articles
     _readingProgress.addListener(_onShareFabProgress);
 
-    // Detect short articles after first layout
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Detect short articles after the first layout pass has had time to
+    // render the article HTML. A naive postFrame callback fires before
+    // `flutter_html` finishes laying out, which made long articles look
+    // "short" (maxScrollExtent < 50) and locked the CTA orange on open.
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (!mounted) return;
       _checkShortArticle();
     });
 
@@ -425,7 +451,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           }
           lastTouchY = currentY;
         }, { passive: true });
-        // Reading progress tracking (throttled to every 150ms for smooth updates)
+        // Reading progress tracking (throttled to 300ms — high enough to keep
+        // the postMessage cost from stuttering native WebView scrolling, low
+        // enough for the header/footer auto-hide to feel responsive).
         var progressTimer = null;
         var lastScrollY = window.scrollY;
         window.addEventListener('scroll', function() {
@@ -443,11 +471,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             }
             var currentScrollY = window.scrollY;
             var scrollDelta = currentScrollY - lastScrollY;
-            if (scrollDelta !== 0) {
+            // Skip sub-pixel noise (overscroll bounce, deceleration jitter)
+            // — header/footer auto-hide only needs meaningful deltas.
+            if (Math.abs(scrollDelta) >= 4) {
               ScrollBridge.postMessage('scroll_delta:' + scrollDelta + ':' + currentScrollY);
             }
             lastScrollY = currentScrollY;
-          }, 150);
+          }, 300);
         }, { passive: true });
       })();
     ''');
@@ -567,12 +597,38 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// Detect short articles that don't need scrolling.
+  ///
+  /// Latches `_isShortArticle` (and `_footerPermanent`) only when we are
+  /// confident the article is genuinely short — i.e. the content is fully
+  /// rendered AND its plain-text length is small. Latching too eagerly on
+  /// the first frame caused long articles to appear "short" before
+  /// `flutter_html` had finished laying out, leaving the CTA orange from
+  /// the moment the screen opens.
   void _checkShortArticle() {
+    if (_isShortArticle) return;
     if (!_scrollController.hasClients) return;
-    if (_scrollController.position.maxScrollExtent < 50) {
-      _isShortArticle = true;
-      _footerPermanent.value = true;
+    if (_scrollController.position.maxScrollExtent >= 50) return;
+
+    final article = _content;
+    if (article != null && article.contentType == ContentType.article) {
+      final text = article.htmlContent ?? article.description;
+      // Bail out: if the article carries any meaningful text, the small
+      // maxScrollExtent only means the HTML hasn't laid out yet — wait.
+      if (plainTextLength(text) >= 200) return;
     }
+
+    _isShortArticle = true;
+    _footerPermanent.value = true;
+  }
+
+  /// Fires a brief scale-pop on the primary CTA when `_footerPermanent`
+  /// flips to true (i.e. the bouton "Lire sur ..." just turned orange).
+  /// Skipped while in WebView mode where the orange state is unused.
+  void _onFooterPermanentChanged() {
+    if (!_footerPermanent.value) return;
+    if (_isWebViewActive || _ctaTapped || _showWebView) return;
+    HapticFeedback.selectionClick();
+    _ctaPulseController.forward(from: 0.0);
   }
 
   /// Measures the pixel distance from the top of the scroll content to the
@@ -710,6 +766,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       setState(() {
         _isWebViewActive = true;
       });
+      // Drop the article subtree from the tree once the 300 ms fade-out is
+      // done, so Flutter stops painting it under the scrolling WebView.
+      _articleLayerUnmountTimer?.cancel();
+      _articleLayerUnmountTimer =
+          Timer(const Duration(milliseconds: 320), () {
+        if (mounted && _isWebViewActive && _articleLayerMounted) {
+          setState(() => _articleLayerMounted = false);
+        }
+      });
       // Reset permanent-footer latch acquired during the CTA reveal scroll
       // so subsequent WebView scroll deltas can hide/show header & footer.
       _footerPermanent.value = false;
@@ -768,6 +833,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Update header offset and FAB opacity based on scroll delta (in pixels).
   /// Positive delta = scrolling down, negative = scrolling up.
   void _onScrollDelta(double delta) {
+    if (delta == 0) return;
     // Dismiss sunflower nudge on any scroll
     if (_showSunflowerNudge) {
       setState(() => _showSunflowerNudge = false);
@@ -876,11 +942,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               !_isConsumed) {
             _startReadingTimer();
           }
-          // Re-check short article + measure article extent after content loads and renders
+          // Re-check short article + measure article extent after content
+          // loads and renders. We measure the extent on the next frame, but
+          // the short-article check is delayed: `flutter_html` may need
+          // multiple frames to finish laying out a long article, and an
+          // eager check would mistakenly latch `_isShortArticle = true`.
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              _checkShortArticle();
               _measureArticleExtent();
+            }
+          });
+          Future.delayed(const Duration(milliseconds: 600), () {
+            if (mounted) {
+              _checkShortArticle();
             }
           });
           // Pre-load WebView if not already initialized
@@ -1242,6 +1316,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _scrollStopTimer?.cancel();
     _sunflowerNudgeTimer?.cancel();
     _inactivityTimer?.cancel();
+    _articleLayerUnmountTimer?.cancel();
     _videoPlayHideTimer?.cancel();
     _linkCopiedFabTimer?.cancel();
     _linkCopiedHeaderTimer?.cancel();
@@ -1254,6 +1329,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _exitAnimController.dispose();
     _headerAutoController.dispose();
     _footerAutoController.dispose();
+    _ctaPulseController.dispose();
+    _footerPermanent.removeListener(_onFooterPermanentChanged);
     WidgetsBinding.instance.removeObserver(this);
     _fabOpacity.dispose();
     _headerOffset.dispose();
@@ -1428,6 +1505,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // If data already pre-loaded, show directly
     if (_perspectivesResponse != null) {
       _showPerspectivesSheet(context, _perspectivesResponse!);
+      // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
+      unawaited(ref.read(lettersProvider.notifier).silentRefresh());
       return;
     }
 
@@ -1466,6 +1545,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         setState(() => _perspectivesResponse = response);
         _showPerspectivesSheet(context, response);
       }
+      // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
+      unawaited(ref.read(lettersProvider.notifier).silentRefresh());
     } catch (e) {
       debugPrint('Error fetching perspectives: $e');
       if (context.mounted) Navigator.pop(context);
@@ -1649,16 +1730,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     _footerOffset.value = 0.0;
                   }
                   
-                  // Sync short-article flag from live scroll metrics (catches cases
-                  // where the postFrameCallback hasn't fired yet).
-                  if (!_isShortArticle &&
-                      metrics.maxScrollExtent < 50) {
-                    _isShortArticle = true;
-                    _footerPermanent.value = true;
-                    _headerOffset.value = 0.0;
-                  }
                   _onScrollDelta(delta);
-                  _checkAtPerspectivesSection();
+                  // Gate the perspectives RenderObject walk on (a) the
+                  // section actually existing and (b) the user having
+                  // scrolled at least 24px since the last check. Cuts the
+                  // per-frame cost of localToGlobal on multiple GlobalKeys
+                  // — main source of jank on long articles.
+                  if (_perspectivesResponse != null &&
+                      (metrics.pixels - _lastPerspCheckPixels).abs() >= 24) {
+                    _lastPerspCheckPixels = metrics.pixels;
+                    _checkAtPerspectivesSection();
+                  }
                   // Track reading progress from any scrollable (including in-app reader)
                   if (metrics.maxScrollExtent > 0) {
                     final rawProgress =
@@ -1716,7 +1798,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     child: child!,
                   );
                 },
-                child: _buildHeader(context, content),
+                // RepaintBoundary isolates the header's render layer so the
+                // per-pixel Transform.translate driven by _headerOffset only
+                // recomposites this layer — the article body underneath is
+                // not invalidated.
+                child: RepaintBoundary(child: _buildHeader(context, content)),
               ),
             ),
             // Opaque status-bar backdrop — only when WebView is active and
@@ -1761,7 +1847,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     top: top,
                     left: 0,
                     right: 0,
-                    child: _buildReadingProgressBar(colors),
+                    child: RepaintBoundary(
+                      child: _buildReadingProgressBar(colors),
+                    ),
                   );
                 },
               ),
@@ -1793,8 +1881,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           opacity: showSticky ? 1.0 : 0.0,
                           child: IgnorePointer(
                             ignoring: !showSticky,
-                            child: _buildPerspectivesStickyHeader(
-                                context, _perspectivesResponse!),
+                            child: RepaintBoundary(
+                              child: _buildPerspectivesStickyHeader(
+                                  context, _perspectivesResponse!),
+                            ),
                           ),
                         ),
                       );
@@ -1887,9 +1977,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   },
                 ),
               ),
-            // Footer — shown for in-app article reading, mirrors header slide behavior
+            // Footer — shown for in-app article reading, mirrors header slide behavior.
+            // Also shown in `_showWebView` fallback so the user keeps the
+            // "Lire via Navigateur" CTA to escape to the external browser.
             if (useScrollToSite ||
-                (useInAppReading && content.contentType == ContentType.article))
+                (useInAppReading && content.contentType == ContentType.article) ||
+                (_showWebView && content.contentType == ContentType.article))
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -2123,9 +2216,37 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           );
         }
       });
-    } else {
-      _openOriginalUrl();
+      return;
     }
+
+    // Already in any WebView mode (scroll-to-site revealed, fallback active,
+    // or the user has explicitly tapped the CTA once): the next tap is the
+    // user opting in to the external browser.
+    if (_isWebViewActive || _showWebView || _ctaTapped) {
+      _openOriginalUrl();
+      return;
+    }
+
+    // First CTA tap on an article that did NOT qualify for scroll-to-site
+    // (htmlContent missing or too short — common race on Android). Reveal
+    // the internal WebView instead of jumping straight to the external
+    // browser, so the user stays inside the reader.
+    unawaited(Sentry.addBreadcrumb(Breadcrumb(
+      category: 'reader.cta',
+      message: 'fallback to internal webview',
+      level: SentryLevel.info,
+      data: {
+        'contentId': content.id,
+        'contentType': content.contentType.name,
+        'hasInAppContent': content.hasInAppContent,
+        'plainTextLen': plainTextLength(articleText),
+        'platform': defaultTargetPlatform.name,
+      },
+    )));
+    setState(() {
+      _showWebView = true;
+      _ctaTapped = true;
+    });
   }
 
   /// Persistent footer bar shown for in-app article reading.
@@ -2185,7 +2306,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       final iconData = isWebViewMode
                           ? PhosphorIcons.arrowUpRight(
                               PhosphorIconsStyle.regular)
-                          : PhosphorIcons.arrowRight(
+                          : PhosphorIcons.arrowDown(
                               PhosphorIconsStyle.regular);
 
                       final children = <Widget>[
@@ -2227,18 +2348,27 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       ];
 
                       if (usePrimary) {
-                        return FilledButton(
-                          onPressed: _onReadOnSiteTap,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: colors.primary,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                        return AnimatedBuilder(
+                          animation: _ctaPulseController,
+                          builder: (context, child) {
+                            // Subtle pop: 1.0 → 1.04 → 1.0 over 280ms.
+                            final t = _ctaPulseController.value;
+                            final scale = 1.0 + 0.04 * math.sin(t * math.pi);
+                            return Transform.scale(scale: scale, child: child);
+                          },
+                          child: FilledButton(
+                            onPressed: _onReadOnSiteTap,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: colors.primary,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
                             ),
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 12),
+                            child: Row(children: children),
                           ),
-                          child: Row(children: children),
                         );
                       }
 
@@ -2465,7 +2595,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       builder: (context, offset, child) => Transform.translate(
         // Extra 8px to slide the top border shadow fully off-screen.
         offset: Offset(0, offset * (_kFooterContentHeight + bottomInset + 8)),
-        child: child,
+        // RepaintBoundary isolates the footer subtree from per-pixel
+        // _footerOffset updates — the translation only recomposites this
+        // layer, the article body is not invalidated.
+        child: RepaintBoundary(child: child),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -3128,7 +3261,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // IgnorePointer lets touches pass through to WebView when active.
         // AnimatedOpacity hides article layer when WebView is active to prevent
         // bottom-of-article content from bleeding through the header status bar area.
-        Positioned.fill(
+        // Once the fade completes, _articleLayerMounted flips to false and the
+        // entire subtree is removed so Flutter no longer rasterizes it on top
+        // of the scrolling WebView.
+        if (_articleLayerMounted)
+          Positioned.fill(
           child: AnimatedOpacity(
             opacity: _isWebViewActive ? 0.0 : 1.0,
             duration: const Duration(milliseconds: 300),

@@ -20,7 +20,6 @@ import '../../../core/nudges/nudge_coordinator.dart';
 import '../../../core/nudges/nudge_counters.dart';
 import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/widgets/feed_nudge_anchors.dart';
-import '../../welcome_tour/controllers/welcome_tour_controller.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../providers/feed_provider.dart';
@@ -29,7 +28,7 @@ import '../../../widgets/design/facteur_logo.dart';
 import '../models/content_model.dart';
 import '../widgets/feed_card.dart';
 import '../widgets/compact_source_chip.dart';
-import '../widgets/compact_search_chip.dart';
+import '../widgets/search_filter_sheet.dart';
 import '../widgets/compact_theme_chip.dart';
 import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
@@ -49,14 +48,25 @@ import '../../custom_topics/widgets/topic_chip.dart';
 // import '../../custom_topics/widgets/cluster_chip.dart';
 // import '../widgets/keyword_overflow_chip.dart';
 // import '../widgets/entity_overflow_chip.dart';
+import '../widgets/digest_entry_card.dart';
 import '../widgets/feed_carousel.dart';
+import '../widgets/profile_avatar_button.dart';
+import '../../gamification/widgets/streak_indicator.dart';
+import '../../app_update/providers/app_update_provider.dart';
+import '../../app_update/widgets/update_modal.dart';
+import '../../../core/orchestration/first_impression_orchestrator.dart';
+import '../../notifications/widgets/notification_activation_modal.dart';
+import '../../lettres/widgets/lettres_notification_banner.dart';
+import '../../notifications/widgets/notification_renudge_banner.dart';
+import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../widgets/feed_refresh_undo_banner.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../widgets/empty_filter_state.dart';
+import '../widgets/filter_collapsible_panel.dart';
 import '../widgets/follow_keyword_suggestion_card.dart';
 import '../widgets/interest_filter_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
-import '../../digest/widgets/serein_toggle_chip.dart';
+import '../../settings/providers/user_profile_provider.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/pepites_carousel.dart';
 import '../../progress/widgets/progression_card.dart';
@@ -75,10 +85,12 @@ class FeedScreen extends ConsumerStatefulWidget {
 
 class _FeedScreenState extends ConsumerState<FeedScreen> {
   bool _showWelcome = false;
+  bool _activationModalShown = false;
   bool _caughtUpDismissed = false;
-  static const int _caughtUpThreshold = 8;
+  static const int _caughtUpMinScrolled = 15;
   final ScrollController _scrollController = ScrollController();
   double _maxScrollPercent = 0.0;
+  bool _userHasScrolled = false;
   final int _itemsViewed = 0;
 
   bool _hasNudged = false;
@@ -88,8 +100,18 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   // Sticky filter bar overlay state
   bool _showStickyBar = false;
   double _lastScrollPos = 0;
+  double _lastFabScrollPos = 0;
+  bool _showScrollTopFab = false;
+  double _upwardAccumulator = 0;
+  bool _showPullHint = false;
+  DateTime? _lastPullHintAt;
+  Timer? _pullHintTimer;
+  // Profondeur max atteinte pendant la session (proxy ≥ 4 cartes scrollées
+  // avant qu'on suggère le pull-to-refresh).
+  double _maxScrollDepthPx = 0;
   static const double _stickyScrollThreshold = 12;
-  static const double _stickyHideAboveScroll = 240;
+  static const double _stickyHideAboveScroll = 380;
+  static const double _pullHintMinDepthPx = 800;
 
   // Feed Refresh: track timestamps of recent refreshes for anti-addiction
   final List<DateTime> _refreshTimestamps = [];
@@ -134,6 +156,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   // LaurinFallbackView (UX uniquement, pas de modif provider).
   int _consecutiveErrorCount = 0;
 
+  // Update modal: déclenchée une seule fois par session si une update est dispo.
+  bool _hasCheckedUpdate = false;
+
   Future<void> _withFeedLoading(Future<void> Function() action) async {
     if (mounted) setState(() => _isFeedRefreshing = true);
     try {
@@ -156,19 +181,14 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   }
 
   Future<void> _recordFeedOpenAndMaybeNudge() async {
-    // The shell navigates to /feed during welcome_tour step 2 — don't count
-    // that as a "natural" visit and don't request a spotlight that would
-    // overlap the tour overlay. Whether the tour has been seen at all is
-    // already enforced by the registry prerequisite (read device-scoped, so
-    // PR2 v1 legacy users who never re-saw the user-scoped tour still pass).
-    if (ref.read(welcomeTourControllerProvider).active) return;
     final opens = await NudgeCounters.increment(NudgeCounters.feedOpenCount);
     final taps = await NudgeCounters.get(NudgeCounters.feedCardTapCount);
     if (!mounted) return;
     // feed_badge_longpress: 2nd feed open with ≥1 card tap previously.
     if (opens >= 2 && taps >= 1) {
-      unawaited(
-          ref.read(nudgeCoordinatorProvider).request(NudgeIds.feedBadgeLongpress));
+      unawaited(ref
+          .read(nudgeCoordinatorProvider)
+          .request(NudgeIds.feedBadgeLongpress));
     }
     // feed_preview_longpress: 3rd feed open with ≥2 articles opened.
     if (opens >= 3) {
@@ -184,8 +204,25 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   }
 
   Future<void> _onFeedCardTapped() async {
-    if (ref.read(welcomeTourControllerProvider).active) return;
     await NudgeCounters.increment(NudgeCounters.feedCardTapCount);
+  }
+
+  /// Modal d'activation notif gatée par `firstImpressionSlotProvider` (au
+  /// plus 1 modal/session, arbitrée avec re-nudge banner + well-informed
+  /// prompt).
+  void _maybeShowActivationModal(FirstImpressionSlot slot) {
+    if (_activationModalShown) return;
+    if (slot != FirstImpressionSlot.notifModal) return;
+    _activationModalShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(notifModalConsumedThisSessionProvider.notifier).state = true;
+      showNotificationActivationModal(
+        context,
+        ref,
+        trigger: ActivationTrigger.update,
+      );
+    });
   }
 
   // Epic 12: One-shot toast explaining the new chronological default
@@ -283,6 +320,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       debugPrint('FeedScreen: Analytics tracking skipped during dispose');
     }
     _scrollController.dispose();
+    _pullHintTimer?.cancel();
     super.dispose();
   }
 
@@ -291,6 +329,15 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
     final maxScroll = _scrollController.position.maxScrollExtent;
     final currentScroll = _scrollController.position.pixels;
+
+    if (currentScroll > _maxScrollDepthPx) {
+      _maxScrollDepthPx = currentScroll;
+    }
+
+    // Bonus: nudge animations only after the user has scrolled a bit.
+    if (!_userHasScrolled && currentScroll > 40) {
+      setState(() => _userHasScrolled = true);
+    }
 
     // Sticky filter bar visibility
     final delta = currentScroll - _lastScrollPos;
@@ -330,6 +377,48 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
         ScrollDirection.forward;
     if (currentScroll >= maxScroll - 800 && notScrollingUp) {
       ref.read(feedProvider.notifier).loadMore();
+    }
+
+    // Bouton "remonter" : cumul instantané du scroll vers le haut. Apparait
+    // après ≥ 250 px remontés ET position > 600 px. Disparait IMMÉDIATEMENT
+    // dès que l'utilisateur descend ou repasse sous 200 px.
+    final fabDelta = currentScroll - _lastFabScrollPos;
+    _lastFabScrollPos = currentScroll;
+    if (fabDelta < -0.5) {
+      _upwardAccumulator += -fabDelta;
+    } else if (fabDelta > 0.5) {
+      _upwardAccumulator = 0;
+      if (_showScrollTopFab) {
+        setState(() => _showScrollTopFab = false);
+      }
+    }
+    final shouldShowScrollTop = _upwardAccumulator > 250 && currentScroll > 600;
+    final shouldHideScrollTop = currentScroll < 200;
+    if (shouldShowScrollTop && !_showScrollTopFab) {
+      setState(() => _showScrollTopFab = true);
+    } else if (shouldHideScrollTop && _showScrollTopFab) {
+      setState(() => _showScrollTopFab = false);
+    }
+
+    // Hint pull-to-refresh : montre une fois quand l'utilisateur remonte
+    // tout en haut du feed (signale visuellement qu'un pull est possible).
+    // Condition stricte : doit avoir atteint au moins ~4 cartes de profondeur
+    // pendant la session pour éviter de nudger après un mini-scroll d'inertie.
+    final scrollingUp = _scrollController.position.userScrollDirection ==
+        ScrollDirection.forward;
+    if (scrollingUp &&
+        currentScroll < 20 &&
+        _maxScrollDepthPx >= _pullHintMinDepthPx) {
+      final now = DateTime.now();
+      final last = _lastPullHintAt;
+      if (last == null || now.difference(last) > const Duration(minutes: 2)) {
+        _lastPullHintAt = now;
+        setState(() => _showPullHint = true);
+        _pullHintTimer?.cancel();
+        _pullHintTimer = Timer(const Duration(milliseconds: 1800), () {
+          if (mounted) setState(() => _showPullHint = false);
+        });
+      }
     }
   }
 
@@ -420,7 +509,52 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
   }
 
-  Widget _buildFilterBarContent(BuildContext context) {
+  int _activeFilterCount() {
+    final notifier = ref.read(feedProvider.notifier);
+    var count = 0;
+    if (notifier.selectedSourceId != null) count++;
+    if (notifier.selectedTheme != null ||
+        notifier.selectedTopic != null ||
+        notifier.selectedEntity != null) count++;
+    if (notifier.selectedKeyword != null &&
+        notifier.selectedKeyword!.isNotEmpty) count++;
+    return count;
+  }
+
+  Widget _buildFilterBar(BuildContext context) {
+    final notifier = ref.read(feedProvider.notifier);
+    final hasSearch = notifier.selectedKeyword != null &&
+        notifier.selectedKeyword!.isNotEmpty;
+    return FilterCollapsiblePanel(
+      activeCount: _activeFilterCount(),
+      chipsRow: _buildFilterChipsRow(context),
+      leadingTrigger: _SearchTriggerButton(
+        active: hasSearch,
+        keyword: notifier.selectedKeyword,
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          SearchFilterSheet.show(
+            context,
+            currentKeyword: notifier.selectedKeyword,
+            onSearchSubmitted: (keyword, {bool fromTrending = false}) {
+              _withFeedLoading(() => notifier.setKeyword(
+                    keyword,
+                    includeUnfollowed: fromTrending,
+                  ));
+              _scrollToTop();
+            },
+          );
+        },
+        onClear: () {
+          HapticFeedback.mediumImpact();
+          _withFeedLoading(() => notifier.setKeyword(null));
+          _scrollToTop();
+        },
+      ),
+    );
+  }
+
+  Widget _buildFilterChipsRow(BuildContext context) {
     final notifier = ref.read(feedProvider.notifier);
 
     if (notifier.selectedTheme == null &&
@@ -497,19 +631,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
             },
           ),
         ),
-        const SizedBox(width: 8),
-        Flexible(
-          child: CompactSearchChip(
-            activeKeyword: notifier.selectedKeyword,
-            onSearchChanged: (keyword, {bool fromTrending = false}) {
-              _withFeedLoading(() => notifier.setKeyword(
-                    keyword,
-                    includeUnfollowed: fromTrending,
-                  ));
-              _scrollToTop();
-            },
-          ),
-        ),
       ],
     );
   }
@@ -518,6 +639,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   Widget build(BuildContext context) {
     final feedAsync = ref.watch(feedProvider);
     final colors = context.facteurColors;
+
+    // Orchestrateur "premier impact" — arbitre entre modal notif, re-nudge
+    // banner et well-informed prompt. Garantit max 1 modal + 1 nudge par
+    // session.
+    final impressionSlot = ref.watch(firstImpressionSlotProvider);
+    _maybeShowActivationModal(impressionSlot);
 
     // Pre-warm topics provider (single watch for all TopicChips)
     final followedTopics = ref.watch(customTopicsProvider).valueOrNull ?? [];
@@ -559,6 +686,21 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       }
     });
 
+    // Show update modal at launch when an update is available.
+    ref.listen(appUpdateProvider, (previous, next) {
+      if (_hasCheckedUpdate) return;
+      next.whenData((info) {
+        if (info != null && info.updateAvailable && UpdateModal.shouldShow()) {
+          _hasCheckedUpdate = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              UpdateModal.show(context, info: info);
+            }
+          });
+        }
+      });
+    });
+
     return PopScope(
       canPop: false,
       child: Material(
@@ -573,50 +715,96 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                   controller: _scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
-                    const SliverToBoxAdapter(
+                    SliverToBoxAdapter(
                       child: Padding(
-                        padding: EdgeInsets.symmetric(
+                        padding: const EdgeInsets.symmetric(
                           horizontal: FacteurSpacing.space6,
                           vertical: FacteurSpacing.space3,
                         ),
-                        child: Center(child: FacteurLogo(size: 22, showIcon: false)),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 16, 8, 4),
-                        child: Row(
+                        child: Stack(
+                          alignment: Alignment.center,
                           children: [
-                            Expanded(
-                              child: Text(
-                                'Bonjour,',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .displayMedium,
-                              ),
+                            const FacteurLogo(size: 22, showIcon: false),
+                            const Align(
+                              alignment: Alignment.centerLeft,
+                              child: StreakIndicator(),
                             ),
-                            const SereinToggleChip(),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: Consumer(builder: (context, ref, _) {
+                                final hasUpdate = ref
+                                        .watch(appUpdateProvider)
+                                        .valueOrNull
+                                        ?.updateAvailable ==
+                                    true;
+                                final settingsButton = ProfileAvatarButton(
+                                  onTap: () =>
+                                      context.push(RoutePaths.settings),
+                                );
+                                if (!hasUpdate) return settingsButton;
+                                return Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    settingsButton,
+                                    Positioned(
+                                      top: -2,
+                                      right: -2,
+                                      child: Container(
+                                        width: 12,
+                                        height: 12,
+                                        decoration: BoxDecoration(
+                                          color: colors.error,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: colors.backgroundPrimary,
+                                            width: 2,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }),
+                            ),
                           ],
                         ),
                       ),
                     ),
                     SliverToBoxAdapter(
+                      child: _FeedTourneeHeader(),
+                    ),
+                    // Re-nudge banner (≥7j après refus, cap 3, espacement
+                    // 14j) — gaté par l'orchestrateur (1 nudge max, pas en
+                    // parallèle d'une modal).
+                    SliverToBoxAdapter(
+                      child: impressionSlot == FirstImpressionSlot.renudgeBanner
+                          ? const NotificationRenudgeBanner()
+                          : const SizedBox.shrink(),
+                    ),
+                    // Story 14.3 — Well-informed self-report inline prompt.
+                    // Cooldown dans `wellInformedShouldShowProvider`, arbitré
+                    // par l'orchestrateur.
+                    SliverToBoxAdapter(
+                      child: impressionSlot == FirstImpressionSlot.wellInformed
+                          ? const WellInformedPrompt()
+                          : const SizedBox.shrink(),
+                    ),
+                    // Story 19.1 — Lettres du Facteur. Banner indépendant,
+                    // gating local (active letter + route + dismiss session).
+                    const SliverToBoxAdapter(
+                      child: LettresNotificationBanner(),
+                    ),
+                    const SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Text(
-                          'Votre flux issu de vos sources de confiance.',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.copyWith(color: colors.textSecondary),
-                        ),
+                        padding: EdgeInsets.only(top: 14, bottom: 8),
+                        child: DigestEntryCard(),
                       ),
                     ),
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16.0, vertical: 8.0),
-                        child: _buildFilterBarContent(context),
+                        child: _buildFilterBar(context),
                       ),
                     ),
                     SliverToBoxAdapter(
@@ -660,10 +848,36 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         final streakAsync = ref.watch(streakProvider);
                         final dailyCount =
                             streakAsync.valueOrNull?.weeklyCount ?? 0;
-                        final showCaughtUp = dailyCount >= _caughtUpThreshold &&
-                            !_caughtUpDismissed;
-                        // Position de la carte "Tu es à jour" après 8 articles
-                        const caughtUpPos = 8;
+                        final isSerein =
+                            ref.watch(sereinToggleProvider).enabled;
+
+                        bool showCaughtUp;
+                        int caughtUpPos;
+                        if (_caughtUpDismissed) {
+                          showCaughtUp = false;
+                          caughtUpPos = -1;
+                        } else if (isSerein) {
+                          showCaughtUp = dailyCount >= _caughtUpMinScrolled &&
+                              contents.length > _caughtUpMinScrolled;
+                          caughtUpPos = _caughtUpMinScrolled;
+                        } else {
+                          final now = DateTime.now();
+                          final firstOldIdx = contents.indexWhere(
+                            (c) =>
+                                now.difference(c.publishedAt) >
+                                const Duration(hours: 24),
+                          );
+                          if (firstOldIdx >= 0 &&
+                              contents.length >= _caughtUpMinScrolled) {
+                            caughtUpPos = firstOldIdx < _caughtUpMinScrolled
+                                ? _caughtUpMinScrolled
+                                : firstOldIdx;
+                            showCaughtUp = contents.length > caughtUpPos;
+                          } else {
+                            showCaughtUp = false;
+                            caughtUpPos = -1;
+                          }
+                        }
 
                         // Saved nudge: show at position 6 if user has 3+ unread saves
                         final savedSummary =
@@ -672,19 +886,34 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 .watch(savedNudgeDismissedProvider)
                                 .valueOrNull ??
                             false;
+                        // SavedNudge : laisser respirer le feed avant de pousser
+                        // un nudge "Tu as N sauvegardés". Au minimum 10 cartes
+                        // après le carrousel "Plus tard, c'est maintenant"
+                        // (saved) si présent ; sinon position fixe assez basse.
+                        final savedCarouselPos = state.carousels
+                            .where((c) =>
+                                c.carouselType == 'saved' && c.items.isNotEmpty)
+                            .map((c) => c.position)
+                            .fold<int?>(
+                                null,
+                                (acc, p) =>
+                                    acc == null ? p : (p < acc ? p : acc));
+                        final savedNudgePos = savedCarouselPos != null
+                            ? savedCarouselPos + 11
+                            : 33;
                         final showSavedNudge = !showCaughtUp &&
                             !savedNudgeDismissed &&
                             savedSummary != null &&
                             savedSummary.unreadCount >= 3 &&
-                            contents.length > 6;
-                        const savedNudgePos = 6;
+                            contents.length > savedNudgePos;
 
                         // Backend gère rate-limit + cool-down : liste vide → widget invisible.
                         final pepitesAsync = ref.watch(pepitesProvider);
-                        final pepitesList = pepitesAsync.valueOrNull ?? const [];
-                        final showPepitesCarousel = pepitesList.isNotEmpty &&
-                            contents.length > 3;
-                        const pepitesCarouselPos = 3;
+                        final pepitesList =
+                            pepitesAsync.valueOrNull ?? const [];
+                        final showPepitesCarousel =
+                            pepitesList.isNotEmpty && contents.length > 5;
+                        const pepitesCarouselPos = 5;
 
                         // Empty state when a filter is active but no results
                         final hasActiveFilter =
@@ -693,38 +922,53 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 notifier.selectedEntity != null ||
                                 notifier.selectedSourceId != null;
 
-                        // Carousels: sorted by position, hidden when filter active
+                        // Carousels: sorted by position, hidden when filter
+                        // active. Pour éviter l'effet "fin de flux" où plusieurs
+                        // carrousels s'empilent en queue avant que loadMore
+                        // ramène la page suivante : on filtre les positions au-
+                        // delà des items chargés, et on réserve une queue de
+                        // 5 items lorsqu'une page suivante est attendue.
+                        final reservedTail =
+                            ref.read(feedProvider.notifier).hasNext ? 5 : 0;
+                        final maxAllowedPos = (contents.length - reservedTail)
+                            .clamp(0, contents.length);
                         final sortedCarousels = hasActiveFilter
                             ? <FeedCarouselData>[]
                             : ([...state.carousels]
-                                .where((c) => c.items.isNotEmpty)
+                                .where((c) =>
+                                    c.items.isNotEmpty &&
+                                    c.position < maxAllowedPos)
                                 .toList()
-                                ..sort((a, b) => a.position.compareTo(b.position)));
+                              ..sort(
+                                  (a, b) => a.position.compareTo(b.position)));
 
                         // childCount calculé dynamiquement pour garantir exactement 1 slot
                         // trailing (loader ou spacer). CaughtUp et SavedNudge sont
                         // mutuellement exclusifs → intercalatedCount ≤ 1.
-                        final int intercalatedCount =
-                            (showCaughtUp ? 1 : 0) +
+                        final int intercalatedCount = (showCaughtUp ? 1 : 0) +
                             (showSavedNudge ? 1 : 0) +
                             (showPepitesCarousel ? 1 : 0) +
                             sortedCarousels.length;
-                        final int effectiveChildCount =
-                            contents.isEmpty ? 1 : contents.length + intercalatedCount + 1;
+                        final int effectiveChildCount = contents.isEmpty
+                            ? 1
+                            : contents.length + intercalatedCount + 1;
 
                         if (contents.isEmpty && hasActiveFilter) {
                           // Resolve source name from ID for display
-                          final sourceFilterName = notifier.selectedSourceId != null
-                              ? (ref.read(userSourcesProvider).valueOrNull ?? [])
-                                  .where((s) => s.id == notifier.selectedSourceId)
+                          final sourceFilterName = notifier.selectedSourceId !=
+                                  null
+                              ? (ref.read(userSourcesProvider).valueOrNull ??
+                                      [])
+                                  .where(
+                                      (s) => s.id == notifier.selectedSourceId)
                                   .firstOrNull
                                   ?.name
                               : null;
 
                           return SliverToBoxAdapter(
                             child: EmptyFilterState(
-                              filterName: _selectedInterestName ??
-                                  sourceFilterName,
+                              filterName:
+                                  _selectedInterestName ?? sourceFilterName,
                               isTheme: notifier.selectedTheme != null,
                               isEntity: notifier.selectedEntity != null,
                               isSource: notifier.selectedSourceId != null,
@@ -743,7 +987,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 InterestFilterSheet.show(
                                   context,
                                   currentTopicSlug: null,
-                                  onInterestSelected: (slug, name, {bool isTheme = false, bool isEntity = false}) {
+                                  onInterestSelected: (slug, name,
+                                      {bool isTheme = false,
+                                      bool isEntity = false}) {
                                     setState(() {
                                       _selectedInterestName = name;
                                       _selectedIsTheme = isTheme;
@@ -766,94 +1012,373 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             opacity: _isFeedRefreshing ? 0.3 : 1.0,
                             duration: const Duration(milliseconds: 200),
                             sliver: SliverList(
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) {
-                                final listIndex = index;
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) {
+                                  final listIndex = index;
 
-                                // Interleaving logic - calculer l'offset pour les éléments intercalés
-                                int contentOffset = 0;
+                                  // Interleaving logic - calculer l'offset pour les éléments intercalés
+                                  int contentOffset = 0;
 
-                                // Caught up card - s'affiche après caughtUpPos articles
-                                if (showCaughtUp) {
-                                  if (listIndex == caughtUpPos) {
-                                    return Padding(
-                                        key: const ValueKey('caught_up_card'),
+                                  // Caught up card - s'affiche après caughtUpPos articles
+                                  if (showCaughtUp) {
+                                    if (listIndex == caughtUpPos) {
+                                      return Padding(
+                                          key: const ValueKey('caught_up_card'),
+                                          padding:
+                                              const EdgeInsets.only(bottom: 16),
+                                          child: CaughtUpCard(onDismiss: () {
+                                            setState(() =>
+                                                _caughtUpDismissed = true);
+                                            // Forcer le chargement de plus d'articles
+                                            ref
+                                                .read(feedProvider.notifier)
+                                                .loadMore();
+                                          }));
+                                    }
+                                    // Avant la carte : continuer normalement
+                                  }
+
+                                  // Compter la CaughtUpCard si elle est passée (pour le décalage)
+                                  if (showCaughtUp && listIndex > caughtUpPos) {
+                                    contentOffset++;
+                                  }
+
+                                  if (showPepitesCarousel) {
+                                    final pepitesEffectivePos =
+                                        pepitesCarouselPos + contentOffset;
+                                    if (listIndex == pepitesEffectivePos) {
+                                      return const Padding(
+                                        key: ValueKey('pepites_carousel'),
+                                        padding: EdgeInsets.only(bottom: 16),
+                                        child: PepitesCarousel(),
+                                      );
+                                    }
+                                    if (listIndex > pepitesEffectivePos) {
+                                      contentOffset++;
+                                    }
+                                  }
+
+                                  // Saved Nudge at position 6
+                                  if (showSavedNudge) {
+                                    final savedNudgeEffectivePos =
+                                        savedNudgePos + contentOffset;
+                                    if (listIndex == savedNudgeEffectivePos) {
+                                      final count = savedSummary.unreadCount;
+                                      return SavedNudge(
+                                        key: const ValueKey('saved_nudge'),
+                                        message:
+                                            'Tu as $count article${count > 1 ? 's' : ''} sauvegardé${count > 1 ? 's' : ''} non lu${count > 1 ? 's' : ''}',
+                                      );
+                                    }
+                                    if (listIndex > savedNudgeEffectivePos) {
+                                      contentOffset++;
+                                    }
+                                  }
+
+                                  // Carousels at their designated positions
+                                  for (final carousel in sortedCarousels) {
+                                    final effectivePos =
+                                        carousel.position + contentOffset;
+                                    if (listIndex == effectivePos) {
+                                      contentOffset++;
+                                      return Padding(
+                                        key: ValueKey(
+                                            'carousel_${carousel.carouselType}'),
                                         padding:
                                             const EdgeInsets.only(bottom: 16),
-                                        child: CaughtUpCard(onDismiss: () {
-                                          setState(
-                                              () => _caughtUpDismissed = true);
-                                          // Forcer le chargement de plus d'articles
-                                          ref
-                                              .read(feedProvider.notifier)
-                                              .loadMore();
-                                        }));
+                                        child: FeedCarousel(
+                                          data: carousel,
+                                          onArticleTap: (c) =>
+                                              _showArticleModal(c),
+                                          // Story 4.5b: viewport-aware refresh.
+                                          onItemVisible: (id) =>
+                                              _fullyVisibleIds.add(id),
+                                          // T1: Full card feature parity
+                                          onLongPressStart: (c, _) =>
+                                              ArticlePreviewOverlay.show(
+                                                  context, c),
+                                          onLongPressMoveUpdate: (details) =>
+                                              ArticlePreviewOverlay
+                                                  .updateScroll(details
+                                                      .localOffsetFromOrigin
+                                                      .dy),
+                                          onLongPressEnd: (_) =>
+                                              ArticlePreviewOverlay.dismiss(),
+                                          onLike: (c) {
+                                            final wasLiked = c.isLiked;
+                                            ref
+                                                .read(feedProvider.notifier)
+                                                .toggleLike(c);
+                                            NotificationService.showInfo(
+                                              wasLiked
+                                                  ? 'Retiré de Mes contenus recommandés 🌻'
+                                                  : 'Ajouté à Mes contenus recommandés 🌻',
+                                            );
+                                            ref.invalidate(collectionsProvider);
+                                          },
+                                          onSave: (c) async {
+                                            final wasSaved = c.isSaved;
+                                            ref
+                                                .read(feedProvider.notifier)
+                                                .toggleSave(c);
+                                            if (!wasSaved) {
+                                              final defaultCol = ref.read(
+                                                  defaultCollectionProvider);
+                                              if (defaultCol != null) {
+                                                final colRepo = ref.read(
+                                                    collectionsRepositoryProvider);
+                                                await colRepo.addToCollection(
+                                                    defaultCol.id, c.id);
+                                                ref.invalidate(
+                                                    collectionsProvider);
+                                              }
+                                              if (context.mounted) {
+                                                CollectionPickerSheet.show(
+                                                    context, c.id);
+                                              }
+                                            }
+                                          },
+                                          onSaveLongPress: (c) =>
+                                              CollectionPickerSheet.show(
+                                                  context, c.id),
+                                          onSourceTap: (sourceId) {
+                                            ref
+                                                .read(feedProvider.notifier)
+                                                .setSource(sourceId);
+                                            _scrollToTop();
+                                          },
+                                          onSourceLongPress: (c) =>
+                                              TopicChip.showArticleSheet(
+                                                  context, c,
+                                                  initialSection:
+                                                      ArticleSheetSection
+                                                          .source),
+                                          topicChipBuilder: (c) => TopicChip(
+                                            content: c,
+                                            isFollowed: c.topics.isNotEmpty &&
+                                                followedTopics.any((t) =>
+                                                    t.slugParent ==
+                                                        c.topics.first ||
+                                                    t.name.toLowerCase() ==
+                                                        getTopicLabel(
+                                                                c.topics.first)
+                                                            .toLowerCase()),
+                                            onTap: c.topics.isNotEmpty
+                                                ? () {
+                                                    final slug = c.topics.first;
+                                                    setState(() {
+                                                      _selectedInterestName =
+                                                          getTopicLabel(slug);
+                                                      _selectedIsTheme = false;
+                                                    });
+                                                    ref
+                                                        .read(feedProvider
+                                                            .notifier)
+                                                        .setTopic(slug);
+                                                    _scrollToTop();
+                                                  }
+                                                : null,
+                                          ),
+                                          onFollowSource: (c) =>
+                                              TopicChip.showArticleSheet(
+                                                  context, c),
+                                          subscribedSourceIds:
+                                              subscribedSourceIds,
+                                          hasActiveFilter: hasActiveFilter,
+                                          isSerene: ref
+                                              .watch(sereinToggleProvider)
+                                              .enabled,
+                                          onReportNotSerene: (c) async {
+                                            HapticFeedback.lightImpact();
+                                            try {
+                                              final feedRepo = ref
+                                                  .read(feedRepositoryProvider);
+                                              await feedRepo
+                                                  .reportNotSerene(c.id);
+                                              NotificationService.showSuccess(
+                                                  'Merci, nous en prenons note');
+                                            } catch (e) {
+                                              NotificationService.showError(
+                                                  'Erreur lors du signalement');
+                                            }
+                                          },
+                                        ),
+                                      );
+                                    }
+                                    if (listIndex > effectivePos) {
+                                      contentOffset++;
+                                    }
                                   }
-                                  // Avant la carte : continuer normalement
-                                }
 
-                                // Compter la CaughtUpCard si elle est passée (pour le décalage)
-                                if (showCaughtUp && listIndex > caughtUpPos) {
-                                  contentOffset++;
-                                }
+                                  final contentIndex =
+                                      listIndex - contentOffset;
 
-                                if (showPepitesCarousel) {
-                                  final pepitesEffectivePos =
-                                      pepitesCarouselPos + contentOffset;
-                                  if (listIndex == pepitesEffectivePos) {
-                                    return const Padding(
-                                      key: ValueKey('pepites_carousel'),
-                                      padding: EdgeInsets.only(bottom: 16),
-                                      child: PepitesCarousel(),
-                                    );
+                                  if (contentIndex >= contents.length) {
+                                    if (ref
+                                        .read(feedProvider.notifier)
+                                        .hasNext) {
+                                      return const Center(
+                                          child: Padding(
+                                              padding: EdgeInsets.all(16.0),
+                                              child: CircularProgressIndicator
+                                                  .adaptive()));
+                                    }
+                                    return const SizedBox(height: 64);
                                   }
-                                  if (listIndex > pepitesEffectivePos) {
-                                    contentOffset++;
-                                  }
-                                }
 
-                                // Saved Nudge at position 6
-                                if (showSavedNudge) {
-                                  final savedNudgeEffectivePos =
-                                      savedNudgePos + contentOffset;
-                                  if (listIndex == savedNudgeEffectivePos) {
-                                    final count = savedSummary.unreadCount;
-                                    return SavedNudge(
-                                      key: const ValueKey('saved_nudge'),
-                                      message:
-                                          'Tu as $count article${count > 1 ? 's' : ''} sauvegardé${count > 1 ? 's' : ''} non lu${count > 1 ? 's' : ''}',
-                                    );
+                                  if (contentIndex < 0) {
+                                    return const SizedBox.shrink();
                                   }
-                                  if (listIndex > savedNudgeEffectivePos) {
-                                    contentOffset++;
-                                  }
-                                }
 
-                                // Carousels at their designated positions
-                                for (final carousel in sortedCarousels) {
-                                  final effectivePos = carousel.position.clamp(0, contents.length) + contentOffset;
-                                  if (listIndex == effectivePos) {
-                                    contentOffset++;
+                                  final content = contents[contentIndex];
+
+                                  // Carte swipe-dismissée → remplacée par le
+                                  // banner inline de feedback, à la même position.
+                                  // Hide API a déjà été appelé (au swipe).
+                                  // Résolution = CTA, X, ou viewport-exit.
+                                  if (_pendingFeedback
+                                      .containsKey(content.id)) {
                                     return Padding(
-                                      key: ValueKey('carousel_${carousel.carouselType}'),
-                                      padding: const EdgeInsets.only(bottom: 16),
-                                      child: FeedCarousel(
-                                        data: carousel,
-                                        onArticleTap: (c) => _showArticleModal(c),
-                                        // Story 4.5b: viewport-aware refresh.
-                                        onItemVisible: (id) =>
-                                            _fullyVisibleIds.add(id),
-                                        // T1: Full card feature parity
-                                        onLongPressStart: (c, _) =>
-                                            ArticlePreviewOverlay.show(context, c),
+                                      key: ValueKey('feedback_${content.id}'),
+                                      padding:
+                                          const EdgeInsets.only(bottom: 16),
+                                      child: VisibilityDetector(
+                                        key: Key('feedback_vis_${content.id}'),
+                                        onVisibilityChanged: (info) {
+                                          if (info.visibleFraction == 0) {
+                                            _resolveFeedback(content.id);
+                                          }
+                                        },
+                                        child: FeedbackInline(
+                                          onSelectSource: () async {
+                                            _trackFeedbackSubmit(
+                                                content.id, 'less_source');
+                                            await TopicChip.showArticleSheet(
+                                              context,
+                                              content,
+                                              initialSection:
+                                                  ArticleSheetSection.source,
+                                              highlightInitialSection: true,
+                                            );
+                                            _resolveFeedback(content.id);
+                                          },
+                                          onSelectTopic: () async {
+                                            _trackFeedbackSubmit(
+                                                content.id, 'less_topic');
+                                            await TopicChip.showArticleSheet(
+                                              context,
+                                              content,
+                                              initialSection:
+                                                  ArticleSheetSection.topic,
+                                              highlightInitialSection: true,
+                                            );
+                                            _resolveFeedback(content.id);
+                                          },
+                                          onSelectAlreadySeen: () {
+                                            _trackFeedbackSubmit(
+                                                content.id, 'already_seen');
+                                            _resolveFeedback(content.id);
+                                          },
+                                          onUndo: () {
+                                            // Re-surface la carte : annule
+                                            // le hide côté backend et retire
+                                            // simplement l'entrée pending
+                                            // (l'item est toujours dans
+                                            // state.items, donc la FeedCard
+                                            // reprendra sa place).
+                                            unawaited(ref
+                                                .read(feedRepositoryProvider)
+                                                .unhideContent(content.id)
+                                                .catchError((Object e) {
+                                              // ignore: avoid_print
+                                              print(
+                                                  'FeedScreen: unhideContent failed for ${content.id}: $e');
+                                            }));
+                                            setState(() => _pendingFeedback
+                                                .remove(content.id));
+                                          },
+                                          onClose: () =>
+                                              _resolveFeedback(content.id),
+                                        ),
+                                      ),
+                                    );
+                                  }
+
+                                  final isConsumed = ref
+                                      .read(feedProvider.notifier)
+                                      .isContentConsumed(content.id);
+                                  final progressionTopic =
+                                      _activeProgressions[content.id];
+
+                                  final showHint = !_swipeHintSeen &&
+                                      _userHasScrolled &&
+                                      contentIndex == 0;
+
+                                  Widget cardWidget = SwipeToOpenCard(
+                                    onSwipeOpen: () =>
+                                        _showArticleModal(content),
+                                    onSwipeDismiss: () {
+                                      // Hide API immédiat — le swipe est
+                                      // l'engagement. Silent failure : l'inline
+                                      // reste affiché même si le réseau échoue
+                                      // (le user peut juste re-tap pour résoudre).
+                                      unawaited(ref
+                                          .read(feedRepositoryProvider)
+                                          .hideContent(content.id)
+                                          .catchError((Object e) {
+                                        // ignore: avoid_print
+                                        print(
+                                            'FeedScreen: hideContent failed for ${content.id}: $e');
+                                      }));
+                                      setState(() =>
+                                          _pendingFeedback[content.id] =
+                                              content);
+                                    },
+                                    enableHintAnimation: showHint,
+                                    onHintAnimationComplete: () {
+                                      if (!_swipeHintSeen) {
+                                        _swipeHintSeen = true;
+                                        markSwipeLeftHintSeen();
+                                        ref.invalidate(
+                                            swipeLeftHintSeenProvider);
+                                      }
+                                    },
+                                    child: AnimatedFeedCard(
+                                      isConsumed: isConsumed,
+                                      child: FeedCard(
+                                        content: content,
+                                        titleMaxLines: 5,
+                                        badgeAnchorKey: contentIndex == 0
+                                            ? feedFirstBadgeKey
+                                            : null,
+                                        cardAnchorKey: contentIndex == 0
+                                            ? feedFirstCardKey
+                                            : null,
+                                        onTap: () {
+                                          _onFeedCardTapped();
+                                          _showArticleModal(content);
+                                        },
+                                        onLongPressStart: (_) {
+                                          ref
+                                              .read(nudgeCoordinatorProvider)
+                                              .markConverted(NudgeIds
+                                                  .feedPreviewLongpress);
+                                          ArticlePreviewOverlay.show(
+                                            context,
+                                            content,
+                                          );
+                                        },
                                         onLongPressMoveUpdate: (details) =>
                                             ArticlePreviewOverlay.updateScroll(
-                                                details.localOffsetFromOrigin.dy),
+                                          details.localOffsetFromOrigin.dy,
+                                        ),
                                         onLongPressEnd: (_) =>
                                             ArticlePreviewOverlay.dismiss(),
-                                        onLike: (c) {
-                                          final wasLiked = c.isLiked;
-                                          ref.read(feedProvider.notifier).toggleLike(c);
+                                        onLike: () {
+                                          final wasLiked = content.isLiked;
+                                          ref
+                                              .read(feedProvider.notifier)
+                                              .toggleLike(content);
                                           NotificationService.showInfo(
                                             wasLiked
                                                 ? 'Retiré de Mes contenus recommandés 🌻'
@@ -861,320 +1386,76 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           );
                                           ref.invalidate(collectionsProvider);
                                         },
-                                        onSave: (c) async {
-                                          final wasSaved = c.isSaved;
-                                          ref.read(feedProvider.notifier).toggleSave(c);
+                                        isLiked: content.isLiked,
+                                        onSave: () async {
+                                          final wasSaved = content.isSaved;
+                                          ref
+                                              .read(feedProvider.notifier)
+                                              .toggleSave(content);
                                           if (!wasSaved) {
-                                            final defaultCol =
-                                                ref.read(defaultCollectionProvider);
+                                            // Auto-add to default collection
+                                            final defaultCol = ref.read(
+                                                defaultCollectionProvider);
                                             if (defaultCol != null) {
-                                              final colRepo = ref
-                                                  .read(collectionsRepositoryProvider);
+                                              final colRepo = ref.read(
+                                                  collectionsRepositoryProvider);
                                               await colRepo.addToCollection(
-                                                  defaultCol.id, c.id);
-                                              ref.invalidate(collectionsProvider);
+                                                  defaultCol.id, content.id);
+                                              ref.invalidate(
+                                                  collectionsProvider);
                                             }
                                             if (context.mounted) {
                                               CollectionPickerSheet.show(
-                                                  context, c.id);
+                                                  context, content.id);
                                             }
                                           }
                                         },
-                                        onSaveLongPress: (c) =>
-                                            CollectionPickerSheet.show(context, c.id),
-                                        onSourceTap: (sourceId) {
-                                          ref
-                                              .read(feedProvider.notifier)
-                                              .setSource(sourceId);
-                                          _scrollToTop();
-                                        },
-                                        onSourceLongPress: (c) =>
-                                            TopicChip.showArticleSheet(context, c,
-                                                initialSection:
-                                                    ArticleSheetSection.source),
-                                        topicChipBuilder: (c) => TopicChip(
-                                          content: c,
-                                          isFollowed: c.topics.isNotEmpty &&
+                                        isSaved: content.isSaved,
+                                        onSaveLongPress: () =>
+                                            CollectionPickerSheet.show(
+                                                context, content.id),
+                                        topicChipWidget: TopicChip(
+                                          content: content,
+                                          isFollowed: content
+                                                  .topics.isNotEmpty &&
                                               followedTopics.any((t) =>
-                                                  t.slugParent == c.topics.first ||
+                                                  t.slugParent ==
+                                                      content.topics.first ||
                                                   t.name.toLowerCase() ==
-                                                      getTopicLabel(c.topics.first)
+                                                      getTopicLabel(content
+                                                              .topics.first)
                                                           .toLowerCase()),
-                                          onTap: c.topics.isNotEmpty
+                                          onTap: content.topics.isNotEmpty
                                               ? () {
-                                                  final slug = c.topics.first;
+                                                  final slug =
+                                                      content.topics.first;
                                                   setState(() {
                                                     _selectedInterestName =
                                                         getTopicLabel(slug);
                                                     _selectedIsTheme = false;
                                                   });
                                                   ref
-                                                      .read(feedProvider.notifier)
+                                                      .read(
+                                                          feedProvider.notifier)
                                                       .setTopic(slug);
                                                   _scrollToTop();
                                                 }
                                               : null,
+                                          onLongPress: () {
+                                            ref
+                                                .read(nudgeCoordinatorProvider)
+                                                .markConverted(NudgeIds
+                                                    .feedBadgeLongpress);
+                                            TopicChip.showArticleSheet(
+                                              context,
+                                              content,
+                                              initialSection:
+                                                  ArticleSheetSection.topic,
+                                            );
+                                          },
                                         ),
-                                        onFollowSource: (c) =>
-                                            TopicChip.showArticleSheet(context, c),
-                                        subscribedSourceIds: subscribedSourceIds,
-                                        hasActiveFilter: hasActiveFilter,
-                                        isSerene:
-                                            ref.watch(sereinToggleProvider).enabled,
-                                        onReportNotSerene: (c) async {
-                                          HapticFeedback.lightImpact();
-                                          try {
-                                            final feedRepo =
-                                                ref.read(feedRepositoryProvider);
-                                            await feedRepo.reportNotSerene(c.id);
-                                            NotificationService.showSuccess(
-                                                'Merci, nous en prenons note');
-                                          } catch (e) {
-                                            NotificationService.showError(
-                                                'Erreur lors du signalement');
-                                          }
-                                        },
-                                      ),
-                                    );
-                                  }
-                                  if (listIndex > effectivePos) {
-                                    contentOffset++;
-                                  }
-                                }
-
-                                final contentIndex = listIndex - contentOffset;
-
-                                if (contentIndex >= contents.length) {
-                                  if (ref.read(feedProvider.notifier).hasNext) {
-                                    return const Center(
-                                        child: Padding(
-                                            padding: EdgeInsets.all(16.0),
-                                            child: CircularProgressIndicator
-                                                .adaptive()));
-                                  }
-                                  return const SizedBox(height: 64);
-                                }
-
-                                if (contentIndex < 0) {
-                                  return const SizedBox.shrink();
-                                }
-
-                                final content = contents[contentIndex];
-
-                                // Carte swipe-dismissée → remplacée par le
-                                // banner inline de feedback, à la même position.
-                                // Hide API a déjà été appelé (au swipe).
-                                // Résolution = CTA, X, ou viewport-exit.
-                                if (_pendingFeedback.containsKey(content.id)) {
-                                  return Padding(
-                                    key: ValueKey('feedback_${content.id}'),
-                                    padding:
-                                        const EdgeInsets.only(bottom: 16),
-                                    child: VisibilityDetector(
-                                      key: Key('feedback_vis_${content.id}'),
-                                      onVisibilityChanged: (info) {
-                                        if (info.visibleFraction == 0) {
-                                          _resolveFeedback(content.id);
-                                        }
-                                      },
-                                      child: FeedbackInline(
-                                        onSelectSource: () async {
-                                          _trackFeedbackSubmit(
-                                              content.id, 'less_source');
-                                          await TopicChip.showArticleSheet(
-                                            context,
-                                            content,
-                                            initialSection:
-                                                ArticleSheetSection.source,
-                                            highlightInitialSection: true,
-                                          );
-                                          _resolveFeedback(content.id);
-                                        },
-                                        onSelectTopic: () async {
-                                          _trackFeedbackSubmit(
-                                              content.id, 'less_topic');
-                                          await TopicChip.showArticleSheet(
-                                            context,
-                                            content,
-                                            initialSection:
-                                                ArticleSheetSection.topic,
-                                            highlightInitialSection: true,
-                                          );
-                                          _resolveFeedback(content.id);
-                                        },
-                                        onSelectAlreadySeen: () {
-                                          _trackFeedbackSubmit(
-                                              content.id, 'already_seen');
-                                          _resolveFeedback(content.id);
-                                        },
-                                        onUndo: () {
-                                          // Re-surface la carte : annule
-                                          // le hide côté backend et retire
-                                          // simplement l'entrée pending
-                                          // (l'item est toujours dans
-                                          // state.items, donc la FeedCard
-                                          // reprendra sa place).
-                                          unawaited(ref
-                                              .read(feedRepositoryProvider)
-                                              .unhideContent(content.id)
-                                              .catchError((Object e) {
-                                            // ignore: avoid_print
-                                            print(
-                                                'FeedScreen: unhideContent failed for ${content.id}: $e');
-                                          }));
-                                          setState(() => _pendingFeedback
-                                              .remove(content.id));
-                                        },
-                                        onClose: () =>
-                                            _resolveFeedback(content.id),
-                                      ),
-                                    ),
-                                  );
-                                }
-
-                                final isConsumed = ref
-                                    .read(feedProvider.notifier)
-                                    .isContentConsumed(content.id);
-                                final progressionTopic =
-                                    _activeProgressions[content.id];
-
-                                final showHint =
-                                    !_swipeHintSeen && contentIndex <= 1;
-
-                                Widget cardWidget = SwipeToOpenCard(
-                                  onSwipeOpen: () => _showArticleModal(content),
-                                  onSwipeDismiss: () {
-                                    // Hide API immédiat — le swipe est
-                                    // l'engagement. Silent failure : l'inline
-                                    // reste affiché même si le réseau échoue
-                                    // (le user peut juste re-tap pour résoudre).
-                                    unawaited(ref
-                                        .read(feedRepositoryProvider)
-                                        .hideContent(content.id)
-                                        .catchError((Object e) {
-                                      // ignore: avoid_print
-                                      print(
-                                          'FeedScreen: hideContent failed for ${content.id}: $e');
-                                    }));
-                                    setState(() =>
-                                        _pendingFeedback[content.id] = content);
-                                  },
-                                  enableHintAnimation: showHint,
-                                  onHintAnimationComplete: () {
-                                    if (!_swipeHintSeen) {
-                                      _swipeHintSeen = true;
-                                      markSwipeLeftHintSeen();
-                                      ref.invalidate(swipeLeftHintSeenProvider);
-                                    }
-                                  },
-                                  child: AnimatedFeedCard(
-                                    isConsumed: isConsumed,
-                                    child: FeedCard(
-                                      content: content,
-                                      titleMaxLines: 5,
-                                      badgeAnchorKey: contentIndex == 0
-                                          ? feedFirstBadgeKey
-                                          : null,
-                                      cardAnchorKey: contentIndex == 0
-                                          ? feedFirstCardKey
-                                          : null,
-                                      onTap: () {
-                                        _onFeedCardTapped();
-                                        _showArticleModal(content);
-                                      },
-                                      onLongPressStart: (_) {
-                                        ref
-                                            .read(nudgeCoordinatorProvider)
-                                            .markConverted(
-                                                NudgeIds.feedPreviewLongpress);
-                                        ArticlePreviewOverlay.show(
-                                          context,
-                                          content,
-                                        );
-                                      },
-                                      onLongPressMoveUpdate: (details) =>
-                                          ArticlePreviewOverlay.updateScroll(
-                                        details.localOffsetFromOrigin.dy,
-                                      ),
-                                      onLongPressEnd: (_) =>
-                                          ArticlePreviewOverlay.dismiss(),
-                                      onLike: () {
-                                        final wasLiked = content.isLiked;
-                                        ref
-                                            .read(feedProvider.notifier)
-                                            .toggleLike(content);
-                                        NotificationService.showInfo(
-                                          wasLiked
-                                              ? 'Retiré de Mes contenus recommandés 🌻'
-                                              : 'Ajouté à Mes contenus recommandés 🌻',
-                                        );
-                                        ref.invalidate(collectionsProvider);
-                                      },
-                                      isLiked: content.isLiked,
-                                      onSave: () async {
-                                        final wasSaved = content.isSaved;
-                                        ref
-                                            .read(feedProvider.notifier)
-                                            .toggleSave(content);
-                                        if (!wasSaved) {
-                                          // Auto-add to default collection
-                                          final defaultCol = ref
-                                              .read(defaultCollectionProvider);
-                                          if (defaultCol != null) {
-                                            final colRepo = ref.read(
-                                                collectionsRepositoryProvider);
-                                            await colRepo.addToCollection(
-                                                defaultCol.id, content.id);
-                                            ref.invalidate(collectionsProvider);
-                                          }
-                                          if (context.mounted) {
-                                            CollectionPickerSheet.show(
-                                                context, content.id);
-                                          }
-                                        }
-                                      },
-                                      isSaved: content.isSaved,
-                                      onSaveLongPress: () =>
-                                          CollectionPickerSheet.show(
-                                              context, content.id),
-                                      topicChipWidget: TopicChip(
-                                        content: content,
-                                        isFollowed: content
-                                                .topics.isNotEmpty &&
-                                            followedTopics.any((t) =>
-                                                t.slugParent ==
-                                                    content
-                                                        .topics.first ||
-                                                t.name.toLowerCase() ==
-                                                    getTopicLabel(content
-                                                            .topics.first)
-                                                        .toLowerCase()),
-                                        onTap: content.topics.isNotEmpty
-                                            ? () {
-                                                final slug = content.topics.first;
-                                                setState(() {
-                                                  _selectedInterestName = getTopicLabel(slug);
-                                                  _selectedIsTheme = false;
-                                                });
-                                                ref.read(feedProvider.notifier).setTopic(slug);
-                                                _scrollToTop();
-                                              }
-                                            : null,
-                                        onLongPress: () {
-                                          ref
-                                              .read(nudgeCoordinatorProvider)
-                                              .markConverted(
-                                                  NudgeIds.feedBadgeLongpress);
-                                          TopicChip.showArticleSheet(
-                                            context,
-                                            content,
-                                            initialSection:
-                                                ArticleSheetSection.topic,
-                                          );
-                                        },
-                                      ),
-                                      // DEADCODE: Bloc masqué temporairement (cluster/overflow chips)
-                                      /*
+                                        // DEADCODE: Bloc masqué temporairement (cluster/overflow chips)
+                                        /*
                                       clusterChipWidget:
                                           // Suppress overflow chips when filter is active
                                           // (diversification is bypassed server-side)
@@ -1203,108 +1484,122 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                           ? KeywordOverflowChip(content: content, onOverflowTap: _scrollToTop)
                                                           : const SizedBox.shrink(),
                                       */
-                                      isFollowedSource: content.isFollowedSource,
-                                      isSourceSubscribed: subscribedSourceIds
-                                          .contains(content.source.id),
-                                      hasActiveFilter: notifier.selectedTheme != null ||
-                                          notifier.selectedTopic != null ||
-                                          notifier.selectedEntity != null,
-                                      onFollowSource: !content.isFollowedSource
-                                          ? () {
-                                              TopicChip.showArticleSheet(context, content);
-                                            }
-                                          : null,
-                                      onSourceTap: () {
-                                        ref.read(feedProvider.notifier).setSource(content.source.id);
-                                        _scrollToTop();
-                                      },
-                                      onSourceLongPress: () {
-                                        ref
-                                            .read(nudgeCoordinatorProvider)
-                                            .markConverted(
-                                                NudgeIds.feedBadgeLongpress);
-                                        TopicChip.showArticleSheet(
-                                            context, content,
-                                            initialSection:
-                                                ArticleSheetSection.source);
-                                      },
-                                      isSerene: ref.watch(sereinToggleProvider).enabled,
-                                      onReportNotSerene: () async {
-                                        HapticFeedback.lightImpact();
-                                        try {
-                                          final feedRepo = ref.read(feedRepositoryProvider);
-                                          await feedRepo.reportNotSerene(content.id);
-                                          NotificationService.showSuccess(
-                                              'Merci, nous en prenons note');
-                                        } catch (e) {
-                                          NotificationService.showError(
-                                              'Erreur lors du signalement');
-                                        }
-                                      },
+                                        isFollowedSource:
+                                            content.isFollowedSource,
+                                        isSourceSubscribed: subscribedSourceIds
+                                            .contains(content.source.id),
+                                        hasActiveFilter:
+                                            notifier.selectedTheme != null ||
+                                                notifier.selectedTopic !=
+                                                    null ||
+                                                notifier.selectedEntity != null,
+                                        onFollowSource:
+                                            !content.isFollowedSource
+                                                ? () {
+                                                    TopicChip.showArticleSheet(
+                                                        context, content);
+                                                  }
+                                                : null,
+                                        onSourceTap: () {
+                                          ref
+                                              .read(feedProvider.notifier)
+                                              .setSource(content.source.id);
+                                          _scrollToTop();
+                                        },
+                                        onSourceLongPress: () {
+                                          ref
+                                              .read(nudgeCoordinatorProvider)
+                                              .markConverted(
+                                                  NudgeIds.feedBadgeLongpress);
+                                          TopicChip.showArticleSheet(
+                                              context, content,
+                                              initialSection:
+                                                  ArticleSheetSection.source);
+                                        },
+                                        isSerene: ref
+                                            .watch(sereinToggleProvider)
+                                            .enabled,
+                                        onReportNotSerene: () async {
+                                          HapticFeedback.lightImpact();
+                                          try {
+                                            final feedRepo = ref
+                                                .read(feedRepositoryProvider);
+                                            await feedRepo
+                                                .reportNotSerene(content.id);
+                                            NotificationService.showSuccess(
+                                                'Merci, nous en prenons note');
+                                          } catch (e) {
+                                            NotificationService.showError(
+                                                'Erreur lors du signalement');
+                                          }
+                                        },
+                                      ),
                                     ),
-                                  ),
-                                );
-
-                                // Nudge: subtle scale pulse on first card
-                                if (contentIndex == 0 && !_hasNudged) {
-                                  cardWidget = _NudgePulseWrapper(
-                                    onComplete: () =>
-                                        setState(() => _hasNudged = true),
-                                    child: cardWidget,
                                   );
-                                }
 
-                                return VisibilityDetector(
-                                  key: ValueKey('vis_${content.id}'),
-                                  onVisibilityChanged: (info) {
-                                    // Story 4.5b: track cards fully visible in
-                                    // the viewport (>= 90%) so pull-to-refresh
-                                    // can mark them as "already seen".
-                                    if (info.visibleFraction >= 0.9) {
-                                      _fullyVisibleIds.add(content.id);
-                                    }
-                                  },
-                                  child: Padding(
-                                  key: ValueKey(content.id),
-                                  padding: const EdgeInsets.only(bottom: 16),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      cardWidget,
-                                      if (progressionTopic != null) ...[
-                                        TweenAnimationBuilder<double>(
-                                          tween: Tween(begin: 0.0, end: 1.0),
-                                          duration:
-                                              const Duration(milliseconds: 500),
-                                          curve: Curves.easeOutBack,
-                                          builder: (context, value, child) {
-                                            return Transform.scale(
-                                              scale: value,
-                                              child: Opacity(
-                                                  opacity: value, child: child),
-                                            );
-                                          },
-                                          child: ProgressionCard(
-                                            topic: progressionTopic,
-                                            onDismiss: () {
-                                              setState(() {
-                                                _activeProgressions
-                                                    .remove(content.id);
-                                              });
-                                            },
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                  ),
-                                );
-                              },
-                              childCount: effectiveChildCount,
-                              addAutomaticKeepAlives: false,
-                              addRepaintBoundaries: true,
+                                  // Nudge: subtle scale pulse on first card
+                                  if (contentIndex == 0 && !_hasNudged) {
+                                    cardWidget = _NudgePulseWrapper(
+                                      onComplete: () =>
+                                          setState(() => _hasNudged = true),
+                                      child: cardWidget,
+                                    );
+                                  }
+
+                                  return VisibilityDetector(
+                                    key: ValueKey('vis_${content.id}'),
+                                    onVisibilityChanged: (info) {
+                                      // Story 4.5b: track cards fully visible in
+                                      // the viewport (>= 90%) so pull-to-refresh
+                                      // can mark them as "already seen".
+                                      if (info.visibleFraction >= 0.9) {
+                                        _fullyVisibleIds.add(content.id);
+                                      }
+                                    },
+                                    child: Padding(
+                                      key: ValueKey(content.id),
+                                      padding:
+                                          const EdgeInsets.only(bottom: 16),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          cardWidget,
+                                          if (progressionTopic != null) ...[
+                                            TweenAnimationBuilder<double>(
+                                              tween:
+                                                  Tween(begin: 0.0, end: 1.0),
+                                              duration: const Duration(
+                                                  milliseconds: 500),
+                                              curve: Curves.easeOutBack,
+                                              builder: (context, value, child) {
+                                                return Transform.scale(
+                                                  scale: value,
+                                                  child: Opacity(
+                                                      opacity: value,
+                                                      child: child),
+                                                );
+                                              },
+                                              child: ProgressionCard(
+                                                topic: progressionTopic,
+                                                onDismiss: () {
+                                                  setState(() {
+                                                    _activeProgressions
+                                                        .remove(content.id);
+                                                  });
+                                                },
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                                childCount: effectiveChildCount,
+                                addAutomaticKeepAlives: false,
+                                addRepaintBoundaries: true,
+                              ),
                             ),
-                          ),
                           ),
                         );
                       },
@@ -1354,8 +1649,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     child: ClipRect(
                       child: webBlurFallback(
                         filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                        fallbackColor: colors.backgroundPrimary
-                            .withValues(alpha: 0.96),
+                        fallbackColor:
+                            colors.backgroundPrimary.withValues(alpha: 0.96),
                         child: Container(
                           color: kWebPerf
                               ? null
@@ -1367,7 +1662,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             16,
                             8,
                           ),
-                          child: _buildFilterBarContent(context),
+                          child: _buildFilterBar(context),
                         ),
                       ),
                     ),
@@ -1400,16 +1695,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     alignment: Alignment.topCenter,
                     child: FeedRefreshUndoBanner(
                       onUndo: () async {
-                        await ref
-                            .read(feedProvider.notifier)
-                            .undoLastRefresh();
+                        await ref.read(feedProvider.notifier).undoLastRefresh();
                       },
                       onAutoResolve: () {
                         // Confirm the refresh: drop the undo snapshot so a
                         // later empty-path refresh can't resurrect it.
-                        ref
-                            .read(feedUndoSnapshotProvider.notifier)
-                            .state = null;
+                        ref.read(feedUndoSnapshotProvider.notifier).state =
+                            null;
                         if (mounted) {
                           setState(() => _showUndoBanner = false);
                         }
@@ -1418,8 +1710,212 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                   ),
                 ),
               ),
+            // Bouton "remonter en haut" : apparait quand l'utilisateur a
+            // scrollé bas et commence à remonter. Tap = scroll-to-top smooth.
+            Positioned(
+              right: 16,
+              bottom: 24,
+              child: SafeArea(
+                child: AnimatedSlide(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  offset:
+                      _showScrollTopFab ? Offset.zero : const Offset(0, 1.6),
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 220),
+                    opacity: _showScrollTopFab ? 1.0 : 0.0,
+                    child: _ScrollToTopButton(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        _scrollToTop();
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // Hint pull-to-refresh : flèche vers le bas qui flotte au-dessus
+            // du feed quand l'utilisateur arrive en haut, signalant qu'on
+            // peut tirer pour rafraîchir. Ne déclenche PAS de refresh.
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 280),
+                    opacity: _showPullHint ? 1.0 : 0.0,
+                    child: _PullToRefreshHint(active: _showPullHint),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ScrollToTopButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _ScrollToTopButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Material(
+      color: colors.backgroundPrimary,
+      shape: const CircleBorder(),
+      elevation: 4,
+      shadowColor: Colors.black26,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: colors.border),
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
+            size: 18,
+            color: colors.textPrimary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PullToRefreshHint extends StatefulWidget {
+  final bool active;
+  const _PullToRefreshHint({required this.active});
+
+  @override
+  State<_PullToRefreshHint> createState() => _PullToRefreshHintState();
+}
+
+class _PullToRefreshHintState extends State<_PullToRefreshHint>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _bounceController;
+
+  @override
+  void initState() {
+    super.initState();
+    _bounceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    if (widget.active) _bounceController.repeat();
+  }
+
+  @override
+  void didUpdateWidget(_PullToRefreshHint oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !_bounceController.isAnimating) {
+      _bounceController.repeat();
+    } else if (!widget.active && _bounceController.isAnimating) {
+      _bounceController.stop();
+      _bounceController.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _bounceController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Padding(
+      padding: const EdgeInsets.only(top: 80),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: colors.primary.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(FacteurRadius.full),
+            boxShadow: [
+              BoxShadow(
+                color: colors.primary.withOpacity(0.25),
+                blurRadius: 12,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedBuilder(
+                animation: _bounceController,
+                builder: (context, child) {
+                  final t = _bounceController.value;
+                  // Bounce vertical : 0 → -3 → +3 → 0
+                  final offset = math.sin(t * math.pi * 2) * 3.0;
+                  return Transform.translate(
+                    offset: Offset(0, offset),
+                    child: child,
+                  );
+                },
+                child: Icon(
+                  PhosphorIcons.arrowDown(PhosphorIconsStyle.bold),
+                  size: 14,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Tirer pour rafraîchir',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Header "Bonjour {prénom}, votre tournée du jour" en haut du feed,
+/// avec une overline date façon tampon postal et le toggle Normal/Serein
+/// aligné à droite.
+class _FeedTourneeHeader extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.facteurColors;
+    final profile = ref.watch(userProfileProvider);
+    final firstName = (profile.displayName ?? '').trim().split(' ').first;
+    final hello = DateTime.now().hour >= 18 ? 'Bonsoir' : 'Bonjour';
+    final greeting = firstName.isEmpty ? '$hello,' : '$hello $firstName,';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            greeting,
+            style: FacteurTypography.serifTitle(colors.textPrimary)
+                .copyWith(fontSize: 22, height: 1.1),
+          ),
+          Text(
+            'voici vos nouvelles du jour',
+            style: FacteurTypography.serifTitle(colors.textPrimary)
+                .copyWith(fontSize: 22, height: 1.1),
+          ),
+        ],
       ),
     );
   }
@@ -1613,6 +2109,97 @@ class _RefreshConfirmSheet extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _SearchTriggerButton extends StatelessWidget {
+  final bool active;
+  final String? keyword;
+  final VoidCallback onTap;
+  final VoidCallback onClear;
+
+  const _SearchTriggerButton({
+    required this.active,
+    required this.keyword,
+    required this.onTap,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final primary = colors.primary;
+    if (active) {
+      return GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          height: 32,
+          padding: const EdgeInsets.only(left: 10, right: 6),
+          decoration: BoxDecoration(
+            color: primary.withOpacity(0.12),
+            border: Border.all(color: primary),
+            borderRadius: BorderRadius.circular(FacteurRadius.full),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold),
+                size: 14,
+                color: primary,
+              ),
+              const SizedBox(width: 4),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 100),
+                child: Text(
+                  keyword ?? '',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: primary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onClear,
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                  child: Icon(
+                    PhosphorIcons.x(PhosphorIconsStyle.bold),
+                    size: 12,
+                    color: primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: 32,
+        width: 32,
+        decoration: BoxDecoration(
+          color: colors.surface,
+          border: Border.all(color: colors.border),
+          borderRadius: BorderRadius.circular(FacteurRadius.full),
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
+          size: 16,
+          color: colors.textSecondary,
+        ),
       ),
     );
   }

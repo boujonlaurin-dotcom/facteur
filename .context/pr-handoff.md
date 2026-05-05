@@ -1,82 +1,30 @@
-# PR — Activation Notifications Push v1
+# PR — Veille V3 PR3 « UX polish (intro + presets + pré-loading) »
 
-## Why
+## Summary
 
-Implémente le brief produit du 28/04/2026 — modal d'activation, présets de rythme (Minimaliste/Curieux), horaire paramétrable (Matin 07:30 / Soir 19:00), re-nudge post-refus, sync backend des préférences notif. Objectif : faire de la notif push le 1er vecteur de retour D7/D30 sans trahir le positionnement slow media (tutoiement, écriture inclusive avec point médian, personnification du Facteur à la 1ʳᵉ personne).
+PR3 du V3 veille (suite de #561 PR1 critical fixes et #562 PR2 sources rankées). Trois améliorations UX du flow de configuration, focalisées sur la perception de fluidité et l'accès aux pré-sets :
 
-## Changements
+- **T4** — Pré-loading actif des suggestions LLM entre les steps. L'animation halo (`FlowLoadingScreen`) reçoit désormais `topicsParams` / `sourcesParams` et déclenche le pré-fetch en arrière-plan dès le tap « Continuer ». Durée adaptive : 1.5 s minimum d'animation, puis on attend `data|error` du provider (cap 8 s). À l'arrivée sur Step2/Step3, plus de spinner secondaire dans le cas nominal.
+- **T5** — Nouvel écran `VeilleIntroScreen` au premier accès `/veille/config` (pas de config active, pas de mode édition). Single-page minimaliste : pitch + halo animé + CTA « C'est parti ». Skipé en mode édition et après `applyPreset`.
+- **T6** — Repositionnement des pré-sets dans Step1. Suppression de la section `_InspirationsSection` en bas du scroll. Ajout d'un teaser tappable « Pas inspiré ? Pioche un pré-set → » sous le header (visible sans scroll), qui ouvre une bottom sheet `VeillePresetsSheet` listant tous les pré-sets via `PresetCard` (workflow Step1.5 preview inchangé).
 
-**Backend (`packages/api`)**
-- Nouvelle table `user_notification_preferences` (Alembic `np01`) — `preset` ∈ {minimaliste, curieux}, `time_slot` ∈ {morning, evening}, état refus/re-nudge, `modal_seen`, timezone.
-- Router `GET/PATCH /api/notification-preferences` (auto-create row au GET, partial update au PATCH).
-- Tests router (`tests/routers/test_notification_preferences.py`) — defaults, patch, validation invalide.
+## Fichiers modifiés
 
-**Mobile (`apps/mobile`)**
-- `NotificationsSettingsNotifier` étendu : enums `NotifPreset`/`NotifTimeSlot`, sync backend (boot + debounced PATCH + retry `pending_sync` au prochain boot), Hive cache offline.
-- `PushNotificationService` réécrit : heure paramétrable via slot, `scheduleWeeklyCommunityPick` (vendredi 18:00 pour préset Curieux), variantes copy A/B/C avec tutoiement + personnification ("Facteur passé !"), payload routing pour deep-link article.
-- `NotificationActivationModal` full-screen : préset RadioGroup, pills horaire, preview live, CTA OS prompt → snackbar si refus. Trigger A (post-onboarding, remplace l'ancien bottom sheet) et Trigger B (1ʳᵉ ouverture post-update si `modal_seen=false`).
-- `NotificationRenudgeBanner` + provider : règle ≥7j depuis refus, espacement 14j, cap 3.
-- Settings `Profil > Notifications` étendu : préset + heure éditables (composants partagés modal/settings).
-- 11 events PostHog (`modal_notif_*`, `renudge_*`, `notif_scheduled`/`opened`, `notif_settings_changed`, `notif_disabled`).
+- `apps/mobile/lib/features/veille/screens/veille_intro_screen.dart` (NOUVEAU)
+- `apps/mobile/lib/features/veille/screens/veille_config_screen.dart` (T4 + T5)
+- `apps/mobile/lib/features/veille/providers/veille_config_provider.dart` (T4 + T5 — durée adaptive, helpers params, `introCompleted`, `completeIntro`)
+- `apps/mobile/lib/features/veille/screens/steps/step1_theme_screen.dart` (T6 — teaser + bottom sheet, suppression `_InspirationsSection`)
+- `docs/stories/core/19.3.veille-v3-pr3-ux-polish.md` (NOUVEAU — story doc)
 
-## Décisions confirmées avec le PO (2026-04-28)
-- Sync backend dès v1 (pas local-only).
-- Trigger B au post-update via flag `modal_seen`.
-- Variante B (sujet phare) auto = 1ᵉʳ topic du digest connu côté client.
-- Assets icône (`ic_stat_facteur` Android, app icon iOS) et illustrations modal/re-nudge fournis par le PO ultérieurement (placeholders 🧑‍✈️ + `ic_launcher_foreground` en attendant).
+## Tests
 
-## Hors-scope v1 (cf brief §9)
+- `flutter analyze` — pas de nouveau warning sur les fichiers veille.
+- `flutter test test/features/veille/` — 51/51 verts.
+- Suite complète : 554 verts. Les 37 échecs (digest, feed, custom_topics, etc.) sont **pré-existants** (vérifié sur `main` avant PR3, certains marqués « Test not implemented »).
+- Playwright MCP : flow complet validé (intro → Step1 → preset bottom sheet → Step1.5 preview → Step2/3 avec animation halo + données chargées → Step4 → submit).
 
-Variante C jour calme (override manuel éditorial), A/B test, alertes veille thématique, time picker libre, pause vacances.
+## Risques
 
-## Test plan
-
-- [x] `flutter analyze lib` → 0 errors (562 infos pré-existantes : withOpacity, etc.)
-- [x] `flutter test test/features/notifications test/core/services/push_notification_service_copy_test.dart` → 12/12 pass
-- [x] `ruff format --check` + `ruff check` backend → OK
-- [x] Backend smoke import (`python -c "from app.main import app"`) → OK
-- [x] `alembic heads` → 1 head unique (`np01`)
-- [ ] **QA manuelle** : flow onboarding → modal s'affiche → sélection Curieux/Soir → confirm → notif planifiée à 19:00 + vendredi 18:00, settings reflète. Toggle off in-app → cancel les 2 schedules.
-- [ ] **Device Android** : `adb shell dumpsys alarm | grep facteur` montre id=0 (digest) + id=1 (community).
-- [ ] **Assets** : intégrer `ic_stat_facteur` monochrome blanc-sur-transparent dans `android/app/src/main/res/drawable-{mdpi..xxxhdpi}/` et illustrations modal/re-nudge dans `assets/notifications/` quand fournis.
-- [ ] **PostHog** : events `modal_notif_*`, `renudge_*`, `notif_scheduled` visibles après run.
-
-## Migration
-
-Appliquer la migration `np01_create_user_notification_preferences` via **Supabase SQL Editor** (jamais sur Railway, cf CLAUDE.md). Idempotent côté users : `modal_seen=false` par défaut → Trigger B s'affichera à leur prochaine ouverture, comportement intentionnel.
-
----
-
-## v1.1 — Fix superpositions + UI polish (post-QA PO 2026-04-28)
-
-### Pourquoi
-QA E2E PO sur la v1 a remonté deux familles de bugs bloquants (cf `.context/handoff-notif-activation-v2.md`) :
-1. **Superpositions** d'overlays : modal notif + onboarding questionnaire, modal notif + Welcome Tour, et cumul welcome tour / NIS prompt / modal / re-nudge à l'arrivée sur le Digest.
-2. **UI** : modal full-screen incohérente avec le reste de l'app, hiérarchie typo pauvre, sections (preview, time slot) sans intro.
-
-### Changements
-
-**Orchestrateur "premier impact"** — `apps/mobile/lib/core/orchestration/first_impression_orchestrator.dart` (NEW)
-- `firstImpressionSlotProvider` : enum `FirstImpressionSlot {none, welcomeTour, notifModal, renudgeBanner, wellInformed}` calculé depuis `authStateProvider`, `welcomeTourControllerProvider`, `notificationsSettingsProvider`, `notificationRenudgeShouldShowProvider`, `wellInformedShouldShowProvider`.
-- Règles : onboarding pas terminé → rien ; tour actif/jamais vu → tour seul ; sinon modal notif (1 fois) ; sinon re-nudge ou well-informed (1 nudge max par session).
-- 2 `StateProvider<bool>` session-only : `notifModalConsumedThisSessionProvider`, `nudgeConsumedThisSessionProvider`.
-
-**Wiring** — `apps/mobile/lib/features/digest/screens/digest_screen.dart`
-- `_maybeShowActivationModal` consomme désormais le slot, plus de `notificationsSettingsProvider` direct.
-- `NotificationRenudgeBanner` et `WellInformedPrompt` dans le scroll sont gatés par le slot.
-- Imports nettoyés (suppression `notifications_settings_provider`, `well_informed_prompt_provider`).
-
-**Restyle modal** — `apps/mobile/lib/features/notifications/widgets/notification_activation_modal.dart`
-- Passage de `MaterialPageRoute(fullscreenDialog: true)` à `showDialog` + `Dialog` flottant + `barrierColor: Colors.black54` (pattern aligné `digest_welcome_modal.dart`).
-- Restructure contenu : titre `displaySmall` → hook secondaire → 3 bullets ✓ (au lieu de paragraphes blocs) → mini-label italique d'intro preview → `_NotificationPreview` → section header "Choisis ton rythme" → `PresetSelector` → section header "À quel moment ?" → `TimeSlotSelector` → CTA + lien.
-
-**Setup nudge consumed flags**
-- `notification_renudge_banner.dart` : marque `nudgeConsumedThisSessionProvider` post-frame au 1ʳᵉ affichage.
-- `well_informed_prompt.dart` : idem.
-
-### Test plan v1.1
-
-- [x] `flutter analyze lib` → 0 errors (warnings préexistants seuls).
-- [x] `flutter test test/features/notifications/` → 7/7 pass.
-- [x] `flutter test test/features/well_informed/` → 8/8 pass.
-- [ ] **Test E2E manuel** (handoff §3) : reset DB compte test → onboarding (pas de modal pendant questionnaire) → fin onboarding (modal une fois après theme choice) → restart `modal_seen=true` + `welcome_tour_completed=false` (tour seul) → restart `modal_seen=false` post-update (modal une seule fois) → jamais 2 overlays simultanés.
+- **Cohérence des params** entre `goNext()` / `FlowLoadingScreen` / `step2_suggestions_screen` / `step3_sources_screen` : les helpers `notifier.topicsParamsFromState()` et `notifier.sourcesParamsFromState()` factorisent la construction et garantissent une clé `family.autoDispose` identique (sinon double fetch).
+- **`introCompleted: true` dans `applyPreset` et `hydrateFromActiveConfig`** : empêche l'intro de réapparaître après un preset apply ou en mode édition.
+- **Annulation pendant loading** : `_waitAndAdvance` vérifie `state.loadingFrom != from` avant de pousser la transition pour éviter un push stale si l'utilisateur close le flow ou submit pendant l'animation.

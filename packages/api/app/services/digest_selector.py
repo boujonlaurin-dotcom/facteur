@@ -41,7 +41,7 @@ from app.models.user import UserProfile, UserSubtopic
 from app.schemas.digest import DigestScoreBreakdown
 from app.services.briefing.importance_detector import ImportanceDetector
 from app.services.recommendation.filter_presets import (
-    apply_serein_filter,
+    apply_good_news_filter,
     is_sport_content,
 )
 from app.services.recommendation.scoring_config import ScoringWeights
@@ -311,6 +311,23 @@ class DigestSelector:
                         if global_ctx is None:
                             global_ctx = _get_cached_editorial_ctx(_cache_date, mode)
                         if global_ctx is None:
+                            # On-demand recompute : le digest éditorial est
+                            # global par design (1 contexte par jour, partagé
+                            # entre tous les users). On utilise donc un pool
+                            # GLOBAL — pas le pool user-personnalisé — pour
+                            # ne pas faire échouer la génération quand les
+                            # sources suivies du user ne couvrent pas le mode
+                            # (cas de la "Bonne Nouvelle" en serein, où le pool
+                            # is_good_news + followed-sources peut être vide).
+                            # Cf. bug-digest-pipeline-fallbacks.md C5.
+                            global_pool_candidates = (
+                                await self._fetch_editorial_global_pool(
+                                    mode=mode,
+                                    hours_lookback=hours_lookback,
+                                )
+                            )
+                            compute_candidates = global_pool_candidates or candidates
+
                             # CRITICAL: libérer la connexion au pool avant
                             # les 3-5 min de LLM. commit() seul ne restitue
                             # PAS la connexion au pool — seul close() le fait.
@@ -327,7 +344,7 @@ class DigestSelector:
                                     user_id=str(user_id),
                                 )
                             global_ctx = await pipeline.compute_global_context(
-                                candidates, mode=mode
+                                compute_candidates, mode=mode
                             )
                             if global_ctx is not None:
                                 _set_cached_editorial_ctx(_cache_date, mode, global_ctx)
@@ -770,11 +787,13 @@ class DigestSelector:
                         Content.is_paid.is_not(True)
                     )
 
-            # Appliquer le filtre serein si demandé
+            # Mode "serein" devient "Bonnes nouvelles du jour" : hard-filter
+            # is_good_news=True. La promesse prime sur la quantité (digest
+            # potentiellement partiel). Les `sensitive_themes` n'ont plus
+            # d'effet ici — bonne nouvelle ⇒ déjà non-anxiogène par construction.
             if mode == "serein":
-                user_sources_query = apply_serein_filter(
+                user_sources_query = apply_good_news_filter(
                     user_sources_query,
-                    sensitive_themes=sensitive_themes,
                     excluded_topics=excluded_topics,
                 )
 
@@ -844,11 +863,10 @@ class DigestSelector:
             else:
                 curated_query = curated_query.where(Content.is_paid.is_not(True))
 
-        # Appliquer le filtre serein si demandé
+        # Mode "Bonnes nouvelles" : hard-filter is_good_news=True (cf. supra).
         if mode == "serein":
-            curated_query = apply_serein_filter(
+            curated_query = apply_good_news_filter(
                 curated_query,
-                sensitive_themes=sensitive_themes,
                 excluded_topics=excluded_topics,
             )
 
@@ -858,8 +876,9 @@ class DigestSelector:
 
         curated_count = len(curated_candidates)
 
-        # Étape 3: In serein mode, include serein_default sources (humorous/satirical)
-        # even if user doesn't follow them and they aren't curated.
+        # Étape 3: En mode "Bonnes nouvelles", on conserve le pool serein_default
+        # (sources humoristiques/satiriques) MAIS on exige aussi is_good_news=True.
+        # Sans ce gate, des billets satiriques anodins sortent comme "bonne nouvelle".
         serein_default_count = 0
         if mode == "serein":
             existing_ids = {c.id for c in candidates}
@@ -872,6 +891,7 @@ class DigestSelector:
                     Content.published_at >= since,
                     Source.serein_default == True,  # noqa: E712
                     Source.is_active == True,  # noqa: E712
+                    Content.is_good_news == True,  # noqa: E712
                     Content.id.notin_(list(existing_ids)) if existing_ids else True,
                 )
                 .order_by(Content.published_at.desc())
@@ -893,6 +913,48 @@ class DigestSelector:
         )
 
         return candidates
+
+    async def _fetch_editorial_global_pool(
+        self,
+        mode: str,
+        hours_lookback: int,
+    ) -> list[Content]:
+        """Pool global pour la pipeline éditoriale on-demand.
+
+        Pendant le batch, ``digest_generation_job._get_global_candidates``
+        construit un pool user-agnostique pour pré-calculer le contexte
+        éditorial. En on-demand (cache miss inter-process), on doit faire
+        la même chose ici plutôt que d'utiliser le pool user-personnalisé,
+        sinon les users dont les sources suivies ne couvrent pas le mode
+        (cas typique du serein) reçoivent un digest vide.
+
+        Returns: liste de Contents (≤200) ; vide si la requête échoue.
+        """
+        cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+            hours=hours_lookback
+        )
+        stmt = select(Content).options(selectinload(Content.source))
+        if mode == "serein":
+            from app.services.recommendation.filter_presets import (
+                apply_good_news_filter,
+            )
+
+            stmt = stmt.join(Source, Content.source_id == Source.id)
+            stmt = apply_good_news_filter(stmt)
+        stmt = (
+            stmt.where(Content.published_at >= cutoff)
+            .order_by(Content.published_at.desc())
+            .limit(200)
+        )
+        try:
+            result = await self.session.execute(stmt)
+            return list(result.scalars().all())
+        except SQLAlchemyError:
+            logger.exception(
+                "digest_selector_global_pool_failed",
+                mode=mode,
+            )
+            return []
 
     async def _score_candidates(
         self,
