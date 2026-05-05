@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:open_filex/open_filex.dart';
@@ -49,16 +50,46 @@ class AppUpdateService {
   String? _currentFilePath;
   bool _installTriggered = false;
 
+  // Polling fallback : flutter_downloader peut ne jamais émettre via le
+  // port isolate (registration silencieusement échouée, callback rate
+  // d'Android, etc.). On poll la DB du downloader en parallèle pour
+  // garantir que l'UI sort toujours de "Téléchargement en cours...".
+  Timer? _pollTimer;
+  int _ticksWithoutProgress = 0;
+  int _lastEmittedProgress = -1;
+  DownloadTaskStatus? _lastEmittedStatus;
+  bool _portEventReceived = false;
+
   void _bind() {
     if (_port != null) return;
     _port = ReceivePort();
-    IsolateNameServer.registerPortWithName(_port!.sendPort, _kPortName);
+    // Toujours nettoyer une mapping résiduelle avant de réenregistrer.
+    // Sinon registerPortWithName retourne false silencieusement et le
+    // callback isolate envoie ses events à un SendPort orphelin.
+    IsolateNameServer.removePortNameMapping(_kPortName);
+    var ok = IsolateNameServer.registerPortWithName(
+      _port!.sendPort,
+      _kPortName,
+    );
+    if (!ok) {
+      IsolateNameServer.removePortNameMapping(_kPortName);
+      ok = IsolateNameServer.registerPortWithName(
+        _port!.sendPort,
+        _kPortName,
+      );
+      if (!ok) {
+        debugPrint(
+          'AppUpdateService: failed to register port — relying on polling',
+        );
+      }
+    }
     _port!.listen((dynamic data) {
+      _portEventReceived = true;
       final list = data as List<dynamic>;
       final id = list[0] as String;
       final status = DownloadTaskStatus.fromInt(list[1] as int);
       final progress = list[2] as int;
-      _controller.add(UpdateProgress(
+      _emitProgress(UpdateProgress(
         taskId: id,
         status: status,
         progress: progress,
@@ -68,6 +99,71 @@ class AppUpdateService {
       }
     });
     FlutterDownloader.registerCallback(downloadCallback);
+  }
+
+  void _emitProgress(UpdateProgress p) {
+    _lastEmittedStatus = p.status;
+    _lastEmittedProgress = p.progress;
+    _controller.add(p);
+    if (p.status == DownloadTaskStatus.complete ||
+        p.status == DownloadTaskStatus.failed ||
+        p.status == DownloadTaskStatus.canceled) {
+      _stopPolling();
+    }
+  }
+
+  void _startPolling(String taskId) {
+    _stopPolling();
+    _ticksWithoutProgress = 0;
+    _portEventReceived = false;
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      // Si le port reçoit déjà des events, le polling est redondant.
+      if (_portEventReceived) {
+        _stopPolling();
+        return;
+      }
+      try {
+        final tasks = await FlutterDownloader.loadTasksWithRawQuery(
+          query: "SELECT * FROM task WHERE task_id='$taskId'",
+        );
+        if (tasks == null || tasks.isEmpty) return;
+        final t = tasks.first;
+        final changed = t.status != _lastEmittedStatus ||
+            t.progress != _lastEmittedProgress;
+        if (changed) {
+          _ticksWithoutProgress = 0;
+          _emitProgress(UpdateProgress(
+            taskId: taskId,
+            status: t.status,
+            progress: t.progress,
+          ));
+          if (t.status == DownloadTaskStatus.complete &&
+              taskId == _currentTaskId) {
+            unawaited(_triggerInstall());
+          }
+        } else {
+          _ticksWithoutProgress++;
+          // ~14s coincés en enqueued sans changement → on abandonne.
+          if (_ticksWithoutProgress >= 7 &&
+              t.status == DownloadTaskStatus.enqueued) {
+            _emitProgress(UpdateProgress(
+              taskId: taskId,
+              status: DownloadTaskStatus.failed,
+              progress: t.progress,
+              errorMessage:
+                  'Téléchargement bloqué — vérifiez la connexion et réessayez.',
+            ));
+          }
+        }
+      } catch (e) {
+        debugPrint('AppUpdateService: polling error: $e');
+      }
+    });
+  }
+
+  void _stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
   }
 
   /// Starts a fresh APK download. Returns the new [UpdateProgress] (enqueued).
@@ -103,6 +199,10 @@ class AppUpdateService {
     await box.put(_kHiveTaskId, taskId);
     await box.put(_kHiveFilePath, filePath);
 
+    _lastEmittedStatus = DownloadTaskStatus.enqueued;
+    _lastEmittedProgress = 0;
+    _startPolling(taskId);
+
     return UpdateProgress(
       taskId: taskId,
       status: DownloadTaskStatus.enqueued,
@@ -136,6 +236,12 @@ class AppUpdateService {
     } else if (t.status == DownloadTaskStatus.failed ||
         t.status == DownloadTaskStatus.canceled) {
       await _clearPersistedTask();
+    } else {
+      // Reprise d'un download en cours : redémarrer le polling fallback
+      // pour ne pas dépendre uniquement du callback isolate.
+      _lastEmittedStatus = t.status;
+      _lastEmittedProgress = t.progress;
+      _startPolling(taskId);
     }
 
     return UpdateProgress(
