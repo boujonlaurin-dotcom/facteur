@@ -118,6 +118,15 @@ class FeedResponse(BaseModel):
     carousels: list[CarouselInfo] = []
 
 
+class TabCountsResponse(BaseModel):
+    """Comptages d'articles récents non-lus par onglet favori."""
+
+    total: int
+    topics: dict[str, int] = {}
+    entities: dict[str, int] = {}
+    themes: dict[str, int] = {}
+
+
 class TrendingTopicResponse(BaseModel):
     """Un sujet tendance détecté par clustering de titres."""
 

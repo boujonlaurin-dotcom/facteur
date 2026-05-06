@@ -9,6 +9,7 @@ import '../../custom_topics/models/topic_models.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../custom_topics/providers/theme_priority_provider.dart';
 import '../models/content_model.dart';
+import '../repositories/feed_repository.dart';
 
 enum FavoriteTabKind { tous, subjectTopic, subjectEntity, theme }
 
@@ -33,6 +34,7 @@ class FavoriteTabModel {
 
 class FavoriteTopicTabs extends ConsumerStatefulWidget {
   final List<Content> items;
+  final TabCounts? serverCounts;
   final String? selectedTopicSlug;
   final String? selectedThemeSlug;
   final String? selectedEntitySlug;
@@ -43,6 +45,7 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
   const FavoriteTopicTabs({
     super.key,
     required this.items,
+    this.serverCounts,
     this.selectedTopicSlug,
     this.selectedThemeSlug,
     this.selectedEntitySlug,
@@ -113,6 +116,7 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
       topics: topics,
       themePriority: themePriority,
       items: widget.items,
+      serverCounts: widget.serverCounts,
       selectedTopicSlug: widget.selectedTopicSlug,
       selectedThemeSlug: widget.selectedThemeSlug,
       selectedEntitySlug: widget.selectedEntitySlug,
@@ -178,6 +182,7 @@ List<FavoriteTabModel> buildFavoriteTabModelsForTest({
   required List<UserTopicProfile> topics,
   required Map<String, double> themePriority,
   required List<Content> items,
+  TabCounts? serverCounts,
   String? selectedTopicSlug,
   String? selectedThemeSlug,
   String? selectedEntitySlug,
@@ -186,6 +191,7 @@ List<FavoriteTabModel> buildFavoriteTabModelsForTest({
       topics: topics,
       themePriority: themePriority,
       items: items,
+      serverCounts: serverCounts,
       selectedTopicSlug: selectedTopicSlug,
       selectedThemeSlug: selectedThemeSlug,
       selectedEntitySlug: selectedEntitySlug,
@@ -195,11 +201,13 @@ List<FavoriteTabModel> _buildTabModels({
   required List<UserTopicProfile> topics,
   required Map<String, double> themePriority,
   required List<Content> items,
+  TabCounts? serverCounts,
   String? selectedTopicSlug,
   String? selectedThemeSlug,
   String? selectedEntitySlug,
 }) {
   final themeApiSlugs = macroThemeToApiSlug.values.toSet();
+  final useServer = serverCounts != null && serverCounts.total > 0;
 
   final entitySubjects = topics
       .where((t) => t.entityType != null && t.priorityMultiplier == 2.0)
@@ -231,8 +239,10 @@ List<FavoriteTabModel> _buildTabModels({
     slug: null,
     label: 'Tous',
     emoji: '',
-    count: _countUnreadRecent(items,
-        cutoff: cutoff, kind: FavoriteTabKind.tous, slug: null),
+    count: useServer
+        ? serverCounts.total
+        : _countUnreadRecent(items,
+            cutoff: cutoff, kind: FavoriteTabKind.tous, slug: null),
     active: selectedTopicSlug == null &&
         selectedThemeSlug == null &&
         selectedEntitySlug == null,
@@ -246,8 +256,10 @@ List<FavoriteTabModel> _buildTabModels({
       slug: slug,
       label: entity.name,
       emoji: '',
-      count: _countUnreadRecent(items,
-          cutoff: cutoff, kind: FavoriteTabKind.subjectEntity, slug: slug),
+      count: useServer
+          ? (serverCounts.entities[slug.toLowerCase()] ?? 0)
+          : _countUnreadRecent(items,
+              cutoff: cutoff, kind: FavoriteTabKind.subjectEntity, slug: slug),
       active: selectedEntitySlug != null && selectedEntitySlug == slug,
     ));
   }
@@ -259,8 +271,10 @@ List<FavoriteTabModel> _buildTabModels({
       slug: slug,
       label: topic.name,
       emoji: '',
-      count: _countUnreadRecent(items,
-          cutoff: cutoff, kind: FavoriteTabKind.subjectTopic, slug: slug),
+      count: useServer
+          ? (serverCounts.topics[slug] ?? 0)
+          : _countUnreadRecent(items,
+              cutoff: cutoff, kind: FavoriteTabKind.subjectTopic, slug: slug),
       active: selectedTopicSlug != null && selectedTopicSlug == slug,
     ));
   }
@@ -274,8 +288,10 @@ List<FavoriteTabModel> _buildTabModels({
       slug: apiSlug,
       label: label,
       emoji: getMacroThemeEmoji(label),
-      count: _countUnreadRecent(items,
-          cutoff: cutoff, kind: FavoriteTabKind.theme, slug: apiSlug),
+      count: useServer
+          ? (serverCounts.themes[apiSlug] ?? 0)
+          : _countUnreadRecent(items,
+              cutoff: cutoff, kind: FavoriteTabKind.theme, slug: apiSlug),
       active: selectedThemeSlug != null && selectedThemeSlug == apiSlug,
     ));
   }
