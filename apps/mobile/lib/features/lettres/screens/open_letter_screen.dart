@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
@@ -23,7 +24,8 @@ class OpenLetterScreen extends ConsumerStatefulWidget {
   ConsumerState<OpenLetterScreen> createState() => _OpenLetterScreenState();
 }
 
-class _OpenLetterScreenState extends ConsumerState<OpenLetterScreen> {
+class _OpenLetterScreenState extends ConsumerState<OpenLetterScreen>
+    with WidgetsBindingObserver {
   bool _completionShown = false;
   // Anti-cascade : on snapshot les actions déjà done au premier load pour ne
   // pas afficher de toast pour des paliers déjà acquis avant cette session.
@@ -33,10 +35,42 @@ class _OpenLetterScreenState extends ConsumerState<OpenLetterScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Seed le snapshot dès maintenant si l'état Riverpod est déjà chargé,
+    // pour que la transition todo→done qui suivra le refresh ci-dessous
+    // déclenche bien un toast (sinon elle serait avalée par la 1ʳᵉ émission).
+    final initial = ref.read(lettersProvider).valueOrNull;
+    if (initial != null) {
+      final letter = initial.letters
+          .where((l) => l.id == widget.letterId)
+          .cast<Letter?>()
+          .firstOrNull;
+      if (letter != null) {
+        _seenDoneActionIds.addAll(
+          letter.actions
+              .where((a) => a.status == LetterActionStatus.done)
+              .map((a) => a.id),
+        );
+        _seenInitialized = true;
+      }
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(lettersProvider.notifier).refreshLetterStatus(widget.letterId);
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      ref.read(lettersProvider.notifier).refreshLetterStatus(widget.letterId);
+    }
   }
 
   void _maybeShowCompletion(LetterProgressState state) {
@@ -354,8 +388,16 @@ class _Body extends ConsumerWidget {
                 ...letter.actions.map(
                   (a) => LetterActionTile(
                     action: a,
-                    onTap: () =>
-                        ref.read(lettersProvider.notifier).silentRefresh(),
+                    onTap: () async {
+                      final route = a.targetRoute;
+                      if (route != null && route.isNotEmpty) {
+                        await context.push<void>(route);
+                      }
+                      if (!context.mounted) return;
+                      await ref
+                          .read(lettersProvider.notifier)
+                          .refreshLetterStatus(letter.id);
+                    },
                   ),
                 ),
                 const SizedBox(height: 24),

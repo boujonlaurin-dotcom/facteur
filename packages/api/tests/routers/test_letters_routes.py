@@ -11,7 +11,7 @@ Couvre :
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest_asyncio
@@ -75,8 +75,19 @@ async def _add_topics(db_session, user_id: UUID, count: int) -> None:
     await db_session.commit()
 
 
-async def _add_sources(db_session, user_id: UUID, total: int, custom: int) -> None:
-    """Crée `total` user_sources dont `custom` avec is_custom=True."""
+async def _add_sources(
+    db_session,
+    user_id: UUID,
+    total: int,
+    custom: int,
+    *,
+    added_at: datetime | None = None,
+) -> None:
+    """Crée `total` user_sources dont `custom` avec is_custom=True.
+
+    `added_at` permet de simuler des ajouts antérieurs ou postérieurs au
+    démarrage de la Lettre 1, ce qui matter pour `_detect_add_2_personal_sources`.
+    """
     for i in range(total):
         src = Source(
             id=uuid4(),
@@ -89,14 +100,46 @@ async def _add_sources(db_session, user_id: UUID, total: int, custom: int) -> No
         )
         db_session.add(src)
         await db_session.flush()
-        db_session.add(
-            UserSource(
-                user_id=user_id,
-                source_id=src.id,
-                is_custom=i < custom,
-            )
-        )
+        kwargs: dict = {
+            "user_id": user_id,
+            "source_id": src.id,
+            "is_custom": i < custom,
+        }
+        if added_at is not None:
+            kwargs["added_at"] = added_at
+        db_session.add(UserSource(**kwargs))
     await db_session.commit()
+
+
+async def _ensure_letter_1_started(db_session, user_id: UUID) -> datetime:
+    """Initialise les rows letter_progress (L1 active) et retourne started_at."""
+    now = datetime.now(UTC)
+    db_session.add_all(
+        [
+            UserLetterProgress(
+                user_id=user_id,
+                letter_id="letter_0",
+                status="archived",
+                completed_actions=[],
+                archived_at=now,
+            ),
+            UserLetterProgress(
+                user_id=user_id,
+                letter_id="letter_1",
+                status="active",
+                completed_actions=[],
+                started_at=now,
+            ),
+            UserLetterProgress(
+                user_id=user_id,
+                letter_id="letter_2",
+                status="upcoming",
+                completed_actions=[],
+            ),
+        ]
+    )
+    await db_session.commit()
+    return now
 
 
 async def _add_perspectives_event(db_session, user_id: UUID) -> None:
@@ -261,7 +304,16 @@ class TestAutoDetection:
         assert "define_editorial_line" not in resp.json()["completed_actions"]
 
     async def test_sources_actions_detected(self, auth_user, db_session):
-        await _add_sources(db_session, auth_user, total=5, custom=2)
+        # L1 doit être démarrée avant l'ajout de sources : `add_2_personal_sources`
+        # ne compte que les sources ajoutées après `letter_1.started_at`.
+        started_at = await _ensure_letter_1_started(db_session, auth_user)
+        await _add_sources(
+            db_session,
+            auth_user,
+            total=5,
+            custom=2,
+            added_at=started_at + timedelta(seconds=1),
+        )
 
         async with _client() as ac:
             resp = await ac.post("/api/letters/letter_1/refresh-status")
@@ -269,6 +321,44 @@ class TestAutoDetection:
         completed = resp.json()["completed_actions"]
         assert "add_5_sources" in completed
         assert "add_2_personal_sources" in completed
+
+    async def test_curated_sources_count_after_letter_1_started(
+        self, auth_user, db_session
+    ):
+        """Régression : 2 sources curées (is_custom=False) ajoutées après le
+        démarrage de la Lettre 1 doivent valider `add_2_personal_sources`."""
+        started_at = await _ensure_letter_1_started(db_session, auth_user)
+        await _add_sources(
+            db_session,
+            auth_user,
+            total=2,
+            custom=0,
+            added_at=started_at + timedelta(seconds=1),
+        )
+
+        async with _client() as ac:
+            resp = await ac.post("/api/letters/letter_1/refresh-status")
+
+        assert "add_2_personal_sources" in resp.json()["completed_actions"]
+
+    async def test_sources_added_before_letter_1_not_counted(
+        self, auth_user, db_session
+    ):
+        """Les sources ajoutées avant le démarrage de la Lettre 1 (ex.
+        onboarding) ne valident pas `add_2_personal_sources`."""
+        started_at = await _ensure_letter_1_started(db_session, auth_user)
+        await _add_sources(
+            db_session,
+            auth_user,
+            total=3,
+            custom=3,
+            added_at=started_at - timedelta(hours=1),
+        )
+
+        async with _client() as ac:
+            resp = await ac.post("/api/letters/letter_1/refresh-status")
+
+        assert "add_2_personal_sources" not in resp.json()["completed_actions"]
 
     async def test_perspectives_event_detected(self, auth_user, db_session):
         await _add_perspectives_event(db_session, auth_user)
@@ -281,8 +371,15 @@ class TestAutoDetection:
 
 class TestChaining:
     async def test_l1_archived_unlocks_l2(self, auth_user, db_session):
+        started_at = await _ensure_letter_1_started(db_session, auth_user)
         await _add_topics(db_session, auth_user, 3)
-        await _add_sources(db_session, auth_user, total=5, custom=2)
+        await _add_sources(
+            db_session,
+            auth_user,
+            total=5,
+            custom=2,
+            added_at=started_at + timedelta(seconds=1),
+        )
         await _add_perspectives_event(db_session, auth_user)
 
         async with _client() as ac:
@@ -316,8 +413,15 @@ class TestIdempotence:
         self, auth_user, db_session
     ):
         # Archive L1 manuellement
+        started_at = await _ensure_letter_1_started(db_session, auth_user)
         await _add_topics(db_session, auth_user, 3)
-        await _add_sources(db_session, auth_user, total=5, custom=2)
+        await _add_sources(
+            db_session,
+            auth_user,
+            total=5,
+            custom=2,
+            added_at=started_at + timedelta(seconds=1),
+        )
         await _add_perspectives_event(db_session, auth_user)
 
         async with _client() as ac:

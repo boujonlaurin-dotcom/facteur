@@ -475,10 +475,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePaths.digest,
         name: RouteNames.digest,
-        pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-          transitionDurationOverride: Duration(milliseconds: 480),
-          child: DigestScreen(),
-        ),
+        pageBuilder: (context, state) {
+          final serein = state.uri.queryParameters['serein'] == '1';
+          return FullSwipeCupertinoPage(
+            transitionDurationOverride: const Duration(milliseconds: 480),
+            child: DigestScreen(initialSerein: serein),
+          );
+        },
       ),
 
       // Topic Explorer (outside ShellRoute to hide bottom nav)
