@@ -395,8 +395,23 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       final currentItems = state.value?.items ?? [];
       final currentCarousels = state.value?.carousels ?? [];
 
+      // Deduplicate by content ID: stale cache on page 1 + fresh API on page 2
+      // can produce overlapping articles when new content was ingested in between.
+      final existingIds = Set<String>.from(currentItems.map((c) => c.id));
+      final dedupedNewItems =
+          newItems.where((c) => !existingIds.contains(c.id)).toList();
+
+      if (dedupedNewItems.isEmpty && newItems.isNotEmpty) {
+        // All items were duplicates — pagination is fully misaligned (e.g. stale
+        // cache vs. heavily updated candidate pool). Stop paging to avoid a loop.
+        print(
+            'FeedNotifier: loadMore page $nextPage fully deduplicated (${newItems.length} dupes), stopping pagination.');
+        _hasNext = false;
+        return;
+      }
+
       state = AsyncData(FeedState(
-        items: [...currentItems, ...newItems],
+        items: [...currentItems, ...dedupedNewItems],
         carousels: currentCarousels, // Keep page 1 carousels
       ));
     } catch (e) {
