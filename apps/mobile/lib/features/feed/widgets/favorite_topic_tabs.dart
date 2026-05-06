@@ -248,10 +248,14 @@ List<FavoriteTabModel> _buildTabModels({
         selectedEntitySlug == null,
   ));
 
-  // 2. Sujets favoris : entités puis topics.
+  // 2. Onglets favoris (entités, topics, thèmes) fusionnés et triés
+  // par nombre d'articles disponibles décroissant. Pas de hiérarchie
+  // Sujet > Thème : seul le volume d'actu disponible compte.
+  final favoriteTabs = <FavoriteTabModel>[];
+
   for (final entity in entitySubjects) {
     final slug = entity.canonicalName ?? entity.name;
-    tabs.add(FavoriteTabModel(
+    favoriteTabs.add(FavoriteTabModel(
       kind: FavoriteTabKind.subjectEntity,
       slug: slug,
       label: entity.name,
@@ -266,7 +270,7 @@ List<FavoriteTabModel> _buildTabModels({
 
   for (final topic in topicSubjects) {
     final slug = topic.slugParent ?? topic.id;
-    tabs.add(FavoriteTabModel(
+    favoriteTabs.add(FavoriteTabModel(
       kind: FavoriteTabKind.subjectTopic,
       slug: slug,
       label: topic.name,
@@ -279,11 +283,10 @@ List<FavoriteTabModel> _buildTabModels({
     ));
   }
 
-  // 3. Thèmes favoris.
   for (final label in favoriteThemes) {
     final apiSlug = macroThemeToApiSlug[label];
     if (apiSlug == null) continue;
-    tabs.add(FavoriteTabModel(
+    favoriteTabs.add(FavoriteTabModel(
       kind: FavoriteTabKind.theme,
       slug: apiSlug,
       label: label,
@@ -296,6 +299,13 @@ List<FavoriteTabModel> _buildTabModels({
     ));
   }
 
+  favoriteTabs.sort((a, b) {
+    final byCount = b.count.compareTo(a.count);
+    if (byCount != 0) return byCount;
+    return a.label.toLowerCase().compareTo(b.label.toLowerCase());
+  });
+
+  tabs.addAll(favoriteTabs);
   return tabs;
 }
 
@@ -394,7 +404,7 @@ class _FavoriteTabItem extends StatelessWidget {
               Transform.translate(
                 offset: const Offset(0, -6),
                 child: Text(
-                  '${tab.count}',
+                  tab.count > 10 ? '10+' : '${tab.count}',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,

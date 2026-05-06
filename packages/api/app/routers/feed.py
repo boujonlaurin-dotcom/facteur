@@ -1,4 +1,3 @@
-import asyncio
 import json
 import re
 from datetime import UTC, datetime, timedelta
@@ -532,19 +531,15 @@ async def get_tab_counts(
     user_uuid = UUID(current_user_id)
     cutoff = datetime.now(UTC) - timedelta(hours=48)
 
-    # 1. Fetch user's followed sources + favorite topics in parallel
     followed_stmt = select(UserSource.source_id).where(UserSource.user_id == user_uuid)
     favorites_stmt = select(UserTopicProfile).where(
         UserTopicProfile.user_id == user_uuid,
         UserTopicProfile.priority_multiplier == 2.0,
     )
 
-    followed_result, favorites_result = await asyncio.gather(
-        db.execute(followed_stmt),
-        db.scalars(favorites_stmt),
-    )
+    followed_result = await db.execute(followed_stmt)
     followed_source_ids = {row[0] for row in followed_result.all()}
-    favorite_profiles = list(favorites_result.all())
+    favorite_profiles = list((await db.scalars(favorites_stmt)).all())
 
     if not followed_source_ids:
         return TabCountsResponse(total=0)
@@ -559,11 +554,6 @@ async def get_tab_counts(
         else:
             if prof.slug_parent:
                 fav_topic_slugs.add(prof.slug_parent)
-
-    # Build reverse theme map: theme_slug → set of topic slugs
-    theme_to_topics: dict[str, set[str]] = {}
-    for topic_slug, theme_slug in TOPIC_TO_THEME.items():
-        theme_to_topics.setdefault(theme_slug, set()).add(topic_slug)
 
     # 3. Lightweight query: only columns needed for counting
     exclude_stmt = exists().where(
@@ -592,12 +582,10 @@ async def get_tab_counts(
         topics = row.topics or []
         entities_raw = row.entities or []
 
-        # Topic matching
         for slug in fav_topic_slugs:
             if slug in topics:
                 topic_counts[slug] = topic_counts.get(slug, 0) + 1
 
-        # Entity matching (JSON-encoded strings in the array)
         if fav_entity_names and entities_raw:
             for raw_entity in entities_raw:
                 try:
@@ -608,23 +596,13 @@ async def get_tab_counts(
                 if name in fav_entity_names:
                     entity_counts[name] = entity_counts.get(name, 0) + 1
 
-        # Theme matching: check if any topic belongs to each theme
+        # Theme: count each article once per theme (not per topic)
+        seen_themes: set[str] = set()
         for topic_slug in topics:
             theme_slug = TOPIC_TO_THEME.get(topic_slug)
-            if theme_slug:
+            if theme_slug and theme_slug not in seen_themes:
+                seen_themes.add(theme_slug)
                 theme_counts[theme_slug] = theme_counts.get(theme_slug, 0) + 1
-
-    # Deduplicate theme counts (an article can match multiple topics in the
-    # same theme — count it once per theme)
-    theme_counts_dedup: dict[str, int] = {}
-    for theme_slug in theme_counts:
-        theme_topic_slugs = theme_to_topics.get(theme_slug, set())
-        count = 0
-        for row in rows:
-            row_topics = row.topics or []
-            if any(t in theme_topic_slugs for t in row_topics):
-                count += 1
-        theme_counts_dedup[theme_slug] = count
 
     logger.info(
         "tab_counts_served",
@@ -632,14 +610,14 @@ async def get_tab_counts(
         total=total,
         topic_count=len(topic_counts),
         entity_count=len(entity_counts),
-        theme_count=len(theme_counts_dedup),
+        theme_count=len(theme_counts),
     )
 
     return TabCountsResponse(
         total=total,
         topics=topic_counts,
         entities=entity_counts,
-        themes=theme_counts_dedup,
+        themes=theme_counts,
     )
 
 

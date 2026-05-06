@@ -1,10 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/api/providers.dart';
 import '../repositories/feed_repository.dart';
+import 'feed_provider.dart';
 
 final tabCountsProvider = FutureProvider.autoDispose<TabCounts>((ref) async {
-  final apiClient = ref.watch(apiClientProvider);
-  final repo = FeedRepository(apiClient);
+  final repo = ref.watch(feedRepositoryProvider);
   return repo.getTabCounts();
 });
