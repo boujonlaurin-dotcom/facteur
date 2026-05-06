@@ -106,6 +106,15 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   String? _lastWidgetPushSignature;
   static const Duration _widgetPushDelay = Duration(seconds: 1);
 
+  // Cap mirrored to the Kotlin RemoteViewsFactory's MAX_ROWS_FLUX. The
+  // widget runs without thumbnails in Flux, so 80 rows fit well under the
+  // Binder IPC ceiling.
+  static const int _widgetFluxCap = 80;
+  // Max additional pages fetched purely to feed the widget. Keeps the
+  // prefetch chain bounded even if the backend keeps reporting hasNext.
+  static const int _widgetPrefetchMaxPages = 4;
+  bool _widgetDepthFillInProgress = false;
+
   bool get isLoadingMore => _isLoadingMore;
   bool get hasNext => _hasNext;
   String? get selectedFilter => _selectedFilter;
@@ -185,6 +194,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         _globalItems = parsed.items;
         print(
             '[PERF] feedProvider.build(): cache hit (${parsed.items.length} items, age=${ageSeconds}s, silent_reval=${ageSeconds >= _silentRevalSkipSeconds})');
+        unawaited(_prefetchForWidget(parsed.items));
         return FeedState(items: parsed.items, carousels: parsed.carousels);
       } catch (e) {
         // Corrupted cache or schema drift — drop silently and fall through.
@@ -200,6 +210,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     print('[PERF] feedProvider.build(): ${sw.elapsedMilliseconds}ms (${response.items.length} items)');
 
     _globalItems = response.items;
+    unawaited(_prefetchForWidget(response.items));
     return FeedState(items: response.items, carousels: response.carousels);
   }
 
@@ -271,7 +282,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         _selectedKeyword != null) {
       return;
     }
-    final slice = items.take(30).toList(growable: false);
+    final slice = items.take(_widgetFluxCap).toList(growable: false);
     final signature = slice.isEmpty
         ? '0'
         : '${slice.length}|${slice.first.id}|${slice.last.id}';
@@ -281,6 +292,70 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       _lastWidgetPushSignature = signature;
       WidgetService.updateWidget(feedItems: slice);
     });
+  }
+
+  /// Prefetch additional pages purely to feed the widget. Calls the repository
+  /// directly so the in-app feed state (`state.value.items`, `_hasNext`, `_page`)
+  /// is never mutated — pages 2-3 fetched here only land in the widget payload.
+  ///
+  /// Aborts silently if a filter becomes active mid-flight or if the chain is
+  /// already running. Bounded by [_widgetPrefetchMaxPages] and [_widgetFluxCap].
+  Future<void> _prefetchForWidget(List<Content> initialItems) async {
+    if (!_isUnfiltered) return;
+    if (_widgetDepthFillInProgress) return;
+    if (initialItems.length >= _widgetFluxCap) return;
+    if (!_hasNext) return;
+
+    _widgetDepthFillInProgress = true;
+    try {
+      final buffer = List<Content>.from(initialItems);
+      final existingIds = Set<String>.from(buffer.map((c) => c.id));
+      final repository = ref.read(feedRepositoryProvider);
+      final isSerein = ref.read(sereinToggleProvider).enabled;
+
+      // Page 1 is already in [initialItems] — start at 2.
+      var probePage = 2;
+      var attempts = 0;
+      while (buffer.length < _widgetFluxCap &&
+          attempts < _widgetPrefetchMaxPages) {
+        if (!_isUnfiltered) return;
+        attempts++;
+        try {
+          final response = await repository.getFeed(
+            page: probePage,
+            limit: _limit,
+            mode: null,
+            theme: null,
+            topic: null,
+            sourceId: null,
+            entity: null,
+            keyword: null,
+            includeUnfollowed: false,
+            serein: isSerein,
+          );
+          final hasMore =
+              response.pagination.hasNext && response.items.isNotEmpty;
+          for (final c in response.items) {
+            if (existingIds.add(c.id)) {
+              buffer.add(c);
+              if (buffer.length >= _widgetFluxCap) break;
+            }
+          }
+          probePage++;
+          if (!hasMore) break;
+        } catch (e) {
+          // Best-effort prefetch: a failed extra page must never bubble up.
+          // ignore: avoid_print
+          print('FeedNotifier: widget prefetch page $probePage failed: $e');
+          break;
+        }
+      }
+
+      if (!_isUnfiltered) return;
+      _scheduleWidgetPush(buffer);
+    } finally {
+      _widgetDepthFillInProgress = false;
+    }
   }
 
   Future<void> setFilter(String? filter) async {

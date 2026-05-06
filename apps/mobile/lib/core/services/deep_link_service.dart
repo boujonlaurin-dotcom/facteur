@@ -13,8 +13,10 @@ import 'analytics_service.dart';
 /// Supported URIs:
 /// - `io.supabase.facteur://digest` → `/digest`
 /// - `io.supabase.facteur://digest/<contentId>?pos=<n>&topicId=<id>`
-///   → `/feed/content/<contentId>` (article reader)
+///   → `/feed/content/<contentId>` (article reader, Essentiel deep link)
 /// - `io.supabase.facteur://feed` → `/feed`
+/// - `io.supabase.facteur://feed/content/<contentId>?pos=<n>&topicId=<id>`
+///   → `/feed/content/<contentId>` (article reader, Flux deep link)
 /// - `io.supabase.facteur://veille/dashboard` → `/veille/dashboard`
 ///
 /// `io.supabase.facteur://login-callback` is intentionally ignored — Supabase
@@ -242,6 +244,24 @@ class DeepLinkService {
       );
     }
     if (isFeed) {
+      // Flux article: `io.supabase.facteur://feed/content/<id>` — emitted by
+      // the Kotlin RemoteViewsFactory in Flux mode. host="feed" gives segments
+      // `[content, <id>]`; some Android intent shapes deliver host="" with
+      // segments `[feed, content, <id>]`, so we normalise both.
+      final feedSegments =
+          host == 'feed' ? segments : segments.skip(1).toList();
+      if (feedSegments.length >= 2 && feedSegments[0] == 'content') {
+        final articleId = feedSegments[1];
+        if (articleId.isNotEmpty) {
+          return WidgetDeepLinkAction(
+            target: WidgetDeepLinkTarget.article,
+            route: '/feed/content/$articleId',
+            articleId: articleId,
+            position: int.tryParse(uri.queryParameters['pos'] ?? ''),
+            topicId: uri.queryParameters['topicId'],
+          );
+        }
+      }
       return const WidgetDeepLinkAction(
         target: WidgetDeepLinkTarget.feed,
         route: RoutePaths.feed,
