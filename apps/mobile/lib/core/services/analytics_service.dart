@@ -515,6 +515,29 @@ class AnalyticsService {
     await _capturePostHog('widget_article_opened', props);
   }
 
+  /// Fired once per Flux view session, on app foreground, after reading the
+  /// max scroll position the native RemoteViewsFactory persisted to
+  /// SharedPreferences. [maxPosition] is 0-indexed; [scrollPct] is computed
+  /// against [totalCount].
+  Future<void> trackWidgetFluxScrollSession({
+    required int maxPosition,
+    required int totalCount,
+    DateTime? at,
+  }) async {
+    final scrollPct = totalCount > 0
+        ? ((maxPosition + 1) / totalCount).clamp(0.0, 1.0)
+        : 0.0;
+    final props = <String, dynamic>{
+      'session_id': _sessionId,
+      'max_position': maxPosition,
+      'total_count': totalCount,
+      'scroll_pct': scrollPct,
+      'at_iso': at?.toUtc().toIso8601String(),
+    };
+    await _logEvent('widget_flux_scroll', props);
+    await _capturePostHog('widget_flux_scroll', props);
+  }
+
   // ── Notifications activation events (brief §7) ──────────────────────
 
   Future<void> trackModalNotifShown({required ActivationTrigger trigger}) async {
