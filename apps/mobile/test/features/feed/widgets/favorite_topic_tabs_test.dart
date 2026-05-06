@@ -65,7 +65,8 @@ void main() {
       expect(tabs.first.active, isTrue);
     });
 
-    test('2 sujets + 1 thème → 4 tabs in order subjects → themes', () {
+    test('2 sujets + 1 thème → 4 tabs sorted by count desc (alpha tie-break)',
+        () {
       final topics = [
         _topic(
           id: 't1',
@@ -89,17 +90,19 @@ void main() {
         items: const [],
       );
 
+      // All counts are 0 here, so the tie-break is alphabetical on label
+      // (lowercased): environnement < ia santé < trump.
       expect(tabs.map((t) => t.kind).toList(), [
         FavoriteTabKind.tous,
-        FavoriteTabKind.subjectEntity,
-        FavoriteTabKind.subjectTopic,
         FavoriteTabKind.theme,
+        FavoriteTabKind.subjectTopic,
+        FavoriteTabKind.subjectEntity,
       ]);
-      expect(tabs[1].label, 'Trump');
+      expect(tabs[1].label, 'Environnement');
+      expect(tabs[1].slug, 'environment');
+      expect(tabs[1].emoji, isNotEmpty);
       expect(tabs[2].label, 'IA santé');
-      expect(tabs[3].label, 'Environnement');
-      expect(tabs[3].slug, 'environment');
-      expect(tabs[3].emoji, isNotEmpty);
+      expect(tabs[3].label, 'Trump');
     });
 
     test('topics whose slugParent is a macro-theme slug are excluded', () {

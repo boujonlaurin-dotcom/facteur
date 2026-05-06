@@ -97,9 +97,8 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   final Set<String> _consumedContentIds =
       {}; // Track content being animated out
 
-  // Snapshot of the last unfiltered feed (no topic/theme/entity active).
-  // Used by FavoriteTopicTabs to compute all tab badges independently of
-  // which tab is currently selected.
+  // Unfiltered snapshot — tab badges need counts across all topics, not just
+  // the currently filtered subset.
   List<Content> _globalItems = [];
 
   Timer? _widgetPushDebounce;
