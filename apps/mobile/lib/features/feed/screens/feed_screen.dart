@@ -66,6 +66,7 @@ import '../widgets/favorite_topic_tabs.dart';
 import '../widgets/filter_collapsible_panel.dart';
 import '../widgets/follow_keyword_suggestion_card.dart';
 import '../widgets/interest_filter_sheet.dart';
+import '../providers/tab_counts_provider.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../settings/providers/user_profile_provider.dart';
 import '../../sources/providers/sources_providers.dart';
@@ -525,11 +526,15 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
         notifier.selectedKeyword!.isNotEmpty;
     final feedItems =
         ref.watch(feedProvider).valueOrNull?.items ?? const <Content>[];
+    final globalItems = notifier.globalItems;
+    final badgeItems = globalItems.isNotEmpty ? globalItems : feedItems;
+    final serverCounts = ref.watch(tabCountsProvider).valueOrNull;
     return FilterCollapsiblePanel(
       activeCount: _activeFilterCount(),
       chipsRow: _buildFilterChipsRow(context),
       leadingContent: FavoriteTopicTabs(
-        items: feedItems,
+        items: badgeItems,
+        serverCounts: serverCounts,
         selectedTopicSlug: notifier.selectedTopic,
         selectedThemeSlug: notifier.selectedTheme,
         selectedEntitySlug: notifier.selectedEntity,

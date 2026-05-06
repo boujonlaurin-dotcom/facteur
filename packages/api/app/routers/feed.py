@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 from datetime import UTC, datetime, timedelta
@@ -506,6 +507,140 @@ async def mark_briefing_item_read(
         )
 
     return {"message": "Briefing item marked as read", "updated": result.rowcount}
+
+
+@router.get("/tab-counts")
+async def get_tab_counts(
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Comptages d'articles récents non-lus pour chaque onglet favori.
+
+    Requête légère (projection minimale, pas de scoring) appelée au
+    chargement du feed pour afficher les badges sur les onglets.
+    """
+    import json as _json
+
+    from sqlalchemy import exists, or_, select
+
+    from app.models.content import Content
+    from app.models.source import UserSource
+    from app.models.user_topic_profile import UserTopicProfile
+    from app.schemas.feed import TabCountsResponse
+    from app.services.ml.topic_theme_mapper import TOPIC_TO_THEME
+
+    user_uuid = UUID(current_user_id)
+    cutoff = datetime.now(UTC) - timedelta(hours=48)
+
+    # 1. Fetch user's followed sources + favorite topics in parallel
+    followed_stmt = select(UserSource.source_id).where(UserSource.user_id == user_uuid)
+    favorites_stmt = select(UserTopicProfile).where(
+        UserTopicProfile.user_id == user_uuid,
+        UserTopicProfile.priority_multiplier == 2.0,
+    )
+
+    followed_result, favorites_result = await asyncio.gather(
+        db.execute(followed_stmt),
+        db.scalars(favorites_stmt),
+    )
+    followed_source_ids = {row[0] for row in followed_result.all()}
+    favorite_profiles = list(favorites_result.all())
+
+    if not followed_source_ids:
+        return TabCountsResponse(total=0)
+
+    # 2. Extract favorite slugs/names to count
+    fav_topic_slugs: set[str] = set()
+    fav_entity_names: set[str] = set()
+    for prof in favorite_profiles:
+        if prof.entity_type is not None:
+            if prof.canonical_name:
+                fav_entity_names.add(prof.canonical_name.lower())
+        else:
+            if prof.slug_parent:
+                fav_topic_slugs.add(prof.slug_parent)
+
+    # Build reverse theme map: theme_slug → set of topic slugs
+    theme_to_topics: dict[str, set[str]] = {}
+    for topic_slug, theme_slug in TOPIC_TO_THEME.items():
+        theme_to_topics.setdefault(theme_slug, set()).add(topic_slug)
+
+    # 3. Lightweight query: only columns needed for counting
+    exclude_stmt = exists().where(
+        UserContentStatus.content_id == Content.id,
+        UserContentStatus.user_id == user_uuid,
+        or_(
+            UserContentStatus.is_hidden,
+            UserContentStatus.status.in_(["seen", "consumed"]),
+        ),
+    )
+
+    stmt = select(Content.id, Content.topics, Content.entities).where(
+        Content.source_id.in_(list(followed_source_ids)),
+        Content.published_at >= cutoff,
+        ~exclude_stmt,
+    )
+    rows = (await db.execute(stmt)).all()
+
+    # 4. Count in Python (single pass over lightweight rows)
+    total = len(rows)
+    topic_counts: dict[str, int] = {}
+    entity_counts: dict[str, int] = {}
+    theme_counts: dict[str, int] = {}
+
+    for row in rows:
+        topics = row.topics or []
+        entities_raw = row.entities or []
+
+        # Topic matching
+        for slug in fav_topic_slugs:
+            if slug in topics:
+                topic_counts[slug] = topic_counts.get(slug, 0) + 1
+
+        # Entity matching (JSON-encoded strings in the array)
+        if fav_entity_names and entities_raw:
+            for raw_entity in entities_raw:
+                try:
+                    parsed = _json.loads(raw_entity)
+                    name = parsed.get("name", "").lower()
+                except (ValueError, AttributeError):
+                    name = raw_entity.lower()
+                if name in fav_entity_names:
+                    entity_counts[name] = entity_counts.get(name, 0) + 1
+
+        # Theme matching: check if any topic belongs to each theme
+        for topic_slug in topics:
+            theme_slug = TOPIC_TO_THEME.get(topic_slug)
+            if theme_slug:
+                theme_counts[theme_slug] = theme_counts.get(theme_slug, 0) + 1
+
+    # Deduplicate theme counts (an article can match multiple topics in the
+    # same theme — count it once per theme)
+    theme_counts_dedup: dict[str, int] = {}
+    for theme_slug in theme_counts:
+        theme_topic_slugs = theme_to_topics.get(theme_slug, set())
+        count = 0
+        for row in rows:
+            row_topics = row.topics or []
+            if any(t in theme_topic_slugs for t in row_topics):
+                count += 1
+        theme_counts_dedup[theme_slug] = count
+
+    logger.info(
+        "tab_counts_served",
+        user_id=current_user_id,
+        total=total,
+        topic_count=len(topic_counts),
+        entity_count=len(entity_counts),
+        theme_count=len(theme_counts_dedup),
+    )
+
+    return TabCountsResponse(
+        total=total,
+        topics=topic_counts,
+        entities=entity_counts,
+        themes=theme_counts_dedup,
+    )
 
 
 @router.get("/trending-topics", response_model=list[TrendingTopicResponse])

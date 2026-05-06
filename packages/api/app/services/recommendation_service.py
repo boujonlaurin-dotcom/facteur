@@ -26,6 +26,18 @@ logger = structlog.get_logger()
 # Cf. docs/bugs/bug-feed-default-hang.md
 _FEED_TWO_PHASE_TIMEOUT_S = 8.0
 
+# Suffixes corporate courants strippés pour matcher "Anthropic" avec
+# "Anthropic, PBC" ou "OpenAI" avec "OpenAI Inc." côté post-filtre entité.
+_CORP_SUFFIX_RE = re.compile(
+    r"[,\s]+(pbc|inc|llc|ltd|sa|sas|gmbh|co|corp|corporation|"
+    r"company|nv|ag|spa|srl|plc)\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_entity_name(name: str) -> str:
+    return _CORP_SUFFIX_RE.sub("", name.strip().lower()).strip()
+
 
 @dataclass
 class InterestContext:
@@ -428,7 +440,7 @@ class RecommendationService:
         if entity:
             import json as _json
 
-            entity_lower = entity.lower()
+            entity_norm = _normalize_entity_name(entity)
 
             def _matches_entity(c: Content) -> bool:
                 if not c.entities:
@@ -438,7 +450,7 @@ class RecommendationService:
                         e = _json.loads(raw)
                         if (
                             isinstance(e, dict)
-                            and e.get("name", "").lower() == entity_lower
+                            and _normalize_entity_name(e.get("name", "")) == entity_norm
                         ):
                             return True
                     except (ValueError, TypeError):
@@ -2320,22 +2332,17 @@ class RecommendationService:
 
         # Base source filter
         # source_id: show only articles from this specific source
-        # theme/topic/entity: show curated sources (broader discovery)
-        # keyword + include_unfollowed: same broader discovery as theme/topic/entity
+        # theme/topic/entity: filtre explicite — toutes les sources actives
+        #   Facteur (curated + non-curated + tier=deep), pour ne pas écarter
+        #   de matches potentiels. La distinction suivie/non-suivie est rendue
+        #   à l'affichage via la chip "Suivre +".
+        # keyword + include_unfollowed: même politique d'élargissement.
         # followed_source_ids: followed sources only (no curated enrichment)
         _use_two_phase = False
         if source_id:
             query = query.where(Content.source_id == source_id)
         elif theme or topic or entity or (keyword and include_unfollowed):
-            if followed_source_ids:
-                query = query.where(
-                    or_(
-                        and_(Source.is_curated, Source.source_tier != "deep"),
-                        Source.id.in_(list(followed_source_ids)),
-                    )
-                )
-            else:
-                query = query.where(Source.is_curated, Source.source_tier != "deep")
+            pass
         elif followed_source_ids:
             # Don't apply source filter yet — two-phase fetch after all filters
             _use_two_phase = True

@@ -874,6 +874,20 @@ class FeedRepository {
     }
   }
 
+  Future<TabCounts> getTabCounts() async {
+    try {
+      final response = await _apiClient.dio.get<Map<String, dynamic>>(
+        'feed/tab-counts',
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        return TabCounts.fromJson(response.data!);
+      }
+    } catch (e) {
+      print('FeedRepository: [ERROR] getTabCounts: $e');
+    }
+    return const TabCounts();
+  }
+
   /// Fetch perspectives for a content via Google News search
   Future<PerspectivesResponse> getPerspectives(String contentId) async {
     try {
@@ -892,6 +906,37 @@ class FeedRepository {
       return PerspectivesResponse(
           perspectives: [], keywords: [], biasDistribution: {});
     }
+  }
+}
+
+class TabCounts {
+  final int total;
+  final Map<String, int> topics;
+  final Map<String, int> entities;
+  final Map<String, int> themes;
+
+  const TabCounts({
+    this.total = 0,
+    this.topics = const {},
+    this.entities = const {},
+    this.themes = const {},
+  });
+
+  factory TabCounts.fromJson(Map<String, dynamic> json) {
+    return TabCounts(
+      total: (json['total'] as num?)?.toInt() ?? 0,
+      topics: _castIntMap(json['topics']),
+      entities: _castIntMap(json['entities']),
+      themes: _castIntMap(json['themes']),
+    );
+  }
+
+  static Map<String, int> _castIntMap(dynamic raw) {
+    if (raw is! Map) return const {};
+    return {
+      for (final e in raw.entries)
+        e.key.toString(): (e.value as num?)?.toInt() ?? 0,
+    };
   }
 }
 

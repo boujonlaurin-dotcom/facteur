@@ -97,6 +97,11 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   final Set<String> _consumedContentIds =
       {}; // Track content being animated out
 
+  // Snapshot of the last unfiltered feed (no topic/theme/entity active).
+  // Used by FavoriteTopicTabs to compute all tab badges independently of
+  // which tab is currently selected.
+  List<Content> _globalItems = [];
+
   Timer? _widgetPushDebounce;
   String? _lastWidgetPushSignature;
   static const Duration _widgetPushDelay = Duration(seconds: 1);
@@ -109,6 +114,12 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   String? get selectedSourceId => _selectedSourceId;
   String? get selectedEntity => _selectedEntity;
   String? get selectedKeyword => _selectedKeyword;
+  List<Content> get globalItems => _globalItems;
+
+  bool get _isUnfiltered =>
+      _selectedTopic == null &&
+      _selectedTheme == null &&
+      _selectedEntity == null;
 
   @override
   FutureOr<FeedState> build() async {
@@ -171,6 +182,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         if (ageSeconds >= _silentRevalSkipSeconds) {
           _scheduleSilentRevalidation();
         }
+        _globalItems = parsed.items;
         print(
             '[PERF] feedProvider.build(): cache hit (${parsed.items.length} items, age=${ageSeconds}s, silent_reval=${ageSeconds >= _silentRevalSkipSeconds})');
         return FeedState(items: parsed.items, carousels: parsed.carousels);
@@ -187,6 +199,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     sw.stop();
     print('[PERF] feedProvider.build(): ${sw.elapsedMilliseconds}ms (${response.items.length} items)');
 
+    _globalItems = response.items;
     return FeedState(items: response.items, carousels: response.carousels);
   }
 
@@ -221,6 +234,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
               .map((c) => c.id))),
         };
         if (consumedIds.isEmpty) {
+          _globalItems = response.items;
           state = AsyncData(
               FeedState(items: response.items, carousels: response.carousels));
           return;
@@ -228,8 +242,10 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         Content preserve(Content c) => consumedIds.contains(c.id)
             ? c.copyWith(status: ContentStatus.consumed)
             : c;
+        final mergedItems = response.items.map(preserve).toList();
+        _globalItems = mergedItems;
         state = AsyncData(FeedState(
-          items: response.items.map(preserve).toList(),
+          items: mergedItems,
           carousels: response.carousels
               .map((car) =>
                   car.copyWith(items: car.items.map(preserve).toList()))
@@ -477,6 +493,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       // call (the backend cache will still give a fast response, but the
       // user has the right to ask for fresh data).
       final response = await _fetchPage(page: 1, forceFresh: true);
+      if (_isUnfiltered) {
+        _globalItems = response.items;
+      }
       state = AsyncData(FeedState(
         items: response.items,
         carousels: response.carousels,
