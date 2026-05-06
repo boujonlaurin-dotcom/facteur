@@ -6,31 +6,36 @@ import 'package:home_widget/home_widget.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
 
+import '../../config/topic_labels.dart';
 import '../../features/digest/models/digest_models.dart';
+import '../../features/feed/models/content_model.dart';
 import '../../features/gamification/models/streak_model.dart';
 
 /// Service to push digest data to the Android home screen widget.
 ///
 /// Data flows: Flutter → SharedPreferences (via home_widget) → FacteurWidget.kt
 ///
-/// Schema (since refonte v2):
-/// - `articles_json` : JSON array of up to 5 articles (see [_serializeArticle])
+/// Schema:
+/// - `articles_json` : Essentiel — JSON array of up to 5 articles
+/// - `feed_articles_json` : Flux — JSON array of up to 30 feed items
 /// - `articles_updated_at` : epoch millis of last successful refresh
 /// - `digest_status` : 'none' | 'available' | 'in_progress' | 'completed'
 /// - `digest_progress` : 'X/Y'
 /// - `streak` : current streak as string
+/// - `widget_mode` : 'essentiel' | 'flux' (written natively at tab tap)
 class WidgetService {
   static const _androidName = 'FacteurWidget';
   static const _maxArticles = 5;
+  static const _maxFeedArticles = 30;
+  // Cap thumbnails to keep RemoteViews IPC under Binder's ~1 MB ceiling.
+  static const _maxFeedThumbnails = 10;
   static final _dio = Dio();
 
-  /// Update the home screen widget with the latest digest and/or streak data.
-  ///
-  /// Each parameter is independent: passing only `streak` will refresh the
-  /// streak counter without touching `articles_json`. This avoids wiping
-  /// previously saved articles when streak refresh fires after digest fetch.
+  /// Update the home screen widget with the latest digest, feed and/or streak.
+  /// Each parameter is independent — passing only one preserves the others.
   static Future<void> updateWidget({
     DigestResponse? digest,
+    List<Content>? feedItems,
     StreakModel? streak,
   }) async {
     try {
@@ -51,6 +56,14 @@ class WidgetService {
         await HomeWidget.saveWidgetData(
           'digest_progress',
           _computeProgress(digest),
+        );
+      }
+
+      if (feedItems != null) {
+        final items = await _buildFeedArticleList(feedItems);
+        await HomeWidget.saveWidgetData(
+          'feed_articles_json',
+          jsonEncode(items),
         );
       }
 
@@ -85,10 +98,12 @@ class WidgetService {
   static Future<void> clear() async {
     try {
       await HomeWidget.saveWidgetData('articles_json', '[]');
+      await HomeWidget.saveWidgetData('feed_articles_json', '[]');
       await HomeWidget.saveWidgetData('articles_updated_at', '0');
       await HomeWidget.saveWidgetData('digest_status', 'none');
       await HomeWidget.saveWidgetData('digest_progress', '0/0');
       await HomeWidget.saveWidgetData('streak', '0');
+      await HomeWidget.saveWidgetData('widget_mode', 'essentiel');
       await HomeWidget.updateWidget(androidName: _androidName);
     } catch (e) {
       debugPrint('WidgetService: clear failed: $e');
@@ -171,6 +186,66 @@ class WidgetService {
       'thumbnail_path': thumbPath ?? '',
       'perspective_count': topic.perspectiveCount,
       'published_at_iso': article.publishedAt?.toUtc().toIso8601String() ?? '',
+    };
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Feed (Flux) serialization
+  // ──────────────────────────────────────────────────────────────
+
+  /// Build the Flux article list (max 30) from the current feed state.
+  /// Thumbnails only downloaded for the first [_maxFeedThumbnails] entries
+  /// to keep the RemoteViews IPC payload under Binder's ~1 MB ceiling.
+  static Future<List<Map<String, dynamic>>> _buildFeedArticleList(
+    List<Content> items,
+  ) async {
+    if (items.isEmpty) return const [];
+    final capped = items.take(_maxFeedArticles).toList(growable: false);
+    return Future.wait([
+      for (var i = 0; i < capped.length; i++)
+        _serializeFeedItem(
+          item: capped[i],
+          rank: i + 1,
+          downloadThumbnail: i < _maxFeedThumbnails,
+        ),
+    ]);
+  }
+
+  static Future<Map<String, dynamic>> _serializeFeedItem({
+    required Content item,
+    required int rank,
+    required bool downloadThumbnail,
+  }) async {
+    final downloads = await Future.wait([
+      downloadThumbnail
+          ? _downloadIfPresent(
+              item.thumbnailUrl,
+              'widget_feed_thumbnail_$rank.jpg',
+            )
+          : Future<String?>.value(null),
+      _downloadIfPresent(
+        item.source.logoUrl,
+        'widget_feed_logo_$rank.png',
+      ),
+    ]);
+    final thumbPath = downloads[0];
+    final logoPath = downloads[1];
+
+    final topicSlug = item.topics.isNotEmpty ? item.topics.first : '';
+    final topicLabel = topicSlugToLabel[topicSlug] ?? '';
+
+    return {
+      'id': item.id,
+      'rank': rank,
+      'topic_id': topicSlug,
+      'topic_label': topicLabel,
+      'is_main': false,
+      'title': item.title,
+      'source_name': item.source.name,
+      'source_logo_path': logoPath ?? '',
+      'thumbnail_path': thumbPath ?? '',
+      'perspective_count': 0,
+      'published_at_iso': item.publishedAt.toUtc().toIso8601String(),
     };
   }
 
