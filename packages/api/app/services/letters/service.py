@@ -54,13 +54,29 @@ async def _detect_add_5_sources(user_id: UUID, db: AsyncSession) -> bool:
 
 
 async def _detect_add_2_personal_sources(user_id: UUID, db: AsyncSession) -> bool:
-    """≥2 user_sources avec is_custom=True."""
-    stmt = (
+    """≥2 user_sources ajoutées après le démarrage de la Lettre 1.
+
+    Compte toute association (curée OU custom) ajoutée après que l'utilisateur
+    soit entré dans la Lettre 1, pour valider l'effort post-onboarding sans
+    dépendre du flag is_custom (qui ne couvre que les ajouts par URL libre).
+    """
+    started_at = await db.scalar(
+        select(UserLetterProgress.started_at).where(
+            UserLetterProgress.user_id == user_id,
+            UserLetterProgress.letter_id == "letter_1",
+        )
+    )
+    if started_at is None:
+        return False
+    count = await db.scalar(
         select(func.count())
         .select_from(UserSource)
-        .where(UserSource.user_id == user_id, UserSource.is_custom.is_(True))
+        .where(
+            UserSource.user_id == user_id,
+            UserSource.added_at >= started_at,
+        )
     )
-    return ((await db.execute(stmt)).scalar() or 0) >= 2
+    return (count or 0) >= 2
 
 
 def _first_event_detector(event_type: str):
@@ -155,7 +171,7 @@ def _serialize(row: UserLetterProgress, catalog: dict) -> dict:
     serialized_actions = [
         {
             k: a[k]
-            for k in ("id", "label", "help", "completion_palier")
+            for k in ("id", "label", "help", "completion_palier", "target_route")
             if k in a and a[k] is not None
         }
         for a in actions

@@ -22,6 +22,36 @@ void main() {
       expect(l.introPalier, isNull);
       expect(l.completionVoeu, isNull);
       expect(l.actions.single.completionPalier, isNull);
+      expect(l.actions.single.targetRoute, isNull);
+    });
+
+    test('parses target_route on actions', () {
+      final l = Letter.fromJson({
+        'id': 'letter_1',
+        'num': '01',
+        'title': 'X',
+        'message': 'm',
+        'signature': 's',
+        'status': 'active',
+        'actions': [
+          {
+            'id': 'a1',
+            'label': 'A',
+            'help': 'h',
+            'target_route': '/settings/sources/add',
+          },
+          {
+            'id': 'a2',
+            'label': 'B',
+            'help': 'h',
+          },
+        ],
+        'completed_actions': <String>[],
+        'progress': 0.0,
+      });
+
+      expect(l.actions[0].targetRoute, '/settings/sources/add');
+      expect(l.actions[1].targetRoute, isNull);
     });
 
     test('parses L2 payload with narrative fields', () {

@@ -40,7 +40,13 @@ import '../../../core/ui/notification_service.dart';
 /// Main digest screen showing the daily "Essentiel" with 7 articles
 /// Uses DigestBriefingSection with Feed-style header and segmented progress bar
 class DigestScreen extends ConsumerStatefulWidget {
-  const DigestScreen({super.key});
+  /// When true (e.g. via `/digest?serein=1`), force serein mode locally for
+  /// this visit only and fire the bonnes_nouvelles_opened analytics event,
+  /// matching the entry-card flow. The user's persisted preference isn't
+  /// touched.
+  final bool initialSerein;
+
+  const DigestScreen({super.key, this.initialSerein = false});
 
   @override
   ConsumerState<DigestScreen> createState() => _DigestScreenState();
@@ -51,6 +57,13 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
   final ScrollController _scrollController = ScrollController();
   // Sprint 2 PR1 — dedupe digest_opened + digest_item_viewed per digest_id.
   String? _trackedDigestId;
+  bool? _sereinOriginal;
+
+  @override
+  void deactivate() {
+    _restoreSereinIfNeeded();
+    super.deactivate();
+  }
 
   @override
   void dispose() {
@@ -58,10 +71,35 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     super.dispose();
   }
 
+  void _restoreSereinIfNeeded() {
+    final original = _sereinOriginal;
+    if (original == null) return;
+    final notifier = ref.read(sereinToggleProvider.notifier);
+    if (ref.read(sereinToggleProvider).enabled != original) {
+      notifier.setEnabledLocal(original);
+    }
+    _sereinOriginal = null;
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetService.initWidgetIfNeeded();
+    if (widget.initialSerein) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final current = ref.read(sereinToggleProvider).enabled;
+        _sereinOriginal = current;
+        if (!current) {
+          ref.read(sereinToggleProvider.notifier).setEnabledLocal(true);
+        }
+        unawaited(
+          ref
+              .read(analyticsServiceProvider)
+              .trackBonnesNouvellesOpened(targetDate: DateTime.now()),
+        );
+      });
+    }
   }
 
   /// Intercept exit from the digest to nudge the user (once) to pin the
@@ -74,6 +112,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       await WidgetPinNudge.show(context, ref);
     }
     if (!mounted) return;
+    _restoreSereinIfNeeded();
     if (context.canPop()) {
       context.pop();
     } else {

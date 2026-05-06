@@ -24,6 +24,7 @@ class LetterAction {
   final String help;
   final LetterActionStatus status;
   final String? completionPalier;
+  final String? targetRoute;
 
   const LetterAction({
     required this.id,
@@ -31,6 +32,7 @@ class LetterAction {
     required this.help,
     required this.status,
     this.completionPalier,
+    this.targetRoute,
   });
 }
 
@@ -99,6 +101,7 @@ class Letter {
         help: raw['help'] as String? ?? '',
         status: actionStatus,
         completionPalier: raw['completion_palier'] as String?,
+        targetRoute: raw['target_route'] as String?,
       ));
     }
 
