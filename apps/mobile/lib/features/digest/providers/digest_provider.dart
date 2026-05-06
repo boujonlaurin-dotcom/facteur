@@ -283,10 +283,11 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     }
   }
 
-  /// Push current digest state to the home screen widget.
+  /// Push the Essentiel (normal) digest to the home screen widget.
+  /// Always uses `_normalDigest` so the widget stays on L'Essentiel even when
+  /// the in-app Serein/"Bonnes Nouvelles" toggle is on.
   void _syncWidget() {
-    final digest = state.value;
-    WidgetService.updateWidget(digest: digest);
+    WidgetService.updateWidget(digest: _normalDigest);
   }
 
   /// Update the daily notification with topic keywords from the loaded digest.
