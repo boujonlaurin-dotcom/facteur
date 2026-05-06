@@ -256,14 +256,17 @@ class TestBuild:
         items = await builder.build(veille_config.id)
         assert items == []
 
-    async def test_filters_by_topic_overlap(
+    async def test_includes_all_source_articles_regardless_of_topic(
         self,
         db_session,
         veille_config,
         matching_contents,
         fake_session_maker,
     ):
-        """L'article tagué `t-sport` ne doit pas remonter."""
+        """Plus de filtre topic : tout article venant des sources du user
+        rentre dans le pipeline. Le clustering top-N + le « why it matters »
+        gèrent la sélection éditoriale (cf cause racine digests vides).
+        """
         builder = VeilleDigestBuilder(
             llm=_make_llm_mock(ready=False),
             session_maker=fake_session_maker,
@@ -272,8 +275,75 @@ class TestBuild:
         items = await builder.build(veille_config.id)
 
         all_titles = [a["title"] for it in items for a in it["articles"]]
-        assert all("sport scolaire" not in t for t in all_titles)
         assert any("Réforme évaluation" in t for t in all_titles)
+        assert any("sport scolaire" in t for t in all_titles)
+
+    async def test_returns_items_when_user_topics_mismatch_classifier_taxonomy(
+        self,
+        db_session,
+        test_user,
+        test_sources,
+        fake_session_maker,
+    ):
+        """Cause racine de l'incident digests vides : `veille_topics.topic_id`
+        contient des slugs LLM custom (ex `custom-agents-llm-frameworks`) qui
+        ne sont jamais présents dans `Content.topics` (taxonomie classifier
+        canonique : `ai`, `tech`...). Avant le fix, le filtre `&&` retournait
+        0 ligne → digest vide. Après le fix, les contents des sources sont
+        récupérés sans filtre topic.
+        """
+        cfg = VeilleConfig(
+            id=uuid4(),
+            user_id=test_user,
+            theme_id="tech",
+            theme_label="Tech",
+            frequency=VeilleFrequency.WEEKLY,
+            day_of_week=0,
+            delivery_hour=7,
+            timezone="Europe/Paris",
+            status=VeilleStatus.ACTIVE,
+        )
+        db_session.add(cfg)
+        await db_session.flush()
+        db_session.add(
+            VeilleTopic(
+                veille_config_id=cfg.id,
+                topic_id="custom-agents-llm-frameworks",
+                label="Agents LLM frameworks",
+                kind=VeilleTopicKind.CUSTOM,
+            )
+        )
+        db_session.add_all(
+            [
+                VeilleSource(
+                    veille_config_id=cfg.id,
+                    source_id=s.id,
+                    kind=VeilleSourceKind.FOLLOWED,
+                )
+                for s in test_sources
+            ]
+        )
+        # Articles tagués avec des slugs canoniques classifier — pas de
+        # match avec `custom-agents-llm-frameworks`.
+        base = datetime.now(UTC) - timedelta(hours=1)
+        for i in range(3):
+            db_session.add(
+                _make_content(
+                    source_id=test_sources[i % len(test_sources)].id,
+                    title=f"Article {i} sur les LLM",
+                    topics=["ai"],
+                    published_at=base + timedelta(minutes=i * 5),
+                )
+            )
+        await db_session.commit()
+
+        builder = VeilleDigestBuilder(
+            llm=_make_llm_mock(ready=False),
+            session_maker=fake_session_maker,
+            top_n=5,
+        )
+        items = await builder.build(cfg.id)
+        assert items, "Build doit produire un digest même sans match topic SQL"
 
     async def test_top_n_caps_clusters(
         self,

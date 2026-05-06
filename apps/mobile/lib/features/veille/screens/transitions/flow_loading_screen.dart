@@ -69,7 +69,7 @@ class _FlowLoadingScreenState extends ConsumerState<FlowLoadingScreen> {
     ),
     4: _LoadingLabels(
       eyebrow: 'Le facteur prépare ta première livraison…',
-      h: 'Première veille en cours',
+      h: 'Votre première veille se construit !',
       s:
           'Quelques secondes pour rassembler les articles, justifier les angles et préparer la livraison.',
       checks: [

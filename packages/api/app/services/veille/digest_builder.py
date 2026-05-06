@@ -91,12 +91,15 @@ class VeilleDigestBuilder:
             return []
 
         all_clusters = self.detector.build_topic_clusters(contents)
-        relevant = self._filter_clusters_for_topics(all_clusters, ctx.user_topic_ids)
-        top_clusters = self._top_n_clusters(relevant)
+        # Pas de filtrage par user_topic_ids ici non plus : même mismatch que
+        # dans `_fetch_contents` (slugs LLM custom vs slugs classifier). Le
+        # top-N par taille de cluster suffit ; le LLM « why it matters »
+        # reçoit topics+purpose et explique la pertinence pour le lecteur.
+        top_clusters = self._top_n_clusters(all_clusters)
 
         if not top_clusters:
             logger.info(
-                "veille_pipeline.no_relevant_clusters",
+                "veille_pipeline.no_clusters",
                 config_id=str(config_id),
                 total_clusters=len(all_clusters),
             )
@@ -160,6 +163,14 @@ class VeilleDigestBuilder:
     async def _fetch_contents(
         self, s: AsyncSession, ctx: VeilleDigestInput
     ) -> list[Content]:
+        # Pas de filtre topic SQL : `Content.topics` ne contient que les ~51
+        # slugs canoniques du classifier (`ai`, `tech`, `politics`...) tandis
+        # que `ctx.user_topic_ids` contient des slugs LLM-générés en kebab-case
+        # (`custom-agents-llm-frameworks`...). L'intersection `&&` retournait
+        # 0 lignes pour 16 users sur 17 en prod → digests vides. Les sources
+        # picked par le user sont déjà un signal d'intention fort ; le
+        # clustering top-N + le « why it matters » LLM font la sélection
+        # éditoriale finale.
         since = ctx.last_delivered_at or (
             datetime.now(UTC) - timedelta(days=self.lookback_days)
         )
@@ -168,25 +179,11 @@ class VeilleDigestBuilder:
             .where(
                 Content.source_id.in_(ctx.user_source_ids),
                 Content.published_at >= since,
-                Content.topics.op("&&")(ctx.user_topic_ids),
             )
             .order_by(Content.published_at.desc())
             .limit(_FETCH_CONTENTS_LIMIT)
         )
         return list((await s.execute(stmt)).scalars().all())
-
-    def _filter_clusters_for_topics(
-        self, clusters: list[TopicCluster], user_topic_ids: list[str]
-    ) -> list[TopicCluster]:
-        topic_set = set(user_topic_ids)
-        return [
-            c
-            for c in clusters
-            if any(
-                content.topics and topic_set.intersection(content.topics)
-                for content in c.contents
-            )
-        ]
 
     def _top_n_clusters(self, clusters: list[TopicCluster]) -> list[TopicCluster]:
         return sorted(
