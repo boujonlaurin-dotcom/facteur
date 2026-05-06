@@ -17,18 +17,22 @@ import '../../features/gamification/models/streak_model.dart';
 ///
 /// Schema:
 /// - `articles_json` : Essentiel — JSON array of up to 5 articles
-/// - `feed_articles_json` : Flux — JSON array of up to 30 feed items
+/// - `feed_articles_json` : Flux — JSON array of up to 80 feed items
 /// - `articles_updated_at` : epoch millis of last successful refresh
 /// - `digest_status` : 'none' | 'available' | 'in_progress' | 'completed'
 /// - `digest_progress` : 'X/Y'
 /// - `streak` : current streak as string
 /// - `widget_mode` : 'essentiel' | 'flux' (written natively at tab tap)
+/// - `widget_flux_max_scroll_position` : highest row index seen by getViewAt
+///   in the current/last Flux session (-1 = nothing to flush). Written natively.
+/// - `widget_flux_total_count` : article count at the time of that scroll
+/// - `widget_flux_max_scroll_at` : epoch millis of the flush
 class WidgetService {
   static const _androidName = 'FacteurWidget';
   static const _maxArticles = 5;
-  static const _maxFeedArticles = 30;
-  // Cap thumbnails to keep RemoteViews IPC under Binder's ~1 MB ceiling.
-  static const _maxFeedThumbnails = 10;
+  // Flux: thumbnails are off (cf. widget.5) so 80 rows fit comfortably under
+  // the ~1 MB Binder IPC ceiling for the RemoteViews payload.
+  static const _maxFeedArticles = 80;
   static final _dio = Dio();
 
   /// Update the home screen widget with the latest digest, feed and/or streak.
@@ -193,9 +197,10 @@ class WidgetService {
   // Feed (Flux) serialization
   // ──────────────────────────────────────────────────────────────
 
-  /// Build the Flux article list (max 30) from the current feed state.
-  /// Thumbnails only downloaded for the first [_maxFeedThumbnails] entries
-  /// to keep the RemoteViews IPC payload under Binder's ~1 MB ceiling.
+  /// Build the Flux article list (max 80) from the current feed state.
+  /// Thumbnails are off in Flux (cf. widget.5) — payload stays tiny so 80
+  /// rows fit well under Binder's ~1 MB IPC ceiling. Only the source logo
+  /// (much smaller) is still inlined.
   static Future<List<Map<String, dynamic>>> _buildFeedArticleList(
     List<Content> items,
   ) async {
@@ -203,33 +208,18 @@ class WidgetService {
     final capped = items.take(_maxFeedArticles).toList(growable: false);
     return Future.wait([
       for (var i = 0; i < capped.length; i++)
-        _serializeFeedItem(
-          item: capped[i],
-          rank: i + 1,
-          downloadThumbnail: i < _maxFeedThumbnails,
-        ),
+        _serializeFeedItem(item: capped[i], rank: i + 1),
     ]);
   }
 
   static Future<Map<String, dynamic>> _serializeFeedItem({
     required Content item,
     required int rank,
-    required bool downloadThumbnail,
   }) async {
-    final downloads = await Future.wait([
-      downloadThumbnail
-          ? _downloadIfPresent(
-              item.thumbnailUrl,
-              'widget_feed_thumbnail_$rank.jpg',
-            )
-          : Future<String?>.value(null),
-      _downloadIfPresent(
-        item.source.logoUrl,
-        'widget_feed_logo_$rank.png',
-      ),
-    ]);
-    final thumbPath = downloads[0];
-    final logoPath = downloads[1];
+    final logoPath = await _downloadIfPresent(
+      item.source.logoUrl,
+      'widget_feed_logo_$rank.png',
+    );
 
     final topicSlug = item.topics.isNotEmpty ? item.topics.first : '';
     final topicLabel = topicSlugToLabel[topicSlug] ?? '';
@@ -243,10 +233,59 @@ class WidgetService {
       'title': item.title,
       'source_name': item.source.name,
       'source_logo_path': logoPath ?? '',
-      'thumbnail_path': thumbPath ?? '',
+      'thumbnail_path': '',
       'perspective_count': 0,
       'published_at_iso': item.publishedAt.toUtc().toIso8601String(),
     };
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Flux scroll metric (widget → app, flushed on foreground)
+  // ──────────────────────────────────────────────────────────────
+
+  /// Read the Flux scroll metric written by the native RemoteViewsFactory and
+  /// clear it. Returns `null` when no session is pending (`-1` sentinel).
+  ///
+  /// Called by the app on cold start + each `AppLifecycleState.resumed` so the
+  /// scroll session that ended while the app was in background is logged
+  /// exactly once. The clear-on-read makes it idempotent.
+  static Future<({int maxPosition, int totalCount, DateTime? at})?>
+      readAndClearFluxScrollMetric() async {
+    try {
+      final position = await HomeWidget.getWidgetData<int>(
+            'widget_flux_max_scroll_position',
+            defaultValue: -1,
+          ) ??
+          -1;
+      if (position < 0) return null;
+      final total = await HomeWidget.getWidgetData<int>(
+            'widget_flux_total_count',
+            defaultValue: 0,
+          ) ??
+          0;
+      final atMs = await HomeWidget.getWidgetData<int>(
+            'widget_flux_max_scroll_at',
+            defaultValue: 0,
+          ) ??
+          0;
+
+      // Reset so the next foreground doesn't re-fire the event.
+      await HomeWidget.saveWidgetData<int>(
+        'widget_flux_max_scroll_position',
+        -1,
+      );
+      await HomeWidget.saveWidgetData<int>('widget_flux_total_count', 0);
+      await HomeWidget.saveWidgetData<int>('widget_flux_max_scroll_at', 0);
+
+      return (
+        maxPosition: position,
+        totalCount: total,
+        at: atMs > 0 ? DateTime.fromMillisecondsSinceEpoch(atMs) : null,
+      );
+    } catch (e) {
+      debugPrint('WidgetService: readAndClearFluxScrollMetric failed: $e');
+      return null;
+    }
   }
 
   // ──────────────────────────────────────────────────────────────

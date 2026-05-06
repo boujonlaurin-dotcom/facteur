@@ -26,7 +26,12 @@ internal object WidgetRendering {
 
     private const val TAG = "FacteurWidget"
     const val MAX_ROWS_ESSENTIEL = 5
-    const val MAX_ROWS_FLUX = 30
+
+    /**
+     * Flux mode runs without thumbnails (cf. widget.5.flux-iter2) — payload
+     * is tiny, we can pack 80 rows comfortably under the ~1 MB Binder ceiling.
+     */
+    const val MAX_ROWS_FLUX = 80
 
     data class Article(
         val id: String,

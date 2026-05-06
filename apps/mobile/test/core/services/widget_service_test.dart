@@ -88,11 +88,17 @@ void main() {
       expect(picked.every((e) => e['is_main'] == false), isTrue);
     });
 
-    test('caps at 30 items even with longer feed', () {
-      final items = List.generate(50, (i) => _content('c$i', 'T$i'));
+    test('caps at 80 items even with longer feed', () {
+      final items = List.generate(120, (i) => _content('c$i', 'T$i'));
       final picked = _pickFeedList(items);
-      expect(picked.length, 30);
-      expect(picked.last['id'], 'c29');
+      expect(picked.length, 80);
+      expect(picked.last['id'], 'c79');
+    });
+
+    test('thumbnail_path is always empty (Flux is image-less)', () {
+      final items = List.generate(5, (i) => _content('c$i', 'T$i'));
+      final picked = _pickFeedList(items);
+      expect(picked.every((e) => e['thumbnail_path'] == ''), isTrue);
     });
 
     test('maps known topic slug to French label, falls back to empty', () {
@@ -207,7 +213,7 @@ DigestItem _article(
 // without the SharedPreferences/dio image fetch dependencies.
 // ──────────────────────────────────────────────────────────────
 
-const _maxFeedArticles = 30;
+const _maxFeedArticles = 80;
 
 List<Map<String, dynamic>> _pickFeedList(List<Content> items) {
   final capped = items.take(_maxFeedArticles).toList();
