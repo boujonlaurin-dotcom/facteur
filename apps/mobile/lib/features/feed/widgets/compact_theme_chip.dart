@@ -11,6 +11,7 @@ class CompactThemeChip extends StatelessWidget {
   final bool selectedIsTheme;
   final void Function(String? slug, String? name,
       {bool isTheme, bool isEntity}) onInterestChanged;
+  final bool discreet;
 
   const CompactThemeChip({
     super.key,
@@ -18,6 +19,7 @@ class CompactThemeChip extends StatelessWidget {
     this.selectedName,
     this.selectedIsTheme = false,
     required this.onInterestChanged,
+    this.discreet = false,
   });
 
   bool get _isActive => selectedSlug != null;
@@ -38,6 +40,7 @@ class CompactThemeChip extends StatelessWidget {
           ? _ActiveChip(
               key: ValueKey('theme_active_$selectedSlug'),
               name: selectedName ?? 'Thème',
+              discreet: discreet,
               onClear: () {
                 HapticFeedback.mediumImpact();
                 onInterestChanged(null, null,
@@ -118,17 +121,25 @@ class _ActiveChip extends StatelessWidget {
   final String name;
   final VoidCallback onClear;
   final VoidCallback onTap;
+  final bool discreet;
 
   const _ActiveChip({
     super.key,
     required this.name,
     required this.onClear,
     required this.onTap,
+    this.discreet = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.facteurColors;
     final primary = Theme.of(context).colorScheme.primary;
+    final bg = discreet ? colors.surface : primary.withOpacity(0.12);
+    final borderColor = primary;
+    final borderWidth = discreet ? 1.5 : 1.0;
+    final labelColor = discreet ? colors.textPrimary : primary;
+    final iconColor = discreet ? colors.textSecondary : primary;
 
     return GestureDetector(
       onTap: onTap,
@@ -137,8 +148,8 @@ class _ActiveChip extends StatelessWidget {
         padding: const EdgeInsets.only(left: 10),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(FacteurRadius.full),
-          color: primary.withOpacity(0.12),
-          border: Border.all(color: primary),
+          color: bg,
+          border: Border.all(color: borderColor, width: borderWidth),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -149,7 +160,7 @@ class _ActiveChip extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: primary,
+                  color: labelColor,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -163,7 +174,7 @@ class _ActiveChip extends StatelessWidget {
                 child: Icon(
                   PhosphorIcons.x(PhosphorIconsStyle.bold),
                   size: 13,
-                  color: primary,
+                  color: iconColor,
                 ),
               ),
             ),

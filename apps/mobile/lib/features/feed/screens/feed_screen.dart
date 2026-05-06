@@ -62,6 +62,7 @@ import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../widgets/feed_refresh_undo_banner.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../widgets/empty_filter_state.dart';
+import '../widgets/favorite_topic_tabs.dart';
 import '../widgets/filter_collapsible_panel.dart';
 import '../widgets/follow_keyword_suggestion_card.dart';
 import '../widgets/interest_filter_sheet.dart';
@@ -513,9 +514,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     final notifier = ref.read(feedProvider.notifier);
     var count = 0;
     if (notifier.selectedSourceId != null) count++;
-    if (notifier.selectedTheme != null ||
-        notifier.selectedTopic != null ||
-        notifier.selectedEntity != null) count++;
     if (notifier.selectedKeyword != null &&
         notifier.selectedKeyword!.isNotEmpty) count++;
     return count;
@@ -525,11 +523,75 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     final notifier = ref.read(feedProvider.notifier);
     final hasSearch = notifier.selectedKeyword != null &&
         notifier.selectedKeyword!.isNotEmpty;
+    final feedItems =
+        ref.watch(feedProvider).valueOrNull?.items ?? const <Content>[];
     return FilterCollapsiblePanel(
       activeCount: _activeFilterCount(),
       chipsRow: _buildFilterChipsRow(context),
+      leadingContent: FavoriteTopicTabs(
+        items: feedItems,
+        selectedTopicSlug: notifier.selectedTopic,
+        selectedThemeSlug: notifier.selectedTheme,
+        selectedEntitySlug: notifier.selectedEntity,
+        onTabTap: (kind, slug) {
+          _withFeedLoading(() async {
+            switch (kind) {
+              case FavoriteTabKind.tous:
+                await notifier.setTopic(null);
+                await notifier.setTheme(null);
+                await notifier.setEntity(null);
+                break;
+              case FavoriteTabKind.subjectTopic:
+                await notifier.setTopic(slug);
+                break;
+              case FavoriteTabKind.subjectEntity:
+                await notifier.setEntity(slug);
+                break;
+              case FavoriteTabKind.theme:
+                await notifier.setTheme(slug);
+                break;
+            }
+          });
+          if (mounted) {
+            setState(() {
+              _selectedInterestName = null;
+              _selectedIsTheme = kind == FavoriteTabKind.theme;
+            });
+          }
+          _scrollToTop();
+        },
+        onTapActiveTab: _scrollToTop,
+        onAddFavorite: () {
+          HapticFeedback.mediumImpact();
+          InterestFilterSheet.show(
+            context,
+            currentTopicSlug: notifier.selectedTopic ??
+                notifier.selectedTheme ??
+                notifier.selectedEntity,
+            currentIsTheme: notifier.selectedTheme != null,
+            onInterestSelected:
+                (slug, name, {bool isTheme = false, bool isEntity = false}) {
+              setState(() {
+                _selectedInterestName = name;
+                _selectedIsTheme = isTheme;
+              });
+              _withFeedLoading(() async {
+                if (isTheme) {
+                  await notifier.setTheme(slug);
+                } else if (isEntity) {
+                  await notifier.setEntity(slug);
+                } else {
+                  await notifier.setTopic(slug);
+                }
+              });
+              _scrollToTop();
+            },
+          );
+        },
+      ),
       leadingTrigger: _SearchTriggerButton(
         active: hasSearch,
+        flat: true,
         keyword: notifier.selectedKeyword,
         onTap: () {
           HapticFeedback.mediumImpact();
@@ -590,6 +652,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
             selectedSourceId: selectedSourceId,
             selectedSourceName: selectedSourceName,
             selectedSourceLogoUrl: selectedSourceLogoUrl,
+            discreet: true,
             onSourceChanged: (sourceId) {
               if (sourceId != null) {
                 _withFeedLoading(() => notifier.setSource(sourceId));
@@ -608,6 +671,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                 notifier.selectedEntity,
             selectedName: _selectedInterestName,
             selectedIsTheme: _selectedIsTheme,
+            discreet: true,
             onInterestChanged: (slug, name,
                 {isTheme = false, isEntity = false}) {
               setState(() {
@@ -2081,6 +2145,7 @@ class _RefreshConfirmSheet extends StatelessWidget {
 
 class _SearchTriggerButton extends StatelessWidget {
   final bool active;
+  final bool flat;
   final String? keyword;
   final VoidCallback onTap;
   final VoidCallback onClear;
@@ -2090,6 +2155,7 @@ class _SearchTriggerButton extends StatelessWidget {
     required this.keyword,
     required this.onTap,
     required this.onClear,
+    this.flat = false,
   });
 
   @override
@@ -2144,6 +2210,23 @@ class _SearchTriggerButton extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      );
+    }
+    if (flat) {
+      return GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          height: 32,
+          width: 32,
+          child: Center(
+            child: Icon(
+              PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
+              size: 18,
+              color: colors.textSecondary,
+            ),
           ),
         ),
       );

@@ -6,21 +6,24 @@ import '../../../config/theme.dart';
 
 /// Filter row with the trigger button on the RIGHT.
 ///
-/// - Collapsed + no active filter: "Flux continu" label + thin grey rule fills
-///   the left side ; "Filtres" pill sits on the right.
-/// - Collapsed + active filter(s): empty space on the left ; pill shows count.
+/// - Collapsed + no active filter: [leadingContent] (or "Flux continu"
+///   fallback) fills the left side ; "Filtres" pill sits on the right.
+/// - Collapsed + active filter(s): [leadingContent] still shown when provided
+///   (e.g. favorite topic tabs) ; pill shows count.
 /// - Expanded: pills slide in to the left ; the trigger morphs into a pill of
 ///   the same shape with an × icon (primary, "selected" look).
 class FilterCollapsiblePanel extends StatefulWidget {
   final int activeCount;
   final Widget chipsRow;
   final Widget? leadingTrigger;
+  final Widget? leadingContent;
 
   const FilterCollapsiblePanel({
     super.key,
     required this.activeCount,
     required this.chipsRow,
     this.leadingTrigger,
+    this.leadingContent,
   });
 
   @override
@@ -57,34 +60,46 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
                       padding: const EdgeInsets.only(right: 8),
                       child: widget.chipsRow,
                     )
-                  : (hasActive
-                      ? const SizedBox.shrink(key: ValueKey('idle'))
-                      : Padding(
-                          key: const ValueKey('flux-continu'),
-                          padding: const EdgeInsets.only(right: 12),
-                          child: Row(
-                            children: [
-                              Text(
-                                'FLUX CONTINU',
-                                style: FacteurTypography.stamp(
-                                        colors.textTertiary)
-                                    .copyWith(letterSpacing: 1.2),
+                  : (widget.leadingContent != null
+                      ? KeyedSubtree(
+                          key: const ValueKey('leading-content'),
+                          child: widget.leadingContent!,
+                        )
+                      : (hasActive
+                          ? const SizedBox.shrink(key: ValueKey('idle'))
+                          : Padding(
+                              key: const ValueKey('flux-continu'),
+                              padding: const EdgeInsets.only(right: 12),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    'FLUX CONTINU',
+                                    style: FacteurTypography.stamp(
+                                            colors.textTertiary)
+                                        .copyWith(letterSpacing: 1.2),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Container(
+                                      height: 1,
+                                      color: colors.border.withOpacity(0.5),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Container(
-                                  height: 1,
-                                  color: colors.border.withOpacity(0.5),
-                                ),
-                              ),
-                            ],
-                          ),
-                        )),
+                            ))),
             ),
           ),
+          if (widget.leadingContent != null && !_expanded)
+            Container(
+              width: 1,
+              height: 16,
+              margin: const EdgeInsets.symmetric(horizontal: 8),
+              color: colors.border.withOpacity(0.6),
+            ),
           if (widget.leadingTrigger != null) ...[
             widget.leadingTrigger!,
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
           ],
           GestureDetector(
             onTap: _toggle,
@@ -93,17 +108,15 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
               duration: const Duration(milliseconds: 180),
               height: 32,
               padding: EdgeInsets.symmetric(
-                horizontal: hasActive && !_expanded ? 12 : 10,
+                horizontal: hasActive && !_expanded ? 12 : 8,
               ),
               decoration: BoxDecoration(
                 color: (_expanded || hasActive)
                     ? colors.primary.withOpacity(0.12)
-                    : colors.surface,
-                border: Border.all(
-                  color: (_expanded || hasActive)
-                      ? colors.primary
-                      : colors.border,
-                ),
+                    : Colors.transparent,
+                border: (_expanded || hasActive)
+                    ? Border.all(color: colors.primary)
+                    : null,
                 borderRadius: BorderRadius.circular(FacteurRadius.full),
               ),
               child: Row(
@@ -113,7 +126,7 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
                     _expanded
                         ? PhosphorIcons.x(PhosphorIconsStyle.bold)
                         : PhosphorIcons.funnel(PhosphorIconsStyle.regular),
-                    size: 16,
+                    size: 18,
                     color: (_expanded || hasActive)
                         ? colors.primary
                         : colors.textSecondary,
