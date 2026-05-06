@@ -32,6 +32,15 @@ logger = structlog.get_logger()
 
 _CONCURRENCY_LIMIT = 5
 _SCAN_LIMIT = 500
+# Hard cap pour éviter qu'une livraison reste en RUNNING indéfiniment quand
+# le builder hang (LLM, DB, etc). 5 min couvre largement la p99 observée
+# (~30 s) ; au-delà on FAILED + Sentry, le user reverra le retry au prochain run.
+_BUILDER_TIMEOUT_SECONDS = 300
+# Au-delà de ce délai, une row RUNNING est considérée morte (worker SIGKILL,
+# OOM, restart Railway). Le watchdog log dans `_phase1_mark_running` permet de
+# tracer la reprise — la row sera reset à RUNNING avec attempts++ via le
+# on_conflict_do_update existant.
+_STUCK_RUNNING_THRESHOLD_SECONDS = 600
 
 
 async def run_veille_generation(target_date: date | None = None) -> None:
@@ -183,7 +192,9 @@ async def run_veille_generation_for_config(
 
     items: list[dict] = []
     if builder is not None:
-        items = await builder.build(config_id)
+        items = await asyncio.wait_for(
+            builder.build(config_id), timeout=_BUILDER_TIMEOUT_SECONDS
+        )
 
     finished_at = datetime.now(UTC)
     async with session_maker() as s:
@@ -219,6 +230,35 @@ async def _phase1_mark_running(
         raise ValueError(f"VeilleConfig introuvable: {config_id}")
 
     started_at = datetime.now(UTC)
+
+    # Watchdog : si une row RUNNING > _STUCK_RUNNING_THRESHOLD_SECONDS existe
+    # déjà pour ce (config, date), c'est qu'un worker précédent a crashé sans
+    # passer par _mark_scanner_delivery_failed. Le upsert qui suit la reset à
+    # RUNNING+attempts++, on log explicitement pour que Sentry voie l'incident.
+    existing = (
+        await session.execute(
+            select(VeilleDelivery).where(
+                VeilleDelivery.veille_config_id == config_id,
+                VeilleDelivery.target_date == target_date,
+            )
+        )
+    ).scalar_one_or_none()
+    if (
+        existing is not None
+        and existing.generation_state == VeilleGenerationState.RUNNING.value
+        and existing.started_at is not None
+        and (started_at - existing.started_at).total_seconds()
+        > _STUCK_RUNNING_THRESHOLD_SECONDS
+    ):
+        logger.warning(
+            "veille.stuck_running_reset",
+            config_id=str(config_id),
+            target_date=str(target_date),
+            previous_started_at=existing.started_at.isoformat(),
+            stuck_seconds=int((started_at - existing.started_at).total_seconds()),
+            attempts=existing.attempts,
+        )
+
     upsert_stmt = (
         pg_insert(VeilleDelivery)
         .values(

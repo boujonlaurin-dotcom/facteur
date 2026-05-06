@@ -80,9 +80,13 @@ class VeilleConfigScreen extends ConsumerWidget {
           context.go(RoutePaths.veilleDashboard);
           return;
         }
+
+        // Effet "Wow" : on affiche le loader full-screen IMMÉDIATEMENT, avant
+        // le moindre await — sinon le user voit Step 4 figé (~700 ms-1 s) le
+        // temps que `submit()` + `generate-first` reviennent.
+        notifier.setLoadingFrom(4);
         final deliveryId = await notifier.submitAndGenerateFirst();
         if (!context.mounted) return;
-        notifier.setLoadingFrom(4);
 
         // Délai 1 s pour laisser le loading screen apparaître avant la modal,
         // sinon la modal flashe par-dessus la transition AnimatedSwitcher.
@@ -95,8 +99,9 @@ class VeilleConfigScreen extends ConsumerWidget {
           );
         }));
 
+        var pollSucceeded = false;
         if (deliveryId != null) {
-          await _pollFirstDelivery(
+          pollSucceeded = await _pollFirstDelivery(
             context: context,
             ref: ref,
             deliveryId: deliveryId,
@@ -105,7 +110,13 @@ class VeilleConfigScreen extends ConsumerWidget {
           );
         }
         if (!context.mounted) return;
-        context.go(RoutePaths.veilleDashboard);
+        // Succès → ouverture directe du digest (effet Wow). Échec/timeout →
+        // fallback dashboard, le snackbar ayant déjà informé le user.
+        if (pollSucceeded && deliveryId != null) {
+          context.go('${RoutePaths.veilleDeliveries}/$deliveryId');
+        } else {
+          context.go(RoutePaths.veilleDashboard);
+        }
       } on VeilleApiException catch (e) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -205,9 +216,10 @@ class VeilleConfigScreen extends ConsumerWidget {
 /// Poll `/deliveries/{id}` jusqu'à `succeeded` (succès) ou 90 s écoulées.
 /// Backoff 2 s pendant les 20 premières secondes (≈ p50 de la génération),
 /// puis 5 s ensuite — l'objectif est de limiter la charge serveur quand le
-/// volume utilisateur scalera. Renvoie quand le poll s'arrête (état terminal,
-/// timeout ou widget unmount). Affiche un snackbar en cas de timeout.
-Future<void> _pollFirstDelivery({
+/// volume utilisateur scalera. Renvoie `true` si la livraison est `succeeded`,
+/// `false` sinon (failed, timeout, ou widget unmount). Affiche un snackbar en
+/// cas de timeout/failed.
+Future<bool> _pollFirstDelivery({
   required BuildContext context,
   required WidgetRef ref,
   required String deliveryId,
@@ -222,22 +234,22 @@ Future<void> _pollFirstDelivery({
   final start = DateTime.now();
 
   while (true) {
-    if (!context.mounted) return;
+    if (!context.mounted) return false;
     final elapsed = DateTime.now().difference(start);
     if (elapsed >= totalBudget) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(onTimeoutMessage)),
       );
-      return;
+      return false;
     }
 
     try {
       final delivery = await repo.getDelivery(deliveryId);
       if (delivery.generationState == VeilleGenerationState.succeeded) {
-        return;
+        return true;
       }
       if (delivery.generationState == VeilleGenerationState.failed) {
-        if (!context.mounted) return;
+        if (!context.mounted) return false;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -245,7 +257,7 @@ Future<void> _pollFirstDelivery({
             ),
           ),
         );
-        return;
+        return false;
       }
     } on VeilleApiException {
       // Erreur transitoire — on continue à poll, le timeout protégera.
