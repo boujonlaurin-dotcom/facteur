@@ -1,5 +1,4 @@
 
-import asyncio
 import os
 import sys
 from sqlalchemy import select, func
@@ -38,4 +37,5 @@ async def main():
             f.write("\n".join(output))
 
 if __name__ == "__main__":
+    import asyncio
     asyncio.run(main())
