@@ -7,58 +7,46 @@
     android:background="@drawable/widget_root_bg"
     android:padding="16dp">
 
-    <!-- Header: refresh button (start) | Facteur wordmark (center) | streak (end) -->
+    <!-- Segmented control: [ Essentiel ] [ Flux ]
+         Each tab is a TextView wired to a broadcast PendingIntent that
+         persists `widget_mode` and re-renders the widget. -->
     <LinearLayout
-        android:id="@+id/widget_header"
+        android:id="@+id/widget_tabs"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="4dp"
+        android:layout_marginBottom="10dp"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
-        <ImageView
-            android:id="@+id/btn_refresh"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:padding="2dp"
-            android:src="@drawable/ic_widget_refresh"
-            android:contentDescription="Recharger l'essentiel" />
+        <TextView
+            android:id="@+id/tab_essentiel"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:gravity="center"
+            android:text="Essentiel"
+            android:textSize="14sp"
+            android:fontFamily="sans-serif-medium"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp" />
 
         <TextView
-            android:id="@+id/app_name"
+            android:id="@+id/tab_flux"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:gravity="center"
-            android:text="Facteur"
-            android:textSize="22sp"
-            android:fontFamily="serif"
-            android:textStyle="bold"
-            android:letterSpacing="-0.02"
-            android:textColor="@color/facteur_text_primary" />
-
-        <TextView
-            android:id="@+id/streak_text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minWidth="28dp"
-            android:gravity="end"
-            android:text=""
+            android:text="Flux"
             android:textSize="14sp"
-            android:textColor="@color/facteur_accent" />
+            android:fontFamily="sans-serif-medium"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp" />
     </LinearLayout>
-
-    <!-- Subtitle -->
-    <TextView
-        android:id="@+id/subtitle"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
-        android:gravity="center"
-        android:text="L'Essentiel du jour"
-        android:textSize="13sp"
-        android:fontFamily="sans-serif"
-        android:textColor="@color/facteur_text_secondary" />
 
     <!-- Scrollable article list — bound to FacteurWidgetService via setRemoteAdapter. -->
     <ListView
@@ -81,21 +69,4 @@
         android:textColor="@color/facteur_text_secondary"
         android:visibility="gone"
         android:text="Ouvre Facteur pour charger ton essentiel" />
-
-    <!-- Footer: single CTA opening the digest -->
-    <TextView
-        android:id="@+id/btn_open"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:text="Ouvrir Facteur"
-        android:textSize="14sp"
-        android:textStyle="bold"
-        android:textColor="#FDFBF7"
-        android:background="@drawable/widget_btn_primary"
-        android:paddingTop="10dp"
-        android:paddingBottom="10dp"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:gravity="center" />
 </LinearLayout>

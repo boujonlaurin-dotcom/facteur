@@ -12,19 +12,21 @@ import es.antonborri.home_widget.HomeWidgetPlugin
 /**
  * RemoteViewsService backing the home-screen widget's scrollable article list.
  *
- * Reads the same `articles_json` SharedPreferences key that
- * [FacteurWidget] uses, so refresh paths stay consistent: any caller that
- * already invokes `appWidgetManager.notifyAppWidgetViewDataChanged(id, R.id.articles_list)`
- * triggers a re-read here.
+ * Reads either `articles_json` (Essentiel) or `feed_articles_json` (Flux) from
+ * the SharedPreferences shared with Flutter via `home_widget`, depending on
+ * the `widget_mode` extra passed by [FacteurWidget] in the adapter intent.
  */
 class FacteurWidgetService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory {
-        return FacteurRemoteViewsFactory(applicationContext)
+        val mode = intent.getStringExtra(FacteurWidget.EXTRA_MODE)
+            ?: FacteurWidget.MODE_ESSENTIEL
+        return FacteurRemoteViewsFactory(applicationContext, mode)
     }
 }
 
 private class FacteurRemoteViewsFactory(
     private val context: Context,
+    private val mode: String,
 ) : RemoteViewsService.RemoteViewsFactory {
 
     private companion object {
@@ -39,9 +41,14 @@ private class FacteurRemoteViewsFactory(
 
     override fun onDataSetChanged() {
         val prefs = HomeWidgetPlugin.getData(context)
-        val json = prefs?.getString("articles_json", null)
-        articles = WidgetRendering.parseArticles(json)
-        Log.d(TAG, "onDataSetChanged count=${articles.size}")
+        val (jsonKey, maxRows) = if (mode == FacteurWidget.MODE_FLUX) {
+            "feed_articles_json" to WidgetRendering.MAX_ROWS_FLUX
+        } else {
+            "articles_json" to WidgetRendering.MAX_ROWS_ESSENTIEL
+        }
+        val json = prefs?.getString(jsonKey, null)
+        articles = WidgetRendering.parseArticles(json, maxRows)
+        Log.d(TAG, "onDataSetChanged mode=$mode count=${articles.size}")
     }
 
     override fun onDestroy() {
@@ -54,10 +61,8 @@ private class FacteurRemoteViewsFactory(
         val article = articles.getOrNull(position) ?: return loadingRow()
         val rv = RemoteViews(context.packageName, R.layout.widget_article_row)
 
-        rv.setTextViewText(
-            R.id.row_topic,
-            "${article.rank} — ${article.topicLabel.ifBlank { "Actu" }}",
-        )
+        val topicSegment = article.topicLabel.ifBlank { "Actu" }
+        rv.setTextViewText(R.id.row_topic, "${article.rank} — $topicSegment")
         rv.setViewVisibility(
             R.id.row_a_la_une,
             if (article.isMain) View.VISIBLE else View.GONE,
@@ -94,9 +99,15 @@ private class FacteurRemoteViewsFactory(
 
         // Per-row tap → fillInIntent merged into the template PendingIntent
         // declared by FacteurWidget.onUpdate (setPendingIntentTemplate).
+        // Deep link host depends on the mode: Essentiel routes through the
+        // digest article reader; Flux through the feed reader.
+        val baseUri = if (mode == FacteurWidget.MODE_FLUX) {
+            Uri.parse("io.supabase.facteur://feed/content/${article.id}")
+        } else {
+            Uri.parse("io.supabase.facteur://digest/${article.id}")
+        }
         val fillIn = Intent().apply {
-            data = Uri.parse("io.supabase.facteur://digest/${article.id}")
-                .buildUpon()
+            data = baseUri.buildUpon()
                 .appendQueryParameter("pos", article.rank.toString())
                 .appendQueryParameter("topicId", article.topicId)
                 .build()

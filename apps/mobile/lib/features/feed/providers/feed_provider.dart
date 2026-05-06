@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/services/widget_service.dart';
 import '../models/content_model.dart';
 import '../repositories/feed_repository.dart';
 import '../repositories/personalization_repository.dart';
@@ -96,6 +97,10 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   final Set<String> _consumedContentIds =
       {}; // Track content being animated out
 
+  Timer? _widgetPushDebounce;
+  String? _lastWidgetPushSignature;
+  static const Duration _widgetPushDelay = Duration(seconds: 1);
+
   bool get isLoadingMore => _isLoadingMore;
   bool get hasNext => _hasNext;
   String? get selectedFilter => _selectedFilter;
@@ -107,6 +112,13 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
 
   @override
   FutureOr<FeedState> build() async {
+    listenSelf((previous, next) {
+      next.whenData((data) => _scheduleWidgetPush(data.items));
+    });
+    ref.onDispose(() {
+      _widgetPushDebounce?.cancel();
+    });
+
     // Watch auth state to handle logout/user change
     final authState = ref.watch(authStateProvider);
 
@@ -227,6 +239,31 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         // Silent: user still sees the cached feed.
         print('FeedNotifier: silent revalidation failed: $e');
       }
+    });
+  }
+
+  /// Push the current default feed to the home-screen widget. No-op when a
+  /// filter/theme/source/etc. is active — only the canonical, unfiltered Flux
+  /// is mirrored to the widget. Debounced + signature-guarded so optimistic
+  /// taps and loadMore bursts don't churn SharedPreferences.
+  void _scheduleWidgetPush(List<Content> items) {
+    if (_selectedFilter != null ||
+        _selectedTheme != null ||
+        _selectedTopic != null ||
+        _selectedSourceId != null ||
+        _selectedEntity != null ||
+        _selectedKeyword != null) {
+      return;
+    }
+    final slice = items.take(30).toList(growable: false);
+    final signature = slice.isEmpty
+        ? '0'
+        : '${slice.length}|${slice.first.id}|${slice.last.id}';
+    if (signature == _lastWidgetPushSignature) return;
+    _widgetPushDebounce?.cancel();
+    _widgetPushDebounce = Timer(_widgetPushDelay, () {
+      _lastWidgetPushSignature = signature;
+      WidgetService.updateWidget(feedItems: slice);
     });
   }
 

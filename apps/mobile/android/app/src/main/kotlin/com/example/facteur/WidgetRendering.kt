@@ -17,14 +17,16 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * Shared parsing + bitmap helpers used by both [FacteurWidget] (header
- * rendering, MAX_ROWS cap) and [FacteurWidgetService]'s RemoteViewsFactory
- * (row rendering inside the ListView).
+ * Shared parsing + bitmap helpers used by both [FacteurWidget] (tabs +
+ * empty state) and [FacteurWidgetService]'s RemoteViewsFactory (row
+ * rendering inside the ListView). Row caps differ by mode: Essentiel is
+ * capped at 5 (one per topic), Flux at 30 (Binder IPC ceiling).
  */
 internal object WidgetRendering {
 
     private const val TAG = "FacteurWidget"
-    const val MAX_ROWS = 5
+    const val MAX_ROWS_ESSENTIEL = 5
+    const val MAX_ROWS_FLUX = 30
 
     data class Article(
         val id: String,
@@ -40,11 +42,11 @@ internal object WidgetRendering {
         val publishedAtIso: String,
     )
 
-    fun parseArticles(json: String?): List<Article> {
+    fun parseArticles(json: String?, maxRows: Int = MAX_ROWS_ESSENTIEL): List<Article> {
         if (json.isNullOrBlank() || json == "[]") return emptyList()
         return try {
             val arr = JSONArray(json)
-            (0 until arr.length()).take(MAX_ROWS).mapNotNull { i ->
+            (0 until arr.length()).take(maxRows).mapNotNull { i ->
                 arr.optJSONObject(i)?.let(::parseArticle)
             }
         } catch (e: Exception) {
