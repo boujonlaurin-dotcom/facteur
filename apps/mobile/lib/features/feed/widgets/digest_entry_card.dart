@@ -24,7 +24,7 @@ import '../../lettres/providers/letters_provider.dart';
 class DigestEntryCard extends ConsumerWidget {
   const DigestEntryCard({super.key});
 
-  static const double _carouselHeight = 170;
+  static const double _carouselHeight = 162;
   static const double _horizontalPadding = 16;
   static const double _peek = 24;
   static const double _gap = 12;
@@ -36,13 +36,12 @@ class DigestEntryCard extends ConsumerWidget {
     final colors = context.facteurColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final normalCount = dual.normal?.items.length ?? 5;
-    final sereinCount = dual.serein?.items.length ?? normalCount;
     final targetDate = dual.normal?.targetDate ?? DateTime.now();
 
-    final width = MediaQuery.of(context).size.width -
-        (_horizontalPadding * 2) -
-        _peek;
+    final width = (MediaQuery.of(context).size.width -
+            (_horizontalPadding * 2) -
+            _peek) *
+        0.95;
 
     Future<void> openDigest({required bool requireSerein}) async {
       if (requireSerein) {
@@ -78,9 +77,6 @@ class DigestEntryCard extends ConsumerWidget {
         pill: EssentielPill(colors: colors, isDark: isDark),
         title: "L'essentiel du jour",
         titleColor: colors.textPrimary,
-        captionColor: colors.textTertiary,
-        articleCount: normalCount,
-        targetDate: targetDate,
         onTap: () => openDigest(requireSerein: false),
       ),
     );
@@ -93,9 +89,6 @@ class DigestEntryCard extends ConsumerWidget {
         pill: BonnesNouvellesPill(isDark: isDark),
         title: 'Les bonnes nouvelles',
         titleColor: colors.textPrimary,
-        captionColor: colors.textTertiary,
-        articleCount: sereinCount,
-        targetDate: targetDate,
         assetPath: 'assets/notifications/facteur_goodnews.png',
         onTap: () => openDigest(requireSerein: true),
       ),
@@ -125,9 +118,6 @@ class _CarouselCard extends StatelessWidget {
   final Widget pill;
   final String title;
   final Color titleColor;
-  final Color captionColor;
-  final int articleCount;
-  final DateTime targetDate;
   final VoidCallback onTap;
   final double avatarOpacity;
   final String assetPath;
@@ -138,9 +128,6 @@ class _CarouselCard extends StatelessWidget {
     required this.pill,
     required this.title,
     required this.titleColor,
-    required this.captionColor,
-    required this.articleCount,
-    required this.targetDate,
     required this.onTap,
     this.avatarOpacity = 1.0,
     this.assetPath = 'assets/notifications/facteur_avatar.png',
@@ -218,18 +205,6 @@ class _CarouselCard extends StatelessWidget {
                   .copyWith(fontSize: 22, height: 1.15),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          Positioned(
-            left: 28,
-            right: 120,
-            bottom: 16,
-            child: Text(
-              '$articleCount articles · ${formatDigestDate(targetDate)}',
-              style: FacteurTypography.stamp(captionColor).copyWith(
-                fontSize: 11,
-                letterSpacing: 1.2,
-              ),
             ),
           ),
         ],

@@ -33,8 +33,8 @@ void main() {
       expect(find.text("L'ESSENTIEL"), findsOneWidget);
       expect(find.text('Les bonnes nouvelles'), findsOneWidget);
       expect(find.text('BONNES NOUVELLES'), findsOneWidget);
-      // Les deux cartes affichent le sous-titre meta « N articles · date ».
-      expect(find.textContaining('articles ·'), findsNWidgets(2));
+      // Le sous-titre meta « N articles · date » a été retiré du design.
+      expect(find.textContaining('articles ·'), findsNothing);
       // Illustration facteur sur la carte Essentiel.
       final essentielIllustration = find.byWidgetPredicate(
         (w) =>
@@ -55,7 +55,8 @@ void main() {
       expect(goodNewsIllustration, findsOneWidget);
     });
 
-    testWidgets('utilise items.length du digest quand chargé', (tester) async {
+    testWidgets('rend les deux cartes quand un digest est chargé',
+        (tester) async {
       final digest = DigestResponse(
         digestId: 'd1',
         userId: 'u1',
@@ -68,9 +69,8 @@ void main() {
       await tester.pumpWidget(makeHost(digest: digest));
       await tester.pumpAndSettle();
 
-      // Les 2 cartes utilisent le même fallback de count quand la variante
-      // serein n'est pas encore en cache.
-      expect(find.text('7 articles · 21 mai'), findsNWidgets(2));
+      expect(find.text("L'essentiel du jour"), findsOneWidget);
+      expect(find.text('Les bonnes nouvelles'), findsOneWidget);
     });
   });
 }

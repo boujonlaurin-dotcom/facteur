@@ -102,9 +102,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   // Sticky filter bar overlay state
   bool _showStickyBar = false;
   double _lastScrollPos = 0;
-  double _lastFabScrollPos = 0;
   bool _showScrollTopFab = false;
-  double _upwardAccumulator = 0;
   bool _showPullHint = false;
   DateTime? _lastPullHintAt;
   Timer? _pullHintTimer;
@@ -341,7 +339,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       setState(() => _userHasScrolled = true);
     }
 
-    // Sticky filter bar visibility
+    // Sticky filter bar + bouton "remonter" : même logique d'apparition.
+    // Apparaissent au scroll up (delta < 0) au-dessus du seuil, disparaissent
+    // au scroll down ou repassage sous le seuil.
     final delta = currentScroll - _lastScrollPos;
     if (delta.abs() >= _stickyScrollThreshold) {
       bool next = _showStickyBar;
@@ -352,8 +352,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       } else if (delta > 0) {
         next = false;
       }
-      if (next != _showStickyBar) {
-        setState(() => _showStickyBar = next);
+      if (next != _showStickyBar || next != _showScrollTopFab) {
+        setState(() {
+          _showStickyBar = next;
+          _showScrollTopFab = next;
+        });
       }
       _lastScrollPos = currentScroll;
     }
@@ -379,27 +382,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
         ScrollDirection.forward;
     if (currentScroll >= maxScroll - 800 && notScrollingUp) {
       ref.read(feedProvider.notifier).loadMore();
-    }
-
-    // Bouton "remonter" : cumul instantané du scroll vers le haut. Apparait
-    // après ≥ 250 px remontés ET position > 600 px. Disparait IMMÉDIATEMENT
-    // dès que l'utilisateur descend ou repasse sous 200 px.
-    final fabDelta = currentScroll - _lastFabScrollPos;
-    _lastFabScrollPos = currentScroll;
-    if (fabDelta < -0.5) {
-      _upwardAccumulator += -fabDelta;
-    } else if (fabDelta > 0.5) {
-      _upwardAccumulator = 0;
-      if (_showScrollTopFab) {
-        setState(() => _showScrollTopFab = false);
-      }
-    }
-    final shouldShowScrollTop = _upwardAccumulator > 250 && currentScroll > 600;
-    final shouldHideScrollTop = currentScroll < 200;
-    if (shouldShowScrollTop && !_showScrollTopFab) {
-      setState(() => _showScrollTopFab = true);
-    } else if (shouldHideScrollTop && _showScrollTopFab) {
-      setState(() => _showScrollTopFab = false);
     }
 
     // Hint pull-to-refresh : montre une fois quand l'utilisateur remonte
@@ -566,6 +548,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
           _scrollToTop();
         },
         onTapActiveTab: _scrollToTop,
+        onTapActiveTabRefresh: () {
+          HapticFeedback.mediumImpact();
+          _scrollToTop();
+          _refresh();
+        },
         onAddFavorite: () {
           HapticFeedback.mediumImpact();
           InterestFilterSheet.show(
