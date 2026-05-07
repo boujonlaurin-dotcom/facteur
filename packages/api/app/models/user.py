@@ -25,6 +25,14 @@ class UserProfile(Base):
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     gamification_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     weekly_goal: Mapped[int] = mapped_column(Integer, default=10)
+    # Soft-delete (App Store 5.1.1(v) + Play Store account deletion).
+    # `deleted_at` set by DELETE /api/users/me ; cron purge after 30 days.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    # SHA256 of the auth.users email captured at delete-time — kept post-purge
+    # for support/legal traceability without storing PII.
+    email_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

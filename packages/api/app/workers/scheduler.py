@@ -8,6 +8,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import get_settings
 from app.jobs.digest_generation_job import run_digest_generation
+from app.jobs.purge_deleted_users import purge_deleted_users
 from app.jobs.veille_generation_job import (
     cleanup_stuck_running_deliveries,
     run_veille_generation,
@@ -215,6 +216,16 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
+    # Hard-delete soft-deleted user accounts older than 30 days (4h00 Paris,
+    # heure creuse, après storage_cleanup). Cf. App Store 5.1.1(v) compliance.
+    scheduler.add_job(
+        purge_deleted_users,
+        trigger=CronTrigger(hour=4, minute=0, timezone=_PARIS_TZ),
+        id="purge_deleted_users",
+        name="Purge soft-deleted users (>30d)",
+        replace_existing=True,
+    )
+
     # Zombie session sweeper — kill Supavisor sessions stuck in
     # `idle in transaction` > 5 min (filet de sécurité par-dessus le
     # timeout Postgres + le rollback() en finally de safe_async_session).
@@ -263,6 +274,7 @@ def start_scheduler() -> None:
             "daily_digest",
             "digest_watchdog",
             "storage_cleanup",
+            "purge_deleted_users",
             "zombie_session_sweeper",
             "veille_generation",
             "veille_stuck_cleanup",
