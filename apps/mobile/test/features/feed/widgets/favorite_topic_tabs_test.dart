@@ -226,6 +226,7 @@ void main() {
           items: const [],
           onTabTap: (_, __) => tabTapCalls++,
           onTapActiveTab: () => tapActiveCalls++,
+          onTapActiveTabRefresh: () => tapActiveCalls++,
           onAddFavorite: () {},
         ),
       ));
@@ -248,6 +249,7 @@ void main() {
           items: const [],
           onTabTap: (_, __) {},
           onTapActiveTab: () {},
+          onTapActiveTabRefresh: () {},
           onAddFavorite: () => addCalls++,
         ),
       ));
