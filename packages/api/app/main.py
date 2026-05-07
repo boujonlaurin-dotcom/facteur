@@ -83,6 +83,7 @@ from app.routers import (
     feed,
     images,
     internal,
+    legal,
     letters,
     notification_preferences,
     personalization,
@@ -470,6 +471,7 @@ app.include_router(
 )
 app.include_router(veille.router, prefix="/api/veille", tags=["Veille"])
 app.include_router(letters.router, prefix="/api/letters", tags=["Letters"])
+app.include_router(legal.router, prefix="/legal", tags=["Legal"])
 
 
 @app.exception_handler(Exception)
