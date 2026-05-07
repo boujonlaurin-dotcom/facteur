@@ -1406,33 +1406,7 @@ class _PerspectivesInlineSectionState
               ),
             ),
           ),
-          // ── Row 2: Bias bar (single persistent instance) ───────────────
-          // compact=true hides labels/marker (AnimatedSize collapses their
-          // space); taps are forwarded to onToggle when collapsed.
-          GestureDetector(
-            onTap: !widget.isExpanded ? widget.onToggle : null,
-            behavior: !widget.isExpanded
-                ? HitTestBehavior.opaque
-                : HitTestBehavior.translucent,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: IgnorePointer(
-                ignoring: !widget.isExpanded,
-                child: PerspectivesBiasBar(
-                  compact: !widget.isExpanded,
-                  colors: colors,
-                  mergedDistribution: _mergedDistribution,
-                  sourceBiasStance: widget.sourceBiasStance,
-                  sourceName: widget.sourceName,
-                  selectedSegments:
-                      widget.isExpanded ? _effectiveSegments : const {},
-                  onSegmentTap:
-                      widget.isExpanded ? _handleSegmentTap : (_) {},
-                ),
-              ),
-            ),
-          ),
-          // ── Expandable content (cards + analysis) ─────────────────────
+          // ── Expandable content (bias bar + cards + analysis) ──────────
           AnimatedSize(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeInOut,
@@ -1441,6 +1415,18 @@ class _PerspectivesInlineSectionState
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Bias bar — fait partie du contenu togglable.
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: PerspectivesBiasBar(
+                          colors: colors,
+                          mergedDistribution: _mergedDistribution,
+                          sourceBiasStance: widget.sourceBiasStance,
+                          sourceName: widget.sourceName,
+                          selectedSegments: _effectiveSegments,
+                          onSegmentTap: _handleSegmentTap,
+                        ),
+                      ),
                       if (_effectiveSegments.isNotEmpty)
                         Padding(
                           padding:

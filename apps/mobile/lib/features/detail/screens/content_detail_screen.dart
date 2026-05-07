@@ -27,7 +27,6 @@ import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../lettres/providers/letters_provider.dart';
 import '../../sources/providers/sources_providers.dart';
-import '../../feed/widgets/perspectives_pill.dart';
 import '../../../widgets/sunflower_icon.dart';
 import '../providers/nudge_provider.dart' show NudgeTracker;
 import '../widgets/article_reader_widget.dart';
@@ -37,7 +36,6 @@ import '../widgets/note_input_sheet.dart';
 import '../../../core/nudges/nudge_coordinator.dart';
 import '../../../core/nudges/nudge_counters.dart';
 import '../../../core/nudges/nudge_ids.dart';
-import '../../../core/nudges/widgets/article_save_notes_tooltip.dart';
 import '../../../core/nudges/widgets/nudge_inline_banner.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/widgets/editorial_badge.dart';
@@ -82,32 +80,20 @@ const double _kHeaderVisualBottom = 59;
 /// = vertical padding (12+12) + button row height (44).
 const double _kFooterContentHeight = 82.0;
 
-/// Bottom scroll clearance so content isn't hidden behind the FAB row.
-const double _kFabBottomClearance = 120.0;
-
 class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
-  late AnimationController _fabController;
-  late Animation<double> _fabAnimation;
   late AnimationController _bookmarkBounceController;
   late Animation<double> _bookmarkScaleAnimation;
   late AnimationController _likeBounceController;
   late Animation<double> _likeScaleAnimation;
-  late AnimationController _fabReappearController;
-  late Animation<double> _fabReappearScale;
-  late AnimationController _shareFabController;
-  late Animation<double> _shareFabScale;
   late AnimationController _exitAnimController;
   bool _isExitAnimating = false;
 
-  bool _showFab = false;
-  bool _showShareFab = false;
   bool _isShortArticle = false;
   // true once user reaches end of displayed content
   final ValueNotifier<bool> _footerPermanent = ValueNotifier<bool>(false);
   final ValueNotifier<bool> _atPerspectivesSection = ValueNotifier(false);
   bool _suppressPerspectivesCheck = false;
-  bool _showSaveNotesNudge = false;
   bool _showReadOnSiteNudge = false;
   int _articleOpenCount = 0;
   bool _readOnSiteNudgeRequested = false;
@@ -115,9 +101,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   AnimationController? _perspectivesPulseController;
   Animation<double>? _perspectivesPulseScale;
   bool _perspectivesCtaTriggered = false;
-  bool _linkCopiedFab = false;
   bool _linkCopiedHeader = false;
-  Timer? _linkCopiedFabTimer;
   Timer? _linkCopiedHeaderTimer;
   bool _premiumRedirectScheduled = false;
   bool _webFallbackRedirectScheduled = false;
@@ -164,7 +148,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   double _headerAutoStart = 0.0;
   double _headerAutoTarget = 0.0;
 
-  final ValueNotifier<double> _fabOpacity = ValueNotifier<double>(0.07);
 
   /// Header slide offset as a fraction: 0.0 = fully visible, 1.0 = fully hidden.
   final ValueNotifier<double> _headerOffset = ValueNotifier<double>(0.0);
@@ -196,8 +179,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   // Video detail screen state
   bool _isDescriptionExpanded = false;
-  bool _isVideoPlaying = false;
-  Timer? _videoPlayHideTimer;
 
   Content? _content;
   bool _contentResolved = false;
@@ -214,7 +195,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   // Perspectives sticky section header state
   Set<String> _perspectivesSelectedSegments = {};
-  bool _perspectivesExpanded = true;
+  bool _perspectivesExpanded = false;
   final ValueNotifier<bool> _showStickyPerspectivesHeader =
       ValueNotifier(false);
 
@@ -222,7 +203,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void initState() {
     super.initState();
     _content = widget.content;
-    _perspectivesExpanded = !_isPartialContent;
     _startTime = DateTime.now();
     if (_content != null) {
       _isConsumed = _content!.status == ContentStatus.consumed;
@@ -234,15 +214,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (_content?.contentType == ContentType.article) {
       _fetchPerspectives();
     }
-
-    _fabController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _fabAnimation = CurvedAnimation(
-      parent: _fabController,
-      curve: Curves.easeOut,
-    );
 
     // Bookmark bounce animation (triggered on first note character)
     _bookmarkBounceController = AnimationController(
@@ -280,35 +251,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ),
     ]).animate(_likeBounceController);
 
-    // Scroll reappear: subtle scale-up when FABs fade back in
-    _fabReappearController = AnimationController(
-      duration: const Duration(milliseconds: 400),
-      value: 1.0, // Start at end so initial scale is 1.0
-      vsync: this,
-    );
-    _fabReappearScale = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 0.85, end: 1.05)
-            .chain(CurveTween(curve: Curves.easeOut)),
-        weight: 60,
-      ),
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 1.05, end: 1.0)
-            .chain(CurveTween(curve: Curves.easeInOut)),
-        weight: 40,
-      ),
-    ]).animate(_fabReappearController);
-
-    // Share FAB entrance animation (triggered at 90% reading progress)
-    _shareFabController = AnimationController(
-      duration: const Duration(milliseconds: 400),
-      vsync: this,
-    );
-    _shareFabScale = CurvedAnimation(
-      parent: _shareFabController,
-      curve: Curves.elasticOut,
-    );
-
     _exitAnimController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -339,20 +281,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _footerPermanent.addListener(_onFooterPermanentChanged);
 
     WidgetsBinding.instance.addObserver(this);
-
-    // Show FAB after delay — start transparent, fade+scale in after 2s
-    Future.delayed(const Duration(milliseconds: 2000), () {
-      if (mounted) {
-        setState(() {
-          _showFab = true;
-        });
-        _fabOpacity.value = 1.0;
-        _fabController.forward();
-      }
-    });
-
-    // First-time save+notes nudge.
-    _requestSaveNotesNudge();
 
     // Persist article open count for triggers (read_on_site 4th article,
     // feed_preview_longpress ≥2 articles opened).
@@ -399,9 +327,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // End-of-article nudge: show contextual action when progress >= 90%
     _readingProgress.addListener(_onReadingProgressNudge);
-
-    // Share FAB: show only after 90% reading on long articles
-    _readingProgress.addListener(_onShareFabProgress);
 
     // Detect short articles after the first layout pass has had time to
     // render the article HTML. A naive postFrame callback fires before
@@ -584,15 +509,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _inactivityTimer?.cancel();
       if (_headerOffset.value > 0.0) _animateHeaderTo(0.0);
       if (_footerOffset.value > 0.0) _animateFooterTo(0.0);
-    }
-  }
-
-  /// Show Share FAB when user reaches 90% of article (long articles only).
-  void _onShareFabProgress() {
-    if (_showShareFab || _isShortArticle) return;
-    if (_maxReadingProgress >= 0.9) {
-      setState(() => _showShareFab = true);
-      _shareFabController.forward();
     }
   }
 
@@ -792,24 +708,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  /// Fade FABs + header during scroll, restore on stop with differentiated delays.
-  /// Uses ValueNotifier to avoid rebuilding the entire widget tree on each scroll pixel.
-  /// Auto-hide header/FABs during video playback for immersion.
   void _onVideoPlayStateChanged(bool isPlaying) {
-    _isVideoPlaying = isPlaying;
-    _videoPlayHideTimer?.cancel();
-
-    if (isPlaying) {
-      _videoPlayHideTimer = Timer(const Duration(milliseconds: 2500), () {
-        if (mounted && _isVideoPlaying) {
-          // Keep header visible in video readers (fullscreen is handled natively).
-          _fabOpacity.value = 0.07;
-        }
-      });
-    } else {
+    if (!isPlaying) {
       _headerOffset.value = 0.0;
-      _fabOpacity.value = 1.0;
-
       _scrollStopTimer?.cancel();
     }
   }
@@ -830,7 +731,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _footerAutoController.forward(from: 0);
   }
 
-  /// Update header offset and FAB opacity based on scroll delta (in pixels).
+  /// Update header/footer offsets based on scroll delta (in pixels).
   /// Positive delta = scrolling down, negative = scrolling up.
   void _onScrollDelta(double delta) {
     if (delta == 0) return;
@@ -839,10 +740,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       setState(() => _showSunflowerNudge = false);
     }
     final isVideo = _content?.isVideo ?? false;
-    _videoPlayHideTimer?.cancel();
-    if (_fabOpacity.value != 0.07) {
-      _fabOpacity.value = 0.07;
-    }
     // In video readers the header stays visible at all times (only native
     // fullscreen covers it, which is handled by the system).
     // For short articles that don't need scrolling, keep header visible —
@@ -881,16 +778,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         }
       }
     }
-    // FABs + footer reappear after 2.5s of scroll inactivity.
+    // Footer reappear after 2s of scroll inactivity.
     // Skip the footer reappear in WebView mode — overlays must stay hidden
     // until the user explicitly scrolls up to maximise reading space.
     _scrollStopTimer?.cancel();
     _scrollStopTimer = Timer(const Duration(milliseconds: 2000), () {
-      if (mounted) {
-        _fabOpacity.value = 1.0;
-        _fabReappearController.forward(from: 0);
-        if (!_isWebViewActive) _animateFooterTo(0.0);
-      }
+      if (mounted && !_isWebViewActive) _animateFooterTo(0.0);
     });
     // Auto-hide header after 3s of inactivity (no scroll), but only if not at top
     _inactivityTimer?.cancel();
@@ -1099,25 +992,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  Future<void> _shareArticle({bool isFab = false}) async {
+  Future<void> _shareArticle() async {
     final content = _content;
     if (content == null) return;
 
     await Clipboard.setData(ClipboardData(text: content.url));
     if (mounted) {
-      if (isFab) {
-        setState(() => _linkCopiedFab = true);
-        _linkCopiedFabTimer?.cancel();
-        _linkCopiedFabTimer = Timer(const Duration(seconds: 2), () {
-          if (mounted) setState(() => _linkCopiedFab = false);
-        });
-      } else {
-        setState(() => _linkCopiedHeader = true);
-        _linkCopiedHeaderTimer?.cancel();
-        _linkCopiedHeaderTimer = Timer(const Duration(seconds: 2), () {
-          if (mounted) setState(() => _linkCopiedHeader = false);
-        });
-      }
+      setState(() => _linkCopiedHeader = true);
+      _linkCopiedHeaderTimer?.cancel();
+      _linkCopiedHeaderTimer = Timer(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _linkCopiedHeader = false);
+      });
     }
   }
 
@@ -1223,12 +1108,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
   }
 
-  Widget _wrapWithPerspectivesPulse(Widget child) {
-    final scale = _perspectivesPulseScale;
-    if (scale == null) return child;
-    return ScaleTransition(scale: scale, child: child);
-  }
-
   void _playPerspectivesPulse() {
     _perspectivesPulseController ??= AnimationController(
       vsync: this,
@@ -1249,26 +1128,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }
     });
     setState(() {});
-  }
-
-  Future<void> _requestSaveNotesNudge() async {
-    final coordinator = ref.read(nudgeCoordinatorProvider);
-    final active = await coordinator.request(NudgeIds.articleSaveNotes);
-    if (!mounted) return;
-    if (active == NudgeIds.articleSaveNotes) {
-      setState(() => _showSaveNotesNudge = true);
-    }
-  }
-
-  Future<void> _dismissSaveNotesNudge() async {
-    if (!_showSaveNotesNudge) return;
-    final coordinator = ref.read(nudgeCoordinatorProvider);
-    if (coordinator.activeId == NudgeIds.articleSaveNotes) {
-      await coordinator.dismiss(markSeen: true);
-    }
-    if (mounted) {
-      setState(() => _showSaveNotesNudge = false);
-    }
   }
 
   @override
@@ -1317,14 +1176,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _sunflowerNudgeTimer?.cancel();
     _inactivityTimer?.cancel();
     _articleLayerUnmountTimer?.cancel();
-    _videoPlayHideTimer?.cancel();
-    _linkCopiedFabTimer?.cancel();
     _linkCopiedHeaderTimer?.cancel();
-    _fabController.dispose();
     _bookmarkBounceController.dispose();
     _likeBounceController.dispose();
-    _fabReappearController.dispose();
-    _shareFabController.dispose();
     _perspectivesPulseController?.dispose();
     _exitAnimController.dispose();
     _headerAutoController.dispose();
@@ -1332,12 +1186,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _ctaPulseController.dispose();
     _footerPermanent.removeListener(_onFooterPermanentChanged);
     WidgetsBinding.instance.removeObserver(this);
-    _fabOpacity.dispose();
     _headerOffset.dispose();
     _footerOffset.dispose();
     _footerPermanent.dispose();
     _readingProgress.removeListener(_onReadingProgressNudge);
-    _readingProgress.removeListener(_onShareFabProgress);
     _readingProgress.dispose();
     _scrollController.removeListener(_onScrollToSite);
     _scrollController.removeListener(_onScrollReadingProgress);
@@ -1806,30 +1658,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 child: RepaintBoundary(child: _buildHeader(context, content)),
               ),
             ),
-            // Opaque status-bar backdrop — only when WebView is active and
-            // the header has slid off-screen, so WebView content doesn't
-            // bleed through the transparent status bar zone.
-            if (_isWebViewActive)
-              ValueListenableBuilder<double>(
-                valueListenable: _headerOffset,
-                builder: (context, offset, _) {
-                  final statusBarHeight = MediaQuery.of(context).padding.top;
-                  return Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: IgnorePointer(
-                      child: Opacity(
-                        opacity: offset,
-                        child: SizedBox(
-                          height: statusBarHeight,
-                          child: ColoredBox(color: colors.backgroundPrimary),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
             // Reading progress bar — follows header position continuously
             if (content.hasInAppContent ||
                 _isWebViewActive ||
@@ -1978,214 +1806,24 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   },
                 ),
               ),
-            // Footer — shown for in-app article reading, mirrors header slide behavior.
-            // Also shown in `_showWebView` fallback so the user keeps the
-            // "Lire via Navigateur" CTA to escape to the external browser.
-            if (useScrollToSite ||
-                (useInAppReading && content.contentType == ContentType.article) ||
-                (_showWebView && content.contentType == ContentType.article))
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: _buildArticleFooter(context, content),
+            // Footer — always rendered, mirrors header slide behavior.
+            // Article: full layout. Video/audio: external CTA + bookmark + sunflower.
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: _buildContentFooter(
+                context,
+                content,
+                isPureWebview:
+                    _showWebView && !useScrollToSite && !useInAppReading,
               ),
+            ),
           ],
         ),
       ),
-      // FABs — vertical column with immersive scroll opacity
-      // Suppressed for articles (replaced by the persistent footer).
-      // ValueListenableBuilder isolates FAB opacity rebuilds from the main widget tree.
-      floatingActionButton: _showFab &&
-              !useScrollToSite &&
-              !(useInAppReading && content.contentType == ContentType.article)
-          ? ValueListenableBuilder<double>(
-              valueListenable: _fabOpacity,
-              builder: (context, opacity, child) => AnimatedOpacity(
-                opacity: opacity,
-                duration: Duration(milliseconds: opacity < 1.0 ? 150 : 300),
-                child: ScaleTransition(
-                  scale: _fabAnimation,
-                  child: ScaleTransition(
-                    scale: _fabReappearScale,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        // Share FAB — appears after 90% reading on long articles
-                        if (_showShareFab) ...[
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              if (_linkCopiedFab) ...[
-                                _buildLinkCopiedTooltip(context),
-                                const SizedBox(width: 16),
-                              ],
-                              ScaleTransition(
-                                scale: _shareFabScale,
-                                child: SizedBox(
-                                  width: 50,
-                                  height: 50,
-                                  child: FloatingActionButton(
-                                    onPressed: () => _shareArticle(isFab: true),
-                                    backgroundColor: Colors.white,
-                                    foregroundColor: colors.textPrimary,
-                                    elevation: 2,
-                                    heroTag: 'share_fab',
-                                    tooltip: 'Partager',
-                                    child: Icon(
-                                      PhosphorIcons.shareNetwork(
-                                          PhosphorIconsStyle.regular),
-                                      size: 25,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: FacteurSpacing.space3),
-                        ],
-                        // Perspectives FAB (articles only) — always just above other FABs
-                        if (content.contentType == ContentType.article) ...[
-                          _wrapWithPerspectivesPulse(
-                            PerspectivesPill(
-                              biasDistribution:
-                                  _perspectivesResponse?.biasDistribution ?? {},
-                              isLoading: _perspectivesLoading,
-                              // shouldDisplay=false → traiter comme empty (CTA dimmed,
-                              // bottom sheet montre l'état vide). Cf. backend gate
-                              // docs/bugs/bug-comparison-clustering-too-loose.md
-                              isEmpty: !_perspectivesLoading &&
-                                  _perspectivesResponse != null &&
-                                  (_perspectivesResponse!.perspectives.isEmpty ||
-                                      !_perspectivesResponse!.shouldDisplay),
-                              onTap: () {
-                                HapticFeedback.lightImpact();
-                                final coordinator =
-                                    ref.read(nudgeCoordinatorProvider);
-                                if (coordinator.activeId ==
-                                    NudgeIds.perspectivesCta) {
-                                  coordinator.markConverted(
-                                      NudgeIds.perspectivesCta);
-                                }
-                                final ctx = _perspectivesKey.currentContext;
-                                if (ctx != null) {
-                                  Scrollable.ensureVisible(
-                                    ctx,
-                                    duration: const Duration(milliseconds: 400),
-                                    curve: Curves.easeInOut,
-                                  );
-                                } else {
-                                  _showPerspectives(context);
-                                }
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: FacteurSpacing.space3),
-                        ],
-                        // External link FAB — hidden for articles unless WebView is active
-                        if (content.contentType != ContentType.article ||
-                            _showWebView ||
-                            _isWebViewActive) ...[
-                          SizedBox(
-                            width: 50,
-                            height: 50,
-                            child: FloatingActionButton(
-                              onPressed: _openOriginalUrl,
-                              backgroundColor: Colors.white,
-                              foregroundColor: colors.textPrimary,
-                              elevation: 2,
-                              heroTag: 'original_fab',
-                              tooltip: _getFabLabel(),
-                              child: Icon(
-                                PhosphorIcons.arrowSquareOut(
-                                    PhosphorIconsStyle.regular),
-                                size: 25,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: FacteurSpacing.space3),
-                        ],
-                        // 🌻 Sunflower recommendation FAB
-                        ScaleTransition(
-                          scale: _likeScaleAnimation,
-                          child: SizedBox(
-                            width: 50,
-                            height: 50,
-                            child: FloatingActionButton(
-                              onPressed: _toggleLike,
-                              backgroundColor: content.isLiked
-                                  ? colors.primary
-                                  : Colors.white,
-                              foregroundColor: content.isLiked
-                                  ? Colors.white
-                                  : colors.textPrimary,
-                              elevation: content.isLiked ? 4 : 2,
-                              heroTag: 'sunflower_fab',
-                              tooltip: 'Recommander',
-                              child: SunflowerIcon(
-                                isActive: content.isLiked,
-                                size: 25,
-                                inactiveColor: colors.textPrimary,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: FacteurSpacing.space3),
-                        // Merged Bookmark + Note FAB (long-press for collection picker)
-                        GestureDetector(
-                          onLongPress: () {
-                            HapticFeedback.mediumImpact();
-                            CollectionPickerSheet.show(
-                              context,
-                              content.id,
-                              onAddNote: () => _openNoteSheet(),
-                            );
-                          },
-                          child: ScaleTransition(
-                            scale: _bookmarkScaleAnimation,
-                            child: SizedBox(
-                              width: 50,
-                              height: 50,
-                              child: FloatingActionButton(
-                                onPressed: _toggleBookmark,
-                                backgroundColor: content.isSaved
-                                    ? colors.primary
-                                    : Colors.white,
-                                foregroundColor: content.isSaved
-                                    ? Colors.white
-                                    : colors.textPrimary,
-                                elevation: content.isSaved ? 4 : 2,
-                                heroTag: 'bookmark_fab',
-                                tooltip: 'Sauvegarder',
-                                child: Icon(
-                                  content.isSaved
-                                      ? PhosphorIcons.bookmarkSimple(
-                                          PhosphorIconsStyle.fill)
-                                      : PhosphorIcons.bookmarkSimple(
-                                          PhosphorIconsStyle.regular),
-                                  size: 25,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        // Save+notes nudge — bottom of FAB column, near bookmark
-                        if (_showSaveNotesNudge) ...[
-                          const SizedBox(height: FacteurSpacing.space3),
-                          ArticleSaveNotesTooltip(
-                            onDismiss: _dismissSaveNotesNudge,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            )
-          : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      // All actions migrated to the persistent footer (article + video/audio).
+      floatingActionButton: null,
     );
   }
 
@@ -2250,18 +1888,84 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
   }
 
-  /// Persistent footer bar shown for in-app article reading.
+  /// External-source CTA used in the footer for video/audio readers.
+  /// Mirrors the article footer's "Lire via Navigateur" outlined style but
+  /// without the permanent-orange logic.
+  Widget _buildExternalCtaButton(BuildContext context, Content content) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final showLogo = content.source.logoUrl != null;
+    return OutlinedButton(
+      onPressed: _openOriginalUrl,
+      style: OutlinedButton.styleFrom(
+        backgroundColor: Colors.white.withValues(alpha: 0.5),
+        foregroundColor: colors.textPrimary,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        side: BorderSide(color: colors.border.withValues(alpha: 0.5)),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+      ),
+      child: Row(
+        children: [
+          if (showLogo) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: CachedNetworkImage(
+                imageUrl: content.source.logoUrl!,
+                width: 28,
+                height: 28,
+                fit: BoxFit.cover,
+                errorWidget: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+          Expanded(
+            child: Text(
+              _getFabLabel(),
+              style: textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colors.textPrimary,
+              ),
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.left,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            PhosphorIcons.arrowUpRight(PhosphorIconsStyle.regular),
+            size: 16,
+            color: colors.textSecondary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Persistent footer bar shown for all reader types.
   /// Mirrors header slide behavior: hides on scroll-down, shows on scroll-up.
-  Widget _buildArticleFooter(BuildContext context, Content content) {
+  /// Article: full layout (CTA + Perspectives + Sauvegarder + Recommander).
+  /// Video/audio: simplified (CTA externe + Sauvegarder + Recommander).
+  Widget _buildContentFooter(
+    BuildContext context,
+    Content content, {
+    bool isPureWebview = false,
+  }) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+    // Pour la webview pure (article sans in-app content), la section
+    // perspectives n'est jamais rendue → masquer le bouton perspectives qui
+    // n'aurait aucun effet.
+    final isArticle =
+        content.contentType == ContentType.article && !isPureWebview;
 
     const iconButtonStyle = ButtonStyle(
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.compact,
-      padding: WidgetStatePropertyAll(EdgeInsets.all(8)),
-      minimumSize: WidgetStatePropertyAll(Size(44, 44)),
+      padding: WidgetStatePropertyAll(EdgeInsets.all(10)),
+      minimumSize: WidgetStatePropertyAll(Size(52, 52)),
       shape: WidgetStatePropertyAll(CircleBorder()),
     );
 
@@ -2286,11 +1990,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
-              // "Lire sur [Source]" — fills available space
-              Expanded(
+              // CTA — sized to content for articles (laisse de la place aux 3
+              // boutons icônes à droite); fills width pour video/audio.
+              // Article: dynamic "Article complet" / "Lire via Navigateur"
+              // with permanent-orange logic. Video/audio: simple external CTA.
+              Flexible(
+                fit: isArticle ? FlexFit.loose : FlexFit.tight,
                 child: SizedBox(
                   height: 53,
-                  child: ValueListenableBuilder<bool>(
+                  child: isArticle
+                      ? ValueListenableBuilder<bool>(
                     valueListenable: _footerPermanent,
                     builder: (context, permanent, _) {
                       final isWebViewMode = _ctaTapped || _isWebViewActive;
@@ -2325,7 +2034,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           ),
                           const SizedBox(width: 6),
                         ],
-                        Expanded(
+                        Flexible(
                           child: Text(
                             label,
                             style: textTheme.labelMedium?.copyWith(
@@ -2368,7 +2077,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 12),
                             ),
-                            child: Row(children: children),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: children,
+                            ),
                           ),
                         );
                       }
@@ -2390,14 +2102,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         child: Row(children: children),
                       );
                     },
-                  ),
+                  )
+                      : _buildExternalCtaButton(context, content),
                 ),
               ),
-              const SizedBox(width: 4),
+              if (isArticle) ...[
+                const SizedBox(width: 4),
 
-              // Autres points de vue / Retour à l'article
-              ValueListenableBuilder<bool>(
-                valueListenable: _atPerspectivesSection,
+                // Autres points de vue / Retour à l'article
+                ValueListenableBuilder<bool>(
+                  valueListenable: _atPerspectivesSection,
                 builder: (context, atPersp, _) {
                   if (atPersp) {
                     return Tooltip(
@@ -2409,31 +2123,50 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           _suppressPerspectivesCheck = true;
                           _atPerspectivesSection.value = false;
                           _showStickyPerspectivesHeader.value = false;
-                          final ScrollController activeController =
-                              _scrollController.hasClients
-                                  ? _scrollController
-                                  : _inAppScrollController;
-                          if (activeController.hasClients) {
-                            activeController.animateTo(
-                              0,
-                              duration: const Duration(milliseconds: 400),
-                              curve: Curves.easeInOut,
-                            );
+                          // Si la webview scroll-to-site est active, le
+                          // subtree article a été démonté (cf.
+                          // _articleLayerMounted=false) et _scrollController
+                          // n'a plus de clients → l'animateTo serait no-op.
+                          // Désactiver la webview, remonter l'article puis
+                          // scroller au top.
+                          if (_isWebViewActive) {
+                            setState(() {
+                              _isWebViewActive = false;
+                              _articleLayerMounted = true;
+                              _ctaTapped = false;
+                            });
+                            _articleLayerUnmountTimer?.cancel();
+                            _animateHeaderTo(0.0);
+                            _animateFooterTo(0.0);
                           }
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!mounted) return;
+                            final ScrollController activeController =
+                                _scrollController.hasClients
+                                    ? _scrollController
+                                    : _inAppScrollController;
+                            if (activeController.hasClients) {
+                              activeController.animateTo(
+                                0,
+                                duration: const Duration(milliseconds: 400),
+                                curve: Curves.easeInOut,
+                              );
+                            }
+                          });
                           Future.delayed(const Duration(milliseconds: 450), () {
                             if (mounted) _suppressPerspectivesCheck = false;
                           });
                         },
                         icon: SizedBox(
-                          width: 28,
-                          height: 28,
+                          width: 32,
+                          height: 32,
                           child: Stack(
                             children: [
                               Center(
                                 child: Icon(
                                   PhosphorIcons.newspaper(
                                       PhosphorIconsStyle.regular),
-                                  size: 24,
+                                  size: 28,
                                   color: colors.textSecondary,
                                 ),
                               ),
@@ -2491,6 +2224,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         : () {
                             HapticFeedback.lightImpact();
                             _suppressPerspectivesCheck = true;
+                            // Force immediate switch to "Retour à l'article"
+                            // state so the footer reflects the user intent
+                            // without waiting for the scroll-driven check
+                            // (AnimatedSize expansion + scroll animation
+                            // would otherwise race for ~600ms).
+                            _atPerspectivesSection.value = true;
                             setState(() => _perspectivesExpanded = true);
                             WidgetsBinding.instance.addPostFrameCallback((_) {
                               if (!mounted) return;
@@ -2531,7 +2270,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           },
                   );
                 },
-              ),
+                ),
+              ],
 
               // Sauvegarder (long-press → collection picker)
               GestureDetector(
@@ -2558,7 +2298,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               PhosphorIconsStyle.fill)
                           : PhosphorIcons.bookmarkSimple(
                               PhosphorIconsStyle.regular),
-                      size: 24,
+                      size: 28,
                       color:
                           content.isSaved ? Colors.white : colors.textSecondary,
                     ),
@@ -2579,7 +2319,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   onPressed: _toggleLike,
                   icon: SunflowerIcon(
                     isActive: content.isLiked,
-                    size: 20,
+                    size: 26,
                     inactiveColor: colors.textSecondary,
                   ),
                   tooltip: 'Recommander',
@@ -3542,8 +3282,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
         return Column(
           children: [
-            // Spacer for header overlay (header sits on this, not on iframe)
-            SizedBox(height: headerHeight),
+            // Spacer for header overlay — collapses as header slides off so
+            // the player fills the viewport up to the status bar.
+            ValueListenableBuilder<double>(
+              valueListenable: _headerOffset,
+              builder: (_, offset, __) =>
+                  SizedBox(height: headerHeight * (1.0 - offset)),
+            ),
 
             // Centered player — bounded height, narrower than screen width
             SizedBox(
@@ -3682,8 +3427,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       ),
                     ],
 
-                    // Bottom spacing for FABs
-                    const SizedBox(height: _kFabBottomClearance),
+                    // Bottom spacing — clears the persistent footer.
+                    SizedBox(
+                      height: _kFooterContentHeight +
+                          MediaQuery.of(context).viewPadding.bottom,
+                    ),
                   ],
                 ),
               ),
@@ -3697,8 +3445,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
       return Column(
         children: [
-          // Push below the header overlay
-          SizedBox(height: headerHeight),
+          // Push below the header overlay — collapses with header slide.
+          ValueListenableBuilder<double>(
+            valueListenable: _headerOffset,
+            builder: (_, offset, __) =>
+                SizedBox(height: headerHeight * (1.0 - offset)),
+          ),
 
           // Sticky player container
           SizedBox(
@@ -3829,8 +3581,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     ),
                   ],
 
-                  // Bottom spacing for FABs
-                  const SizedBox(height: 120),
+                  // Bottom spacing — clears the persistent footer.
+                  SizedBox(
+                    height: _kFooterContentHeight +
+                        MediaQuery.of(context).viewPadding.bottom,
+                  ),
                 ],
               ),
             ),
@@ -4074,16 +3829,25 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         );
 
       case ContentType.audio:
+        final audioBottomInset =
+            _kFooterContentHeight + MediaQuery.of(context).viewPadding.bottom;
         return Column(
           children: [
-            SizedBox(height: headerHeight),
+            ValueListenableBuilder<double>(
+              valueListenable: _headerOffset,
+              builder: (_, offset, __) =>
+                  SizedBox(height: headerHeight * (1.0 - offset)),
+            ),
             Expanded(
-              child: AudioPlayerWidget(
-                audioUrl: content.audioUrl!,
-                title: content.title,
-                description: content.description,
-                thumbnailUrl: content.thumbnailUrl,
-                durationSeconds: content.durationSeconds,
+              child: Padding(
+                padding: EdgeInsets.only(bottom: audioBottomInset),
+                child: AudioPlayerWidget(
+                  audioUrl: content.audioUrl!,
+                  title: content.title,
+                  description: content.description,
+                  thumbnailUrl: content.thumbnailUrl,
+                  durationSeconds: content.durationSeconds,
+                ),
               ),
             ),
           ],
@@ -4091,14 +3855,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
       case ContentType.youtube:
       case ContentType.video:
+        final videoBottomInset =
+            _kFooterContentHeight + MediaQuery.of(context).viewPadding.bottom;
         return Column(
           children: [
-            SizedBox(height: headerHeight),
+            ValueListenableBuilder<double>(
+              valueListenable: _headerOffset,
+              builder: (_, offset, __) =>
+                  SizedBox(height: headerHeight * (1.0 - offset)),
+            ),
             Expanded(
-              child: YouTubePlayerWidget(
-                videoUrl: content.url,
-                title: content.title,
-                description: content.description,
+              child: Padding(
+                padding: EdgeInsets.only(bottom: videoBottomInset),
+                child: YouTubePlayerWidget(
+                  videoUrl: content.url,
+                  title: content.title,
+                  description: content.description,
+                ),
               ),
             ),
           ],
@@ -4131,7 +3904,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final headerHeight = topInset + _kHeaderContentHeight;
     return Column(
       children: [
-        SizedBox(height: headerHeight),
+        ValueListenableBuilder<double>(
+          valueListenable: _headerOffset,
+          builder: (_, offset, __) =>
+              SizedBox(height: headerHeight * (1.0 - offset)),
+        ),
         // Extra breathing room so tag chips aren't clipped by the header overlay
         const SizedBox(height: FacteurSpacing.space2),
         if (content.entities.isNotEmpty)
@@ -4229,15 +4006,15 @@ class _WinkingEyeButtonState extends State<_WinkingEyeButton>
           tooltip:
               disabled ? 'Pas d\'autres points de vue' : 'Autres points de vue',
           icon: SizedBox(
-            width: 28,
-            height: 28,
+            width: 32,
+            height: 32,
             child: Stack(
               children: [
                 Center(
                   child: disabled
                       ? Icon(
                           PhosphorIcons.eyeClosed(PhosphorIconsStyle.regular),
-                          size: 22,
+                          size: 26,
                           color: widget.iconColor,
                         )
                       : Transform.scale(
@@ -4247,7 +4024,7 @@ class _WinkingEyeButtonState extends State<_WinkingEyeButton>
                                 ? PhosphorIcons.eyeClosed(
                                     PhosphorIconsStyle.regular)
                                 : PhosphorIcons.eye(PhosphorIconsStyle.regular),
-                            size: 22,
+                            size: 26,
                             color: widget.iconColor,
                           ),
                         ),
