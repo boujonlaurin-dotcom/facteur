@@ -788,38 +788,11 @@ class PerspectivesEmptyState extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: Padding(
-        padding: EdgeInsets.zero,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              PhosphorIcons.newspaperClipping(PhosphorIconsStyle.duotone),
-              size: 48,
-              color: colors.textSecondary.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                'Sujet peu couvert',
-                style: textTheme.titleSmall?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.w600,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                "Ce sujet n'a pas encore été repris par d'autres médias.",
-                style:
-                    textTheme.bodySmall?.copyWith(color: colors.textTertiary),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ],
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Text(
+          "Ce sujet n'a pas encore été repris par d'autres médias.",
+          style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
+          textAlign: TextAlign.center,
         ),
       ),
     );

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../config/theme.dart';
@@ -25,12 +26,12 @@ class SourceLogoAvatar extends StatelessWidget {
     if (url != null && url.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(radius),
-        child: Image.network(
-          url,
+        child: CachedNetworkImage(
+          imageUrl: url,
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _Initials(
+          errorWidget: (_, __, ___) => _Initials(
             name: source.name,
             size: size,
             radius: radius,
