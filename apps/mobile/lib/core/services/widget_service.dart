@@ -44,6 +44,11 @@ class WidgetService {
   /// still well under the ~1 MB Binder IPC ceiling.
   static const _maxTotal = 80;
 
+  // Mirror of WidgetRendering.SOURCE_KIND_* on the Kotlin side — both must
+  // agree for the deeplink router to pick the right reader per row.
+  static const _sourceKindEssentiel = 'essentiel';
+  static const _sourceKindFlux = 'flux';
+
   static final _dio = Dio();
 
   /// Update the home screen widget with the latest digest, feed and/or streak.
@@ -95,8 +100,10 @@ class WidgetService {
         await _rewriteMergedPayload();
       }
 
-      await HomeWidget.updateWidget(androidName: _androidNameLight);
-      await HomeWidget.updateWidget(androidName: _androidNameDark);
+      await Future.wait([
+        HomeWidget.updateWidget(androidName: _androidNameLight),
+        HomeWidget.updateWidget(androidName: _androidNameDark),
+      ]);
     } catch (e) {
       debugPrint('WidgetService: updateWidget failed: $e');
     }
@@ -122,8 +129,10 @@ class WidgetService {
         jsonEncode(<dynamic>[]),
       );
       await HomeWidget.saveWidgetData('digest_status', 'none');
-      await HomeWidget.updateWidget(androidName: _androidNameLight);
-      await HomeWidget.updateWidget(androidName: _androidNameDark);
+      await Future.wait([
+        HomeWidget.updateWidget(androidName: _androidNameLight),
+        HomeWidget.updateWidget(androidName: _androidNameDark),
+      ]);
     } catch (e) {
       debugPrint('WidgetService: initWidgetIfNeeded failed: $e');
     }
@@ -140,8 +149,10 @@ class WidgetService {
       await HomeWidget.saveWidgetData('digest_status', 'none');
       await HomeWidget.saveWidgetData('digest_progress', '0/0');
       await HomeWidget.saveWidgetData('streak', '0');
-      await HomeWidget.updateWidget(androidName: _androidNameLight);
-      await HomeWidget.updateWidget(androidName: _androidNameDark);
+      await Future.wait([
+        HomeWidget.updateWidget(androidName: _androidNameLight),
+        HomeWidget.updateWidget(androidName: _androidNameDark),
+      ]);
     } catch (e) {
       debugPrint('WidgetService: clear failed: $e');
     }
@@ -176,14 +187,14 @@ class WidgetService {
       final id = (e['id'] as String?) ?? '';
       if (id.isEmpty || seenIds.contains(id)) continue;
       seenIds.add(id);
-      result.add({...e, 'source_kind': 'essentiel'});
+      result.add({...e, 'source_kind': _sourceKindEssentiel});
       if (result.length >= _maxTotal) return result;
     }
     for (final f in flux) {
       final id = (f['id'] as String?) ?? '';
       if (id.isEmpty || seenIds.contains(id)) continue;
       seenIds.add(id);
-      result.add({...f, 'source_kind': 'flux'});
+      result.add({...f, 'source_kind': _sourceKindFlux});
       if (result.length >= _maxTotal) return result;
     }
     return result;
@@ -233,22 +244,25 @@ class WidgetService {
   ) async {
     if (digest == null || digest.topics.isEmpty) return const [];
 
-    final result = <Map<String, dynamic>>[];
+    final picks = <({DigestItem article, DigestTopic topic, int rank})>[];
     var rank = 1;
     for (final topic in digest.topics) {
-      if (result.length >= _maxEssentiel) break;
+      if (picks.length >= _maxEssentiel) break;
       if (topic.articles.isEmpty) continue;
       final article = _pickSingleton(topic);
       if (article.isDismissed) continue;
-      result.add(await _serializeArticle(
-        article: article,
-        topic: topic,
-        rank: rank,
-        isMain: rank == 1,
-      ));
+      picks.add((article: article, topic: topic, rank: rank));
       rank++;
     }
-    return result;
+    return Future.wait([
+      for (final p in picks)
+        _serializeArticle(
+          article: p.article,
+          topic: p.topic,
+          rank: p.rank,
+          isMain: p.rank == 1,
+        ),
+    ]);
   }
 
   static DigestItem _pickSingleton(DigestTopic topic) {
