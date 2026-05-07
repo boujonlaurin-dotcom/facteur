@@ -17,21 +17,20 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * Shared parsing + bitmap helpers used by both [FacteurWidget] (tabs +
- * empty state) and [FacteurWidgetService]'s RemoteViewsFactory (row
- * rendering inside the ListView). Row caps differ by mode: Essentiel is
- * capped at 5 (one per topic), Flux at 30 (Binder IPC ceiling).
+ * Shared parsing + bitmap helpers for the unified Facteur widget. The merged
+ * payload (Essentiel-then-Flux, deduplicated) is capped at [MAX_ROWS] total
+ * items — well under the ~1 MB Binder IPC ceiling because Flux items carry no
+ * thumbnail (cf. widget.5.flux-iter2).
  */
 internal object WidgetRendering {
 
     private const val TAG = "FacteurWidget"
-    const val MAX_ROWS_ESSENTIEL = 5
 
-    /**
-     * Flux mode runs without thumbnails (cf. widget.5.flux-iter2) — payload
-     * is tiny, we can pack 80 rows comfortably under the ~1 MB Binder ceiling.
-     */
-    const val MAX_ROWS_FLUX = 80
+    /** Total cap for the merged Essentiel + Flux payload. */
+    const val MAX_ROWS = 80
+
+    const val SOURCE_KIND_ESSENTIEL = "essentiel"
+    const val SOURCE_KIND_FLUX = "flux"
 
     data class Article(
         val id: String,
@@ -45,9 +44,10 @@ internal object WidgetRendering {
         val thumbnailPath: String,
         val perspectiveCount: Int,
         val publishedAtIso: String,
+        val sourceKind: String,
     )
 
-    fun parseArticles(json: String?, maxRows: Int = MAX_ROWS_ESSENTIEL): List<Article> {
+    fun parseArticles(json: String?, maxRows: Int = MAX_ROWS): List<Article> {
         if (json.isNullOrBlank() || json == "[]") return emptyList()
         return try {
             val arr = JSONArray(json)
@@ -57,6 +57,19 @@ internal object WidgetRendering {
         } catch (e: Exception) {
             Log.w(TAG, "parseArticles failed", e)
             emptyList()
+        }
+    }
+
+    /**
+     * Cheap count without full parsing — used to render the masthead meta
+     * ("12 articles · 7h02"). Falls back to 0 on any error.
+     */
+    fun countArticles(json: String?): Int {
+        if (json.isNullOrBlank() || json == "[]") return 0
+        return try {
+            JSONArray(json).length().coerceAtMost(MAX_ROWS)
+        } catch (_: Exception) {
+            0
         }
     }
 
@@ -72,14 +85,13 @@ internal object WidgetRendering {
         thumbnailPath = obj.optString("thumbnail_path"),
         perspectiveCount = obj.optInt("perspective_count", 0),
         publishedAtIso = obj.optString("published_at_iso"),
+        // Default to Flux when missing — historic payloads (pre-merge) only
+        // carried Essentiel under the old `articles_json` key, but the new
+        // path always sets source_kind explicitly so the default is just a
+        // safety net.
+        sourceKind = obj.optString("source_kind").ifBlank { SOURCE_KIND_FLUX },
     )
 
-    /**
-     * Decode a bitmap downscaled to fit within [targetSizeDp]² to keep the
-     * RemoteViews payload small. Inlining unscaled thumbnails into a single
-     * RemoteViews trips Binder's ~1 MB IPC limit, surfacing as
-     * "Impossible d'ajouter le widget" on the host launcher.
-     */
     fun loadBitmap(context: Context, path: String?, targetSizeDp: Int): Bitmap? {
         if (path.isNullOrBlank()) return null
         return try {

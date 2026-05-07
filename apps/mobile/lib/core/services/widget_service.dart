@@ -11,32 +11,45 @@ import '../../features/digest/models/digest_models.dart';
 import '../../features/feed/models/content_model.dart';
 import '../../features/gamification/models/streak_model.dart';
 
-/// Service to push digest data to the Android home screen widget.
+/// Service to push the unified Facteur feed (Essentiel + Flux) to the home
+/// screen widgets.
 ///
-/// Data flows: Flutter → SharedPreferences (via home_widget) → FacteurWidget.kt
+/// Data flow: Flutter → SharedPreferences (via home_widget) → FacteurWidget.kt
 ///
 /// Schema:
-/// - `articles_json` : Essentiel — JSON array of up to 5 articles
-/// - `feed_articles_json` : Flux — JSON array of up to 80 feed items
-/// - `articles_updated_at` : epoch millis of last successful refresh
-/// - `digest_status` : 'none' | 'available' | 'in_progress' | 'completed'
-/// - `digest_progress` : 'X/Y'
-/// - `streak` : current streak as string
-/// - `widget_mode` : 'essentiel' | 'flux' (written natively at tab tap)
-/// - `widget_flux_max_scroll_position` : highest row index seen by getViewAt
-///   in the current/last Flux session (-1 = nothing to flush). Written natively.
-/// - `widget_flux_total_count` : article count at the time of that scroll
-/// - `widget_flux_max_scroll_at` : epoch millis of the flush
+/// - `widget_articles_json` : merged Essentiel-then-Flux payload (deduped by
+///   id, capped at [_maxTotal]). Each entry carries `source_kind` so the
+///   native side can pick the right deeplink target.
+/// - `articles_json` / `feed_articles_json` : per-source caches still written
+///   so that a later call with only one side (`updateWidget(digest:)` or
+///   `updateWidget(feedItems:)`) can reconstruct the merge without losing the
+///   other side after a cold start.
+/// - `articles_updated_at` : epoch millis of last successful refresh.
+/// - `digest_status` / `digest_progress` / `streak` : legacy keys kept stable.
+/// - `widget_flux_max_scroll_position` / `widget_flux_total_count` /
+///   `widget_flux_max_scroll_at` : scroll metric written natively, flushed by
+///   the app on next foreground.
 class WidgetService {
-  static const _androidName = 'FacteurWidget';
-  static const _maxArticles = 5;
-  // Flux: thumbnails are off (cf. widget.5) so 80 rows fit comfortably under
-  // the ~1 MB Binder IPC ceiling for the RemoteViews payload.
+  // Two AppWidgetProvider classes are registered in AndroidManifest.xml:
+  // FacteurWidgetLight (parchment) and FacteurWidgetDark (charcoal). Each is
+  // pinned independently by the user — both must be updated on every push.
+  static const _androidNameLight = 'FacteurWidgetLight';
+  static const _androidNameDark = 'FacteurWidgetDark';
+
+  static const _maxEssentiel = 5;
   static const _maxFeedArticles = 80;
+
+  /// Total cap for the merged payload. Stays at 80 because Flux items are
+  /// image-less (cf. widget.5) — Essentiel adds at most 5 thumbnails on top,
+  /// still well under the ~1 MB Binder IPC ceiling.
+  static const _maxTotal = 80;
+
   static final _dio = Dio();
 
   /// Update the home screen widget with the latest digest, feed and/or streak.
-  /// Each parameter is independent — passing only one preserves the others.
+  /// Each parameter is independent — passing only one rebuilds that side and
+  /// re-merges with the cached other side, then pushes both Light and Dark
+  /// widgets.
   static Future<void> updateWidget({
     DigestResponse? digest,
     List<Content>? feedItems,
@@ -44,7 +57,7 @@ class WidgetService {
   }) async {
     try {
       if (digest != null) {
-        final articles = await _buildArticleList(digest);
+        final articles = await _buildEssentielList(digest);
         await HomeWidget.saveWidgetData(
           'articles_json',
           jsonEncode(articles),
@@ -75,56 +88,138 @@ class WidgetService {
         await HomeWidget.saveWidgetData('streak', '${streak.currentStreak}');
       }
 
-      await HomeWidget.updateWidget(androidName: _androidName);
+      // Always rebuild the merged payload from whichever per-source caches
+      // are currently in SharedPreferences — robust to cold starts where
+      // only one of digest/feed is delivered before the widget update.
+      if (digest != null || feedItems != null) {
+        await _rewriteMergedPayload();
+      }
+
+      await HomeWidget.updateWidget(androidName: _androidNameLight);
+      await HomeWidget.updateWidget(androidName: _androidNameDark);
     } catch (e) {
       debugPrint('WidgetService: updateWidget failed: $e');
     }
   }
 
-  /// Push a placeholder payload when no digest is available yet (cold install,
+  /// Push a placeholder payload when no data is available yet (cold install,
   /// pre-first-fetch). Idempotent — checked via SharedPreferences.
   static Future<void> initWidgetIfNeeded() async {
     try {
-      final existing = await HomeWidget.getWidgetData<String>('articles_json');
+      final existing = await HomeWidget.getWidgetData<String>(
+        'widget_articles_json',
+      );
       if (existing != null && existing.isNotEmpty && existing != '[]') {
         return;
       }
       await HomeWidget.saveWidgetData('articles_json', jsonEncode(<dynamic>[]));
+      await HomeWidget.saveWidgetData(
+        'feed_articles_json',
+        jsonEncode(<dynamic>[]),
+      );
+      await HomeWidget.saveWidgetData(
+        'widget_articles_json',
+        jsonEncode(<dynamic>[]),
+      );
       await HomeWidget.saveWidgetData('digest_status', 'none');
-      await HomeWidget.updateWidget(androidName: _androidName);
+      await HomeWidget.updateWidget(androidName: _androidNameLight);
+      await HomeWidget.updateWidget(androidName: _androidNameDark);
     } catch (e) {
       debugPrint('WidgetService: initWidgetIfNeeded failed: $e');
     }
   }
 
   /// Wipe widget data on logout so the next user never briefly sees the
-  /// previous account's digest on their home screen.
+  /// previous account's articles on their home screen.
   static Future<void> clear() async {
     try {
       await HomeWidget.saveWidgetData('articles_json', '[]');
       await HomeWidget.saveWidgetData('feed_articles_json', '[]');
+      await HomeWidget.saveWidgetData('widget_articles_json', '[]');
       await HomeWidget.saveWidgetData('articles_updated_at', '0');
       await HomeWidget.saveWidgetData('digest_status', 'none');
       await HomeWidget.saveWidgetData('digest_progress', '0/0');
       await HomeWidget.saveWidgetData('streak', '0');
-      await HomeWidget.saveWidgetData('widget_mode', 'essentiel');
-      await HomeWidget.updateWidget(androidName: _androidName);
+      await HomeWidget.updateWidget(androidName: _androidNameLight);
+      await HomeWidget.updateWidget(androidName: _androidNameDark);
     } catch (e) {
       debugPrint('WidgetService: clear failed: $e');
     }
   }
 
-  /// Request Android to pin the widget to the home screen.
+  /// Request Android to pin one of the two widgets to the home screen. We pin
+  /// the Clair variant by default — the user can later swap it with Sombre
+  /// from the launcher if they prefer.
   static Future<void> requestPinWidget() async {
     try {
-      await HomeWidget.requestPinWidget(androidName: _androidName);
+      await HomeWidget.requestPinWidget(androidName: _androidNameLight);
     } catch (e) {
       debugPrint('WidgetService: requestPinWidget failed: $e');
     }
   }
 
   // ──────────────────────────────────────────────────────────────
-  // Article serialization
+  // Merge — Essentiel-then-Flux, deduped, capped.
+  // ──────────────────────────────────────────────────────────────
+
+  /// Combine Essentiel and Flux entries in order, dedup by `id`, cap at the
+  /// total ceiling and tag every entry with its `source_kind`. Pure function —
+  /// exposed for unit tests.
+  @visibleForTesting
+  static List<Map<String, dynamic>> mergeForWidget(
+    List<Map<String, dynamic>> essentiel,
+    List<Map<String, dynamic>> flux,
+  ) {
+    final result = <Map<String, dynamic>>[];
+    final seenIds = <String>{};
+    for (final e in essentiel) {
+      final id = (e['id'] as String?) ?? '';
+      if (id.isEmpty || seenIds.contains(id)) continue;
+      seenIds.add(id);
+      result.add({...e, 'source_kind': 'essentiel'});
+      if (result.length >= _maxTotal) return result;
+    }
+    for (final f in flux) {
+      final id = (f['id'] as String?) ?? '';
+      if (id.isEmpty || seenIds.contains(id)) continue;
+      seenIds.add(id);
+      result.add({...f, 'source_kind': 'flux'});
+      if (result.length >= _maxTotal) return result;
+    }
+    return result;
+  }
+
+  static Future<void> _rewriteMergedPayload() async {
+    final essentielJson =
+        await HomeWidget.getWidgetData<String>('articles_json') ?? '[]';
+    final fluxJson =
+        await HomeWidget.getWidgetData<String>('feed_articles_json') ?? '[]';
+    final essentiel = _decodeList(essentielJson);
+    final flux = _decodeList(fluxJson);
+    final merged = mergeForWidget(essentiel, flux);
+    await HomeWidget.saveWidgetData(
+      'widget_articles_json',
+      jsonEncode(merged),
+    );
+  }
+
+  static List<Map<String, dynamic>> _decodeList(String raw) {
+    if (raw.isEmpty || raw == '[]') return const [];
+    try {
+      final parsed = jsonDecode(raw);
+      if (parsed is! List) return const [];
+      return parsed
+          .whereType<Map<String, dynamic>>()
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList(growable: false);
+    } catch (e) {
+      debugPrint('WidgetService: _decodeList failed: $e');
+      return const [];
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Essentiel serialization
   // ──────────────────────────────────────────────────────────────
 
   /// Build the list of widget articles (max 5) from a digest response.
@@ -133,7 +228,7 @@ class WidgetService {
   ///  - Iterate topics in rank order, take 1 article per topic
   ///  - Prefer a followed-source article when available
   ///  - Topic 1 article gets `is_main = true` (drives "À la Une" badge)
-  static Future<List<Map<String, dynamic>>> _buildArticleList(
+  static Future<List<Map<String, dynamic>>> _buildEssentielList(
     DigestResponse? digest,
   ) async {
     if (digest == null || digest.topics.isEmpty) return const [];
@@ -141,7 +236,7 @@ class WidgetService {
     final result = <Map<String, dynamic>>[];
     var rank = 1;
     for (final topic in digest.topics) {
-      if (result.length >= _maxArticles) break;
+      if (result.length >= _maxEssentiel) break;
       if (topic.articles.isEmpty) continue;
       final article = _pickSingleton(topic);
       if (article.isDismissed) continue;
@@ -194,13 +289,12 @@ class WidgetService {
   }
 
   // ──────────────────────────────────────────────────────────────
-  // Feed (Flux) serialization
+  // Flux serialization
   // ──────────────────────────────────────────────────────────────
 
   /// Build the Flux article list (max 80) from the current feed state.
-  /// Thumbnails are off in Flux (cf. widget.5) — payload stays tiny so 80
-  /// rows fit well under Binder's ~1 MB IPC ceiling. Only the source logo
-  /// (much smaller) is still inlined.
+  /// Thumbnails are off in Flux (cf. widget.5) — only the source logo (much
+  /// smaller) is still inlined.
   static Future<List<Map<String, dynamic>>> _buildFeedArticleList(
     List<Content> items,
   ) async {
@@ -243,12 +337,14 @@ class WidgetService {
   // Flux scroll metric (widget → app, flushed on foreground)
   // ──────────────────────────────────────────────────────────────
 
-  /// Read the Flux scroll metric written by the native RemoteViewsFactory and
+  /// Read the scroll metric written by the native RemoteViewsFactory and
   /// clear it. Returns `null` when no session is pending (`-1` sentinel).
   ///
   /// Called by the app on cold start + each `AppLifecycleState.resumed` so the
   /// scroll session that ended while the app was in background is logged
-  /// exactly once. The clear-on-read makes it idempotent.
+  /// exactly once. The clear-on-read makes it idempotent. The PostHog event
+  /// keeps its `widget_flux_*` keys for funnel continuity, even though the
+  /// session now spans the unified feed (Essentiel + Flux).
   static Future<({int maxPosition, int totalCount, DateTime? at})?>
       readAndClearFluxScrollMetric() async {
     try {

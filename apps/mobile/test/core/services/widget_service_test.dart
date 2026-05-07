@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:facteur/config/topic_labels.dart';
+import 'package:facteur/core/services/widget_service.dart';
 import 'package:facteur/features/digest/models/digest_models.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
@@ -123,6 +124,75 @@ void main() {
       expect(first['source_name'], 'Le Monde');
       expect((first['published_at_iso'] as String).endsWith('Z'), isTrue);
       expect(first['perspective_count'], 0);
+    });
+  });
+
+  group('Merge — Essentiel-then-Flux unified payload', () {
+    Map<String, dynamic> entry(String id, {int rank = 1, bool isMain = false}) {
+      return {
+        'id': id,
+        'rank': rank,
+        'topic_id': 't',
+        'topic_label': 'Topic',
+        'is_main': isMain,
+        'title': 'Title $id',
+        'source_name': 'Source',
+        'source_logo_path': '',
+        'thumbnail_path': '',
+        'perspective_count': 0,
+        'published_at_iso': '',
+      };
+    }
+
+    test('Essentiel comes first, then Flux', () {
+      final merged = WidgetService.mergeForWidget(
+        [entry('e1'), entry('e2')],
+        [entry('f1'), entry('f2')],
+      );
+      expect(merged.map((e) => e['id']), ['e1', 'e2', 'f1', 'f2']);
+    });
+
+    test('every entry carries source_kind', () {
+      final merged = WidgetService.mergeForWidget(
+        [entry('e1')],
+        [entry('f1')],
+      );
+      expect(merged[0]['source_kind'], 'essentiel');
+      expect(merged[1]['source_kind'], 'flux');
+    });
+
+    test('Flux entries duplicating an Essentiel id are dropped', () {
+      final merged = WidgetService.mergeForWidget(
+        [entry('shared'), entry('e2')],
+        [entry('shared'), entry('f2')],
+      );
+      // shared appears only once, tagged as essentiel, then e2, then f2.
+      expect(merged.map((e) => e['id']), ['shared', 'e2', 'f2']);
+      expect(merged.first['source_kind'], 'essentiel');
+    });
+
+    test('total cap at 80, Essentiel always wins on collision', () {
+      final essentiel =
+          List.generate(5, (i) => entry('e$i', rank: i + 1, isMain: i == 0));
+      final flux = List.generate(120, (i) => entry('f$i', rank: i + 1));
+      final merged = WidgetService.mergeForWidget(essentiel, flux);
+      expect(merged.length, 80);
+      expect(merged.first['id'], 'e0');
+      expect(merged.first['source_kind'], 'essentiel');
+      expect(merged[5]['id'], 'f0');
+      expect(merged[5]['source_kind'], 'flux');
+    });
+
+    test('empty inputs yield empty output', () {
+      expect(WidgetService.mergeForWidget(const [], const []), isEmpty);
+    });
+
+    test('entries with empty id are skipped', () {
+      final merged = WidgetService.mergeForWidget(
+        [entry(''), entry('e1')],
+        [entry(''), entry('f1')],
+      );
+      expect(merged.map((e) => e['id']), ['e1', 'f1']);
     });
   });
 }

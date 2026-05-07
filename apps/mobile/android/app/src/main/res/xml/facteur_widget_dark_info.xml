@@ -8,7 +8,7 @@
     android:maxResizeHeight="500dp"
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="1800000"
-    android:previewLayout="@layout/facteur_widget"
-    android:description="@string/widget_description"
+    android:previewLayout="@layout/facteur_widget_dark"
+    android:description="@string/widget_description_dark"
     android:widgetCategory="home_screen"
-    android:initialLayout="@layout/facteur_widget" />
+    android:initialLayout="@layout/facteur_widget_dark" />

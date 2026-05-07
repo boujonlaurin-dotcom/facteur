@@ -2,13 +2,23 @@
 <resources>
     <color name="ic_launcher_background">#E07A5F</color>
 
-    <!-- Facteur palette (widget) -->
-    <color name="facteur_background">#FDFBF7</color>
-    <color name="facteur_card">#FFFFFF</color>
-    <color name="facteur_text_primary">#2C2A29</color>
-    <color name="facteur_text_secondary">#5D5B5A</color>
-    <color name="facteur_text_tertiary">#959392</color>
-    <color name="facteur_accent">#D35400</color>
-    <color name="facteur_border">#E5E1D9</color>
-    <color name="facteur_a_la_une_bg">#D35400</color>
+    <!-- Facteur palette (widget) — Clair (parchemin) -->
+    <color name="facteur_background_light">#F2E8D5</color>
+    <color name="facteur_card_light">#FDFBF7</color>
+    <color name="facteur_text_primary_light">#2C2A29</color>
+    <color name="facteur_text_secondary_light">#5D5B5A</color>
+    <color name="facteur_text_tertiary_light">#959392</color>
+    <color name="facteur_accent_light">#D35400</color>
+    <color name="facteur_border_light">#1F2C2A29</color>
+    <color name="facteur_a_la_une_bg_light">#1FD35400</color>
+
+    <!-- Facteur palette (widget) — Sombre (charbon) -->
+    <color name="facteur_background_dark">#1C1C1C</color>
+    <color name="facteur_card_dark">#242424</color>
+    <color name="facteur_text_primary_dark">#EAEAEA</color>
+    <color name="facteur_text_secondary_dark">#A6A6A6</color>
+    <color name="facteur_text_tertiary_dark">#707070</color>
+    <color name="facteur_accent_dark">#E07A4D</color>
+    <color name="facteur_border_dark">#12FFFFFF</color>
+    <color name="facteur_a_la_une_bg_dark">#26E07A4D</color>
 </resources>

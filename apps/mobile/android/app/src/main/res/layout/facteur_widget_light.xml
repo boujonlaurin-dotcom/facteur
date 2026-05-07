@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Facteur widget — variante CLAIR (parchemin).
+     Le clic sur le masthead ouvre le flux dans l'app.
+     La liste enchaîne Essentiel (≤5) puis Flux dédupliqués (≤80 total). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_root_bg_light"
+    android:padding="16dp">
+
+    <!-- Masthead : pastille F + wordmark "Facteur" — meta (n articles · 7h02) -->
+    <LinearLayout
+        android:id="@+id/widget_masthead"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/masthead_mark"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:background="@drawable/widget_masthead_mark_light"
+            android:text="F"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:gravity="center" />
+
+        <TextView
+            android:id="@+id/masthead_wordmark"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="7dp"
+            android:text="Facteur"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:textColor="@color/facteur_text_primary_light" />
+
+        <!-- Spacer flexible (Space n'est pas RemoteViews-safe sur certains launchers). -->
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/masthead_meta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="11sp"
+            android:textAllCaps="true"
+            android:letterSpacing="0.06"
+            android:textColor="@color/facteur_text_tertiary_light"
+            android:maxLines="1" />
+    </LinearLayout>
+
+    <!-- Liste scrollable — bound to FacteurWidgetService via setRemoteAdapter. -->
+    <ListView
+        android:id="@+id/articles_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@null"
+        android:dividerHeight="0dp"
+        android:scrollbars="none" />
+
+    <TextView
+        android:id="@+id/empty_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:padding="16dp"
+        android:textSize="13sp"
+        android:textColor="@color/facteur_text_secondary_light"
+        android:visibility="gone"
+        android:text="Ouvre Facteur pour charger ton actualité" />
+</LinearLayout>

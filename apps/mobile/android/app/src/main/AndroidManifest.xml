@@ -48,14 +48,32 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- Home Screen Widget -->
-        <receiver android:name=".FacteurWidget" android:exported="true">
+        <!-- Home Screen Widget — deux variantes côte à côte dans le sélecteur
+             du launcher (Clair / Sombre). Choix figé à la pose par
+             l'utilisateur ; pas de suivi du thème système. Les deux receivers
+             pointent vers le même FacteurWidgetService (le thème est passé
+             via EXTRA_THEME dans l'adapter intent). -->
+        <receiver
+            android:name=".FacteurWidgetLight"
+            android:exported="true"
+            android:label="@string/widget_label_light">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/facteur_widget_info" />
+                android:resource="@xml/facteur_widget_light_info" />
+        </receiver>
+        <receiver
+            android:name=".FacteurWidgetDark"
+            android:exported="true"
+            android:label="@string/widget_label_dark">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/facteur_widget_dark_info" />
         </receiver>
         <service
             android:name=".FacteurWidgetService"

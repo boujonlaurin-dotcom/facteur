@@ -10,23 +10,25 @@ import android.widget.RemoteViewsService
 import es.antonborri.home_widget.HomeWidgetPlugin
 
 /**
- * RemoteViewsService backing the home-screen widget's scrollable article list.
+ * RemoteViewsService backing the unified Facteur widget feed.
  *
- * Reads either `articles_json` (Essentiel) or `feed_articles_json` (Flux) from
- * the SharedPreferences shared with Flutter via `home_widget`, depending on
- * the `widget_mode` extra passed by [FacteurWidget] in the adapter intent.
+ * Reads `widget_articles_json` (the Essentiel-then-Flux merged payload, capped
+ * at [WidgetRendering.MAX_ROWS]) from the SharedPreferences shared with Flutter
+ * via `home_widget`. The `EXTRA_THEME` extra picks between the Clair / Sombre
+ * row layouts; deeplink target per row is decided from the `source_kind` field
+ * on the article (Essentiel → digest reader, Flux → feed reader).
  */
 class FacteurWidgetService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory {
-        val mode = intent.getStringExtra(FacteurWidget.EXTRA_MODE)
-            ?: FacteurWidget.MODE_ESSENTIEL
-        return FacteurRemoteViewsFactory(applicationContext, mode)
+        val theme = intent.getStringExtra(FacteurWidget.EXTRA_THEME)
+            ?: FacteurWidget.THEME_LIGHT
+        return FacteurRemoteViewsFactory(applicationContext, theme)
     }
 }
 
 private class FacteurRemoteViewsFactory(
     private val context: Context,
-    private val mode: String,
+    private val theme: String,
 ) : RemoteViewsService.RemoteViewsFactory {
 
     private companion object {
@@ -36,12 +38,17 @@ private class FacteurRemoteViewsFactory(
         const val PREF_AT = "widget_flux_max_scroll_at"
     }
 
+    private val rowLayoutId: Int = if (theme == FacteurWidget.THEME_DARK) {
+        R.layout.widget_article_row_dark
+    } else {
+        R.layout.widget_article_row_light
+    }
+
     private var articles: List<WidgetRendering.Article> = emptyList()
 
     // Highest row index seen by getViewAt during the current view session.
     // Reset to -1 after each flush. Flushed in onDataSetChanged (start of a
-    // new session) and onDestroy (factory torn down). Tracked only in Flux
-    // mode — Essentiel is 5 rows tall and not the surface we're measuring.
+    // new session) and onDestroy (factory torn down).
     private var maxPositionSeen: Int = -1
 
     override fun onCreate() {
@@ -53,14 +60,9 @@ private class FacteurRemoteViewsFactory(
         flushScrollMetricIfNeeded()
 
         val prefs = HomeWidgetPlugin.getData(context)
-        val (jsonKey, maxRows) = if (mode == FacteurWidget.MODE_FLUX) {
-            "feed_articles_json" to WidgetRendering.MAX_ROWS_FLUX
-        } else {
-            "articles_json" to WidgetRendering.MAX_ROWS_ESSENTIEL
-        }
-        val json = prefs?.getString(jsonKey, null)
-        articles = WidgetRendering.parseArticles(json, maxRows)
-        Log.d(TAG, "onDataSetChanged mode=$mode count=${articles.size}")
+        val json = prefs?.getString(FacteurWidget.PAYLOAD_KEY, null)
+        articles = WidgetRendering.parseArticles(json)
+        Log.d(TAG, "onDataSetChanged theme=$theme count=${articles.size}")
     }
 
     override fun onDestroy() {
@@ -72,18 +74,19 @@ private class FacteurRemoteViewsFactory(
 
     override fun getViewAt(position: Int): RemoteViews {
         val article = articles.getOrNull(position) ?: return loadingRow()
-        if (mode == FacteurWidget.MODE_FLUX && position > maxPositionSeen) {
+        if (position > maxPositionSeen) {
             maxPositionSeen = position
         }
-        val rv = RemoteViews(context.packageName, R.layout.widget_article_row)
+        val rv = RemoteViews(context.packageName, rowLayoutId)
 
+        // Topic line: Essentiel keeps the rank prefix ("1 — Climat") as a
+        // positional cue inside the daily 5; Flux drops it to feel like a
+        // continuous scroll.
         val topicSegment = article.topicLabel.ifBlank { "Actu" }
-        // Flux drops the rank prefix ("1 — Topic") to feel less like a digest;
-        // Essentiel keeps it as a positional cue inside the daily 5.
-        val topicLine = if (mode == FacteurWidget.MODE_FLUX) {
-            topicSegment
-        } else {
+        val topicLine = if (article.sourceKind == WidgetRendering.SOURCE_KIND_ESSENTIEL) {
             "${article.rank} — $topicSegment"
+        } else {
+            topicSegment
         }
         rv.setTextViewText(R.id.row_topic, topicLine)
         rv.setViewVisibility(
@@ -92,10 +95,9 @@ private class FacteurRemoteViewsFactory(
         )
         rv.setTextViewText(R.id.row_title, article.title)
 
-        // Flux is image-less — skip the bitmap decode entirely (perf + payload).
-        if (mode == FacteurWidget.MODE_FLUX) {
-            rv.setViewVisibility(R.id.row_thumbnail, View.GONE)
-        } else {
+        // Thumbnails: only Essentiel articles carry one (Flux is image-less
+        // to keep the merged payload under the Binder ceiling at MAX_ROWS=80).
+        if (article.sourceKind == WidgetRendering.SOURCE_KIND_ESSENTIEL) {
             val thumb = WidgetRendering.loadBitmap(context, article.thumbnailPath, 72)?.let {
                 WidgetRendering.roundCorners(context, it, 8f)
             }
@@ -105,6 +107,8 @@ private class FacteurRemoteViewsFactory(
             } else {
                 rv.setViewVisibility(R.id.row_thumbnail, View.GONE)
             }
+        } else {
+            rv.setViewVisibility(R.id.row_thumbnail, View.GONE)
         }
 
         val logo = WidgetRendering.loadBitmap(context, article.sourceLogoPath, 18)
@@ -127,12 +131,13 @@ private class FacteurRemoteViewsFactory(
 
         // Per-row tap → fillInIntent merged into the template PendingIntent
         // declared by FacteurWidget.onUpdate (setPendingIntentTemplate).
-        // Deep link host depends on the mode: Essentiel routes through the
-        // digest article reader; Flux through the feed reader.
-        val baseUri = if (mode == FacteurWidget.MODE_FLUX) {
-            Uri.parse("io.supabase.facteur://feed/content/${article.id}")
-        } else {
+        // Deep link host depends on the source_kind:
+        //  - Essentiel → digest reader (digest/<id>)
+        //  - Flux      → feed reader   (feed/content/<id>)
+        val baseUri = if (article.sourceKind == WidgetRendering.SOURCE_KIND_ESSENTIEL) {
             Uri.parse("io.supabase.facteur://digest/${article.id}")
+        } else {
+            Uri.parse("io.supabase.facteur://feed/content/${article.id}")
         }
         val fillIn = Intent().apply {
             data = baseUri.buildUpon()
@@ -155,7 +160,7 @@ private class FacteurRemoteViewsFactory(
     override fun hasStableIds(): Boolean = true
 
     private fun loadingRow(): RemoteViews =
-        RemoteViews(context.packageName, R.layout.widget_article_row)
+        RemoteViews(context.packageName, rowLayoutId)
 
     /**
      * Persist the max scroll position observed during the current view session
@@ -165,10 +170,10 @@ private class FacteurRemoteViewsFactory(
      * session isn't overwritten by a later session that scrolled less.
      *
      * Single batched write per session (start + end of factory life) — never
-     * per-row — to keep getViewAt jank-free.
+     * per-row — to keep getViewAt jank-free. The PREF_* keys keep their
+     * historic `widget_flux_*` prefix for funnel continuity in PostHog.
      */
     private fun flushScrollMetricIfNeeded() {
-        if (mode != FacteurWidget.MODE_FLUX) return
         if (maxPositionSeen < 0) return
         val total = articles.size
         if (total <= 0) {
