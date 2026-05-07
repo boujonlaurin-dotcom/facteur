@@ -40,6 +40,7 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
   final String? selectedEntitySlug;
   final void Function(FavoriteTabKind kind, String? slug) onTabTap;
   final VoidCallback onTapActiveTab;
+  final VoidCallback onTapActiveTabRefresh;
   final VoidCallback onAddFavorite;
 
   const FavoriteTopicTabs({
@@ -51,6 +52,7 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
     this.selectedEntitySlug,
     required this.onTabTap,
     required this.onTapActiveTab,
+    required this.onTapActiveTabRefresh,
     required this.onAddFavorite,
   });
 
@@ -159,7 +161,11 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
               colors: colors,
               onTap: () {
                 if (tab.active) {
-                  widget.onTapActiveTab();
+                  if (tab.count >= 3) {
+                    widget.onTapActiveTabRefresh();
+                  } else {
+                    widget.onTapActiveTab();
+                  }
                 } else {
                   HapticFeedback.selectionClick();
                   widget.onTabTap(tab.kind, tab.slug);
@@ -359,8 +365,7 @@ class _FavoriteTabItem extends StatelessWidget {
     final labelColor =
         tab.active ? colors.textPrimary : colors.textSecondary;
     final labelWeight = tab.active ? FontWeight.w700 : FontWeight.w500;
-    final countColor =
-        tab.active ? colors.primary : colors.textTertiary;
+    final showBadge = tab.count >= 3;
     final showLabel =
         tab.emoji.isNotEmpty ? '${tab.emoji} ${tab.label}' : tab.label;
 
@@ -399,19 +404,28 @@ class _FavoriteTabItem extends StatelessWidget {
                 ],
               ),
             ),
-            if (tab.count > 0) ...[
-              const SizedBox(width: 4),
+            if (showBadge) ...[
+              const SizedBox(width: 6),
               Transform.translate(
                 offset: const Offset(0, -6),
-                child: Text(
-                  tab.count > 10 ? '10+' : '${tab.count}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: countColor,
-                    height: 1.0,
-                  ),
-                ),
+                child: tab.active
+                    ? Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: colors.primary,
+                        ),
+                      )
+                    : Text(
+                        tab.count > 10 ? '10+' : '${tab.count}',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: colors.textTertiary,
+                          height: 1.0,
+                        ),
+                      ),
               ),
             ],
           ],
