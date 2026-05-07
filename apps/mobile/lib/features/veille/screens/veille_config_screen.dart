@@ -119,12 +119,13 @@ class VeilleConfigScreen extends ConsumerWidget {
         }
       } on VeilleApiException catch (e) {
         if (!context.mounted) return;
+        // 422 = validation backend (ex: source_selections vide). Ne pas
+        // suggérer de "réessayer" — c'est un problème de saisie utilisateur.
+        final message = e.statusCode == 422
+            ? 'Sélectionne au moins une source pour ta veille.'
+            : 'Impossible d\'enregistrer ta veille (${e.statusCode ?? '?'}). Réessaie.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Impossible d\'enregistrer ta veille (${e.statusCode ?? '?'}). Réessaie.',
-            ),
-          ),
+          SnackBar(content: Text(message)),
         );
       } catch (_) {
         if (!context.mounted) return;

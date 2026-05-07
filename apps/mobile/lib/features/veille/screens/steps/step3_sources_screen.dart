@@ -4,7 +4,6 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../../../sources/models/smart_search_result.dart';
-import '../../data/veille_mock_data.dart';
 import '../../models/veille_config.dart';
 import '../../models/veille_suggestion.dart';
 import '../../providers/veille_config_provider.dart';
@@ -57,6 +56,15 @@ class Step3SourcesScreen extends ConsumerWidget {
       );
     }
 
+    final hasRealSource = state.realSelectedSourceCount > 0;
+
+    void retrySuggestions() {
+      if (params == null) return;
+      ref
+          .read(veilleSourceSuggestionsProvider(params).notifier)
+          .refreshKeepingChecked(state.selectedSourceIds);
+    }
+
     return Column(
       children: [
         VeilleStepHeader(
@@ -88,39 +96,40 @@ class Step3SourcesScreen extends ConsumerWidget {
                     padding: EdgeInsets.symmetric(vertical: 24),
                     child: Center(child: CircularProgressIndicator()),
                   ),
-                  error: (_, __) => _MockSourcesFallback(
-                    state: state,
-                    notifier: notifier,
-                    onRetry: params == null
-                        ? null
-                        : () => ref
-                            .read(veilleSourceSuggestionsProvider(params)
-                                .notifier)
-                            .refreshKeepingChecked(state.selectedSourceIds),
+                  error: (_, __) => _SuggestionsUnavailable(
+                    onRetry: params == null ? null : retrySuggestions,
                   ),
-                  data: (resp) => _ApiSourceList(
-                    resp: resp,
-                    state: state,
-                    notifier: notifier,
-                  ),
+                  data: (resp) => resp.sources.isEmpty
+                      ? _SuggestionsUnavailable(
+                          onRetry: params == null ? null : retrySuggestions,
+                        )
+                      : _ApiSourceList(
+                          resp: resp,
+                          state: state,
+                          notifier: notifier,
+                        ),
                 ),
                 const SizedBox(height: 16),
                 GhostLink(
                   label: 'Proposer plus de sources',
                   icon: PhosphorIcons.arrowsClockwise(),
                   onTap: () {
-                    if (params != null) {
-                      ref
-                          .read(
-                              veilleSourceSuggestionsProvider(params).notifier)
-                          .refreshKeepingChecked(state.selectedSourceIds);
-                    }
+                    if (params != null) retrySuggestions();
                   },
                 ),
                 const SizedBox(height: 12),
                 _AddSourceButton(
                   onTap: () => _openAddSheet(context, ref, notifier),
                 ),
+                if (!hasRealSource) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Sélectionne au moins une source pour continuer.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFF8B7E63),
+                        ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -133,7 +142,7 @@ class Step3SourcesScreen extends ConsumerWidget {
           child: VeilleCtaButton(
             label: 'Continuer',
             trailingIcon: PhosphorIcons.arrowRight(),
-            onPressed: notifier.goNext,
+            onPressed: hasRealSource ? notifier.goNext : null,
           ),
         ),
       ],
@@ -179,9 +188,6 @@ class _ApiSourceList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (resp.sources.isEmpty) {
-      return _MockSourcesFallback(state: state, notifier: notifier);
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -218,59 +224,56 @@ class _ApiSourceList extends StatelessWidget {
   }
 }
 
-class _MockSourcesFallback extends StatelessWidget {
-  final VeilleConfigState state;
-  final VeilleConfigNotifier notifier;
+/// Affiché quand l'API `/suggestions/sources` est en erreur ou retourne `[]`.
+/// Plus aucune liste mock cliquable (les mocks n'avaient pas d'`apiSourceId`
+/// et étaient systématiquement jetés au submit — piège UX).
+class _SuggestionsUnavailable extends StatelessWidget {
   final VoidCallback? onRetry;
-  const _MockSourcesFallback({
-    required this.state,
-    required this.notifier,
-    this.onRetry,
-  });
+  const _SuggestionsUnavailable({this.onRetry});
 
   @override
   Widget build(BuildContext context) {
-    final allMockSources = [
-      ...VeilleMockData.followedSources,
-      ...VeilleMockData.nicheSources,
-    ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Suggestions indisponibles, conserve ta sélection.',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF8B7E63)),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8EA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: FacteurColors.veilleLine),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'On n\'a pas pu charger les suggestions.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF2A2419),
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Réessaie ou ajoute une source manuellement.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: const Color(0xFF8B7E63),
+                ),
+          ),
+          if (onRetry != null) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: onRetry,
+                icon: Icon(PhosphorIcons.arrowClockwise(), size: 16),
+                label: const Text('Réessayer'),
+                style: TextButton.styleFrom(
+                  foregroundColor: FacteurColors.veille,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
               ),
-              if (onRetry != null)
-                TextButton.icon(
-                  onPressed: onRetry,
-                  icon: Icon(PhosphorIcons.arrowClockwise(), size: 16),
-                  label: const Text('Réessayer'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF8B7E63),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        for (int i = 0; i < allMockSources.length; i++) ...[
-          if (i > 0) const SizedBox(height: 6),
-          VeilleSourceCard(
-            source: allMockSources[i],
-            inVeille: state.selectedSourceIds.contains(allMockSources[i].id),
-            isAlreadyFollowed:
-                VeilleMockData.followedSources.contains(allMockSources[i]),
-            onToggle: () => notifier.toggleSource(allMockSources[i].id),
-          ),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

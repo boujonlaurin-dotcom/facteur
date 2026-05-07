@@ -8,7 +8,10 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import get_settings
 from app.jobs.digest_generation_job import run_digest_generation
-from app.jobs.veille_generation_job import run_veille_generation
+from app.jobs.veille_generation_job import (
+    cleanup_stuck_running_deliveries,
+    run_veille_generation,
+)
 from app.workers.rss_sync import sync_all_sources
 from app.workers.storage_cleanup import cleanup_old_articles
 from app.workers.top3_job import generate_daily_top3_job
@@ -239,6 +242,18 @@ def start_scheduler() -> None:
         max_instances=1,
     )
 
+    # Filet final : passe FAILED toute row veille_deliveries restée RUNNING
+    # > 15 min — couvre les SIGKILL/OOM Railway que ni le retry router ni le
+    # watchdog `_phase1_mark_running` ne reprennent (config plus `due`).
+    scheduler.add_job(
+        cleanup_stuck_running_deliveries,
+        trigger=IntervalTrigger(minutes=5),
+        id="veille_stuck_cleanup",
+        name="Veille stuck-running cleanup (>15 min)",
+        replace_existing=True,
+        max_instances=1,
+    )
+
     scheduler.start()
     logger.info(
         "Scheduler started",
@@ -250,6 +265,7 @@ def start_scheduler() -> None:
             "storage_cleanup",
             "zombie_session_sweeper",
             "veille_generation",
+            "veille_stuck_cleanup",
         ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,
         digest_cron="06:00 Europe/Paris",

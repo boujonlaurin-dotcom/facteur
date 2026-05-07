@@ -6,7 +6,7 @@ qui yield la `db_session` du fixture pour persister sur la base de test.
 """
 
 from contextlib import asynccontextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
@@ -15,6 +15,7 @@ import pytest_asyncio
 from sqlalchemy import select
 
 from app.jobs.veille_generation_job import (
+    cleanup_stuck_running_deliveries,
     run_veille_generation,
     run_veille_generation_for_config,
 )
@@ -182,3 +183,58 @@ class TestRunVeilleGenerationScanner:
 
         with patch("app.jobs.veille_generation_job.safe_async_session", _fake_session):
             await run_veille_generation(target_date=date(2026, 5, 4))
+
+
+class TestCleanupStuckRunning:
+    """C1 — filet final qui FAIL les rows RUNNING > 15 min."""
+
+    async def test_marks_old_running_rows_as_failed(self, db_session, active_config):
+        # Row stuck depuis 30 min — doit être nettoyée.
+        stuck = VeilleDelivery(
+            id=uuid4(),
+            veille_config_id=active_config.id,
+            target_date=date(2026, 5, 4),
+            generation_state=VeilleGenerationState.RUNNING,
+            attempts=1,
+            started_at=datetime.now(UTC) - timedelta(minutes=30),
+        )
+        db_session.add(stuck)
+        await db_session.commit()
+
+        @asynccontextmanager
+        async def _fake_session():
+            yield db_session
+
+        with patch("app.jobs.veille_generation_job.safe_async_session", _fake_session):
+            fixed = await cleanup_stuck_running_deliveries()
+
+        assert fixed == 1
+        await db_session.refresh(stuck)
+        assert stuck.generation_state == VeilleGenerationState.FAILED
+        assert stuck.last_error is not None
+        assert "watchdog_cleanup" in stuck.last_error
+        assert stuck.finished_at is not None
+
+    async def test_leaves_recent_running_rows_alone(self, db_session, active_config):
+        # Row RUNNING depuis 2 min — sous le seuil, ne doit pas être touchée.
+        recent = VeilleDelivery(
+            id=uuid4(),
+            veille_config_id=active_config.id,
+            target_date=date(2026, 5, 4),
+            generation_state=VeilleGenerationState.RUNNING,
+            attempts=1,
+            started_at=datetime.now(UTC) - timedelta(minutes=2),
+        )
+        db_session.add(recent)
+        await db_session.commit()
+
+        @asynccontextmanager
+        async def _fake_session():
+            yield db_session
+
+        with patch("app.jobs.veille_generation_job.safe_async_session", _fake_session):
+            fixed = await cleanup_stuck_running_deliveries()
+
+        assert fixed == 0
+        await db_session.refresh(recent)
+        assert recent.generation_state == VeilleGenerationState.RUNNING

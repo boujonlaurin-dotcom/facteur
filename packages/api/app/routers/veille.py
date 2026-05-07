@@ -321,6 +321,15 @@ async def upsert_config(
             )
         )
 
+    # Filet final : Pydantic `min_length=1` couvre le payload, ce check couvre
+    # le cas où toutes les selections collapsent au même source_id après dedup.
+    if not seen_source_ids:
+        await db.rollback()
+        raise HTTPException(
+            status_code=422,
+            detail="Sélectionne au moins une source pour ta veille.",
+        )
+
     cfg.next_scheduled_at = compute_next_scheduled_at(
         frequency=cfg.frequency,
         day_of_week=cfg.day_of_week,
@@ -332,6 +341,27 @@ async def upsert_config(
 
     await db.commit()
     await db.refresh(cfg)
+
+    # Métrique produit : on veut voir 0% de submits avec source_count=0 une
+    # fois A1 déployé. Si la métrique remonte > 0, c'est qu'un client envoie
+    # un payload qui contourne la validation Pydantic (ne devrait pas arriver).
+    try:
+        from app.services.posthog_client import get_posthog_client
+
+        get_posthog_client().capture(
+            user_id=user_uuid,
+            event="veille_config_submitted",
+            properties={
+                "source_count": len(seen_source_ids),
+                "topic_count": len(body.topics),
+                "frequency": body.frequency,
+                "theme_id": body.theme_id,
+                "preset_id": body.preset_id,
+            },
+        )
+    except Exception:  # noqa: BLE001 — métrique fire-and-forget
+        logger.warning("veille.posthog_capture_failed", exc_info=True)
+
     return await _hydrate_response(db, cfg)
 
 

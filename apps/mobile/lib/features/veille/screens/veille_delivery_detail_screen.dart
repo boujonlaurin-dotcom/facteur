@@ -100,7 +100,7 @@ class _DeliveryBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (delivery.generationState == VeilleGenerationState.failed) {
-      return _DeliveryFailedView(lastError: delivery.lastError);
+      return const _DeliveryFailedView();
     }
     if (delivery.generationState == VeilleGenerationState.running ||
         delivery.generationState == VeilleGenerationState.pending) {
@@ -147,8 +147,7 @@ class _DeliveryPendingView extends StatelessWidget {
 }
 
 class _DeliveryFailedView extends StatelessWidget {
-  final String? lastError;
-  const _DeliveryFailedView({this.lastError});
+  const _DeliveryFailedView();
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -181,16 +180,6 @@ class _DeliveryFailedView extends StatelessWidget {
                 color: const Color(0xFF8B7E63),
               ),
             ),
-            if (lastError != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                lastError!,
-                style: GoogleFonts.dmSans(
-                  fontSize: 11,
-                  color: const Color(0xFFAFA38B),
-                ),
-              ),
-            ],
           ],
         ),
       ),

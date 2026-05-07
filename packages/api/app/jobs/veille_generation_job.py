@@ -41,6 +41,11 @@ _BUILDER_TIMEOUT_SECONDS = 300
 # tracer la reprise — la row sera reset à RUNNING avec attempts++ via le
 # on_conflict_do_update existant.
 _STUCK_RUNNING_THRESHOLD_SECONDS = 600
+# Filet final (job */5min) : si une row reste RUNNING > 15 min sans transition
+# FAILED, c'est qu'aucun re-scan ne la touchera (le scanner ne reprend que les
+# configs `due`, et le watchdog `_phase1_mark_running` ne fire que si elle est
+# rescannée). On la marque FAILED + Sentry pour qu'elle disparaisse de l'UI.
+_STUCK_CLEANUP_THRESHOLD_SECONDS = 900
 
 
 async def run_veille_generation(target_date: date | None = None) -> None:
@@ -171,6 +176,69 @@ async def _mark_scanner_delivery_failed(
         error_class=error_class,
         error_msg=str(exc)[:480],
     )
+
+
+async def cleanup_stuck_running_deliveries() -> int:
+    """Filet final : marque FAILED toute row RUNNING > 15 min.
+
+    Couvre le cas worker SIGKILL/OOM Railway où ni le retry router (PR #561)
+    ni le watchdog `_phase1_mark_running` (PR #577) ne reprennent la row
+    parce qu'elle n'est plus jamais rescannée (config plus `due`). Tourne
+    toutes les 5 min via le scheduler.
+    """
+    threshold = datetime.now(UTC).timestamp() - _STUCK_CLEANUP_THRESHOLD_SECONDS
+    cutoff = datetime.fromtimestamp(threshold, tz=UTC)
+    fixed = 0
+    try:
+        async with safe_async_session() as s:
+            stuck_rows = (
+                (
+                    await s.execute(
+                        select(VeilleDelivery).where(
+                            VeilleDelivery.generation_state
+                            == VeilleGenerationState.RUNNING.value,
+                            VeilleDelivery.started_at.is_not(None),
+                            VeilleDelivery.started_at < cutoff,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in stuck_rows:
+                stuck_seconds = (
+                    int((datetime.now(UTC) - row.started_at).total_seconds())
+                    if row.started_at is not None
+                    else -1
+                )
+                row.generation_state = VeilleGenerationState.FAILED.value
+                row.last_error = (
+                    f"watchdog_cleanup: stuck >15min "
+                    f"({stuck_seconds}s, no FAILED transition)"
+                )
+                row.finished_at = datetime.now(UTC)
+                fixed += 1
+                logger.warning(
+                    "veille.watchdog_cleanup_marked_failed",
+                    delivery_id=str(row.id),
+                    config_id=str(row.veille_config_id),
+                    target_date=str(row.target_date),
+                    stuck_seconds=stuck_seconds,
+                    attempts=row.attempts,
+                )
+                sentry_sdk.capture_message(
+                    f"veille.watchdog_cleanup: delivery {row.id} stuck "
+                    f"{stuck_seconds}s in RUNNING — marked FAILED",
+                    level="warning",
+                )
+            if fixed:
+                await s.commit()
+    except Exception:  # noqa: BLE001 — best-effort, ne pas planter le scheduler
+        logger.exception("veille.watchdog_cleanup_failed")
+        return 0
+
+    logger.info("veille.watchdog_cleanup_completed", fixed=fixed)
+    return fixed
 
 
 async def run_veille_generation_for_config(

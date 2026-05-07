@@ -122,7 +122,10 @@ class VeilleConfigUpsert(BaseModel):
     theme_id: str = Field(min_length=1, max_length=50)
     theme_label: str = Field(min_length=1, max_length=120)
     topics: list[VeilleTopicSelection] = Field(default_factory=list)
-    source_selections: list[VeilleSourceSelection] = Field(default_factory=list)
+    # min_length=1 garantit qu'aucune config n'est créée sans source résolue —
+    # cf. bug-veille-config-without-sources.md (digest vide systématique quand
+    # le mobile retombait sur un fallback mock sans `apiSourceId`).
+    source_selections: list[VeilleSourceSelection] = Field(min_length=1)
     frequency: Literal["weekly", "biweekly", "monthly"]
     day_of_week: int | None = Field(default=None, ge=0, le=6)
     delivery_hour: int = Field(default=7, ge=0, le=23)

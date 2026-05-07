@@ -143,6 +143,12 @@ class VeilleConfigState {
   int get totalSelectedSources => selectedSourceIds.length;
   int get totalSelectedTopics => selectedTopics.length;
 
+  /// Nombre de sources réellement persistables (avec `apiSourceId`).
+  /// Une source mock sans `apiSourceId` est filtrée par `_buildUpsertRequest`,
+  /// donc elle ne compte pas pour autoriser le passage à Step 4.
+  int get realSelectedSourceCount =>
+      selectedSourceIds.where((id) => sourcesMeta[id]?.apiSourceId != null).length;
+
   VeilleConfigState copyWith({
     int? step,
     Object? loadingFrom = _Sentinel.value,

@@ -125,6 +125,41 @@ class TestConfigCRUD:
         assert data["sources"][0]["source"]["name"] == "Café Pédago"
         assert data["next_scheduled_at"] is not None
 
+    async def test_post_rejects_empty_source_selections(self, auth_user):
+        """Garde-fou A1 : un POST sans sources doit retourner 422.
+
+        Couvre le bug de configs créées sans sources (cf.
+        bug-veille-config-without-sources.md) qui aboutissaient à des
+        digests vides.
+        """
+        body = {
+            "theme_id": "education",
+            "theme_label": "Éducation",
+            "topics": [],
+            "source_selections": [],
+            "frequency": "weekly",
+            "day_of_week": 0,
+            "delivery_hour": 7,
+            "timezone": "Europe/Paris",
+        }
+        async with _client() as ac:
+            resp = await ac.post("/api/veille/config", json=body)
+        assert resp.status_code == 422
+
+    async def test_post_rejects_missing_source_selections(self, auth_user):
+        """Le champ `source_selections` n'est plus optionnel."""
+        body = {
+            "theme_id": "education",
+            "theme_label": "Éducation",
+            "topics": [],
+            "frequency": "weekly",
+            "day_of_week": 0,
+            "delivery_hour": 7,
+        }
+        async with _client() as ac:
+            resp = await ac.post("/api/veille/config", json=body)
+        assert resp.status_code == 422
+
     async def test_post_persists_purpose_and_brief(
         self, auth_user, curated_education_source
     ):
