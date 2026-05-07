@@ -41,11 +41,12 @@ class ProfileScreen extends ConsumerWidget {
                   subtitle: 'Gérer vos informations',
                   onTap: () => context.pushNamed(RouteNames.account),
                 ),
-                _Tile(
-                  icon: Icons.notifications_none,
-                  title: 'Notifications',
-                  onTap: () => context.pushNamed(RouteNames.notifications),
-                ),
+                if (!kIsWeb)
+                  _Tile(
+                    icon: Icons.notifications_none,
+                    title: 'Notifications',
+                    onTap: () => context.pushNamed(RouteNames.notifications),
+                  ),
               ],
             ),
             const SizedBox(height: FacteurSpacing.space6),

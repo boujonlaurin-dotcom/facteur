@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
@@ -9,6 +10,14 @@ import 'package:flutter/material.dart';
 /// on Android/iOS native builds.
 
 const bool kWebPerf = kIsWeb;
+
+/// Push notifications locales (`flutter_local_notifications`) — indispo sur
+/// Flutter Web. Sert de gate centralisé pour toute UI/provider qui
+/// déclenche une demande de permission ou planifie un slot.
+const bool kSupportsPushNotifications = !kIsWeb;
+
+/// Home-screen widget — Android natif uniquement (FacteurWidget Kotlin).
+bool get kSupportsHomeWidget => !kIsWeb && Platform.isAndroid;
 
 /// Replaces a `BackdropFilter` by an opaque fill on web.
 /// On mobile, returns the blurred widget unchanged.

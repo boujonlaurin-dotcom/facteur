@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_state.dart';
+import '../web/web_perf.dart';
 import '../../features/notifications/providers/notification_renudge_provider.dart';
 import '../../features/settings/providers/notifications_settings_provider.dart';
 import '../../features/well_informed/providers/well_informed_prompt_provider.dart';
@@ -47,7 +48,10 @@ final firstImpressionSlotProvider = Provider<FirstImpressionSlot>((ref) {
   }
   if (auth.needsOnboarding) return FirstImpressionSlot.none;
 
-  if (!modalConsumed && notif.synced && !notif.modalSeen) {
+  if (kSupportsPushNotifications &&
+      !modalConsumed &&
+      notif.synced &&
+      !notif.modalSeen) {
     return FirstImpressionSlot.notifModal;
   }
 

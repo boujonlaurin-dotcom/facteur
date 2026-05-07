@@ -5,6 +5,7 @@ import '../../../config/theme.dart';
 import '../../../core/api/notification_preferences_api_service.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/services/push_notification_service.dart';
+import '../../../core/web/web_perf.dart';
 import '../../settings/providers/notifications_settings_provider.dart';
 import 'preset_selector.dart';
 import 'time_slot_selector.dart';
@@ -26,6 +27,9 @@ Future<void> showNotificationActivationModal(
   WidgetRef ref, {
   required ActivationTrigger trigger,
 }) async {
+  // Push local indispo sur Web (flutter_local_notifications n'a pas de plugin
+  // Web) — on no-op pour ne pas crasher ni proposer une activation morte.
+  if (!kSupportsPushNotifications) return;
   if (trigger == ActivationTrigger.veille) {
     final settings = ref.read(notificationsSettingsProvider);
     if (settings.pushEnabled) {
@@ -38,7 +42,7 @@ Future<void> showNotificationActivationModal(
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
-    barrierColor: Colors.black87,
+    barrierColor: Colors.black.withOpacity(0.6),
     useRootNavigator: true,
     builder: (_) => Dialog(
       insetPadding: const EdgeInsets.symmetric(
