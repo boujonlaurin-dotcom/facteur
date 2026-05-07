@@ -1,22 +1,29 @@
 """Routes utilisateur."""
 
+import hashlib
 import logging
 import time
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+import certifi
+import httpx
+import sentry_sdk
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import func, text, update
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 _perf_logger = structlog.get_logger("streak_perf")
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
+from app.models.user import UserProfile
 from app.schemas.streak import StreakResponse
 from app.schemas.user import (
     AlgorithmProfileResponse,
@@ -333,3 +340,121 @@ async def get_top_themes(
         for i in themes
         if theme_counts.get(i.interest_slug, 0) > 0
     ]
+
+
+# ─── Account deletion ────────────────────────────────────────────────────────
+# App Store Guideline 5.1.1(v) + Play Store account deletion policy.
+# The flow: anonymise the user_profiles row + drop the auth.users row via the
+# Supabase Admin API, then a daily cron purges soft-deleted rows after 30 days
+# (cf. app/jobs/purge_deleted_users.py).
+
+
+async def _fetch_auth_email(db: AsyncSession, user_id: str) -> str | None:
+    """Read the user email from auth.users (Supabase-managed schema).
+
+    Extracted as a module-level helper so tests can monkeypatch it without
+    needing the auth schema in the SQLAlchemy test fixture (the test DB only
+    creates tables from Base.metadata, which excludes auth.*).
+    """
+    row = (
+        await db.execute(
+            text("SELECT email FROM auth.users WHERE id = :uid"),
+            {"uid": user_id},
+        )
+    ).first()
+    return row[0] if row else None
+
+
+async def _delete_supabase_auth_user(user_id: str) -> None:
+    """Call Supabase Admin REST API to remove auth.users row (idempotent).
+
+    Failures are logged but never raised: the local `deleted_at` flag is
+    already set, so the cron will purge the row in 30 days regardless. We
+    must not return 5xx to a user who has just deleted their account.
+    """
+    settings = get_settings()
+    if not (settings.supabase_url and settings.supabase_service_role_key):
+        logger.warning("delete_user_supabase_admin_skipped_missing_config")
+        return
+
+    url = f"{settings.supabase_url}/auth/v1/admin/users/{user_id}"
+    headers = {
+        "Authorization": f"Bearer {settings.supabase_service_role_key}",
+        "apikey": settings.supabase_service_role_key,
+    }
+    try:
+        async with httpx.AsyncClient(verify=certifi.where(), timeout=10.0) as client:
+            resp = await client.delete(url, headers=headers)
+        if resp.status_code in (200, 204):
+            return
+        if resp.status_code == 404:
+            # Already gone — treat as success for idempotence.
+            logger.info("delete_user_supabase_admin_already_deleted", user_id=user_id)
+            return
+        logger.warning(
+            "delete_user_supabase_admin_unexpected_status",
+            user_id=user_id,
+            status=resp.status_code,
+            body=resp.text[:500],
+        )
+        sentry_sdk.capture_message(
+            "delete_user_supabase_admin_unexpected_status", level="warning"
+        )
+    except Exception as exc:
+        logger.warning(
+            "delete_user_supabase_admin_exception", user_id=user_id, error=str(exc)
+        )
+        sentry_sdk.capture_exception(exc)
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Soft-delete the current account (App Store 5.1.1(v) compliance).
+
+    - Anonymises the user_profiles row (display_name/age_range/gender → NULL).
+    - Stores SHA256(email) for legal/support traceability post-purge.
+    - Removes the auth.users row via Supabase Admin API → blocks reconnection.
+    - Idempotent: a 2nd call on an already soft-deleted account returns 204.
+    - Cron purge after 30 days (cf. app/jobs/purge_deleted_users.py).
+    """
+    profile = (
+        await db.execute(
+            sa_select(UserProfile).where(UserProfile.user_id == UUID(user_id))
+        )
+    ).scalar_one_or_none()
+
+    if profile is None:
+        # No profile yet (user finished signup but skipped onboarding).
+        # We still call the Supabase admin endpoint to drop auth.users so
+        # reconnection is blocked.
+        await _delete_supabase_auth_user(user_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    if profile.deleted_at is not None:
+        # Idempotent: already soft-deleted, nothing more to do.
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    email = await _fetch_auth_email(db, user_id)
+    email_hash = hashlib.sha256(email.encode("utf-8")).hexdigest() if email else None
+
+    await db.execute(
+        update(UserProfile)
+        .where(UserProfile.user_id == UUID(user_id))
+        .values(
+            display_name=None,
+            age_range=None,
+            gender=None,
+            email_hash=email_hash,
+            deleted_at=func.now(),
+        )
+    )
+    await db.commit()
+
+    await _delete_supabase_auth_user(user_id)
+
+    FEED_CACHE.invalidate(UUID(user_id))
+    logger.info("user_account_soft_deleted", user_id=user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
