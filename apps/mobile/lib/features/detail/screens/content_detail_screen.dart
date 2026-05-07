@@ -27,6 +27,7 @@ import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../lettres/providers/letters_provider.dart';
 import '../../sources/providers/sources_providers.dart';
+import '../../sources/widgets/source_logo_avatar.dart';
 import '../../../widgets/sunflower_icon.dart';
 import '../providers/nudge_provider.dart' show NudgeTracker;
 import '../widgets/article_reader_widget.dart';
@@ -471,6 +472,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   void _maybeRequestReadOnSiteNudge(double progress) {
+    if (_isPartialContent) return;
     if (_readOnSiteNudgeRequested) return;
     if (_showReadOnSiteNudge) return;
     if (progress < 0.5) return;
@@ -643,6 +645,62 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final shouldStick = perspScreenY < appHeaderBottomY;
     if (shouldStick != _showStickyPerspectivesHeader.value) {
       _showStickyPerspectivesHeader.value = shouldStick;
+    }
+  }
+
+  /// Shared handler for the inline "Couverture médiatique" toggle. On
+  /// expand-from-collapsed, scrolls the perspectives divider into view and
+  /// flips [_atPerspectivesSection] so the floating "Lancer l'analyse Facteur"
+  /// button reappears. On collapse, preserves the existing recheck behaviour.
+  void _onPerspectivesToggle() {
+    HapticFeedback.lightImpact();
+    final wasCollapsed = !_perspectivesExpanded;
+    setState(() {
+      _perspectivesExpanded = !_perspectivesExpanded;
+      _suppressPerspectivesCheck = true;
+    });
+    if (wasCollapsed) {
+      _atPerspectivesSection.value = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final ctx = _perspectivesDividerKey.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            alignment: 0.0,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOut,
+          );
+          // Re-trigger after AnimatedSize expansion settles maxScrollExtent.
+          Future.delayed(const Duration(milliseconds: 250), () {
+            if (!mounted) return;
+            final c = _perspectivesDividerKey.currentContext;
+            if (c != null) {
+              Scrollable.ensureVisible(
+                c,
+                alignment: 0.0,
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOut,
+              );
+            }
+          });
+        }
+        Future.delayed(const Duration(milliseconds: 550), () {
+          if (mounted) {
+            setState(() => _suppressPerspectivesCheck = false);
+          }
+        });
+      });
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _checkAtPerspectivesSection(force: true);
+        Future.delayed(const Duration(milliseconds: 200), () {
+          if (mounted) {
+            setState(() => _suppressPerspectivesCheck = false);
+          }
+        });
+      });
     }
   }
 
@@ -1995,7 +2053,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               // Article: dynamic "Article complet" / "Lire via Navigateur"
               // with permanent-orange logic. Video/audio: simple external CTA.
               Flexible(
-                fit: isArticle ? FlexFit.loose : FlexFit.tight,
+                fit: FlexFit.loose,
                 child: SizedBox(
                   height: 53,
                   child: isArticle
@@ -2011,8 +2069,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       final label = isWebViewMode
                           ? 'Lire via Navigateur'
                           : 'Article complet';
-                      final showLogo = !isWebViewMode &&
-                          content.source.logoUrl != null;
+                      final showLogo = !isWebViewMode;
                       final iconData = isWebViewMode
                           ? PhosphorIcons.arrowUpRight(
                               PhosphorIconsStyle.regular)
@@ -2021,16 +2078,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                       final children = <Widget>[
                         if (showLogo) ...[
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: CachedNetworkImage(
-                              imageUrl: content.source.logoUrl!,
-                              width: 28,
-                              height: 28,
-                              fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) =>
-                                  const SizedBox.shrink(),
-                            ),
+                          SourceLogoAvatar(
+                            source: content.source,
+                            size: 28,
+                            radius: 8,
                           ),
                           const SizedBox(width: 6),
                         ],
@@ -2106,9 +2157,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       : _buildExternalCtaButton(context, content),
                 ),
               ),
-              if (isArticle) ...[
-                const SizedBox(width: 4),
-
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+              if (isArticle)
                 // Autres points de vue / Retour à l'article
                 ValueListenableBuilder<bool>(
                   valueListenable: _atPerspectivesSection,
@@ -2271,7 +2324,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   );
                 },
                 ),
-              ],
 
               // Sauvegarder (long-press → collection picker)
               GestureDetector(
@@ -2323,6 +2375,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     inactiveColor: colors.textSecondary,
                   ),
                   tooltip: 'Recommander',
+                ),
+              ),
+                  ],
                 ),
               ),
             ],
@@ -2453,21 +2508,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             behavior: HitTestBehavior.opaque,
                             child: Row(
                               children: [
-                                // Source logo (reduced from 32 to 28)
-                                if (content.source.logoUrl != null)
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(10),
-                                    child: CachedNetworkImage(
-                                      imageUrl: content.source.logoUrl!,
-                                      width: 28,
-                                      height: 28,
-                                      fit: BoxFit.cover,
-                                      errorWidget: (_, __, ___) =>
-                                          _buildSourcePlaceholder(colors),
-                                    ),
-                                  )
-                                else
-                                  _buildSourcePlaceholder(colors),
+                                // Source logo (28px, fallback initiales)
+                                SourceLogoAvatar(
+                                  source: content.source,
+                                  size: 28,
+                                  radius: 10,
+                                ),
                                 const SizedBox(width: 8),
 
                                 // Source Name + Time + Badges
@@ -2919,18 +2965,58 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
-  Widget _buildSourcePlaceholder(FacteurColors colors) {
-    return Container(
-      width: 24,
-      height: 24,
-      decoration: BoxDecoration(
-        color: colors.surfaceElevated,
-        borderRadius: BorderRadius.circular(12),
+  /// Inline "Article complet" button shown at the end of the body when the
+  /// article is in partial mode — replaces the dismissible nudge for partial
+  /// articles since reading-on-site is the only path to the full content.
+  Widget _buildPartialArticleInlineButton(BuildContext context, Content content) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: FacteurSpacing.space4,
+        vertical: FacteurSpacing.space4,
       ),
-      child: Icon(
-        PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
-        size: 14,
-        color: colors.textTertiary,
+      child: SizedBox(
+        height: 53,
+        child: OutlinedButton(
+          onPressed: _onReadOnSiteTap,
+          style: OutlinedButton.styleFrom(
+            backgroundColor: Colors.white.withValues(alpha: 0.5),
+            foregroundColor: colors.textPrimary,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            side: BorderSide(color: colors.border.withValues(alpha: 0.5)),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SourceLogoAvatar(
+                source: content.source,
+                size: 24,
+                radius: 6,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  'Article complet',
+                  style: textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.textPrimary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                PhosphorIcons.arrowDown(PhosphorIconsStyle.regular),
+                size: 16,
+                color: colors.textSecondary,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -3107,7 +3193,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 ),
                                 const SizedBox(height: FacteurSpacing.space3),
                               ],
-                              Divider(color: colors.border, height: 1),
                               const SizedBox(height: FacteurSpacing.space4),
                             ],
                           ),
@@ -3120,6 +3205,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ),
                       ),
 
+                      if (isPartial && _contentResolved)
+                        _buildPartialArticleInlineButton(context, content),
+
                       // ZONE 2: Inline perspectives (articles only)
                       if (_perspectivesResponse != null ||
                           _perspectivesLoading) ...[
@@ -3128,7 +3216,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           color: colors.backgroundPrimary,
                           padding: const EdgeInsets.symmetric(
                             horizontal: FacteurSpacing.space4,
-                            vertical: FacteurSpacing.space6,
+                            vertical: FacteurSpacing.space4,
                           ),
                           child: Divider(color: colors.border, height: 1),
                         ),
@@ -3183,29 +3271,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                       analysisZoneKey: _analysisZoneKey,
                                       firstCardKey: _firstPerspectiveCardKey,
                                       isExpanded: _perspectivesExpanded,
-                                      onToggle: () {
-                                        setState(() {
-                                          _perspectivesExpanded =
-                                              !_perspectivesExpanded;
-                                          _suppressPerspectivesCheck = true;
-                                        });
-                                        WidgetsBinding.instance
-                                            .addPostFrameCallback((_) {
-                                          if (mounted) {
-                                            _checkAtPerspectivesSection(
-                                                force: true);
-                                            Future.delayed(
-                                                const Duration(
-                                                    milliseconds: 200), () {
-                                              if (mounted) {
-                                                setState(() =>
-                                                    _suppressPerspectivesCheck =
-                                                        false);
-                                              }
-                                            });
-                                          }
-                                        });
-                                      },
+                                      onToggle: _onPerspectivesToggle,
                                     )
                                   : const SizedBox.shrink(),
                         ),
@@ -3710,14 +3776,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                 const SizedBox(height: FacteurSpacing.space4),
 
-                // ── Divider: header / article ─────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: FacteurSpacing.space4),
-                  child: Divider(color: colors.border, height: 1),
-                ),
-                const SizedBox(height: FacteurSpacing.space4),
-
                 // ── Article section ────────────────────────────────────────
                 // Zero-height marker at the end lets _measureArticleExtent()
                 // compute progress against article length only (excludes perspectives).
@@ -3725,6 +3783,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     articleWidget,
+                    if (isPartial && _contentResolved)
+                      _buildPartialArticleInlineButton(context, content),
                     if (_showReadOnSiteNudge) ...[
                       const SizedBox(height: FacteurSpacing.space4),
                       Padding(
@@ -3757,7 +3817,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         horizontal: FacteurSpacing.space4),
                     child: Divider(color: colors.border, height: 1),
                   ),
-                  const SizedBox(height: FacteurSpacing.space8),
+                  const SizedBox(height: FacteurSpacing.space4),
                   if (_perspectivesLoading && _perspectivesResponse == null)
                     const Center(child: CircularProgressIndicator())
                   else if (_perspectivesResponse != null)
@@ -3796,24 +3856,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       analysisZoneKey: _analysisZoneKey,
                       firstCardKey: _firstPerspectiveCardKey,
                       isExpanded: _perspectivesExpanded,
-                      onToggle: () {
-                        setState(() {
-                          _perspectivesExpanded = !_perspectivesExpanded;
-                          _suppressPerspectivesCheck = true;
-                        });
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) {
-                            _checkAtPerspectivesSection(force: true);
-                            Future.delayed(const Duration(milliseconds: 200),
-                                () {
-                              if (mounted) {
-                                setState(() =>
-                                    _suppressPerspectivesCheck = false);
-                              }
-                            });
-                          }
-                        });
-                      },
+                      onToggle: _onPerspectivesToggle,
                     ),
                 ],
 
