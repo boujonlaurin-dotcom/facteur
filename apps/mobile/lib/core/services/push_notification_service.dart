@@ -205,7 +205,7 @@ class PushNotificationService {
     final canUseExact =
         (await androidPlugin?.canScheduleExactNotifications()) ?? true;
     final scheduleMode = canUseExact
-        ? AndroidScheduleMode.alarmClock
+        ? AndroidScheduleMode.exactAllowWhileIdle
         : AndroidScheduleMode.inexactAllowWhileIdle;
 
     const sender = Person(
@@ -269,7 +269,7 @@ class PushNotificationService {
     final canUseExact =
         (await androidPlugin?.canScheduleExactNotifications()) ?? true;
     final scheduleMode = canUseExact
-        ? AndroidScheduleMode.alarmClock
+        ? AndroidScheduleMode.exactAllowWhileIdle
         : AndroidScheduleMode.inexactAllowWhileIdle;
 
     final androidDetails = AndroidNotificationDetails(
@@ -323,7 +323,7 @@ class PushNotificationService {
     final canUseExact =
         (await androidPlugin?.canScheduleExactNotifications()) ?? true;
     final scheduleMode = canUseExact
-        ? AndroidScheduleMode.alarmClock
+        ? AndroidScheduleMode.exactAllowWhileIdle
         : AndroidScheduleMode.inexactAllowWhileIdle;
 
     const sender = Person(
@@ -405,7 +405,7 @@ class PushNotificationService {
     final canUseExact =
         (await androidPlugin?.canScheduleExactNotifications()) ?? true;
     final scheduleMode = canUseExact
-        ? AndroidScheduleMode.alarmClock
+        ? AndroidScheduleMode.exactAllowWhileIdle
         : AndroidScheduleMode.inexactAllowWhileIdle;
 
     final androidDetails = AndroidNotificationDetails(
