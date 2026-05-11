@@ -198,21 +198,27 @@ def test_topical_signals_external_low_jaccard_rejected():
     assert reason == "low_jaccard"
 
 
-def test_topical_signals_shared_topic_rescues_low_jaccard():
-    """Si Jaccard titre faible mais 1 topic ML partagé → accepter (Layer 1)."""
+def test_topical_signals_shared_topic_alone_insufficient_with_zero_jaccard():
+    """1 topic partagé seul + Jaccard ≈ 0 → rejeter (faux-positif "Trump partout").
+
+    Un topic générique ("politics", "religion"…) partagé sans entité discriminante
+    ET sans aucune similarité de titre ne suffit plus à valider une perspective.
+    Empêche ex: Congo/Trump vs Ukraine/Trump via seul topic "politics".
+    """
     seed_tokens, seed_topics, _ = _seed_signals_inputs()
     signals = PerspectiveService._topical_signals(
         seed_tokens,
         seed_topics,
         seed_disc_entities=set(),
         cand_title="Article au titre totalement différent qui ne matche rien",
-        cand_topics=["religion"],  # 1 topic en commun
+        cand_topics=["religion"],  # 1 topic en commun, mais 0 entité, jaccard ≈ 0
         cand_entities=[],
     )
     assert signals["title_jaccard"] < PERSPECTIVE_TITLE_JACCARD_MIN
     assert signals["shared_topics"] == 1
-    is_ok, _ = PerspectiveService._is_topically_coherent(signals)
-    assert is_ok is True
+    is_ok, reason = PerspectiveService._is_topically_coherent(signals)
+    assert is_ok is False
+    assert reason == "no_signal"
 
 
 def test_topical_signals_2_shared_entities_rescues_low_jaccard():
