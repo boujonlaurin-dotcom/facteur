@@ -8,6 +8,7 @@ import 'core/providers/analytics_provider.dart';
 import 'core/services/deep_link_service.dart';
 import 'core/services/widget_service.dart';
 import 'features/feed/providers/feed_preload_provider.dart';
+import 'features/feed/providers/feed_provider.dart';
 import 'features/onboarding/providers/onboarding_sync_provider.dart';
 import 'features/settings/providers/theme_provider.dart';
 
@@ -24,6 +25,7 @@ class FacteurApp extends ConsumerStatefulWidget {
 class _FacteurAppState extends ConsumerState<FacteurApp>
     with WidgetsBindingObserver {
   bool _deepLinksStarted = false;
+  bool _wasBackgrounded = false;
 
   @override
   void initState() {
@@ -45,8 +47,16 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState appState) {
-    if (appState == AppLifecycleState.resumed) {
+    if (appState == AppLifecycleState.paused) {
+      _wasBackgrounded = true;
+    } else if (appState == AppLifecycleState.resumed) {
       _flushFluxScrollMetricIfAny();
+      if (_wasBackgrounded) {
+        _wasBackgrounded = false;
+        if (ref.read(authStateProvider).isAuthenticated) {
+          ref.read(feedProvider.notifier).refresh();
+        }
+      }
     }
   }
 
