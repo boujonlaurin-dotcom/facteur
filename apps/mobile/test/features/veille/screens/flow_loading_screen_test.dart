@@ -25,7 +25,7 @@ void main() {
       find.text('LE FACTEUR PRÉPARE TA PREMIÈRE LIVRAISON…'),
       findsOneWidget,
     );
-    expect(find.text('Première veille en cours'), findsOneWidget);
+    expect(find.text('Votre première veille se construit !'), findsOneWidget);
 
     await _disposeTree(tester);
   });

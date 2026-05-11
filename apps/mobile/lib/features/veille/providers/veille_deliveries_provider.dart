@@ -30,3 +30,20 @@ final veilleDeliveryProvider = FutureProvider.autoDispose
     return repo.getDelivery(deliveryId);
   },
 );
+
+/// Dernière livraison (limit 1) — utilisé par le dashboard pour gating la CTA
+/// « Lancer ma première veille » sans tirer la liste de 20.
+class VeilleLastDeliveryNotifier
+    extends AsyncNotifier<VeilleDeliveryListItem?> {
+  @override
+  Future<VeilleDeliveryListItem?> build() async {
+    final repo = ref.read(veilleRepositoryProvider);
+    final list = await repo.listDeliveries(limit: 1);
+    return list.isEmpty ? null : list.first;
+  }
+}
+
+final veilleLastDeliveryProvider = AsyncNotifierProvider<
+    VeilleLastDeliveryNotifier, VeilleDeliveryListItem?>(
+  VeilleLastDeliveryNotifier.new,
+);

@@ -7,7 +7,7 @@ incidents pool QueuePool docs/bugs/bug-infinite-load-requests.md (#363).
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 import sentry_sdk
@@ -46,6 +46,7 @@ _STUCK_RUNNING_THRESHOLD_SECONDS = 600
 # configs `due`, et le watchdog `_phase1_mark_running` ne fire que si elle est
 # rescannée). On la marque FAILED + Sentry pour qu'elle disparaisse de l'UI.
 _STUCK_CLEANUP_THRESHOLD_SECONDS = 900
+STUCK_DELIVERY_THRESHOLD = timedelta(seconds=_STUCK_CLEANUP_THRESHOLD_SECONDS)
 
 
 async def run_veille_generation(target_date: date | None = None) -> None:

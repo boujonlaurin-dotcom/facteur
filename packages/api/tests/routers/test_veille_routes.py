@@ -6,10 +6,11 @@ LLM Mistral mocké via AsyncMock sur les singletons des suggesters.
 
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
@@ -566,11 +567,13 @@ class TestGenerateFirstDelivery:
     async def test_refuses_when_delivery_exists(
         self, db_session, auth_user, active_veille_config
     ):
+        # Succeeded AVEC items → vraie première livraison, on refuse 403.
         existing = VeilleDelivery(
             id=uuid4(),
             veille_config_id=active_veille_config.id,
             target_date=datetime.now(UTC).date(),
             generation_state=VeilleGenerationState.SUCCEEDED.value,
+            items=[{"cluster_id": "c1", "title": "x", "articles": []}],
         )
         db_session.add(existing)
         await db_session.commit()
@@ -584,6 +587,122 @@ class TestGenerateFirstDelivery:
         async with _client() as ac:
             resp = await ac.post("/api/veille/deliveries/generate-first")
         assert resp.status_code == 404
+
+    async def test_retries_after_failed_delivery(
+        self, monkeypatch, db_session, auth_user, active_veille_config
+    ):
+        from app.routers import veille as veille_module
+
+        failed = VeilleDelivery(
+            id=uuid4(),
+            veille_config_id=active_veille_config.id,
+            target_date=datetime.now(UTC).date() - timedelta(days=1),
+            generation_state=VeilleGenerationState.FAILED.value,
+            last_error="boom",
+        )
+        db_session.add(failed)
+        await db_session.commit()
+        failed_id = failed.id
+
+        bg_calls: list[tuple] = []
+
+        def _capture_add_task(self, func, *args, **kwargs):
+            bg_calls.append((func, args, kwargs))
+
+        monkeypatch.setattr(
+            "fastapi.BackgroundTasks.add_task",
+            _capture_add_task,
+            raising=True,
+        )
+
+        async with _client() as ac:
+            resp = await ac.post("/api/veille/deliveries/generate-first")
+
+        assert resp.status_code == 202, resp.text
+        # L'ancienne row a été supprimée.
+        await db_session.refresh(active_veille_config)
+        remaining = (
+            await db_session.execute(
+                select(VeilleDelivery.id).where(VeilleDelivery.id == failed_id)
+            )
+        ).scalar_one_or_none()
+        assert remaining is None
+        # Une nouvelle row PENDING est créée.
+        new_id = resp.json()["delivery_id"]
+        new_row = (
+            await db_session.execute(
+                select(VeilleDelivery).where(VeilleDelivery.id == UUID(new_id))
+            )
+        ).scalar_one()
+        assert new_row.generation_state == VeilleGenerationState.PENDING.value
+        assert any(
+            call[0] is veille_module._run_first_delivery_with_retry for call in bg_calls
+        ), bg_calls
+
+    async def test_retries_after_succeeded_empty(
+        self, monkeypatch, db_session, auth_user, active_veille_config
+    ):
+        empty = VeilleDelivery(
+            id=uuid4(),
+            veille_config_id=active_veille_config.id,
+            target_date=datetime.now(UTC).date() - timedelta(days=1),
+            generation_state=VeilleGenerationState.SUCCEEDED.value,
+            items=[],
+        )
+        db_session.add(empty)
+        await db_session.commit()
+
+        monkeypatch.setattr(
+            "fastapi.BackgroundTasks.add_task",
+            lambda self, *a, **kw: None,
+            raising=True,
+        )
+
+        async with _client() as ac:
+            resp = await ac.post("/api/veille/deliveries/generate-first")
+
+        assert resp.status_code == 202, resp.text
+
+    async def test_retries_after_stuck_running(
+        self, monkeypatch, db_session, auth_user, active_veille_config
+    ):
+        stuck = VeilleDelivery(
+            id=uuid4(),
+            veille_config_id=active_veille_config.id,
+            target_date=datetime.now(UTC).date(),
+            generation_state=VeilleGenerationState.RUNNING.value,
+            created_at=datetime.now(UTC) - timedelta(minutes=30),
+        )
+        db_session.add(stuck)
+        await db_session.commit()
+
+        monkeypatch.setattr(
+            "fastapi.BackgroundTasks.add_task",
+            lambda self, *a, **kw: None,
+            raising=True,
+        )
+
+        async with _client() as ac:
+            resp = await ac.post("/api/veille/deliveries/generate-first")
+
+        assert resp.status_code == 202, resp.text
+
+    async def test_conflict_when_running_recent(
+        self, db_session, auth_user, active_veille_config
+    ):
+        running = VeilleDelivery(
+            id=uuid4(),
+            veille_config_id=active_veille_config.id,
+            target_date=datetime.now(UTC).date(),
+            generation_state=VeilleGenerationState.RUNNING.value,
+        )
+        db_session.add(running)
+        await db_session.commit()
+
+        async with _client() as ac:
+            resp = await ac.post("/api/veille/deliveries/generate-first")
+
+        assert resp.status_code == 409
 
 
 class TestSourceExamples:

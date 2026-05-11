@@ -7,11 +7,10 @@ import 'package:go_router/go_router.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../notifications/widgets/notification_activation_modal.dart';
-import '../models/veille_delivery.dart';
 import '../providers/veille_active_config_provider.dart';
 import '../providers/veille_config_provider.dart';
-import '../providers/veille_repository_provider.dart';
 import '../repositories/veille_repository.dart';
+import '../utils/poll_first_delivery.dart';
 import 'steps/step1_5_preset_preview_screen.dart';
 import 'steps/step1_theme_screen.dart';
 import 'steps/step2_suggestions_screen.dart';
@@ -101,7 +100,7 @@ class VeilleConfigScreen extends ConsumerWidget {
 
         var pollSucceeded = false;
         if (deliveryId != null) {
-          pollSucceeded = await _pollFirstDelivery(
+          pollSucceeded = await pollFirstDelivery(
             context: context,
             ref: ref,
             deliveryId: deliveryId,
@@ -214,57 +213,3 @@ class VeilleConfigScreen extends ConsumerWidget {
   }
 }
 
-/// Poll `/deliveries/{id}` jusqu'à `succeeded` (succès) ou 90 s écoulées.
-/// Backoff 2 s pendant les 20 premières secondes (≈ p50 de la génération),
-/// puis 5 s ensuite — l'objectif est de limiter la charge serveur quand le
-/// volume utilisateur scalera. Renvoie `true` si la livraison est `succeeded`,
-/// `false` sinon (failed, timeout, ou widget unmount). Affiche un snackbar en
-/// cas de timeout/failed.
-Future<bool> _pollFirstDelivery({
-  required BuildContext context,
-  required WidgetRef ref,
-  required String deliveryId,
-  required String onTimeoutMessage,
-}) async {
-  const totalBudget = Duration(seconds: 90);
-  const fastInterval = Duration(seconds: 2);
-  const slowInterval = Duration(seconds: 5);
-  const fastWindow = Duration(seconds: 20);
-
-  final repo = ref.read(veilleRepositoryProvider);
-  final start = DateTime.now();
-
-  while (true) {
-    if (!context.mounted) return false;
-    final elapsed = DateTime.now().difference(start);
-    if (elapsed >= totalBudget) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(onTimeoutMessage)),
-      );
-      return false;
-    }
-
-    try {
-      final delivery = await repo.getDelivery(deliveryId);
-      if (delivery.generationState == VeilleGenerationState.succeeded) {
-        return true;
-      }
-      if (delivery.generationState == VeilleGenerationState.failed) {
-        if (!context.mounted) return false;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'La génération a échoué. On retentera à la prochaine livraison.',
-            ),
-          ),
-        );
-        return false;
-      }
-    } on VeilleApiException {
-      // Erreur transitoire — on continue à poll, le timeout protégera.
-    }
-
-    final next = elapsed < fastWindow ? fastInterval : slowInterval;
-    await Future<void>.delayed(next);
-  }
-}
