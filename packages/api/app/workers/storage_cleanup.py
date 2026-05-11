@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, exists, func, not_, select
 
 from app.config import get_settings
 from app.database import safe_async_session
@@ -61,16 +61,18 @@ async def cleanup_old_articles() -> dict:
 
     async with safe_async_session() as session:
         try:
-            # Subquery: articles bookmarkés (à préserver)
-            bookmarked_subquery = select(UserContentStatus.content_id).where(
-                UserContentStatus.is_saved
+            # NOT EXISTS plutôt que NOT IN (subquery) : permet à Postgres
+            # d'utiliser un anti-join indexé (ix_user_content_status_content_id
+            # ajouté en parallèle), au lieu de matérialiser la subquery puis
+            # filtrer ligne par ligne.
+            bookmarked_exists = exists().where(
+                UserContentStatus.content_id == Content.id,
+                UserContentStatus.is_saved,
             )
-
-            # Subquery: articles de sources deep (à préserver — Story 10.22)
-            deep_source_subquery = (
-                select(Content.id)
-                .join(Source, Content.source_id == Source.id)
-                .where(Source.source_tier == "deep")
+            # Source deep : corrélée sur source_id (PK Source → très rapide).
+            deep_source_exists = exists().where(
+                Source.id == Content.source_id,
+                Source.source_tier == "deep",
             )
 
             # Set: content_ids référencés par un digest des 90 derniers jours.
@@ -85,8 +87,8 @@ async def cleanup_old_articles() -> dict:
             # digest récent.
             common_conditions = [
                 Content.published_at < cutoff_date,
-                ~Content.id.in_(bookmarked_subquery),
-                ~Content.id.in_(deep_source_subquery),
+                not_(bookmarked_exists),
+                not_(deep_source_exists),
             ]
             if referenced_list:
                 common_conditions.append(~Content.id.in_(referenced_list))
@@ -103,7 +105,7 @@ async def cleanup_old_articles() -> dict:
                 .select_from(Content)
                 .where(
                     Content.published_at < cutoff_date,
-                    Content.id.in_(bookmarked_subquery),
+                    bookmarked_exists,
                 )
             )
             preserved_bookmarks = preserved_result.scalar_one()
@@ -114,7 +116,7 @@ async def cleanup_old_articles() -> dict:
                 .select_from(Content)
                 .where(
                     Content.published_at < cutoff_date,
-                    Content.id.in_(deep_source_subquery),
+                    deep_source_exists,
                 )
             )
             preserved_deep = preserved_deep_result.scalar_one()

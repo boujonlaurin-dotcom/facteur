@@ -22,6 +22,22 @@ from app.services.paywall_detector import detect_paywall
 
 logger = structlog.get_logger()
 
+# Cooldown avant de re-tenter une extraction trafilatura sur le même article.
+# Évite que chaque sync (toutes les 30 min) re-tente d'extraire des articles
+# dont l'extraction a déjà échoué récemment (paywalls, JS-only, 404, etc.).
+# Sans ce gate, chaque sync génère un UPDATE extraction_attempted_at par
+# article — observé en prod : ~3 M UPDATE/jour sur la table contents.
+_EXTRACTION_RETRY_DELAY = datetime.timedelta(hours=24)
+
+
+def _is_extraction_stale(attempted_at: datetime.datetime | None) -> bool:
+    """True si on peut re-tenter l'extraction (jamais tentée OU > 24 h)."""
+    if attempted_at is None:
+        return True
+    if attempted_at.tzinfo is None:
+        attempted_at = attempted_at.replace(tzinfo=datetime.UTC)
+    return datetime.datetime.now(datetime.UTC) - attempted_at > _EXTRACTION_RETRY_DELAY
+
 
 class SyncService:
     def __init__(self, session: AsyncSession, session_maker=None):
@@ -598,6 +614,7 @@ class SyncService:
                     existing.content_type == ContentType.ARTICLE
                     and existing.content_quality != "full"
                     and not existing.html_content
+                    and _is_extraction_stale(existing.extraction_attempted_at)
                 )
                 if needs_enrich:
                     # Marquer AVANT l'await externe pour garantir le cooldown
