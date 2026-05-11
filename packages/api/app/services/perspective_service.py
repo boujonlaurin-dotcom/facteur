@@ -24,6 +24,11 @@ logger = structlog.get_logger(__name__)
 # --- Post-filtre cohérence sujet (anti-clustering trop large) ---
 # Voir docs/bugs/bug-comparison-clustering-too-loose.md
 PERSPECTIVE_TITLE_JACCARD_MIN = 0.30
+# Jaccard minimum exigé même dans le chemin full_signals (bypass Layer 1).
+# Empêche qu'un seul topic générique ("politics") suffise à valider deux articles
+# sur des sujets radicalement différents (ex: Congo/prisonniers vs Ukraine/trêve)
+# partageant seulement un nom propre omniprésent (Trump, Macron…).
+PERSPECTIVE_MIN_JACCARD_FLOOR = 0.08
 PERSPECTIVE_MIN_VALID_RESULTS = 2
 PERSPECTIVE_MIN_BIAS_GROUPS = 2
 # Entités jugées suffisamment discriminantes (LOCATION exclu : trop générique)
@@ -509,9 +514,9 @@ class PerspectiveService:
         """Décide si un candidat est on-topic.
 
         - Si title_jaccard >= seuil → cohérent (signal fort).
-        - Sinon, si signaux complets (Layer 1 DB), accepter aussi sur :
-          shared_topics >= 1 OU shared_entities >= 2.
-        - Sinon (Layer 2/3 Google News, titre seul) → rejeter.
+        - Sinon, si signaux complets (Layer 1 DB) ET jaccard >= floor minimal :
+          (shared_topics >= 1 ET shared_entities >= 1) OU shared_entities >= 2.
+        - Sinon (Layer 2/3 Google News, ou jaccard trop faible) → rejeter.
 
         Retourne (is_coherent, reason). reason vide si cohérent.
         """
@@ -523,10 +528,21 @@ class PerspectiveService:
             and signals["shared_entities"] is not None
         )
         if full_signals:
-            if signals["shared_topics"] and signals["shared_topics"] >= 1:
-                return True, ""
+            # 2 entités discriminantes partagées → signal fort, pas de floor requis.
             if signals["shared_entities"] and signals["shared_entities"] >= 2:
                 return True, ""
+            # 1 topic + 1 entité : exiger aussi un Jaccard minimal pour bloquer
+            # les faux-positifs "même personnalité, sujets totalement différents"
+            # (ex: Congo/Trump vs Ukraine/Trump — seul token commun : "trump").
+            if signals["title_jaccard"] >= PERSPECTIVE_MIN_JACCARD_FLOOR:
+                topic_ok = bool(
+                    signals["shared_topics"] and signals["shared_topics"] >= 1
+                )
+                entity_ok = bool(
+                    signals["shared_entities"] and signals["shared_entities"] >= 1
+                )
+                if topic_ok and entity_ok:
+                    return True, ""
             return False, "no_signal"
         return False, "low_jaccard"
 
