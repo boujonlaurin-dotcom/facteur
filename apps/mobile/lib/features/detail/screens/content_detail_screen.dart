@@ -149,6 +149,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   double _headerAutoStart = 0.0;
   double _headerAutoTarget = 0.0;
 
+  // Direction hysteresis for WebView continuous mapping. Absorbs fling-rebound
+  // micro-inversions (1-4 px) that would flicker the chrome without a filter.
+  int _webScrollDirection = 0; // -1 up, 0 idle, +1 down
+  double _webDirectionAccumulator = 0.0;
+  static const double _kWebDirectionFlipThreshold = 6.0;
 
   /// Header slide offset as a fraction: 0.0 = fully visible, 1.0 = fully hidden.
   final ValueNotifier<double> _headerOffset = ValueNotifier<double>(0.0);
@@ -377,33 +382,49 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           }
           lastTouchY = currentY;
         }, { passive: true });
-        // Reading progress tracking (throttled to 300ms — high enough to keep
-        // the postMessage cost from stuttering native WebView scrolling, low
-        // enough for the header/footer auto-hide to feel responsive).
-        var progressTimer = null;
+        // Two distinct cadences for the bridge:
+        //  - `scroll_delta`: coalesced per animation frame (~16 ms) so the
+        //    native side can apply a continuous delta→offset mapping just
+        //    like the in-app reader, instead of a binary toggle that was
+        //    causing header/footer to flicker on micro-inversions.
+        //  - `progress:`   : kept throttled to 300 ms (downstream cost is
+        //    identical at higher rates, no UX benefit).
         var lastScrollY = window.scrollY;
+        var rafScheduled = false;
+        var raf = window.requestAnimationFrame
+          ? function(cb) { window.requestAnimationFrame(cb); }
+          : function(cb) { setTimeout(cb, 16); };
+        function flushDelta() {
+          rafScheduled = false;
+          var currentScrollY = window.scrollY;
+          var scrollDelta = currentScrollY - lastScrollY;
+          lastScrollY = currentScrollY;
+          // Sub-pixel filter: with rAF cadence (~16 ms) we want native
+          // granularity; a 1 px floor is enough to drop true noise.
+          if (Math.abs(scrollDelta) >= 1) {
+            ScrollBridge.postMessage('scroll_delta:' + scrollDelta + ':' + currentScrollY);
+          }
+        }
+        var progressTimer = null;
+        function flushProgress() {
+          progressTimer = null;
+          var maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+          if (maxScroll <= 0) return;
+          var pct = parseFloat((window.scrollY / maxScroll * 100).toFixed(1));
+          pct = Math.min(100, Math.max(0, pct));
+          if (pct !== lastProgress) {
+            lastProgress = pct;
+            ScrollBridge.postMessage('progress:' + pct);
+          }
+        }
         window.addEventListener('scroll', function() {
-          if (progressTimer) return;
-          progressTimer = setTimeout(function() {
-            progressTimer = null;
-            var maxScroll = document.documentElement.scrollHeight - window.innerHeight;
-            if (maxScroll > 0) {
-              var pct = parseFloat((window.scrollY / maxScroll * 100).toFixed(1));
-              pct = Math.min(100, Math.max(0, pct));
-              if (pct !== lastProgress) {
-                lastProgress = pct;
-                ScrollBridge.postMessage('progress:' + pct);
-              }
-            }
-            var currentScrollY = window.scrollY;
-            var scrollDelta = currentScrollY - lastScrollY;
-            // Skip sub-pixel noise (overscroll bounce, deceleration jitter)
-            // — header/footer auto-hide only needs meaningful deltas.
-            if (Math.abs(scrollDelta) >= 4) {
-              ScrollBridge.postMessage('scroll_delta:' + scrollDelta + ':' + currentScrollY);
-            }
-            lastScrollY = currentScrollY;
-          }, 300);
+          if (!rafScheduled) {
+            rafScheduled = true;
+            raf(flushDelta);
+          }
+          if (!progressTimer) {
+            progressTimer = setTimeout(flushProgress, 300);
+          }
         }, { passive: true });
       })();
     ''');
@@ -804,25 +825,40 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // EXCEPT in WebView mode where scroll comes from the JS bridge and the
     // user expects hide-on-scroll regardless of how short the in-app stub was.
     if (!isVideo && (!_isShortArticle || _isWebViewActive)) {
-      // In WebView mode the JS bridge fires at ~7Hz (150ms throttle) which
-      // makes per-event offset increments visibly choppy. Drive the overlays
-      // with the smooth 200ms tween in either direction instead.
+      // Effective delta to apply after the hysteresis filter. In native
+      // scroll mode the in-app ScrollController already produces per-frame
+      // deltas, so no filter is needed. In WebView mode the JS bridge
+      // emits per-frame deltas too, but tiny inverse spikes (fling rebound,
+      // deceleration jitter) used to flip the overlays binarily — we now
+      // gate direction changes through an accumulator so micro-inversions
+      // are absorbed before they propagate to the offset.
+      double effectiveDelta = delta;
       if (_isWebViewActive) {
-        if (delta > 0) {
-          if (_headerAutoTarget != 1.0) _animateHeaderTo(1.0);
-          if (!_footerPermanent.value && _footerAutoTarget != 1.0) {
-            _animateFooterTo(1.0);
-          }
-        } else if (delta < 0) {
-          if (_headerAutoTarget != 0.0) _animateHeaderTo(0.0);
-          if (!_footerPermanent.value && _footerAutoTarget != 0.0) {
-            _animateFooterTo(0.0);
+        final int sign = delta > 0 ? 1 : -1;
+        if (_webScrollDirection == 0 || sign == _webScrollDirection) {
+          _webScrollDirection = sign;
+          _webDirectionAccumulator = 0.0;
+        } else {
+          _webDirectionAccumulator += delta.abs();
+          if (_webDirectionAccumulator < _kWebDirectionFlipThreshold) {
+            effectiveDelta = 0.0;
+          } else {
+            _webScrollDirection = sign;
+            _webDirectionAccumulator = 0.0;
           }
         }
-      } else {
+        // Stop any in-flight reveal/hide tween; it would race against the
+        // continuous mapping below and re-introduce the flicker.
+        if (effectiveDelta != 0) {
+          _headerAutoController.stop();
+          _footerAutoController.stop();
+        }
+      }
+
+      if (effectiveDelta != 0) {
         final headerHeight =
             MediaQuery.of(context).padding.top + _kHeaderContentHeight;
-        final shift = delta / headerHeight;
+        final shift = effectiveDelta / headerHeight;
         _headerOffset.value = (_headerOffset.value + shift).clamp(0.0, 1.0);
 
         // Footer mirrors header: hides on scroll-down, shows on scroll-up.
@@ -830,7 +866,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         if (!_footerPermanent.value) {
           final bottomInset = MediaQuery.of(context).viewPadding.bottom;
           final footerHeight = _kFooterContentHeight + bottomInset;
-          final footerShift = delta / footerHeight;
+          final footerShift = effectiveDelta / footerHeight;
           _footerOffset.value =
               (_footerOffset.value + footerShift).clamp(0.0, 1.0);
         }
