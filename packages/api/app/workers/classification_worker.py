@@ -299,6 +299,7 @@ class ClassificationWorker:
                         "topics": [],
                         "serene": None,
                         "good_news": None,
+                        "is_ad": None,
                         "entities": [],
                     }
                     for _ in batch_items
@@ -314,7 +315,7 @@ class ClassificationWorker:
                         await service.mark_completed_with_entities(item.id, [], [])
                         continue
 
-                    # Get topics, serene and entities from batch result
+                    # Get topics, serene, is_ad and entities from batch result
                     if i in batch_indices:
                         result = (
                             all_results[batch_result_idx]
@@ -323,6 +324,7 @@ class ClassificationWorker:
                                 "topics": [],
                                 "serene": None,
                                 "good_news": None,
+                                "is_ad": None,
                                 "entities": [],
                             }
                         )
@@ -330,11 +332,13 @@ class ClassificationWorker:
                         topics = result.get("topics", [])
                         is_serene = result.get("serene")
                         is_good_news = result.get("good_news")
+                        is_ad = result.get("is_ad")
                         entities = result.get("entities", [])
                     else:
                         topics = []
                         is_serene = None
                         is_good_news = None
+                        is_ad = None
                         entities = []
 
                     # If still no topics after individual retry, let the retry
@@ -356,6 +360,7 @@ class ClassificationWorker:
                         entities,
                         is_serene=is_serene,
                         is_good_news=is_good_news,
+                        is_ad=is_ad,
                     )
 
                 except Exception as e:

@@ -98,6 +98,8 @@ class Content(Base):
     is_good_news: Mapped[bool | None] = mapped_column(
         Boolean, nullable=True, default=None
     )
+    # Publicité / native ad: contenu sponsorisé ou promotionnel déguisé en éditorial.
+    is_ad: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
     # In-App Reading: content quality signal ('full', 'partial', 'none')
     content_quality: Mapped[str | None] = mapped_column(
         String(20), nullable=True, default=None

@@ -193,6 +193,7 @@ def apply_serein_filter(
         ),
     )
     query = query.where(serene_condition)
+    query = apply_ad_filter(query)
 
     # User-personalized theme exclusions override LLM is_serene=True: if the
     # user explicitly said "no tech", hide every tech article regardless of
@@ -205,6 +206,13 @@ def apply_serein_filter(
         if topic_exclusion is not None:
             query = query.where(topic_exclusion)
     return query
+
+
+def apply_ad_filter(query):
+    """Exclut les articles classifiés is_ad=True. NULL toléré (articles non encore classifiés)."""
+    return query.where(
+        or_(Content.is_ad.is_(None), Content.is_ad == False)  # noqa: E712
+    )
 
 
 def apply_good_news_filter(
@@ -221,6 +229,7 @@ def apply_good_news_filter(
     pour respecter les préférences personnelles.
     """
     query = query.where(Content.is_good_news == True)  # noqa: E712
+    query = apply_ad_filter(query)
     if excluded_topics:
         topic_exclusion = _topic_exclusion_condition(excluded_topics)
         if topic_exclusion is not None:

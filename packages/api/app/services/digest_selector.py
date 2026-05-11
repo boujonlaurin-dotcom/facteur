@@ -41,6 +41,7 @@ from app.models.user import UserProfile, UserSubtopic
 from app.schemas.digest import DigestScoreBreakdown
 from app.services.briefing.importance_detector import ImportanceDetector
 from app.services.recommendation.filter_presets import (
+    apply_ad_filter,
     apply_good_news_filter,
     is_sport_content,
 )
@@ -787,6 +788,8 @@ class DigestSelector:
                         Content.is_paid.is_not(True)
                     )
 
+            user_sources_query = apply_ad_filter(user_sources_query)
+
             # Mode "serein" devient "Bonnes nouvelles du jour" : hard-filter
             # is_good_news=True. La promesse prime sur la quantité (digest
             # potentiellement partiel). Les `sensitive_themes` n'ont plus
@@ -824,6 +827,8 @@ class DigestSelector:
                 ~excluded_stmt,
                 Content.published_at >= since,
                 Source.is_curated,
+                # Exclure les publicités / native ads (NULL = non classifié → toléré)
+                or_(Content.is_ad.is_(None), Content.is_ad == False),  # noqa: E712
                 Content.id.notin_(list(existing_ids)) if existing_ids else True,
                 Source.id.notin_(list(context.muted_sources))
                 if context.muted_sources
@@ -862,6 +867,8 @@ class DigestSelector:
                 )
             else:
                 curated_query = curated_query.where(Content.is_paid.is_not(True))
+
+        curated_query = apply_ad_filter(curated_query)
 
         # Mode "Bonnes nouvelles" : hard-filter is_good_news=True (cf. supra).
         if mode == "serein":
