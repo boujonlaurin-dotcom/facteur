@@ -259,7 +259,9 @@ class ClassificationWorker:
 
                 good_news_indices: list[int] = []
                 good_news_items: list[dict] = []
-                for idx, (bi, result) in enumerate(zip(batch_items, all_results, strict=False)):
+                for idx, (bi, result) in enumerate(
+                    zip(batch_items, all_results, strict=False)
+                ):
                     if result.get("serene") is not True:
                         continue
                     source_name = bi.get("source_name", "")
@@ -284,9 +286,7 @@ class ClassificationWorker:
                             logger.info(
                                 "classification_worker.good_news_pass",
                                 evaluated=len(good_news_items),
-                                positives=sum(
-                                    1 for v in gn_results if v is True
-                                ),
+                                positives=sum(1 for v in gn_results if v is True),
                             )
                         except Exception as e:
                             logger.warning(
