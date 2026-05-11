@@ -836,9 +836,7 @@ async def generate_first_delivery(
                 detail="Génération déjà en cours, patiente quelques instants.",
             )
 
-        await db.execute(
-            delete(VeilleDelivery).where(VeilleDelivery.id == last.id)
-        )
+        await db.execute(delete(VeilleDelivery).where(VeilleDelivery.id == last.id))
 
     target = today_paris()
     delivery_id = uuid4()
