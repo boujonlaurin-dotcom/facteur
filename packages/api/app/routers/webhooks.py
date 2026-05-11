@@ -1,6 +1,5 @@
 """Routes webhooks."""
 
-import hashlib
 import hmac
 
 import structlog
@@ -13,58 +12,34 @@ from app.services.subscription_service import SubscriptionService
 
 router = APIRouter()
 logger = structlog.get_logger()
-settings = get_settings()
-
-
-def verify_revenuecat_signature(
-    payload: bytes,
-    signature: str,
-    secret: str,
-) -> bool:
-    """Vérifie la signature du webhook RevenueCat."""
-    expected = hmac.new(
-        secret.encode(),
-        payload,
-        hashlib.sha256,
-    ).hexdigest()
-
-    return hmac.compare_digest(expected, signature)
 
 
 @router.post("/revenuecat")
 async def revenuecat_webhook(
     request: Request,
-    x_revenuecat_signature: str = Header(None, alias="X-RevenueCat-Signature"),
+    authorization: str | None = Header(None),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     """
     Webhook RevenueCat pour les événements d'abonnement.
+
+    Auth : RevenueCat envoie le secret configuré dans le dashboard tel quel
+    via le header `Authorization` (cf. doc « Authorization Header
+    Verification »). On compare avec `Bearer <secret>`.
 
     Événements gérés:
     - INITIAL_PURCHASE
     - RENEWAL
     - CANCELLATION
     - EXPIRATION
-    - PRODUCT_CHANGE
     """
-    # Vérifier la signature en production
-    if settings.is_production and settings.revenuecat_webhook_secret:
-        payload = await request.body()
-
-        if not x_revenuecat_signature:
+    settings = get_settings()
+    if settings.revenuecat_webhook_secret:
+        expected = f"Bearer {settings.revenuecat_webhook_secret}"
+        if not authorization or not hmac.compare_digest(authorization, expected):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing signature",
-            )
-
-        if not verify_revenuecat_signature(
-            payload,
-            x_revenuecat_signature,
-            settings.revenuecat_webhook_secret,
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid signature",
+                detail="Invalid authorization",
             )
 
     # Parser l'événement
