@@ -26,6 +26,7 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     with WidgetsBindingObserver {
   bool _deepLinksStarted = false;
   bool _wasBackgrounded = false;
+  DateTime? _backgroundedAt;
 
   @override
   void initState() {
@@ -49,11 +50,16 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
   void didChangeAppLifecycleState(AppLifecycleState appState) {
     if (appState == AppLifecycleState.paused) {
       _wasBackgrounded = true;
+      _backgroundedAt = DateTime.now();
     } else if (appState == AppLifecycleState.resumed) {
       _flushFluxScrollMetricIfAny();
       if (_wasBackgrounded) {
         _wasBackgrounded = false;
-        if (ref.read(authStateProvider).isAuthenticated) {
+        final elapsed = _backgroundedAt != null
+            ? DateTime.now().difference(_backgroundedAt!)
+            : null;
+        if (ref.read(authStateProvider).isAuthenticated &&
+            (elapsed == null || elapsed.inSeconds >= 60)) {
           ref.read(feedProvider.notifier).refresh();
         }
       }
