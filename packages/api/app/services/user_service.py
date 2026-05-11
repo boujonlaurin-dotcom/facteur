@@ -137,7 +137,7 @@ class UserService:
             "content_recency": answers.content_recency,
             "format_preference": answers.format_preference,
             "personal_goal": answers.personal_goal,
-            "serein_enabled": getattr(answers, "serein_enabled", None),
+            "serein_enabled": str(answers.digest_mode == "serein").lower() if answers.digest_mode is not None else None,
         }
 
         pref_count = 0
