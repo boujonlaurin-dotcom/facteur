@@ -371,13 +371,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       (function() {
         var lastTouchY = 0;
         var lastProgress = 0;
+        // Track the user's finger direction so we can gate scrollY deltas
+        // that don't match it: some sites (Le Monde, Reddit, …) collapse
+        // their own sticky header on scroll, which mutates the document
+        // layout and emits scrollY deltas opposite to the gesture. Without
+        // gating, our reader chrome flips direction on these site-driven
+        // shifts and flickers.
+        //   touchDir = +1 → finger moving up = page scrolls down
+        //   touchDir = -1 → finger moving down = page scrolls up
+        // Kept across touchend so momentum frames still gate on the last
+        // gesture direction; reset on the next touchstart.
+        var touchDir = 0;
         document.addEventListener('touchstart', function(e) {
           lastTouchY = e.touches[0].clientY;
+          touchDir = 0;
         }, { passive: true });
         document.addEventListener('touchmove', function(e) {
           var currentY = e.touches[0].clientY;
-          var isScrollingUp = currentY > lastTouchY;
-          if (isScrollingUp && window.scrollY <= 0) {
+          var dy = currentY - lastTouchY;
+          if (Math.abs(dy) >= 1) {
+            touchDir = dy < 0 ? 1 : -1;
+          }
+          if (currentY > lastTouchY && window.scrollY <= 0) {
             ScrollBridge.postMessage('overscroll_top');
           }
           lastTouchY = currentY;
@@ -399,11 +414,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           var currentScrollY = window.scrollY;
           var scrollDelta = currentScrollY - lastScrollY;
           lastScrollY = currentScrollY;
-          // Sub-pixel filter: with rAF cadence (~16 ms) we want native
-          // granularity; a 1 px floor is enough to drop true noise.
-          if (Math.abs(scrollDelta) >= 1) {
-            ScrollBridge.postMessage('scroll_delta:' + scrollDelta + ':' + currentScrollY);
+          if (Math.abs(scrollDelta) < 1) return;
+          // Drop deltas that don't match the user's finger direction. These
+          // are typically site-driven (sticky-header collapse, content
+          // reflow) and would flip the reader chrome direction even though
+          // the user is still scrolling the same way. lastScrollY is
+          // advanced above so the swallowed delta isn't re-emitted.
+          if (touchDir !== 0) {
+            var deltaDir = scrollDelta > 0 ? 1 : -1;
+            if (deltaDir !== touchDir) return;
           }
+          ScrollBridge.postMessage('scroll_delta:' + scrollDelta + ':' + currentScrollY);
         }
         var progressTimer = null;
         function flushProgress() {
