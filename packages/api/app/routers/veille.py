@@ -25,7 +25,10 @@ from app.config import get_settings
 from app.data.veille_presets import get_presets
 from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
-from app.jobs.veille_generation_job import run_veille_generation_for_config
+from app.jobs.veille_generation_job import (
+    STUCK_DELIVERY_THRESHOLD,
+    run_veille_generation_for_config,
+)
 from app.models.content import Content
 from app.models.enums import SourceType
 from app.models.source import Source
@@ -784,22 +787,58 @@ async def generate_first_delivery(
 
     Crée une row VeilleDelivery en PENDING tout de suite pour que le mobile
     puisse poll GET /deliveries/{id} pendant que le BackgroundTask tourne.
-    Refuse si une livraison existe déjà pour cette config (anti-doublon).
+
+    Idempotent sur reprise d'erreur :
+    - Si la dernière livraison a réussi avec ≥1 item → 403 (anti-doublon réel).
+    - Si elle est `failed`, `succeeded` mais vide, ou `pending|running` depuis
+      >15 min → on DELETE l'ancienne row et on relance proprement.
+    - Si elle est `pending|running` depuis <15 min → 409 (en cours, le mobile
+      doit récupérer son `delivery_id` via GET /deliveries).
     """
     user_uuid = UUID(current_user_id)
     cfg = await _get_active_config(db, user_uuid)
     if cfg is None:
         raise HTTPException(status_code=404, detail="Aucune veille active.")
 
-    existing = (
+    # FOR UPDATE sérialise les concurrents (double-clic sur la CTA dashboard)
+    # sur la dernière row : sans ce lock, deux requêtes peuvent toutes deux
+    # voir « failed », DELETE puis INSERT, et lancer 2 background tasks.
+    last = (
         await db.execute(
-            select(VeilleDelivery.id)
+            select(VeilleDelivery)
             .where(VeilleDelivery.veille_config_id == cfg.id)
+            .order_by(VeilleDelivery.created_at.desc())
             .limit(1)
+            .with_for_update()
         )
     ).scalar_one_or_none()
-    if existing is not None:
-        raise HTTPException(status_code=403, detail="Première livraison déjà générée.")
+
+    if last is not None:
+        state = last.generation_state
+        item_count = len(last.items or [])
+        succeeded = state == VeilleGenerationState.SUCCEEDED.value
+        if succeeded and item_count > 0:
+            raise HTTPException(
+                status_code=403, detail="Première livraison déjà générée."
+            )
+
+        in_flight = state in (
+            VeilleGenerationState.PENDING.value,
+            VeilleGenerationState.RUNNING.value,
+        )
+        created = last.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=UTC)
+        age = datetime.now(UTC) - created
+        if in_flight and age < STUCK_DELIVERY_THRESHOLD:
+            raise HTTPException(
+                status_code=409,
+                detail="Génération déjà en cours, patiente quelques instants.",
+            )
+
+        await db.execute(
+            delete(VeilleDelivery).where(VeilleDelivery.id == last.id)
+        )
 
     target = today_paris()
     delivery_id = uuid4()

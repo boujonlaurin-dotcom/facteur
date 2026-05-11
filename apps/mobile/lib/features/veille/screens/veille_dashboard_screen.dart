@@ -7,9 +7,13 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/routes.dart';
 import '../../../core/services/push_notification_service.dart';
 import '../models/veille_config_dto.dart';
+import '../models/veille_delivery.dart';
 import '../providers/veille_active_config_provider.dart';
+import '../providers/veille_deliveries_provider.dart';
 import '../providers/veille_repository_provider.dart';
 import '../repositories/veille_repository.dart';
+import '../utils/poll_first_delivery.dart';
+import 'transitions/flow_loading_screen.dart';
 
 class VeilleDashboardScreen extends ConsumerWidget {
   const VeilleDashboardScreen({super.key});
@@ -64,13 +68,28 @@ class VeilleDashboardScreen extends ConsumerWidget {
   }
 }
 
-class _DashboardBody extends ConsumerWidget {
+class _DashboardBody extends ConsumerStatefulWidget {
   final VeilleConfigDto cfg;
   const _DashboardBody({required this.cfg});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_DashboardBody> createState() => _DashboardBodyState();
+}
+
+class _DashboardBodyState extends ConsumerState<_DashboardBody> {
+  bool _isGeneratingFirst = false;
+
+  VeilleConfigDto get cfg => widget.cfg;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isGeneratingFirst) {
+      return const FlowLoadingScreen(from: 4);
+    }
+
     final isPaused = cfg.status == 'paused';
+    final lastDeliveryAsync = ref.watch(veilleLastDeliveryProvider);
+    final firstDeliveryState = _firstDeliveryState(lastDeliveryAsync);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
@@ -153,6 +172,13 @@ class _DashboardBody extends ConsumerWidget {
           ),
         ],
         const SizedBox(height: 24),
+        if (firstDeliveryState != _FirstDeliveryState.hideCta) ...[
+          _FirstDeliveryCta(
+            isRetry: firstDeliveryState == _FirstDeliveryState.retry,
+            onTap: _handleFirstDeliveryCta,
+          ),
+          const SizedBox(height: 10),
+        ],
         _PrimaryButton(
           icon: PhosphorIcons.envelope(),
           label: 'Voir l\'historique',
@@ -288,6 +314,67 @@ class _DashboardBody extends ConsumerWidget {
     return labels[dow];
   }
 
+  /// Hide la CTA tant qu'on a une 1re livraison valide OU sur état transitoire
+  /// (loading/error) — ne pas proposer d'action sur un état flou.
+  _FirstDeliveryState _firstDeliveryState(
+    AsyncValue<VeilleDeliveryListItem?> lastDeliveryAsync,
+  ) {
+    if (!lastDeliveryAsync.hasValue) return _FirstDeliveryState.hideCta;
+    final last = lastDeliveryAsync.value;
+    if (last == null) return _FirstDeliveryState.firstAttempt;
+
+    final isValid = last.generationState == VeilleGenerationState.succeeded &&
+        last.itemCount > 0;
+    if (isValid) return _FirstDeliveryState.hideCta;
+
+    final isInFlight =
+        last.generationState == VeilleGenerationState.pending ||
+            last.generationState == VeilleGenerationState.running;
+    if (isInFlight) {
+      final age = DateTime.now().difference(last.createdAt);
+      if (age < const Duration(minutes: 15)) {
+        return _FirstDeliveryState.hideCta;
+      }
+    }
+    return _FirstDeliveryState.retry;
+  }
+
+  Future<void> _handleFirstDeliveryCta() async {
+    if (_isGeneratingFirst) return;
+    setState(() => _isGeneratingFirst = true);
+    try {
+      final repo = ref.read(veilleRepositoryProvider);
+      final response = await repo.generateFirstDelivery();
+      if (!mounted) return;
+      final ok = await pollFirstDelivery(
+        context: context,
+        ref: ref,
+        deliveryId: response.deliveryId,
+        onTimeoutMessage:
+            "On t'enverra une notif quand ta veille est prête.",
+        onFailedMessage:
+            'La génération a échoué. Tu peux relancer depuis le dashboard.',
+      );
+      if (!mounted) return;
+      if (ok) {
+        context.go('${RoutePaths.veilleDeliveries}/${response.deliveryId}');
+      } else {
+        ref.invalidate(veilleLastDeliveryProvider);
+      }
+    } on VeilleApiException catch (e) {
+      if (!mounted) return;
+      final message = e.statusCode == 409
+          ? 'Génération en cours, patiente quelques instants.'
+          : 'Impossible de relancer la génération (${e.statusCode ?? '?'}). Réessaie.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+      ref.invalidate(veilleLastDeliveryProvider);
+    } finally {
+      if (mounted) setState(() => _isGeneratingFirst = false);
+    }
+  }
+
   static String _formatNextScheduled(DateTime d) {
     final local = d.toLocal();
     const months = [
@@ -308,6 +395,76 @@ class _DashboardBody extends ConsumerWidget {
     final hh = local.hour.toString().padLeft(2, '0');
     final mm = local.minute.toString().padLeft(2, '0');
     return '${local.day} $m ${local.year} · $hh:$mm';
+  }
+}
+
+enum _FirstDeliveryState { firstAttempt, retry, hideCta }
+
+class _FirstDeliveryCta extends StatelessWidget {
+  final bool isRetry;
+  final VoidCallback onTap;
+  const _FirstDeliveryCta({required this.isRetry, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8EC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE0C97A)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            isRetry
+                ? 'Ta première veille n\'a pas abouti.'
+                : 'Lance ta première veille pour voir ce que ça donne.',
+            style: GoogleFonts.dmSans(
+              fontSize: 13,
+              color: const Color(0xFF2A2419),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 44,
+            child: Material(
+              color: const Color(0xFF2A2419),
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(10),
+                child: Center(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        PhosphorIcons.sparkle(),
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        isRetry
+                            ? 'Relancer ma première veille'
+                            : 'Lancer ma première veille',
+                        style: GoogleFonts.dmSans(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
