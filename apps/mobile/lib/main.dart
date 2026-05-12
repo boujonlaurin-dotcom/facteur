@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -73,10 +76,15 @@ Future<void> _bootstrap() async {
 
   // Initialiser flutter_downloader (Android DownloadManager) pour la mise
   // à jour APK : permet au téléchargement de continuer en arrière-plan.
-  try {
-    await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
-  } catch (e) {
-    debugPrint('Main: FlutterDownloader init failed (non-critical): $e');
+  // Gate Android-only : sur iOS l'init crash (AppDelegate ne wire pas
+  // setPluginRegistrantCallback) et la feature (sideload APK) ne s'applique
+  // pas. Sur web `dart:io` Platform throw.
+  if (!kIsWeb && Platform.isAndroid) {
+    try {
+      await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
+    } catch (e) {
+      debugPrint('Main: FlutterDownloader init failed (non-critical): $e');
+    }
   }
 
   // Pré-ouvrir les boxes et vérifier leur contenu
