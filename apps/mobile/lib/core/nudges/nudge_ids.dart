@@ -23,4 +23,7 @@ class NudgeIds {
 
   // Story 14.3 — self-reported "well-informed" score (NPS-style).
   static const wellInformedPoll = 'well_informed_poll';
+
+  // Story web.1 — Modal "Ajouter à l'écran d'accueil" sur iOS Safari.
+  static const iosAddToHome = 'ios_add_to_home';
 }
