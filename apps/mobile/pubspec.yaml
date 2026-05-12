@@ -90,6 +90,9 @@ dependencies:
   flutter_downloader: ^1.11.8
   flutter_inappwebview: ^6.1.5
 
+  # PWA install prompt detection (Story web.1 — iOS Safari add-to-home)
+  web: ^1.1.0
+
 dev_dependencies:
   mocktail: ^1.0.3
   mockito: ^5.4.4

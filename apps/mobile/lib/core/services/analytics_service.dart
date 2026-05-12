@@ -577,6 +577,23 @@ class AnalyticsService {
     await _capturePostHog('modal_notif_dismissed', {});
   }
 
+  // ── iOS "Add to Home Screen" PWA modal (Story web.1) ────────────────
+
+  Future<void> trackIosAddToHomeShown() async {
+    await _logEvent('ios_add_to_home_shown', {});
+    await _capturePostHog('ios_add_to_home_shown', {});
+  }
+
+  Future<void> trackIosAddToHomeConfirmed() async {
+    await _logEvent('ios_add_to_home_confirmed', {});
+    await _capturePostHog('ios_add_to_home_confirmed', {});
+  }
+
+  Future<void> trackIosAddToHomeDismissed() async {
+    await _logEvent('ios_add_to_home_dismissed', {});
+    await _capturePostHog('ios_add_to_home_dismissed', {});
+  }
+
   Future<void> trackRenudgeShown({required int displayCount}) async {
     final props = <String, dynamic>{'display_count': displayCount};
     await _logEvent('renudge_shown', props);

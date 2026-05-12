@@ -56,6 +56,8 @@ import '../../app_update/providers/app_update_provider.dart';
 import '../../app_update/widgets/update_modal.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../notifications/widgets/notification_activation_modal.dart';
+import '../../onboarding/providers/ios_add_to_home_provider.dart';
+import '../../onboarding/widgets/ios_add_to_home_sheet.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
 import '../../notifications/widgets/notification_renudge_banner.dart';
 import '../../well_informed/widgets/well_informed_prompt.dart';
@@ -207,21 +209,38 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     await NudgeCounters.increment(NudgeCounters.feedCardTapCount);
   }
 
-  /// Modal d'activation notif gatée par `firstImpressionSlotProvider` (au
+  /// Modal premier-impact gatée par `firstImpressionSlotProvider` (au
   /// plus 1 modal/session, arbitrée avec re-nudge banner + well-informed
-  /// prompt).
+  /// prompt). Dispatch sur le type de slot pour soit la modal notif (mobile
+  /// natif), soit la modal "Ajouter à l'écran d'accueil" (iOS Safari web).
   void _maybeShowActivationModal(FirstImpressionSlot slot) {
     if (_activationModalShown) return;
-    if (slot != FirstImpressionSlot.notifModal) return;
+    final VoidCallback action;
+    switch (slot) {
+      case FirstImpressionSlot.iosAddToHome:
+        action = () {
+          ref.read(iosAddToHomeConsumedThisSessionProvider.notifier).state =
+              true;
+          showIosAddToHomeSheet(context, ref);
+        };
+      case FirstImpressionSlot.notifModal:
+        action = () {
+          ref.read(notifModalConsumedThisSessionProvider.notifier).state = true;
+          showNotificationActivationModal(
+            context,
+            ref,
+            trigger: ActivationTrigger.update,
+          );
+        };
+      case FirstImpressionSlot.none:
+      case FirstImpressionSlot.renudgeBanner:
+      case FirstImpressionSlot.wellInformed:
+        return;
+    }
     _activationModalShown = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(notifModalConsumedThisSessionProvider.notifier).state = true;
-      showNotificationActivationModal(
-        context,
-        ref,
-        trigger: ActivationTrigger.update,
-      );
+      action();
     });
   }
 

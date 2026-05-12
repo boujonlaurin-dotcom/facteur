@@ -117,5 +117,17 @@ class NudgeRegistry {
       frequency: NudgeFrequency.cooldown,
       cooldown: Duration(days: 5),
     ),
+
+    // Story web.1 — iOS Safari "Ajouter à l'écran d'accueil". Cooldown 7j
+    // pour les utilisateurs qui ferment via "Plus tard" ; `markSeen`
+    // permanent quand l'utilisateur confirme "C'est fait".
+    const Nudge(
+      id: NudgeIds.iosAddToHome,
+      surface: NudgeSurface.global,
+      placement: NudgePlacement.modal,
+      priority: NudgePriority.high,
+      frequency: NudgeFrequency.cooldown,
+      cooldown: Duration(days: 7),
+    ),
   ];
 }
