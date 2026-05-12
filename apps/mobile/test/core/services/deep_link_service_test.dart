@@ -33,9 +33,58 @@ void main() {
       expect(action.topicId, 'international');
     });
 
+    test('veille/dashboard → veille target', () {
+      final action = DeepLinkService.parse(
+        Uri.parse('io.supabase.facteur://veille/dashboard'),
+      );
+      expect(action.target, WidgetDeepLinkTarget.veille);
+      expect(action.route, '/veille/dashboard');
+    });
+
+    test('veille bare host → veille target (fallback dashboard)', () {
+      final action = DeepLinkService.parse(
+        Uri.parse('io.supabase.facteur://veille'),
+      );
+      expect(action.target, WidgetDeepLinkTarget.veille);
+      expect(action.route, '/veille/dashboard');
+    });
+
     test('feed host → feed target', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://feed'),
+      );
+      expect(action.target, WidgetDeepLinkTarget.feed);
+      expect(action.route, '/feed');
+    });
+
+    test('feed/content/<id> → article reader (Flux deep link)', () {
+      final action = DeepLinkService.parse(
+        Uri.parse(
+          'io.supabase.facteur://feed/content/abc-123?pos=4&topicId=tech',
+        ),
+      );
+      expect(action.target, WidgetDeepLinkTarget.article);
+      expect(action.route, '/feed/content/abc-123');
+      expect(action.articleId, 'abc-123');
+      expect(action.position, 4);
+      expect(action.topicId, 'tech');
+    });
+
+    test('feed/content/<id> with empty host → article reader', () {
+      // Some Android intent shapes drop the host and prepend it as a path
+      // segment instead. Both shapes should resolve to the article reader.
+      final action = DeepLinkService.parse(
+        Uri.parse('io.supabase.facteur:///feed/content/abc-123?pos=7'),
+      );
+      expect(action.target, WidgetDeepLinkTarget.article);
+      expect(action.route, '/feed/content/abc-123');
+      expect(action.articleId, 'abc-123');
+      expect(action.position, 7);
+    });
+
+    test('feed/content/ (id missing) falls back to feed target', () {
+      final action = DeepLinkService.parse(
+        Uri.parse('io.supabase.facteur://feed/content/'),
       );
       expect(action.target, WidgetDeepLinkTarget.feed);
       expect(action.route, '/feed');

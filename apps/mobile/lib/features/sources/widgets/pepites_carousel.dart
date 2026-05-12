@@ -6,7 +6,7 @@ import '../../../config/theme.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
 import 'pepite_card.dart';
-import 'pepite_preview_sheet.dart';
+import 'source_detail_modal.dart';
 
 /// Carousel de recommandations de sources curées ("Pépites"), affiché dans
 /// le feed pour aider à découvrir des sources de qualité. Visibilité gérée
@@ -35,12 +35,8 @@ class PepitesCarousel extends ConsumerWidget {
     FacteurColors colors,
     List<Source> sources,
   ) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      decoration: BoxDecoration(
-        color: colors.backgroundSecondary,
-        borderRadius: BorderRadius.circular(FacteurRadius.medium),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -48,23 +44,28 @@ class PepitesCarousel extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14),
             child: Row(
               children: [
-                Icon(
-                  PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
-                  size: 16,
-                  color: colors.primary,
+                Image.asset(
+                  'assets/images/recos_facteur.png',
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.contain,
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Des sources à découvrir',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                    "Recos. de l'équipe Facteur",
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      height: 1.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 _DismissButton(
-                  onPressed: () =>
-                      ref.read(pepitesProvider.notifier).dismiss(),
+                  onPressed: () => ref.read(pepitesProvider.notifier).dismiss(),
                 ),
               ],
             ),
@@ -79,9 +80,16 @@ class PepitesCarousel extends ConsumerWidget {
               separatorBuilder: (_, __) => const SizedBox(width: 10),
               itemBuilder: (_, index) {
                 final source = sources[index];
+                final isFollowing = ref.watch(userSourcesProvider).maybeWhen(
+                      data: (list) =>
+                          list.any((s) => s.id == source.id && s.isTrusted),
+                      orElse: () => false,
+                    );
                 return PepiteCard(
                   source: source,
-                  onFollow: () => _onFollow(context, ref, source),
+                  isFollowing: isFollowing,
+                  onToggleFollow: () =>
+                      _onToggleFollow(ref, source, isFollowing),
                   onTap: () => _onTap(context, ref, source),
                 );
               },
@@ -92,25 +100,34 @@ class PepitesCarousel extends ConsumerWidget {
     );
   }
 
-  Future<void> _onFollow(
-    BuildContext context,
+  Future<void> _onToggleFollow(
     WidgetRef ref,
     Source source,
+    bool currentlyFollowing,
   ) async {
-    ref.read(pepitesProvider.notifier).removeLocal(source.id);
-    try {
-      await ref.read(sourcesRepositoryProvider).trustSource(source.id);
-      ref.invalidate(userSourcesProvider);
-    } catch (_) {
-      // silent : retry au prochain refresh
-    }
+    await ref
+        .read(userSourcesProvider.notifier)
+        .toggleTrust(source.id, currentlyFollowing);
   }
 
   void _onTap(BuildContext context, WidgetRef ref, Source source) {
-    PepitePreviewSheet.show(
-      context,
-      source: source,
-      onFollow: () => _onFollow(context, ref, source),
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final live = ref.watch(userSourcesProvider).maybeWhen(
+              data: (list) =>
+                  list.where((s) => s.id == source.id).firstOrNull ?? source,
+              orElse: () => source,
+            );
+        return SourceDetailModal(
+          source: live,
+          onToggleTrust: () => ref
+              .read(userSourcesProvider.notifier)
+              .toggleTrust(source.id, live.isTrusted),
+        );
+      },
     );
   }
 }

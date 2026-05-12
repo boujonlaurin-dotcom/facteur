@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/services/widget_service.dart';
 import '../models/content_model.dart';
 import '../repositories/feed_repository.dart';
 import '../repositories/personalization_repository.dart';
@@ -96,6 +97,23 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   final Set<String> _consumedContentIds =
       {}; // Track content being animated out
 
+  // Unfiltered snapshot — tab badges need counts across all topics, not just
+  // the currently filtered subset.
+  List<Content> _globalItems = [];
+
+  Timer? _widgetPushDebounce;
+  String? _lastWidgetPushSignature;
+  static const Duration _widgetPushDelay = Duration(seconds: 1);
+
+  // Cap mirrored to the Kotlin RemoteViewsFactory's MAX_ROWS_FLUX. The
+  // widget runs without thumbnails in Flux, so 80 rows fit well under the
+  // Binder IPC ceiling.
+  static const int _widgetFluxCap = 80;
+  // Max additional pages fetched purely to feed the widget. Keeps the
+  // prefetch chain bounded even if the backend keeps reporting hasNext.
+  static const int _widgetPrefetchMaxPages = 4;
+  bool _widgetDepthFillInProgress = false;
+
   bool get isLoadingMore => _isLoadingMore;
   bool get hasNext => _hasNext;
   String? get selectedFilter => _selectedFilter;
@@ -104,9 +122,22 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   String? get selectedSourceId => _selectedSourceId;
   String? get selectedEntity => _selectedEntity;
   String? get selectedKeyword => _selectedKeyword;
+  List<Content> get globalItems => _globalItems;
+
+  bool get _isUnfiltered =>
+      _selectedTopic == null &&
+      _selectedTheme == null &&
+      _selectedEntity == null;
 
   @override
   FutureOr<FeedState> build() async {
+    listenSelf((previous, next) {
+      next.whenData((data) => _scheduleWidgetPush(data.items));
+    });
+    ref.onDispose(() {
+      _widgetPushDebounce?.cancel();
+    });
+
     // Watch auth state to handle logout/user change
     final authState = ref.watch(authStateProvider);
 
@@ -159,8 +190,10 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         if (ageSeconds >= _silentRevalSkipSeconds) {
           _scheduleSilentRevalidation();
         }
+        _globalItems = parsed.items;
         print(
             '[PERF] feedProvider.build(): cache hit (${parsed.items.length} items, age=${ageSeconds}s, silent_reval=${ageSeconds >= _silentRevalSkipSeconds})');
+        unawaited(_prefetchForWidget(parsed.items));
         return FeedState(items: parsed.items, carousels: parsed.carousels);
       } catch (e) {
         // Corrupted cache or schema drift — drop silently and fall through.
@@ -175,6 +208,8 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     sw.stop();
     print('[PERF] feedProvider.build(): ${sw.elapsedMilliseconds}ms (${response.items.length} items)');
 
+    _globalItems = response.items;
+    unawaited(_prefetchForWidget(response.items));
     return FeedState(items: response.items, carousels: response.carousels);
   }
 
@@ -196,15 +231,130 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
             _selectedKeyword != null) {
           return;
         }
+        // Preserve consumed status for items that the user marked while the API
+        // call was in flight (race: tap → markContentAsConsumed sets optimistic
+        // state before response arrives and would overwrite it).
+        final currentState = state.value;
+        final consumedIds = <String>{
+          ...?(currentState?.items
+              .where((c) => c.status == ContentStatus.consumed)
+              .map((c) => c.id)),
+          ...?(currentState?.carousels.expand((carousel) => carousel.items
+              .where((c) => c.status == ContentStatus.consumed)
+              .map((c) => c.id))),
+        };
+        if (consumedIds.isEmpty) {
+          _globalItems = response.items;
+          state = AsyncData(
+              FeedState(items: response.items, carousels: response.carousels));
+          return;
+        }
+        Content preserve(Content c) => consumedIds.contains(c.id)
+            ? c.copyWith(status: ContentStatus.consumed)
+            : c;
+        final mergedItems = response.items.map(preserve).toList();
+        _globalItems = mergedItems;
         state = AsyncData(FeedState(
-          items: response.items,
-          carousels: response.carousels,
+          items: mergedItems,
+          carousels: response.carousels
+              .map((car) =>
+                  car.copyWith(items: car.items.map(preserve).toList()))
+              .toList(),
         ));
       } catch (e) {
         // Silent: user still sees the cached feed.
         print('FeedNotifier: silent revalidation failed: $e');
       }
     });
+  }
+
+  /// Push the current default feed to the home-screen widget. No-op when a
+  /// filter/theme/source/etc. is active — only the canonical, unfiltered Flux
+  /// is mirrored to the widget. Debounced + signature-guarded so optimistic
+  /// taps and loadMore bursts don't churn SharedPreferences.
+  void _scheduleWidgetPush(List<Content> items) {
+    if (_selectedFilter != null ||
+        _selectedTheme != null ||
+        _selectedTopic != null ||
+        _selectedSourceId != null ||
+        _selectedEntity != null ||
+        _selectedKeyword != null) {
+      return;
+    }
+    final slice = items.take(_widgetFluxCap).toList(growable: false);
+    final signature = slice.isEmpty
+        ? '0'
+        : '${slice.length}|${slice.first.id}|${slice.last.id}';
+    if (signature == _lastWidgetPushSignature) return;
+    _widgetPushDebounce?.cancel();
+    _widgetPushDebounce = Timer(_widgetPushDelay, () {
+      _lastWidgetPushSignature = signature;
+      WidgetService.updateWidget(feedItems: slice);
+    });
+  }
+
+  /// Prefetch additional pages purely to feed the widget. Calls the repository
+  /// directly so the in-app feed state (`state.value.items`, `_hasNext`, `_page`)
+  /// is never mutated — pages 2-3 fetched here only land in the widget payload.
+  ///
+  /// Aborts silently if a filter becomes active mid-flight or if the chain is
+  /// already running. Bounded by [_widgetPrefetchMaxPages] and [_widgetFluxCap].
+  Future<void> _prefetchForWidget(List<Content> initialItems) async {
+    if (!_isUnfiltered) return;
+    if (_widgetDepthFillInProgress) return;
+    if (initialItems.length >= _widgetFluxCap) return;
+    if (!_hasNext) return;
+
+    _widgetDepthFillInProgress = true;
+    try {
+      final buffer = List<Content>.from(initialItems);
+      final existingIds = Set<String>.from(buffer.map((c) => c.id));
+      final repository = ref.read(feedRepositoryProvider);
+      final isSerein = ref.read(sereinToggleProvider).enabled;
+
+      // Page 1 is already in [initialItems] — start at 2.
+      var probePage = 2;
+      var attempts = 0;
+      while (buffer.length < _widgetFluxCap &&
+          attempts < _widgetPrefetchMaxPages) {
+        if (!_isUnfiltered) return;
+        attempts++;
+        try {
+          final response = await repository.getFeed(
+            page: probePage,
+            limit: _limit,
+            mode: null,
+            theme: null,
+            topic: null,
+            sourceId: null,
+            entity: null,
+            keyword: null,
+            includeUnfollowed: false,
+            serein: isSerein,
+          );
+          final hasMore =
+              response.pagination.hasNext && response.items.isNotEmpty;
+          for (final c in response.items) {
+            if (existingIds.add(c.id)) {
+              buffer.add(c);
+              if (buffer.length >= _widgetFluxCap) break;
+            }
+          }
+          probePage++;
+          if (!hasMore) break;
+        } catch (e) {
+          // Best-effort prefetch: a failed extra page must never bubble up.
+          // ignore: avoid_print
+          print('FeedNotifier: widget prefetch page $probePage failed: $e');
+          break;
+        }
+      }
+
+      if (!_isUnfiltered) return;
+      _scheduleWidgetPush(buffer);
+    } finally {
+      _widgetDepthFillInProgress = false;
+    }
   }
 
   Future<void> setFilter(String? filter) async {
@@ -372,8 +522,23 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       final currentItems = state.value?.items ?? [];
       final currentCarousels = state.value?.carousels ?? [];
 
+      // Deduplicate by content ID: stale cache on page 1 + fresh API on page 2
+      // can produce overlapping articles when new content was ingested in between.
+      final existingIds = Set<String>.from(currentItems.map((c) => c.id));
+      final dedupedNewItems =
+          newItems.where((c) => !existingIds.contains(c.id)).toList();
+
+      if (dedupedNewItems.isEmpty && newItems.isNotEmpty) {
+        // All items were duplicates — pagination is fully misaligned (e.g. stale
+        // cache vs. heavily updated candidate pool). Stop paging to avoid a loop.
+        print(
+            'FeedNotifier: loadMore page $nextPage fully deduplicated (${newItems.length} dupes), stopping pagination.');
+        _hasNext = false;
+        return;
+      }
+
       state = AsyncData(FeedState(
-        items: [...currentItems, ...newItems],
+        items: [...currentItems, ...dedupedNewItems],
         carousels: currentCarousels, // Keep page 1 carousels
       ));
     } catch (e) {
@@ -402,6 +567,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       // call (the backend cache will still give a fast response, but the
       // user has the right to ask for fresh data).
       final response = await _fetchPage(page: 1, forceFresh: true);
+      if (_isUnfiltered) {
+        _globalItems = response.items;
+      }
       state = AsyncData(FeedState(
         items: response.items,
         carousels: response.carousels,
@@ -918,32 +1086,48 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       if (c.id != updated.id) return c;
       return updated.copyWith(status: c.status);
     }).toList();
-    state = AsyncData(FeedState(items: items, carousels: state.value?.carousels ?? const []));
+
+    final updatedCarousels = _updateCarouselItem(
+      currentState.carousels,
+      updated.id,
+      (c) => updated.copyWith(status: c.status),
+    );
+
+    state = AsyncData(FeedState(items: items, carousels: updatedCarousels));
   }
 
   Future<void> markContentAsConsumed(Content content) async {
     final currentState = state.value;
     if (currentState == null) return;
 
-    // Check if it's in the feed items
     final feedIndex = currentState.items.indexWhere((c) => c.id == content.id);
 
+    final updatedItems = List<Content>.from(currentState.items);
     if (feedIndex != -1) {
-      // Update the item status in the list directly
-      final updatedItems = List<Content>.from(currentState.items);
       updatedItems[feedIndex] =
           updatedItems[feedIndex].copyWith(status: ContentStatus.consumed);
+    }
 
-      state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
+    final updatedCarousels = _updateCarouselItem(
+      currentState.carousels,
+      content.id,
+      (c) => c.copyWith(status: ContentStatus.consumed),
+    );
 
-      // Call Generic API immediately (Fire and forget)
-      try {
-        final repository = ref.read(feedRepositoryProvider);
-        await repository.updateContentStatus(
-            content.id, ContentStatus.consumed);
-      } catch (e) {
-        // Silent failure, state is already updated optimistically
+    state = AsyncData(FeedState(items: updatedItems, carousels: updatedCarousels));
+
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.updateContentStatus(content.id, ContentStatus.consumed);
+      // Invalidate in-memory dedupe + Hive cache so the next fetch (silent
+      // revalidation or cold start) returns fresh data with the correct status.
+      FeedRepository.clearDefaultViewCache();
+      final userId = ref.read(authStateProvider).user?.id;
+      if (userId != null) {
+        unawaited(ref.read(feedCacheServiceProvider)?.clearForUser(userId));
       }
+    } catch (e) {
+      // Silent failure, state is already updated optimistically
     }
   }
 }

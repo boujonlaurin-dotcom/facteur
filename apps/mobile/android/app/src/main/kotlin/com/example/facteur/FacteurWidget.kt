@@ -5,41 +5,42 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffXfermode
-import android.graphics.RectF
 import android.net.Uri
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
 import es.antonborri.home_widget.HomeWidgetPlugin
-import org.json.JSONArray
-import org.json.JSONObject
-import java.io.File
-import java.time.Duration
-import java.time.OffsetDateTime
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * Home-screen widget rendering up to 5 digest articles inline.
+ * Home-screen widget rendering a unified Facteur feed: up to 5 articles from
+ * the daily Essentiel followed by deduplicated Flux items, capped at
+ * [WidgetRendering.MAX_ROWS] total. The user picks at install time between
+ * two visual variants (Clair / Sombre) via the [FacteurWidgetLight] /
+ * [FacteurWidgetDark] subclasses — each is its own AppWidgetProvider with
+ * a dedicated layout and color set.
  *
- * Earlier iterations used a ListView bound to a RemoteViewsService. That
- * pattern is unreliable on Samsung One UI launchers (the RemoteViewsAdapter
- * never receives data and the system shows "Chargement…" forever). We now
- * parse `articles_json` directly in [onUpdate] and append one
- * `widget_article_row` RemoteViews per article into `articles_container`.
+ * Data flow: Flutter writes `widget_articles_json` (the merged Essentiel +
+ * Flux payload) via the `home_widget` package. There is no more in-widget
+ * mode switch; deeplink targets are decided per-row from the `source_kind`
+ * field (`essentiel` → `digest/<id>`, `flux` → `feed/content/<id>`).
  */
-class FacteurWidget : AppWidgetProvider() {
+abstract class FacteurWidget : AppWidgetProvider() {
+
+    /**
+     * "light" or "dark" — picks the layout, row layout and resource colors.
+     * Overridden by [FacteurWidgetLight] / [FacteurWidgetDark].
+     */
+    protected abstract val theme: String
 
     companion object {
         private const val TAG = "FacteurWidget"
-        private const val MAX_ROWS = 5
-        private const val STALE_THRESHOLD_MS = 36L * 60 * 60 * 1000 // 36h
+        const val EXTRA_THEME = "widget_theme"
+        const val THEME_LIGHT = "light"
+        const val THEME_DARK = "dark"
+        const val PAYLOAD_KEY = "widget_articles_json"
     }
 
     override fun onUpdate(
@@ -49,238 +50,118 @@ class FacteurWidget : AppWidgetProvider() {
     ) {
         for (appWidgetId in appWidgetIds) {
             try {
-                val views = RemoteViews(context.packageName, R.layout.facteur_widget)
-                val prefs = HomeWidgetPlugin.getData(context)
-                val json = prefs?.getString("articles_json", null)
-                Log.d(TAG, "onUpdate id=$appWidgetId json.len=${json?.length ?: -1}")
+                val layoutId = if (theme == THEME_DARK) {
+                    R.layout.facteur_widget_dark
+                } else {
+                    R.layout.facteur_widget_light
+                }
+                val views = RemoteViews(context.packageName, layoutId)
 
-                renderHeader(views, prefs)
-                renderArticles(context, views, json)
-                wireClickIntents(context, views, appWidgetId)
+                val prefs = HomeWidgetPlugin.getData(context)
+                val json = prefs?.getString(PAYLOAD_KEY, null)
+                Log.d(TAG, "onUpdate id=$appWidgetId theme=$theme json.len=${json?.length ?: -1}")
+
+                renderMasthead(context, views, appWidgetId, json)
+                bindArticleList(context, views, appWidgetId, json)
 
                 appWidgetManager.updateAppWidget(appWidgetId, views)
-            } catch (e: Exception) {
-                Log.e(TAG, "Widget update failed for id=$appWidgetId", e)
+                appWidgetManager.notifyAppWidgetViewDataChanged(
+                    appWidgetId,
+                    R.id.articles_list,
+                )
+            } catch (t: Throwable) {
+                Log.e(TAG, "Widget update failed for id=$appWidgetId theme=$theme", t)
             }
         }
     }
 
-    private fun renderHeader(views: RemoteViews, prefs: android.content.SharedPreferences?) {
-        val streak = prefs?.getString("streak", "0")?.toIntOrNull() ?: 0
-        views.setTextViewText(
-            R.id.streak_text,
-            if (streak > 0) "🔥 ${streak}j" else "",
+    private fun renderMasthead(
+        context: Context,
+        views: RemoteViews,
+        appWidgetId: Int,
+        json: String?,
+    ) {
+        val count = WidgetRendering.countArticles(json)
+        val article = if (count > 1) "articles" else "article"
+        val hour = LocalTime.now().format(
+            DateTimeFormatter.ofPattern("H'h'mm", Locale.FRENCH),
         )
+        // "12 articles · 7h02"
+        val meta = if (count > 0) "$count $article · $hour" else hour
+        views.setTextViewText(R.id.masthead_meta, meta)
 
-        val subtitle = when (prefs?.getString("digest_status", "none")) {
-            "completed" -> "Essentiel du jour complété ✓"
-            "in_progress" -> "Continue ton essentiel"
-            else -> "L'Essentiel du jour"
-        }
-        views.setTextViewText(R.id.subtitle, subtitle)
-
-        val updatedAt = prefs?.getString("articles_updated_at", "0")?.toLongOrNull() ?: 0L
-        val isStale = updatedAt > 0 &&
-            (System.currentTimeMillis() - updatedAt) > STALE_THRESHOLD_MS
-        views.setViewVisibility(
-            R.id.stale_banner,
-            if (isStale) View.VISIBLE else View.GONE,
-        )
-    }
-
-    private fun renderArticles(context: Context, views: RemoteViews, json: String?) {
-        views.removeAllViews(R.id.articles_container)
-
-        val articles = parseArticles(json)
-        if (articles.isEmpty()) {
-            views.addView(
-                R.id.articles_container,
-                buildPlaceholderRow(context, "Ouvre Facteur pour charger ton essentiel"),
-            )
-            return
-        }
-
-        for ((index, article) in articles.withIndex()) {
-            val row = buildArticleRow(context, article)
-            views.addView(R.id.articles_container, row)
-            if (index < articles.size - 1) {
-                // Separators are baked into widget_article_row.xml.
-            }
-        }
-    }
-
-    private fun parseArticles(json: String?): List<Article> {
-        if (json.isNullOrBlank() || json == "[]") return emptyList()
-        return try {
-            val arr = JSONArray(json)
-            (0 until arr.length()).take(MAX_ROWS).mapNotNull { i ->
-                arr.optJSONObject(i)?.let(::parseArticle)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "parseArticles failed", e)
-            emptyList()
-        }
-    }
-
-    private fun parseArticle(obj: JSONObject): Article = Article(
-        id = obj.optString("id"),
-        rank = obj.optInt("rank", 0),
-        topicId = obj.optString("topic_id"),
-        topicLabel = obj.optString("topic_label"),
-        isMain = obj.optBoolean("is_main", false),
-        title = obj.optString("title"),
-        sourceName = obj.optString("source_name"),
-        sourceLogoPath = obj.optString("source_logo_path"),
-        thumbnailPath = obj.optString("thumbnail_path"),
-        perspectiveCount = obj.optInt("perspective_count", 0),
-        publishedAtIso = obj.optString("published_at_iso"),
-    )
-
-    private fun buildArticleRow(context: Context, article: Article): RemoteViews {
-        val rv = RemoteViews(context.packageName, R.layout.widget_article_row)
-
-        rv.setTextViewText(
-            R.id.row_topic,
-            "${article.rank} — ${article.topicLabel.ifBlank { "Actu" }}",
-        )
-        rv.setViewVisibility(
-            R.id.row_a_la_une,
-            if (article.isMain) View.VISIBLE else View.GONE,
-        )
-        rv.setTextViewText(R.id.row_title, article.title)
-
-        val thumb = loadBitmap(article.thumbnailPath)?.let { roundCorners(context, it, 8f) }
-        if (thumb != null) {
-            rv.setImageViewBitmap(R.id.row_thumbnail, thumb)
-            rv.setViewVisibility(R.id.row_thumbnail, View.VISIBLE)
-        } else {
-            rv.setViewVisibility(R.id.row_thumbnail, View.GONE)
-        }
-
-        val logo = loadBitmap(article.sourceLogoPath)
-        if (logo != null) {
-            rv.setImageViewBitmap(R.id.row_source_logo, logo)
-            rv.setViewVisibility(R.id.row_source_logo, View.VISIBLE)
-        } else {
-            rv.setViewVisibility(R.id.row_source_logo, View.GONE)
-        }
-        rv.setTextViewText(R.id.row_source_name, article.sourceName)
-
-        if (article.perspectiveCount > 0) {
-            rv.setTextViewText(R.id.row_perspective, "+${article.perspectiveCount}")
-            rv.setViewVisibility(R.id.row_perspective, View.VISIBLE)
-        } else {
-            rv.setViewVisibility(R.id.row_perspective, View.GONE)
-        }
-
-        rv.setTextViewText(R.id.row_time, formatTime(article.publishedAtIso))
-
-        // Tap target — open the article via deep link.
-        val tapIntent = Intent(context, MainActivity::class.java).apply {
-            action = Intent.ACTION_VIEW
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            data = Uri.parse("io.supabase.facteur://digest/${article.id}")
-                .buildUpon()
-                .appendQueryParameter("pos", article.rank.toString())
-                .appendQueryParameter("topicId", article.topicId)
-                .build()
-        }
-        val pending = PendingIntent.getActivity(
-            context,
-            article.id.hashCode(),
-            tapIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        rv.setOnClickPendingIntent(R.id.row_root, pending)
-
-        return rv
-    }
-
-    private fun buildPlaceholderRow(context: Context, text: String): RemoteViews {
-        val rv = RemoteViews(context.packageName, R.layout.widget_article_row)
-        rv.setTextViewText(R.id.row_topic, "")
-        rv.setViewVisibility(R.id.row_a_la_une, View.GONE)
-        rv.setTextViewText(R.id.row_title, text)
-        rv.setViewVisibility(R.id.row_thumbnail, View.GONE)
-        rv.setViewVisibility(R.id.row_source_logo, View.GONE)
-        rv.setTextViewText(R.id.row_source_name, "")
-        rv.setViewVisibility(R.id.row_perspective, View.GONE)
-        rv.setTextViewText(R.id.row_time, "")
-        return rv
-    }
-
-    private fun wireClickIntents(context: Context, views: RemoteViews, appWidgetId: Int) {
+        // Tap on the masthead opens the feed in-app — primary surface for the
+        // unified widget now that the segmented control is gone.
         val openIntent = Intent(context, MainActivity::class.java).apply {
             action = Intent.ACTION_VIEW
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            data = Uri.parse("io.supabase.facteur://digest")
+            data = Uri.parse("io.supabase.facteur://feed")
         }
         val openPending = PendingIntent.getActivity(
             context,
-            appWidgetId,
+            appWidgetId * 10,
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        views.setOnClickPendingIntent(R.id.widget_header, openPending)
-        views.setOnClickPendingIntent(R.id.subtitle, openPending)
-        views.setOnClickPendingIntent(R.id.btn_open, openPending)
-        views.setOnClickPendingIntent(R.id.stale_banner, openPending)
+        views.setOnClickPendingIntent(R.id.widget_masthead, openPending)
     }
 
-    // ──────────────────────────────────────────────────────────────
-    // Helpers
-    // ──────────────────────────────────────────────────────────────
-
-    private data class Article(
-        val id: String,
-        val rank: Int,
-        val topicId: String,
-        val topicLabel: String,
-        val isMain: Boolean,
-        val title: String,
-        val sourceName: String,
-        val sourceLogoPath: String,
-        val thumbnailPath: String,
-        val perspectiveCount: Int,
-        val publishedAtIso: String,
-    )
-
-    private fun loadBitmap(path: String?): Bitmap? {
-        if (path.isNullOrBlank()) return null
-        return try {
-            val file = File(path)
-            if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
-        } catch (e: Exception) {
-            Log.w(TAG, "Bitmap decode failed: $path", e)
-            null
+    private fun bindArticleList(
+        context: Context,
+        views: RemoteViews,
+        appWidgetId: Int,
+        json: String?,
+    ) {
+        // Adapter intent — unique URI per (appWidgetId, theme) so the system
+        // keeps a separate factory instance per pinned widget.
+        val adapterIntent = Intent(context, FacteurWidgetService::class.java).apply {
+            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            putExtra(EXTRA_THEME, theme)
+            data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
         }
-    }
+        views.setRemoteAdapter(R.id.articles_list, adapterIntent)
+        views.setEmptyView(R.id.articles_list, R.id.empty_view)
 
-    private fun roundCorners(context: Context, src: Bitmap, radiusDp: Float): Bitmap {
-        val r = radiusDp * context.resources.displayMetrics.density
-        val output = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(output)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        val rect = RectF(0f, 0f, src.width.toFloat(), src.height.toFloat())
-        canvas.drawRoundRect(rect, r, r, paint)
-        paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
-        canvas.drawBitmap(src, 0f, 0f, paint)
-        return output
-    }
+        val isEmpty = json.isNullOrBlank() || json == "[]"
+        views.setViewVisibility(
+            R.id.empty_view,
+            if (isEmpty) View.VISIBLE else View.GONE,
+        )
+        views.setOnClickPendingIntent(
+            R.id.empty_view,
+            buildOpenAppPendingIntent(context, appWidgetId),
+        )
 
-    private fun formatTime(iso: String): String {
-        if (iso.isBlank()) return ""
-        return try {
-            val parsed = OffsetDateTime.parse(iso, DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-            val minutes = Duration.between(parsed, OffsetDateTime.now()).toMinutes()
-            when {
-                minutes < 1 -> "à l'instant"
-                minutes < 60 -> String.format(Locale.FRENCH, "%dmin", minutes)
-                minutes < 24 * 60 -> String.format(Locale.FRENCH, "%dh", minutes / 60)
-                else -> String.format(Locale.FRENCH, "%dj", minutes / (60 * 24))
-            }
-        } catch (e: Exception) {
-            ""
+        // Per-row tap → fillInIntent merged into the template PendingIntent.
+        // FLAG_MUTABLE is required (Android 12+) so the system can write the
+        // fillInIntent's data URI into the template at click time.
+        val template = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
+        val templatePending = PendingIntent.getActivity(
+            context,
+            appWidgetId,
+            template,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+        )
+        views.setPendingIntentTemplate(R.id.articles_list, templatePending)
+    }
+
+    private fun buildOpenAppPendingIntent(
+        context: Context,
+        appWidgetId: Int,
+    ): PendingIntent {
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            data = Uri.parse("io.supabase.facteur://feed")
+        }
+        return PendingIntent.getActivity(
+            context,
+            appWidgetId * 10 + 2,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 }

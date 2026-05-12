@@ -10,7 +10,7 @@ from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.services.analytics_service import AnalyticsService
 
-router = APIRouter(prefix="/analytics", tags=["Analytics"])
+router = APIRouter(tags=["Analytics"])
 
 
 class EventCreate(BaseModel):

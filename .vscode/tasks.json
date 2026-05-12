@@ -23,10 +23,18 @@
     {
       "label": "Launch Android Emulator",
       "type": "shell",
-      "command": "ADB=${env:HOME}/Library/Android/sdk/platform-tools/adb; EMU=${env:HOME}/Library/Android/sdk/emulator/emulator; DEVICE=emulator-5554; if [ \"$($ADB -s $DEVICE get-state 2>/dev/null || true)\" = \"device\" ]; then while [ \"$($ADB -s $DEVICE shell getprop sys.boot_completed 2>/dev/null || true)\" != \"1\" ]; do sleep 2; done; echo 'Emulator already running'; exit 0; fi; $EMU -avd Medium_Phone_API_36.1 -no-audio -no-boot-anim -gpu host & $ADB wait-for-device; while [ \"$($ADB -s $DEVICE shell getprop sys.boot_completed 2>/dev/null)\" != \"1\" ]; do sleep 2; done; echo 'Emulator ready'",
-      "isBackground": false,
+      "command": "ADB=${env:HOME}/Library/Android/sdk/platform-tools/adb; EMU=${env:HOME}/Library/Android/sdk/emulator/emulator; AVD_NAME=Pixel_5_API_30_Lite; if $ADB devices | grep -q 'emulator-'; then DEVICE=$($ADB devices | grep 'emulator-' | head -n1 | awk '{print $1}'); else DEVICE='emulator-5554'; fi; if [ \"$($ADB -s $DEVICE get-state 2>/dev/null || true)\" = \"device\" ]; then while [ \"$($ADB -s $DEVICE shell getprop sys.boot_completed 2>/dev/null || true)\" != \"1\" ]; do sleep 2; done; echo \"Emulator ready\"; exit 0; fi; echo \"Starting emulator ($AVD_NAME)...\"; $EMU -avd $AVD_NAME -no-audio -no-boot-anim -gpu software -no-snapshot-load & $ADB -e wait-for-device; while [ \"$($ADB -e shell getprop sys.boot_completed 2>/dev/null)\" != \"1\" ]; do sleep 2; done; echo 'Emulator ready'; wait",
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^Starting emulator.*$",
+          "endsPattern": "^Emulator ready$"
+        }
+      },
       "presentation": {
-        "reveal": "silent",
+        "reveal": "always",
         "panel": "shared",
         "showReuseMessage": false
       }

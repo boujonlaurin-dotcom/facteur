@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
-import '../../../widgets/design/facteur_image.dart';
 import '../../../widgets/design/priority_slider.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
 import '../../../widgets/design/facteur_button.dart';
+import 'source_logo_avatar.dart';
 
 class SourceDetailModal extends ConsumerWidget {
   final Source source;
@@ -57,19 +57,7 @@ class SourceDetailModal extends ConsumerWidget {
           // Header
           Row(
             children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: colors.backgroundSecondary,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: source.logoUrl != null
-                    ? FacteurImage(
-                        imageUrl: source.logoUrl!, fit: BoxFit.cover)
-                    : Icon(PhosphorIcons.article(), color: colors.secondary),
-              ),
+              SourceLogoAvatar(source: displaySource, size: 64, radius: 16),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -104,6 +92,26 @@ class SourceDetailModal extends ConsumerWidget {
               ),
             ],
           ),
+          if (displaySource.followerCount > 0) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(
+                  PhosphorIcons.users(PhosphorIconsStyle.regular),
+                  size: 14,
+                  color: colors.textSecondary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Source de confiance de ${displaySource.followerCount} '
+                  '${displaySource.followerCount > 1 ? "lecteurs" : "lecteur"}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 24),
 
           // Recent articles (only shown when provided, e.g. from smart search)
@@ -205,6 +213,61 @@ class SourceDetailModal extends ConsumerWidget {
                           height: 1.3,
                         ),
                   ),
+                ],
+              ),
+            ),
+          ],
+          if (displaySource.recommendedBy != null &&
+              displaySource.recommendedBy!.trim().isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: colors.backgroundSecondary,
+                borderRadius: BorderRadius.circular(16),
+                border:
+                    Border.all(color: colors.textTertiary.withOpacity(0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Image.asset(
+                        'assets/images/recos_facteur.png',
+                        width: 24,
+                        height: 24,
+                        fit: BoxFit.contain,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Recommandé par ${displaySource.recommendedBy} '
+                          '— équipe Facteur',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(
+                                color: colors.textPrimary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (displaySource.recommendationReason != null &&
+                      displaySource.recommendationReason!
+                          .trim()
+                          .isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      displaySource.recommendationReason!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textSecondary,
+                            height: 1.5,
+                          ),
+                    ),
+                  ],
                 ],
               ),
             ),

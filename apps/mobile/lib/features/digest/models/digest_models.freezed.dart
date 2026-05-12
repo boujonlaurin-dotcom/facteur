@@ -1381,6 +1381,8 @@ mixin _$DigestTopic {
   bool get isTrending => throw _privateConstructorUsedError;
   @JsonKey(name: 'is_une')
   bool get isUne => throw _privateConstructorUsedError;
+  @JsonKey(name: 'source_count')
+  int get sourceCount => throw _privateConstructorUsedError;
   String? get theme => throw _privateConstructorUsedError;
   @JsonKey(name: 'topic_score')
   double get topicScore => throw _privateConstructorUsedError;
@@ -1424,6 +1426,7 @@ abstract class $DigestTopicCopyWith<$Res> {
       String reason,
       @JsonKey(name: 'is_trending') bool isTrending,
       @JsonKey(name: 'is_une') bool isUne,
+      @JsonKey(name: 'source_count') int sourceCount,
       String? theme,
       @JsonKey(name: 'topic_score') double topicScore,
       List<String> subjects,
@@ -1459,6 +1462,7 @@ class _$DigestTopicCopyWithImpl<$Res, $Val extends DigestTopic>
     Object? reason = null,
     Object? isTrending = null,
     Object? isUne = null,
+    Object? sourceCount = null,
     Object? theme = freezed,
     Object? topicScore = null,
     Object? subjects = null,
@@ -1498,6 +1502,10 @@ class _$DigestTopicCopyWithImpl<$Res, $Val extends DigestTopic>
           ? _value.isUne
           : isUne // ignore: cast_nullable_to_non_nullable
               as bool,
+      sourceCount: null == sourceCount
+          ? _value.sourceCount
+          : sourceCount // ignore: cast_nullable_to_non_nullable
+              as int,
       theme: freezed == theme
           ? _value.theme
           : theme // ignore: cast_nullable_to_non_nullable
@@ -1569,6 +1577,7 @@ abstract class _$$DigestTopicImplCopyWith<$Res>
       String reason,
       @JsonKey(name: 'is_trending') bool isTrending,
       @JsonKey(name: 'is_une') bool isUne,
+      @JsonKey(name: 'source_count') int sourceCount,
       String? theme,
       @JsonKey(name: 'topic_score') double topicScore,
       List<String> subjects,
@@ -1602,6 +1611,7 @@ class __$$DigestTopicImplCopyWithImpl<$Res>
     Object? reason = null,
     Object? isTrending = null,
     Object? isUne = null,
+    Object? sourceCount = null,
     Object? theme = freezed,
     Object? topicScore = null,
     Object? subjects = null,
@@ -1641,6 +1651,10 @@ class __$$DigestTopicImplCopyWithImpl<$Res>
           ? _value.isUne
           : isUne // ignore: cast_nullable_to_non_nullable
               as bool,
+      sourceCount: null == sourceCount
+          ? _value.sourceCount
+          : sourceCount // ignore: cast_nullable_to_non_nullable
+              as int,
       theme: freezed == theme
           ? _value.theme
           : theme // ignore: cast_nullable_to_non_nullable
@@ -1707,6 +1721,7 @@ class _$DigestTopicImpl extends _DigestTopic {
       this.reason = '',
       @JsonKey(name: 'is_trending') this.isTrending = false,
       @JsonKey(name: 'is_une') this.isUne = false,
+      @JsonKey(name: 'source_count') this.sourceCount = 0,
       this.theme,
       @JsonKey(name: 'topic_score') this.topicScore = 0.0,
       final List<String> subjects = const [],
@@ -1748,6 +1763,9 @@ class _$DigestTopicImpl extends _DigestTopic {
   @override
   @JsonKey(name: 'is_une')
   final bool isUne;
+  @override
+  @JsonKey(name: 'source_count')
+  final int sourceCount;
   @override
   final String? theme;
   @override
@@ -1816,7 +1834,7 @@ class _$DigestTopicImpl extends _DigestTopic {
 
   @override
   String toString() {
-    return 'DigestTopic(topicId: $topicId, label: $label, rank: $rank, reason: $reason, isTrending: $isTrending, isUne: $isUne, theme: $theme, topicScore: $topicScore, subjects: $subjects, articles: $articles, introText: $introText, transitionText: $transitionText, perspectiveCount: $perspectiveCount, biasDistribution: $biasDistribution, biasHighlights: $biasHighlights, divergenceAnalysis: $divergenceAnalysis, perspectiveSources: $perspectiveSources, divergenceLevel: $divergenceLevel, representativeContentId: $representativeContentId)';
+    return 'DigestTopic(topicId: $topicId, label: $label, rank: $rank, reason: $reason, isTrending: $isTrending, isUne: $isUne, sourceCount: $sourceCount, theme: $theme, topicScore: $topicScore, subjects: $subjects, articles: $articles, introText: $introText, transitionText: $transitionText, perspectiveCount: $perspectiveCount, biasDistribution: $biasDistribution, biasHighlights: $biasHighlights, divergenceAnalysis: $divergenceAnalysis, perspectiveSources: $perspectiveSources, divergenceLevel: $divergenceLevel, representativeContentId: $representativeContentId)';
   }
 
   @override
@@ -1831,6 +1849,8 @@ class _$DigestTopicImpl extends _DigestTopic {
             (identical(other.isTrending, isTrending) ||
                 other.isTrending == isTrending) &&
             (identical(other.isUne, isUne) || other.isUne == isUne) &&
+            (identical(other.sourceCount, sourceCount) ||
+                other.sourceCount == sourceCount) &&
             (identical(other.theme, theme) || other.theme == theme) &&
             (identical(other.topicScore, topicScore) ||
                 other.topicScore == topicScore) &&
@@ -1867,6 +1887,7 @@ class _$DigestTopicImpl extends _DigestTopic {
         reason,
         isTrending,
         isUne,
+        sourceCount,
         theme,
         topicScore,
         const DeepCollectionEquality().hash(_subjects),
@@ -1904,6 +1925,7 @@ abstract class _DigestTopic extends DigestTopic {
       final String reason,
       @JsonKey(name: 'is_trending') final bool isTrending,
       @JsonKey(name: 'is_une') final bool isUne,
+      @JsonKey(name: 'source_count') final int sourceCount,
       final String? theme,
       @JsonKey(name: 'topic_score') final double topicScore,
       final List<String> subjects,
@@ -1940,6 +1962,9 @@ abstract class _DigestTopic extends DigestTopic {
   @override
   @JsonKey(name: 'is_une')
   bool get isUne;
+  @override
+  @JsonKey(name: 'source_count')
+  int get sourceCount;
   @override
   String? get theme;
   @override

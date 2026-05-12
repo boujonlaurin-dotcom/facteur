@@ -36,6 +36,14 @@ class SereinToggleNotifier extends StateNotifier<SereinToggleState> {
     state = SereinToggleState(enabled: sereinEnabled, isLoading: false);
   }
 
+  /// Change the local view mode without persisting the preference.
+  /// Used when the user opens "Lecture apaisée" from the feed entry card —
+  /// we want serein content for this visit only, not flip their saved
+  /// preference.
+  void setEnabledLocal(bool enabled) {
+    state = state.copyWith(enabled: enabled);
+  }
+
   /// Instant toggle — UI flips immediately, preference saved in background.
   Future<void> toggle() async {
     final newValue = !state.enabled;

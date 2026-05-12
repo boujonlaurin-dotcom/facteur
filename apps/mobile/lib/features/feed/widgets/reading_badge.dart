@@ -22,6 +22,7 @@ class ReadingBadge extends StatelessWidget {
 
     final colors = context.facteurColors;
     final progress = content.readingProgress;
+    final isConsumed = content.status == ContentStatus.consumed;
 
     // Color logic
     final Color bgColor;
@@ -33,8 +34,9 @@ class ReadingBadge extends StatelessWidget {
       bgColor = colors.success;
       fgColor = Colors.white;
       icon = PhosphorIcons.checks(PhosphorIconsStyle.bold);
-    } else if (progress >= 30) {
-      // Lu — green + check circle (warmer than bare checkmark)
+    } else if (progress >= 30 || isConsumed) {
+      // Lu — green + check circle (also covers freshly-opened articles
+      // where status==consumed but scroll progress is still 0)
       bgColor = colors.success;
       fgColor = Colors.white;
       icon = PhosphorIcons.checkCircle(PhosphorIconsStyle.fill);

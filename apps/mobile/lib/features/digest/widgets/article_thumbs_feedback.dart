@@ -143,7 +143,7 @@ class _ArticleThumbsFeedbackState extends ConsumerState<ArticleThumbsFeedback> {
         Align(
           alignment: Alignment.centerRight,
           child: Padding(
-            padding: const EdgeInsets.only(right: 12, top: 6),
+            padding: const EdgeInsets.only(right: 12, top: 10),
             child: Row(
               mainAxisSize: MainAxisSize.min,
             children: [
@@ -298,14 +298,14 @@ class _ThumbButton extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: const EdgeInsets.all(4),
+        padding: const EdgeInsets.all(6),
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 200),
           child: Icon(
             icon,
             key: ValueKey('$icon-$isActive'),
-            size: 16,
-            color: isActive ? activeColor : inactiveColor.withOpacity(0.4),
+            size: 20,
+            color: isActive ? activeColor : inactiveColor.withOpacity(0.65),
           ),
         ),
       ),

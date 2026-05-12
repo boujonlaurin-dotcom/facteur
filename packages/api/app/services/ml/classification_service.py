@@ -45,7 +45,16 @@ def _validate_entities(raw_entities: list) -> list[dict]:
     return entities
 
 
-_EMPTY_RESULT: dict = {"topics": [], "serene": None, "entities": []}
+_EMPTY_RESULT: dict = {
+    "topics": [],
+    "serene": None,
+    "entities": [],
+    "is_ad": None,
+}
+
+
+def _coerce_bool(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
 
 
 # 51 topic slugs in the Facteur taxonomy
@@ -279,9 +288,26 @@ Règles :
 7. Assigne 2-3 topics si l'article couvre clairement plusieurs sujets
 8. Le premier topic est le PLUS pertinent
 
+## PUBLICITÉ / NATIVE AD (is_ad)
+Détermine si l'article est un contenu publicitaire, sponsorisé ou promotionnel déguisé en contenu éditorial.
+
+is_ad = true si l'article est :
+- Un article "bons plans" ou deal commercial (mention d'un prix réduit, remise, code promo, "au meilleur prix", "bradé", lien vers un site marchand)
+- Un contenu d'affiliation ou comparatif orienté achat ("quel est le meilleur produit", "guide d'achat", "top N produits à acheter")
+- Un communiqué de presse déguisé en article (annonce produit sans analyse ni recul critique)
+- Un "test" ou "unboxing" dont l'objectif principal est la conversion commerciale sans critique négative
+
+is_ad = false si l'article est :
+- Une actualité, analyse, enquête ou opinion journalistique, même si un produit y est mentionné
+- Une actualité sur une entreprise avec contexte et recul éditorial (licenciements, stratégie, etc.)
+- Un guide pratique (comment faire X) à valeur informative sans lien marchand
+- Un test comparatif avec véritable critique nuancée ou négative
+
+En cas de doute, is_ad = false (préférer les faux négatifs aux faux positifs).
+
 ## FORMAT
 Réponds en JSON array. Chaque élément :
-{"topics": ["slug1", "slug2"], "serene": true/false, "entities": [{"name": "Nom Complet", "type": "PERSON"}]}
+{"topics": ["slug1", "slug2"], "serene": true/false, "entities": [{"name": "Nom Complet", "type": "PERSON"}], "is_ad": true/false}
 Pas de texte avant ou après."""
 
 CLASSIFICATION_MODEL = "mistral-small-latest"
@@ -553,13 +579,14 @@ class ClassificationService:
             f"Classifie chacun de ces {len(items)} articles.\n"
             f"Réponds en JSON array de exactement {len(items)} éléments.\n"
             'Exemple pour 2 articles: [{"topics": ["politics", "europe"], "serene": false, '
-            '"entities": [{"name": "Emmanuel Macron", "type": "PERSON"}]}, '
-            '{"topics": ["ai", "tech"], "serene": true, "entities": [{"name": "OpenAI", "type": "ORG"}]}]\n\n'
+            '"entities": [{"name": "Emmanuel Macron", "type": "PERSON"}], "is_ad": false}, '
+            '{"topics": ["health", "science"], "serene": true, '
+            '"entities": [{"name": "Institut Pasteur", "type": "ORG"}], "is_ad": false}]\n\n'
             f"{articles_text}"
         )
 
     def _parse_topics(self, raw: str, top_k: int) -> dict:
-        """Parse la réponse du LLM pour un article unique. Retourne dict avec topics, serene et entities."""
+        """Parse la réponse du LLM pour un article unique. Retourne dict avec topics, serene, entities et is_ad."""
         raw = raw.strip()
 
         # Try JSON parse first (new format: single object or array with one element)
@@ -571,14 +598,12 @@ class ClassificationService:
                     for s in parsed["topics"]
                     if isinstance(s, str) and s.strip().lower() in VALID_TOPIC_SLUGS
                 ]
-                serene = parsed.get("serene")
-                if not isinstance(serene, bool):
-                    serene = None
                 entities = _validate_entities(parsed.get("entities", []))
                 return {
                     "topics": topics[:top_k],
-                    "serene": serene,
+                    "serene": _coerce_bool(parsed.get("serene")),
                     "entities": entities,
+                    "is_ad": _coerce_bool(parsed.get("is_ad")),
                 }
             if (
                 isinstance(parsed, list)
@@ -591,14 +616,12 @@ class ClassificationService:
                     for s in item.get("topics", [])
                     if isinstance(s, str) and s.strip().lower() in VALID_TOPIC_SLUGS
                 ]
-                serene = item.get("serene")
-                if not isinstance(serene, bool):
-                    serene = None
                 entities = _validate_entities(item.get("entities", []))
                 return {
                     "topics": topics[:top_k],
-                    "serene": serene,
+                    "serene": _coerce_bool(item.get("serene")),
                     "entities": entities,
+                    "is_ad": _coerce_bool(item.get("is_ad")),
                 }
         except (json.JSONDecodeError, TypeError):
             pass
@@ -607,7 +630,12 @@ class ClassificationService:
         clean = raw.strip('"').strip("'").strip("`")
         slugs = [s.strip().lower() for s in clean.split(",")]
         valid = [s for s in slugs if s in VALID_TOPIC_SLUGS]
-        return {"topics": valid[:top_k], "serene": None, "entities": []}
+        return {
+            "topics": valid[:top_k],
+            "serene": None,
+            "entities": [],
+            "is_ad": None,
+        }
 
     def _parse_batch_response(
         self, raw: str, expected_count: int, top_k: int
@@ -625,7 +653,7 @@ class ClassificationService:
                         raw=raw[:200],
                     )
 
-                # Array of objects with "topics", "serene" and "entities"
+                # Array of objects with "topics", "serene", "entities" and "is_ad"
                 if parsed and isinstance(parsed[0], dict):
                     results = []
                     for item in parsed[:expected_count]:
@@ -636,25 +664,23 @@ class ClassificationService:
                                 if isinstance(s, str)
                                 and s.strip().lower() in VALID_TOPIC_SLUGS
                             ]
-                            serene = item.get("serene")
-                            if not isinstance(serene, bool):
-                                serene = None
                             entities = _validate_entities(item.get("entities", []))
                             results.append(
                                 {
                                     "topics": topics[:top_k],
-                                    "serene": serene,
+                                    "serene": _coerce_bool(item.get("serene")),
                                     "entities": entities,
+                                    "is_ad": _coerce_bool(item.get("is_ad")),
                                 }
                             )
                         else:
-                            results.append(_EMPTY_RESULT)
+                            results.append(_EMPTY_RESULT.copy())
                     # Pad with empty results if Mistral returned fewer than expected
                     while len(results) < expected_count:
-                        results.append(_EMPTY_RESULT)
+                        results.append(_EMPTY_RESULT.copy())
                     return results
 
-                # Fallback: old format (array of arrays), treat serene as None
+                # Fallback: old format (array of arrays), treat serene/is_ad as None
                 if parsed and isinstance(parsed[0], list):
                     log.info("classification_service.batch_old_format_fallback")
                     results = []
@@ -671,12 +697,13 @@ class ClassificationService:
                                     "topics": valid[:top_k],
                                     "serene": None,
                                     "entities": [],
+                                    "is_ad": None,
                                 }
                             )
                         else:
-                            results.append(_EMPTY_RESULT)
+                            results.append(_EMPTY_RESULT.copy())
                     while len(results) < expected_count:
-                        results.append(_EMPTY_RESULT)
+                        results.append(_EMPTY_RESULT.copy())
                     return results
 
         except (json.JSONDecodeError, TypeError):
@@ -690,10 +717,17 @@ class ClassificationService:
             clean = line.strip("[]").strip()
             slugs = [s.strip().strip('"').strip("'").lower() for s in clean.split(",")]
             valid = [s for s in slugs if s in VALID_TOPIC_SLUGS]
-            results.append({"topics": valid[:top_k], "serene": None, "entities": []})
+            results.append(
+                {
+                    "topics": valid[:top_k],
+                    "serene": None,
+                    "entities": [],
+                    "is_ad": None,
+                }
+            )
 
         while len(results) < expected_count:
-            results.append(_EMPTY_RESULT)
+            results.append(_EMPTY_RESULT.copy())
 
         return results
 

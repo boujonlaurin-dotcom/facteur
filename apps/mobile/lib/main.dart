@@ -7,6 +7,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:home_widget/home_widget.dart';
+import 'package:flutter_downloader/flutter_downloader.dart';
 
 import 'app.dart';
 import 'config/constants.dart';
@@ -70,6 +71,14 @@ Future<void> _bootstrap() async {
   // Initialiser Hive (storage local)
   await Hive.initFlutter();
 
+  // Initialiser flutter_downloader (Android DownloadManager) pour la mise
+  // à jour APK : permet au téléchargement de continuer en arrière-plan.
+  try {
+    await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
+  } catch (e) {
+    debugPrint('Main: FlutterDownloader init failed (non-critical): $e');
+  }
+
   // Pré-ouvrir les boxes et vérifier leur contenu
   // Try-catch avec fallback : si un box est corrompu, on le recrée vide
   debugPrint('Main: Opening Hive boxes...');
@@ -95,6 +104,8 @@ Future<void> _bootstrap() async {
   }
 
   // Initialiser les notifications push locales (sans forcer la permission)
+  Map<String, dynamic>? bootNotifDiag;
+  bool? bootPushEnabledHive;
   try {
     debugPrint('Main: Initializing push notifications...');
     final pushNotificationService = PushNotificationService();
@@ -105,6 +116,7 @@ Future<void> _bootstrap() async {
     final settingsBox = Hive.box<dynamic>('settings');
     final pushEnabled = settingsBox.get('push_notifications_enabled',
         defaultValue: true) as bool;
+    bootPushEnabledHive = pushEnabled;
     if (pushEnabled) {
       // S'assurer que la permission exact alarm est toujours valide
       // (peut être révoquée par une mise à jour Android ou un changement système)
@@ -132,11 +144,12 @@ Future<void> _bootstrap() async {
         debugPrint(
             'Main: Digest notification already scheduled — skipping static placeholder.');
       }
-
-      // Logger l'état complet pour diagnostic
-      final diag = await pushNotificationService.getDiagnostics();
-      debugPrint('Main: Push diagnostics: $diag');
     }
+
+    // Toujours collecter le diagnostic — y compris quand pushEnabled=false —
+    // pour mesurer le parc côté télémétrie (cf. bug-notifications-stalled).
+    bootNotifDiag = await pushNotificationService.getDiagnostics();
+    debugPrint('Main: Push diagnostics: $bootNotifDiag');
     debugPrint('Main: Push notifications initialized (enabled: $pushEnabled)');
   } catch (e, s) {
     debugPrint('ERROR: Failed to initialize push notifications: $e\n$s');
@@ -197,6 +210,19 @@ Future<void> _bootstrap() async {
     // auth state stream to identify/reset the distinct_id automatically.
     final posthog = PostHogService();
     await posthog.init();
+
+    // Émettre l'état des notifs locales collecté au boot (capture après init
+    // PostHog : avant, capture() est un no-op silencieux).
+    if (bootNotifDiag != null) {
+      final diagProps = <String, Object>{
+        'push_enabled_hive': bootPushEnabledHive ?? false,
+      };
+      bootNotifDiag.forEach((k, v) {
+        if (v != null) diagProps[k] = v as Object;
+      });
+      unawaited(posthog.capture(event: 'notif_diag', properties: diagProps));
+    }
+
     if (hasSession) {
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {

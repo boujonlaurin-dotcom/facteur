@@ -40,8 +40,9 @@ Choisis les vérifications selon ce qui a été modifié dans le diff
 ### Migration Alembic
 
 1. `cd packages/api && alembic heads` — exactement 1 head.
-2. `alembic upgrade head` sur une DB locale — doit passer sans erreur.
-3. **Ne JAMAIS exécuter Alembic sur Railway** (règle LOCKED de CLAUDE.md).
+2. `alembic upgrade head` sur une DB locale **vide** (`make db-reset` puis `alembic upgrade head`) — doit passer sans erreur sur une chaîne complète.
+3. **Le `Dockerfile` rejoue `alembic upgrade head` au démarrage de chaque conteneur Railway.** Si ta migration plante, le déploiement plantera. Le fallback du `CMD` démarre `uvicorn` malgré l'erreur (avec un WARNING dans les logs), donc une migration cassée peut passer inaperçue à l'œil — surveille les logs Railway après merge.
+4. Pas de SQL manuel via Supabase SQL Editor. Tout DDL chaîne après le head courant via `alembic revision --autogenerate -m "<desc>"`. Si la chaîne se met à diverger de prod malgré tout, voir [`docs/runbooks/recover-from-alembic-drift.md`](../../docs/runbooks/recover-from-alembic-drift.md).
 
 ### Suite complète (toujours, à la fin)
 

@@ -17,7 +17,7 @@
 - Python **3.12.x** uniquement (3.13+ casse pydantic)
 - `list[]`, `dict[]`, `X | None` natifs (jamais `from typing import List, Dict, Optional`)
 - JWT secret identique mobile ↔ backend
-- Alembic : exactement 1 head, jamais d'exécution sur Railway (SQL via Supabase SQL Editor)
+- **Alembic est la seule source de vérité pour le schéma DB.** Tout DDL (ALTER, CREATE, DROP) passe par une migration générée via `alembic revision --autogenerate -m "<desc>"` dans la PR qui le requiert. **Pas de SQL manuel via Supabase SQL Editor** — c'est le pattern qui a causé l'incident de drift d'avril 2026 (cf. [runbook de récupération](docs/runbooks/recover-from-alembic-drift.md)). Exactement 1 head Alembic. Le `Dockerfile` exécute `alembic upgrade head` au démarrage de chaque conteneur Railway — donc une migration cassée plante le déploiement, et stamper prod *avant* de merger une refonte de la chaîne est obligatoire (cf. runbook).
 - Zones à risque (Auth, Router, DB, Infra) → lire [Safety Guardrails](docs/agent-brain/safety-guardrails.md) AVANT modif
 
 ---
@@ -64,7 +64,7 @@ Après le GO utilisateur, implémente et teste en autonomie :
 
 | Hook | Quand | Effet |
 |------|-------|-------|
-| `pre-edit-alembic-deploy.sh` | Avant Edit/Write | Bloque si migration Alembic risquée |
+| `pre-edit-alembic-deploy.sh` | Avant Edit/Write | Avertit si édition d'un fichier deploy touche `alembic upgrade`/`stamp` (le `Dockerfile` exécute la chaîne au boot — toute erreur plante le déploiement Railway) |
 | `post-edit-python-guardrails.sh` | Après Edit/Write | Bloque si `List[]`/`Dict[]` from typing |
 | `post-edit-alembic-heads.sh` | Après Edit/Write | Bloque si >1 head Alembic |
 | `post-edit-auto-test.sh` | Après Edit/Write | Lance auto les tests du fichier modifié |
@@ -102,6 +102,7 @@ bash docs/qa/scripts/verify_<task>.sh
 - [Navigation Matrix](docs/agent-brain/navigation-matrix.md) — workflows par type de tâche
 - [Safety Guardrails](docs/agent-brain/safety-guardrails.md) — guardrails + safety protocols
 - [Investigation Playbook](docs/agent-brain/investigation-playbook.md) — outils par scénario prod (bug, usage, migration, logs, sécurité)
+- [Runbook : récupération de drift Alembic](docs/runbooks/recover-from-alembic-drift.md) — étapes à suivre si la chaîne Alembic se met à diverger de prod
 - [Claude Access Setup](docs/infra/claude-access-setup.md) — secrets + accès multi-services (Supabase/Railway/Sentry/PostHog)
 - [PRD](docs/prd.md) / [Architecture](docs/architecture.md) / [Front-end Spec](docs/front-end-spec.md)
 - Agents BMAD : `.bmad-core/agents/` (dev, po, architect, qa)
@@ -175,7 +176,7 @@ autonomie** les 3 étapes qui restent — avec la preuve que ça marche :
    - Mobile : `flutter test && flutter analyze` + Playwright MCP
      (viewport 390x844, console sans erreurs, réseau sans 4xx/5xx inattendus,
      edge cases).
-   - Alembic : exactement 1 head, `upgrade head` local OK, jamais sur Railway.
+   - Alembic : exactement 1 head, `upgrade head` local OK. Le `Dockerfile` rejouera `alembic upgrade head` au prochain boot Railway — une migration cassée plante le déploiement, donc tester localement contre une DB *vide* (`make db-reset`) est non-négociable.
    - Re-run systématique de la suite complète avant de conclure
      (anticipe le hook `stop-verify-tests.sh`).
 2. **SIMPLIFY** : invoque la skill `simplify` puis re-run VERIFY si du code a

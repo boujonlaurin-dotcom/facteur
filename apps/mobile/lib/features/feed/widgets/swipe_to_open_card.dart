@@ -73,7 +73,7 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
 
     _hintController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
+      duration: const Duration(milliseconds: 2800),
     )..addListener(_onHintTick);
 
     if (widget.enableHintAnimation && widget.onSwipeDismiss != null) {
@@ -102,7 +102,7 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
   }
 
   void _scheduleHintAnimation() {
-    Future.delayed(const Duration(milliseconds: 1200), () {
+    Future.delayed(const Duration(milliseconds: 2200), () {
       if (mounted && !_hintPlayed && !_dragUnderway) {
         _hintPlayed = true;
         _hintController.forward().then((_) {
@@ -136,12 +136,15 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
   void _onHintTick() {
     if (!_dragUnderway && !_isDismissing) {
       setState(() {
-        // Sine wave: 0 → -20 → 0
+        // Séquence bidirectionnelle douce : glisse à droite puis à gauche.
+        // Amplitude réduite (45 px) + courbe ease-in-out lente pour rester
+        // discrète et non-intimidante.
         final t = _hintController.value;
-        _dragExtent = -40.0 *
-            Curves.easeInOut.transform(
-              t <= 0.5 ? t * 2 : (1.0 - t) * 2,
-            );
+        final phase = t < 0.5 ? t * 2 : (t - 0.5) * 2;
+        final direction = t < 0.5 ? 1.0 : -1.0;
+        final shape = phase <= 0.5 ? phase * 2 : (1.0 - phase) * 2;
+        _dragExtent =
+            direction * 45.0 * Curves.easeInOutSine.transform(shape);
       });
     }
   }

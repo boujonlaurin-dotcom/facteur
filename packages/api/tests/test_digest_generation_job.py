@@ -228,12 +228,12 @@ class TestGlobalCandidatePool:
 
     @pytest.mark.asyncio
     async def test_get_global_candidates_serein_applies_filter(self, job):
-        """Serein mode must join on Source and apply the serein filter.
+        """Serein mode applies the hard `is_good_news` filter.
 
-        Regression for bug-digest-serein-collision-2026-04-13: before this
-        fix the editorial batch reused the unfiltered pour_vous pool for
-        serein, which is why serein digests ended up showing the same
-        articles as the normal mode.
+        Replaces the legacy theme/keyword fallback : the bonnes-nouvelles
+        rebrand introduced `Content.is_good_news` as the single signal, with
+        no keyword fallback (we accept a partial digest rather than ship a
+        false positive).
         """
         mock_session = AsyncMock()
         scalars_mock = MagicMock()
@@ -244,17 +244,10 @@ class TestGlobalCandidatePool:
 
         await job._get_global_candidates(mock_session, mode="serein")
 
-        # Inspect the SQL actually executed — it must reference Source (join)
-        # and the serene/keyword filter artefacts.
         stmt = mock_session.execute.call_args.args[0]
         compiled = str(stmt.compile(compile_kwargs={"literal_binds": False})).lower()
-        # Serein mode joins on sources and filters via the serene condition
-        # (either is_serene=True path or the keyword/theme fallback).
-        assert "join sources" in compiled, (
-            f"serein pool must JOIN sources; got:\n{compiled}"
-        )
-        assert "sources.theme" in compiled, (
-            f"serein pool must reference Source.theme filter; got:\n{compiled}"
+        assert "contents.is_good_news = true" in compiled, (
+            f"serein pool must filter on is_good_news=True; got:\n{compiled}"
         )
 
     @pytest.mark.asyncio
@@ -271,6 +264,5 @@ class TestGlobalCandidatePool:
 
         stmt = mock_session.execute.call_args.args[0]
         compiled = str(stmt.compile(compile_kwargs={"literal_binds": False})).lower()
-        # No join on sources, no theme filter — historical behaviour preserved
-        assert "join sources" not in compiled
-        assert "sources.theme" not in compiled
+        # No good-news filter applied — historical behaviour preserved
+        assert "is_good_news = true" not in compiled

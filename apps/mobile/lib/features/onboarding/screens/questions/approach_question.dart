@@ -21,54 +21,62 @@ class ApproachQuestion extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 2),
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: FacteurSpacing.space8),
 
-          // Question
-          Text(
-            OnboardingStrings.q4Title,
-            style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space8),
-
-          // Options binaires
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: BinarySelectionCard(
-                    emoji: '⚡', // Direct
-                    label: OnboardingStrings.q4DirectLabel,
-                    subtitle: OnboardingStrings.q4DirectSubtitle,
-                    isSelected: selectedApproach == 'direct',
-                    onTap: () {
-                      ref
-                          .read(onboardingProvider.notifier)
-                          .selectApproach('direct');
-                    },
+                  Text(
+                    OnboardingStrings.q4Title,
+                    style: Theme.of(context).textTheme.displayLarge,
+                    textAlign: TextAlign.center,
                   ),
-                ),
-                const SizedBox(width: FacteurSpacing.space3),
-                Expanded(
-                  child: BinarySelectionCard(
-                    emoji: '🔍', // Détaillé
-                    label: OnboardingStrings.q4DetailedLabel,
-                    subtitle: OnboardingStrings.q4DetailedSubtitle,
-                    isSelected: selectedApproach == 'detailed',
-                    onTap: () {
-                      ref
-                          .read(onboardingProvider.notifier)
-                          .selectApproach('detailed');
-                    },
+
+                  const SizedBox(height: FacteurSpacing.space8),
+
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: BinarySelectionCard(
+                            emoji: '⚡',
+                            label: OnboardingStrings.q4DirectLabel,
+                            subtitle: OnboardingStrings.q4DirectSubtitle,
+                            isSelected: selectedApproach == 'direct',
+                            onTap: () {
+                              ref
+                                  .read(onboardingProvider.notifier)
+                                  .selectApproach('direct');
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: FacteurSpacing.space3),
+                        Expanded(
+                          child: BinarySelectionCard(
+                            emoji: '🔍',
+                            label: OnboardingStrings.q4DetailedLabel,
+                            subtitle: OnboardingStrings.q4DetailedSubtitle,
+                            isSelected: selectedApproach == 'detailed',
+                            onTap: () {
+                              ref
+                                  .read(onboardingProvider.notifier)
+                                  .selectApproach('detailed');
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+
+                  const SizedBox(height: FacteurSpacing.space6),
+                ],
+              ),
             ),
           ),
-
-          const Spacer(flex: 3),
 
           DelayedContinueButton(
             visible: selectedApproach != null,

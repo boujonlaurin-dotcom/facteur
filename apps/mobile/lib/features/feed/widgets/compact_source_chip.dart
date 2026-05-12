@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../sources/models/source_model.dart';
 import 'source_filter_sheet.dart';
@@ -16,6 +17,7 @@ class CompactSourceChip extends StatelessWidget {
   final String? selectedSourceName;
   final String? selectedSourceLogoUrl;
   final ValueChanged<String?> onSourceChanged;
+  final bool discreet;
 
   const CompactSourceChip({
     super.key,
@@ -24,27 +26,10 @@ class CompactSourceChip extends StatelessWidget {
     this.selectedSourceName,
     this.selectedSourceLogoUrl,
     required this.onSourceChanged,
+    this.discreet = false,
   });
 
   bool get _isActive => selectedSourceId != null;
-
-  /// Top 3 favorites sorted: real logo first, then hasSubscription, then priorityMultiplier desc.
-  List<Source> get _topSources {
-    final sorted = [...followedSources];
-    sorted.sort((a, b) {
-      // 1. Prefer sources with a real logo image
-      final aHasLogo = a.logoUrl != null && a.logoUrl!.isNotEmpty;
-      final bHasLogo = b.logoUrl != null && b.logoUrl!.isNotEmpty;
-      if (aHasLogo != bHasLogo) return bHasLogo ? 1 : -1;
-      // 2. Then hasSubscription
-      if (a.hasSubscription != b.hasSubscription) {
-        return b.hasSubscription ? 1 : -1;
-      }
-      // 3. Then priorityMultiplier desc
-      return b.priorityMultiplier.compareTo(a.priorityMultiplier);
-    });
-    return sorted.take(3).toList();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +48,7 @@ class CompactSourceChip extends StatelessWidget {
               key: ValueKey('source_active_$selectedSourceId'),
               sourceLogoUrl: selectedSourceLogoUrl,
               sourceName: selectedSourceName ?? 'Source',
+              discreet: discreet,
               onClear: () {
                 HapticFeedback.mediumImpact();
                 onSourceChanged(null);
@@ -74,10 +60,6 @@ class CompactSourceChip extends StatelessWidget {
             )
           : _InactiveChip(
               key: const ValueKey('source_inactive'),
-              topSources: _topSources,
-              remainingCount: followedSources.length > 3
-                  ? followedSources.length - 3
-                  : 0,
               onTap: () {
                 HapticFeedback.mediumImpact();
                 _openSheet(context);
@@ -96,85 +78,43 @@ class CompactSourceChip extends StatelessWidget {
 }
 
 class _InactiveChip extends StatelessWidget {
-  final List<Source> topSources;
-  final int remainingCount;
   final VoidCallback onTap;
 
   const _InactiveChip({
     super.key,
-    required this.topSources,
-    required this.remainingCount,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final muted = colorScheme.onSurface.withOpacity(0.5);
-    final trackColor = isDark
-        ? Colors.white.withOpacity(0.08)
-        : Colors.black.withOpacity(0.05);
+    final colors = context.facteurColors;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
         height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: trackColor,
+          borderRadius: BorderRadius.circular(FacteurRadius.full),
+          color: colors.surface,
+          border: Border.all(color: colors.border),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (topSources.isEmpty) ...[
-              Text(
-                'Sources',
-                style: TextStyle(fontSize: 12, color: muted, fontWeight: FontWeight.w500),
+            Text(
+              'Mes sources',
+              style: TextStyle(
+                fontSize: 12,
+                color: colors.textPrimary,
+                fontWeight: FontWeight.w500,
               ),
-              const SizedBox(width: 2),
-            ] else ...[
-              // Avatar stack — overlap adapts to screen width
-              Builder(builder: (context) {
-                final screenW = MediaQuery.of(context).size.width;
-                // step ranges from 13 (small, ~320px) to 16 (large, ≥430px)
-                final step = (screenW / 35).clamp(13.0, 16.0);
-                final stackW = 18.0 + (topSources.length - 1) * step;
-                return Opacity(
-                  opacity: 0.65,
-                  child: SizedBox(
-                    width: stackW,
-                    height: 18,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        for (int i = 0; i < topSources.length; i++)
-                          Positioned(
-                            left: i * step,
-                            child: _SourceAvatar(
-                              source: topSources[i],
-                              size: 18,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
-              const SizedBox(width: 6),
-              if (remainingCount > 0) ...[
-                Text(
-                  '+$remainingCount',
-                  style: TextStyle(fontSize: 11, color: muted),
-                ),
-                const SizedBox(width: 2),
-              ],
-            ],
+            ),
+            const SizedBox(width: 4),
             Icon(
               PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
               size: 10,
-              color: muted,
+              color: colors.textSecondary,
             ),
           ],
         ),
@@ -188,6 +128,7 @@ class _ActiveChip extends StatelessWidget {
   final String sourceName;
   final VoidCallback onClear;
   final VoidCallback onTap;
+  final bool discreet;
 
   const _ActiveChip({
     super.key,
@@ -195,21 +136,28 @@ class _ActiveChip extends StatelessWidget {
     required this.sourceName,
     required this.onClear,
     required this.onTap,
+    this.discreet = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final primary = colorScheme.primary;
+    final colors = context.facteurColors;
+    final primary = colors.primary;
+    final bg = discreet ? colors.surface : primary.withOpacity(0.12);
+    final borderColor = primary;
+    final borderWidth = discreet ? 1.5 : 1.0;
+    final labelColor = discreet ? colors.textPrimary : primary;
+    final iconColor = discreet ? colors.textSecondary : primary;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
         height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: primary.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(FacteurRadius.full),
+          color: bg,
+          border: Border.all(color: borderColor, width: borderWidth),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -226,7 +174,7 @@ class _ActiveChip extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: primary,
+                  color: labelColor,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -240,7 +188,7 @@ class _ActiveChip extends StatelessWidget {
                 child: Icon(
                   PhosphorIcons.x(PhosphorIconsStyle.bold),
                   size: 13,
-                  color: primary,
+                  color: iconColor,
                 ),
               ),
             ),

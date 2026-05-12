@@ -115,10 +115,10 @@ class _ConclusionAnimationScreenState
       );
     }
 
-    // Naviguer vers le digest avec paramètre first pour welcome experience
-    // context.go() remplace toute la stack (pas de back vers onboarding)
+    // context.go() remplace toute la stack pour bloquer le back vers
+    // l'onboarding.
     if (mounted) {
-      context.go('${RoutePaths.digest}?first=true');
+      context.go(RoutePaths.feed);
     }
   }
 }

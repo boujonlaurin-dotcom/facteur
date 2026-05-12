@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Confirmation Facteur</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #fafaf7;
+      --fg: #1a1a1a;
+      --muted: #6b6b6b;
+      --primary: #d97706;
+      --primary-fg: #ffffff;
+      --surface: #ffffff;
+      --border: rgba(0, 0, 0, 0.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f0f0f;
+        --fg: #f5f5f5;
+        --muted: #a3a3a3;
+        --surface: #1a1a1a;
+        --border: rgba(255, 255, 255, 0.08);
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    main {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      text-align: center;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px 24px;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+    }
+    .check {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: rgba(217, 119, 6, 0.12);
+      color: var(--primary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      margin-bottom: 16px;
+    }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    p { color: var(--muted); margin: 0 0 24px; line-height: 1.5; }
+    .actions { display: flex; flex-direction: column; gap: 12px; }
+    a.btn {
+      display: inline-block;
+      padding: 14px 20px;
+      border-radius: 12px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 15px;
+    }
+    a.primary {
+      background: var(--primary);
+      color: var(--primary-fg);
+    }
+    a.secondary {
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid var(--border);
+    }
+    .hint {
+      margin-top: 20px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="card">
+      <div class="check" aria-hidden="true">✓</div>
+      <h1>Email confirmé</h1>
+      <p>Ouverture de l'application Facteur…</p>
+      <div class="actions">
+        <a id="open-app" class="btn primary" href="#">Ouvrir dans l'app</a>
+        <a id="open-web" class="btn secondary" href="./">Continuer dans le navigateur</a>
+      </div>
+      <p class="hint">
+        Si rien ne se passe, l'app n'est peut-être pas installée — utilise le
+        bouton ci-dessus, ou retourne dans Facteur et clique sur
+        « J'ai confirmé mon email ».
+      </p>
+    </div>
+  </main>
+  <script>
+    (function () {
+      var fragment = window.location.hash || '';
+      var search = window.location.search || '';
+      var deepLink = 'io.supabase.facteur://login-callback' + search + fragment;
+      var openApp = document.getElementById('open-app');
+      openApp.setAttribute('href', deepLink);
+      // Tentative auto au chargement (les browsers modernes peuvent bloquer
+      // selon le contexte ; le bouton manuel reste le fallback fiable).
+      setTimeout(function () {
+        window.location.href = deepLink;
+      }, 150);
+    })();
+  </script>
+</body>
+</html>

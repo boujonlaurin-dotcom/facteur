@@ -20,6 +20,9 @@ class NotificationsSettings {
   final DateTime? lastRenudgeAt;
   final int renudgeShownCount;
   final bool emailDigestEnabled;
+  final bool goodNewsEnabled;
+  final NotifTimeSlot goodNewsTimeSlot;
+  final bool notifVeilleEnabled;
 
   /// True dès que la phase load Hive + sync backend (succès OU échec) est
   /// terminée. Tant que false, ne pas déclencher la modal d'activation
@@ -36,6 +39,9 @@ class NotificationsSettings {
     this.lastRenudgeAt,
     this.renudgeShownCount = 0,
     this.emailDigestEnabled = false,
+    this.goodNewsEnabled = false,
+    this.goodNewsTimeSlot = NotifTimeSlot.evening,
+    this.notifVeilleEnabled = false,
     this.synced = false,
   });
 
@@ -49,6 +55,9 @@ class NotificationsSettings {
     DateTime? lastRenudgeAt,
     int? renudgeShownCount,
     bool? emailDigestEnabled,
+    bool? goodNewsEnabled,
+    NotifTimeSlot? goodNewsTimeSlot,
+    bool? notifVeilleEnabled,
     bool? synced,
   }) {
     return NotificationsSettings(
@@ -61,6 +70,9 @@ class NotificationsSettings {
       lastRenudgeAt: lastRenudgeAt ?? this.lastRenudgeAt,
       renudgeShownCount: renudgeShownCount ?? this.renudgeShownCount,
       emailDigestEnabled: emailDigestEnabled ?? this.emailDigestEnabled,
+      goodNewsEnabled: goodNewsEnabled ?? this.goodNewsEnabled,
+      goodNewsTimeSlot: goodNewsTimeSlot ?? this.goodNewsTimeSlot,
+      notifVeilleEnabled: notifVeilleEnabled ?? this.notifVeilleEnabled,
       synced: synced ?? this.synced,
     );
   }
@@ -97,6 +109,9 @@ class NotificationsSettingsNotifier
   static const _kRenudgeShownCount = 'notif_renudge_shown_count';
   static const _kEmailDigest = 'email_digest_enabled';
   static const _kPendingSync = 'notif_prefs_pending_sync';
+  static const _kGoodNewsEnabled = 'notif_good_news_enabled';
+  static const _kGoodNewsTimeSlot = 'notif_good_news_time_slot';
+  static const _kNotifVeilleEnabled = 'notif_veille_enabled';
 
   Future<Box<dynamic>> _box() => Hive.openBox<dynamic>(_boxName);
 
@@ -113,6 +128,13 @@ class NotificationsSettingsNotifier
       renudgeShownCount:
           box.get(_kRenudgeShownCount, defaultValue: 0) as int,
       emailDigestEnabled: box.get(_kEmailDigest, defaultValue: false) as bool,
+      goodNewsEnabled:
+          box.get(_kGoodNewsEnabled, defaultValue: false) as bool,
+      goodNewsTimeSlot: NotifTimeSlotX.fromWire(
+        box.get(_kGoodNewsTimeSlot) as String?,
+      ),
+      notifVeilleEnabled:
+          box.get(_kNotifVeilleEnabled, defaultValue: false) as bool,
     );
   }
 
@@ -133,6 +155,9 @@ class NotificationsSettingsNotifier
       _kLastRenudgeAt: s.lastRenudgeAt?.toUtc().toIso8601String(),
       _kRenudgeShownCount: s.renudgeShownCount,
       _kEmailDigest: s.emailDigestEnabled,
+      _kGoodNewsEnabled: s.goodNewsEnabled,
+      _kGoodNewsTimeSlot: s.goodNewsTimeSlot.wire,
+      _kNotifVeilleEnabled: s.notifVeilleEnabled,
     });
   }
 
@@ -151,6 +176,7 @@ class NotificationsSettingsNotifier
         lastRefusalAt: dto.lastRefusalAt,
         lastRenudgeAt: dto.lastRenudgeAt,
         renudgeShownCount: dto.renudgeShownCount,
+        notifVeilleEnabled: dto.notifVeilleEnabled,
       );
       state = fresh;
       await _persist(fresh);
@@ -181,6 +207,7 @@ class NotificationsSettingsNotifier
         lastRefusalAt: s.lastRefusalAt,
         lastRenudgeAt: s.lastRenudgeAt,
         renudgeShownCount: s.renudgeShownCount,
+        notifVeilleEnabled: s.notifVeilleEnabled,
       );
       if (result == null) {
         final box = await _box();
@@ -197,10 +224,17 @@ class NotificationsSettingsNotifier
     final push = PushNotificationService();
     await push.cancelDigestNotification();
     await push.cancelWeeklyCommunityPick();
-    if (!state.pushEnabled) return;
-    await push.scheduleDailyDigestNotification(timeSlot: state.timeSlot);
-    if (state.preset == NotifPreset.curieux) {
-      await push.scheduleWeeklyCommunityPick();
+    await push.cancelGoodNewsNotification();
+    if (state.pushEnabled) {
+      await push.scheduleDailyDigestNotification(timeSlot: state.timeSlot);
+      if (state.preset == NotifPreset.curieux) {
+        await push.scheduleWeeklyCommunityPick();
+      }
+    }
+    if (state.goodNewsEnabled) {
+      await push.scheduleDailyGoodNewsNotification(
+        timeSlot: state.goodNewsTimeSlot,
+      );
     }
   }
 
@@ -269,6 +303,52 @@ class NotificationsSettingsNotifier
     state = state.copyWith(emailDigestEnabled: value);
     final box = await _box();
     await box.put(_kEmailDigest, value);
+  }
+
+  /// Active/désactive le canal « Bonnes nouvelles du jour ».
+  ///
+  /// Indépendant du push principal (cf. règle CRITIQUE : un opt-in serein
+  /// ne doit jamais embarquer le push « Normal » sans consentement, et
+  /// réciproquement). Si le user n'a jamais accordé la permission OS,
+  /// elle est demandée à la première activation.
+  Future<void> setGoodNewsEnabled(bool value) async {
+    if (value) {
+      final pushService = PushNotificationService();
+      final granted = await pushService.requestPermission();
+      if (!granted) return;
+      await pushService.requestExactAlarmPermission();
+    }
+    await _commit(state.copyWith(goodNewsEnabled: value));
+  }
+
+  Future<void> setGoodNewsTimeSlot(NotifTimeSlot slot) =>
+      _commit(state.copyWith(goodNewsTimeSlot: slot));
+
+  /// Confirme la modal d'activation pour le canal Bonnes nouvelles.
+  /// Distinct de `confirmActivation` pour ne JAMAIS coupler les deux opt-ins.
+  Future<void> confirmGoodNewsActivation({
+    required NotifTimeSlot timeSlot,
+    required bool osGranted,
+  }) async {
+    await _commit(state.copyWith(
+      goodNewsEnabled: osGranted,
+      goodNewsTimeSlot: timeSlot,
+    ));
+  }
+
+  /// Active/désactive la notif "Ta veille est prête".
+  ///
+  /// Canal séparé du push digest et bonnes nouvelles : on ne couple jamais
+  /// deux opt-ins. À la première activation, demande la permission OS si
+  /// pas déjà accordée.
+  Future<void> setNotifVeilleEnabled(bool value) async {
+    if (value && !state.pushEnabled) {
+      final pushService = PushNotificationService();
+      final granted = await pushService.requestPermission();
+      if (!granted) return;
+      await pushService.requestExactAlarmPermission();
+    }
+    await _commit(state.copyWith(notifVeilleEnabled: value));
   }
 }
 

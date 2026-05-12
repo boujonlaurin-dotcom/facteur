@@ -106,3 +106,22 @@ async def test_patch_increments_refusal_count(auth_user):
     body = resp.json()
     assert body["refusal_count"] == 1
     assert body["last_refusal_at"].startswith("2026-04-28T12:00:00")
+
+
+@pytest.mark.asyncio
+async def test_patch_notif_veille_enabled(auth_user):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        get_resp = await ac.get("/api/notification-preferences/")
+        assert get_resp.json()["notif_veille_enabled"] is False
+
+        patch_resp = await ac.patch(
+            "/api/notification-preferences/",
+            json={"notif_veille_enabled": True},
+        )
+        assert patch_resp.status_code == 200
+        assert patch_resp.json()["notif_veille_enabled"] is True
+
+        # Persistance vérifiée au GET suivant.
+        recheck = await ac.get("/api/notification-preferences/")
+        assert recheck.json()["notif_veille_enabled"] is True

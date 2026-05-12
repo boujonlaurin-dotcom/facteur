@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../lettres/providers/letters_provider.dart';
 import '../models/topic_models.dart';
 import '../repositories/topic_repository.dart';
 
@@ -108,6 +109,8 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
             subtopicSlug: created.slugParent ?? created.name,
             origin: 'custom_topics',
           ));
+      // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
+      unawaited(ref.read(lettersProvider.notifier).silentRefresh());
       return created;
     } catch (e) {
       // Rollback
@@ -276,6 +279,8 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
       } else {
         state = AsyncData([created]);
       }
+      // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
+      unawaited(ref.read(lettersProvider.notifier).silentRefresh());
       return created;
     } catch (e) {
       state = previousState;

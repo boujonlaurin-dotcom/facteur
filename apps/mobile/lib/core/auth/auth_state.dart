@@ -8,8 +8,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../features/auth/utils/auth_error_messages.dart';
-import '../nudges/nudge_ids.dart';
-import '../nudges/nudge_service.dart';
 import '../services/posthog_service.dart';
 import '../services/widget_service.dart';
 import 'session_refresher.dart';
@@ -38,13 +36,6 @@ class AuthState {
   /// Cf. docs/bugs/bug-feed-403-auth-recovery.md.
   final DateTime? lastTokenRefreshAt;
 
-  /// Whether the user has already seen the post-onboarding Welcome Tour.
-  ///
-  /// Loaded at app boot from the unified NudgeService. Used by the GoRouter
-  /// redirect to gate `/welcome-tour` synchronously for both new users
-  /// (post-onboarding) and existing users (first boot after deploy).
-  final bool welcomeTourSeen;
-
   const AuthState({
     this.user,
     this.isLoading = false,
@@ -54,7 +45,6 @@ class AuthState {
     this.forceUnconfirmed = false,
     this.sessionExpired = false,
     this.lastTokenRefreshAt,
-    this.welcomeTourSeen = true,
   });
 
   bool get isAuthenticated => user != null;
@@ -94,7 +84,6 @@ class AuthState {
     bool? forceUnconfirmed,
     bool? sessionExpired,
     DateTime? lastTokenRefreshAt,
-    bool? welcomeTourSeen,
   }) {
     return AuthState(
       user: user ?? this.user,
@@ -107,7 +96,6 @@ class AuthState {
       forceUnconfirmed: forceUnconfirmed ?? this.forceUnconfirmed,
       sessionExpired: sessionExpired ?? this.sessionExpired,
       lastTokenRefreshAt: lastTokenRefreshAt ?? this.lastTokenRefreshAt,
-      welcomeTourSeen: welcomeTourSeen ?? this.welcomeTourSeen,
     );
   }
 }
@@ -124,11 +112,6 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   /// Timestamp of the last forceUnconfirmed set. Used to debounce
   /// repeated 403s and avoid redirect loops.
   DateTime? _lastForceUnconfirmedAt;
-
-  /// Version minimale de l'onboarding requise.
-  /// Incrémentée lors de changements majeurs pour forcer les users existants
-  /// à repasser par l'onboarding (skip vers Section 3 uniquement).
-  static const int _requiredOnboardingVersion = 3;
 
   Future<void> _init() async {
     try {
@@ -244,7 +227,6 @@ class AuthStateNotifier extends StateNotifier<AuthState>
 
       if (session != null) {
         await _checkOnboardingStatus();
-        await _loadWelcomeTourSeen();
       }
 
       // 7. Écouter les changements futurs
@@ -304,12 +286,6 @@ class AuthStateNotifier extends StateNotifier<AuthState>
 
       if (user != null && isNewSignIn) {
         // Check onboarding on first sign-in (new user appearing).
-        // Sequential await: `welcomeTourSeen` must settle AFTER `needsOnboarding`
-        // so the `WelcomeTourHost` doesn't race — starting the tour in the
-        // brief window where the shell is mounted before the onboarding
-        // redirect kicks in. Without the sequence, switching accounts on the
-        // same device could flash the tour and then strand its controller
-        // with `active=true` during onboarding.
         _loadSessionProfile();
       }
     });
@@ -363,6 +339,12 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     // never briefly sees the previous user's digest.
     await WidgetService.clear();
 
+    // Reset onboarding navigation state — otherwise a fresh signup on the
+    // same device inherits saved section/question and skips Section 1.
+    // openBox is idempotent (returns the existing instance if already open).
+    final onboardingBox = await Hive.openBox<dynamic>('onboarding');
+    await onboardingBox.clear();
+
     state = const AuthState();
   }
 
@@ -400,16 +382,8 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     super.dispose();
   }
 
-  /// Loads onboarding status and welcome-tour-seen flag in sequence.
-  ///
-  /// Sequential ordering is load-bearing: `WelcomeTourHost` listens to both
-  /// flags, and if `welcomeTourSeen=false` settles before `needsOnboarding=true`
-  /// the host will start the tour in the shell before the onboarding redirect
-  /// takes effect — leaving the tour's state machine stuck when the host
-  /// unmounts.
   Future<void> _loadSessionProfile() async {
     await _checkOnboardingStatus();
-    await _loadWelcomeTourSeen();
   }
 
   Future<void> _checkOnboardingStatus() async {
@@ -432,34 +406,13 @@ class AuthStateNotifier extends StateNotifier<AuthState>
           .eq('user_id', state.user!.id)
           .maybeSingle();
 
-      var needsOnboarding =
+      final needsOnboarding =
           response == null || response['onboarding_completed'] == false;
 
-      // 3. Si onboarding déjà fait, vérifier la version
-      // Les users avec une version obsolète repassent par Section 3
-      if (!needsOnboarding) {
-        final savedVersion =
-            box.get('onboarding_app_version') as int? ?? 0;
-        if (savedVersion < _requiredOnboardingVersion) {
-          needsOnboarding = true;
-          // Pré-configurer le restart vers Section 3 directement
-          // Guard: only write once to avoid resetting user progress on every app resume
-          if (!state.needsOnboarding) {
-            final onboardingBox = await Hive.openBox('onboarding');
-            await onboardingBox.put('section', 2); // sourcePreferences index
-            await onboardingBox.put('question', 0);
-          }
-          debugPrint(
-            'AuthState: onboarding version $savedVersion < $_requiredOnboardingVersion, '
-            're-triggering onboarding (Section 3 only)',
-          );
-        }
-      }
-
-      // 4. Mettre à jour le cache avec la valeur de la DB
+      // 3. Mettre à jour le cache avec la valeur de la DB
       await box.put('onboarding_completed', !needsOnboarding);
 
-      // 5. Mettre à jour l'état si différent du cache
+      // 4. Mettre à jour l'état si différent du cache
       if (state.needsOnboarding != needsOnboarding) {
         state = state.copyWith(needsOnboarding: needsOnboarding);
       }
@@ -472,40 +425,6 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   /// Force le rafraîchissement du statut onboarding depuis la DB
   Future<void> refreshOnboardingStatus() async {
     await _checkOnboardingStatus();
-  }
-
-  /// Charge l'état "tour vu" pour l'utilisateur courant depuis NudgeService.
-  ///
-  /// La clé est scopée par `user.id` (cf. [NudgeStorage.isSeenForUser]) pour
-  /// que deux comptes sur le même device voient le tour indépendamment.
-  /// Appelé à l'init (session restaurée) et lors d'un nouveau sign-in.
-  Future<void> _loadWelcomeTourSeen() async {
-    final userId = state.user?.id;
-    if (userId == null) return;
-    try {
-      final seen =
-          await NudgeService().isSeenForUser(NudgeIds.welcomeTour, userId);
-      if (state.welcomeTourSeen != seen) {
-        state = state.copyWith(welcomeTourSeen: seen);
-      }
-    } catch (e) {
-      debugPrint('AuthState: _loadWelcomeTourSeen error: $e');
-    }
-  }
-
-  /// Marque le Welcome Tour comme vu pour l'utilisateur courant.
-  ///
-  /// Appelé par le `WelcomeTourController` à la fin du tour ou sur skip.
-  Future<void> markWelcomeTourSeen() async {
-    if (state.welcomeTourSeen) return;
-    final userId = state.user?.id;
-    state = state.copyWith(welcomeTourSeen: true);
-    if (userId == null) return;
-    try {
-      await NudgeService().markSeenForUser(NudgeIds.welcomeTour, userId);
-    } catch (e) {
-      debugPrint('AuthState: markWelcomeTourSeen persistence error: $e');
-    }
   }
 
   Future<void> signInWithEmail(
@@ -555,10 +474,13 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
-      // Deep link pour native, URL web pour Flutter web
+      // Sur natif, on cible une page web statique (hébergée à côté du build
+      // Flutter web) qui tente d'ouvrir le scheme `io.supabase.facteur://`
+      // puis offre un fallback bouton — les schemes custom seuls sont
+      // bloqués par certains clients mail / browsers Android/iOS.
       final redirectUrl = kIsWeb
           ? Uri(scheme: Uri.base.scheme, host: Uri.base.host, path: Uri.base.path).toString()
-          : 'io.supabase.facteur://login-callback';
+          : 'https://boujonlaurin-dotcom.github.io/facteur/email-confirmation.html';
 
       await _supabase.auth.signUp(
         email: email,
@@ -692,23 +614,15 @@ class AuthStateNotifier extends StateNotifier<AuthState>
 
   Future<void> setOnboardingCompleted() async {
     state = state.copyWith(needsOnboarding: false);
-    // Persister la version pour éviter un re-trigger au prochain login
     final box = await Hive.openBox<dynamic>('user_profile');
-    await box.put('onboarding_app_version', _requiredOnboardingVersion);
     await box.put('onboarding_completed', true);
   }
 
   /// Change le statut d'onboarding (utilisé pour reset/refaire)
   Future<void> setNeedsOnboarding(bool value) async {
     state = state.copyWith(needsOnboarding: value);
-
-    // Mettre à jour le cache local
     final box = await Hive.openBox<dynamic>('user_profile');
     await box.put('onboarding_completed', !value);
-
-    if (!value) {
-      await box.put('onboarding_app_version', _requiredOnboardingVersion);
-    }
   }
 
   void clearError() {
@@ -731,31 +645,64 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     }
   }
 
-  /// Rafraîchit les informations de l'utilisateur depuis Supabase via le
-  /// `SessionRefresher` (single-flight). Sur AuthException, recheck
-  /// `currentSession` avant de déconnecter — un refresh concurrent a peut-être
-  /// déjà obtenu une session valide. Cf. docs/bugs/bug-android-disconnect-race.md.
+  /// Rafraîchit les informations de l'utilisateur depuis Supabase.
+  ///
+  /// Utilise `getUser()` (GET /auth/v1/user) plutôt que `refreshSession()` :
+  /// `refreshSession()` ne re-fetche pas le user depuis la DB, il ne fait
+  /// qu'échanger le refresh token, donc `emailConfirmedAt` reste stale même
+  /// après que l'utilisateur a cliqué le lien de confirmation. Avec
+  /// `getUser()`, le serveur lit le user record courant et renvoie la valeur
+  /// fraîche de `email_confirmed_at`.
+  ///
+  /// Si l'email est désormais confirmé, on enchaîne un `SessionRefresher`
+  /// pour obtenir un JWT à jour (sinon les prochaines requêtes API
+  /// continueraient à propager l'ancien claim et le backend renverrait 403).
+  ///
+  /// Sur AuthException, recheck `currentSession` avant de déconnecter — un
+  /// refresh concurrent a peut-être déjà obtenu une session valide.
+  /// Cf. docs/bugs/bug-android-disconnect-race.md.
   Future<void> refreshUser() async {
+    // Skip the network call once the user is known confirmed — the
+    // EmailConfirmationScreen polls every 6 s and the router redirect can lag,
+    // so without this guard we'd burn a GET /auth/v1/user per tick after
+    // confirmation for nothing.
+    if (state.isEmailConfirmed) return;
+
     try {
-      debugPrint('AuthStateNotifier: Refreshing user session...');
-      final session = await SessionRefresher.instance.refresh();
-      final user = session?.user;
+      debugPrint('AuthStateNotifier: Refreshing user via getUser()...');
+      final userResponse = await _supabase.auth.getUser();
+      final freshUser = userResponse.user;
+      if (freshUser == null) return;
 
-      if (user != null) {
-        final isNowConfirmed = user.emailConfirmedAt != null ||
-            (user.appMetadata['providers'] as List<dynamic>?)
-                    ?.any((p) => p != 'email') ==
-                true;
+      final isNowConfirmed = freshUser.emailConfirmedAt != null ||
+          (freshUser.appMetadata['providers'] as List<dynamic>?)
+                  ?.any((p) => p != 'email') ==
+              true;
 
-        debugPrint(
-          'AuthStateNotifier: User refreshed. Confirmed: $isNowConfirmed',
-        );
-        state = state.copyWith(
-          user: user,
-          forceUnconfirmed: isNowConfirmed ? false : state.forceUnconfirmed,
-        );
-        // Onboarding is checked on init and auth change only, not on resume
+      debugPrint(
+        'AuthStateNotifier: User refreshed. Confirmed: $isNowConfirmed',
+      );
+
+      if (isNowConfirmed) {
+        try {
+          await SessionRefresher.instance.refresh();
+        } catch (e) {
+          debugPrint(
+              'AuthStateNotifier: Post-confirm session refresh failed: $e');
+        }
       }
+
+      // Avoid notifying every Riverpod listener when nothing actually changed
+      // (poll returning the same unconfirmed user shouldn't rebuild the feed).
+      final emailStatusChanged =
+          state.user?.emailConfirmedAt != freshUser.emailConfirmedAt;
+      final forceFlagChanged = state.forceUnconfirmed && isNowConfirmed;
+      if (!emailStatusChanged && !forceFlagChanged) return;
+
+      state = state.copyWith(
+        user: freshUser,
+        forceUnconfirmed: isNowConfirmed ? false : state.forceUnconfirmed,
+      );
     } on AuthException catch (e) {
       debugPrint(
           'AuthStateNotifier: Refresh failed (AuthException): ${e.message}');

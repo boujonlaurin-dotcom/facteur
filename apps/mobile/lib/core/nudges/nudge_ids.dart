@@ -8,13 +8,11 @@ class NudgeIds {
   NudgeIds._();
 
   // Existing (migrated from scattered SharedPreferences keys).
-  static const digestWelcome = 'digest_welcome';
   static const widgetPinAndroid = 'widget_pin_android';
   static const sunflowerRecommend = 'sunflower_recommend';
   static const savedUnread = 'saved_unread';
 
-  // New (planned for PR2/PR3).
-  static const welcomeTour = 'welcome_tour';
+  // Feed and article nudges.
   static const feedSwipeHint = 'feed_swipe_hint';
   static const feedBadgeLongpress = 'feed_badge_longpress';
   static const feedPreviewLongpress = 'feed_preview_longpress';
@@ -25,4 +23,7 @@ class NudgeIds {
 
   // Story 14.3 — self-reported "well-informed" score (NPS-style).
   static const wellInformedPoll = 'well_informed_poll';
+
+  // Story web.1 — Modal "Ajouter à l'écran d'accueil" sur iOS Safari.
+  static const iosAddToHome = 'ios_add_to_home';
 }

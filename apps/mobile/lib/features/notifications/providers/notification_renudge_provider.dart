@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/web/web_perf.dart';
 import '../../settings/providers/notifications_settings_provider.dart';
 
 /// Cap : maximum 3 affichages du re-nudge au total (brief §5.1).
@@ -12,6 +13,7 @@ const Duration kRenudgeMinSinceRefusal = Duration(days: 7);
 const Duration kRenudgeMinBetween = Duration(days: 14);
 
 bool shouldShowRenudge(NotificationsSettings s, {required DateTime now}) {
+  if (!kSupportsPushNotifications) return false;
   if (s.pushEnabled) return false;
   if (s.renudgeShownCount >= kRenudgeMaxShown) return false;
 

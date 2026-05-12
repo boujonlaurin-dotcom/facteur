@@ -1759,13 +1759,22 @@ class DigestService:
         is_serene: bool = False,
     ) -> DailyDigest | None:
         """Create a new DailyDigest in editorial_v1 format."""
-        # Garde-fou: filter out subjects with no articles at all
+        # Garde-fou: la pipeline trim déjà les sujets sans article (cf.
+        # pipeline.py "ÉTAPE 3A-bis"). Ici on est défensif : si quelque chose
+        # passe au travers, on logge en error (ce ne devrait plus arriver).
         valid_subjects = [
             s for s in result.subjects if s.actu_article or s.deep_article
         ]
         if not valid_subjects:
             logger.error("editorial_digest.all_subjects_empty", user_id=str(user_id))
             return None
+        if len(valid_subjects) < len(result.subjects):
+            logger.error(
+                "editorial_digest.subjects_filtered_at_persist",
+                user_id=str(user_id),
+                received=len(result.subjects),
+                kept=len(valid_subjects),
+            )
         result = result.model_copy(update={"subjects": valid_subjects})
 
         items_json = {

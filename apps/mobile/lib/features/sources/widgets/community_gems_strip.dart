@@ -6,7 +6,7 @@ import '../../../config/theme.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
 
-class CommunityGemsStrip extends ConsumerWidget {
+class CommunityGemsStrip extends ConsumerStatefulWidget {
   final void Function(Source source) onSourceTap;
   final void Function(String sourceId)? onGemTap;
 
@@ -17,125 +17,196 @@ class CommunityGemsStrip extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.facteurColors;
-    final trendingAsync = ref.watch(trendingSourcesProvider);
+  ConsumerState<CommunityGemsStrip> createState() => _CommunityGemsStripState();
+}
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(PhosphorIcons.fire(PhosphorIconsStyle.regular),
-                size: 18, color: colors.primary),
-            const SizedBox(width: 6),
-            Text(
-              'Pepites de la communaute',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        trendingAsync.when(
-          data: (sources) {
-            if (sources.isEmpty) {
-              return Text(
-                'Aucune pepite pour le moment.',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: colors.textTertiary),
-              );
-            }
-            return SizedBox(
-              height: 88,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: sources.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
-                itemBuilder: (context, index) =>
-                    _buildGemItem(context, sources[index]),
-              ),
-            );
-          },
-          loading: () => SizedBox(
-            height: 88,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: 4,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (_, __) => _buildPlaceholder(context),
-            ),
+class _CommunityGemsStripState extends ConsumerState<CommunityGemsStrip> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildHeader(context, colors),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: _expanded
+                ? _buildExpanded(context, colors)
+                : const SizedBox.shrink(),
           ),
-          error: (_, __) => const SizedBox.shrink(),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildGemItem(BuildContext context, Source source) {
-    final colors = context.facteurColors;
-
-    return GestureDetector(
-      onTap: () {
-        onGemTap?.call(source.id);
-        onSourceTap(source);
-      },
-      child: Container(
-        width: 140,
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: colors.border),
+  Widget _buildHeader(BuildContext context, FacteurColors colors) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => setState(() => _expanded = !_expanded),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Icon(PhosphorIcons.fire(PhosphorIconsStyle.regular),
+                  size: 20, color: colors.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Pépites de la communauté',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: colors.textPrimary,
+                          ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Les sources favorites de la communauté Facteur',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textTertiary,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              AnimatedRotation(
+                turns: _expanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 200),
+                child: Icon(
+                  PhosphorIcons.caretDown(PhosphorIconsStyle.regular),
+                  size: 18,
+                  color: colors.textTertiary,
+                ),
+              ),
+            ],
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      ),
+    );
+  }
+
+  Widget _buildExpanded(BuildContext context, FacteurColors colors) {
+    final trendingAsync = ref.watch(trendingSourcesProvider);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+      child: trendingAsync.when(
+        data: (sources) {
+          if (sources.isEmpty) {
+            return Text(
+              'Aucune pépite pour le moment.',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: colors.textTertiary),
+            );
+          }
+          return Column(
+            children: [
+              Divider(height: 1, color: colors.border),
+              const SizedBox(height: 8),
+              ...sources.map((s) => _buildGemTile(context, colors, s)),
+            ],
+          );
+        },
+        loading: () => const Padding(
+          padding: EdgeInsets.symmetric(vertical: 16),
+          child: Center(
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ),
+        error: (_, __) => Text(
+          'Impossible de charger les pépites.',
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(color: colors.textTertiary),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGemTile(
+      BuildContext context, FacteurColors colors, Source source) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () {
+        widget.onGemTap?.call(source.id);
+        widget.onSourceTap(source);
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        child: Row(
           children: [
-            Row(
-              children: [
-                _buildLogo(source, colors),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
+            _buildLogo(source, colors),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
                     source.name,
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelMedium
-                        ?.copyWith(fontWeight: FontWeight.w600),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: colors.textPrimary,
+                        ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ],
-            ),
-            const Spacer(),
-            Text(
-              source.getThemeLabel(),
-              style: Theme.of(context)
-                  .textTheme
-                  .labelSmall
-                  ?.copyWith(color: colors.textTertiary),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (source.followerCount > 0) ...[
-              const SizedBox(height: 2),
-              Row(
-                children: [
-                  Icon(PhosphorIcons.users(PhosphorIconsStyle.regular),
-                      size: 10, color: colors.textTertiary),
-                  const SizedBox(width: 3),
-                  Text(
-                    '${source.followerCount}',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: colors.textTertiary,
-                          fontSize: 10,
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          source.getThemeLabel(),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: colors.textTertiary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
+                      ),
+                      if (source.followerCount > 0) ...[
+                        const SizedBox(width: 8),
+                        Icon(PhosphorIcons.users(PhosphorIconsStyle.regular),
+                            size: 11, color: colors.textTertiary),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${source.followerCount}',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: colors.textTertiary),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
+            const SizedBox(width: 8),
+            Icon(PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
+                size: 16, color: colors.textTertiary),
           ],
         ),
       ),
@@ -145,11 +216,11 @@ class CommunityGemsStrip extends ConsumerWidget {
   Widget _buildLogo(Source source, FacteurColors colors) {
     if (source.logoUrl != null) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
         child: Image.network(
           source.logoUrl!,
-          width: 32,
-          height: 32,
+          width: 36,
+          height: 36,
           fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => _buildLogoFallback(colors),
         ),
@@ -160,62 +231,14 @@ class CommunityGemsStrip extends ConsumerWidget {
 
   Widget _buildLogoFallback(FacteurColors colors) {
     return Container(
-      width: 32,
-      height: 32,
+      width: 36,
+      height: 36,
       decoration: BoxDecoration(
         color: colors.backgroundSecondary,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Icon(PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
-          size: 16, color: colors.primary),
-    );
-  }
-
-  Widget _buildPlaceholder(BuildContext context) {
-    final colors = context.facteurColors;
-    return Container(
-      width: 140,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: colors.backgroundSecondary,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                width: 60,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: colors.backgroundSecondary,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ],
-          ),
-          const Spacer(),
-          Container(
-            width: 50,
-            height: 10,
-            decoration: BoxDecoration(
-              color: colors.backgroundSecondary,
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-        ],
-      ),
+          size: 18, color: colors.primary),
     );
   }
 }

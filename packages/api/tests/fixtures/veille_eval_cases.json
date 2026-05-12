@@ -1,0 +1,72 @@
+[
+  {
+    "id": "tech-ia-generative",
+    "theme_id": "tech",
+    "topic_labels": ["IA générative", "LLM open source"],
+    "purpose": "progresser_au_travail",
+    "editorial_brief": "Suivre l'évolution technique des modèles ouverts et leur impact sur l'industrie."
+  },
+  {
+    "id": "science-recherche-medicale",
+    "theme_id": "science",
+    "topic_labels": ["Recherche médicale", "Essais cliniques"],
+    "purpose": "culture_generale",
+    "editorial_brief": null
+  },
+  {
+    "id": "society-education",
+    "theme_id": "society",
+    "topic_labels": ["Politiques éducatives", "Inclusion scolaire"],
+    "purpose": "preparer_projet",
+    "editorial_brief": "Préparer un projet associatif autour de l'inclusion."
+  },
+  {
+    "id": "economy-finance-publique",
+    "theme_id": "economy",
+    "topic_labels": ["Finance publique", "Fiscalité"],
+    "purpose": "me_tenir_au_courant",
+    "editorial_brief": null
+  },
+  {
+    "id": "environment-climat",
+    "theme_id": "environment",
+    "topic_labels": ["Climat", "Transition énergétique"],
+    "purpose": "approfondir_passion",
+    "editorial_brief": "Plutôt analyses long format, éviter le sensationnalisme."
+  },
+  {
+    "id": "politics-elections",
+    "theme_id": "politics",
+    "topic_labels": ["Élections", "Vie démocratique"],
+    "purpose": "me_tenir_au_courant",
+    "editorial_brief": null
+  },
+  {
+    "id": "culture-cinema",
+    "theme_id": "culture",
+    "topic_labels": ["Cinéma indépendant", "Festivals"],
+    "purpose": "approfondir_passion",
+    "editorial_brief": "Critique de fond, pas de bandes-annonces."
+  },
+  {
+    "id": "international-moyen-orient",
+    "theme_id": "international",
+    "topic_labels": ["Moyen-Orient", "Conflits régionaux"],
+    "purpose": "culture_generale",
+    "editorial_brief": null
+  },
+  {
+    "id": "sport-cyclisme",
+    "theme_id": "sport",
+    "topic_labels": ["Cyclisme professionnel", "Grands tours"],
+    "purpose": "approfondir_passion",
+    "editorial_brief": "Reportages de fond plutôt que résultats live."
+  },
+  {
+    "id": "international-amerique-latine",
+    "theme_id": "international",
+    "topic_labels": ["Amérique latine", "Politiques sociales"],
+    "purpose": "culture_generale",
+    "editorial_brief": "Voix locales, pas seulement vues françaises."
+  }
+]

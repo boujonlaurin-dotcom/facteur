@@ -193,6 +193,7 @@ def apply_serein_filter(
         ),
     )
     query = query.where(serene_condition)
+    query = apply_ad_filter(query)
 
     # User-personalized theme exclusions override LLM is_serene=True: if the
     # user explicitly said "no tech", hide every tech article regardless of
@@ -200,6 +201,35 @@ def apply_serein_filter(
     if sensitive_themes is not None and effective_themes:
         query = query.where(Source.theme.notin_(effective_themes))
 
+    if excluded_topics:
+        topic_exclusion = _topic_exclusion_condition(excluded_topics)
+        if topic_exclusion is not None:
+            query = query.where(topic_exclusion)
+    return query
+
+
+def apply_ad_filter(query):
+    """Exclut les articles classifiés is_ad=True. NULL toléré (articles non encore classifiés)."""
+    return query.where(
+        or_(Content.is_ad.is_(None), Content.is_ad == False)  # noqa: E712
+    )
+
+
+def apply_good_news_filter(
+    query,
+    excluded_topics: list[ExcludedTopic] | None = None,
+):
+    """Hard filter "bonnes nouvelles" : ne garde que `is_good_news=True`.
+
+    Pas de fallback keywords ni de tolérance NULL — on préfère un digest
+    partiel à un faux positif. La promesse "bonnes nouvelles" prime sur la
+    quantité.
+
+    Les `excluded_topics` utilisateur (topic-level opt-out) restent appliqués
+    pour respecter les préférences personnelles.
+    """
+    query = query.where(Content.is_good_news == True)  # noqa: E712
+    query = apply_ad_filter(query)
     if excluded_topics:
         topic_exclusion = _topic_exclusion_condition(excluded_topics)
         if topic_exclusion is not None:

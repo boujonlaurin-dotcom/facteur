@@ -332,10 +332,14 @@ class DigestGenerationJob:
         # we keep it behind the mode branch to match existing behaviour.
         stmt = select(Content).options(selectinload(Content.source))
         if mode == "serein":
-            from app.services.recommendation.filter_presets import apply_serein_filter
+            # Mode "Bonnes nouvelles" : hard-filter is_good_news=True. Pool
+            # potentiellement plus restreint que l'ancien serein, c'est voulu.
+            from app.services.recommendation.filter_presets import (
+                apply_good_news_filter,
+            )
 
             stmt = stmt.join(Source, Content.source_id == Source.id)
-            stmt = apply_serein_filter(stmt)
+            stmt = apply_good_news_filter(stmt)
         stmt = (
             stmt.where(Content.published_at >= cutoff)
             .order_by(Content.published_at.desc())

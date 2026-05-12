@@ -17,7 +17,6 @@ import 'coup_de_coeur_block.dart';
 import 'pepite_block.dart';
 import 'quote_block.dart';
 import 'section_divider.dart';
-import 'serein_toggle_chip.dart';
 import 'topic_section.dart';
 import 'transition_text.dart';
 
@@ -159,42 +158,43 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
 
     final colors = context.facteurColors;
 
+    final introTextStyle = TextStyle(
+      fontSize: 13,
+      height: 1.45,
+      color: colors.textSecondary,
+    );
+    final showDotsAtTop = widget.dailyGoal > 0;
+    final showQuoteAtTop = widget.isSerein &&
+        widget.usesEditorial &&
+        _usesTopics &&
+        widget.digest?.quote != null;
+
     return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 8),
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: title (left) | serein toggle (right)
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Text(
-                    "L'Essentiel du jour",
-                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
-                      color: colors.textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const SereinToggleChip(),
-              ],
+            padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+            child: Text(
+              widget.isSerein
+                  ? "Chaque matin, nous analysons l'actu pour en sortir les quelques nouvelles qui nous redonnent (un petit peu) foi en l'humanité et en l'avenir. Bonne lecture !"
+                  : "L'Essentiel est une synthèse des sujets les plus couverts en France aujourd'hui. Facteur compare les points de vues, et t'amène vers des articles pour t'aider à prendre du recul sur l'actualité.",
+              style: introTextStyle,
             ),
           ),
-          // Compact progress counter below title
-          if (widget.dailyGoal > 0)
+          const SizedBox(height: 16),
+          // Quote block (serein editorial only) — rendered above the counter
+          // so the gap counter→first-card matches Essentiel exactly (16px).
+          if (showQuoteAtTop) QuoteBlock(quote: widget.digest!.quote!),
+          // Compact progress counter (after description, before topics)
+          if (showDotsAtTop) ...[
             Padding(
-              padding: const EdgeInsets.only(left: 14, top: 6),
+              padding: const EdgeInsets.only(left: 14),
               child: _buildCompactCounter(colors),
             ),
-          const SizedBox(height: 10),
+            const SizedBox(height: 16),
+          ],
           // Content area with crossfade on serein toggle
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
@@ -273,14 +273,14 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         ...List.generate(denominator, (i) {
           final isDone = i < processed;
           return Container(
-            width: 8,
-            height: 2,
-            margin: EdgeInsets.only(right: i < denominator - 1 ? 2 : 0),
+            width: 16,
+            height: 4,
+            margin: EdgeInsets.only(right: i < denominator - 1 ? 4 : 0),
             decoration: BoxDecoration(
               color: isDone
                   ? (isComplete ? colors.success : color)
                   : colors.textTertiary.withOpacity(0.25),
-              borderRadius: BorderRadius.circular(1.25),
+              borderRadius: BorderRadius.circular(2),
             ),
           );
         }),
@@ -292,10 +292,8 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     final isSerene = widget.isSerein;
     final sections = <Widget>[];
 
-    // Quote block first in serein mode — sets the tone for the reading
-    if (isSerene && widget.digest?.quote != null) {
-      sections.add(QuoteBlock(quote: widget.digest!.quote!));
-    }
+    // Quote + counter for serein mode are rendered above this widget (in
+    // build()) so the spacing counter→first-topic matches Essentiel exactly.
 
     // Topics with intro text, editorial DigestCards, and transition text
     for (int i = 0; i < widget.topics!.length; i++) {

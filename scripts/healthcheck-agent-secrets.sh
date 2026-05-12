@@ -164,6 +164,20 @@ else
   fi
 fi
 
+# ─── Sentry DSN mobile (Flutter) ────────────────────────────────────────────
+hdr "Sentry — DSN Flutter (SENTRY_DSN_FLUTTER, build-time only)"
+if [[ -z "${SENTRY_DSN_FLUTTER:-}" ]]; then
+  sk "SENTRY_DSN_FLUTTER"
+else
+  # Pas d'auth-check possible (DSN = clé publique write-only). On valide le
+  # format, ce qui suffit pour détecter un copier/coller cassé avant build.
+  if [[ "$SENTRY_DSN_FLUTTER" =~ ^https://[a-f0-9]+@o[0-9]+\.ingest\.[a-z]+\.sentry\.io/[0-9]+$ ]]; then
+    ok "format DSN valide (sera injecté via --dart-define au build APK/IPA)"
+  else
+    ko "format DSN inattendu — vérifier que la valeur n'a pas été tronquée"
+  fi
+fi
+
 # ─── PostHog ─────────────────────────────────────────────────────────────────
 hdr "PostHog (POSTHOG_PERSONAL_API_KEY)"
 if [[ -z "${POSTHOG_PERSONAL_API_KEY:-}" ]]; then

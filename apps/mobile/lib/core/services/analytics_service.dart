@@ -235,6 +235,15 @@ class AnalyticsService {
     await _capturePostHog('digest_opened', props);
   }
 
+  Future<void> trackBonnesNouvellesOpened({DateTime? targetDate}) async {
+    final props = {
+      'session_id': _sessionId,
+      'target_date': targetDate?.toIso8601String(),
+    };
+    await _logEvent('bonnes_nouvelles_opened', props);
+    await _capturePostHog('bonnes_nouvelles_opened', props);
+  }
+
   Future<void> trackDigestItemViewed({
     required String digestDate,
     required String contentId,
@@ -451,6 +460,24 @@ class AnalyticsService {
     await _capturePostHog('widget_pin_dismissed', props);
   }
 
+  Future<void> trackDiscoverDisableStepShown() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('discover_disable_step_shown', props);
+    await _capturePostHog('discover_disable_step_shown', props);
+  }
+
+  Future<void> trackDiscoverDisableConfirmed() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('discover_disable_confirmed', props);
+    await _capturePostHog('discover_disable_confirmed', props);
+  }
+
+  Future<void> trackDiscoverDisableSkipped() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('discover_disable_skipped', props);
+    await _capturePostHog('discover_disable_skipped', props);
+  }
+
   /// target: 'digest' | 'article' | 'feed'.
   /// Fired whenever a `io.supabase.facteur://` widget URI lands in the app.
   Future<void> trackWidgetAppOpened({
@@ -486,6 +513,29 @@ class AnalyticsService {
     };
     await _logEvent('widget_article_opened', props);
     await _capturePostHog('widget_article_opened', props);
+  }
+
+  /// Fired once per Flux view session, on app foreground, after reading the
+  /// max scroll position the native RemoteViewsFactory persisted to
+  /// SharedPreferences. [maxPosition] is 0-indexed; [scrollPct] is computed
+  /// against [totalCount].
+  Future<void> trackWidgetFluxScrollSession({
+    required int maxPosition,
+    required int totalCount,
+    DateTime? at,
+  }) async {
+    final scrollPct = totalCount > 0
+        ? ((maxPosition + 1) / totalCount).clamp(0.0, 1.0)
+        : 0.0;
+    final props = <String, dynamic>{
+      'session_id': _sessionId,
+      'max_position': maxPosition,
+      'total_count': totalCount,
+      'scroll_pct': scrollPct,
+      'at_iso': at?.toUtc().toIso8601String(),
+    };
+    await _logEvent('widget_flux_scroll', props);
+    await _capturePostHog('widget_flux_scroll', props);
   }
 
   // ── Notifications activation events (brief §7) ──────────────────────
@@ -525,6 +575,23 @@ class AnalyticsService {
   Future<void> trackModalNotifDismissed() async {
     await _logEvent('modal_notif_dismissed', {});
     await _capturePostHog('modal_notif_dismissed', {});
+  }
+
+  // ── iOS "Add to Home Screen" PWA modal (Story web.1) ────────────────
+
+  Future<void> trackIosAddToHomeShown() async {
+    await _logEvent('ios_add_to_home_shown', {});
+    await _capturePostHog('ios_add_to_home_shown', {});
+  }
+
+  Future<void> trackIosAddToHomeConfirmed() async {
+    await _logEvent('ios_add_to_home_confirmed', {});
+    await _capturePostHog('ios_add_to_home_confirmed', {});
+  }
+
+  Future<void> trackIosAddToHomeDismissed() async {
+    await _logEvent('ios_add_to_home_dismissed', {});
+    await _capturePostHog('ios_add_to_home_dismissed', {});
   }
 
   Future<void> trackRenudgeShown({required int displayCount}) async {

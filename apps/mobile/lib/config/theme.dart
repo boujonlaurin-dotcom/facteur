@@ -162,6 +162,14 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
   static const Color sWarning = Color(0xFFF39C12);
   static const Color sError = Color(0xFFE74C3C);
   static const Color sInfo = Color(0xFF3498DB);
+
+  // Veille tone — utilisé par le flow de configuration "Ma veille".
+  // Ton sépia distinct de --primary (ocre) pour signaler la curation IA.
+  static const Color veille = Color(0xFF5D5B5A);
+  static const Color veilleTint = Color(0xFFEAE8E5);
+  static const Color veilleLine = Color(0xFFD2C9BB);
+  static const Color veilleLineSoft = Color(0xFFE6E1D6);
+  static const Color veilleSkel = Color(0xFFE6E1D6);
 }
 
 // Définitions des Palettes

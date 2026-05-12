@@ -24,6 +24,11 @@ logger = structlog.get_logger(__name__)
 # --- Post-filtre cohérence sujet (anti-clustering trop large) ---
 # Voir docs/bugs/bug-comparison-clustering-too-loose.md
 PERSPECTIVE_TITLE_JACCARD_MIN = 0.30
+# Jaccard minimum exigé même dans le chemin full_signals (bypass Layer 1).
+# Empêche qu'un seul topic générique ("politics") suffise à valider deux articles
+# sur des sujets radicalement différents (ex: Congo/prisonniers vs Ukraine/trêve)
+# partageant seulement un nom propre omniprésent (Trump, Macron…).
+PERSPECTIVE_MIN_JACCARD_FLOOR = 0.08
 PERSPECTIVE_MIN_VALID_RESULTS = 2
 PERSPECTIVE_MIN_BIAS_GROUPS = 2
 # Entités jugées suffisamment discriminantes (LOCATION exclu : trop générique)
@@ -307,30 +312,55 @@ class PerspectiveService:
         perspectives_text = "\n".join(perspectives_lines)
 
         system = (
-            "Analyste média français. Compare les couvertures d'un même sujet.\n\n"
+            "Analyste média français. Tu compares la couverture d'un même sujet "
+            "par plusieurs rédactions et tu fais ressortir CE QUI LES OPPOSE.\n\n"
+            "Méthode obligatoire :\n"
+            "1. Lis tous les titres + résumés.\n"
+            "2. REGROUPE les médias en 2 à 4 clusters selon l'angle commun qu'ils "
+            "adoptent — pas un constat par média, mais un constat par groupe partageant "
+            "un même cadrage. Si tous traitent le sujet de la même manière, dis-le "
+            "et explique pourquoi (divergence_level: low).\n"
+            "3. Pour chaque cluster, identifie : la qualification des faits choisie "
+            "(mots forts vs neutres), ce qui est mis en avant ou occulté, et tout "
+            "marqueur d'opinion (adjectifs chargés, attribution morale, lexique "
+            'révélateur — "dérapage" vs "incident", "renoncement" vs "ajustement", '
+            '"victoire" vs "concession").\n\n'
             "Réponds en JSON avec deux clés :\n"
-            '- "analysis": texte court (~120 mots max), structuré ainsi :\n'
-            "  1. Une phrase de contexte (le fait central que tous couvrent).\n"
-            "  2. Un saut de ligne double (\\n\\n).\n"
-            '  3. Exactement 2 constats, chacun sur sa propre ligne, préfixés par "→ ".\n'
-            "  Dans chaque constat : nomme 1 ou 2 médias en **gras**, et mets en **gras** "
-            "le verbe ou nom-clé qui exprime l'angle. Maximum 3 segments en gras par ligne. "
-            "Pas d'en-tête, pas de titre de section.\n"
+            '- "analysis": texte structuré ainsi :\n'
+            "  1. Phrase de contexte : le fait central que tous couvrent (15-25 mots).\n"
+            "  2. Saut de ligne double (\\n\\n).\n"
+            '  3. 2 à 4 constats, chacun préfixé "→ ", chacun 30-50 mots :\n'
+            '     • cluster de médias en **gras** ("**Le Monde** et **Libération**"),\n'
+            '     • verbe ou nom-clé d\'angle en **gras** ("**cadrent**", "**minimisent**"),\n'
+            "     • un élément concret tiré du titre/résumé (chiffre, acteur, "
+            "qualification, mot précis cité entre guillemets si possible),\n"
+            "     • si pertinent : marqueur d'opinion repéré "
+            '("emploient le terme «X»", "qualifient de Y", "présentent comme Z").\n'
+            "  Max 5 segments en gras par ligne. Aucun titre de section.\n"
             '- "divergence_level": "low" (couvertures similaires), "medium" '
             '(angles sensiblement différents), "high" (cadrages opposés ou contradictoires).\n\n'
-            "Exemple d'analysis :\n"
-            "\"Tous couvrent l'annonce du plan budgétaire.\\n\\n"
-            "→ **Le Monde** et **Libération** **insistent** sur le volet social et les "
-            "arbitrages à venir.\\n"
-            "→ **Le Figaro** **cadre** la mesure comme un tournant sécuritaire, "
-            "d'après son titre.\"\n\n"
             "RÈGLES :\n"
-            "- Uniquement les titres/résumés fournis, pas de faits inventés.\n"
-            "- Précise \"d'après son titre\" si tu parles d'un angle absent d'un résumé.\n"
-            "- Verbes concrets : insiste sur, minimise, cadre comme, ignore, met en avant, oppose.\n"
-            '- Interdits : "met en lumière", "soulève des questions", "révèle la fragilité", '
-            '"fait écho".\n'
-            "- Ton factuel, phrases courtes. Français."
+            "- Uniquement les titres/résumés fournis. Zéro fait inventé, zéro "
+            "intention prêtée à un média sans appui textuel.\n"
+            "- Si l'angle d'un cluster repose uniquement sur le titre, ajouter "
+            '"d\'après leurs titres".\n'
+            "- Verbes concrets : insiste(nt) sur, minimise(nt), cadre(nt) comme, "
+            "ignore(nt), met(tent) en avant, oppose(nt), contextualise(nt), "
+            "relativise(nt), dramatise(nt), neutralise(nt), qualifie(nt) de, "
+            "dénonce(nt), salue(nt).\n"
+            '- Interdits : "met en lumière", "soulève des questions", '
+            '"révèle la fragilité", "fait écho", "interroge", "questionne".\n'
+            "- Ton factuel, phrases denses. Français impeccable.\n\n"
+            "EXEMPLE :\n"
+            "\"Tous reviennent sur l'annonce du plan budgétaire 2026 présenté par Bercy.\\n\\n"
+            "→ **Le Monde** et **Libération** **insistent** sur le volet social, "
+            "citant les arbitrages à venir sur les retraites et qualifiant la "
+            "trajectoire de «resserrement nécessaire mais douloureux».\\n"
+            "→ **Le Figaro** et **Les Échos** **cadrent** la mesure comme un signal "
+            "de sérieux budgétaire, mettant en avant les 12 milliards d'économies "
+            "et le terme «redressement» dans leurs titres.\\n"
+            "→ **Mediapart** **dénonce** un budget «d'austérité déguisée», marqueur "
+            "d'opinion explicite absent des autres couvertures.\""
         )
 
         source_stance = STANCE_LABELS.get(source_bias, source_bias)
@@ -348,7 +378,7 @@ class PerspectiveService:
                 user_message=user_message,
                 model="mistral-large-latest",
                 temperature=0.4,
-                max_tokens=400,
+                max_tokens=700,
             )
             if isinstance(result, dict) and "analysis" in result:
                 return result
@@ -484,9 +514,9 @@ class PerspectiveService:
         """Décide si un candidat est on-topic.
 
         - Si title_jaccard >= seuil → cohérent (signal fort).
-        - Sinon, si signaux complets (Layer 1 DB), accepter aussi sur :
-          shared_topics >= 1 OU shared_entities >= 2.
-        - Sinon (Layer 2/3 Google News, titre seul) → rejeter.
+        - Sinon, si signaux complets (Layer 1 DB) ET jaccard >= floor minimal :
+          (shared_topics >= 1 ET shared_entities >= 1) OU shared_entities >= 2.
+        - Sinon (Layer 2/3 Google News, ou jaccard trop faible) → rejeter.
 
         Retourne (is_coherent, reason). reason vide si cohérent.
         """
@@ -498,10 +528,21 @@ class PerspectiveService:
             and signals["shared_entities"] is not None
         )
         if full_signals:
-            if signals["shared_topics"] and signals["shared_topics"] >= 1:
-                return True, ""
+            # 2 entités discriminantes partagées → signal fort, pas de floor requis.
             if signals["shared_entities"] and signals["shared_entities"] >= 2:
                 return True, ""
+            # 1 topic + 1 entité : exiger aussi un Jaccard minimal pour bloquer
+            # les faux-positifs "même personnalité, sujets totalement différents"
+            # (ex: Congo/Trump vs Ukraine/Trump — seul token commun : "trump").
+            if signals["title_jaccard"] >= PERSPECTIVE_MIN_JACCARD_FLOOR:
+                topic_ok = bool(
+                    signals["shared_topics"] and signals["shared_topics"] >= 1
+                )
+                entity_ok = bool(
+                    signals["shared_entities"] and signals["shared_entities"] >= 1
+                )
+                if topic_ok and entity_ok:
+                    return True, ""
             return False, "no_signal"
         return False, "low_jaccard"
 

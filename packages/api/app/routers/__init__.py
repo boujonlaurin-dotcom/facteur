@@ -17,6 +17,7 @@ from app.routers import (
     streaks,
     subscription,
     users,
+    veille,
     webhooks,
 )
 
@@ -37,5 +38,6 @@ __all__ = [
     "streaks",
     "subscription",
     "users",
+    "veille",
     "webhooks",
 ]

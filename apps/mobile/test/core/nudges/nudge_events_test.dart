@@ -28,12 +28,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    // Seed welcome_tour so the catalogue nudges used by these tests are
-    // eligible. The `no events emitted when request is rejected` test
-    // overrides the prefs inline to exercise a different rejection reason.
-    SharedPreferences.setMockInitialValues({
-      'nudge.welcome_tour.seen': true,
-    });
+    SharedPreferences.setMockInitialValues({});
   });
 
   test('request → dismiss emits shown + dismissed with outcome', () async {
@@ -44,12 +39,12 @@ void main() {
       events: events,
     );
 
-    await coordinator.request(NudgeIds.digestWelcome);
+    await coordinator.request(NudgeIds.widgetPinAndroid);
     await coordinator.dismiss(markSeen: true);
 
     expect(recorder.calls.length, 2);
     expect(recorder.calls[0].event, 'nudge_shown');
-    expect(recorder.calls[0].props?['nudge_id'], NudgeIds.digestWelcome);
+    expect(recorder.calls[0].props?['nudge_id'], NudgeIds.widgetPinAndroid);
     expect(recorder.calls[0].props?['surface'], 'digest');
     expect(recorder.calls[1].event, 'nudge_dismissed');
     expect(recorder.calls[1].props?['outcome'], 'dismissed');
@@ -63,8 +58,8 @@ void main() {
       events: events,
     );
 
-    await coordinator.request(NudgeIds.digestWelcome);
-    await coordinator.markConverted(NudgeIds.digestWelcome);
+    await coordinator.request(NudgeIds.widgetPinAndroid);
+    await coordinator.markConverted(NudgeIds.widgetPinAndroid);
 
     expect(recorder.calls.length, 2);
     expect(recorder.calls[1].event, 'nudge_dismissed');
@@ -82,16 +77,16 @@ void main() {
     // normal priority first
     await coordinator.request(NudgeIds.articleSaveNotes);
     // high priority preempts
-    await coordinator.request(NudgeIds.digestWelcome);
+    await coordinator.request(NudgeIds.widgetPinAndroid);
 
     expect(recorder.calls.length, 2);
     expect(recorder.calls[0].props?['nudge_id'], NudgeIds.articleSaveNotes);
-    expect(recorder.calls[1].props?['nudge_id'], NudgeIds.digestWelcome);
+    expect(recorder.calls[1].props?['nudge_id'], NudgeIds.widgetPinAndroid);
   });
 
   test('no events emitted when request is rejected', () async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('nudge.digest_welcome.seen', true);
+    await prefs.setBool('nudge.widget_pin_android.seen', true);
 
     final recorder = _RecordingPostHog();
     final events = NudgeEvents(recorder);
@@ -100,7 +95,7 @@ void main() {
       events: events,
     );
 
-    await coordinator.request(NudgeIds.digestWelcome);
+    await coordinator.request(NudgeIds.widgetPinAndroid);
     expect(recorder.calls, isEmpty);
   });
 }

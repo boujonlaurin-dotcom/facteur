@@ -26,6 +26,18 @@ logger = structlog.get_logger()
 # Cf. docs/bugs/bug-feed-default-hang.md
 _FEED_TWO_PHASE_TIMEOUT_S = 8.0
 
+# Suffixes corporate courants strippés pour matcher "Anthropic" avec
+# "Anthropic, PBC" ou "OpenAI" avec "OpenAI Inc." côté post-filtre entité.
+_CORP_SUFFIX_RE = re.compile(
+    r"[,\s]+(pbc|inc|llc|ltd|sa|sas|gmbh|co|corp|corporation|"
+    r"company|nv|ag|spa|srl|plc)\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_entity_name(name: str) -> str:
+    return _CORP_SUFFIX_RE.sub("", name.strip().lower()).strip()
+
 
 @dataclass
 class InterestContext:
@@ -428,7 +440,7 @@ class RecommendationService:
         if entity:
             import json as _json
 
-            entity_lower = entity.lower()
+            entity_norm = _normalize_entity_name(entity)
 
             def _matches_entity(c: Content) -> bool:
                 if not c.entities:
@@ -438,7 +450,7 @@ class RecommendationService:
                         e = _json.loads(raw)
                         if (
                             isinstance(e, dict)
-                            and e.get("name", "").lower() == entity_lower
+                            and _normalize_entity_name(e.get("name", "")) == entity_norm
                         ):
                             return True
                     except (ValueError, TypeError):
@@ -1092,13 +1104,13 @@ class RecommendationService:
     # `decale` is only emitted in serein mode, which excludes hot/community,
     # so it sits at community's slot.
     _CAROUSEL_BASE_POSITIONS: dict[str, int] = {
-        "favorite": 3,
-        "new_source": 6,
-        "community": 9,
-        "decale": 9,
-        "saved": 12,
-        "hot": 15,
-        "deep": 18,
+        "favorite": 5,
+        "new_source": 11,
+        "community": 17,
+        "decale": 17,
+        "saved": 23,
+        "hot": 29,
+        "deep": 35,
     }
 
     @staticmethod
@@ -1138,7 +1150,7 @@ class RecommendationService:
         MIN_CAROUSEL_ITEMS = 3  # Minimum items for building a carousel
         MIN_DISPLAY_ITEMS = 2  # T2: Minimum items after consumed filtering
         MAX_CAROUSEL_ITEMS = 5
-        MIN_CAROUSEL_POSITION = 4  # No carousel before position 4
+        MIN_CAROUSEL_POSITION = 5  # No carousel before position 5 (≈ GNews cadence)
         carousels: list[dict] = []
         promoted_ids: set[UUID] = set()
         used_group_keys: set[str] = set()  # Prevent same group in hot + deep
@@ -1424,19 +1436,16 @@ class RecommendationService:
                     if len(items) < MIN_NEW_SOURCE_ITEMS:
                         continue
 
-                    # T3D: Dynamic position based on source age.
-                    # Very-recent sources keep priority slots (1 / 3); older
-                    # ones fall back on the Story 12.8 jittered business slot.
+                    # Cooldown post-add 6 h — laisse les articles de la source
+                    # remonter naturellement dans le main feed avant de pousser
+                    # un carrousel "Récemment ajouté".
                     now = datetime.datetime.now(datetime.UTC)
                     source_age_seconds = (now - src_row.added_at).total_seconds()
-                    if source_age_seconds < 24 * 3600:  # < 24h
-                        position = 1
-                    elif source_age_seconds < 3 * 24 * 3600:  # < 3 days
-                        position = 3
-                    else:
-                        position = self._jitter_carousel_position(
-                            "new_source", user_id, today
-                        )
+                    if source_age_seconds < 6 * 3600:
+                        continue
+                    position = self._jitter_carousel_position(
+                        "new_source", user_id, today
+                    )
 
                     logger.info(
                         "carousel_new_source_selected",
@@ -1664,13 +1673,16 @@ class RecommendationService:
                 business_rank.get(c["carousel_type"], 99),
             )
         )
-        taken: set[int] = set()
+        # Carrousels espacés d'au moins MIN_GAP slots — évite les empilements
+        # adjacents qui rendent le flux dense (effet GNews / Apple News).
+        MIN_GAP = 6
+        taken: list[int] = []
         for c in carousels:
             pos = max(c["position"], MIN_CAROUSEL_POSITION)
-            while pos in taken:
+            while any(abs(pos - t) < MIN_GAP for t in taken):
                 pos += 1
             c["position"] = pos
-            taken.add(pos)
+            taken.append(pos)
 
         # Convert Content objects to serializable dicts for CarouselInfo
         carousel_dicts = []
@@ -2320,22 +2332,17 @@ class RecommendationService:
 
         # Base source filter
         # source_id: show only articles from this specific source
-        # theme/topic/entity: show curated sources (broader discovery)
-        # keyword + include_unfollowed: same broader discovery as theme/topic/entity
+        # theme/topic/entity: filtre explicite — toutes les sources actives
+        #   Facteur (curated + non-curated + tier=deep), pour ne pas écarter
+        #   de matches potentiels. La distinction suivie/non-suivie est rendue
+        #   à l'affichage via la chip "Suivre +".
+        # keyword + include_unfollowed: même politique d'élargissement.
         # followed_source_ids: followed sources only (no curated enrichment)
         _use_two_phase = False
         if source_id:
             query = query.where(Content.source_id == source_id)
         elif theme or topic or entity or (keyword and include_unfollowed):
-            if followed_source_ids:
-                query = query.where(
-                    or_(
-                        and_(Source.is_curated, Source.source_tier != "deep"),
-                        Source.id.in_(list(followed_source_ids)),
-                    )
-                )
-            else:
-                query = query.where(Source.is_curated, Source.source_tier != "deep")
+            pass
         elif followed_source_ids:
             # Don't apply source filter yet — two-phase fetch after all filters
             _use_two_phase = True

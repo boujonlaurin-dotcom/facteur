@@ -743,6 +743,20 @@ async def get_perspectives(
 
     cache_key = str(content_id)
 
+    # Track perspective open (Story 19.1 — Lettres du Facteur, action 4).
+    # Non-bloquant : un échec ne doit pas casser l'endpoint. Un seul event
+    # suffit pour la détection (DETECTORS["first_perspectives_open"] LIMIT 1).
+    try:
+        from app.services.analytics_service import AnalyticsService
+
+        await AnalyticsService(db).log_event(
+            user_id=UUID(current_user_id),
+            event_type="perspectives_opened",
+            event_data={"content_id": cache_key},
+        )
+    except Exception:
+        logger.warning("perspectives_open_tracking_failed", exc_info=True)
+
     # Check cache (TTLCache handles expiration automatically)
     cached_response = _perspectives_cache.get(cache_key)
     if cached_response is not None:

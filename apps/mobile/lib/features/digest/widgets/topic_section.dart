@@ -21,6 +21,7 @@ import '../../feed/widgets/perspectives_loading_sheet.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import 'a_la_une_badge.dart';
 import 'article_thumbs_feedback.dart';
 import 'divergence_analysis_block.dart';
 import 'editorial_badge.dart';
@@ -88,6 +89,11 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   int _currentPage = 0;
   bool _isExpanded = false;
 
+  PageController? _expandedPageController;
+  int _expandedPage = 0;
+
+  bool get _effectiveExpanded => _isExpanded;
+
   /// Content IDs whose images failed to load (detected at runtime).
   final Set<String> _collapsedImages = {};
 
@@ -103,6 +109,18 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     return actuArticles.first;
   }
 
+  /// Returns [actuArticles] with the anchor article (followed source first,
+  /// else first article) moved to index 0 — used to seed the expanded
+  /// carousel and the "compare" handler with the same lead article.
+  List<DigestItem> _orderAnchorFirst(List<DigestItem> actuArticles) {
+    final anchor = _pickSingleton(actuArticles);
+    return [
+      anchor,
+      for (final a in actuArticles)
+        if (a.contentId != anchor.contentId) a,
+    ];
+  }
+
   @override
   void initState() {
     super.initState();
@@ -114,6 +132,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   @override
   void dispose() {
     _pageController.dispose();
+    _expandedPageController?.dispose();
     super.dispose();
   }
 
@@ -269,7 +288,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                 children: [
                   naturalHeader,
                   const SizedBox(height: 8),
-                  if (_isExpanded)
+                  if (_effectiveExpanded)
                     _buildExpandedEditorial(
                         colors, isDark, topic, actuArticles)
                   else
@@ -343,7 +362,10 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             .replaceAll('il y a ', '')
         : null;
 
-    final isHero = topic.isUne && hasImage;
+    // Defensive: if backend forgot to flag rank 1 as "À la Une", force the
+    // hero layout — the lead topic must always render in the une format.
+    final isUneTopic = topic.isUne || topic.rank == 1;
+    final isHero = isUneTopic && hasImage;
 
     return GestureDetector(
       onTap: () {
@@ -369,7 +391,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
               : null,
         ),
         clipBehavior: Clip.antiAlias,
-        child: topic.isUne
+        child: isUneTopic
             ? (hasImage
                 ? _buildCompactHeroCard(
                     colors, isDark, article, topic, timeAgo)
@@ -391,49 +413,37 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     DigestTopic topic,
     String? timeAgo,
   ) {
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Left: compact image (1:1 ratio, ~120px width)
-          SizedBox(
-            width: 120,
-            child: FacteurThumbnail(
-              imageUrl: article.thumbnailUrl,
-              aspectRatio: 1.0,
-              borderRadius: BorderRadius.zero,
-              onError: () => _onImageError(article.contentId),
-            ),
-          ),
-          // Right: text content
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Title
-                  Text(
-                    article.title,
-                    maxLines: _digestTitleMaxLines,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      height: 1.3,
-                      color: isDark ? Colors.white : colors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  // Footer: source logos · time · expand icon
-                  _buildCompactFooter(colors, isDark, topic, timeAgo, article),
-                ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FacteurThumbnail(
+          imageUrl: article.thumbnailUrl,
+          aspectRatio: 21 / 9,
+          borderRadius: BorderRadius.zero,
+          onError: () => _onImageError(article.contentId),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                article.title,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  height: 1.3,
+                  color: isDark ? Colors.white : colors.textPrimary,
+                ),
               ),
-            ),
+              const SizedBox(height: 8),
+              _buildCompactFooter(colors, isDark, topic, timeAgo, article),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -445,7 +455,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     String? timeAgo,
   ) {
     return Padding(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -454,13 +464,13 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             maxLines: _digestTitleMaxLines,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 15,
+              fontSize: 16,
               fontWeight: FontWeight.bold,
               height: 1.3,
               color: isDark ? Colors.white : colors.textPrimary,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           _buildCompactFooter(colors, isDark, topic, timeAgo, article),
         ],
       ),
@@ -731,22 +741,38 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         .cast<DigestItem?>()
         .firstOrNull;
 
-    // Singleton mode: show one article per topic even when the backend
-    // sends 2-3 (carousel deprecated — see review iteration). The extras
-    // still drive `perspective_sources` / `bias_distribution` for the
-    // "Analyse de biais" block below.
-    final singleton = _pickSingleton(actuArticles);
+    final orderedArticles = _orderAnchorFirst(actuArticles);
+    final visibleIndex = _expandedPage.clamp(0, orderedArticles.length - 1);
+    final visibleArticle = orderedArticles[visibleIndex];
+    final hasCarousel = orderedArticles.length > 1;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-            // ── Article unique (singleton) ──
             const SizedBox(height: 2),
-            if (!singleton.isDismissed) _buildSingleArticle(singleton),
+            if (hasCarousel)
+              _buildExpandedCarousel(orderedArticles)
+            else if (!visibleArticle.isDismissed)
+              _buildSingleArticle(visibleArticle),
+
+            if (hasCarousel) ...[
+              const SizedBox(height: 2),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  // Center the indicator under the visible card (viewportFraction=0.96)
+                  final cardWidth = constraints.maxWidth * 0.96;
+                  return SizedBox(
+                    width: cardWidth,
+                    child: _buildPageIndicator(
+                        colors, orderedArticles.length, _expandedPage),
+                  );
+                },
+              ),
+            ],
 
             const SizedBox(height: 12),
 
-            // ── Analyse Facteur (juste sous le singleton) ──
+            // ── Analyse Facteur ──
             if (topic.divergenceAnalysis != null) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -758,14 +784,14 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   onCompare: _handleCompare,
                   perspectiveCount: topic.perspectiveCount,
                   perspectiveSources: topic.perspectiveSources,
-                  excludeSourceId: singleton.source?.id,
-                  excludeSourceName: singleton.source?.name,
+                  excludeSourceId: visibleArticle.source?.id,
+                  excludeSourceName: visibleArticle.source?.name,
                 ),
               ),
               const SizedBox(height: 6),
             ],
 
-            // ── Pas de recul (intègre le contexte du sujet) ──
+            // ── Pas de recul ──
             if (deepArticle != null) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -776,30 +802,42 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                 ),
               ),
               const SizedBox(height: 6),
-            ] else if (topic.introText != null) ...[
-              // Fallback : sujet sans deep article → intro text en
-              // paragraphe discret (pas de carte).
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  topic.introText!,
-                  style: TextStyle(
-                    fontSize: 14,
-                    height: 1.5,
-                    color: isDark
-                        ? Colors.white.withOpacity(0.75)
-                        : colors.textSecondary.withOpacity(0.85),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 6),
             ],
 
             // ── Thumbs feedback ──
             ArticleThumbsFeedback(
-              contentId: singleton.contentId,
+              contentId: visibleArticle.contentId,
             ),
           ],
+    );
+  }
+
+  Widget _buildExpandedCarousel(List<DigestItem> articles) {
+    const viewport = 0.96;
+    _expandedPageController ??= PageController(viewportFraction: viewport);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = constraints.maxWidth * viewport;
+        double maxH = 0;
+        for (final a in articles) {
+          final h = _estimateCardHeight(a, cardWidth);
+          if (h > maxH) maxH = h;
+        }
+        return SizedBox(
+          height: maxH,
+          child: PageView.builder(
+            controller: _expandedPageController,
+            onPageChanged: (i) => setState(() => _expandedPage = i),
+            itemCount: articles.length,
+            itemBuilder: (context, index) {
+              return Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: _buildSingleArticle(articles[index]),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 
@@ -812,12 +850,16 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         ? widget.topic.articles.where((a) => a.badge != 'pas_de_recul').toList()
         : widget.topic.articles;
     if (articles.isEmpty) return;
-    // Editorial mode is singleton — use the same selection logic as the
-    // compact card so "Comparer" operates on the visible article. Non-
-    // editorial paths keep the legacy _currentPage behavior.
-    final article = widget.editorialMode
-        ? _pickSingleton(articles)
-        : articles[_currentPage.clamp(0, articles.length - 1)];
+    // Editorial mode: operate on the article currently visible in the
+    // expanded carousel (or singleton if only one). Non-editorial paths
+    // keep the legacy _currentPage behavior.
+    final DigestItem article;
+    if (widget.editorialMode) {
+      final ordered = _orderAnchorFirst(articles);
+      article = ordered[_expandedPage.clamp(0, ordered.length - 1)];
+    } else {
+      article = articles[_currentPage.clamp(0, articles.length - 1)];
+    }
     // Prefer the backend-provided pivot id (the same content used to compute
     // perspective_count / bias_distribution). Falls back to the currently
     // displayed article for legacy cached digests where the field is absent.
@@ -977,7 +1019,9 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           ),
 
           // Row 2: Badges — skip for singletons
-          if (!isSingleton && (topic.isTrending || topic.isUne)) ...[
+          if (!isSingleton &&
+              (topic.isTrending ||
+                  (topic.isUne && topic.sourceCount >= 2))) ...[
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -989,13 +1033,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                     icon: PhosphorIcons.trendUp(PhosphorIconsStyle.bold),
                     label: 'Couvert par ${topic.sourceCount} sources',
                   ),
-                if (topic.isUne)
-                  _buildBadge(
-                    colors,
-                    isDark,
-                    icon: PhosphorIcons.newspaper(PhosphorIconsStyle.bold),
-                    label: 'A la une',
-                  ),
+                if (topic.isUne && topic.sourceCount >= 2)
+                  ALaUneBadge(sourceCount: topic.sourceCount),
               ],
             ),
           ],
@@ -1167,11 +1206,12 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     );
   }
 
-  Widget _buildPageIndicator(FacteurColors colors, int count) {
+  Widget _buildPageIndicator(FacteurColors colors, int count, [int? activeOverride]) {
+    final active = activeOverride ?? _currentPage;
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: List.generate(count, (index) {
-        final isActive = index == _currentPage;
+        final isActive = index == active;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           width: isActive ? 24 : 10,

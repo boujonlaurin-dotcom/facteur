@@ -6,6 +6,7 @@ Story 10.24: Fills all null editorial text fields via LLM + DB query.
 from __future__ import annotations
 
 import json
+import re
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
@@ -37,6 +38,32 @@ logger = structlog.get_logger()
 # within this many days. 3 days is short enough to still surface genuinely
 # popular content, long enough that users don't see "déjà vu" picks.
 _HIGHLIGHTS_ROTATION_DAYS = 3
+
+
+# Detects a media attribution / "bridge to a deep article" sentence. Used to
+# scrub `intro_text` when `deep_article` is null — Mistral occasionally
+# fabricates a source ("Next.ink explique pourquoi…") even though the prompt
+# forbids it. Cf. digest 2026-04-30 sujet "Faille critique Linux".
+_PHANTOM_BRIDGE_RE = re.compile(
+    r"\b(?:selon|d['’]apr[èe]s|comme l['’](?:explique|illustre|montre)|"
+    r"un\s+(?:éclairage|article|reportage|décryptage)\s+(?:de|du|des)\s+|"
+    r"[A-ZÉÈÀÂÎÔÛ][\w'’.-]*\s+(?:détaille|explique|décrypte|"
+    r"revient\s+sur|analyse|décortique|montre|précise))",
+    re.IGNORECASE,
+)
+
+
+def _strip_phantom_bridge(intro: str) -> tuple[str, bool]:
+    """Truncate `intro` to its first sentence if it contains a fake source bridge.
+
+    Returns (cleaned_text, was_modified). Used when no `deep_article` is
+    attached to a subject — any media attribution is by definition fabricated.
+    """
+    if not intro or not _PHANTOM_BRIDGE_RE.search(intro):
+        return intro, False
+    sentences = re.split(r"(?<=[.!?])\s+", intro.strip())
+    first = sentences[0].strip() if sentences else intro
+    return (first if first else intro), True
 
 
 # Lightweight FR heuristic — Content has no `language` column, so we score the
@@ -322,15 +349,30 @@ class EditorialWriterService:
 
         try:
             raw_subjects = raw.get("subjects", [])
-            subject_writings = [
-                SubjectWriting(
-                    topic_id=s.get("topic_id", ""),
-                    intro_text=s.get("intro_text", ""),
-                    transition_text=s.get("transition_text"),
+            no_deep_topic_ids = {s.topic_id for s in subjects if s.deep_article is None}
+            subject_writings: list[SubjectWriting] = []
+            for s in raw_subjects:
+                topic_id = s.get("topic_id") or ""
+                intro = s.get("intro_text") or ""
+                if not topic_id or not intro:
+                    continue
+                if topic_id in no_deep_topic_ids:
+                    cleaned, stripped = _strip_phantom_bridge(intro)
+                    if stripped:
+                        logger.warning(
+                            "editorial_writer.phantom_bridge_stripped",
+                            topic_id=topic_id,
+                            original=intro,
+                            cleaned=cleaned,
+                        )
+                    intro = cleaned
+                subject_writings.append(
+                    SubjectWriting(
+                        topic_id=topic_id,
+                        intro_text=intro,
+                        transition_text=s.get("transition_text"),
+                    )
                 )
-                for s in raw_subjects
-                if s.get("topic_id") and s.get("intro_text")
-            ]
 
             if not subject_writings:
                 logger.warning("editorial_writer.no_subjects_in_output")

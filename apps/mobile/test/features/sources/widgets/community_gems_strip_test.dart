@@ -14,24 +14,38 @@ void main() {
       Source(id: '3', name: 'r/france', type: SourceType.reddit),
     ];
 
-    testWidgets('renders sources horizontally when data loaded',
-        (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            trendingSourcesProvider.overrideWith((_) async => mockSources),
-          ],
-          child: MaterialApp(
-            theme: FacteurTheme.lightTheme,
-            home: Scaffold(
-              body: CommunityGemsStrip(
-                onSourceTap: (_) {},
-              ),
+    Widget buildHarness(List<Source> sources, {void Function(Source)? onTap, void Function(String)? onGem}) {
+      return ProviderScope(
+        overrides: [
+          trendingSourcesProvider.overrideWith((_) async => sources),
+        ],
+        child: MaterialApp(
+          theme: FacteurTheme.lightTheme,
+          home: Scaffold(
+            body: CommunityGemsStrip(
+              onSourceTap: onTap ?? (_) {},
+              onGemTap: onGem,
             ),
           ),
         ),
       );
+    }
 
+    testWidgets('header is visible and section is collapsed by default',
+        (tester) async {
+      await tester.pumpWidget(buildHarness(mockSources));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Pépites de la communauté'), findsOneWidget);
+      expect(find.text('Le Monde'), findsNothing);
+    });
+
+    testWidgets('expands and renders all sources when header tapped',
+        (tester) async {
+      await tester.pumpWidget(buildHarness(mockSources));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Pépites de la communauté'));
       await tester.pumpAndSettle();
 
       expect(find.text('Le Monde'), findsOneWidget);
@@ -39,70 +53,29 @@ void main() {
       expect(find.text('r/france'), findsOneWidget);
     });
 
-    testWidgets('displays section title', (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            trendingSourcesProvider.overrideWith((_) async => mockSources),
-          ],
-          child: MaterialApp(
-            theme: FacteurTheme.lightTheme,
-            home: Scaffold(
-              body: CommunityGemsStrip(
-                onSourceTap: (_) {},
-              ),
-            ),
-          ),
-        ),
-      );
-
-      expect(find.text('Pepites de la communaute'), findsOneWidget);
-    });
-
-    testWidgets('shows empty message when no sources', (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            trendingSourcesProvider
-                .overrideWith((_) async => <Source>[]),
-          ],
-          child: MaterialApp(
-            theme: FacteurTheme.lightTheme,
-            home: Scaffold(
-              body: CommunityGemsStrip(
-                onSourceTap: (_) {},
-              ),
-            ),
-          ),
-        ),
-      );
-
+    testWidgets('shows empty message when expanded with no sources',
+        (tester) async {
+      await tester.pumpWidget(buildHarness(<Source>[]));
       await tester.pumpAndSettle();
 
-      expect(find.text('Aucune pepite pour le moment.'), findsOneWidget);
+      await tester.tap(find.text('Pépites de la communauté'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Aucune pépite pour le moment.'), findsOneWidget);
     });
 
-    testWidgets('fires callbacks on tap', (tester) async {
+    testWidgets('fires callbacks on gem tap', (tester) async {
       Source? tappedSource;
       String? tappedGemId;
 
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            trendingSourcesProvider.overrideWith((_) async => mockSources),
-          ],
-          child: MaterialApp(
-            theme: FacteurTheme.lightTheme,
-            home: Scaffold(
-              body: CommunityGemsStrip(
-                onSourceTap: (s) => tappedSource = s,
-                onGemTap: (id) => tappedGemId = id,
-              ),
-            ),
-          ),
-        ),
-      );
+      await tester.pumpWidget(buildHarness(
+        mockSources,
+        onTap: (s) => tappedSource = s,
+        onGem: (id) => tappedGemId = id,
+      ));
+      await tester.pumpAndSettle();
 
+      await tester.tap(find.text('Pépites de la communauté'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Le Monde'));

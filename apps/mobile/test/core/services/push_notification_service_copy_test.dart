@@ -7,34 +7,47 @@ void main() {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantA,
       );
-      expect(copy.title, 'Le facteur est passé !');
+      expect(copy.title, 'Facteur');
       expect(copy.body, "Ton récap du jour t'attend quand tu veux.");
+      expect(copy.bigText, copy.body);
     });
 
-    test('variant B with teaser uses tutoiement + personnification', () {
+    test('variant B with teasers uses tutoiement + personnification', () {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantB,
-        teaser: 'Trump',
+        teasers: ['Trump'],
       );
-      expect(copy.title, 'Je suis passé.');
+      expect(copy.title, 'Facteur');
       expect(copy.body, 'À la une : Trump');
+      expect(copy.bigText, "À la une dans l'Essentiel :\n• Trump");
     });
 
-    test('variant B without teaser falls back to A', () {
+    test('variant B with multiple teasers renders bullet bigText (max 3)', () {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantB,
-        teaser: '',
+        teasers: ['Trump', 'Climat', 'Marseille', 'Quatrième'],
       );
-      expect(copy.title, 'Le facteur est passé !');
+      expect(copy.body, 'À la une : Trump');
+      expect(
+        copy.bigText,
+        "À la une dans l'Essentiel :\n• Trump\n• Climat\n• Marseille",
+      );
     });
 
-    test('variant B truncates teaser longer than 60 chars', () {
+    test('variant B without teasers falls back to A', () {
+      final copy = PushNotificationService.buildCopy(
+        variant: NotifVariant.variantB,
+        teasers: const [],
+      );
+      expect(copy.title, 'Facteur');
+    });
+
+    test('variant B truncates first teaser longer than 60 chars', () {
       final teaser = 'A' * 80;
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantB,
-        teaser: teaser,
+        teasers: [teaser],
       );
-      // body = "À la une : <57 chars>…"
       expect(copy.body.length, lessThanOrEqualTo('À la une : '.length + 58));
       expect(copy.body, endsWith('…'));
     });
@@ -43,7 +56,7 @@ void main() {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantC,
       );
-      expect(copy.title, 'Le facteur est passé !');
+      expect(copy.title, 'Facteur');
       expect(copy.body, contains("Belle journée"));
     });
   });

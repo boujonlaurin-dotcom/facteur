@@ -1,0 +1,58 @@
+name: Alembic smoke (upgrade head from empty)
+
+# Guardrail against migration drift. Any PR that breaks `alembic upgrade head`
+# from an empty Postgres fails this check. This is the single biggest defense
+# against the chain rotting again — see
+# docs/maintenance/maintenance-alembic-baseline-squash.md.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/api/alembic/**'
+      - 'packages/api/requirements.txt'
+      - '.github/workflows/alembic-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  upgrade-head:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: facteur_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install API runtime
+        # env.py imports `from app.database import Base` and `from app.models import *`,
+        # which transitively pulls in pydantic / fastapi / structlog / etc.
+        # Installing requirements.txt avoids the whack-a-mole of adding deps one by one.
+        run: pip install -r packages/api/requirements.txt
+
+      - name: alembic upgrade head
+        working-directory: packages/api
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:test@localhost:5432/facteur_test?sslmode=disable
+        run: alembic upgrade head
+
+      - name: alembic heads (must be exactly one)
+        working-directory: packages/api
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:test@localhost:5432/facteur_test?sslmode=disable
+        run: |
+          heads=$(alembic heads | wc -l)
+          echo "Heads: $heads"
+          test "$heads" -eq 1

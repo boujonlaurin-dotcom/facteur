@@ -788,38 +788,11 @@ class PerspectivesEmptyState extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: Padding(
-        padding: EdgeInsets.zero,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              PhosphorIcons.newspaperClipping(PhosphorIconsStyle.duotone),
-              size: 48,
-              color: colors.textSecondary.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                'Sujet peu couvert',
-                style: textTheme.titleSmall?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.w600,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                "Ce sujet n'a pas encore été repris par d'autres médias.",
-                style:
-                    textTheme.bodySmall?.copyWith(color: colors.textTertiary),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ],
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Text(
+          "Ce sujet n'a pas encore été repris par d'autres médias.",
+          style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
+          textAlign: TextAlign.center,
         ),
       ),
     );
@@ -1406,33 +1379,7 @@ class _PerspectivesInlineSectionState
               ),
             ),
           ),
-          // ── Row 2: Bias bar (single persistent instance) ───────────────
-          // compact=true hides labels/marker (AnimatedSize collapses their
-          // space); taps are forwarded to onToggle when collapsed.
-          GestureDetector(
-            onTap: !widget.isExpanded ? widget.onToggle : null,
-            behavior: !widget.isExpanded
-                ? HitTestBehavior.opaque
-                : HitTestBehavior.translucent,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: IgnorePointer(
-                ignoring: !widget.isExpanded,
-                child: PerspectivesBiasBar(
-                  compact: !widget.isExpanded,
-                  colors: colors,
-                  mergedDistribution: _mergedDistribution,
-                  sourceBiasStance: widget.sourceBiasStance,
-                  sourceName: widget.sourceName,
-                  selectedSegments:
-                      widget.isExpanded ? _effectiveSegments : const {},
-                  onSegmentTap:
-                      widget.isExpanded ? _handleSegmentTap : (_) {},
-                ),
-              ),
-            ),
-          ),
-          // ── Expandable content (cards + analysis) ─────────────────────
+          // ── Expandable content (bias bar + cards + analysis) ──────────
           AnimatedSize(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeInOut,
@@ -1441,6 +1388,18 @@ class _PerspectivesInlineSectionState
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Bias bar — fait partie du contenu togglable.
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: PerspectivesBiasBar(
+                          colors: colors,
+                          mergedDistribution: _mergedDistribution,
+                          sourceBiasStance: widget.sourceBiasStance,
+                          sourceName: widget.sourceName,
+                          selectedSegments: _effectiveSegments,
+                          onSegmentTap: _handleSegmentTap,
+                        ),
+                      ),
                       if (_effectiveSegments.isNotEmpty)
                         Padding(
                           padding:

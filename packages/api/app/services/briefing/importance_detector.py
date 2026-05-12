@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 import structlog
 
 from app.models.content import Content
+from app.models.enums import SourceType
 from app.services.text_similarity import (
     FRENCH_STOP_WORDS,
 )
@@ -28,6 +29,26 @@ from app.services.text_similarity import (
 from app.services.text_similarity import (
     normalize_title as _normalize_title,
 )
+
+# Sources qui agrègent / partagent du contenu d'autres médias plutôt que
+# d'en produire (Reddit, …). Quand un cluster contient à la fois une source
+# primaire ET un share Reddit du même sujet, on ne compte pas Reddit comme
+# une "couverture média" distincte. Cf. bug-digest-pipeline-fallbacks.md C4.
+_AGGREGATOR_SOURCE_TYPES: frozenset[SourceType] = frozenset({SourceType.REDDIT})
+
+
+def _is_aggregator(content: Content) -> bool:
+    src = getattr(content, "source", None)
+    if src is None:
+        return False
+    src_type = getattr(src, "type", None)
+    if src_type is None:
+        return False
+    try:
+        return SourceType(src_type) in _AGGREGATOR_SOURCE_TYPES
+    except ValueError:
+        return False
+
 
 # Re-exposé pour compat (anciennement défini ici)
 __all__ = ["FRENCH_STOP_WORDS", "ImportanceDetector", "TopicCluster"]
@@ -177,7 +198,18 @@ class ImportanceDetector:
 
         for raw in raw_clusters:
             cluster_contents: list[Content] = raw["contents"]
-            source_ids = {c.source_id for c in cluster_contents}
+            # Fold agrégateurs : si le cluster a au moins une source primaire,
+            # on n'inclut pas les sources de type aggregator (Reddit) dans le
+            # compte. Sinon (cluster Reddit-only), on les conserve — un sujet
+            # repris uniquement par r/france mérite encore d'exister.
+            primary_source_ids: set[UUID] = set()
+            aggregator_source_ids: set[UUID] = set()
+            for c in cluster_contents:
+                if _is_aggregator(c):
+                    aggregator_source_ids.add(c.source_id)
+                else:
+                    primary_source_ids.add(c.source_id)
+            source_ids = primary_source_ids or aggregator_source_ids
 
             # Thème dominant : mode de content.theme, fallback source.theme
             themes: list[str] = []
