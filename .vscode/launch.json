@@ -57,7 +57,6 @@
       "request": "launch",
       "type": "dart",
       "program": "apps/mobile/lib/main.dart",
-      "preLaunchTask": "Start Backend API",
       "args": [
         "-d",
         "iPhone",
@@ -90,7 +89,7 @@
       "request": "launch",
       "type": "dart",
       "program": "apps/mobile/lib/main.dart",
-      "preLaunchTask": "Android Emulator + Backend API",
+      "preLaunchTask": "Android Emulator",
       "deviceId": "emulator-5554",
       "args": [
         // 10.0.2.2 = adresse du host machine depuis l'émulateur Android
