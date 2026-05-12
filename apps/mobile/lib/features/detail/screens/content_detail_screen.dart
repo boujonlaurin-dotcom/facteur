@@ -548,7 +548,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// Show header + footer when user reaches the bottom of the article (progress ≥ 98%).
+  /// Skipped in WebView mode — overlays are controlled by scroll direction only.
   void _onReadingProgressNudge() {
+    if (_isWebViewActive) return;
     if (_readingProgress.value >= 0.98) {
       _inactivityTimer?.cancel();
       if (_headerOffset.value > 0.0) _animateHeaderTo(0.0);
@@ -767,6 +769,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
   }
 
+  /// Exit WebView mode and return to in-app article reading.
+  void _exitWebViewMode() {
+    setState(() {
+      _isWebViewActive = false;
+      _ctaTapped = false;
+      _offsetsComputed = false;
+      _bridgeEndOffset = 0;
+    });
+    _footerPermanent.value = false;
+    _animateFooterTo(0.0);
+    _scrollController.jumpTo(0);
+  }
+
   /// Scroll listener driving WebView activation.
   void _onScrollToSite() {
     if (!_ctaTapped || !_offsetsComputed) return;
@@ -799,11 +814,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       // avec une éventuelle modale (cookies, paywall) qui verrouille souvent
       // body { overflow: hidden } — sans scroll, le ScrollBridge JS ne peut
       // rien signaler, donc on doit cacher proactivement les overlays.
-      // Header & footer restent cachés par défaut en mode WebView et ne
-      // réapparaissent qu'au scroll vers le haut (via _onScrollDelta).
+      // Header reste toujours visible en mode WebView. Footer caché par défaut,
+      // réapparaît au scroll vers le haut (via _onScrollDelta).
       _scrollStopTimer?.cancel();
       _inactivityTimer?.cancel();
-      _animateHeaderTo(1.0);
+      _animateHeaderTo(0.0);
       _animateFooterTo(1.0);
     }
   }
@@ -2537,7 +2552,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     size: 16,
                     color: colors.textSecondary,
                   ),
-                  onPressed: () => context.pop(_content),
+                  onPressed: _isWebViewActive
+                      ? _exitWebViewMode
+                      : () => context.pop(_content),
                 ),
                 const SizedBox(width: 4),
 
@@ -3227,9 +3244,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     return Stack(
       children: [
-        // LAYER 0: WebView — fixed in viewport, always rendered.
+        // LAYER 0: WebView — fixed in viewport below the header, always rendered.
         // Painted first so it appears visually behind the scrollable content.
-        Positioned.fill(
+        Positioned(
+          top: headerHeight,
+          left: 0,
+          right: 0,
+          bottom: 0,
           child: _buildWebViewLayer(),
         ),
 
