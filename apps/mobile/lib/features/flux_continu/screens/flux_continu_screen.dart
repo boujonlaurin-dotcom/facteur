@@ -4,20 +4,26 @@ import 'package:go_router/go_router.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../core/orchestration/first_impression_orchestrator.dart';
+import '../../../widgets/design/facteur_logo.dart';
+import '../../app_update/providers/app_update_provider.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
+import '../../feed/providers/feed_provider.dart';
+import '../../feed/widgets/digest_entry_card.dart';
+import '../../feed/widgets/follow_keyword_suggestion_card.dart';
+import '../../feed/widgets/profile_avatar_button.dart';
+import '../../gamification/widgets/streak_indicator.dart';
+import '../../lettres/widgets/lettres_notification_banner.dart';
+import '../../notifications/widgets/notification_renudge_banner.dart';
+import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
 import '../widgets/closing_card_v18.dart';
-import '../widgets/flux_app_bar.dart';
 import '../widgets/flux_continu_article_card.dart';
 import '../widgets/section_block.dart';
 import '../widgets/section_hairline.dart';
 import '../widgets/sticky_tab_bar.dart';
-
-/// Top spacer height so content scrolls underneath the absolute app bar
-/// without overlapping its content.
-const double _kTopSpacerHeight = 76.0;
 
 /// Scroll offset at which the AppBar is swapped with the sticky tab bar.
 const double _kStickyThreshold = 60.0;
@@ -113,7 +119,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       return;
     }
     final delta =
-        box.localToGlobal(Offset.zero, ancestor: scrollBox).dy - _kStickyBarHeight;
+        box.localToGlobal(Offset.zero, ancestor: scrollBox).dy -
+            _kStickyBarHeight;
     final target = (_scroll.offset + delta)
         .clamp(0.0, _scroll.position.maxScrollExtent);
     await _scroll.animateTo(
@@ -150,37 +157,42 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final state = ref.watch(fluxContinuProvider);
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
-      body: Stack(
-        children: [
-          state.when(
-            loading: () => const _LoadingView(),
-            error: (e, _) => _ErrorView(
-              error: e,
-              onRetry: () =>
-                  ref.read(fluxContinuProvider.notifier).refresh(),
+      body: SafeArea(
+        bottom: false,
+        child: Stack(
+          children: [
+            state.when(
+              loading: () => const _LoadingView(),
+              error: (e, _) => _ErrorView(
+                error: e,
+                onRetry: () =>
+                    ref.read(fluxContinuProvider.notifier).refresh(),
+              ),
+              data: (data) => _buildContent(context, data),
             ),
-            data: (data) => _buildContent(context, data),
-          ),
-          _AppBarOrSticky(
-            scrollOffset: _scrollOffset,
-            scrollProgress: _scrollProgress,
-            activeIndex: _activeIndex,
-            stateProvider: fluxContinuProvider,
-            onTapTab: _scrollToSection,
-          ),
-        ],
+            _StickyTabBarOverlay(
+              scrollOffset: _scrollOffset,
+              scrollProgress: _scrollProgress,
+              activeIndex: _activeIndex,
+              stateProvider: fluxContinuProvider,
+              onTapTab: _scrollToSection,
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildContent(BuildContext context, FluxContinuState state) {
     final notifier = ref.read(fluxContinuProvider.notifier);
+    final colors = context.facteurColors;
+    final impressionSlot = ref.watch(firstImpressionSlotProvider);
+    final keyword = ref.watch(feedProvider.notifier).selectedKeyword;
     final totalArticles = state.sections.fold<int>(
       0,
       (sum, s) => sum + s.articles.length,
     );
 
-    // Keep section keys list in sync with the number of sections rendered.
     if (_sectionKeys.length != state.sections.length) {
       _sectionKeys
         ..clear()
@@ -189,51 +201,138 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
     return RefreshIndicator(
       onRefresh: notifier.refresh,
-      child: ListView(
+      color: colors.primary,
+      child: CustomScrollView(
         controller: _scroll,
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.zero,
-        children: [
-          const SizedBox(height: _kTopSpacerHeight),
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: FacteurSpacing.space6,
+                vertical: FacteurSpacing.space3,
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  const FacteurLogo(size: 22, showIcon: false),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: StreakIndicator(),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Consumer(builder: (context, ref, _) {
+                      final hasUpdate = ref
+                              .watch(appUpdateProvider)
+                              .valueOrNull
+                              ?.updateAvailable ==
+                          true;
+                      final settingsButton = ProfileAvatarButton(
+                        onTap: () => context.push(RoutePaths.settings),
+                      );
+                      if (!hasUpdate) return settingsButton;
+                      return Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          settingsButton,
+                          Positioned(
+                            top: -2,
+                            right: -2,
+                            child: Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: colors.error,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: colors.backgroundPrimary,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: impressionSlot == FirstImpressionSlot.renudgeBanner
+                ? const NotificationRenudgeBanner()
+                : const SizedBox.shrink(),
+          ),
+          SliverToBoxAdapter(
+            child: impressionSlot == FirstImpressionSlot.wellInformed
+                ? const WellInformedPrompt()
+                : const SizedBox.shrink(),
+          ),
+          const SliverToBoxAdapter(
+            child: LettresNotificationBanner(),
+          ),
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(top: 14, bottom: 8),
+              child: DigestEntryCard(),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: (keyword == null || keyword.trim().isEmpty)
+                ? const SizedBox.shrink()
+                : FollowKeywordSuggestionCard(keyword: keyword),
+          ),
           for (var i = 0; i < state.sections.length; i++)
-            KeyedSubtree(
-              key: _sectionKeys[i],
-              child: SectionBlock(
-                section: state.sections[i],
-                isOpen: state.isOpen(state.sections[i].kind),
-                onToggleMore: () =>
-                    notifier.toggleMore(state.sections[i].kind),
-                onTapArticle: (a) => _openArticle(context, a),
+            SliverToBoxAdapter(
+              child: KeyedSubtree(
+                key: _sectionKeys[i],
+                child: SectionBlock(
+                  section: state.sections[i],
+                  isOpen: state.isOpen(state.sections[i].kind),
+                  onToggleMore: () =>
+                      notifier.toggleMore(state.sections[i].kind),
+                  onTapArticle: (a) => _openArticle(context, a),
+                ),
               ),
             ),
           if (state.sections.isEmpty)
-            _EmptySectionsHint(onRetry: notifier.refresh),
-          KeyedSubtree(
-            key: _closingKey,
-            child: ClosingCardV18(
-              articleCount: totalArticles,
-              onContinue: _scrollToContinuation,
+            SliverToBoxAdapter(
+              child: _EmptySectionsHint(onRetry: notifier.refresh),
+            ),
+          SliverToBoxAdapter(
+            child: KeyedSubtree(
+              key: _closingKey,
+              child: ClosingCardV18(
+                articleCount: totalArticles,
+                onContinue: _scrollToContinuation,
+              ),
             ),
           ),
           if (state.feedContinu.isNotEmpty) ...[
-            for (final content in state.feedContinu)
-              FluxContinuArticleCard(
-                article: content,
-                onTap: () => _openArticle(context, content),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, i) => FluxContinuArticleCard(
+                  article: state.feedContinu[i],
+                  onTap: () => _openArticle(context, state.feedContinu[i]),
+                ),
+                childCount: state.feedContinu.length,
               ),
-            const SectionHairline(),
+            ),
+            const SliverToBoxAdapter(child: SectionHairline()),
           ],
-          const SizedBox(height: 60),
+          const SliverToBoxAdapter(child: SizedBox(height: 60)),
         ],
       ),
     );
   }
 }
 
-/// Cross-fades between the AppBar (initial) and the sticky tab bar once
-/// the scroll offset has crossed the threshold. Listening only on the
-/// notifier prevents the whole screen from rebuilding on every frame.
-class _AppBarOrSticky extends ConsumerWidget {
+/// Reveals the sticky tab bar over the content once the user scrolls past
+/// the threshold. The header itself lives inside the scroll view, so it
+/// simply disappears upward as content moves up.
+class _StickyTabBarOverlay extends ConsumerWidget {
   final ValueNotifier<double> scrollOffset;
   final ValueNotifier<double> scrollProgress;
   final ValueNotifier<int> activeIndex;
@@ -241,7 +340,7 @@ class _AppBarOrSticky extends ConsumerWidget {
       stateProvider;
   final ValueChanged<int> onTapTab;
 
-  const _AppBarOrSticky({
+  const _StickyTabBarOverlay({
     required this.scrollOffset,
     required this.scrollProgress,
     required this.activeIndex,
@@ -251,8 +350,8 @@ class _AppBarOrSticky extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sections = ref.watch(stateProvider).valueOrNull?.sections ??
-        const <Section>[];
+    final sections =
+        ref.watch(stateProvider).valueOrNull?.sections ?? const <Section>[];
     return ValueListenableBuilder<double>(
       valueListenable: scrollOffset,
       builder: (context, offset, _) {
@@ -279,13 +378,7 @@ class _AppBarOrSticky extends ConsumerWidget {
                     ),
                   ),
                 )
-              : const Positioned(
-                  key: ValueKey('appbar'),
-                  top: 32,
-                  left: 0,
-                  right: 0,
-                  child: FluxAppBar(),
-                ),
+              : const SizedBox.shrink(key: ValueKey('hidden')),
         );
       },
     );
@@ -298,7 +391,7 @@ class _LoadingView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.only(top: _kTopSpacerHeight + 12),
+      padding: const EdgeInsets.only(top: 60),
       children: List.generate(
         4,
         (_) => const Padding(
