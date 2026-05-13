@@ -45,7 +45,7 @@ class FluxContinuScreen extends ConsumerStatefulWidget {
 
 class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   final ScrollController _scroll = ScrollController();
-  final ValueNotifier<double> _scrollOffset = ValueNotifier(0);
+  final ValueNotifier<bool> _stickyVisible = ValueNotifier(false);
   final ValueNotifier<double> _scrollProgress = ValueNotifier(0);
   final ValueNotifier<int> _activeIndex = ValueNotifier(0);
   final GlobalKey _closingKey = GlobalKey();
@@ -62,7 +62,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   void dispose() {
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
-    _scrollOffset.dispose();
+    _stickyVisible.dispose();
     _scrollProgress.dispose();
     _activeIndex.dispose();
     super.dispose();
@@ -71,7 +71,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   void _onScroll() {
     if (!_scroll.hasClients) return;
     final pos = _scroll.position;
-    _scrollOffset.value = pos.pixels;
+    final showSticky = pos.pixels > _kStickyThreshold;
+    if (_stickyVisible.value != showSticky) {
+      _stickyVisible.value = showSticky;
+    }
     final max = pos.maxScrollExtent;
     _scrollProgress.value = max > 0 ? (pos.pixels / max).clamp(0.0, 1.0) : 0;
     _updateActiveSection();
@@ -171,7 +174,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
               data: (data) => _buildContent(context, data),
             ),
             _StickyTabBarOverlay(
-              scrollOffset: _scrollOffset,
+              stickyVisible: _stickyVisible,
               scrollProgress: _scrollProgress,
               activeIndex: _activeIndex,
               stateProvider: fluxContinuProvider,
@@ -333,7 +336,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 /// the threshold. The header itself lives inside the scroll view, so it
 /// simply disappears upward as content moves up.
 class _StickyTabBarOverlay extends ConsumerWidget {
-  final ValueNotifier<double> scrollOffset;
+  final ValueNotifier<bool> stickyVisible;
   final ValueNotifier<double> scrollProgress;
   final ValueNotifier<int> activeIndex;
   final AsyncNotifierProvider<FluxContinuNotifier, FluxContinuState>
@@ -341,7 +344,7 @@ class _StickyTabBarOverlay extends ConsumerWidget {
   final ValueChanged<int> onTapTab;
 
   const _StickyTabBarOverlay({
-    required this.scrollOffset,
+    required this.stickyVisible,
     required this.scrollProgress,
     required this.activeIndex,
     required this.stateProvider,
@@ -353,19 +356,17 @@ class _StickyTabBarOverlay extends ConsumerWidget {
     final sections =
         ref.watch(stateProvider).valueOrNull?.sections ??
             const <FluxSection>[];
-    // Positioned must be a direct child of the outer Stack — wrapping it
-    // inside AnimatedSwitcher would defeat the positioning and let the
-    // sticky bar's Column expand to fill the whole viewport (which paints
-    // a parchment-tinted veil over the underlying content).
+    // Positioned must be a direct child of the outer Stack — putting it
+    // inside an AnimatedSwitcher would defeat the positioning and let the
+    // sticky bar paint a parchment-tinted veil over the content.
     return Positioned(
       top: 0,
       left: 0,
       right: 0,
-      child: ValueListenableBuilder<double>(
-        valueListenable: scrollOffset,
-        builder: (context, offset, _) {
-          final showSticky =
-              offset > _kStickyThreshold && sections.isNotEmpty;
+      child: ValueListenableBuilder<bool>(
+        valueListenable: stickyVisible,
+        builder: (context, visible, _) {
+          final showSticky = visible && sections.isNotEmpty;
           return AnimatedSwitcher(
             duration: const Duration(milliseconds: 150),
             child: showSticky
