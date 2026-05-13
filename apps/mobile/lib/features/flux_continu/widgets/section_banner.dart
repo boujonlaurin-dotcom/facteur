@@ -25,6 +25,10 @@ class SectionBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+    final hasIllustration = illustrationAsset != null;
+    // Reserve the right half for the illustration when present, so the
+    // title and blurb never bleed under the asset (QA Laurin 2026-05-14).
+    final textWidthFactor = hasIllustration ? 0.58 : 0.92;
     // `width: double.infinity` is required because the parent SectionBlock
     // Column uses `CrossAxisAlignment.start`, which would otherwise size
     // this Container to its intrinsic width and leave parchment showing
@@ -71,18 +75,6 @@ class SectionBanner extends StatelessWidget {
             Positioned.fill(
               child: _BannerIllustration(asset: illustrationAsset!),
             ),
-          // Vertical dashed rule on the left edge.
-          Positioned(
-            left: 10,
-            top: 14,
-            bottom: 14,
-            child: IgnorePointer(
-              child: CustomPaint(
-                size: const Size(2, double.infinity),
-                painter: _VerticalDashedPainter(color: accent),
-              ),
-            ),
-          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(22, 16, 22, 18),
             child: Column(
@@ -99,7 +91,7 @@ class SectionBanner extends StatelessWidget {
                   ),
                 ),
                 FractionallySizedBox(
-                  widthFactor: 0.8,
+                  widthFactor: textWidthFactor,
                   alignment: AlignmentDirectional.centerStart,
                   child: Padding(
                     padding: const EdgeInsets.only(top: 4, bottom: 6),
@@ -117,7 +109,7 @@ class SectionBanner extends StatelessWidget {
                 ),
                 if (blurb != null && blurb!.trim().isNotEmpty)
                   FractionallySizedBox(
-                    widthFactor: 0.78,
+                    widthFactor: textWidthFactor,
                     alignment: AlignmentDirectional.centerStart,
                     child: Text(
                       blurb!,
@@ -156,7 +148,7 @@ class _BannerIllustration extends StatelessWidget {
             begin: Alignment.centerRight,
             end: Alignment.centerLeft,
             colors: [Colors.black, Colors.transparent],
-            stops: [0.45, 1.0],
+            stops: [0.55, 1.0],
           ).createShader(rect),
           child: Padding(
             padding: const EdgeInsets.only(right: 4, bottom: 2),
@@ -174,34 +166,4 @@ class _BannerIllustration extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Paints a vertical dashed line — used as the left rule of the banner.
-class _VerticalDashedPainter extends CustomPainter {
-  static const double _dashLength = 4;
-  static const double _gap = 4;
-
-  final Color color;
-
-  _VerticalDashedPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color.withValues(alpha: 0.55)
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-
-    double y = 0;
-    final centerX = size.width / 2;
-    while (y < size.height) {
-      final end = (y + _dashLength).clamp(0.0, size.height);
-      canvas.drawLine(Offset(centerX, y), Offset(centerX, end), paint);
-      y = end + _gap;
-    }
-  }
-
-  @override
-  bool shouldRepaint(_VerticalDashedPainter old) => old.color != color;
 }
