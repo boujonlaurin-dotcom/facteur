@@ -353,19 +353,24 @@ class _StickyTabBarOverlay extends ConsumerWidget {
     final sections =
         ref.watch(stateProvider).valueOrNull?.sections ??
             const <FluxSection>[];
-    return ValueListenableBuilder<double>(
-      valueListenable: scrollOffset,
-      builder: (context, offset, _) {
-        final showSticky = offset > _kStickyThreshold && sections.isNotEmpty;
-        return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 150),
-          child: showSticky
-              ? Positioned(
-                  key: const ValueKey('sticky'),
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: ValueListenableBuilder<int>(
+    // Positioned must be a direct child of the outer Stack — wrapping it
+    // inside AnimatedSwitcher would defeat the positioning and let the
+    // sticky bar's Column expand to fill the whole viewport (which paints
+    // a parchment-tinted veil over the underlying content).
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: ValueListenableBuilder<double>(
+        valueListenable: scrollOffset,
+        builder: (context, offset, _) {
+          final showSticky =
+              offset > _kStickyThreshold && sections.isNotEmpty;
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 150),
+            child: showSticky
+                ? ValueListenableBuilder<int>(
+                    key: const ValueKey('sticky'),
                     valueListenable: activeIndex,
                     builder: (context, idx, _) =>
                         ValueListenableBuilder<double>(
@@ -377,11 +382,11 @@ class _StickyTabBarOverlay extends ConsumerWidget {
                         onTapTab: onTapTab,
                       ),
                     ),
-                  ),
-                )
-              : const SizedBox.shrink(key: ValueKey('hidden')),
-        );
-      },
+                  )
+                : const SizedBox.shrink(key: ValueKey('hidden')),
+          );
+        },
+      ),
     );
   }
 }

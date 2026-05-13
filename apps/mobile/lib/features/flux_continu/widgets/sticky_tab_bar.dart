@@ -57,6 +57,7 @@ class StickyTabBar extends StatelessWidget {
           child: SafeArea(
             bottom: false,
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const _StickyHead(),
@@ -132,7 +133,7 @@ class _TabsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 36,
+      height: 44,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
@@ -178,16 +179,18 @@ class _Tab extends StatelessWidget {
     final dotColor = isActive
         ? section.accent
         : (isDone ? colors.textTertiary : colors.textSecondary);
+    // CSS spec: .hf-sticky .tab { padding: 7px 12px 9px; }
+    //          .hf-sticky .tab .underline { position: absolute; bottom: 0;
+    //            left: 8px; right: 8px; height: 2px; }
+    // → the underline is out of flow so it doesn't push the tab taller.
     return InkWell(
       onTap: onTap,
       borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 7, 12, 0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 7, 12, 9),
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
@@ -213,14 +216,23 @@ class _Tab extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 7),
-            Container(
+          ),
+          if (isActive)
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 0,
               height: 2,
-              width: 28,
-              color: isActive ? section.accent : Colors.transparent,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: section.accent,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(2),
+                  ),
+                ),
+              ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
