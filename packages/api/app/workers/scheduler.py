@@ -22,17 +22,28 @@ settings = get_settings()
 
 _PARIS_TZ = pytz.timezone("Europe/Paris")
 
-# Hour (Paris) at which the daily digest cron fires. Imported by the
+# Hour/minute (Paris) at which the daily digest cron fires. Imported by the
 # startup catchup in app/main.py so it never generates earlier than the
 # scheduled cron — avoids midnight regenerations on late-evening Railway
 # deploys (RSS not yet refreshed → poor digest content).
-DIGEST_CRON_HOUR_PARIS = 6
+#
+# Pourquoi 07:30 et pas 06:00 (bug-digest-evening-content) : à 06:00 Paris
+# les Unes du matin (Le Monde ~06h30, Le Figaro ~07h, Libération ~07h) ne
+# sont pas encore publiées. Le pool des 200 contents les plus récents
+# (hours_lookback=48 → ORDER BY published_at DESC LIMIT 200) est alors
+# saturé par l'édition de la veille au soir et les dépêches nocturnes,
+# donc le digest "Essentiel" servait des articles datés ~22h. La courbe
+# des `published_at` montre un saut de 215 → 509 articles/heure entre
+# 5h et 6h Paris : firer le cron à 07:30 garantit que les Unes du matin
+# sont déjà dans le pool candidat.
+DIGEST_CRON_HOUR_PARIS = 7
+DIGEST_CRON_MINUTE_PARIS = 30
 
 scheduler: AsyncIOScheduler | None = None
 
 
 async def _digest_watchdog() -> None:
-    """Watchdog 7h30 : vérifie la couverture digest et relance si nécessaire.
+    """Watchdog 8h15 : vérifie la couverture digest et relance si nécessaire.
 
     Counts `(user_id, is_serene)` pairs so a user is only considered
     "covered" when BOTH the normal and serein variants exist. Previously
@@ -183,12 +194,17 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
-    # Job Digest Quotidien (6h00 Paris — avancé de 8h pour pré-générer avant le réveil)
+    # Job Digest Quotidien (07h30 Paris — voir DIGEST_CRON_HOUR_PARIS pour le
+    # rationale : à 06h les Unes du matin ne sont pas encore publiées).
     # misfire_grace_time=14400 (4h): couvre les redémarrages Railway longs.
     # coalesce=True: pas de double exécution si plusieurs triggers rattrapés.
     scheduler.add_job(
         run_digest_generation,
-        trigger=CronTrigger(hour=DIGEST_CRON_HOUR_PARIS, minute=0, timezone=_PARIS_TZ),
+        trigger=CronTrigger(
+            hour=DIGEST_CRON_HOUR_PARIS,
+            minute=DIGEST_CRON_MINUTE_PARIS,
+            timezone=_PARIS_TZ,
+        ),
         id="daily_digest",
         name="Daily Digest Generation",
         replace_existing=True,
@@ -196,10 +212,12 @@ def start_scheduler() -> None:
         coalesce=True,
     )
 
-    # Watchdog 7h30 — vérifie la couverture et relance si < 90%
+    # Watchdog 08h15 — vérifie la couverture et relance si < 90%.
+    # Doit tourner *après* le cron principal (07h30) pour avoir une chance
+    # de constater la couverture réelle avant de relancer.
     scheduler.add_job(
         _digest_watchdog,
-        trigger=CronTrigger(hour=7, minute=30, timezone=_PARIS_TZ),
+        trigger=CronTrigger(hour=8, minute=15, timezone=_PARIS_TZ),
         id="digest_watchdog",
         name="Digest Generation Watchdog",
         replace_existing=True,
@@ -280,8 +298,8 @@ def start_scheduler() -> None:
             "veille_stuck_cleanup",
         ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,
-        digest_cron="06:00 Europe/Paris",
-        watchdog_cron="07:30 Europe/Paris",
+        digest_cron="07:30 Europe/Paris",
+        watchdog_cron="08:15 Europe/Paris",
         top3_cron="08:00 Europe/Paris",
         cleanup_cron="03:00 Europe/Paris",
     )
