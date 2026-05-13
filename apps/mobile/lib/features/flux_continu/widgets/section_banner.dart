@@ -5,11 +5,9 @@ import '../../../config/theme.dart';
 
 /// Banner that opens a Flux Continu V1.8 section.
 ///
-/// Visual: vertical gradient tinted with the section [accent], a 28×2 rule
-/// line over the title, the section title (Fraunces 25), and an optional
-/// blurb. When [illustrationAsset] is provided, the asset is rendered on
-/// the right side and masked with a left-fade gradient so it stays subtle
-/// under the typography.
+/// Visual treatment mirrors the FeedScreen hero carrousel cards
+/// (`DigestEntryCard._CarouselCard`) — same radial veil and asset
+/// incrustation — so the two surfaces feel like one family.
 class SectionBanner extends StatelessWidget {
   final String title;
   final String? blurb;
@@ -27,15 +25,14 @@ class SectionBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    // The banner is edge-to-edge per V6 spec — the accent gradient and the
-    // background illustration fade across the full screen width. Force the
-    // width explicitly because the parent SectionBlock Column uses
-    // `CrossAxisAlignment.start`, which would otherwise let the Container
-    // size to its intrinsic width and leave parchment showing on the right.
+    // `width: double.infinity` is required because the parent SectionBlock
+    // Column uses `CrossAxisAlignment.start`, which would otherwise size
+    // this Container to its intrinsic width and leave parchment showing
+    // past the gradient on the right.
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(0, 4, 0, 16),
-      constraints: const BoxConstraints(minHeight: 96),
+      constraints: const BoxConstraints(minHeight: 132),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
@@ -48,8 +45,44 @@ class SectionBanner extends StatelessWidget {
       ),
       child: Stack(
         children: [
+          // Mirrors `DigestEntryCard._CarouselCard` so the two surfaces
+          // share the same hero-card identity.
+          Positioned(
+            top: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Container(
+                width: 220,
+                height: 140,
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.topRight,
+                    radius: 1.0,
+                    colors: [
+                      accent.withValues(alpha: 0.12),
+                      accent.withValues(alpha: 0.0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
           if (illustrationAsset != null)
-            Positioned.fill(child: _BannerIllustration(asset: illustrationAsset!)),
+            Positioned.fill(
+              child: _BannerIllustration(asset: illustrationAsset!),
+            ),
+          // Vertical dashed rule on the left edge.
+          Positioned(
+            left: 10,
+            top: 14,
+            bottom: 14,
+            child: IgnorePointer(
+              child: CustomPaint(
+                size: const Size(2, double.infinity),
+                painter: _VerticalDashedPainter(color: accent),
+              ),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(22, 16, 22, 18),
             child: Column(
@@ -84,7 +117,7 @@ class SectionBanner extends StatelessWidget {
                 ),
                 if (blurb != null && blurb!.trim().isNotEmpty)
                   FractionallySizedBox(
-                    widthFactor: 0.8,
+                    widthFactor: 0.78,
                     alignment: AlignmentDirectional.centerStart,
                     child: Text(
                       blurb!,
@@ -104,9 +137,9 @@ class SectionBanner extends StatelessWidget {
   }
 }
 
-/// Right-anchored illustration, vertically centered, faded from right to
-/// left so it stays as background to the title. Falls back to nothing if
-/// the asset can't be decoded.
+/// Right-anchored illustration, baseline-aligned, faded on the left so it
+/// stays as background to the title. Falls back silently if the asset is
+/// missing.
 class _BannerIllustration extends StatelessWidget {
   final String asset;
 
@@ -115,31 +148,60 @@ class _BannerIllustration extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Align(
-      alignment: Alignment.centerRight,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 0),
+      alignment: Alignment.bottomRight,
+      child: IgnorePointer(
         child: ShaderMask(
           blendMode: BlendMode.dstIn,
           shaderCallback: (rect) => const LinearGradient(
             begin: Alignment.centerRight,
             end: Alignment.centerLeft,
             colors: [Colors.black, Colors.transparent],
-            stops: [0.3, 1.0],
+            stops: [0.45, 1.0],
           ).createShader(rect),
-          child: Opacity(
-            opacity: 0.95,
-            child: Transform.translate(
-              offset: const Offset(16, 0),
-              child: Image.asset(
-                asset,
-                height: 108,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-              ),
+          child: Padding(
+            padding: const EdgeInsets.only(right: 4, bottom: 2),
+            child: Image.asset(
+              asset,
+              height: 136,
+              // Source PNGs are 1024² — decode at 2× display height to
+              // keep texture memory bounded (saves ~10× per image).
+              cacheHeight: 272,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
             ),
           ),
         ),
       ),
     );
   }
+}
+
+/// Paints a vertical dashed line — used as the left rule of the banner.
+class _VerticalDashedPainter extends CustomPainter {
+  static const double _dashLength = 4;
+  static const double _gap = 4;
+
+  final Color color;
+
+  _VerticalDashedPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withValues(alpha: 0.55)
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    double y = 0;
+    final centerX = size.width / 2;
+    while (y < size.height) {
+      final end = (y + _dashLength).clamp(0.0, size.height);
+      canvas.drawLine(Offset(centerX, y), Offset(centerX, end), paint);
+      y = end + _gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_VerticalDashedPainter old) => old.color != color;
 }

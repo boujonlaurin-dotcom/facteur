@@ -111,5 +111,22 @@ void main() {
     test('FeedThemeSection: totalCount reflects items length', () {
       expect(feedSection(5, 2).totalCount, 5);
     });
+
+    test('blurb is optional and defaults to null', () {
+      expect(digestSection(2, 2).blurb, isNull);
+      expect(feedSection(2, 2).blurb, isNull);
+    });
+
+    test('blurb is preserved when provided', () {
+      const section = DigestTopicSection(
+        kind: SectionKind.essentiel,
+        label: 'Essentiel',
+        blurb: 'lead-in copy',
+        accent: Color(0xFFB0470A),
+        coreVisibleCount: 2,
+        topics: [],
+      );
+      expect(section.blurb, 'lead-in copy');
+    });
   });
 }

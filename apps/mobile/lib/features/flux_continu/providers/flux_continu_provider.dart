@@ -22,6 +22,15 @@ const Color _kBonnesAccent = Color(0xFF2E7D32);
 /// Illustration asset associated with each editorial section.
 const String _kEssentielIllustration = 'assets/notifications/facteur_avatar.png';
 const String _kBonnesIllustration = 'assets/notifications/facteur_goodnews.png';
+const String _kVeilleIllustration = 'assets/notifications/facteur_veille.png';
+
+/// Blurbs rendered under each section title.
+const String _kEssentielBlurb =
+    "Trois lectures denses pour saisir ce qui pèse aujourd'hui — sans tout lire.";
+const String _kBonnesBlurb =
+    'Des initiatives concrètes, des victoires petites et grandes, pour repartir.';
+const String _kThemeBlurb =
+    "Les articles récents sur l'un de tes sujets de prédilection — ta veille du jour, sans la chercher.";
 
 /// Riverpod provider for the Flux Continu V1.8 home screen.
 ///
@@ -88,7 +97,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     _essentiel = _buildDigestSection(
       digest: dual?.normal,
       kind: SectionKind.essentiel,
-      label: 'Essentiel',
+      label: "L'Essentiel du jour",
+      blurb: _kEssentielBlurb,
       accent: _kEssentielAccent,
       illustration: _kEssentielIllustration,
       coreVisibleCount: 3,
@@ -97,6 +107,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       digest: dual?.serein,
       kind: SectionKind.bonnes,
       label: 'Bonnes Nouvelles',
+      blurb: _kBonnesBlurb,
       accent: _kBonnesAccent,
       illustration: _kBonnesIllustration,
       coreVisibleCount: 2,
@@ -193,6 +204,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     required DigestResponse? digest,
     required SectionKind kind,
     required String label,
+    required String blurb,
     required Color accent,
     required String illustration,
     required int coreVisibleCount,
@@ -205,6 +217,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     return DigestTopicSection(
       kind: kind,
       label: label,
+      blurb: blurb,
       accent: accent,
       illustrationAsset: illustration,
       coreVisibleCount: coreVisibleCount,
@@ -223,7 +236,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     return FeedThemeSection(
       kind: kind,
       label: visual.label,
+      blurb: _kThemeBlurb,
       accent: visual.accent,
+      illustrationAsset: _kVeilleIllustration,
       coreVisibleCount: 2,
       themeSlug: slug,
       items: items,

@@ -16,6 +16,7 @@ enum SectionKind { essentiel, bonnes, theme1, theme2 }
 sealed class FluxSection {
   final SectionKind kind;
   final String label;
+  final String? blurb;
   final Color accent;
   final String? illustrationAsset;
   final int coreVisibleCount;
@@ -25,6 +26,7 @@ sealed class FluxSection {
     required this.label,
     required this.accent,
     required this.coreVisibleCount,
+    this.blurb,
     this.illustrationAsset,
   });
 
@@ -46,6 +48,7 @@ class DigestTopicSection extends FluxSection {
     required super.accent,
     required super.coreVisibleCount,
     required this.topics,
+    super.blurb,
     super.illustrationAsset,
   });
 
@@ -66,6 +69,7 @@ class FeedThemeSection extends FluxSection {
     required super.coreVisibleCount,
     required this.items,
     this.themeSlug,
+    super.blurb,
     super.illustrationAsset,
   });
 

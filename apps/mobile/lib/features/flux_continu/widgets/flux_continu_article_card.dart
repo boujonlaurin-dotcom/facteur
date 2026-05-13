@@ -113,7 +113,7 @@ class FluxContinuArticleCard extends StatelessWidget {
               ],
             ),
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -125,7 +125,7 @@ class FluxContinuArticleCard extends StatelessWidget {
                         child: Text(
                           vm.title,
                           style: GoogleFonts.dmSans(
-                            fontSize: 15,
+                            fontSize: 16,
                             fontWeight: FontWeight.w600,
                             height: 1.3,
                             letterSpacing: -0.15,
@@ -145,7 +145,7 @@ class FluxContinuArticleCard extends StatelessWidget {
                       ],
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   _Footer(
                     vm: vm,
                     colors: colors,
