@@ -1,91 +1,93 @@
-# QA Handoff — Veille `/suggestions/sources` : savepoint + timeouts + retry mobile
+# QA Handoff — Couverture médiatique sous le titre du reader
 
 ## Feature développée
-Hotfix critique sur le bug "loading infini" perçu en Step 3 de l'onboarding veille (PYTHON-3P/3Q : 13 occurrences en 3 h, 2 users). Trois corrections backend (savepoint par candidat, timeouts par candidat + global LLM, sentry capture) + une correction mobile (réintroduction du bouton « Réessayer » perdu dans PR2 #562).
+
+Section "Couverture médiatique" repositionnée sous le titre dans les deux modes de reader (in-app + scroll-to-site), avec titre raffiné au DS, badge "Couvert par X médias" en état ouvert, et suppression complète de l'ancienne UX footer (boutons "Voir perspectives" / "Retour à l'article", sticky header, méthode de check).
 
 ## PR associée
-À créer après /go (cible : `main`).
+
+À créer via `/go` (base `main`).
 
 ## Écrans impactés
+
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Step 3 — Sources | `/veille/config` (step 3) | Modifié (bouton Réessayer dans `_MockSourcesFallback`) |
+| Reader article (mode in-app, htmlContent Flutter) | `/article/:id` | Modifié |
+| Reader article (mode scroll-to-site, WebView sous-jacente) | `/article/:id` | Modifié |
 
 ## Scénarios de test
 
-### Scénario 1 : Happy path — sources arrivent normalement
+### Scénario 1 : Reader in-app, article avec perspectives
 **Parcours** :
-1. App connectée, sans veille active.
-2. Aller sur `/veille/config` → Step 1 (thème) → choisir « Tech ».
-3. Step 2 (topics) → choisir 2-3 topics.
-4. Step 2 → tap « Continuer ».
-5. Animation halo Step 2→3.
-**Résultat attendu** :
-- Le serveur répond en < 25 s (timeouts en place).
-- Step 3 affiche la liste rankée par pertinence (8-12 sources).
-- Aucun spinner infini.
+1. Ouvrir un article avec `htmlContent` non vide et perspectives disponibles
+2. Observer la section "Couverture médiatique" sous le titre (repliée par défaut)
+3. Tap sur le header de la section pour l'ouvrir
+4. Tap à nouveau pour la refermer
 
-### Scénario 2 : Backend hang sur un domaine bad
-**Parcours** :
-1. Reproduire localement avec un candidat URL qui hang (ex : `binge.audio/feed/`).
-2. Lancer `/api/veille/suggestions/sources`.
 **Résultat attendu** :
-- Backend skip le candidat après 8 s (`source_suggester.candidate_timeout` log).
-- Les autres candidats sont ingérés normalement.
-- Réponse 200 sous 25 s.
+- Section encadrée par 2 dividers, entre titre et description
+- Titre "Couverture médiatique" rendu en `labelLarge` + `textSecondary` (subtil)
+- En état ouvert : badge pill "Couvert par N médias" avec fond `primary.withValues(alpha: 0.1)`, texte `labelMedium` couleur `primary`, juste sous le header et avant la bias bar
+- Animation smooth, scroll-into-view à l'ouverture
 
-### Scénario 3 : Backend 503 (PendingRollbackError simulé) — fallback mobile
-**Parcours** :
-1. Backend down ou throw 503 sur `/suggestions/sources`.
-2. Step 3 mounted → spinner pendant ~30 s (timeout Dio) puis erreur API.
-**Résultat attendu** :
-- Mock fallback affiché avec message « Suggestions indisponibles, conserve ta sélection. ».
-- **Bouton « Réessayer » présent et cliquable** (régression PR2 #562 corrigée).
-- Tap « Réessayer » → relance la requête (`refreshKeepingChecked`).
-- Si backend toujours KO → reste sur le mock fallback ; si recovery → liste rankée affichée.
+### Scénario 2 : Reader in-app, article sans perspectives
+**Parcours** : Ouvrir un article sans comparaisons (perspectives vides ou null)
 
-### Scénario 4 : LLM Mistral timeout (> 20 s)
-**Parcours** :
-1. Configurer un délai artificiel sur le serveur mock LLM ou couper Mistral API.
-2. Appeler `/suggestions/sources`.
-**Résultat attendu** :
-- Backend bascule sur `_fallback` (sources curées du thème).
-- Réponse 200 avec `sources` non-vide (relevance_score=null).
-- Log `source_suggester.llm_timeout` émis.
+**Résultat attendu** : Titre → description directement, aucun divider, aucune section visible
 
-### Scénario 5 : Une violation de contrainte ne poison plus la session
+### Scénario 3 : Reader scroll-to-site, article avec perspectives
 **Parcours** :
-1. LLM produit 3 candidats dont un avec un `name` > 200 chars (violation `String(200)`).
-2. Backend ingère.
+1. Ouvrir un article qualifiant pour le mode scroll-to-site
+2. Vérifier structure : header (thumbnail/tags/titre/temps de lecture) → divider → section perspectives → divider → corps article
+3. Scroll jusqu'au bas du corps article
+
 **Résultat attendu** :
-- Le candidat fautif est skippé via SAVEPOINT rollback.
-- Les 2 autres candidats sont ingérés et committés.
-- `db.commit()` final ne lève pas `PendingRollbackError`.
-- Le candidat fautif est remonté à Sentry via `sentry_sdk.capture_exception`.
+- Section perspectives apparaît entre header et corps, même rendu que le mode in-app (titre + badge en état ouvert)
+- WebView s'active au même seuil de scroll qu'avant (corps article scrollé), pas plus tôt
+- Pas de duplication du titre, pas de chevauchement avec le chrome de l'app
+
+### Scénario 4 : Reader scroll-to-site, article sans perspectives
+**Parcours** : Ouvrir un article scroll-to-site sans perspectives
+
+**Résultat attendu** : Header → corps directement, comportement WebView inchangé
+
+### Scénario 5 : Footer
+**Parcours** : Sur n'importe quel article
+
+**Résultat attendu** : Plus aucun bouton "Voir perspectives" (œil) ni "Retour à l'article" (newspaper + arrowUp) dans le footer. Seuls restent : CTA "Lire sur…", Sauvegarder, Recommander.
+
+### Scénario 6 : Bouton flottant "Lancer l'analyse Facteur" (in-app uniquement)
+**Parcours** :
+1. Ouvrir un article in-app avec perspectives
+2. Ouvrir la section
+3. Vérifier que le bouton flottant apparaît
+4. Refermer la section
+
+**Résultat attendu** : Bouton visible uniquement quand la section est ouverte ET analysis state == idle ET perspectives non vides. Disparaît à la fermeture.
+
+### Scénario 7 : Dark mode
+**Parcours** : Activer le mode sombre, parcourir les scénarios 1–4
+
+**Résultat attendu** : Badge, dividers et couleurs DS suivent le thème.
 
 ## Critères d'acceptation
-- [ ] **Backend** : `pytest tests/test_veille_source_ingestion.py` → tests verts (incluant 3 nouveaux : `test_session_recovers_from_integrity_error`, `test_slow_candidate_is_skipped`, `test_llm_timeout_falls_back_to_curated`).
-- [ ] **Mobile** : `flutter test test/features/veille/screens/step3_sources_screen_test.dart` → 1 test vert (bouton Réessayer présent + cliquable + déclenche fetch).
-- [ ] **Sentry** : zéro nouvelle occurrence PYTHON-3P 24 h après merge en prod.
-- [ ] **Supabase** : `SELECT count(*) FROM sources WHERE created_at > NOW() - INTERVAL '24 hours' AND is_curated = false` > 0 (preuve qu'au moins une ingestion réussit).
-- [ ] **E2E mobile** : flow complet onboarding veille → Step 3 affiche des sources réelles (pas le mock fallback) sur thème `tech` avec topics IA.
+
+- [ ] Section "Couverture médiatique" sous le titre, avant la description/corps, dans les deux modes de reader
+- [ ] Section encadrée par 2 dividers, masquée si aucune perspective
+- [ ] Titre de section au DS (`labelLarge` / `textSecondary`)
+- [ ] Badge "Couvert par X médias" visible uniquement en état ouvert
+- [ ] Suppression totale des boutons footer perspectives
+- [ ] Mode scroll-to-site : WebView s'active au même seuil que sur main
+- [ ] `flutter analyze` sans warning ni erreur sur les fichiers modifiés
+- [ ] Pas de nouveau test en échec (regressions)
 
 ## Zones de risque
 
-1. **Savepoint behaviour avec test fixture `db_session`** : la fixture utilise `join_transaction_mode="create_savepoint"` ; les `session.begin_nested()` du code de prod créent des savepoints imbriqués. Vérifier que les tests de la suite pré-existante (15 dans `test_veille_source_ingestion.py`) restent verts.
-
-2. **`asyncio.wait_for` + httpx timeouts** : `EditorialLLMClient` a déjà un `httpx.Timeout(30.0)` ; `_LLM_TIMEOUT_S=20s` est plus strict, donc effectif. RSSParser a 7 s par requête HTTP → un candidat qui exécute 14 variants suffix peut quand même dépasser 8 s ; le timeout par candidat coupe net.
-
-3. **Sentry noise potential** : `sentry_sdk.capture_exception` dans le `except Exception` peut générer du bruit si le LLM produit régulièrement des candidats invalides. À surveiller dans les premiers jours post-merge ; ajuster le filter rule si > 50/jour.
+1. **`_articleKey` et `_computeScrollOffsets`** (mode scroll-to-site) : la clé reste sur le wrapper du corps article uniquement. Un mauvais positionnement déclencherait la WebView trop tôt ou trop tard.
+2. **Backgrounds opaques** : chaque enfant top-level (header, dividers, perspectives, article) a `color: colors.backgroundPrimary` pour masquer la WebView. Un oubli laisserait la WebView transparaître.
+3. **Prédicat du bouton flottant `Lancer l'analyse`** — désormais piloté par `_perspectivesExpanded` au lieu de `_atPerspectivesSection` (scroll-driven). Devrait apparaître dès l'ouverture de la section.
 
 ## Dépendances
 
-- **Endpoints touchés** : POST `/api/veille/suggestions/sources`.
-- **Services backend** : `SourceSuggester`, `SourceService.detect_source` (RSSParser), `EditorialLLMClient` (Mistral).
-- **Mobile** : `VeilleSourcesSuggestionsNotifier` (provider famille autoDispose), `Step3SourcesScreen`.
-- **Doc** : `docs/bugs/bug-veille-suggestions-sources-pending-rollback.md` (diagnostic + fix complet).
-
-## Hors scope (à créer en issues séparées)
-
-- **Optim RSSParser** : éviter les 14 variants suffix sur un même domaine (les 100+ HTTP calls par request). Refactor `detect()` pour bail-out plus tôt.
-- **Cleanup script rows stuck `running > 15min`** : pré-existait à ce bug.
+- `GET /api/perspectives/:contentId` — backend de comparaisons (inchangé)
+- Aucun changement API ; uniquement UI mobile.

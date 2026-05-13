@@ -25,7 +25,6 @@ import '../../../core/providers/navigation_providers.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
-import '../../lettres/providers/letters_provider.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
 import '../../../widgets/sunflower_icon.dart';
@@ -93,8 +92,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _isShortArticle = false;
   // true once user reaches end of displayed content
   final ValueNotifier<bool> _footerPermanent = ValueNotifier<bool>(false);
-  final ValueNotifier<bool> _atPerspectivesSection = ValueNotifier(false);
-  bool _suppressPerspectivesCheck = false;
   bool _showReadOnSiteNudge = false;
   int _articleOpenCount = 0;
   bool _readOnSiteNudgeRequested = false;
@@ -121,8 +118,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final GlobalKey _articleKey = GlobalKey();
   final GlobalKey _bridgeKey = GlobalKey();
   final GlobalKey _perspectivesKey = GlobalKey();
-  final GlobalKey _perspectivesDividerKey = GlobalKey();
-  final GlobalKey _firstPerspectiveCardKey = GlobalKey();
   bool _isWebViewActive = false;
   bool _ctaTapped = false;
   double _bridgeEndOffset = 0;
@@ -132,10 +127,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   // scrolling WebView (eliminates per-frame UI-thread cost).
   bool _articleLayerMounted = true;
   Timer? _articleLayerUnmountTimer;
-  // Last scroll position at which `_checkAtPerspectivesSection` was run.
-  // Per-frame `findRenderObject + localToGlobal` walks the RenderObject tree
-  // — gating on a 24px delta cuts that work to ~once per overscroll fling.
-  double _lastPerspCheckPixels = -1000;
 
   Timer? _readingTimer;
   Timer? _noteNudgeTimer;
@@ -199,11 +190,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   String? _perspectivesAnalysisText;
   final GlobalKey _analysisZoneKey = GlobalKey();
 
-  // Perspectives sticky section header state
+  // Perspectives section state
   Set<String> _perspectivesSelectedSegments = {};
   bool _perspectivesExpanded = false;
-  final ValueNotifier<bool> _showStickyPerspectivesHeader =
-      ValueNotifier(false);
 
   @override
   void initState() {
@@ -635,115 +624,25 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _offsetsComputed = true;
   }
 
-  /// Updates [_atPerspectivesSection] based on whether the perspectives widget
-  /// is visible in the viewport. Called from the scroll notification handler.
-  /// Uses ValueNotifier to avoid triggering a full setState during scroll.
-  void _checkAtPerspectivesSection({bool force = false}) {
-    if (_suppressPerspectivesCheck && !force) return;
-    final ctx = _perspectivesKey.currentContext;
-    if (ctx == null) {
-      if (_atPerspectivesSection.value) _atPerspectivesSection.value = false;
-      if (_showStickyPerspectivesHeader.value) _showStickyPerspectivesHeader.value = false;
-      return;
-    }
-    final perspBox = ctx.findRenderObject() as RenderBox?;
-    if (perspBox == null || !perspBox.hasSize) {
-      if (_atPerspectivesSection.value) _atPerspectivesSection.value = false;
-      if (_showStickyPerspectivesHeader.value) _showStickyPerspectivesHeader.value = false;
-      return;
-    }
-
-    final perspScreenY = perspBox.localToGlobal(Offset.zero).dy;
-    final screenHeight = MediaQuery.of(context).size.height;
-
-    // Show button once the user has scrolled past the first card.
-    bool reached;
-    final firstCardCtx = _firstPerspectiveCardKey.currentContext;
-    if (firstCardCtx != null) {
-      final firstCardBox = firstCardCtx.findRenderObject() as RenderBox?;
-      if (firstCardBox != null && firstCardBox.hasSize) {
-        final firstCardBottomY = firstCardBox.localToGlobal(Offset.zero).dy +
-            firstCardBox.size.height;
-        reached = firstCardBottomY < screenHeight * 0.9;
-      } else {
-        reached = perspScreenY < screenHeight * 0.85;
-      }
-    } else {
-      reached = perspScreenY < screenHeight * 0.85;
-    }
-
-    if (reached != _atPerspectivesSection.value) {
-      _atPerspectivesSection.value = reached;
-      // Footer becomes sticky as soon as the perspectives section is reached.
-      if (reached && !_footerPermanent.value) {
-        _footerPermanent.value = true;
-        _animateFooterTo(0.0);
-      }
-    }
-
-    // Sticky perspectives header: show as soon as the section title has
-    // scrolled above the bottom of the app header.
-    final appHeaderHeight =
-        MediaQuery.of(context).padding.top + _kHeaderContentHeight;
-    final appHeaderBottomY = appHeaderHeight * (1.0 - _headerOffset.value);
-    final shouldStick = perspScreenY < appHeaderBottomY;
-    if (shouldStick != _showStickyPerspectivesHeader.value) {
-      _showStickyPerspectivesHeader.value = shouldStick;
-    }
-  }
-
   /// Shared handler for the inline "Couverture médiatique" toggle. On
-  /// expand-from-collapsed, scrolls the perspectives divider into view and
-  /// flips [_atPerspectivesSection] so the floating "Lancer l'analyse Facteur"
-  /// button reappears. On collapse, preserves the existing recheck behaviour.
+  /// expand-from-collapsed, scrolls the section into view.
   void _onPerspectivesToggle() {
     HapticFeedback.lightImpact();
     final wasCollapsed = !_perspectivesExpanded;
     setState(() {
       _perspectivesExpanded = !_perspectivesExpanded;
-      _suppressPerspectivesCheck = true;
     });
     if (wasCollapsed) {
-      _atPerspectivesSection.value = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        final ctx = _perspectivesDividerKey.currentContext;
-        if (ctx != null) {
-          Scrollable.ensureVisible(
-            ctx,
-            alignment: 0.0,
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeInOut,
-          );
-          // Re-trigger after AnimatedSize expansion settles maxScrollExtent.
-          Future.delayed(const Duration(milliseconds: 250), () {
-            if (!mounted) return;
-            final c = _perspectivesDividerKey.currentContext;
-            if (c != null) {
-              Scrollable.ensureVisible(
-                c,
-                alignment: 0.0,
-                duration: const Duration(milliseconds: 250),
-                curve: Curves.easeOut,
-              );
-            }
-          });
-        }
-        Future.delayed(const Duration(milliseconds: 550), () {
-          if (mounted) {
-            setState(() => _suppressPerspectivesCheck = false);
-          }
-        });
-      });
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _checkAtPerspectivesSection(force: true);
-        Future.delayed(const Duration(milliseconds: 200), () {
-          if (mounted) {
-            setState(() => _suppressPerspectivesCheck = false);
-          }
-        });
+        final ctx = _perspectivesKey.currentContext;
+        if (ctx == null) return;
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.0,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeInOut,
+        );
       });
     }
   }
@@ -761,11 +660,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             ? {key}
             : (Set.from(current)..add(key));
       }
-    });
-    // Re-check sticky visibility after the section has rebuilt (filtering may
-    // shrink the section back into view with no scroll event).
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _checkAtPerspectivesSection(force: true);
     });
   }
 
@@ -1324,8 +1218,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _scrollController.removeListener(_onScrollToSite);
     _scrollController.removeListener(_onScrollReadingProgress);
 
-    _atPerspectivesSection.dispose();
-    _showStickyPerspectivesHeader.dispose();
     _scrollController.dispose();
     _inAppScrollController.dispose();
     super.dispose();
@@ -1480,103 +1372,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  /// Show perspectives bottom sheet — uses pre-loaded data if available
-  Future<void> _showPerspectives(BuildContext context) async {
-    final content = _content;
-    if (content == null) return;
-
-    // If data already pre-loaded, show directly
-    if (_perspectivesResponse != null) {
-      _showPerspectivesSheet(context, _perspectivesResponse!);
-      // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
-      unawaited(ref.read(lettersProvider.notifier).silentRefresh());
-      return;
-    }
-
-    // Otherwise fetch with loading indicator
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        height: 200,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              const SizedBox(height: FacteurSpacing.space4),
-              Text('Recherche de perspectives...'),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    try {
-      final repository = ref.read(feedRepositoryProvider);
-
-      final response = await repository.getPerspectives(content.id);
-
-      if (context.mounted) Navigator.pop(context);
-
-      if (context.mounted) {
-        setState(() => _perspectivesResponse = response);
-        _showPerspectivesSheet(context, response);
-      }
-      // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
-      unawaited(ref.read(lettersProvider.notifier).silentRefresh());
-    } catch (e) {
-      debugPrint('Error fetching perspectives: $e');
-      if (context.mounted) Navigator.pop(context);
-      if (context.mounted) {
-        NotificationService.showError('Impossible de charger les perspectives',
-            context: context);
-      }
-    }
-  }
-
-  void _showPerspectivesSheet(
-      BuildContext context, PerspectivesResponse response) {
-    // Backend gate : pas assez d'angles distincts → forcer l'état vide
-    // dans le bottom sheet (équivalent à perspectives.isEmpty).
-    // Cf. docs/bugs/bug-comparison-clustering-too-loose.md
-    final perspectives = response.shouldDisplay
-        ? response.perspectives
-            .map(
-              (PerspectiveData p) => Perspective(
-                title: p.title,
-                url: p.url,
-                sourceName: p.sourceName,
-                sourceDomain: p.sourceDomain,
-                biasStance: p.biasStance,
-                publishedAt: p.publishedAt,
-              ),
-            )
-            .toList()
-        : <Perspective>[];
-
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => PerspectivesBottomSheet(
-        perspectives: perspectives,
-        biasDistribution:
-            response.shouldDisplay ? response.biasDistribution : const {},
-        keywords: response.keywords,
-        sourceBiasStance: response.sourceBiasStance,
-        sourceName: _content?.source.name ?? '',
-        contentId: widget.contentId,
-        comparisonQuality: response.comparisonQuality,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
@@ -1707,23 +1502,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   final delta = notification.scrollDelta ?? 0.0;
                   final metrics = notification.metrics;
                   if (metrics.pixels <= 0 && !_isWebViewActive) {
-                    _atPerspectivesSection.value = false;
-                    _showStickyPerspectivesHeader.value = false;
                     _headerOffset.value = 0.0;
                     _footerOffset.value = 0.0;
                   }
 
                   _onScrollDelta(delta);
-                  // Gate the perspectives RenderObject walk on (a) the
-                  // section actually existing and (b) the user having
-                  // scrolled at least 24px since the last check. Cuts the
-                  // per-frame cost of localToGlobal on multiple GlobalKeys
-                  // — main source of jank on long articles.
-                  if (_perspectivesResponse != null &&
-                      (metrics.pixels - _lastPerspCheckPixels).abs() >= 24) {
-                    _lastPerspCheckPixels = metrics.pixels;
-                    _checkAtPerspectivesSection();
-                  }
                   // Track reading progress from any scrollable (including in-app reader)
                   if (metrics.maxScrollExtent > 0) {
                     final rawProgress =
@@ -1812,45 +1595,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   );
                 },
               ),
-            // Sticky perspectives section header — appears below the app header
-            // when the inline section header has scrolled off-screen.
-            // Only shown for in-app article reading.
-            if (useInAppReading &&
-                content.contentType == ContentType.article &&
-                _perspectivesResponse != null)
-              ValueListenableBuilder<bool>(
-                valueListenable: _showStickyPerspectivesHeader,
-                builder: (context, showSticky, _) {
-                  return ValueListenableBuilder<double>(
-                    valueListenable: _headerOffset,
-                    builder: (context, offset, _) {
-                      final statusBarHeight =
-                          MediaQuery.of(context).padding.top;
-                      final topWhenHeaderVisible =
-                          statusBarHeight + _kHeaderVisualBottom;
-                      final topWhenHeaderHidden = statusBarHeight;
-                      final top = topWhenHeaderVisible -
-                          offset * (topWhenHeaderVisible - topWhenHeaderHidden);
-                      return Positioned(
-                        top: top,
-                        left: 0,
-                        right: 0,
-                        child: AnimatedOpacity(
-                          duration: const Duration(milliseconds: 200),
-                          opacity: showSticky ? 1.0 : 0.0,
-                          child: IgnorePointer(
-                            ignoring: !showSticky,
-                            child: RepaintBoundary(
-                              child: _buildPerspectivesStickyHeader(
-                                  context, _perspectivesResponse!),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
             // Exit animation overlay — fade-to-white + scale-down
             if (_isExitAnimating)
               AnimatedBuilder(
@@ -1867,25 +1611,22 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 },
               ),
             // Floating "Lancer l'analyse Facteur" button — in-app articles only.
-            // Visible when the perspectives section is on screen and analysis
+            // Visible when the perspectives section is expanded and analysis
             // hasn't been triggered yet.
             if (useInAppReading && content.contentType == ContentType.article)
-              Positioned(
-                right: 16,
-                bottom: _kFooterContentHeight +
-                    MediaQuery.of(context).viewPadding.bottom +
-                    12,
-                child: ValueListenableBuilder<bool>(
-                  valueListenable: _atPerspectivesSection,
-                  builder: (context, atPersp, _) {
-                    final show = atPersp &&
-                        !_suppressPerspectivesCheck &&
-                        _perspectivesExpanded &&
-                        _perspectivesAnalysisState ==
-                            PerspectivesAnalysisState.idle &&
-                        _perspectivesResponse != null &&
-                        _perspectivesResponse!.perspectives.isNotEmpty;
-                    return AnimatedScale(
+              Builder(
+                builder: (context) {
+                  final show = _perspectivesExpanded &&
+                      _perspectivesAnalysisState ==
+                          PerspectivesAnalysisState.idle &&
+                      _perspectivesResponse != null &&
+                      _perspectivesResponse!.perspectives.isNotEmpty;
+                  return Positioned(
+                    right: 16,
+                    bottom: _kFooterContentHeight +
+                        MediaQuery.of(context).viewPadding.bottom +
+                        12,
+                    child: AnimatedScale(
                       scale: show ? 1.0 : 0.9,
                       duration: const Duration(milliseconds: 200),
                       curve: Curves.easeOut,
@@ -1932,9 +1673,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           ),
                         ),
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
               ),
             // Footer — always rendered, mirrors header slide behavior.
             // Article: full layout. Video/audio: external CTA + bookmark + sunflower.
@@ -2233,170 +1974,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-              if (isArticle)
-                // Autres points de vue / Retour à l'article
-                ValueListenableBuilder<bool>(
-                  valueListenable: _atPerspectivesSection,
-                builder: (context, atPersp, _) {
-                  if (atPersp) {
-                    return Tooltip(
-                      message: 'Retour à l\'article',
-                      child: IconButton(
-                        style: iconButtonStyle,
-                        onPressed: () {
-                          HapticFeedback.lightImpact();
-                          _suppressPerspectivesCheck = true;
-                          _atPerspectivesSection.value = false;
-                          _showStickyPerspectivesHeader.value = false;
-                          // Si la webview scroll-to-site est active, le
-                          // subtree article a été démonté (cf.
-                          // _articleLayerMounted=false) et _scrollController
-                          // n'a plus de clients → l'animateTo serait no-op.
-                          // Désactiver la webview, remonter l'article puis
-                          // scroller au top.
-                          if (_isWebViewActive) {
-                            setState(() {
-                              _isWebViewActive = false;
-                              _articleLayerMounted = true;
-                              _ctaTapped = false;
-                            });
-                            _articleLayerUnmountTimer?.cancel();
-                            _animateHeaderTo(0.0);
-                            _animateFooterTo(0.0);
-                          }
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (!mounted) return;
-                            final ScrollController activeController =
-                                _scrollController.hasClients
-                                    ? _scrollController
-                                    : _inAppScrollController;
-                            if (activeController.hasClients) {
-                              activeController.animateTo(
-                                0,
-                                duration: const Duration(milliseconds: 400),
-                                curve: Curves.easeInOut,
-                              );
-                            }
-                          });
-                          Future.delayed(const Duration(milliseconds: 450), () {
-                            if (mounted) _suppressPerspectivesCheck = false;
-                          });
-                        },
-                        icon: SizedBox(
-                          width: 32,
-                          height: 32,
-                          child: Stack(
-                            children: [
-                              Center(
-                                child: Icon(
-                                  PhosphorIcons.newspaper(
-                                      PhosphorIconsStyle.regular),
-                                  size: 28,
-                                  color: colors.textSecondary,
-                                ),
-                              ),
-                              Positioned(
-                                right: 0,
-                                bottom: 0,
-                                child: Stack(
-                                  children: [
-                                    Text(
-                                      String.fromCharCode(PhosphorIcons.arrowUp(
-                                              PhosphorIconsStyle.bold)
-                                          .codePoint),
-                                      style: TextStyle(
-                                        fontFamily: PhosphorIcons.arrowUp(
-                                                PhosphorIconsStyle.bold)
-                                            .fontFamily,
-                                        package: PhosphorIcons.arrowUp(
-                                                PhosphorIconsStyle.bold)
-                                            .fontPackage,
-                                        fontSize: 8,
-                                        height: 1.0,
-                                        foreground: Paint()
-                                          ..style = PaintingStyle.stroke
-                                          ..strokeWidth = 4.0
-                                          ..strokeJoin = StrokeJoin.round
-                                          ..strokeCap = StrokeCap.round
-                                          ..color = colors.backgroundPrimary,
-                                      ),
-                                    ),
-                                    Icon(
-                                      PhosphorIcons.arrowUp(
-                                          PhosphorIconsStyle.bold),
-                                      size: 8,
-                                      color: colors.textSecondary.withValues(alpha: 0.5),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-                  final perspectivesEmpty = !_perspectivesLoading &&
-                      _perspectivesResponse != null &&
-                      _perspectivesResponse!.perspectives.isEmpty;
-                  return _WinkingEyeButton(
-                    style: iconButtonStyle,
-                    iconColor: perspectivesEmpty
-                        ? colors.textSecondary.withValues(alpha: 0.35)
-                        : colors.textSecondary,
-                    onTap: perspectivesEmpty
-                        ? null
-                        : () {
-                            HapticFeedback.lightImpact();
-                            _suppressPerspectivesCheck = true;
-                            // Force immediate switch to "Retour à l'article"
-                            // state so the footer reflects the user intent
-                            // without waiting for the scroll-driven check
-                            // (AnimatedSize expansion + scroll animation
-                            // would otherwise race for ~600ms).
-                            _atPerspectivesSection.value = true;
-                            setState(() => _perspectivesExpanded = true);
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!mounted) return;
-                              final ctx =
-                                  _perspectivesDividerKey.currentContext;
-                              if (ctx != null) {
-                                Scrollable.ensureVisible(
-                                  ctx,
-                                  alignment: 0.0,
-                                  duration: const Duration(milliseconds: 400),
-                                  curve: Curves.easeInOut,
-                                );
-                                // Re-trigger scroll after AnimatedSize expands
-                                // to handle maxScrollExtent changes.
-                                Future.delayed(
-                                    const Duration(milliseconds: 250), () {
-                                  if (!mounted) return;
-                                  final currentCtx =
-                                      _perspectivesDividerKey.currentContext;
-                                  if (currentCtx != null) {
-                                    Scrollable.ensureVisible(
-                                      currentCtx,
-                                      alignment: 0.0,
-                                      duration:
-                                          const Duration(milliseconds: 250),
-                                      curve: Curves.easeOut,
-                                    );
-                                  }
-                                });
-                              } else {
-                                _showPerspectives(context);
-                              }
-                              Future.delayed(
-                                  const Duration(milliseconds: 550), () {
-                                if (mounted) _suppressPerspectivesCheck = false;
-                              });
-                            });
-                          },
-                  );
-                },
-                ),
-
               // Sauvegarder (long-press → collection picker)
               GestureDetector(
                 onLongPress: () {
@@ -3027,112 +2604,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
-  /// Renders the sticky version of the perspectives section header (icon +
-  /// title, optional quality badge, interactive bias bar).  Shown as a
-  /// [Positioned] overlay below the app header when the inline section header
-  /// has scrolled off-screen.
-  Widget _buildPerspectivesStickyHeader(
-      BuildContext context, PerspectivesResponse response) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
-
-    // Compute merged 3-group distribution from the raw bias distribution.
-    final dist = response.biasDistribution;
-    final merged = {
-      'gauche': (dist['left'] ?? 0) + (dist['center-left'] ?? 0),
-      'centre': dist['center'] ?? 0,
-      'droite': (dist['center-right'] ?? 0) + (dist['right'] ?? 0),
-    };
-
-    final selected = _perspectivesSelectedSegments;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: colors.backgroundPrimary,
-        border: Border(
-          bottom: BorderSide(color: colors.border, width: 1),
-        ),
-      ),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Icon + title row
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                PhosphorIcons.eye(PhosphorIconsStyle.regular),
-                color: colors.primary,
-                size: 22,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Couverture médiatique',
-                  style: textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colors.textPrimary,
-                    fontSize: 18,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (response.comparisonQuality == 'low')
-            PerspectivesWarningBadge(colors: colors, textTheme: textTheme),
-          const SizedBox(height: FacteurSpacing.space2),
-          PerspectivesBiasBar(
-            colors: colors,
-            mergedDistribution: merged,
-            sourceBiasStance: response.sourceBiasStance,
-            sourceName: _content?.source.name ?? '',
-            selectedSegments: selected,
-            onSegmentTap: _onPerspectivesSegmentTap,
-          ),
-          SizedBox(
-            height: selected.isNotEmpty ? 28 : 4,
-            child: selected.isNotEmpty
-                ? Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Align(
-                      alignment: Alignment.topRight,
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() => _perspectivesSelectedSegments = {});
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (mounted) _checkAtPerspectivesSection();
-                          });
-                        },
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Tout afficher',
-                              style: textTheme.labelSmall?.copyWith(
-                                color: colors.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(
-                              PhosphorIcons.x(PhosphorIconsStyle.bold),
-                              size: 12,
-                              color: colors.primary,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                : null,
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Inline "Article complet" button shown at the end of the body when the
   /// article is in partial mode — replaces the dismissible nudge for partial
   /// articles since reading-on-site is the only path to the full content.
@@ -3284,7 +2755,122 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     children: [
                       // Spacer: scrolls with content, initially behind the header overlay
                       SizedBox(height: headerHeight),
-                      // ZONE 1: Article content — opaque background hides WebView.
+                      // ZONE 1a: Top header (thumbnail / tags / title / reading-time)
+                      Container(
+                        color: colors.backgroundPrimary,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: FacteurSpacing.space4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: FacteurSpacing.space2),
+                            if (content.thumbnailUrl != null) ...[
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(
+                                    FacteurRadius.large),
+                                child: FacteurThumbnail(
+                                  imageUrl: content.thumbnailUrl,
+                                  aspectRatio: 16 / 9,
+                                ),
+                              ),
+                              const SizedBox(height: FacteurSpacing.space3),
+                            ],
+                            if (isPartial ||
+                                content.entities.isNotEmpty ||
+                                content.topics.isNotEmpty) ...[
+                              _buildTagsWrap(context, content,
+                                  isPartial: isPartial),
+                              const SizedBox(height: FacteurSpacing.space4),
+                            ],
+                            Text(
+                              content.title,
+                              style: textTheme.displayLarge
+                                  ?.copyWith(fontSize: 24),
+                            ),
+                            const SizedBox(height: FacteurSpacing.space2),
+                            if (readingTime != null) ...[
+                              Row(
+                                children: [
+                                  Icon(
+                                    PhosphorIcons.timer(
+                                        PhosphorIconsStyle.regular),
+                                    size: 14,
+                                    color: colors.textTertiary,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    readingTime,
+                                    style: textTheme.bodySmall?.copyWith(
+                                        color: colors.textTertiary),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: FacteurSpacing.space3),
+                            ],
+                            const SizedBox(height: FacteurSpacing.space4),
+                          ],
+                        ),
+                      ),
+
+                      // ZONE 1b: Perspectives section, framed by dividers.
+                      if (_perspectivesResponse != null &&
+                          _perspectivesResponse!.perspectives.isNotEmpty) ...[
+                        Container(
+                          color: colors.backgroundPrimary,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: FacteurSpacing.space4),
+                          child: Divider(color: colors.textTertiary.withValues(alpha: 0.3), height: 1, thickness: 1),
+                        ),
+                        Container(
+                          color: colors.backgroundPrimary,
+                          child: PerspectivesInlineSection(
+                            key: _perspectivesKey,
+                            perspectives: _perspectivesResponse!.perspectives
+                                .map(
+                                  (PerspectiveData p) => Perspective(
+                                    title: p.title,
+                                    url: p.url,
+                                    sourceName: p.sourceName,
+                                    sourceDomain: p.sourceDomain,
+                                    biasStance: p.biasStance,
+                                    publishedAt: p.publishedAt,
+                                  ),
+                                )
+                                .toList(),
+                            biasDistribution:
+                                _perspectivesResponse!.biasDistribution,
+                            keywords: _perspectivesResponse!.keywords,
+                            sourceBiasStance:
+                                _perspectivesResponse!.sourceBiasStance,
+                            sourceName: _content?.source.name ?? '',
+                            contentId: widget.contentId,
+                            comparisonQuality:
+                                _perspectivesResponse!.comparisonQuality,
+                            externalSelectedSegments:
+                                _perspectivesSelectedSegments,
+                            onSegmentTap: _onPerspectivesSegmentTap,
+                            onClearSegments: () {
+                              setState(() =>
+                                  _perspectivesSelectedSegments = {});
+                            },
+                            analysisState: _perspectivesAnalysisState,
+                            analysisText: _perspectivesAnalysisText,
+                            onRequestAnalysis: _requestPerspectivesAnalysis,
+                            analysisZoneKey: _analysisZoneKey,
+                            isExpanded: _perspectivesExpanded,
+                            onToggle: _onPerspectivesToggle,
+                          ),
+                        ),
+                        Container(
+                          color: colors.backgroundPrimary,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: FacteurSpacing.space4),
+                          child: Divider(color: colors.textTertiary.withValues(alpha: 0.3), height: 1, thickness: 1),
+                        ),
+                      ],
+
+                      // ZONE 2: Article body — _articleKey scopes scroll-bridge
+                      // measurement to the body, excluding header + perspectives.
                       Container(
                         key: _articleKey,
                         color: colors.backgroundPrimary,
@@ -3297,138 +2883,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           bodyPlaceholder: !_contentResolved
                               ? _buildArticleBodySkeleton(colors)
                               : null,
-                          header: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(height: FacteurSpacing.space2),
-                              if (content.thumbnailUrl != null) ...[
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(
-                                      FacteurRadius.large),
-                                  child: FacteurThumbnail(
-                                    imageUrl: content.thumbnailUrl,
-                                    aspectRatio: 16 / 9,
-                                  ),
-                                ),
-                                const SizedBox(height: FacteurSpacing.space3),
-                              ],
-                              if (isPartial ||
-                                  content.entities.isNotEmpty ||
-                                  content.topics.isNotEmpty) ...[
-                                _buildTagsWrap(context, content,
-                                    isPartial: isPartial),
-                                const SizedBox(height: FacteurSpacing.space4),
-                              ],
-                              Text(
-                                content.title,
-                                style: textTheme.displayLarge
-                                    ?.copyWith(fontSize: 24),
-                              ),
-                              const SizedBox(height: FacteurSpacing.space2),
-                              if (readingTime != null) ...[
-                                Row(
-                                  children: [
-                                    Icon(
-                                      PhosphorIcons.timer(
-                                          PhosphorIconsStyle.regular),
-                                      size: 14,
-                                      color: colors.textTertiary,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      readingTime,
-                                      style: textTheme.bodySmall?.copyWith(
-                                          color: colors.textTertiary),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: FacteurSpacing.space3),
-                              ],
-                              const SizedBox(height: FacteurSpacing.space4),
-                            ],
-                          ),
-                          footer: (_perspectivesResponse != null ||
-                                  _perspectivesLoading)
-                              ? null
-                              : SizedBox(
-                                  height:
-                                      _kFooterContentHeight + bottomInset),
+                          footer: SizedBox(
+                              height: _kFooterContentHeight + bottomInset),
                         ),
                       ),
 
                       if (isPartial && _contentResolved)
                         _buildPartialArticleInlineButton(context, content),
-
-                      // ZONE 2: Inline perspectives (articles only)
-                      if (_perspectivesResponse != null ||
-                          _perspectivesLoading) ...[
-                        Container(
-                          key: _perspectivesDividerKey,
-                          color: colors.backgroundPrimary,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: FacteurSpacing.space4,
-                            vertical: FacteurSpacing.space4,
-                          ),
-                          child: Divider(color: colors.border, height: 1),
-                        ),
-                        Container(
-                          color: colors.backgroundPrimary,
-                          child: _perspectivesLoading &&
-                                  _perspectivesResponse == null
-                              ? const Center(child: CircularProgressIndicator())
-                              : _perspectivesResponse != null
-                                  ? PerspectivesInlineSection(
-                                      key: _perspectivesKey,
-                                      perspectives: _perspectivesResponse!
-                                          .perspectives
-                                          .map(
-                                            (PerspectiveData p) => Perspective(
-                                              title: p.title,
-                                              url: p.url,
-                                              sourceName: p.sourceName,
-                                              sourceDomain: p.sourceDomain,
-                                              biasStance: p.biasStance,
-                                              publishedAt: p.publishedAt,
-                                            ),
-                                          )
-                                          .toList(),
-                                      biasDistribution: _perspectivesResponse!
-                                          .biasDistribution,
-                                      keywords: _perspectivesResponse!.keywords,
-                                      sourceBiasStance: _perspectivesResponse!
-                                          .sourceBiasStance,
-                                      sourceName: _content?.source.name ?? '',
-                                      contentId: widget.contentId,
-                                      comparisonQuality: _perspectivesResponse!
-                                          .comparisonQuality,
-                                      externalSelectedSegments:
-                                          _perspectivesSelectedSegments,
-                                      onSegmentTap: _onPerspectivesSegmentTap,
-                                      onClearSegments: () {
-                                        setState(() =>
-                                            _perspectivesSelectedSegments = {});
-                                        WidgetsBinding.instance
-                                            .addPostFrameCallback((_) {
-                                          if (mounted) {
-                                            _checkAtPerspectivesSection(
-                                                force: true);
-                                          }
-                                        });
-                                      },
-                                      analysisState: _perspectivesAnalysisState,
-                                      analysisText: _perspectivesAnalysisText,
-                                      onRequestAnalysis:
-                                          _requestPerspectivesAnalysis,
-                                      analysisZoneKey: _analysisZoneKey,
-                                      firstCardKey: _firstPerspectiveCardKey,
-                                      isExpanded: _perspectivesExpanded,
-                                      onToggle: _onPerspectivesToggle,
-                                    )
-                                  : const SizedBox.shrink(),
-                        ),
-                        SizedBox(
-                            height: _kFooterContentHeight + bottomInset),
-                      ],
 
                       // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation.
                       // _bridgeKey attached here so _computeScrollOffsets() can measure the bridge zone.
@@ -3906,6 +3367,55 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ),
                 ),
 
+                // ── Perspectives section (avant l'article) ─────────────────
+                if (_perspectivesResponse != null &&
+                    _perspectivesResponse!.perspectives.isNotEmpty) ...[
+                  const SizedBox(height: FacteurSpacing.space4),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space4),
+                    child: Divider(color: colors.textTertiary.withValues(alpha: 0.3), height: 1, thickness: 1),
+                  ),
+                  PerspectivesInlineSection(
+                    key: _perspectivesKey,
+                    perspectives: _perspectivesResponse!.perspectives
+                        .map(
+                          (PerspectiveData p) => Perspective(
+                            title: p.title,
+                            url: p.url,
+                            sourceName: p.sourceName,
+                            sourceDomain: p.sourceDomain,
+                            biasStance: p.biasStance,
+                            publishedAt: p.publishedAt,
+                          ),
+                        )
+                        .toList(),
+                    biasDistribution: _perspectivesResponse!.biasDistribution,
+                    keywords: _perspectivesResponse!.keywords,
+                    sourceBiasStance: _perspectivesResponse!.sourceBiasStance,
+                    sourceName: _content?.source.name ?? '',
+                    contentId: widget.contentId,
+                    comparisonQuality:
+                        _perspectivesResponse!.comparisonQuality,
+                    externalSelectedSegments: _perspectivesSelectedSegments,
+                    onSegmentTap: _onPerspectivesSegmentTap,
+                    onClearSegments: () {
+                      setState(() => _perspectivesSelectedSegments = {});
+                    },
+                    analysisState: _perspectivesAnalysisState,
+                    analysisText: _perspectivesAnalysisText,
+                    onRequestAnalysis: _requestPerspectivesAnalysis,
+                    analysisZoneKey: _analysisZoneKey,
+                    isExpanded: _perspectivesExpanded,
+                    onToggle: _onPerspectivesToggle,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space4),
+                    child: Divider(color: colors.textTertiary.withValues(alpha: 0.3), height: 1, thickness: 1),
+                  ),
+                ],
+
                 const SizedBox(height: FacteurSpacing.space4),
 
                 // ── Article section ────────────────────────────────────────
@@ -3939,58 +3449,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     SizedBox(key: _articleEndKey, height: 0),
                   ],
                 ),
-
-                // ── Perspectives section ───────────────────────────────────
-                if (_perspectivesResponse != null || _perspectivesLoading) ...[
-                  const SizedBox(height: FacteurSpacing.space4),
-                  Padding(
-                    key: _perspectivesDividerKey,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: FacteurSpacing.space4),
-                    child: Divider(color: colors.border, height: 1),
-                  ),
-                  const SizedBox(height: FacteurSpacing.space4),
-                  if (_perspectivesLoading && _perspectivesResponse == null)
-                    const Center(child: CircularProgressIndicator())
-                  else if (_perspectivesResponse != null)
-                    PerspectivesInlineSection(
-                      key: _perspectivesKey,
-                      perspectives: _perspectivesResponse!.perspectives
-                          .map(
-                            (PerspectiveData p) => Perspective(
-                              title: p.title,
-                              url: p.url,
-                              sourceName: p.sourceName,
-                              sourceDomain: p.sourceDomain,
-                              biasStance: p.biasStance,
-                              publishedAt: p.publishedAt,
-                            ),
-                          )
-                          .toList(),
-                      biasDistribution: _perspectivesResponse!.biasDistribution,
-                      keywords: _perspectivesResponse!.keywords,
-                      sourceBiasStance: _perspectivesResponse!.sourceBiasStance,
-                      sourceName: _content?.source.name ?? '',
-                      contentId: widget.contentId,
-                      comparisonQuality:
-                          _perspectivesResponse!.comparisonQuality,
-                      externalSelectedSegments: _perspectivesSelectedSegments,
-                      onSegmentTap: _onPerspectivesSegmentTap,
-                      onClearSegments: () {
-                        setState(() => _perspectivesSelectedSegments = {});
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) _checkAtPerspectivesSection(force: true);
-                        });
-                      },
-                      analysisState: _perspectivesAnalysisState,
-                      analysisText: _perspectivesAnalysisText,
-                      onRequestAnalysis: _requestPerspectivesAnalysis,
-                      analysisZoneKey: _analysisZoneKey,
-                      firstCardKey: _firstPerspectiveCardKey,
-                      isExpanded: _perspectivesExpanded,
-                      onToggle: _onPerspectivesToggle,
-                    ),
-                ],
 
                 // ── Footer clearance ───────────────────────────────────────
                 const SizedBox(height: FacteurSpacing.space4),
@@ -4094,154 +3552,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
       ],
-    );
-  }
-}
-
-/// Eye button that winks periodically (scaleY close → open) to hint at perspectives.
-class _WinkingEyeButton extends StatefulWidget {
-  final VoidCallback? onTap;
-  final ButtonStyle? style;
-  final Color iconColor;
-
-  const _WinkingEyeButton({
-    required this.onTap,
-    this.style,
-    required this.iconColor,
-  });
-
-  @override
-  State<_WinkingEyeButton> createState() => _WinkingEyeButtonState();
-}
-
-class _WinkingEyeButtonState extends State<_WinkingEyeButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _scaleY;
-  final math.Random _rng = math.Random();
-  final Stopwatch _timeOnScreen = Stopwatch();
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _timeOnScreen.start();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 320),
-    );
-    _scaleY = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 0.05)
-            .chain(CurveTween(curve: Curves.easeIn)),
-        weight: 30, // close fast (~96ms)
-      ),
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 0.05, end: 1.0)
-            .chain(CurveTween(curve: Curves.easeOut)),
-        weight: 70, // open slower (~224ms)
-      ),
-    ]).animate(_controller);
-    _controller.addStatusListener((status) {
-      if (status == AnimationStatus.completed) _scheduleNext();
-    });
-    _scheduleNext();
-  }
-
-  void _scheduleNext() {
-    final elapsed = _timeOnScreen.elapsed.inSeconds;
-    // Multiplier grows from 1× at t=0 to 3× at t=60s, then stays at 3×.
-    final multiplier = (3.0 * (elapsed.clamp(0, 60) / 60.0)).clamp(1.0, 3.0);
-    final baseMs = 2000 + _rng.nextInt(3001); // 2–5 s
-    final delayMs = (baseMs * multiplier).round();
-    _timer?.cancel();
-    _timer = Timer(Duration(milliseconds: delayMs), () {
-      if (mounted && widget.onTap != null) _controller.forward(from: 0);
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _scaleY,
-      builder: (context, _) {
-        final isWinking = _scaleY.value < 0.5;
-        final disabled = widget.onTap == null;
-        return IconButton(
-          style: widget.style,
-          onPressed: widget.onTap,
-          tooltip:
-              disabled ? 'Pas d\'autres points de vue' : 'Autres points de vue',
-          icon: SizedBox(
-            width: 32,
-            height: 32,
-            child: Stack(
-              children: [
-                Center(
-                  child: disabled
-                      ? Icon(
-                          PhosphorIcons.eyeClosed(PhosphorIconsStyle.regular),
-                          size: 26,
-                          color: widget.iconColor,
-                        )
-                      : Transform.scale(
-                          scaleY: _scaleY.value,
-                          child: Icon(
-                            isWinking
-                                ? PhosphorIcons.eyeClosed(
-                                    PhosphorIconsStyle.regular)
-                                : PhosphorIcons.eye(PhosphorIconsStyle.regular),
-                            size: 26,
-                            color: widget.iconColor,
-                          ),
-                        ),
-                ),
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Stack(
-                    children: [
-                      Text(
-                        String.fromCharCode(
-                            PhosphorIcons.arrowDown(PhosphorIconsStyle.bold)
-                                .codePoint),
-                        style: TextStyle(
-                          fontFamily:
-                              PhosphorIcons.arrowDown(PhosphorIconsStyle.bold)
-                                  .fontFamily,
-                          package:
-                              PhosphorIcons.arrowDown(PhosphorIconsStyle.bold)
-                                  .fontPackage,
-                          fontSize: 8,
-                          height: 1.0,
-                          foreground: Paint()
-                            ..style = PaintingStyle.stroke
-                            ..strokeWidth = 4.0
-                            ..strokeJoin = StrokeJoin.round
-                            ..strokeCap = StrokeCap.round
-                            ..color = context.facteurColors.backgroundPrimary,
-                        ),
-                      ),
-                      Icon(
-                        PhosphorIcons.arrowDown(PhosphorIconsStyle.bold),
-                        size: 8,
-                        color: widget.iconColor.withValues(alpha: 0.5),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }

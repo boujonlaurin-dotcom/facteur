@@ -753,21 +753,13 @@ class PerspectivesWarningBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 4),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: colors.textTertiary.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(6),
+      child: Text(
+        'Comparaison limitée (sujet peu couvert)',
+        style: textTheme.labelSmall?.copyWith(
+          color: colors.textTertiary,
         ),
-        child: Text(
-          '⚠️ Comparaison limitée (sujet peu couvert)',
-          style: textTheme.labelSmall?.copyWith(
-            fontSize: 11,
-            color: colors.textTertiary,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -953,10 +945,10 @@ class PerspectivesBiasBar extends StatelessWidget {
                             clipBehavior: Clip.none,
                             children: [
                               Positioned(
-                                left: markerX - 7,
+                                left: markerX - 5,
                                 top: 0,
                                 child: CustomPaint(
-                                  size: const Size(14, 8),
+                                  size: const Size(10, 6),
                                   painter: PerspectivesTrianglePainter(
                                       color: sourceColor),
                                 ),
@@ -1339,48 +1331,40 @@ class _PerspectivesInlineSectionState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (widget.perspectives.isNotEmpty) ...[
-          // ── Row 1: Eye + title + chevron (tappable to toggle) ──────────
-          GestureDetector(
-            onTap: widget.onToggle,
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 16, right: 16, top: 16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Icon(
-                    PhosphorIcons.eye(PhosphorIconsStyle.regular),
-                    color: colors.primary,
-                    size: 28,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Couverture médiatique',
-                      style: textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colors.textPrimary,
-                        fontSize: 18,
-                      ),
+        // ── Row 1: Title + chevron (tappable to toggle) ──────────────────
+        GestureDetector(
+          onTap: widget.onToggle,
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Couverture médiatique',
+                    style: textTheme.titleMedium?.copyWith(
+                      color: colors.textPrimary,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  AnimatedRotation(
-                    turns: _rotationTurns,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    child: Icon(
-                      PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
-                      size: 16,
-                      color: colors.textSecondary,
-                    ),
+                ),
+                AnimatedRotation(
+                  turns: _rotationTurns,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  child: Icon(
+                    PhosphorIcons.caretDown(PhosphorIconsStyle.regular),
+                    size: 16,
+                    color: colors.textSecondary,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          // ── Expandable content (bias bar + cards + analysis) ──────────
-          AnimatedSize(
+        ),
+        // ── Expandable content (bias bar + cards + analysis) ──────────
+        AnimatedSize(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeInOut,
             alignment: Alignment.topCenter,
@@ -1388,6 +1372,29 @@ class _PerspectivesInlineSectionState
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (widget.perspectives.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: colors.textTertiary.withValues(alpha: 0.08),
+                                borderRadius:
+                                    BorderRadius.circular(FacteurRadius.pill),
+                              ),
+                              child: Text(
+                                'Couvert par ${widget.perspectives.length} médias',
+                                style: textTheme.labelMedium?.copyWith(
+                                  color: colors.textSecondary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       // Bias bar — fait partie du contenu togglable.
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -1480,34 +1487,6 @@ class _PerspectivesInlineSectionState
                   )
                 : const SizedBox.shrink(),
           ),
-        ] else ...[
-          Padding(
-            padding: const EdgeInsets.only(left: 16, right: 16, top: 16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  PhosphorIcons.eye(PhosphorIconsStyle.regular),
-                  color: colors.primary,
-                  size: 28,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Couverture médiatique',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: colors.textPrimary,
-                      fontSize: 18,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          PerspectivesEmptyState(colors: colors, textTheme: textTheme),
-        ],
       ],
     );
   }
