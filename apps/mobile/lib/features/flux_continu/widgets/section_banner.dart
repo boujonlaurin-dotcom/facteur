@@ -5,89 +5,90 @@ import '../../../config/theme.dart';
 
 /// Banner that opens a Flux Continu V1.8 section.
 ///
-/// Visual: subtle gradient tinted with [accent], a 28×2 rule line on the
-/// left, a small placeholder illustration tile, and a Fraunces title with
-/// an optional blurb. Illustrations are intentionally minimal at MVP —
-/// real PNGs will be wired in once the design team delivers them.
+/// Visual: vertical gradient tinted with the section [accent], a 28×2 rule
+/// line over the title, the section title (Fraunces 25), and an optional
+/// blurb. When [illustrationAsset] is provided, the asset is rendered on
+/// the right side and masked with a left-fade gradient so it stays subtle
+/// under the typography.
 class SectionBanner extends StatelessWidget {
   final String title;
   final String? blurb;
   final Color accent;
-  final IconData icon;
+  final String? illustrationAsset;
 
   const SectionBanner({
     super.key,
     required this.title,
     required this.accent,
     this.blurb,
-    this.icon = Icons.article_outlined,
+    this.illustrationAsset,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     return Container(
-      margin: const EdgeInsets.fromLTRB(
-        FacteurSpacing.space4,
-        FacteurSpacing.space2,
-        FacteurSpacing.space4,
-        FacteurSpacing.space3,
-      ),
-      padding: const EdgeInsets.fromLTRB(
-        FacteurSpacing.space4,
-        FacteurSpacing.space4,
-        FacteurSpacing.space4,
-        FacteurSpacing.space4,
-      ),
+      margin: const EdgeInsets.fromLTRB(0, 4, 0, 16),
+      constraints: const BoxConstraints(minHeight: 96),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(FacteurRadius.large),
         gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
           colors: [
-            accent.withValues(alpha: 0.12),
+            accent.withValues(alpha: 0.14),
             accent.withValues(alpha: 0.02),
           ],
         ),
-        border: Border.all(
-          color: accent.withValues(alpha: 0.18),
-          width: 1,
-        ),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Stack(
         children: [
-          Container(
-            width: 28,
-            height: 2,
-            margin: const EdgeInsets.only(right: FacteurSpacing.space3),
-            color: accent,
-          ),
-          _IllustrationTile(accent: accent, icon: icon),
-          const SizedBox(width: FacteurSpacing.space3),
-          Expanded(
+          if (illustrationAsset != null)
+            Positioned.fill(child: _BannerIllustration(asset: illustrationAsset!)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(22, 16, 22, 18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  title,
-                  style: GoogleFonts.fraunces(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    height: 1.15,
-                    color: accent,
+                Container(
+                  width: 28,
+                  height: 2,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                if (blurb != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    blurb!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.textSecondary,
-                          height: 1.4,
-                        ),
+                FractionallySizedBox(
+                  widthFactor: 0.8,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 4, bottom: 6),
+                    child: Text(
+                      title,
+                      style: GoogleFonts.fraunces(
+                        fontSize: 25,
+                        fontWeight: FontWeight.w700,
+                        height: 1.06,
+                        letterSpacing: -0.5,
+                        color: colors.textPrimary,
+                      ),
+                    ),
                   ),
-                ],
+                ),
+                if (blurb != null && blurb!.trim().isNotEmpty)
+                  FractionallySizedBox(
+                    widthFactor: 0.8,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(
+                      blurb!,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 13,
+                        height: 1.45,
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -97,22 +98,42 @@ class SectionBanner extends StatelessWidget {
   }
 }
 
-class _IllustrationTile extends StatelessWidget {
-  final Color accent;
-  final IconData icon;
+/// Right-anchored illustration, vertically centered, faded from right to
+/// left so it stays as background to the title. Falls back to nothing if
+/// the asset can't be decoded.
+class _BannerIllustration extends StatelessWidget {
+  final String asset;
 
-  const _IllustrationTile({required this.accent, required this.icon});
+  const _BannerIllustration({required this.asset});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.16),
-        shape: BoxShape.circle,
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 0),
+        child: ShaderMask(
+          blendMode: BlendMode.dstIn,
+          shaderCallback: (rect) => const LinearGradient(
+            begin: Alignment.centerRight,
+            end: Alignment.centerLeft,
+            colors: [Colors.black, Colors.transparent],
+            stops: [0.3, 1.0],
+          ).createShader(rect),
+          child: Opacity(
+            opacity: 0.95,
+            child: Transform.translate(
+              offset: const Offset(16, 0),
+              child: Image.asset(
+                asset,
+                height: 108,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        ),
       ),
-      child: Icon(icon, color: accent, size: 22),
     );
   }
 }
