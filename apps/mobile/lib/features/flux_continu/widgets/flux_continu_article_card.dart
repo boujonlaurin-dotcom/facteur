@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../digest/models/digest_models.dart';
@@ -11,10 +13,9 @@ import '../../feed/models/content_model.dart';
 class FluxArticleVM {
   final String contentId;
   final String title;
-  final String? description;
   final String? thumbnailUrl;
   final String sourceName;
-  final String? sourceLogoUrl;
+  final String? themeLabel;
   final ContentType contentType;
   final int? durationSeconds;
 
@@ -23,9 +24,8 @@ class FluxArticleVM {
     required this.title,
     required this.sourceName,
     required this.contentType,
-    this.description,
     this.thumbnailUrl,
-    this.sourceLogoUrl,
+    this.themeLabel,
     this.durationSeconds,
   });
 
@@ -34,10 +34,9 @@ class FluxArticleVM {
       return FluxArticleVM(
         contentId: article.contentId,
         title: article.title,
-        description: article.description,
         thumbnailUrl: article.thumbnailUrl,
         sourceName: article.source?.name ?? 'Inconnu',
-        sourceLogoUrl: article.source?.logoUrl,
+        themeLabel: article.source?.theme,
         contentType: article.contentType,
         durationSeconds: article.durationSeconds,
       );
@@ -46,10 +45,9 @@ class FluxArticleVM {
       return FluxArticleVM(
         contentId: article.id,
         title: article.title,
-        description: article.description,
         thumbnailUrl: article.thumbnailUrl,
         sourceName: article.source.name,
-        sourceLogoUrl: article.source.logoUrl,
+        themeLabel: article.progressionTopic,
         contentType: article.contentType,
         durationSeconds: article.durationSeconds,
       );
@@ -60,9 +58,12 @@ class FluxArticleVM {
 
 /// Article list item for the Flux Continu V1.8.
 ///
-/// Horizontal layout: 72×72 thumbnail on the left, title + description on
-/// the right, single-line footer with source · reading time · optional
-/// press-review chip (Essentiel section only).
+/// Layout per maquette V6 :
+/// - 12px padding inside a 12-radius surface card, soft shadow.
+/// - Head row : title (4-line ellipsis, DM Sans 15 w600) + 72×72 thumb on
+///   the right (radius 10).
+/// - Footer row (single-line) : source dot + name · theme pill · clock·time
+///   · optional press-review trailing (Essentiel sections only).
 class FluxContinuArticleCard extends StatelessWidget {
   final Object article;
   final VoidCallback? onTap;
@@ -81,48 +82,60 @@ class FluxContinuArticleCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final vm = FluxArticleVM.from(article);
     final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(FacteurRadius.small),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: FacteurSpacing.space4,
-          vertical: FacteurSpacing.space3,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _Thumbnail(url: vm.thumbnailUrl, isVideo: _isVideo(vm.contentType)),
-            const SizedBox(width: FacteurSpacing.space3),
-            Expanded(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+      child: Material(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(12),
+        elevation: 0,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Ink(
+            decoration: BoxDecoration(
+              color: colors.surface,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    vm.title,
-                    style: textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      height: 1.3,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (vm.description != null &&
-                      vm.description!.trim().isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      vm.description!,
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colors.textSecondary,
-                        height: 1.4,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          vm.title,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            height: 1.3,
+                            letterSpacing: -0.15,
+                            color: colors.textPrimary,
+                          ),
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                  const SizedBox(height: FacteurSpacing.space2),
+                      const SizedBox(width: 12),
+                      _Thumbnail(
+                        url: vm.thumbnailUrl,
+                        isVideo: _isVideo(vm.contentType),
+                        accent: colors.primary,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   _Footer(
                     vm: vm,
                     colors: colors,
@@ -132,7 +145,7 @@ class FluxContinuArticleCard extends StatelessWidget {
                 ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -145,8 +158,13 @@ class FluxContinuArticleCard extends StatelessWidget {
 class _Thumbnail extends StatelessWidget {
   final String? url;
   final bool isVideo;
+  final Color accent;
 
-  const _Thumbnail({required this.url, required this.isVideo});
+  const _Thumbnail({
+    required this.url,
+    required this.isVideo,
+    required this.accent,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -155,20 +173,27 @@ class _Thumbnail extends StatelessWidget {
       width: 72,
       height: 72,
       decoration: BoxDecoration(
-        color: colors.surfaceElevated,
-        borderRadius: BorderRadius.circular(FacteurRadius.small),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            accent.withValues(alpha: 0.12),
+            accent.withValues(alpha: 0.04),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Icon(
         isVideo ? Icons.play_arrow_rounded : Icons.article_outlined,
         color: colors.textTertiary,
-        size: 28,
+        size: 24,
       ),
     );
 
     if (url == null || url!.isEmpty) return placeholder;
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(FacteurRadius.small),
+      borderRadius: BorderRadius.circular(10),
       child: SizedBox(
         width: 72,
         height: 72,
@@ -199,40 +224,69 @@ class _Footer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final footerStyle = textTheme.labelSmall?.copyWith(
-      color: colors.textTertiary,
-      letterSpacing: 0,
+    final separator = Text(
+      '·',
+      style: GoogleFonts.dmSans(
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        color: colors.textTertiary.withValues(alpha: 0.55),
+      ),
     );
 
     return Row(
       mainAxisSize: MainAxisSize.max,
       children: [
-        Container(
-          width: 6,
-          height: 6,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: colors.textTertiary,
-          ),
-        ),
+        _SourceDot(initial: _initial(vm.sourceName), accent: colors.primary,
+            ringColor: colors.surface),
         const SizedBox(width: 6),
-        Flexible(
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 92),
           child: Text(
             vm.sourceName,
-            style: footerStyle,
+            style: GoogleFonts.dmSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: colors.textSecondary,
+              height: 1.4,
+            ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
         ),
-        const SizedBox(width: 8),
-        _NeutralTag(label: _readingTimeLabel(vm)),
+        if (vm.themeLabel != null && vm.themeLabel!.trim().isNotEmpty) ...[
+          const SizedBox(width: 6),
+          _ThemePill(label: vm.themeLabel!, colors: colors),
+        ],
+        const SizedBox(width: 6),
+        separator,
+        const SizedBox(width: 6),
+        Icon(PhosphorIconsRegular.clock,
+            size: 12, color: colors.textTertiary),
+        const SizedBox(width: 3),
+        Text(
+          _readingTimeLabel(vm),
+          style: GoogleFonts.dmSans(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: colors.textTertiary,
+            height: 1.4,
+          ),
+        ),
         if (showPressReview) ...[
-          const SizedBox(width: 8),
-          _PressReviewChip(count: pressReviewCount),
+          const Spacer(),
+          _PressReviewChip(
+            count: pressReviewCount,
+            colors: colors,
+          ),
         ],
       ],
     );
+  }
+
+  String _initial(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return '?';
+    return trimmed.characters.first.toUpperCase();
   }
 
   String _readingTimeLabel(FluxArticleVM vm) {
@@ -240,37 +294,76 @@ class _Footer extends StatelessWidget {
         vm.contentType == ContentType.youtube ||
         vm.contentType == ContentType.audio) {
       final s = vm.durationSeconds;
-      if (s != null && s > 0) {
-        final m = (s / 60).ceil();
-        return '$m min';
-      }
+      if (s != null && s > 0) return '${(s / 60).ceil()} min';
     }
-    // Articles : pas de field reading_time côté backend pour les digests,
-    // on affiche une estimation courte par défaut. La vraie estimation
-    // viendra avec un champ dédié quand le backend l'exposera.
     return '5 min';
   }
 }
 
-class _NeutralTag extends StatelessWidget {
-  final String label;
-  const _NeutralTag({required this.label});
+class _SourceDot extends StatelessWidget {
+  final String initial;
+  final Color accent;
+  final Color ringColor;
+
+  const _SourceDot({
+    required this.initial,
+    required this.accent,
+    required this.ringColor,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.facteurColors;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      width: 14,
+      height: 14,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: accent,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: ringColor,
+            spreadRadius: 1.5,
+            blurRadius: 0,
+          ),
+        ],
+      ),
+      child: Text(
+        initial,
+        style: GoogleFonts.dmSans(
+          fontSize: 8,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+          height: 1.0,
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemePill extends StatelessWidget {
+  final String label;
+  final FacteurColors colors;
+
+  const _ThemePill({required this.label, required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
         color: colors.textPrimary.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(FacteurRadius.small),
+        borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: colors.textSecondary,
-              letterSpacing: 0,
-            ),
+        style: GoogleFonts.dmSans(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.2,
+          height: 1.4,
+          color: colors.textSecondary,
+        ),
       ),
     );
   }
@@ -278,11 +371,12 @@ class _NeutralTag extends StatelessWidget {
 
 class _PressReviewChip extends StatelessWidget {
   final int count;
-  const _PressReviewChip({required this.count});
+  final FacteurColors colors;
+
+  const _PressReviewChip({required this.count, required this.colors});
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.facteurColors;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -292,14 +386,14 @@ class _PressReviewChip extends StatelessWidget {
           child: Stack(
             children: List.generate(3, (i) {
               return Positioned(
-                left: i * 5.0,
+                left: i * 4.0,
                 child: Container(
                   width: 12,
                   height: 12,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: colors.surfaceElevated,
-                    border: Border.all(color: colors.border, width: 1),
+                    border: Border.all(color: colors.surface, width: 1),
                   ),
                 ),
               );
@@ -309,9 +403,11 @@ class _PressReviewChip extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           '+$count',
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: colors.textSecondary,
-              ),
+          style: GoogleFonts.dmSans(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: colors.textSecondary,
+          ),
         ),
       ],
     );
