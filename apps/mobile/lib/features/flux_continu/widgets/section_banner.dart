@@ -27,7 +27,13 @@ class SectionBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+    // The banner is edge-to-edge per V6 spec — the accent gradient and the
+    // background illustration fade across the full screen width. Force the
+    // width explicitly because the parent SectionBlock Column uses
+    // `CrossAxisAlignment.start`, which would otherwise let the Container
+    // size to its intrinsic width and leave parchment showing on the right.
     return Container(
+      width: double.infinity,
       margin: const EdgeInsets.fromLTRB(0, 4, 0, 16),
       constraints: const BoxConstraints(minHeight: 96),
       decoration: BoxDecoration(
