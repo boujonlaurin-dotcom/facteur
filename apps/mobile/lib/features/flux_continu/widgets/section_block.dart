@@ -70,6 +70,7 @@ class SectionBlock extends StatelessWidget {
               article: pickTopicLead(topic),
               isEssentiel: isEssentiel,
               pressReviewCount: topic.perspectiveCount,
+              perspectiveSources: topic.perspectiveSources,
               onTap: () => onTapArticle(pickTopicLead(topic)),
             ),
         ];
