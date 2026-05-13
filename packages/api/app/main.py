@@ -284,21 +284,33 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     from app.models.daily_digest import DailyDigest
                     from app.models.user import UserProfile
                     from app.utils.time import now_paris
-                    from app.workers.scheduler import DIGEST_CRON_HOUR_PARIS
+                    from app.workers.scheduler import (
+                        DIGEST_CRON_HOUR_PARIS,
+                        DIGEST_CRON_MINUTE_PARIS,
+                    )
 
                     await asyncio.sleep(60)
 
-                    # Avant l'heure du cron, on laisse le scheduler générer à
-                    # 06:00 Paris : un deploy Railway entre 00:00 et 06:00
-                    # déclencherait sinon une génération à minuit avec un RSS
-                    # pas encore rafraîchi → digest pauvre.
+                    # Fenêtre stricte [cron_time, 10:00 Paris[ :
+                    # - Avant l'heure du cron : un deploy Railway de nuit
+                    #   déclencherait sinon une génération avec les Unes du
+                    #   matin pas encore publiées (bug-digest-evening-content).
+                    # - Après 10:00 : un redéploiement diurne ne doit PAS
+                    #   régénérer un digest avec du contenu d'après-midi.
+                    #   Si la fenêtre 07:30-10:00 est ratée, c'est cuit pour
+                    #   la journée — mieux qu'un digest pourri à 16h.
                     now = now_paris()
-                    if now.hour < DIGEST_CRON_HOUR_PARIS:
+                    cron_minutes = (
+                        DIGEST_CRON_HOUR_PARIS * 60 + DIGEST_CRON_MINUTE_PARIS
+                    )
+                    now_minutes = now.hour * 60 + now.minute
+                    if now_minutes < cron_minutes or now.hour >= 10:
                         logger.info(
-                            "digest_startup_catchup_too_early",
+                            "digest_startup_catchup_outside_window",
                             now_paris=str(now),
                             target_date=str(now.date()),
                             cron_hour=DIGEST_CRON_HOUR_PARIS,
+                            cron_minute=DIGEST_CRON_MINUTE_PARIS,
                         )
                         return
 
