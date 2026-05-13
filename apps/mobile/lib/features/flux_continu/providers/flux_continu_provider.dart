@@ -53,6 +53,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   FluxSection? _theme1;
   FluxSection? _theme2;
   List<Content> _feedContinu = const [];
+  List<FeedCarouselData> _feedCarousels = const [];
   bool _feedHasMore = false;
   int _feedPage = 1;
   Map<SectionKind, bool> _moreOpen = const {};
@@ -134,6 +135,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         : null;
 
     _feedContinu = feed?.items ?? const [];
+    _feedCarousels = feed?.carousels ?? const [];
     _feedHasMore = feed?.pagination.hasNext ?? false;
     _feedPage = 1;
     _moreOpen = const {};
@@ -156,6 +158,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     return FluxContinuState(
       sections: ordered,
       feedContinu: _dedupFeed(_feedContinu, ordered),
+      feedCarousels: _feedCarousels,
       isSerene: isSerene,
       moreOpen: _moreOpen,
       isLoading: false,
