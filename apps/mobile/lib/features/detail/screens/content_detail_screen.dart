@@ -149,12 +149,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   double _headerAutoStart = 0.0;
   double _headerAutoTarget = 0.0;
 
-  // Direction hysteresis for WebView continuous mapping. Absorbs fling-rebound
-  // micro-inversions (1-4 px) that would flicker the chrome without a filter.
-  int _webScrollDirection = 0; // -1 up, 0 idle, +1 down
-  double _webDirectionAccumulator = 0.0;
-  static const double _kWebDirectionFlipThreshold = 6.0;
-
   /// Header slide offset as a fraction: 0.0 = fully visible, 1.0 = fully hidden.
   final ValueNotifier<double> _headerOffset = ValueNotifier<double>(0.0);
   bool _isConsumed = false;
@@ -364,69 +358,86 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ..loadRequest(Uri.parse(content.url));
   }
 
-  /// Inject JS to detect overscroll at top + track reading progress.
+  /// Inject JS to drive the reader chrome from finger gestures + track
+  /// reading progress.
+  ///
+  /// The chrome (header/footer) is piloted **only** by `touchmove` deltas,
+  /// never by `window.scrollY`. Site-driven scroll mutations (sticky-header
+  /// collapse, lazy-load reflow, virtual scroll, …) emit `scroll` events
+  /// without a matching `touchmove` and used to flicker the chrome; they
+  /// are now ignored by construction. `window.scroll` is only observed for
+  /// reading-progress and to mirror `scrollY` back to Dart (used by the
+  /// inactivity timer).
   Future<void> _injectScrollBridgeScript() async {
     if (_webViewController == null) return;
     await _webViewController!.runJavaScript('''
       (function() {
         var lastTouchY = 0;
-        var lastProgress = 0;
-        // Track the user's finger direction so we can gate scrollY deltas
-        // that don't match it: some sites (Le Monde, Reddit, …) collapse
-        // their own sticky header on scroll, which mutates the document
-        // layout and emits scrollY deltas opposite to the gesture. Without
-        // gating, our reader chrome flips direction on these site-driven
-        // shifts and flickers.
-        //   touchDir = +1 → finger moving up = page scrolls down
-        //   touchDir = -1 → finger moving down = page scrolls up
-        // Kept across touchend so momentum frames still gate on the last
-        // gesture direction; reset on the next touchstart.
-        var touchDir = 0;
-        document.addEventListener('touchstart', function(e) {
-          lastTouchY = e.touches[0].clientY;
-          touchDir = 0;
-        }, { passive: true });
-        document.addEventListener('touchmove', function(e) {
-          var currentY = e.touches[0].clientY;
-          var dy = currentY - lastTouchY;
-          if (Math.abs(dy) >= 1) {
-            touchDir = dy < 0 ? 1 : -1;
-          }
-          if (currentY > lastTouchY && window.scrollY <= 0) {
-            ScrollBridge.postMessage('overscroll_top');
-          }
-          lastTouchY = currentY;
-        }, { passive: true });
-        // Two distinct cadences for the bridge:
-        //  - `scroll_delta`: coalesced per animation frame (~16 ms) so the
-        //    native side can apply a continuous delta→offset mapping just
-        //    like the in-app reader, instead of a binary toggle that was
-        //    causing header/footer to flicker on micro-inversions.
-        //  - `progress:`   : kept throttled to 300 ms (downstream cost is
-        //    identical at higher rates, no UX benefit).
-        var lastScrollY = window.scrollY;
+        var lastTouchT = 0;
+        var velocity = 0;        // px/ms, smoothed (positive = finger moves down)
+        var touchActive = false;
+        var pendingDy = 0;       // accumulated finger Δy since last rAF flush
         var rafScheduled = false;
         var raf = window.requestAnimationFrame
           ? function(cb) { window.requestAnimationFrame(cb); }
           : function(cb) { setTimeout(cb, 16); };
-        function flushDelta() {
+        function flushGesture() {
           rafScheduled = false;
-          var currentScrollY = window.scrollY;
-          var scrollDelta = currentScrollY - lastScrollY;
-          lastScrollY = currentScrollY;
-          if (Math.abs(scrollDelta) < 1) return;
-          // Drop deltas that don't match the user's finger direction. These
-          // are typically site-driven (sticky-header collapse, content
-          // reflow) and would flip the reader chrome direction even though
-          // the user is still scrolling the same way. lastScrollY is
-          // advanced above so the swallowed delta isn't re-emitted.
-          if (touchDir !== 0) {
-            var deltaDir = scrollDelta > 0 ? 1 : -1;
-            if (deltaDir !== touchDir) return;
-          }
-          ScrollBridge.postMessage('scroll_delta:' + scrollDelta + ':' + currentScrollY);
+          var dy = pendingDy;
+          pendingDy = 0;
+          if (Math.abs(dy) < 1) return;
+          // Invert sign so positive = page-scroll-down-equivalent (hide chrome).
+          ScrollBridge.postMessage('gesture_delta:' + (-dy));
         }
+        document.addEventListener('touchstart', function(e) {
+          if (e.touches.length > 1) { touchActive = false; return; }
+          lastTouchY = e.touches[0].clientY;
+          lastTouchT = (window.performance && performance.now) ? performance.now() : Date.now();
+          velocity = 0;
+          pendingDy = 0;
+          touchActive = true;
+          ScrollBridge.postMessage('gesture_start');
+        }, { passive: true });
+        document.addEventListener('touchmove', function(e) {
+          if (!touchActive || e.touches.length > 1) return;
+          var y = e.touches[0].clientY;
+          var t = (window.performance && performance.now) ? performance.now() : Date.now();
+          var dy = y - lastTouchY;
+          var dt = t - lastTouchT;
+          if (dt > 0) {
+            // Exponential moving average — keeps a stable read of finger speed
+            // through the natural micro-jitter of touch sampling.
+            velocity = 0.7 * velocity + 0.3 * (dy / dt);
+          }
+          lastTouchY = y;
+          lastTouchT = t;
+          pendingDy += dy;
+          if (!rafScheduled) {
+            rafScheduled = true;
+            raf(flushGesture);
+          }
+        }, { passive: true });
+        document.addEventListener('touchend', function(e) {
+          if (!touchActive) return;
+          touchActive = false;
+          // Flush any pending pixel-fraction before the snap so the offset
+          // is current.
+          if (rafScheduled) flushGesture();
+          // velocity is finger px/ms; invert sign (page-down equivalent) and
+          // convert to px/s for the Dart snap heuristic.
+          ScrollBridge.postMessage('gesture_end:' + (-velocity * 1000));
+        }, { passive: true });
+        document.addEventListener('touchcancel', function(e) {
+          if (!touchActive) return;
+          touchActive = false;
+          if (rafScheduled) flushGesture();
+          ScrollBridge.postMessage('gesture_cancel');
+        }, { passive: true });
+        // `window.scroll` is observed *only* for progress + scrollY mirroring.
+        // It never drives the chrome offset.
+        var lastProgress = 0;
         var progressTimer = null;
+        var scrollYTimer = null;
         function flushProgress() {
           progressTimer = null;
           var maxScroll = document.documentElement.scrollHeight - window.innerHeight;
@@ -438,14 +449,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             ScrollBridge.postMessage('progress:' + pct);
           }
         }
+        function flushScrollY() {
+          scrollYTimer = null;
+          ScrollBridge.postMessage('scroll_y:' + window.scrollY);
+        }
         window.addEventListener('scroll', function() {
-          if (!rafScheduled) {
-            rafScheduled = true;
-            raf(flushDelta);
-          }
-          if (!progressTimer) {
-            progressTimer = setTimeout(flushProgress, 300);
-          }
+          if (!scrollYTimer) scrollYTimer = setTimeout(flushScrollY, 100);
+          if (!progressTimer) progressTimer = setTimeout(flushProgress, 300);
         }, { passive: true });
       })();
     ''');
@@ -454,15 +464,27 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Handle messages from the WebView JS bridge.
   void _onScrollBridgeMessage(JavaScriptMessage message) {
     final msg = message.message;
-    if (msg.startsWith('scroll_delta:')) {
-      final parts = msg.substring(13).split(':');
-      final delta = double.tryParse(parts[0]);
-      if (delta != null) {
-        if (parts.length > 1) {
-          _webScrollY = double.tryParse(parts[1]) ?? _webScrollY;
-        }
-        _onScrollDelta(delta);
-      }
+    if (msg == 'gesture_start') {
+      _onGestureStart();
+      return;
+    }
+    if (msg.startsWith('gesture_delta:')) {
+      final delta = double.tryParse(msg.substring(14));
+      if (delta != null) _onGestureDelta(delta);
+      return;
+    }
+    if (msg.startsWith('gesture_end:')) {
+      final vel = double.tryParse(msg.substring(12)) ?? 0;
+      _onGestureEnd(vel);
+      return;
+    }
+    if (msg == 'gesture_cancel') {
+      _onGestureEnd(0);
+      return;
+    }
+    if (msg.startsWith('scroll_y:')) {
+      final y = double.tryParse(msg.substring(9));
+      if (y != null) _webScrollY = y;
       return;
     }
     if (msg.startsWith('progress:')) {
@@ -846,83 +868,100 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _footerAutoController.forward(from: 0);
   }
 
-  /// Update header/footer offsets based on scroll delta (in pixels).
-  /// Positive delta = scrolling down, negative = scrolling up.
+  /// Apply a page-scroll-equivalent [delta] (positive = page going down)
+  /// directly to the chrome offsets. Shared by the in-app scroll path and
+  /// the WebView gesture path.
+  void _applyChromeOffsetDelta(double delta) {
+    final headerHeight =
+        MediaQuery.of(context).padding.top + _kHeaderContentHeight;
+    _headerOffset.value =
+        (_headerOffset.value + delta / headerHeight).clamp(0.0, 1.0);
+
+    if (!_footerPermanent.value) {
+      final footerHeight = _kFooterContentHeight +
+          MediaQuery.of(context).viewPadding.bottom;
+      _footerOffset.value =
+          (_footerOffset.value + delta / footerHeight).clamp(0.0, 1.0);
+    }
+  }
+
+  /// Update header/footer offsets based on a native scroll delta (in-app
+  /// reader only). Positive delta = scrolling down, negative = scrolling up.
   void _onScrollDelta(double delta) {
     if (delta == 0) return;
-    // Dismiss sunflower nudge on any scroll
+    if (_isWebViewActive) return;
     if (_showSunflowerNudge) {
       setState(() => _showSunflowerNudge = false);
     }
     final isVideo = _content?.isVideo ?? false;
-    // In video readers the header stays visible at all times (only native
-    // fullscreen covers it, which is handled by the system).
-    // For short articles that don't need scrolling, keep header visible —
-    // EXCEPT in WebView mode where scroll comes from the JS bridge and the
-    // user expects hide-on-scroll regardless of how short the in-app stub was.
-    if (!isVideo && (!_isShortArticle || _isWebViewActive)) {
-      // Effective delta to apply after the hysteresis filter. In native
-      // scroll mode the in-app ScrollController already produces per-frame
-      // deltas, so no filter is needed. In WebView mode the JS bridge
-      // emits per-frame deltas too, but tiny inverse spikes (fling rebound,
-      // deceleration jitter) used to flip the overlays binarily — we now
-      // gate direction changes through an accumulator so micro-inversions
-      // are absorbed before they propagate to the offset.
-      double effectiveDelta = delta;
-      if (_isWebViewActive) {
-        final int sign = delta > 0 ? 1 : -1;
-        if (_webScrollDirection == 0 || sign == _webScrollDirection) {
-          _webScrollDirection = sign;
-          _webDirectionAccumulator = 0.0;
-        } else {
-          _webDirectionAccumulator += delta.abs();
-          if (_webDirectionAccumulator < _kWebDirectionFlipThreshold) {
-            effectiveDelta = 0.0;
-          } else {
-            _webScrollDirection = sign;
-            _webDirectionAccumulator = 0.0;
-          }
-        }
-        // Stop any in-flight reveal/hide tween; it would race against the
-        // continuous mapping below and re-introduce the flicker.
-        if (effectiveDelta != 0) {
-          _headerAutoController.stop();
-          _footerAutoController.stop();
-        }
-      }
-
-      if (effectiveDelta != 0) {
-        final headerHeight =
-            MediaQuery.of(context).padding.top + _kHeaderContentHeight;
-        final shift = effectiveDelta / headerHeight;
-        _headerOffset.value = (_headerOffset.value + shift).clamp(0.0, 1.0);
-
-        // Footer mirrors header: hides on scroll-down, shows on scroll-up.
-        // Skipped once the user has reached the end of the displayed content.
-        if (!_footerPermanent.value) {
-          final bottomInset = MediaQuery.of(context).viewPadding.bottom;
-          final footerHeight = _kFooterContentHeight + bottomInset;
-          final footerShift = effectiveDelta / footerHeight;
-          _footerOffset.value =
-              (_footerOffset.value + footerShift).clamp(0.0, 1.0);
-        }
-      }
+    if (!isVideo && !_isShortArticle) {
+      _applyChromeOffsetDelta(delta);
     }
-    // Footer reappear after 2s of scroll inactivity.
-    // Skip the footer reappear in WebView mode — overlays must stay hidden
-    // until the user explicitly scrolls up to maximise reading space.
     _scrollStopTimer?.cancel();
     _scrollStopTimer = Timer(const Duration(milliseconds: 2000), () {
-      if (mounted && !_isWebViewActive) _animateFooterTo(0.0);
+      if (mounted) _animateFooterTo(0.0);
     });
-    // Auto-hide header after 3s of inactivity (no scroll), but only if not at top
     _inactivityTimer?.cancel();
-    if (!isVideo && (!_isShortArticle || _isWebViewActive)) {
+    if (!isVideo && !_isShortArticle) {
       _inactivityTimer = Timer(const Duration(seconds: 3), () {
-        if (mounted && _webScrollY > 0 && _headerOffset.value < 1.0) {
+        if (mounted && _headerOffset.value < 1.0) {
           _animateHeaderTo(1.0);
         }
       });
+    }
+  }
+
+  /// Stop any in-flight reveal/hide tween so the live gesture pilots the
+  /// chrome without fighting a residual animation.
+  void _onGestureStart() {
+    _headerAutoController.stop();
+    _footerAutoController.stop();
+  }
+
+  /// Map a gesture-derived page-scroll-equivalent delta directly onto the
+  /// chrome offsets. The signal is the user's finger, not `window.scrollY`,
+  /// so no direction filter or hysteresis is needed.
+  void _onGestureDelta(double pageDelta) {
+    if (pageDelta == 0) return;
+    if (_showSunflowerNudge) {
+      setState(() => _showSunflowerNudge = false);
+    }
+    if (_content?.isVideo ?? false) return;
+    _applyChromeOffsetDelta(pageDelta);
+    _inactivityTimer?.cancel();
+    _inactivityTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _webScrollY > 0 && _headerOffset.value < 1.0) {
+        _animateHeaderTo(1.0);
+      }
+    });
+  }
+
+  /// At touchend, commit the chrome to a clean state.
+  /// - High-velocity flick → snap to that direction's endpoint.
+  /// - Slow lift-off → leave the chrome at its current partial offset.
+  /// - At the top of the page → force visible (overscroll guard).
+  void _onGestureEnd(double velocityPxPerSec) {
+    if (_content?.isVideo ?? false) return;
+    // Forced overscroll-at-top behaviour: snap the chrome back to visible.
+    if (_webScrollY <= 0) {
+      if (_headerOffset.value != 0) _animateHeaderTo(0);
+      if (!_footerPermanent.value && _footerOffset.value != 0) {
+        _animateFooterTo(0);
+      }
+      return;
+    }
+    const double kVelocitySnapThreshold = 600.0; // px/s
+    double? targetH;
+    if (velocityPxPerSec > kVelocitySnapThreshold) {
+      targetH = 1.0; // strong page-down flick → hide
+    } else if (velocityPxPerSec < -kVelocitySnapThreshold) {
+      targetH = 0.0; // strong page-up flick → show
+    }
+    if (targetH != null) {
+      if (_headerOffset.value != targetH) _animateHeaderTo(targetH);
+      if (!_footerPermanent.value && _footerOffset.value != targetH) {
+        _animateFooterTo(targetH);
+      }
     }
   }
 
