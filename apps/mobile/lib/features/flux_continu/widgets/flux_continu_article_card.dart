@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../../widgets/design/facteur_image.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 
@@ -202,16 +203,12 @@ class _Thumbnail extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
-      child: SizedBox(
+      child: FacteurImage(
+        imageUrl: url,
         width: 72,
         height: 72,
-        child: Image.network(
-          url,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => placeholder,
-          loadingBuilder: (_, child, progress) =>
-              progress == null ? child : placeholder,
-        ),
+        placeholder: (_) => placeholder,
+        errorWidget: (_) => placeholder,
       ),
     );
   }
@@ -310,11 +307,7 @@ class _Footer extends StatelessWidget {
   }
 }
 
-/// Renders a source identity dot: the source's logo when available,
-/// otherwise the source's first letter on a colored circle.
-///
-/// The parchment-tinted ring around the dot is reproduced via a 0-blur
-/// BoxShadow with [ringColor] (the card surface).
+/// Source identity dot — logo when [logoUrl] is provided, initial otherwise.
 class _SourceDot extends StatelessWidget {
   final String name;
   final String? logoUrl;
@@ -327,18 +320,19 @@ class _SourceDot extends StatelessWidget {
     required this.logoUrl,
     required this.accent,
     required this.ringColor,
-    this.size = 14,
+    required this.size,
   });
 
   @override
   Widget build(BuildContext context) {
     final hasLogo = logoUrl != null && logoUrl!.trim().isNotEmpty;
-    final dot = Container(
+    final initial = _Initial(name: name, fontSize: size * 0.55);
+    return Container(
       width: size,
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: hasLogo ? Colors.white : accent,
+        color: accent,
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
@@ -350,20 +344,16 @@ class _SourceDot extends StatelessWidget {
       ),
       child: hasLogo
           ? ClipOval(
-              child: Image.network(
-                logoUrl!,
+              child: FacteurImage(
+                imageUrl: logoUrl!,
                 width: size,
                 height: size,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _Initial(
-                  name: name,
-                  fontSize: size * 0.55,
-                ),
+                placeholder: (_) => initial,
+                errorWidget: (_) => initial,
               ),
             )
-          : _Initial(name: name, fontSize: size * 0.55),
+          : initial,
     );
-    return dot;
   }
 }
 
@@ -418,10 +408,8 @@ class _ThemePill extends StatelessWidget {
   }
 }
 
-/// Press-review trailing for Essentiel cards: stacks up to 3 source logos
-/// (from [topic.perspectiveSources]) with a 4-px overlap, followed by the
-/// remaining-count chip "+N". Falls back to colored initial-circles when
-/// no logo URL is available for a source.
+/// Trailing for Essentiel cards: stacks up to 3 source logos with a 4-px
+/// overlap, followed by a "+N" count chip.
 class _PressReviewChip extends StatelessWidget {
   final int count;
   final List<SourceMini> sources;
@@ -437,27 +425,27 @@ class _PressReviewChip extends StatelessWidget {
   Widget build(BuildContext context) {
     const dotSize = 12.0;
     const overlap = 4.0;
-    final visible = sources.take(3).toList();
-    final stackWidth = visible.isEmpty
+    final visibleCount = sources.length < 3 ? sources.length : 3;
+    final stackWidth = visibleCount == 0
         ? 0.0
-        : dotSize + (visible.length - 1) * (dotSize - overlap);
+        : dotSize + (visibleCount - 1) * (dotSize - overlap);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (visible.isNotEmpty)
+        if (visibleCount > 0)
           SizedBox(
             width: stackWidth,
             height: dotSize,
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                for (var i = 0; i < visible.length; i++)
+                for (var i = 0; i < visibleCount; i++)
                   Positioned(
                     left: i * (dotSize - overlap),
                     child: _SourceDot(
-                      name: visible[i].name,
-                      logoUrl: visible[i].logoUrl,
+                      name: sources[i].name,
+                      logoUrl: sources[i].logoUrl,
                       accent: colors.primary,
                       ringColor: colors.surface,
                       size: dotSize,
@@ -466,7 +454,7 @@ class _PressReviewChip extends StatelessWidget {
               ],
             ),
           ),
-        if (visible.isNotEmpty) const SizedBox(width: 6),
+        if (visibleCount > 0) const SizedBox(width: 6),
         Text(
           '+$count',
           style: GoogleFonts.dmSans(

@@ -179,10 +179,6 @@ class _Tab extends StatelessWidget {
     final dotColor = isActive
         ? section.accent
         : (isDone ? colors.textTertiary : colors.textSecondary);
-    // CSS spec: .hf-sticky .tab { padding: 7px 12px 9px; }
-    //          .hf-sticky .tab .underline { position: absolute; bottom: 0;
-    //            left: 8px; right: 8px; height: 2px; }
-    // → the underline is out of flow so it doesn't push the tab taller.
     return InkWell(
       onTap: onTap,
       borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
