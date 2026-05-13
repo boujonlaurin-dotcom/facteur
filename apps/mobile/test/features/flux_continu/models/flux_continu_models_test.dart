@@ -6,26 +6,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  group('Section.articleId', () {
-    test('extracts content_id from DigestItem', () {
-      final item = DigestItem(contentId: 'abc-123', title: 't', rank: 1);
-      expect(Section.articleId(item), 'abc-123');
-    });
+  group('pickTopicLead', () {
+    DigestItem item(String id, {bool followed = false}) =>
+        DigestItem(contentId: id, title: 't', isFollowedSource: followed);
 
-    test('extracts id from Content', () {
-      final content = Content(
-        id: 'def-456',
-        title: 't',
-        url: 'https://x.test',
-        contentType: ContentType.article,
-        publishedAt: DateTime(2026, 1, 1),
-        source: Source(id: 's', name: 'S', type: SourceType.article),
+    test('picks the first followed-source article when one exists', () {
+      final topic = DigestTopic(
+        topicId: 't1',
+        label: 'Topic',
+        articles: [item('a'), item('b', followed: true), item('c')],
       );
-      expect(Section.articleId(content), 'def-456');
+      expect(pickTopicLead(topic).contentId, 'b');
     });
 
-    test('returns empty string for unknown types', () {
-      expect(Section.articleId('not-an-article'), '');
+    test('falls back to the first article when no followed source', () {
+      final topic = DigestTopic(
+        topicId: 't1',
+        label: 'Topic',
+        articles: [item('a'), item('b')],
+      );
+      expect(pickTopicLead(topic).contentId, 'a');
     });
   });
 
@@ -58,27 +58,58 @@ void main() {
     });
   });
 
-  group('Section.hasOverflow', () {
-    Section build(int total, int core) {
-      return Section(
-        kind: SectionKind.theme1,
-        label: 'Test',
-        accent: const Color(0xFFFFFFFF),
-        articles: List.generate(total, (i) => 'a$i'),
-        coreCount: core,
+  group('FluxSection.hasOverflow', () {
+    DigestTopicSection digestSection(int topicCount, int core) {
+      return DigestTopicSection(
+        kind: SectionKind.essentiel,
+        label: 'Essentiel',
+        accent: const Color(0xFFB0470A),
+        coreVisibleCount: core,
+        topics: List.generate(
+          topicCount,
+          (i) => DigestTopic(
+            topicId: 't$i',
+            label: 'Topic $i',
+            articles: [DigestItem(contentId: 'c$i', title: 't$i')],
+          ),
+        ),
       );
     }
 
-    test('true when articles exceed coreCount', () {
-      expect(build(5, 2).hasOverflow, isTrue);
+    FeedThemeSection feedSection(int itemCount, int core) {
+      return FeedThemeSection(
+        kind: SectionKind.theme1,
+        label: 'Tech',
+        accent: const Color(0xFF2C3E50),
+        coreVisibleCount: core,
+        items: List.generate(
+          itemCount,
+          (i) => Content(
+            id: 'c$i',
+            title: 't$i',
+            url: 'https://x.test/$i',
+            contentType: ContentType.article,
+            publishedAt: DateTime(2026, 1, 1),
+            source: Source(id: 's', name: 'S', type: SourceType.article),
+          ),
+        ),
+      );
+    }
+
+    test('DigestTopicSection: true when topics exceed coreVisibleCount', () {
+      expect(digestSection(5, 2).hasOverflow, isTrue);
     });
 
-    test('false when articles equal coreCount', () {
-      expect(build(3, 3).hasOverflow, isFalse);
+    test('DigestTopicSection: false when topics equal coreVisibleCount', () {
+      expect(digestSection(3, 3).hasOverflow, isFalse);
     });
 
-    test('false when articles are fewer than coreCount', () {
-      expect(build(1, 3).hasOverflow, isFalse);
+    test('FeedThemeSection: true when items exceed coreVisibleCount', () {
+      expect(feedSection(4, 2).hasOverflow, isTrue);
+    });
+
+    test('FeedThemeSection: totalCount reflects items length', () {
+      expect(feedSection(5, 2).totalCount, 5);
     });
   });
 }

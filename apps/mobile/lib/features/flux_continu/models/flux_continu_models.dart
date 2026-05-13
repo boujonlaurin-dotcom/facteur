@@ -6,41 +6,84 @@ import '../../feed/models/content_model.dart';
 /// Identifier for one of the four sections of the Flux Continu V1.8.
 enum SectionKind { essentiel, bonnes, theme1, theme2 }
 
-/// Abstraction over the heterogeneous payloads that feed each section.
+/// One section of the Flux Continu V1.8 home screen.
 ///
-/// - `essentiel`/`bonnes` are sourced from the editorial digest (DigestItem);
-/// - `theme1`/`theme2` are sourced from the personalized feed (Content).
-///
-/// The screen layer renders cards from `articles`, which holds either type
-/// behind an `Object` union. Use [articleId] to extract a stable identifier
-/// for dedup against the feed continuation underneath the closing card.
-@immutable
-class Section {
+/// Each section renders the same visual shell (banner + cards + optional
+/// "Plus de…" expand + hairline) but the payload differs between sections
+/// backed by the editorial digest (one card per topic, lead article picked
+/// via [pickTopicLead]) and sections backed by the personalized feed (one
+/// card per content item).
+sealed class FluxSection {
   final SectionKind kind;
   final String label;
   final Color accent;
-  final String? themeSlug;
-  final List<Object> articles;
-  final int coreCount;
+  final String? illustrationAsset;
+  final int coreVisibleCount;
 
-  const Section({
+  const FluxSection({
     required this.kind,
     required this.label,
     required this.accent,
-    required this.articles,
-    required this.coreCount,
-    this.themeSlug,
+    required this.coreVisibleCount,
+    this.illustrationAsset,
   });
 
-  bool get hasOverflow => articles.length > coreCount;
+  /// Number of cards the section would render if fully expanded.
+  int get totalCount;
 
-  /// Returns the content_id for either DigestItem or Content; empty string
-  /// if the entry is of an unexpected type (defensive).
-  static String articleId(Object article) {
-    if (article is DigestItem) return article.contentId;
-    if (article is Content) return article.id;
-    return '';
+  /// Whether some cards are hidden behind the "Plus de…" expand button.
+  bool get hasOverflow => totalCount > coreVisibleCount;
+}
+
+/// Section backed by `digest.topics` (Essentiel, Bonnes Nouvelles). One
+/// card per topic — the lead article is selected via [pickTopicLead].
+class DigestTopicSection extends FluxSection {
+  final List<DigestTopic> topics;
+
+  const DigestTopicSection({
+    required super.kind,
+    required super.label,
+    required super.accent,
+    required super.coreVisibleCount,
+    required this.topics,
+    super.illustrationAsset,
+  });
+
+  @override
+  int get totalCount => topics.length;
+}
+
+/// Section backed by `GET /api/feed?theme=…` (sections #3 and #4). One
+/// card per [Content] item.
+class FeedThemeSection extends FluxSection {
+  final String? themeSlug;
+  final List<Content> items;
+
+  const FeedThemeSection({
+    required super.kind,
+    required super.label,
+    required super.accent,
+    required super.coreVisibleCount,
+    required this.items,
+    this.themeSlug,
+    super.illustrationAsset,
+  });
+
+  @override
+  int get totalCount => items.length;
+}
+
+/// Picks the lead article for a digest topic.
+///
+/// Priority — followed-source first (user-affinity bonus), otherwise the
+/// first article (the pivot rank=1 the backend used to compute the topic's
+/// perspectives and bias distribution). Ported from
+/// `digest/widgets/topic_section.dart` to keep visual continuity.
+DigestItem pickTopicLead(DigestTopic topic) {
+  for (final a in topic.articles) {
+    if (a.isFollowedSource) return a;
   }
+  return topic.articles.first;
 }
 
 /// Snapshot of the Flux Continu screen state.
@@ -51,7 +94,7 @@ class Section {
 /// articles already shown above.
 @immutable
 class FluxContinuState {
-  final List<Section> sections;
+  final List<FluxSection> sections;
   final List<Content> feedContinu;
   final bool isSerene;
   final Map<SectionKind, bool> moreOpen;
@@ -68,7 +111,7 @@ class FluxContinuState {
   });
 
   FluxContinuState copyWith({
-    List<Section>? sections,
+    List<FluxSection>? sections,
     List<Content>? feedContinu,
     bool? isSerene,
     Map<SectionKind, bool>? moreOpen,
