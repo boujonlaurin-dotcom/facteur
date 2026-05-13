@@ -10,6 +10,7 @@ import '../features/onboarding/screens/onboarding_screen.dart';
 import '../features/onboarding/screens/conclusion_animation_screen.dart';
 import '../features/feed/screens/feed_screen.dart';
 import '../features/feed/models/content_model.dart';
+import '../features/flux_continu/screens/flux_continu_screen.dart';
 import '../features/auth/screens/email_confirmation_screen.dart';
 import '../features/detail/screens/content_detail_screen.dart';
 
@@ -54,6 +55,7 @@ class RouteNames {
   static const String digest = 'digest';
   static const String digestClosure = 'digest-closure';
   static const String feed = 'feed';
+  static const String fluxContinu = 'flux-continu';
   static const String contentDetail = 'content-detail';
   static const String saved = 'saved';
   static const String savedAll = 'saved-all';
@@ -91,6 +93,7 @@ class RoutePaths {
   static const String digest = '/digest';
   static const String digestClosure = '/digest/closure';
   static const String feed = '/feed';
+  static const String fluxContinu = '/flux-continu';
   static const String contentDetail = '/content/:id';
   static const String saved = '/saved';
   static const String sources = '/settings/sources'; // Moved to settings
@@ -190,7 +193,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (isOnLoginPage || isOnEmailConfirmation || isOnSplash) {
         return authState.needsOnboarding
             ? RoutePaths.onboarding
-            : RoutePaths.feed;
+            : RoutePaths.fluxContinu;
       }
 
       // 4. Onboarding : forcer si nécessaire
@@ -200,9 +203,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         return RoutePaths.onboarding;
       }
 
-      // 5. Onboarding : empêcher d'y retourner si fini → atterrissage feed
+      // 5. Onboarding : empêcher d'y retourner si fini → atterrissage flux continu
       if (!authState.needsOnboarding && isOnOnboarding) {
-        return RoutePaths.feed;
+        return RoutePaths.fluxContinu;
       }
 
       return null;
@@ -250,7 +253,35 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ConclusionAnimationScreen(),
       ),
 
-      // Feed (route racine post-removal du Shell — la bottom nav est supprimée)
+      // Flux Continu V1.8 — nouvelle home post-auth (Story 21.1)
+      GoRoute(
+        path: RoutePaths.fluxContinu,
+        name: RouteNames.fluxContinu,
+        builder: (context, state) => const Stack(
+          children: [
+            FluxContinuScreen(),
+            NudgeHost(),
+          ],
+        ),
+        routes: [
+          GoRoute(
+            path: 'content/:id',
+            parentNavigatorKey: NotificationService.navigatorKey,
+            pageBuilder: (context, state) {
+              final contentId = state.pathParameters['id']!;
+              final content = state.extra as Content?;
+              return FullSwipeCupertinoPage(
+                child: ContentDetailScreen(
+                  contentId: contentId,
+                  content: content,
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+
+      // Feed (legacy — reste accessible via deep link et action manuelle)
       GoRoute(
         path: RoutePaths.feed,
         name: RouteNames.feed,

@@ -38,6 +38,12 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
   final Color biasUnknown;
   final Color border;
 
+  // Flux Continu V1.8 — accents par section éditoriale (Story 21.1)
+  final Color sectionEssentiel;
+  final Color sectionBonnes;
+  final Color sectionVeille1;
+  final Color sectionVeille2;
+
   const FacteurColors({
     required this.backgroundPrimary,
     required this.backgroundSecondary,
@@ -62,6 +68,10 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
     required this.biasRight,
     required this.biasUnknown,
     required this.border,
+    required this.sectionEssentiel,
+    required this.sectionBonnes,
+    required this.sectionVeille1,
+    required this.sectionVeille2,
   });
 
   @override
@@ -89,6 +99,10 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
     Color? biasRight,
     Color? biasUnknown,
     Color? border,
+    Color? sectionEssentiel,
+    Color? sectionBonnes,
+    Color? sectionVeille1,
+    Color? sectionVeille2,
   }) {
     return FacteurColors(
       backgroundPrimary: backgroundPrimary ?? this.backgroundPrimary,
@@ -114,6 +128,10 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
       biasRight: biasRight ?? this.biasRight,
       biasUnknown: biasUnknown ?? this.biasUnknown,
       border: border ?? this.border,
+      sectionEssentiel: sectionEssentiel ?? this.sectionEssentiel,
+      sectionBonnes: sectionBonnes ?? this.sectionBonnes,
+      sectionVeille1: sectionVeille1 ?? this.sectionVeille1,
+      sectionVeille2: sectionVeille2 ?? this.sectionVeille2,
     );
   }
 
@@ -154,6 +172,11 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
       biasRight: Color.lerp(biasRight, other.biasRight, t)!,
       biasUnknown: Color.lerp(biasUnknown, other.biasUnknown, t)!,
       border: Color.lerp(border, other.border, t)!,
+      sectionEssentiel:
+          Color.lerp(sectionEssentiel, other.sectionEssentiel, t)!,
+      sectionBonnes: Color.lerp(sectionBonnes, other.sectionBonnes, t)!,
+      sectionVeille1: Color.lerp(sectionVeille1, other.sectionVeille1, t)!,
+      sectionVeille2: Color.lerp(sectionVeille2, other.sectionVeille2, t)!,
     );
   }
 
@@ -198,6 +221,10 @@ class FacteurPalettes {
     biasRight: const Color(0xFF0D47A1), // Blue 900
     biasUnknown: const Color(0xFFD7CCC8), // Blue Grey 100
     border: const Color(0xFFD2C7B3),
+    sectionEssentiel: const Color(0xFFB0470A),
+    sectionBonnes: const Color(0xFF2E7D32),
+    sectionVeille1: const Color(0xFF2C3E50),
+    sectionVeille2: const Color(0xFF6C3483),
   );
 
   static final FacteurColors dark = FacteurColors(
@@ -224,6 +251,10 @@ class FacteurPalettes {
     biasRight: const Color(0xFF1E88E5), // Blue 600
     biasUnknown: const Color(0xFF616161), // Grey 700
     border: const Color(0xFF333333),
+    sectionEssentiel: const Color(0xFFD16A2C),
+    sectionBonnes: const Color(0xFF4CAF50),
+    sectionVeille1: const Color(0xFF5B7187),
+    sectionVeille2: const Color(0xFFA569BD),
   );
 }
 
