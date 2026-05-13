@@ -18,7 +18,6 @@ class SectionBlock extends StatelessWidget {
   final bool isOpen;
   final VoidCallback onToggleMore;
   final ValueChanged<Object> onTapArticle;
-  final String? bannerBlurb;
   final bool showHairline;
 
   const SectionBlock({
@@ -27,7 +26,6 @@ class SectionBlock extends StatelessWidget {
     required this.isOpen,
     required this.onToggleMore,
     required this.onTapArticle,
-    this.bannerBlurb,
     this.showHairline = true,
   });
 
@@ -41,7 +39,7 @@ class SectionBlock extends StatelessWidget {
         SectionBanner(
           title: section.label,
           accent: section.accent,
-          blurb: bannerBlurb,
+          blurb: section.blurb,
           illustrationAsset: section.illustrationAsset,
         ),
         ...cards,
