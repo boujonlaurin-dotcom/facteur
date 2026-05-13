@@ -10,7 +10,6 @@ import '../../app_update/providers/app_update_provider.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
-import '../../feed/widgets/digest_entry_card.dart';
 import '../../feed/widgets/follow_keyword_suggestion_card.dart';
 import '../../feed/widgets/profile_avatar_button.dart';
 import '../../gamification/widgets/streak_indicator.dart';
@@ -275,12 +274,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           ),
           const SliverToBoxAdapter(
             child: LettresNotificationBanner(),
-          ),
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.only(top: 14, bottom: 8),
-              child: DigestEntryCard(),
-            ),
           ),
           SliverToBoxAdapter(
             child: (keyword == null || keyword.trim().isEmpty)
