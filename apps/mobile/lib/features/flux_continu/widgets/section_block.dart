@@ -42,6 +42,7 @@ class SectionBlock extends StatelessWidget {
           title: section.label,
           accent: section.accent,
           blurb: bannerBlurb,
+          illustrationAsset: section.illustrationAsset,
         ),
         ...cards,
         if (section.hasOverflow)
