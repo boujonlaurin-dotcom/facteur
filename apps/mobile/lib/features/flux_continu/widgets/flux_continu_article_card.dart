@@ -125,7 +125,7 @@ class FluxContinuArticleCard extends StatelessWidget {
                         child: Text(
                           vm.title,
                           style: GoogleFonts.dmSans(
-                            fontSize: 16.5,
+                            fontSize: 17,
                             fontWeight: FontWeight.w600,
                             height: 1.3,
                             letterSpacing: -0.15,
