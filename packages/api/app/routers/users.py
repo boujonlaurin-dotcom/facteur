@@ -11,7 +11,7 @@ import httpx
 import sentry_sdk
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func, text, update
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +38,7 @@ from app.schemas.user import (
 from app.services.digest_service import schedule_initial_digest_generation
 from app.services.feed_cache import FEED_CACHE
 from app.services.streak_service import StreakService
-from app.services.user_service import UserService
+from app.services.user_service import ALLOWED_PREFERENCE_KEYS, UserService
 
 router = APIRouter()
 
@@ -271,6 +271,13 @@ class PreferenceUpdateRequest(BaseModel):
 
     key: str
     value: str
+
+    @field_validator("key")
+    @classmethod
+    def _validate_key(cls, v: str) -> str:
+        if v not in ALLOWED_PREFERENCE_KEYS:
+            raise ValueError(f"preference_key '{v}' is not allowed")
+        return v
 
 
 class PreferenceUpdateResponse(BaseModel):
