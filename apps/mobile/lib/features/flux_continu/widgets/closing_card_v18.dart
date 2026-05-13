@@ -44,98 +44,86 @@ class ClosingCardV18 extends StatelessWidget {
           ),
         ],
       ),
-      child: Stack(
-        children: [
-          Positioned(
-            right: -12,
-            bottom: -8,
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: 0.18,
-                child: Image.asset(
-                  'assets/notifications/facteur_bike.png',
-                  height: 150,
-                  cacheHeight: 300,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/notifications/facteur_bike.png',
+              height: 168,
+              cacheHeight: 336,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            ),
+            const SizedBox(height: 14),
+            Transform.rotate(
+              angle: -2 * math.pi / 180,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: const Color(0xFF2E7D32),
+                    width: 1.5,
+                  ),
+                ),
+                child: Text(
+                  'FIN DE TOURNÉE',
+                  style: GoogleFonts.courierPrime(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF2E7D32),
+                    letterSpacing: 2.0,
+                  ),
                 ),
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(22, 28, 22, 22),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Transform.rotate(
-                  angle: -2 * math.pi / 180,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: const Color(0xFF2E7D32),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Text(
-                      'FIN DE TOURNÉE',
-                      style: GoogleFonts.courierPrime(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF2E7D32),
-                        letterSpacing: 2.0,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Vous êtes à jour',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.fraunces(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    height: 1.1,
-                    letterSpacing: -0.4,
-                    color: colors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 280),
-                  child: Text(
-                    _stepLabel(articleCount),
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 13,
-                      height: 1.5,
-                      color: colors.textSecondary,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: _PrimaryButton(
-                    label: 'Continuer le feed',
-                    onTap: onContinue,
-                  ),
-                ),
-                if (onClose != null) ...[
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: _GhostButton(
-                      label: "Refermer pour aujourd'hui",
-                      onTap: onClose,
-                    ),
-                  ),
-                ],
-              ],
+            const SizedBox(height: 12),
+            Text(
+              'Vous êtes à jour',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.fraunces(
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                height: 1.1,
+                letterSpacing: -0.4,
+                color: colors.textPrimary,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 280),
+              child: Text(
+                _stepLabel(articleCount),
+                textAlign: TextAlign.center,
+                style: GoogleFonts.dmSans(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: colors.textSecondary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: _PrimaryButton(
+                label: 'Continuer le feed',
+                onTap: onContinue,
+              ),
+            ),
+            if (onClose != null) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: _GhostButton(
+                  label: "Refermer pour aujourd'hui",
+                  onTap: onClose,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

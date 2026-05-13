@@ -92,7 +92,7 @@ class FluxContinuArticleCard extends StatelessWidget {
     final hasThumb = vm.thumbnailUrl != null && vm.thumbnailUrl!.isNotEmpty;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Material(
         color: colors.surface,
         borderRadius: BorderRadius.circular(12),
@@ -113,7 +113,7 @@ class FluxContinuArticleCard extends StatelessWidget {
               ],
             ),
             child: Padding(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -125,7 +125,7 @@ class FluxContinuArticleCard extends StatelessWidget {
                         child: Text(
                           vm.title,
                           style: GoogleFonts.dmSans(
-                            fontSize: 16,
+                            fontSize: 16.5,
                             fontWeight: FontWeight.w600,
                             height: 1.3,
                             letterSpacing: -0.15,
@@ -181,8 +181,8 @@ class _Thumbnail extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final placeholder = Container(
-      width: 72,
-      height: 72,
+      width: 78,
+      height: 78,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -205,8 +205,8 @@ class _Thumbnail extends StatelessWidget {
       borderRadius: BorderRadius.circular(10),
       child: FacteurImage(
         imageUrl: url,
-        width: 72,
-        height: 72,
+        width: 78,
+        height: 78,
         placeholder: (_) => placeholder,
         errorWidget: (_) => placeholder,
       ),

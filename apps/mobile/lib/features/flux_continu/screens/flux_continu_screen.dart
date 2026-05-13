@@ -10,6 +10,7 @@ import '../../app_update/providers/app_update_provider.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
+import '../../feed/widgets/digest_entry_card.dart';
 import '../../feed/widgets/follow_keyword_suggestion_card.dart';
 import '../../feed/widgets/profile_avatar_button.dart';
 import '../../gamification/widgets/streak_indicator.dart';
@@ -307,6 +308,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             ),
           ),
           if (state.feedContinu.isNotEmpty) ...[
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.only(top: 8, bottom: 12),
+                child: DigestEntryCard(),
+              ),
+            ),
             SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, i) => FluxContinuArticleCard(
