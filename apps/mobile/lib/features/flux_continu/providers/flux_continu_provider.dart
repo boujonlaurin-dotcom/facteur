@@ -19,6 +19,10 @@ const Color _kEssentielAccent = Color(0xFFB0470A);
 /// Accent applied to the Bonnes Nouvelles section banner.
 const Color _kBonnesAccent = Color(0xFF2E7D32);
 
+/// Illustration asset associated with each editorial section.
+const String _kEssentielIllustration = 'assets/notifications/facteur_avatar.png';
+const String _kBonnesIllustration = 'assets/notifications/facteur_goodnews.png';
+
 /// Riverpod provider for the Flux Continu V1.8 home screen.
 ///
 /// Orchestrates three parallel API calls at mount, then two themed feed calls
@@ -35,10 +39,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   late FeedRepository _feedRepo;
   late FluxContinuRepository _fluxRepo;
 
-  Section? _essentiel;
-  Section? _bonnes;
-  Section? _theme1;
-  Section? _theme2;
+  FluxSection? _essentiel;
+  FluxSection? _bonnes;
+  FluxSection? _theme1;
+  FluxSection? _theme2;
   List<Content> _feedContinu = const [];
   bool _feedHasMore = false;
   int _feedPage = 1;
@@ -50,9 +54,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     _feedRepo = ref.read(feedRepositoryProvider);
     _fluxRepo = ref.read(fluxContinuRepositoryProvider);
 
-    // Refetch from scratch when the serein toggle flips so themed feeds and
-    // the feed continuation pick up the right filter. The sections #1 and #2
-    // swap is applied locally in `_compose`.
     ref.listen<SereinToggleState>(sereinToggleProvider, (prev, next) {
       if (prev?.enabled != next.enabled && state.hasValue) {
         ref.invalidateSelf();
@@ -84,24 +85,22 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final topThemes = (results[1] as List<TopTheme>?) ?? const <TopTheme>[];
     final feed = results[2] as FeedResponse?;
 
-    _essentiel = dual?.normal != null
-        ? Section(
-            kind: SectionKind.essentiel,
-            label: 'Essentiel',
-            accent: _kEssentielAccent,
-            articles: _flattenDigest(dual!.normal!),
-            coreCount: 3,
-          )
-        : null;
-    _bonnes = dual?.serein != null
-        ? Section(
-            kind: SectionKind.bonnes,
-            label: 'Bonnes Nouvelles',
-            accent: _kBonnesAccent,
-            articles: _flattenDigest(dual!.serein!),
-            coreCount: 2,
-          )
-        : null;
+    _essentiel = _buildDigestSection(
+      digest: dual?.normal,
+      kind: SectionKind.essentiel,
+      label: 'Essentiel',
+      accent: _kEssentielAccent,
+      illustration: _kEssentielIllustration,
+      coreVisibleCount: 3,
+    );
+    _bonnes = _buildDigestSection(
+      digest: dual?.serein,
+      kind: SectionKind.bonnes,
+      label: 'Bonnes Nouvelles',
+      accent: _kBonnesAccent,
+      illustration: _kBonnesIllustration,
+      coreVisibleCount: 2,
+    );
 
     final picked = _pickThemes(topThemes);
     final themeResults = await Future.wait(picked.map(
@@ -117,10 +116,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     ));
 
     _theme1 = picked.isNotEmpty
-        ? _maybeThemeSection(picked[0], themeResults[0], SectionKind.theme1)
+        ? _buildThemeSection(picked[0], themeResults[0], SectionKind.theme1)
         : null;
     _theme2 = picked.length >= 2
-        ? _maybeThemeSection(picked[1], themeResults[1], SectionKind.theme2)
+        ? _buildThemeSection(picked[1], themeResults[1], SectionKind.theme2)
         : null;
 
     _feedContinu = feed?.items ?? const [];
@@ -132,7 +131,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }
 
   FluxContinuState _compose(bool isSerene) {
-    final ordered = <Section>[];
+    final ordered = <FluxSection>[];
     if (isSerene) {
       if (_bonnes != null) ordered.add(_bonnes!);
       if (_essentiel != null) ordered.add(_essentiel!);
@@ -153,7 +152,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }
 
   /// Toggle the expand/collapse state of a section's "Plus de…" overflow.
-  /// Updates state synchronously — no network call.
   void toggleMore(SectionKind kind) {
     final current = state.valueOrNull;
     if (current == null) return;
@@ -169,8 +167,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     state = await AsyncValue.guard(_fetchAll);
   }
 
-  /// Append the next page of the feed continuation. No-op if a previous load
-  /// has signalled there is no more data.
+  /// Append the next page of the feed continuation.
   Future<void> loadMoreFeed() async {
     if (!_feedHasMore) return;
     final current = state.valueOrNull;
@@ -192,7 +189,30 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     ));
   }
 
-  Section? _maybeThemeSection(
+  FluxSection? _buildDigestSection({
+    required DigestResponse? digest,
+    required SectionKind kind,
+    required String label,
+    required Color accent,
+    required String illustration,
+    required int coreVisibleCount,
+  }) {
+    final topics = digest?.topics
+            .where((t) => t.articles.isNotEmpty)
+            .toList(growable: false) ??
+        const <DigestTopic>[];
+    if (topics.isEmpty) return null;
+    return DigestTopicSection(
+      kind: kind,
+      label: label,
+      accent: accent,
+      illustrationAsset: illustration,
+      coreVisibleCount: coreVisibleCount,
+      topics: topics,
+    );
+  }
+
+  FluxSection? _buildThemeSection(
     String slug,
     FeedResponse? feed,
     SectionKind kind,
@@ -200,21 +220,14 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final items = feed?.items ?? const <Content>[];
     if (items.length < 2) return null;
     final visual = visualFor(slug);
-    return Section(
+    return FeedThemeSection(
       kind: kind,
       label: visual.label,
       accent: visual.accent,
+      coreVisibleCount: 2,
       themeSlug: slug,
-      articles: items,
-      coreCount: 2,
+      items: items,
     );
-  }
-
-  List<DigestItem> _flattenDigest(DigestResponse digest) {
-    // Both editorial_v1 and topics_v1 populate `items` for backward compat
-    // (cf. packages/api/app/schemas/digest.py:242). Cap at 5 so the section
-    // shows `coreCount` visible + a small expand area.
-    return digest.items.take(5).toList();
   }
 
   List<String> _pickThemes(List<TopTheme> top) {
@@ -231,12 +244,21 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     return [fallbackTheme1, fallbackTheme2];
   }
 
-  List<Content> _dedupFeed(List<Content> feed, List<Section> sections) {
+  /// Builds the set of content_ids already rendered in the sections (digest
+  /// leads + feed-theme items) and filters them out of the continuation.
+  List<Content> _dedupFeed(List<Content> feed, List<FluxSection> sections) {
     final seen = <String>{};
     for (final section in sections) {
-      for (final article in section.articles) {
-        final id = Section.articleId(article);
-        if (id.isNotEmpty) seen.add(id);
+      switch (section) {
+        case DigestTopicSection(:final topics):
+          for (final topic in topics) {
+            if (topic.articles.isEmpty) continue;
+            seen.add(pickTopicLead(topic).contentId);
+          }
+        case FeedThemeSection(:final items):
+          for (final item in items) {
+            seen.add(item.id);
+          }
       }
     }
     return feed.where((c) => !seen.contains(c.id)).toList();

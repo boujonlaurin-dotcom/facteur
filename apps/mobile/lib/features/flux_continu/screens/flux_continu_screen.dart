@@ -190,7 +190,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final keyword = ref.watch(feedProvider.notifier).selectedKeyword;
     final totalArticles = state.sections.fold<int>(
       0,
-      (sum, s) => sum + s.articles.length,
+      (sum, s) => sum + s.totalCount,
     );
 
     if (_sectionKeys.length != state.sections.length) {
@@ -351,7 +351,8 @@ class _StickyTabBarOverlay extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sections =
-        ref.watch(stateProvider).valueOrNull?.sections ?? const <Section>[];
+        ref.watch(stateProvider).valueOrNull?.sections ??
+            const <FluxSection>[];
     return ValueListenableBuilder<double>(
       valueListenable: scrollOffset,
       builder: (context, offset, _) {

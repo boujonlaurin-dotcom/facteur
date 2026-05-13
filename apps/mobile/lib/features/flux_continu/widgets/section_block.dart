@@ -9,13 +9,16 @@ import 'section_hairline.dart';
 /// Composes one section of the Flux Continu V1.8: banner → cards → "Plus
 /// de…" overflow → hairline. State (open/closed for the overflow) is
 /// passed in so the provider remains the single source of truth.
+///
+/// For [DigestTopicSection], the section renders one card per topic, the
+/// lead article being picked by [pickTopicLead]. For [FeedThemeSection],
+/// one card per feed item.
 class SectionBlock extends StatelessWidget {
-  final Section section;
+  final FluxSection section;
   final bool isOpen;
   final VoidCallback onToggleMore;
   final ValueChanged<Object> onTapArticle;
   final String? bannerBlurb;
-  final IconData? bannerIcon;
   final bool showHairline;
 
   const SectionBlock({
@@ -25,18 +28,13 @@ class SectionBlock extends StatelessWidget {
     required this.onToggleMore,
     required this.onTapArticle,
     this.bannerBlurb,
-    this.bannerIcon,
     this.showHairline = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    final visible = isOpen
-        ? section.articles
-        : section.articles.take(section.coreCount).toList();
-    final hiddenCount = section.articles.length - section.coreCount;
-    final isEssentiel = section.kind == SectionKind.essentiel;
-
+    final cards = _buildCards();
+    final hiddenCount = section.totalCount - section.coreVisibleCount;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -44,15 +42,8 @@ class SectionBlock extends StatelessWidget {
           title: section.label,
           accent: section.accent,
           blurb: bannerBlurb,
-          icon: bannerIcon ?? Icons.article_outlined,
         ),
-        ...visible.map(
-          (article) => FluxContinuArticleCard(
-            article: article,
-            isEssentiel: isEssentiel,
-            onTap: () => onTapArticle(article),
-          ),
-        ),
+        ...cards,
         if (section.hasOverflow)
           PlusDeButton(
             sectionLabel: section.label,
@@ -64,5 +55,33 @@ class SectionBlock extends StatelessWidget {
         if (showHairline) const SectionHairline(),
       ],
     );
+  }
+
+  List<Widget> _buildCards() {
+    final isEssentiel = section.kind == SectionKind.essentiel;
+    switch (section) {
+      case DigestTopicSection(:final topics, :final coreVisibleCount):
+        final visible =
+            isOpen ? topics : topics.take(coreVisibleCount).toList();
+        return [
+          for (final topic in visible)
+            FluxContinuArticleCard(
+              article: pickTopicLead(topic),
+              isEssentiel: isEssentiel,
+              pressReviewCount: topic.perspectiveCount,
+              onTap: () => onTapArticle(pickTopicLead(topic)),
+            ),
+        ];
+      case FeedThemeSection(:final items, :final coreVisibleCount):
+        final visible =
+            isOpen ? items : items.take(coreVisibleCount).toList();
+        return [
+          for (final content in visible)
+            FluxContinuArticleCard(
+              article: content,
+              onTap: () => onTapArticle(content),
+            ),
+        ];
+    }
   }
 }
