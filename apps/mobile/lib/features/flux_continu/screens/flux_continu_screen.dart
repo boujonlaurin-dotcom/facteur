@@ -10,9 +10,10 @@ import '../../app_update/providers/app_update_provider.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
-import '../../feed/widgets/digest_entry_card.dart';
+import '../../feed/widgets/feed_carousel.dart';
 import '../../feed/widgets/follow_keyword_suggestion_card.dart';
 import '../../feed/widgets/profile_avatar_button.dart';
+import '../../sources/widgets/pepites_carousel.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
 import '../../notifications/widgets/notification_renudge_banner.dart';
@@ -308,25 +309,75 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             ),
           ),
           if (state.feedContinu.isNotEmpty) ...[
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.only(top: 8, bottom: 12),
-                child: DigestEntryCard(),
-              ),
-            ),
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, i) => FluxContinuArticleCard(
-                  article: state.feedContinu[i],
-                  onTap: () => _openArticle(context, state.feedContinu[i]),
-                ),
-                childCount: state.feedContinu.length,
-              ),
-            ),
+            _buildIntercalatedFeed(context, state),
             const SliverToBoxAdapter(child: SectionHairline()),
           ],
           const SliverToBoxAdapter(child: SizedBox(height: 60)),
         ],
+      ),
+    );
+  }
+
+  /// Intercalates the editorial carousels (Pépites + API-driven feed
+  /// carousels: « Plus tard c'est maintenant », « Autres angles »…)
+  /// inside the bottom feed continuation, mirroring the legacy FeedScreen
+  /// behaviour. PepitesCarousel and FeedCarousel manage their own
+  /// empty/loading states.
+  Widget _buildIntercalatedFeed(
+    BuildContext context,
+    FluxContinuState state,
+  ) {
+    final contents = state.feedContinu;
+    final intercalations = <({int position, Widget Function() builder})>[];
+
+    if (contents.length > 4) {
+      intercalations.add((
+        position: 4,
+        builder: () => const Padding(
+          key: ValueKey('flux_continu_pepites'),
+          padding: EdgeInsets.only(bottom: 12),
+          child: PepitesCarousel(),
+        ),
+      ));
+    }
+
+    for (final carousel in state.feedCarousels) {
+      if (carousel.items.isEmpty || carousel.position >= contents.length) {
+        continue;
+      }
+      intercalations.add((
+        position: carousel.position,
+        builder: () => Padding(
+          key: ValueKey('flux_continu_carousel_${carousel.carouselType}'),
+          padding: const EdgeInsets.only(bottom: 12),
+          child: FeedCarousel(
+            data: carousel,
+            onArticleTap: (c) => _openArticle(context, c),
+          ),
+        ),
+      ));
+    }
+
+    intercalations.sort((a, b) => a.position.compareTo(b.position));
+
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, listIndex) {
+          int offset = 0;
+          for (final inter in intercalations) {
+            final effective = inter.position + offset;
+            if (listIndex == effective) return inter.builder();
+            if (listIndex > effective) offset++;
+          }
+          final articleIndex = listIndex - offset;
+          if (articleIndex < 0 || articleIndex >= contents.length) return null;
+          final article = contents[articleIndex];
+          return FluxContinuArticleCard(
+            article: article,
+            onTap: () => _openArticle(context, article),
+          );
+        },
+        childCount: contents.length + intercalations.length,
       ),
     );
   }
