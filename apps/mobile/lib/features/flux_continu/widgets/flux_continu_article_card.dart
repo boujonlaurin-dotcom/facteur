@@ -15,6 +15,7 @@ class FluxArticleVM {
   final String title;
   final String? thumbnailUrl;
   final String sourceName;
+  final String? sourceLogoUrl;
   final String? themeLabel;
   final ContentType contentType;
   final int? durationSeconds;
@@ -25,6 +26,7 @@ class FluxArticleVM {
     required this.sourceName,
     required this.contentType,
     this.thumbnailUrl,
+    this.sourceLogoUrl,
     this.themeLabel,
     this.durationSeconds,
   });
@@ -36,6 +38,7 @@ class FluxArticleVM {
         title: article.title,
         thumbnailUrl: article.thumbnailUrl,
         sourceName: article.source?.name ?? 'Inconnu',
+        sourceLogoUrl: article.source?.logoUrl,
         themeLabel: article.source?.theme,
         contentType: article.contentType,
         durationSeconds: article.durationSeconds,
@@ -47,6 +50,7 @@ class FluxArticleVM {
         title: article.title,
         thumbnailUrl: article.thumbnailUrl,
         sourceName: article.source.name,
+        sourceLogoUrl: article.source.logoUrl,
         themeLabel: article.progressionTopic,
         contentType: article.contentType,
         durationSeconds: article.durationSeconds,
@@ -69,6 +73,7 @@ class FluxContinuArticleCard extends StatelessWidget {
   final VoidCallback? onTap;
   final bool isEssentiel;
   final int pressReviewCount;
+  final List<SourceMini> perspectiveSources;
 
   const FluxContinuArticleCard({
     super.key,
@@ -76,12 +81,14 @@ class FluxContinuArticleCard extends StatelessWidget {
     this.onTap,
     this.isEssentiel = false,
     this.pressReviewCount = 0,
+    this.perspectiveSources = const [],
   });
 
   @override
   Widget build(BuildContext context) {
     final vm = FluxArticleVM.from(article);
     final colors = context.facteurColors;
+    final hasThumb = vm.thumbnailUrl != null && vm.thumbnailUrl!.isNotEmpty;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
@@ -127,12 +134,14 @@ class FluxContinuArticleCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      _Thumbnail(
-                        url: vm.thumbnailUrl,
-                        isVideo: _isVideo(vm.contentType),
-                        accent: colors.primary,
-                      ),
+                      if (hasThumb) ...[
+                        const SizedBox(width: 12),
+                        _Thumbnail(
+                          url: vm.thumbnailUrl!,
+                          isVideo: _isVideo(vm.contentType),
+                          accent: colors.primary,
+                        ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -141,6 +150,7 @@ class FluxContinuArticleCard extends StatelessWidget {
                     colors: colors,
                     showPressReview: isEssentiel && pressReviewCount > 0,
                     pressReviewCount: pressReviewCount,
+                    perspectiveSources: perspectiveSources,
                   ),
                 ],
               ),
@@ -156,7 +166,7 @@ class FluxContinuArticleCard extends StatelessWidget {
 }
 
 class _Thumbnail extends StatelessWidget {
-  final String? url;
+  final String url;
   final bool isVideo;
   final Color accent;
 
@@ -190,15 +200,13 @@ class _Thumbnail extends StatelessWidget {
       ),
     );
 
-    if (url == null || url!.isEmpty) return placeholder;
-
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
       child: SizedBox(
         width: 72,
         height: 72,
         child: Image.network(
-          url!,
+          url,
           fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => placeholder,
           loadingBuilder: (_, child, progress) =>
@@ -214,12 +222,14 @@ class _Footer extends StatelessWidget {
   final FacteurColors colors;
   final bool showPressReview;
   final int pressReviewCount;
+  final List<SourceMini> perspectiveSources;
 
   const _Footer({
     required this.vm,
     required this.colors,
     required this.showPressReview,
     required this.pressReviewCount,
+    required this.perspectiveSources,
   });
 
   @override
@@ -236,8 +246,13 @@ class _Footer extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.max,
       children: [
-        _SourceDot(initial: _initial(vm.sourceName), accent: colors.primary,
-            ringColor: colors.surface),
+        _SourceDot(
+          name: vm.sourceName,
+          logoUrl: vm.sourceLogoUrl,
+          accent: colors.primary,
+          ringColor: colors.surface,
+          size: 14,
+        ),
         const SizedBox(width: 6),
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 92),
@@ -276,17 +291,12 @@ class _Footer extends StatelessWidget {
           const Spacer(),
           _PressReviewChip(
             count: pressReviewCount,
+            sources: perspectiveSources,
             colors: colors,
           ),
         ],
       ],
     );
-  }
-
-  String _initial(String name) {
-    final trimmed = name.trim();
-    if (trimmed.isEmpty) return '?';
-    return trimmed.characters.first.toUpperCase();
   }
 
   String _readingTimeLabel(FluxArticleVM vm) {
@@ -300,25 +310,35 @@ class _Footer extends StatelessWidget {
   }
 }
 
+/// Renders a source identity dot: the source's logo when available,
+/// otherwise the source's first letter on a colored circle.
+///
+/// The parchment-tinted ring around the dot is reproduced via a 0-blur
+/// BoxShadow with [ringColor] (the card surface).
 class _SourceDot extends StatelessWidget {
-  final String initial;
+  final String name;
+  final String? logoUrl;
   final Color accent;
   final Color ringColor;
+  final double size;
 
   const _SourceDot({
-    required this.initial,
+    required this.name,
+    required this.logoUrl,
     required this.accent,
     required this.ringColor,
+    this.size = 14,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 14,
-      height: 14,
+    final hasLogo = logoUrl != null && logoUrl!.trim().isNotEmpty;
+    final dot = Container(
+      width: size,
+      height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: accent,
+        color: hasLogo ? Colors.white : accent,
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
@@ -328,14 +348,43 @@ class _SourceDot extends StatelessWidget {
           ),
         ],
       ),
-      child: Text(
-        initial,
-        style: GoogleFonts.dmSans(
-          fontSize: 8,
-          fontWeight: FontWeight.w700,
-          color: Colors.white,
-          height: 1.0,
-        ),
+      child: hasLogo
+          ? ClipOval(
+              child: Image.network(
+                logoUrl!,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _Initial(
+                  name: name,
+                  fontSize: size * 0.55,
+                ),
+              ),
+            )
+          : _Initial(name: name, fontSize: size * 0.55),
+    );
+    return dot;
+  }
+}
+
+class _Initial extends StatelessWidget {
+  final String name;
+  final double fontSize;
+
+  const _Initial({required this.name, required this.fontSize});
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = name.trim();
+    final initial =
+        trimmed.isEmpty ? '?' : trimmed.characters.first.toUpperCase();
+    return Text(
+      initial,
+      style: GoogleFonts.dmSans(
+        fontSize: fontSize,
+        fontWeight: FontWeight.w700,
+        color: Colors.white,
+        height: 1.0,
       ),
     );
   }
@@ -369,38 +418,55 @@ class _ThemePill extends StatelessWidget {
   }
 }
 
+/// Press-review trailing for Essentiel cards: stacks up to 3 source logos
+/// (from [topic.perspectiveSources]) with a 4-px overlap, followed by the
+/// remaining-count chip "+N". Falls back to colored initial-circles when
+/// no logo URL is available for a source.
 class _PressReviewChip extends StatelessWidget {
   final int count;
+  final List<SourceMini> sources;
   final FacteurColors colors;
 
-  const _PressReviewChip({required this.count, required this.colors});
+  const _PressReviewChip({
+    required this.count,
+    required this.sources,
+    required this.colors,
+  });
 
   @override
   Widget build(BuildContext context) {
+    const dotSize = 12.0;
+    const overlap = 4.0;
+    final visible = sources.take(3).toList();
+    final stackWidth = visible.isEmpty
+        ? 0.0
+        : dotSize + (visible.length - 1) * (dotSize - overlap);
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
-          width: 22,
-          height: 12,
-          child: Stack(
-            children: List.generate(3, (i) {
-              return Positioned(
-                left: i * 4.0,
-                child: Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: colors.surfaceElevated,
-                    border: Border.all(color: colors.surface, width: 1),
+        if (visible.isNotEmpty)
+          SizedBox(
+            width: stackWidth,
+            height: dotSize,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                for (var i = 0; i < visible.length; i++)
+                  Positioned(
+                    left: i * (dotSize - overlap),
+                    child: _SourceDot(
+                      name: visible[i].name,
+                      logoUrl: visible[i].logoUrl,
+                      accent: colors.primary,
+                      ringColor: colors.surface,
+                      size: dotSize,
+                    ),
                   ),
-                ),
-              );
-            }),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(width: 4),
+        if (visible.isNotEmpty) const SizedBox(width: 6),
         Text(
           '+$count',
           style: GoogleFonts.dmSans(
