@@ -24,6 +24,24 @@ from app.services.ml.classification_service import SLUG_TO_LABEL
 logger = structlog.get_logger(__name__)
 
 
+ALLOWED_PREFERENCE_KEYS: frozenset[str] = frozenset(
+    {
+        "serein_enabled",
+        "serein_personalized",
+        "sensitive_themes",
+        "digest_format",
+        "objective",
+        "approach",
+        "perspective",
+        "response_style",
+        "content_recency",
+        "format_preference",
+        "personal_goal",
+        "acquisition_source",
+    }
+)
+
+
 class UserService:
     """Service pour la gestion des utilisateurs."""
 
@@ -371,6 +389,13 @@ class UserService:
 
     async def upsert_preference(self, user_id: str, key: str, value: str) -> None:
         """Upsert une préférence clé-valeur pour l'utilisateur."""
+        if key not in ALLOWED_PREFERENCE_KEYS:
+            logger.warning(
+                "upsert_preference_rejected_unknown_key",
+                user_id=user_id,
+                key=key,
+            )
+            raise ValueError(f"preference_key '{key}' is not allowed")
         uid = UUID(user_id)
         result = await self.db.execute(
             select(UserPreference).where(
