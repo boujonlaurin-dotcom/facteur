@@ -9,7 +9,7 @@ import '../models/flux_continu_models.dart';
 /// section accent. A multi-stop progress fill underlines the bar based on
 /// the global scroll progress through the tournée.
 class StickyTabBar extends StatelessWidget {
-  final List<Section> sections;
+  final List<FluxSection> sections;
   final int activeIndex;
   final double progress;
   final ValueChanged<int> onTapTab;
@@ -83,7 +83,7 @@ class StickyTabBar extends StatelessWidget {
 }
 
 class _Tab extends StatelessWidget {
-  final Section section;
+  final FluxSection section;
   final bool isActive;
   final bool isDone;
   final VoidCallback onTap;
