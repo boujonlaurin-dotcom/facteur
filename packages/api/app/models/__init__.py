@@ -21,6 +21,7 @@ from app.models.source import Source, UserSource
 from app.models.source_search_log import SourceSearchLog
 from app.models.subscription import UserSubscription
 from app.models.user import UserInterest, UserPreference, UserProfile, UserStreak
+from app.models.user_favorites import UserFavoriteInterest, UserFavoriteSource
 from app.models.user_letter_progress import UserLetterProgress
 from app.models.user_notification_preferences import UserNotificationPreferences
 from app.models.user_personalization import UserPersonalization
@@ -87,6 +88,9 @@ __all__ = [
     "PerspectiveAnalysis",
     # Custom Topics (Epic 11)
     "UserTopicProfile",
+    # Favoris ordonnés (Story 22.1)
+    "UserFavoriteInterest",
+    "UserFavoriteSource",
     # Lettres du Facteur (Story 19.1)
     "UserLetterProgress",
     # Curation (Backoffice)

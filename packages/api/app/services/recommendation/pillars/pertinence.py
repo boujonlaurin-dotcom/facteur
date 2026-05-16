@@ -5,10 +5,15 @@ Consolide : CoreLayer (theme), ArticleTopicLayer, BehavioralLayer,
 """
 
 from app.models.content import Content
-from app.models.enums import ContentType
+from app.models.enums import ContentType, InterestState
 from app.services.recommendation.pillars.base import BasePillar, PillarContribution
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import ScoringContext
+
+# Story 22.1 — floor appliqué au weight (Thèmes) et au priority_multiplier
+# (Sujets) quand state == favorite. Garantit qu'un favori est toujours boosté
+# même si l'algo ML ne lui a pas (encore) appris un weight élevé.
+_FAVORITE_WEIGHT_FLOOR = 1.5
 
 # Mapping thèmes slugs -> Français
 THEME_LABELS = {
@@ -290,7 +295,17 @@ class PertinencePillar(BasePillar):
         if not effective_theme:
             return 0.0, []
 
+        # Story 22.1 — état déclaré : hidden court-circuite (score=0),
+        # favorite floor le weight pour garantir un boost minimal.
+        state = context.user_interest_states.get(
+            effective_theme, InterestState.FOLLOWED
+        )
+        if state == InterestState.HIDDEN:
+            return 0.0, []
+
         weight = context.user_interest_weights.get(effective_theme, 1.0)
+        if state == InterestState.FAVORITE:
+            weight = max(weight, _FAVORITE_WEIGHT_FLOOR)
         base_theme_score = 50.0
 
         if weight > 1.0:
@@ -325,6 +340,12 @@ class PertinencePillar(BasePillar):
         best_topic_name = ""
 
         for tp in context.user_custom_topics:
+            # Story 22.1 — état déclaré : hidden court-circuite ce Sujet,
+            # favorite floor le multiplier appliqué au bonus de base.
+            tp_state = getattr(tp, "state", InterestState.FOLLOWED)
+            if tp_state == InterestState.HIDDEN:
+                continue
+
             matched = False
             if tp.slug_parent in content_topics:
                 matched = True
@@ -336,9 +357,10 @@ class PertinencePillar(BasePillar):
                         break
 
             if matched:
-                topic_score = (
-                    ScoringWeights.CUSTOM_TOPIC_BASE_BONUS * tp.priority_multiplier
-                )
+                multiplier = tp.priority_multiplier
+                if tp_state == InterestState.FAVORITE:
+                    multiplier = max(multiplier, _FAVORITE_WEIGHT_FLOOR)
+                topic_score = ScoringWeights.CUSTOM_TOPIC_BASE_BONUS * multiplier
                 if topic_score > best_score:
                     best_score = topic_score
                     best_topic_name = tp.topic_name
