@@ -1,54 +1,75 @@
-# PR — fix(veille): empêcher configs sans source + filets historique
+# PR — feat(api): interest state unifié + favorites tables + endpoints (Story 22.1, 1/3)
 
 ## Summary
 
-Coupe à la racine le pipeline qui aboutissait à des digests vides : sans validation, le mobile soumettait des configs avec `source_selections=[]` (filtre interne sur les mocks sans `apiSourceId`), le backend acceptait, et le digest builder rendait `items=[]` instantanément. 4 des 7 livraisons des 14 derniers jours étaient dans cet état (cf. `bug-veille-config-without-sources.md`).
+- **Story 22.1 — PR 1/3 (backend uniquement)** : pose le moteur du système d'intérêts unifié à 4 états (`hidden` / `unfollowed` / `followed` / `favorite`) appliqué aux Thèmes (`user_interests`), Sujets (`user_topic_profiles`) et Sources (`user_sources`). Cap dur à 3 favoris par catégorie (intérêts vs sources, séparés).
+- 6 nouveaux endpoints (`GET/PATCH /api/user/interests`, `POST /api/user/interests/reorder` + symétriques pour `/api/user/sources`). `GET /api/users/top-themes` lit désormais `user_favorite_interests` en priorité (fallback weight desc + filter articles 14j). `GET /api/feed?topic=` accepte un slug OU un UUID custom_topic (lookup scoped user_id).
+- Câblage `state` dans le pilier Pertinence : `hidden` → score 0 (court-circuit) ; `favorite` → weight/multiplier floor à 1.5 (boost garanti). Applique aux Thèmes ET aux Sujets pour cohérence sémantique.
 
-- **A1 — Backend 422 si config sans source** : `VeilleConfigUpsert.source_selections` passe à `min_length=1` (`packages/api/app/schemas/veille.py`) + filet final post-dedup dans `upsert_config` qui rollback puis lève `HTTPException(422)` (`packages/api/app/routers/veille.py`).
-- **A2/A3 — Mobile Step 3** : `realSelectedSourceCount` (sources avec `apiSourceId`) gate le CTA « Continuer » + hint « Sélectionne au moins une source ». La liste mock cliquable du fallback est supprimée (piège UX : tous filtrés au submit) — remplacée par `_SuggestionsUnavailable` (texte sobre + bouton « Réessayer »). Le bouton « + Ajouter une source » reste disponible.
-- **A4 — Mobile 422 ciblé** : `veille_config_screen.dart` distingue `e.statusCode == 422` (message validation) du reste.
-- **B2 — Drop `lastError` UI** : `_DeliveryFailedView` n'affiche plus le texte technique brut (`watchdog_backfill: stuck running …` etc.) ; il reste dans Sentry/logs.
-- **C1 — Watchdog cleanup `*/5 min`** : `cleanup_stuck_running_deliveries` marque FAILED toute row RUNNING > 15 min (`packages/api/app/jobs/veille_generation_job.py`) + Sentry `capture_message` par row + job ajouté au scheduler (`packages/api/app/workers/scheduler.py`).
-- **C2 — PostHog `veille_config_submitted`** avec `source_count` pour mesurer 0% post-A1.
+## Mobile rétrocompat
 
-## Tests
+Le mobile actuel **ignore** les nouveaux endpoints → 0 régression attendue. Les endpoints legacy (`PUT /api/personalization/topics/{id}`, `PUT /api/sources/{id}/weight`) restent intacts pour rétrocompat le temps que le mobile rattrape en PR 22.1.2 + 22.1.3.
 
-- Backend : `pytest tests/routers/test_veille_routes.py tests/test_veille_generation_job.py tests/test_veille_first_delivery_failure.py tests/test_veille_digest_builder.py` → 46/46 OK (2 nouveaux tests 422, 2 nouveaux tests cleanup stuck).
-- Mobile : `flutter test test/features/veille/screens/step3_sources_screen_test.dart` → 2/2 OK (fallback texte + CTA disabled state).
-- Lint : `ruff check` + `ruff format --check` OK sur les fichiers touchés ; `flutter analyze` OK sur les écrans veille touchés.
-- Alembic : 1 head, aucune migration ajoutée.
+`GET /api/users/top-themes` garde la forme `List[TopThemeResponse]` (mobile actuel fait `.take(2)` sur la réponse → toujours OK). Quand des favoris sont déclarés, ils priment ; sinon fallback inchangé.
 
-## Action manuelle PO post-merge — cleanup historique (B1)
+## Migration impact
 
-MCP Supabase est en read-only ; à exécuter via Supabase SQL Editor :
+- **Tables touchées** : `user_interests` (+ colonne `state` + UNIQUE `(user_id, interest_slug)`), `user_topic_profiles` (+ colonne `state`), `user_sources` (+ colonne `state`).
+- **Tables créées** : `user_favorite_interests`, `user_favorite_sources` (PK composite `(user_id, position)` + CHECK position 0..2 garantissant le cap=3 au niveau DB).
+- **Type créé** : `interest_state` (PostgreSQL ENUM, 4 valeurs).
+- **Dedupe défensif** : 39 doublons `(user_id, interest_slug)` confirmés en prod via audit MCP Supabase (`mcp__supabase__execute_sql`). Migration garde la row de plus grand `weight` pour chaque paire avant de poser la UNIQUE constraint. No-op sur DB neuve.
+- **Migration de données conservatrice** : `weight ≤ 0.5` → `hidden` (0 lignes en prod actuellement, défensif pour futur) ; `priority_multiplier = 0.2` → `hidden` (75 sources + 52 topics affectés en prod). **Aucun favori auto-promu** — le user devra les déclarer explicitement via la nouvelle UI (PR 22.1.2).
+- **Downgrade** : reverse complet testé localement (`alembic downgrade -1 && alembic upgrade head` round-trip OK).
 
-```sql
-DELETE FROM veille_deliveries WHERE id IN (
-  'e508b4cd-95f0-47a4-b5fc-5de09893c055',
-  '44a569dd-a72f-41de-970e-98c6d1cda27f',
-  '5902a90e-7126-47bc-9f4c-81ca595dbea9',
-  'f48e57dc-30b6-4ad5-81c0-3b6ae635bf01',
-  '06280b22-de15-4c1b-8219-f11b03106e95',
-  '90adb2e5-da1a-46f6-8fb1-38f6d54ad62c',
-  'ef6e0f7e-1a2d-4341-a698-16baebe238eb'
-);
-```
+## Algo reco — note pour review
 
-Vérification SELECT pré-DELETE déjà faite : 6 succeeded `item_count=0` + 1 failed `watchdog_backfill`. Décision PO : DELETE pur, pas de donnée user de valeur.
+La modification de `_score_behavioral` et `_score_custom_topics` touche un système calibré (V2). Garde-fous :
+- `state=followed` (default sur toutes les rows post-migration) → comportement strictement identique à pré-PR (test `test_followed_default_unchanged_from_legacy`).
+- `state=hidden` → court-circuit total (test `test_hidden_state_short_circuits_behavioral_score`).
+- `state=favorite` + `weight=1.0` → bonus identique à `state=followed` + `weight=1.5` (test `test_favorite_state_floors_weight_to_15`).
 
-Vérification post-fix :
+Aucun user n'a `state=hidden` ou `state=favorite` au moment du merge (seuls 75 sources + 52 topics auto-hidden par la migration sur des `priority_multiplier=0.2`, mais ces rows étaient déjà filtrées en pratique). Impact algo immédiat ≈ nul.
 
-```sql
--- Doit retourner 0 :
-SELECT COUNT(*) FROM veille_configs vc
-WHERE NOT EXISTS (SELECT 1 FROM veille_sources vs WHERE vs.veille_config_id = vc.id);
+## PostHog events
 
--- Doit rester à 0 :
-SELECT COUNT(*) FROM veille_deliveries
-WHERE generation_state='running' AND started_at < NOW() - INTERVAL '15 minutes';
-```
+3 events flat snake_case (convention existante `waitlist_signup`, `veille_config_submitted`) :
+- `interest_state_changed` (kind, target_id, new_state, prev_state)
+- `interest_favorite_reordered` (favorite_count, kind: "interests"|"sources")
+- `interest_cap_blocked` (kind, target_id, current_count)
 
-## Hors scope
+## Cache invalidation
 
-- Stabilisation `/api/veille/suggestions/sources` (cause racine `IdleInTransactionSessionTimeout`, à traiter dans un sprint dédié — A1+A3 protègent l'utilisateur indépendamment).
-- Mapping LLM-slug → taxonomie canonique (déjà tracé dans `bug-veille-empty-digests-and-no-wow.md`).
+Chaque mutation invalide `FEED_CACHE` + `SOURCES_CACHE` pour le user concerné. Pattern hérité de `app/routers/personalization.py:143-144`.
+
+## Test plan
+
+- [x] `pytest -v` complet : **1121 passed, 13 skipped, 0 failures** (incluant les 18 nouveaux tests Story 22.1)
+- [x] `alembic heads` → 1 ligne unique (`22a1_interest_state_favorites`)
+- [x] `alembic upgrade head` sur DB vide OK
+- [x] Round-trip `alembic downgrade -1 && alembic upgrade head` OK
+- [x] Boot serveur OK, 4 nouvelles routes enregistrées
+- [x] Pré-audit Supabase prod : 39 doublons → dedupe défensif intégré dans la migration
+- [ ] CI verte (alembic-smoke + pytest + ruff)
+- [ ] Peer review APPROVED
+
+## Files
+
+**Migration** : `packages/api/alembic/versions/22a1_interest_state_favorites.py`
+
+**Models** : `app/models/enums.py` (+InterestState), `app/models/user.py` (+state UserInterest + UniqueConstraint), `app/models/user_topic_profile.py` (+state), `app/models/source.py` (+state UserSource), `app/models/user_favorites.py` (UserFavoriteInterest + UserFavoriteSource), `app/models/__init__.py`
+
+**Schemas** : `app/schemas/user_interests.py` (request/response + cap validation)
+
+**Service** : `app/services/user_interests_service.py` (UserInterestsService + UserSourcesStateService + exceptions FavoriteCapReached, TargetNotFound, TargetNotFavorite)
+
+**Routers** : `app/routers/user_interests.py`, `app/routers/user_sources_state.py`, `app/routers/users.py` (get_top_themes étendu), `app/routers/feed.py` (topic UUID lookup), `app/main.py` (include_router × 2)
+
+**Reco** : `app/services/recommendation/scoring_engine.py` (+user_interest_states), `app/services/recommendation/pillars/pertinence.py` (câblage 2 pillars), `app/services/recommendation_service.py` (populate)
+
+**Constantes** : `app/constants.py` (`FAVORITE_CAP=3`)
+
+**Tests** : `tests/routers/test_user_interests.py`, `tests/routers/test_user_sources_state.py`, `tests/routers/test_top_themes_with_favorites.py`, `tests/recommendation/test_pertinence_state.py`, `tests/alembic/test_interest_state_migration.py`
+
+**Conftest** : `tests/conftest.py` (CREATE TYPE `interest_state` en pré-requis de `create_all` — sinon `psycopg.errors.UndefinedObject` au boot des tests)
+
+**Story doc** : `docs/stories/core/22.1.systeme-interets-unifie.md` (créée)

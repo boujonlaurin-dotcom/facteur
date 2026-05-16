@@ -3,12 +3,23 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, String, Text, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
+from app.models.enums import InterestState
 
 
 class UserTopicProfile(Base):
@@ -52,6 +63,17 @@ class UserTopicProfile(Base):
     composite_score: Mapped[float] = mapped_column(Float, default=0.0)
     excluded_from_serein: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    state: Mapped[InterestState] = mapped_column(
+        Enum(
+            InterestState,
+            name="interest_state",
+            create_type=False,
+            values_callable=lambda e: [v.value for v in e],
+        ),
+        nullable=False,
+        default=InterestState.FOLLOWED,
+        server_default=InterestState.FOLLOWED.value,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
