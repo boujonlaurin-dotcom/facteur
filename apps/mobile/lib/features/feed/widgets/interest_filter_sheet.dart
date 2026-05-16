@@ -8,6 +8,20 @@ import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../custom_topics/models/topic_models.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
+import '../../my_interests/models/user_interests_state.dart';
+import '../../my_interests/providers/user_interests_provider.dart';
+
+const Map<String, String> _apiSlugToMacroLabel = {
+  'tech': 'Technologie',
+  'science': 'Sciences',
+  'society': 'Société',
+  'politics': 'Politique',
+  'economy': 'Économie',
+  'environment': 'Environnement',
+  'culture': 'Culture',
+  'international': 'Géopolitique',
+  'sport': 'Sport',
+};
 
 class InterestFilterSheet extends ConsumerStatefulWidget {
   final String? currentTopicSlug;
@@ -59,34 +73,39 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
     super.dispose();
   }
 
-  /// Build quick picks: entities first, then high-priority topics.
-  /// Excludes topics whose slugParent matches a macro-theme slug (those appear in the themes grid).
-  List<UserTopicProfile> _getQuickPicks(List<UserTopicProfile> allTopics) {
-    final themeApiSlugs = macroThemeToApiSlug.values.toSet();
-    final nonThemeTopics = allTopics
-        .where((t) => !themeApiSlugs.contains(t.slugParent))
-        .toList();
-
-    final entities = nonThemeTopics
-        .where((t) => t.entityType != null)
-        .toList()
-      ..sort((a, b) => b.compositeScore.compareTo(a.compositeScore));
-
-    final entityIds = entities.map((e) => e.id).toSet();
-    final highPriority = nonThemeTopics
-        .where((t) =>
-            !entityIds.contains(t.id) && t.priorityMultiplier >= 2.0)
-        .toList()
-      ..sort((a, b) => b.priorityMultiplier.compareTo(a.priorityMultiplier));
-
-    return [...entities, ...highPriority];
+  /// Story 22.1 — résout les favoris canoniques sous forme de chips ordonnés.
+  /// Les Thèmes apparaissent comme chip dédié (emoji macro), les Sujets/entités
+  /// comme chip classique. Ordre = `favoriteOrder` du provider (drag user-controlled).
+  List<_FavoriteChipData> _resolveFavoriteChips(
+    List<FavoriteRef> favorites,
+    List<UserTopicProfile> allTopics,
+  ) {
+    final byId = {for (final t in allTopics) t.id: t};
+    final out = <_FavoriteChipData>[];
+    for (final fav in favorites) {
+      switch (fav) {
+        case ThemeFavoriteRef(:final slug):
+          final macro = _apiSlugToMacroLabel[slug] ?? slug;
+          out.add(_FavoriteChipData.theme(
+            slug: slug,
+            label: macro,
+            emoji: getMacroThemeEmoji(macro),
+          ));
+        case CustomTopicFavoriteRef(:final id):
+          final topic = byId[id];
+          if (topic != null) {
+            out.add(_FavoriteChipData.topic(topic: topic));
+          }
+      }
+    }
+    return out;
   }
 
   /// Filter quick picks by search query.
-  List<UserTopicProfile> _filterQuickPicks(List<UserTopicProfile> picks) {
+  List<_FavoriteChipData> _filterFavoriteChips(List<_FavoriteChipData> picks) {
     if (_searchQuery.isEmpty) return picks;
     final q = _searchQuery.toLowerCase();
-    return picks.where((t) => t.name.toLowerCase().contains(q)).toList();
+    return picks.where((c) => c.label.toLowerCase().contains(q)).toList();
   }
 
   /// Filter macro-themes by search query.
@@ -100,6 +119,9 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final topicsAsync = ref.watch(customTopicsProvider);
+    final favorites =
+        ref.watch(userInterestsProvider).value?.favorites ??
+            const <FavoriteRef>[];
 
     return Container(
       constraints: BoxConstraints(
@@ -199,7 +221,9 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
             Flexible(
               child: topicsAsync.when(
                 data: (allTopics) {
-                  final quickPicks = _filterQuickPicks(_getQuickPicks(allTopics));
+                  final allFavoriteChips =
+                      _resolveFavoriteChips(favorites, allTopics);
+                  final quickPicks = _filterFavoriteChips(allFavoriteChips);
                   final filteredThemes = _filterThemes();
                   final topicCounts = countTopicsPerMacroTheme(allTopics);
 
@@ -248,27 +272,36 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
-                            children: quickPicks.map((topic) {
-                              final isEntity = topic.entityType != null;
-                              final selectedSlug = isEntity
-                                  ? (topic.canonicalName ?? topic.name)
-                                  : topic.slugParent;
-                              final isSelected = !widget.currentIsTheme &&
-                                  selectedSlug == widget.currentTopicSlug;
-                              return _QuickPickChip(
-                                topic: topic,
-                                isEntity: isEntity,
+                            children: quickPicks.map((chip) {
+                              final isSelected = chip.isTheme
+                                  ? (widget.currentIsTheme &&
+                                      chip.themeSlug == widget.currentTopicSlug)
+                                  : (!widget.currentIsTheme &&
+                                      chip.selectedSlug ==
+                                          widget.currentTopicSlug);
+                              return _FavoriteChip(
+                                data: chip,
                                 isSelected: isSelected,
                                 colors: colors,
                                 onTap: () {
-                                  widget.onInterestSelected(
-                                    isEntity
-                                        ? topic.canonicalName ?? topic.name
-                                        : topic.slugParent ?? topic.id,
-                                    topic.name,
-                                    isTheme: false,
-                                    isEntity: isEntity,
-                                  );
+                                  if (chip.isTheme) {
+                                    widget.onInterestSelected(
+                                      chip.themeSlug!,
+                                      chip.label,
+                                      isTheme: true,
+                                    );
+                                  } else {
+                                    final topic = chip.topic!;
+                                    final isEntity = topic.entityType != null;
+                                    widget.onInterestSelected(
+                                      isEntity
+                                          ? topic.canonicalName ?? topic.name
+                                          : topic.slugParent ?? topic.id,
+                                      topic.name,
+                                      isTheme: false,
+                                      isEntity: isEntity,
+                                    );
+                                  }
                                   Navigator.of(context).pop();
                                 },
                               );
@@ -363,16 +396,67 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
   }
 }
 
-class _QuickPickChip extends StatelessWidget {
-  final UserTopicProfile topic;
-  final bool isEntity;
+/// Story 22.1 — valeur d'affichage d'un favori (Thème ou Sujet) dans la sheet.
+class _FavoriteChipData {
+  final bool isTheme;
+  final String label;
+  final String emoji;
+  // For themes:
+  final String? themeSlug;
+  // For custom topics:
+  final UserTopicProfile? topic;
+
+  const _FavoriteChipData._({
+    required this.isTheme,
+    required this.label,
+    required this.emoji,
+    this.themeSlug,
+    this.topic,
+  });
+
+  factory _FavoriteChipData.theme({
+    required String slug,
+    required String label,
+    required String emoji,
+  }) =>
+      _FavoriteChipData._(
+        isTheme: true,
+        label: label,
+        emoji: emoji,
+        themeSlug: slug,
+      );
+
+  factory _FavoriteChipData.topic({required UserTopicProfile topic}) {
+    final isEntity = topic.entityType != null;
+    final emoji = isEntity
+        ? getEntityTypeEmoji(topic.entityType)
+        : getMacroThemeEmoji(
+            getTopicMacroTheme(topic.slugParent ?? '') ?? '');
+    return _FavoriteChipData._(
+      isTheme: false,
+      label: topic.name,
+      emoji: emoji,
+      topic: topic,
+    );
+  }
+
+  /// Slug renvoyé au caller via `onInterestSelected` quand c'est un topic.
+  String? get selectedSlug {
+    if (topic == null) return null;
+    return topic!.entityType != null
+        ? (topic!.canonicalName ?? topic!.name)
+        : topic!.slugParent;
+  }
+}
+
+class _FavoriteChip extends StatelessWidget {
+  final _FavoriteChipData data;
   final bool isSelected;
   final FacteurColors colors;
   final VoidCallback onTap;
 
-  const _QuickPickChip({
-    required this.topic,
-    required this.isEntity,
+  const _FavoriteChip({
+    required this.data,
     required this.isSelected,
     required this.colors,
     required this.onTap,
@@ -380,23 +464,15 @@ class _QuickPickChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color bgColor;
-    final Color borderColor;
-    final Color textColor;
+    final Color accent = data.isTheme
+        ? colors.primary
+        : (data.topic?.entityType != null
+            ? Colors.orange.shade600
+            : Colors.green.shade700);
 
-    if (isSelected) {
-      bgColor = isEntity ? Colors.orange.shade600 : Colors.green.shade600;
-      borderColor = bgColor;
-      textColor = Colors.white;
-    } else {
-      bgColor = isEntity ? Colors.orange.shade50 : Colors.green.shade50;
-      borderColor = isEntity ? Colors.orange.shade300 : Colors.green.shade300;
-      textColor = isEntity ? Colors.orange.shade800 : Colors.green.shade800;
-    }
-
-    final emoji = isEntity
-        ? getEntityTypeEmoji(topic.entityType)
-        : getMacroThemeEmoji(getTopicMacroTheme(topic.slugParent ?? '') ?? '');
+    final bgColor = isSelected ? accent : accent.withOpacity(0.10);
+    final borderColor = isSelected ? accent : accent.withOpacity(0.30);
+    final textColor = isSelected ? Colors.white : accent;
 
     return GestureDetector(
       onTap: onTap,
@@ -410,10 +486,12 @@ class _QuickPickChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 14)),
-            const SizedBox(width: 6),
+            if (data.emoji.isNotEmpty) ...[
+              Text(data.emoji, style: const TextStyle(fontSize: 14)),
+              const SizedBox(width: 6),
+            ],
             Text(
-              topic.name,
+              data.label,
               style: TextStyle(
                 color: textColor,
                 fontSize: 13,
