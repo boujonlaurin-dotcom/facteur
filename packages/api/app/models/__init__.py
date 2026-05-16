@@ -2,6 +2,7 @@
 
 from app.models.analytics import AnalyticsEvent
 from app.models.classification_queue import ClassificationQueue
+from app.models.cluster_title_annotation import ClusterTitleAnnotation
 from app.models.collection import Collection, CollectionItem
 from app.models.content import Content, UserContentStatus
 from app.models.curation import CurationAnnotation
@@ -85,6 +86,8 @@ __all__ = [
     "SourceSearchLog",
     # Perspective Analysis Cache
     "PerspectiveAnalysis",
+    # Cluster title annotation cache
+    "ClusterTitleAnnotation",
     # Custom Topics (Epic 11)
     "UserTopicProfile",
     # Lettres du Facteur (Story 19.1)
