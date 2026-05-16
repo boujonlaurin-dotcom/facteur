@@ -14,7 +14,7 @@ import '../../feed/widgets/feed_card.dart';
 import '../../../core/api/providers.dart';
 import '../providers/algorithm_profile_provider.dart';
 import '../providers/custom_topics_provider.dart';
-import '../widgets/topic_priority_slider.dart';
+import '../../../widgets/design/priority_slider.dart';
 
 /// Terracotta accent color for custom topics.
 const Color _terracotta = Color(0xFFE07A5F);
@@ -122,8 +122,9 @@ class TopicExplorerScreen extends ConsumerWidget {
                             ? algoProfile.normalizeWeight(
                                 algoProfile.subtopicWeights[topicSlug]!)
                             : null;
-                        return TopicPrioritySlider(
+                        return PrioritySlider(
                           currentMultiplier: matchedTopic.priorityMultiplier,
+                          labels: const ['Moins', 'Normal', 'Plus'],
                           onChanged: (multiplier) async {
                             try {
                               await ref

@@ -14,6 +14,10 @@ class SourceListItem extends StatelessWidget {
   final ValueChanged<double>? onWeightChanged;
   final VoidCallback? onToggleSubscription;
   final double? usageWeight;
+  /// Story 22.1 — ouvre le picker 4-états (callback optionnel).
+  /// `true` → la source est actuellement en favori (étoile pleine).
+  final VoidCallback? onPickInterestState;
+  final bool isFavorite;
 
   const SourceListItem({
     super.key,
@@ -23,6 +27,8 @@ class SourceListItem extends StatelessWidget {
     this.onToggleMute,
     this.onWeightChanged,
     this.onToggleSubscription,
+    this.onPickInterestState,
+    this.isFavorite = false,
   });
 
   IconData get _typeIcon {
@@ -149,6 +155,23 @@ class SourceListItem extends StatelessWidget {
                   ],
                 ),
               ),
+
+              // Story 22.1 — favori star (always visible when callback provided)
+              if (onPickInterestState != null) ...[
+                IconButton(
+                  onPressed: onPickInterestState,
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  icon: Icon(
+                    isFavorite
+                        ? PhosphorIcons.star(PhosphorIconsStyle.fill)
+                        : PhosphorIcons.star(PhosphorIconsStyle.regular),
+                    color: isFavorite ? colors.primary : colors.textTertiary,
+                    size: 18,
+                  ),
+                ),
+              ],
 
               // Priority slider for trusted, non-muted sources
               if (!isMuted && isTrusted && onWeightChanged != null) ...[

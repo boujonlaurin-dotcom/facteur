@@ -5,9 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/custom_topics/models/topic_models.dart';
 import 'package:facteur/features/custom_topics/providers/custom_topics_provider.dart';
-import 'package:facteur/features/custom_topics/providers/theme_priority_provider.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/widgets/favorite_topic_tabs.dart';
+import 'package:facteur/features/my_interests/models/user_interests_state.dart';
+import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 
 UserTopicProfile _topic({
@@ -55,7 +56,7 @@ void main() {
     test('0 favoris → only "Tous" tab', () {
       final tabs = buildFavoriteTabModelsForTest(
         topics: const [],
-        themePriority: const {},
+        favorites: const [],
         items: const [],
       );
 
@@ -72,21 +73,23 @@ void main() {
           id: 't1',
           name: 'IA santé',
           slugParent: 'ai-health',
-          priorityMultiplier: 2.0,
         ),
         _topic(
           id: 't2',
           name: 'Trump',
           entityType: 'PERSON',
           canonicalName: 'Donald Trump',
-          priorityMultiplier: 2.0,
           compositeScore: 0.8,
         ),
       ];
 
       final tabs = buildFavoriteTabModelsForTest(
         topics: topics,
-        themePriority: const {'Environnement': 2.0},
+        favorites: const [
+          CustomTopicFavoriteRef(id: 't1'),
+          CustomTopicFavoriteRef(id: 't2'),
+          ThemeFavoriteRef(slug: 'environment'),
+        ],
         items: const [],
       );
 
@@ -105,41 +108,35 @@ void main() {
       expect(tabs[3].label, 'Trump');
     });
 
-    test('topics whose slugParent is a macro-theme slug are excluded', () {
-      // slugParent == "tech" matches the Technologie macro-theme apiSlug.
+    test('topic not in favorites → excluded', () {
+      // Le topic est dans la liste mais PAS dans favorites → ne doit pas apparaître.
       final topics = [
         _topic(
           id: 't1',
           name: 'Technologie raw',
           slugParent: 'tech',
-          priorityMultiplier: 2.0,
         ),
       ];
 
       final tabs = buildFavoriteTabModelsForTest(
         topics: topics,
-        themePriority: const {},
+        favorites: const [],
         items: const [],
       );
 
-      // Only "Tous" should appear — the topic was filtered out.
       expect(tabs, hasLength(1));
       expect(tabs.first.kind, FavoriteTabKind.tous);
     });
 
     test('count = unseen items < 48h matching slug', () {
       final items = [
-        // Match topic "ai", recent + unseen → counted
         _content(id: 'c1', topics: ['ai']),
-        // Match topic "ai", recent but seen → NOT counted
         _content(id: 'c2', topics: ['ai'], status: ContentStatus.seen),
-        // Match topic "ai", unseen but too old → NOT counted
         _content(
           id: 'c3',
           topics: ['ai'],
           ageBeforeNow: const Duration(hours: 72),
         ),
-        // Wrong topic → NOT counted
         _content(id: 'c4', topics: ['climate']),
       ];
 
@@ -148,13 +145,12 @@ void main() {
           id: 't1',
           name: 'IA',
           slugParent: 'ai',
-          priorityMultiplier: 2.0,
         ),
       ];
 
       final tabs = buildFavoriteTabModelsForTest(
         topics: topics,
-        themePriority: const {},
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
         items: items,
       );
 
@@ -164,7 +160,6 @@ void main() {
 
       final tousTab =
           tabs.firstWhere((t) => t.kind == FavoriteTabKind.tous);
-      // Tous = unseen + recent: c1 + c4 = 2.
       expect(tousTab.count, 2);
     });
 
@@ -174,13 +169,12 @@ void main() {
           id: 't1',
           name: 'IA',
           slugParent: 'ai',
-          priorityMultiplier: 2.0,
         ),
       ];
 
       final tabs = buildFavoriteTabModelsForTest(
         topics: topics,
-        themePriority: const {},
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
         items: const [],
         selectedTopicSlug: 'ai',
       );
@@ -200,14 +194,16 @@ void main() {
     Widget host({
       required Widget child,
       List<UserTopicProfile> topics = const [],
-      Map<String, double> themePriority = const {},
+      List<FavoriteRef> favorites = const [],
     }) {
       return ProviderScope(
         overrides: [
           customTopicsProvider.overrideWith(() {
             return _StaticCustomTopicsNotifier(topics);
           }),
-          themePriorityProvider.overrideWith((ref) async => themePriority),
+          userInterestsProvider.overrideWith(() {
+            return _StaticUserInterestsNotifier(favorites);
+          }),
         ],
         child: MaterialApp(
           theme: FacteurTheme.lightTheme,
@@ -230,10 +226,8 @@ void main() {
           onAddFavorite: () {},
         ),
       ));
-      // Let async providers resolve.
       await tester.pumpAndSettle();
 
-      // "Tous" is the active tab when no selection is set.
       await tester.tap(find.text('Tous'));
       await tester.pump();
 
@@ -255,7 +249,6 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      // The + pill is the only icon in the row.
       await tester.tap(find.byType(Icon).first);
       await tester.pump();
 
@@ -264,7 +257,6 @@ void main() {
   });
 }
 
-/// Test-only notifier that returns a static list and skips network/cache.
 class _StaticCustomTopicsNotifier extends CustomTopicsNotifier {
   _StaticCustomTopicsNotifier(this._topics);
 
@@ -272,4 +264,19 @@ class _StaticCustomTopicsNotifier extends CustomTopicsNotifier {
 
   @override
   Future<List<UserTopicProfile>> build() async => _topics;
+}
+
+class _StaticUserInterestsNotifier extends UserInterestsNotifier {
+  _StaticUserInterestsNotifier(this._favorites);
+
+  final List<FavoriteRef> _favorites;
+
+  @override
+  Future<UserInterestsState> build() async => UserInterestsState(
+        themes: const [],
+        customTopics: const [],
+        favorites: _favorites,
+        favoriteCount: _favorites.length,
+        favoriteCap: 3,
+      );
 }
