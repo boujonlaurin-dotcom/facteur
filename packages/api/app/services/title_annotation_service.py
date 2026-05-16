@@ -33,8 +33,7 @@ _ENTITY_KEY = "entity"
 
 def _strip_accents(s: str) -> str:
     return "".join(
-        c for c in unicodedata.normalize("NFD", s)
-        if unicodedata.category(c) != "Mn"
+        c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn"
     )
 
 
@@ -122,9 +121,7 @@ class TitleAnnotationService:
             logger.exception("title_annotation.spacy_error", title=title[:80])
             return []
 
-    async def compute_strong_tokens_batch(
-        self, titles: list[str]
-    ) -> list[list[dict]]:
+    async def compute_strong_tokens_batch(self, titles: list[str]) -> list[list[dict]]:
         """Batch-compute tokens for many titles in a single executor hop.
 
         spaCy is sync/CPU-bound — running 8 separate `nlp()` calls on the
@@ -136,9 +133,7 @@ class TitleAnnotationService:
         if not self._nlp:
             return [[] for _ in titles]
         loop = asyncio.get_event_loop()
-        docs = await loop.run_in_executor(
-            None, lambda: list(self._nlp.pipe(titles))
-        )
+        docs = await loop.run_in_executor(None, lambda: list(self._nlp.pipe(titles)))
         return [self._doc_to_tokens(doc) for doc in docs]
 
     def diff_spans(
@@ -183,9 +178,9 @@ class TitleAnnotationService:
         """
         out = ClusterAnnotations()
 
-        cluster_stmt = select(
-            Content.id, Content.title, Content.url
-        ).where(Content.cluster_id == cluster_id)
+        cluster_stmt = select(Content.id, Content.title, Content.url).where(
+            Content.cluster_id == cluster_id
+        )
         cluster_rows = (await db.execute(cluster_stmt)).all()
         if not cluster_rows:
             return out

@@ -759,9 +759,7 @@ async def _attach_highlight_spans(
             if annotations.id_by_url.get(p.get("url") or "") is None:
                 off_cluster_indices.append(i)
                 off_cluster_titles.append(p.get("title") or "")
-        off_cluster_tokens = await svc.compute_strong_tokens_batch(
-            off_cluster_titles
-        )
+        off_cluster_tokens = await svc.compute_strong_tokens_batch(off_cluster_titles)
         tokens_by_index: dict[int, list[dict]] = dict(
             zip(off_cluster_indices, off_cluster_tokens, strict=True)
         )

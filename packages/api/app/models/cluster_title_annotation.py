@@ -35,9 +35,7 @@ class ClusterTitleAnnotation(Base):
     __tablename__ = "cluster_title_annotations"
     __table_args__ = (Index("ix_cta_cluster_id", "cluster_id"),)
 
-    cluster_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True
-    )
+    cluster_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     content_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("contents.id", ondelete="CASCADE"),
