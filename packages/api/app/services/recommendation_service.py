@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.content import Content, UserContentStatus
-from app.models.enums import ContentStatus, ContentType, FeedFilterMode
+from app.models.enums import ContentStatus, ContentType, FeedFilterMode, InterestState
 from app.models.source import Source, UserSource
 from app.models.user import UserProfile, UserSubtopic
 
@@ -283,12 +283,15 @@ class RecommendationService:
 
         user_interests = set()
         user_interest_weights = {}
+        user_interest_states: dict[str, InterestState] = {}
         user_prefs = {}
 
         if user_profile:
             for i in user_profile.interests:
                 user_interests.add(i.interest_slug)
                 user_interest_weights[i.interest_slug] = i.weight
+                # Story 22.1: state déclaré par l'utilisateur (hidden / favorite, etc.)
+                user_interest_states[i.interest_slug] = i.state
 
             for p in user_profile.preferences:
                 user_prefs[p.preference_key] = p.preference_value
@@ -706,6 +709,7 @@ class RecommendationService:
             user_custom_topics=user_custom_topics,
             source_priority_multipliers=source_priority_multipliers,
             subscribed_source_ids=subscribed_source_ids,
+            user_interest_states=user_interest_states,
         )
 
         use_pillars = ScoringWeights.SCORING_VERSION == "pillars_v1"

@@ -91,6 +91,8 @@ from app.routers import (
     sources,
     streaks,
     subscription,
+    user_interests,
+    user_sources_state,
     users,
     veille,
     waitlist,
@@ -483,6 +485,16 @@ app.include_router(
 )
 app.include_router(veille.router, prefix="/api/veille", tags=["Veille"])
 app.include_router(letters.router, prefix="/api/letters", tags=["Letters"])
+app.include_router(
+    user_interests.router,
+    prefix="/api/user/interests",
+    tags=["UserInterests"],
+)
+app.include_router(
+    user_sources_state.router,
+    prefix="/api/user/sources",
+    tags=["UserSourcesState"],
+)
 app.include_router(legal.router, prefix="/legal", tags=["Legal"])
 
 
