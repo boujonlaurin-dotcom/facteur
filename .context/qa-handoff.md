@@ -1,16 +1,29 @@
-# QA Handoff — Story 22.1 (PR finale 22.1.1 + 22.1.2 + 22.1.3) : Système d'intérêts unifié 4-états + favoris + backfill legacy
+# QA Handoff — PR finale unifiée : Système d'intérêts 22.1 + Flux Continu 21.1 V1.8/V2.0
 
-> Empile **backend (22.1.1)** + **mobile (22.1.2)** + **backfill legacy + sync mobile (22.1.3)** sur la branche `22.1.1-backend-interests`. 3 commits, 1 PR finale vers `main`.
+> Reconvergence des deux workstreams (`22.1.x-backend-interests` + `flux-continu-v18-refonte` + WIP V10) sur la branche `22.1.1-backend-interests`. UNE PR vers `main`.
+
+## Vue d'ensemble
+
+Deux features shippées ensemble :
+
+1. **Système d'intérêts 4-états unifié + favoris + backfill (Story 22.1)** — Backend (migration + endpoints + services), mobile screens, sync mobile one-shot.
+2. **Flux Continu V1.8 + finitions V2.0 (Story 21.1)** — Home Flux Continu, hero Explorer, sticky bascule tab bar ↔ filter bar, fold différé entre sessions.
+
+Les deux features sont **indépendantes au runtime** mais le WIP V10 du Flux Continu **consomme** la table `user_favorite_interests` peuplée par la migration 22.1. C'est la raison principale du ship groupé.
+
+## PR associée
+
+À créer via `/go` après ce QA. Cible : `--base main`. Remplace de facto PR #614 (à fermer ou rebaser après merge).
+
+---
+
+# A. Système d'intérêts 22.1 — détail
 
 ## Feature développée
 
 Refonte du système d'intérêts mobile autour d'un modèle 4-états unique (`hidden` / `unfollowed` / `followed` / `favorite`) appliqué à Thèmes, Sujets et Sources. Cap dur de 3 favoris (séparé entre intérêts et sources). Ordre canonique éditable par drag. Le slider 1→3 (`TopicPrioritySlider`) et la SharedPreferences `theme_priority_*` disparaissent. Un seul provider `userInterestsProvider` alimente l'écran « Mes intérêts », la sheet filtre du feed et les onglets favoris du feed.
 
-## PR associée
-
-À créer via `/go` après ce QA. Cible : `--base main`.
-
-## Écrans impactés
+## Écrans impactés (22.1)
 
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
@@ -20,7 +33,7 @@ Refonte du système d'intérêts mobile autour d'un modèle 4-états unique (`hi
 | Onglets favoris du feed | top du Feed | **Modifié** (consume `userInterestsProvider.favorites` au lieu des SharedPrefs) |
 | TopicExplorer / ArticleSheet | `/topic-explorer` + sheet | Inchangés visuellement (juste `TopicPrioritySlider` → `PrioritySlider` direct) |
 
-## Scénarios de test
+## Scénarios de test (22.1)
 
 ### Scénario 1 : 0 favori — état initial
 **Parcours** :
@@ -142,7 +155,7 @@ Refonte du système d'intérêts mobile autour d'un modèle 4-états unique (`hi
 
 **Résultat attendu** : les chips 4-états restent visibles uniquement en mode normal ; en mode Serein la checkbox classique persiste comme avant.
 
-## Critères d'acceptation
+## Critères d'acceptation (22.1)
 
 - [ ] `rg topic_priority_slider apps/mobile/lib` → 0 résultat
 - [ ] `rg themePriorityProvider apps/mobile/lib` → 0 résultat
@@ -156,22 +169,183 @@ Refonte du système d'intérêts mobile autour d'un modèle 4-états unique (`hi
 - [ ] **Post-MeP** : aucun user n'a > 3 favoris (cap respecté)
 - [ ] **Post-MeP** : `state='favorite'` cohérent sur `user_interests` / `user_topic_profiles` pour chaque row dans `user_favorite_interests`
 
-## Zones de risque
+## Zones de risque (22.1)
 
-1. **Mode Serein** : la nouvelle UI ne re-implémente PAS le tri-state checkbox cascadant theme→topics (présent dans l'ancien `ThemeSection`). En mode Serein, chaque sujet a son propre checkbox indépendant. La fonctionnalité « masquer un thème entier en mode Serein » nécessite un tap par sujet. ⚠️ À tester si c'est acceptable produit ou si le tri-state doit être restauré.
+1. **Mode Serein** : la nouvelle UI ne re-implémente PAS le tri-state checkbox cascadant theme→topics. En mode Serein, chaque sujet a son propre checkbox indépendant. ⚠️ À tester si acceptable produit.
 
-2. **Suggestions de thèmes** : la suggestion-block existante (« Suggestions de sujets » par macro-thème, depuis `topicSuggestionsProvider`) est supprimée de l'écran refondu. Pour ajouter un sujet, l'utilisateur passe par le FAB « Sujet personnalisé » ou TopicExplorer. ⚠️ Confirmer que cette régression UX est OK pour 22.1.2 (le hand-off ne mentionnait pas explicitement les suggestions).
+2. **Suggestions de thèmes** : la suggestion-block existante (« Suggestions de sujets » par macro-thème, depuis `topicSuggestionsProvider`) est supprimée de l'écran refondu. Pour ajouter un sujet, l'utilisateur passe par le FAB « Sujet personnalisé » ou TopicExplorer.
 
-3. **Cohérence avec personalizationProvider** : la mise à state=hidden d'un Thème via le nouveau endpoint ne met PAS à jour `personalizationProvider.mutedThemes` (les deux mécanismes coexistent). Si une régression apparaît sur le filtrage du feed côté backend, vérifier `pertinence.py:~293` qui doit déjà router sur `state=hidden`.
+3. **Cohérence avec personalizationProvider** : la mise à state=hidden d'un Thème via le nouveau endpoint ne met PAS à jour `personalizationProvider.mutedThemes` (les deux mécanismes coexistent).
 
-4. **Backend pytest** : non re-vérifié en local par cet agent (Postgres local pas démarré sur port 54322). Le code backend a été produit dans un commit antérieur supposé vert. **À re-tester avant merge avec `supabase start` + `pytest -v tests/routers/test_user_interests.py tests/routers/test_user_sources_state.py`.**
+4. **Backend pytest** : à re-tester avant merge avec `supabase start` + `pytest -v tests/routers/test_user_interests.py tests/routers/test_user_sources_state.py`.
 
-## Dépendances
+## Dépendances (22.1)
 
-- Backend endpoints (déjà en working tree, à committer avec ce PR) :
-  - `GET / PATCH /api/user/interests`
-  - `POST /api/user/interests/reorder`
-  - `GET / PATCH /api/user/sources`
-  - `POST /api/user/sources/reorder`
-- Migration Alembic `22a1_interest_state_favorites` (tables `user_favorite_interests`, `user_favorite_sources` + enum `interest_state` + colonne `state` sur `user_interests`/`user_topic_profiles`/`user_sources`).
-- Aucune dépendance externe ajoutée (`pubspec.yaml` inchangé côté mobile).
+- Backend endpoints : `GET/PATCH /api/user/interests`, `POST /api/user/interests/reorder`, `GET/PATCH /api/user/sources`, `POST /api/user/sources/reorder`
+- Migration Alembic `22a1_interest_state_favorites` (tables `user_favorite_interests`, `user_favorite_sources` + enum `interest_state` + colonne `state` sur 3 tables)
+- Aucune dépendance externe ajoutée (`pubspec.yaml` inchangé côté mobile)
+
+---
+
+# B. Flux Continu 21.1 V1.8/V2.0 — détail
+
+## ⚠️ Décision UX 2026-05-14 — fold différé entre sessions (V2.0)
+
+PO Laurin a signalé : « En scroll-down continu, des "sauts" apparaissent toujours en arrivant à la fin d'une section. » Quatre approches in-session ont échoué (trigger naïf, `userScrollDirection`, `correctBy` post-frame, `SliverList` natif) — toutes laissaient un décalage visible parce qu'un resize de sliver dans un `CustomScrollView` impose mécaniquement de réaligner le contenu en dessous.
+
+**Pivot UX** : abandonner le fold pendant la session active. Le scroll-past est désormais **détecté mais persisté en silence** — la section reste expanded à l'écran jusqu'à ce que le user quitte/relance l'app. Au prochain cold launch, les sections "consommées" lors de la session précédente apparaissent déjà en `FoldedSectionCard` (la transition fold→expanded n'est plus visible parce qu'elle est portée par l'initial layout, pas par un changement en cours de session).
+
+**Critères d'acceptation V2.0** :
+1. Pendant une session active, **aucune section ne se replie automatiquement au scroll** — le user voit toujours le hero plein-format, même après l'avoir scrollé.
+2. Aucun saut visuel, aucun stutter pendant le scroll continu (puisqu'il n'y a plus aucun resize).
+3. Cold-launch d'une nouvelle session (kill + relaunch) → les sections scrollées past lors de la session précédente apparaissent déjà en `FoldedSectionCard` au top du flux.
+4. Tap sur folded card → ré-expansion locale (state-only, non persistée, comme avant).
+5. La closing card « Vous êtes à jour » suit la même logique.
+
+## Feature développée (21.1)
+
+Six ajustements de la home Flux Continu V1.8 : auto-fold des sections scrollées en cartes-titre compactes (persisté par jour), hero « Explorer » qui sépare la zone éditoriale du feed continu, bascule sticky tab bar ↔ filter bar au passage du hero Explorer, Bonnes Nouvelles en dernière position (non-serein) ou en tête (serein), refinements visuels des heros (texte plus large, illustration plus discrète).
+
+## Écrans impactés (21.1)
+
+| Écran | Route | Modifié / Nouveau |
+|-------|-------|-------------------|
+| Flux Continu (home) | `/flux-continu` | Modifié |
+| Feed (legacy) | `/feed` | **Non modifié** — vérifier non-régression |
+
+## Scénarios de test (21.1)
+
+### Scénario 1 : Scroll-past sans fold visible (V2.0)
+**Parcours** :
+1. Aller sur `/flux-continu` (cold launch — état initial)
+2. **Scroll-down continu** rapide, puis un autre lent
+3. Observer chaque hero éditorial au moment où il sort par le haut du viewport
+4. Une fois en bas (closing card), scroller vers le haut pour revoir les heros
+
+**Résultat attendu** :
+- **AUCUN saut visuel**, aucun stutter pendant le scroll — il n'y a plus aucun resize en session
+- Chaque hero **reste en taille plein-format** pendant toute la session (pas de fold automatique)
+- En remontant vers le haut, les heros sont toujours expanded — pas de transition
+
+### Scénario 1bis : Fold différé visible au prochain cold launch
+**Parcours** :
+1. Sur `/flux-continu`, scroll-down jusqu'à la closing card (toutes les sections passées au-dessus du viewport)
+2. **Kill l'app** (ou hard refresh sur web)
+3. Relancer / recharger
+4. Observer l'état initial
+
+**Résultat attendu** :
+- Au top du flux, les sections scrollées-past lors de la session précédente apparaissent **directement en `FoldedSectionCard`** (~28 px chacune)
+- La closing card scrollée-past apparaît également dismissée (cachée) si elle a été scrollée past
+- DevTools localStorage : clé `flutter.flux_continu_folded_${YYYY-MM-DD}` contient la liste des sections persistées
+- Tap sur une folded card → ré-expansion locale (session-only)
+
+### Scénario 2 : Tap sur folded card = ré-expansion locale
+**Parcours** :
+1. Après scénario 1, scroll vers le haut pour revoir les folded cards
+2. Tap sur une carte foldée (ex. Essentiel)
+
+**Résultat attendu** :
+- La carte se ré-expanse en hero complet (banner + cards + Plus de…)
+- Pas de persistance : recharger la page (F5) la laisse foldée à nouveau
+
+### Scénario 3 : Persistance par jour
+**Parcours** :
+1. Scroll past toutes les sections jusqu'à `flux_continu_folded` peuplé pour le jour
+2. Recharger l'app (F5 / cold reload)
+3. Observer l'état initial
+
+**Résultat attendu** :
+- Les sections scrollées avant le reload restent foldées
+- DevTools localStorage : clé `flutter.flux_continu_folded_${YYYY-MM-DD}` contient une liste des noms des sections (`["essentiel", "theme1", ...]`)
+
+### Scénario 4 : Hero Explorer
+**Parcours** :
+1. Aller sur `/flux-continu`, scroller jusqu'après la closing card « FIN DE TOURNÉE »
+2. Observer le 5ᵉ hero « Explorer »
+
+**Résultat attendu** :
+- Banner plein-format, accent brun parchemin `#5D4037`
+- Titre « Explorer », blurb « Tout ce qui est sorti aujourd'hui sur tes sources et tes sujets — à toi de fouiller, à ton rythme. »
+- Illustration `facteur_bike.png` à droite (opacity 0.88, fadée à gauche)
+- Pas d'onglet « Explorer » dans le sticky tab bar
+
+### Scénario 5 : Bascule sticky tab bar ↔ filter bar
+**Parcours** :
+1. Sur `/flux-continu`, scroll progressif depuis le haut
+2. Observer le sticky en haut au passage de chaque zone
+
+**Résultat attendu** :
+- En zone éditoriale (4 heros) : `StickyTabBar` visible avec 4 onglets + progress fill multi-stop
+- Au moment où le hero Explorer atteint le top : cross-fade 120 ms vers `FeedFilterBar` (chips source + chips thème + bouton recherche)
+- Aucune secousse, pas de blink, pas de bar qui disparaît
+- Le backdrop parchemin reste cohérent (même teinte + blur)
+
+### Scénario 6 : Bonnes Nouvelles en dernière position
+**Parcours** :
+1. Toggle serein OFF (état non-serein, par défaut)
+2. Observer l'ordre des sections : Essentiel → Theme1 → Theme2 → **Bonnes Nouvelles**
+3. Vérifier ordre des onglets dans `StickyTabBar` (même ordre)
+4. Toggle serein ON
+5. Observer l'ordre : **Bonnes Nouvelles** → Theme1 → Theme2 → Essentiel
+
+**Résultat attendu** : ordre cohérent dans les sections **et** dans les tabs sticky.
+
+### Scénario 7 : Refinements visuels heros
+**Parcours** :
+1. Aller sur `/flux-continu`
+2. Comparer chaque hero (Essentiel, Bonnes, Theme1, Theme2) à la version précédente
+
+**Résultat attendu** :
+- Texte titre/blurb un peu plus large (factor 0.64 vs 0.58)
+- Illustration plus petite (120 px vs 136 px) et plus discrète (opacity 0.88)
+- Fade gauche plus net (stop 0.62 vs 0.55) — l'illustration sent moins « centrale »
+
+### Scénario 8 : Non-régression FeedScreen
+**Parcours** :
+1. Aller sur `/feed`
+2. Vérifier filter bar complète (search + chips + FavoriteTopicTabs)
+3. Sélectionner un thème, taper une recherche
+
+**Résultat attendu** : comportement identique à avant — la filter bar legacy n'a pas été touchée.
+
+### Scénario 9 : Couplage Flux Continu ↔ favoris 22.1 (V10 WIP)
+**Parcours** :
+1. Avoir ≥ 1 favori en `user_favorite_interests` (via backfill 22.1 ou sync mobile)
+2. Aller sur `/flux-continu` cold launch
+3. Observer les sections « Theme1 » et « Theme2 »
+
+**Résultat attendu** :
+- Les heros Theme1/Theme2 correspondent aux 2 premiers favoris (ordre canonique du provider, pas weight ML)
+- Si seulement 1 favori → Theme2 affiche fallback (à valider : skip section ou montrer top weight ML ?)
+- Si 0 favori (très improbable post-backfill) → fallback complet sur l'ancienne logique top weight ML
+
+## Critères d'acceptation (21.1)
+
+- [ ] Sections **NE se foldent PAS** pendant la session active (V2.0 : fold différé)
+- [ ] Tap sur folded card ré-expanse en local (state-only, non persistée)
+- [ ] Cold launch nouveau jour : sections re-dépliées (clé `flux_continu_folded_<date>` purgée)
+- [ ] Cold launch même jour après scroll-past : sections apparaissent déjà foldées
+- [ ] Hero « Explorer » inséré entre closing et feed continu avec illustration bike
+- [ ] Sticky cross-fade entre tab bar et filter bar au passage d'Explorer
+- [ ] Mode non-serein : ordre `[Essentiel, T1, T2, Bonnes]`
+- [ ] Mode serein : ordre `[Bonnes, T1, T2, Essentiel]`
+- [ ] Refinements banner (text width, illustration size, opacity, fade stops)
+- [ ] `flutter test test/features/flux_continu/` vert (20/20)
+- [ ] `flutter analyze` sur fichiers touchés sans issue
+- [ ] FeedScreen `/feed` fonctionne identique à avant
+- [ ] Couplage Flux Continu ↔ favoris : T1/T2 lisent `user_favorite_interests`
+
+## Zones de risque (21.1)
+
+- **Auto-fold idempotence** : `markScrolledPast` doit être idempotent (ne pas spammer SharedPreferences à chaque tick de scroll). Validé par la garde `if (current.folded[kind] == true) return`.
+- **Sticky bascule** : si le user scroll vite, l'`AnimatedSwitcher` doit cross-fader proprement.
+- **Filter bar dans FluxContinu** : `FeedFilterBar` drive `feedProvider` global. Les changements de filtre n'affectent **pas** le `feedContinu` rendu. Limitation connue, à valider en QA.
+- **Persistance SharedPreferences (web)** : sur Flutter web, `SharedPreferences` est backé par `localStorage`. La clé apparaît avec un préfixe `flutter.`.
+- **Couplage T1/T2 ↔ favoris** : le WIP V10 introduit cette dépendance. Si l'user a 0 favori (cas edge post-backfill), définir le comportement.
+
+## Dépendances (21.1)
+
+- Backend : aucun changement (`/api/digest/both`, `/api/users/top-themes`, `/api/feed` inchangés au strict). Le WIP V10 lit `user_favorite_interests` via les endpoints 22.1.
+- Asset : `apps/mobile/assets/notifications/facteur_bike.png` + `facteur_veille.png` (présents dans les commits cherry-pickés)
+- Package : `shared_preferences ^2.5.4` (déjà déclaré)

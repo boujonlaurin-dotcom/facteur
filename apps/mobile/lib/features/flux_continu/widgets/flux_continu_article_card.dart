@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../config/theme.dart';
+import '../../../config/topic_labels.dart';
+import '../../../widgets/article_preview_modal.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
+import '../../feed/widgets/swipe_to_open_card.dart';
+import '../../sources/models/source_model.dart';
 
 /// Unified view-model that hides the DigestItem vs Content split from the
 /// rendering layer. Both types carry the fields needed to display a Flux
@@ -20,6 +25,7 @@ class FluxArticleVM {
   final String? themeLabel;
   final ContentType contentType;
   final int? durationSeconds;
+  final DateTime? publishedAt;
 
   const FluxArticleVM({
     required this.contentId,
@@ -30,6 +36,7 @@ class FluxArticleVM {
     this.sourceLogoUrl,
     this.themeLabel,
     this.durationSeconds,
+    this.publishedAt,
   });
 
   factory FluxArticleVM.from(Object article) {
@@ -40,9 +47,13 @@ class FluxArticleVM {
         thumbnailUrl: article.thumbnailUrl,
         sourceName: article.source?.name ?? 'Inconnu',
         sourceLogoUrl: article.source?.logoUrl,
-        themeLabel: article.source?.theme,
+        themeLabel: (article.source?.theme != null &&
+                article.source!.theme!.isNotEmpty)
+            ? getTopicLabel(article.source!.theme!)
+            : null,
         contentType: article.contentType,
         durationSeconds: article.durationSeconds,
+        publishedAt: article.publishedAt,
       );
     }
     if (article is Content) {
@@ -55,6 +66,7 @@ class FluxArticleVM {
         themeLabel: article.progressionTopic,
         contentType: article.contentType,
         durationSeconds: article.durationSeconds,
+        publishedAt: article.publishedAt,
       );
     }
     throw ArgumentError('Unsupported article type: ${article.runtimeType}');
@@ -72,6 +84,9 @@ class FluxArticleVM {
 class FluxContinuArticleCard extends StatelessWidget {
   final Object article;
   final VoidCallback? onTap;
+  final VoidCallback? onSwipeDismiss;
+  final bool enableSwipeHint;
+  final VoidCallback? onSwipeHintComplete;
   final bool isEssentiel;
   final int pressReviewCount;
   final List<SourceMini> perspectiveSources;
@@ -80,6 +95,9 @@ class FluxContinuArticleCard extends StatelessWidget {
     super.key,
     required this.article,
     this.onTap,
+    this.onSwipeDismiss,
+    this.enableSwipeHint = false,
+    this.onSwipeHintComplete,
     this.isEssentiel = false,
     this.pressReviewCount = 0,
     this.perspectiveSources = const [],
@@ -91,79 +109,134 @@ class FluxContinuArticleCard extends StatelessWidget {
     final colors = context.facteurColors;
     final hasThumb = vm.thumbnailUrl != null && vm.thumbnailUrl!.isNotEmpty;
 
-    return Padding(
+    Widget card = Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Material(
         color: colors.surface,
         borderRadius: BorderRadius.circular(12),
         elevation: 0,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Ink(
-            decoration: BoxDecoration(
-              color: colors.surface,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          vm.title,
-                          style: GoogleFonts.dmSans(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w600,
-                            height: 1.3,
-                            letterSpacing: -0.15,
-                            color: colors.textPrimary,
-                          ),
-                          maxLines: 4,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (hasThumb) ...[
-                        const SizedBox(width: 12),
-                        _Thumbnail(
-                          url: vm.thumbnailUrl!,
-                          isVideo: _isVideo(vm.contentType),
-                          accent: colors.primary,
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  _Footer(
-                    vm: vm,
-                    colors: colors,
-                    showPressReview: isEssentiel && pressReviewCount > 0,
-                    pressReviewCount: pressReviewCount,
-                    perspectiveSources: perspectiveSources,
+        child: GestureDetector(
+          onLongPressStart: (_) =>
+              ArticlePreviewOverlay.show(context, articleToContent(article)),
+          onLongPressMoveUpdate: (details) => ArticlePreviewOverlay.updateScroll(
+              details.localOffsetFromOrigin.dy),
+          onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Ink(
+              decoration: BoxDecoration(
+                color: colors.surface,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
                   ),
                 ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            vm.title,
+                            style: GoogleFonts.dmSans(
+                              fontSize: 17.5,
+                              fontWeight: FontWeight.w600,
+                              height: 1.3,
+                              letterSpacing: -0.15,
+                              color: colors.textPrimary,
+                            ),
+                            maxLines: 5,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (hasThumb) ...[
+                          const SizedBox(width: 12),
+                          _Thumbnail(
+                            url: vm.thumbnailUrl!,
+                            isVideo: _isVideo(vm.contentType),
+                            accent: colors.primary,
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    _Footer(
+                      vm: vm,
+                      colors: colors,
+                      showPressReview: isEssentiel && pressReviewCount > 0,
+                      pressReviewCount: pressReviewCount,
+                      perspectiveSources: perspectiveSources,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
       ),
     );
+
+    if (onTap != null) {
+      card = SwipeToOpenCard(
+        onSwipeOpen: onTap!,
+        onSwipeDismiss: onSwipeDismiss,
+        enableHintAnimation: enableSwipeHint,
+        onHintAnimationComplete: onSwipeHintComplete,
+        child: card,
+      );
+    }
+
+    return card;
   }
 
   bool _isVideo(ContentType type) =>
       type == ContentType.video || type == ContentType.youtube;
+}
+
+/// Adapter producing a synthetic [Content] suitable for [ArticlePreviewOverlay]
+/// or [TopicChip.showArticleSheet] regardless of the source type. [DigestItem]
+/// carries every field needed by the preview except the rich [Source] object —
+/// a minimal [Source] is built from its [SourceMini]. Exposed as top-level so
+/// the screen can reuse it when resolving an inline-feedback chip on a digest
+/// lead.
+Content articleToContent(Object article) {
+  if (article is Content) return article;
+  if (article is DigestItem) {
+    final src = article.source;
+    return Content(
+      id: article.contentId,
+      title: article.title,
+      url: article.url,
+      thumbnailUrl: article.thumbnailUrl,
+      description: article.description,
+      htmlContent: article.htmlContent,
+      contentType: article.contentType,
+      durationSeconds: article.durationSeconds,
+      publishedAt: article.publishedAt ?? DateTime.now(),
+      source: Source(
+        id: src?.id ?? '',
+        name: src?.name ?? 'Inconnu',
+        type: SourceType.article,
+        theme: src?.theme,
+        logoUrl: src?.logoUrl,
+      ),
+      topics: article.topics,
+      isPaid: article.isPaid,
+      isSaved: article.isSaved,
+      isLiked: article.isLiked,
+    );
+  }
+  throw ArgumentError('Unsupported article type: ${article.runtimeType}');
 }
 
 class _Thumbnail extends StatelessWidget {
@@ -276,7 +349,7 @@ class _Footer extends StatelessWidget {
             size: 12, color: colors.textTertiary),
         const SizedBox(width: 3),
         Text(
-          _readingTimeLabel(vm),
+          _publishedAtShort(vm.publishedAt),
           style: GoogleFonts.dmSans(
             fontSize: 12,
             fontWeight: FontWeight.w500,
@@ -296,14 +369,12 @@ class _Footer extends StatelessWidget {
     );
   }
 
-  String _readingTimeLabel(FluxArticleVM vm) {
-    if (vm.contentType == ContentType.video ||
-        vm.contentType == ContentType.youtube ||
-        vm.contentType == ContentType.audio) {
-      final s = vm.durationSeconds;
-      if (s != null && s > 0) return '${(s / 60).ceil()} min';
-    }
-    return '5 min';
+  String _publishedAtShort(DateTime? date) {
+    if (date == null) return 'récent';
+    return timeago
+        .format(date, locale: 'fr_short')
+        .replaceAll('il y a ', '')
+        .trim();
   }
 }
 

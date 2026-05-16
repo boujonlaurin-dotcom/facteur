@@ -106,6 +106,18 @@ class FluxContinuState {
   final List<FeedCarouselData> feedCarousels;
   final bool isSerene;
   final Map<SectionKind, bool> moreOpen;
+  // Sections the user has fully scrolled past (rendered as compact title
+  // cards). Persisted day-by-day so revisiting later in the day keeps the
+  // editorial zone collapsed; reset the next day when fresh content arrives.
+  final Map<SectionKind, bool> folded;
+  // Whether the closing card "Vous êtes à jour" has been dismissed for the
+  // day — either via the Continuer/Refermer buttons or by scrolling past it.
+  // Persisted day-by-day, mirroring [folded].
+  final bool closingDismissed;
+  // Content ids the user has swipe-dismissed during this session. Cards with
+  // ids in this set are filtered out before render so the swipe-away feels
+  // instant; the hide API call is fire-and-forget in the provider.
+  final Set<String> dismissedIds;
   final bool isLoading;
   final Object? error;
 
@@ -115,6 +127,9 @@ class FluxContinuState {
     this.feedCarousels = const [],
     this.isSerene = false,
     this.moreOpen = const {},
+    this.folded = const {},
+    this.closingDismissed = false,
+    this.dismissedIds = const {},
     this.isLoading = true,
     this.error,
   });
@@ -125,6 +140,9 @@ class FluxContinuState {
     List<FeedCarouselData>? feedCarousels,
     bool? isSerene,
     Map<SectionKind, bool>? moreOpen,
+    Map<SectionKind, bool>? folded,
+    bool? closingDismissed,
+    Set<String>? dismissedIds,
     bool? isLoading,
     Object? error,
     bool clearError = false,
@@ -135,10 +153,23 @@ class FluxContinuState {
       feedCarousels: feedCarousels ?? this.feedCarousels,
       isSerene: isSerene ?? this.isSerene,
       moreOpen: moreOpen ?? this.moreOpen,
+      folded: folded ?? this.folded,
+      closingDismissed: closingDismissed ?? this.closingDismissed,
+      dismissedIds: dismissedIds ?? this.dismissedIds,
       isLoading: isLoading ?? this.isLoading,
       error: clearError ? null : (error ?? this.error),
     );
   }
 
   bool isOpen(SectionKind kind) => moreOpen[kind] ?? false;
+  bool isFolded(SectionKind kind) => folded[kind] ?? false;
+
+  /// Slugs of the two `FeedThemeSection` (Veille #1, Veille #2) that make up
+  /// today's tournée — used by the Explorer filter bar to hide chips for
+  /// themes the user has already been served above.
+  List<String> get tourneeThemeSlugs => sections
+      .whereType<FeedThemeSection>()
+      .map((s) => s.themeSlug)
+      .whereType<String>()
+      .toList(growable: false);
 }

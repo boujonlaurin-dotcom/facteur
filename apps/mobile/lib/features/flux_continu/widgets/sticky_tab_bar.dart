@@ -1,18 +1,16 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../models/flux_continu_models.dart';
+import 'sticky_backdrop.dart';
 
 /// Sticky tab bar revealed once the user scrolls past the AppBar threshold.
 ///
 /// Layout per V6 maquette :
 /// - parchment-tinted backdrop with a 14px blur (saturate 140%),
-/// - "sticky-head" row : "Bonne tournée" + fire icon (no progress count
-///   in V6 — the textual progress was dropped),
+/// - "sticky-head" row : zone title ("Les Actus du jour" in the editorial
+///   zone, "Explorer" in the Explorer zone),
 /// - horizontal tabs with section dot, label, done strike-through, and
 ///   an underline tinted with the active section's accent,
 /// - 4-px progress track with a 4-stop gradient fill (essentiel → bonnes
@@ -22,6 +20,7 @@ class StickyTabBar extends StatelessWidget {
   final int activeIndex;
   final double progress;
   final ValueChanged<int> onTapTab;
+  final ScrollController? tabsController;
 
   const StickyTabBar({
     super.key,
@@ -29,71 +28,55 @@ class StickyTabBar extends StatelessWidget {
     required this.activeIndex,
     required this.progress,
     required this.onTapTab,
+    this.tabsController,
   });
 
   @override
   Widget build(BuildContext context) {
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: Container(
-          decoration: BoxDecoration(
-            color: const Color.fromRGBO(242, 232, 213, 0.92),
-            border: const Border(
-              bottom: BorderSide(
-                color: Color.fromRGBO(0, 0, 0, 0.06),
-                width: 1,
-              ),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.18),
-                blurRadius: 12,
-                spreadRadius: -6,
-                offset: const Offset(0, 2),
-              ),
-            ],
+    return StickyBackdrop(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const StickyHead(),
+          _TabsRow(
+            sections: sections,
+            activeIndex: activeIndex,
+            onTapTab: onTapTab,
+            controller: tabsController,
           ),
-          child: SafeArea(
-            bottom: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const _StickyHead(),
-                _TabsRow(
-                  sections: sections,
-                  activeIndex: activeIndex,
-                  onTapTab: onTapTab,
-                ),
-                SizedBox(
-                  height: 4,
-                  child: CustomPaint(
-                    painter: _ProgressPainter(
-                      progress: progress.clamp(0.0, 1.0),
-                      gradient: const [
-                        Color(0xFFD35400),
-                        Color(0xFFC2185B),
-                        Color(0xFF2C3E50),
-                        Color(0xFF6C3483),
-                      ],
-                      glow: const Color.fromRGBO(211, 84, 0, 0.35),
-                      trackColor: const Color.fromRGBO(0, 0, 0, 0.06),
-                    ),
-                    child: const SizedBox.expand(),
-                  ),
-                ),
-              ],
+          SizedBox(
+            height: 4,
+            child: CustomPaint(
+              painter: _ProgressPainter(
+                progress: progress.clamp(0.0, 1.0),
+                gradient: const [
+                  Color(0xFFD35400),
+                  Color(0xFFC2185B),
+                  Color(0xFF2C3E50),
+                  Color(0xFF6C3483),
+                ],
+                glow: const Color.fromRGBO(211, 84, 0, 0.35),
+                trackColor: const Color.fromRGBO(0, 0, 0, 0.06),
+              ),
+              child: const SizedBox.expand(),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
 }
 
-class _StickyHead extends StatelessWidget {
-  const _StickyHead();
+/// Top row of the sticky overlay — a single Fraunces label that names the
+/// current zone of the Flux Continu screen. Shared between the editorial
+/// sticky ([StickyTabBar]) and the Explorer sticky (`_ExplorerSticky` in
+/// `flux_continu_screen.dart`) so the two surfaces feel like the same bar
+/// changing its caption.
+class StickyHead extends StatelessWidget {
+  final String title;
+
+  const StickyHead({super.key, this.title = 'Les Actus du jour'});
 
   @override
   Widget build(BuildContext context) {
@@ -102,11 +85,8 @@ class _StickyHead extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: Row(
         children: [
-          Icon(PhosphorIconsFill.fire,
-              size: 14, color: colors.primary),
-          const SizedBox(width: 6),
           Text(
-            'Bonne tournée',
+            title,
             style: GoogleFonts.fraunces(
               fontSize: 14,
               fontWeight: FontWeight.w700,
@@ -123,11 +103,13 @@ class _TabsRow extends StatelessWidget {
   final List<FluxSection> sections;
   final int activeIndex;
   final ValueChanged<int> onTapTab;
+  final ScrollController? controller;
 
   const _TabsRow({
     required this.sections,
     required this.activeIndex,
     required this.onTapTab,
+    this.controller,
   });
 
   @override
@@ -135,6 +117,7 @@ class _TabsRow extends StatelessWidget {
     return SizedBox(
       height: 44,
       child: ListView.separated(
+        controller: controller,
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
         itemCount: sections.length,
