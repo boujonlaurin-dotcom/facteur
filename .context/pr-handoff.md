@@ -1,75 +1,133 @@
-# PR — feat(api): interest state unifié + favorites tables + endpoints (Story 22.1, 1/3)
+# PR — feat(interests): système 4-états unifié + favoris + backfill legacy (Story 22.1)
+
+> **PR finale unique** regroupant les 3 commits de la story 22.1 :
+> 1. `ae59c924` — backend interest state + favorites tables + endpoints
+> 2. `2dee657a` — écrans intérêts/sources sur le moteur 4-états
+> 3. `<HEAD>` — backfill favoris legacy + sync mobile one-shot
+>
+> Cible : `--base main` (staging déprécié).
 
 ## Summary
 
-- **Story 22.1 — PR 1/3 (backend uniquement)** : pose le moteur du système d'intérêts unifié à 4 états (`hidden` / `unfollowed` / `followed` / `favorite`) appliqué aux Thèmes (`user_interests`), Sujets (`user_topic_profiles`) et Sources (`user_sources`). Cap dur à 3 favoris par catégorie (intérêts vs sources, séparés).
-- 6 nouveaux endpoints (`GET/PATCH /api/user/interests`, `POST /api/user/interests/reorder` + symétriques pour `/api/user/sources`). `GET /api/users/top-themes` lit désormais `user_favorite_interests` en priorité (fallback weight desc + filter articles 14j). `GET /api/feed?topic=` accepte un slug OU un UUID custom_topic (lookup scoped user_id).
-- Câblage `state` dans le pilier Pertinence : `hidden` → score 0 (court-circuit) ; `favorite` → weight/multiplier floor à 1.5 (boost garanti). Applique aux Thèmes ET aux Sujets pour cohérence sémantique.
+- **Refonte complète du système d'intérêts** autour d'un unique modèle 4-états (`hidden` / `unfollowed` / `followed` / `favorite`) appliqué aux Thèmes, Sujets et Sources. Cap dur à 3 favoris par catégorie (intérêts vs sources, séparés). Ordre canonique éditable par drag.
+- **Backend** : enum `interest_state`, 2 nouvelles tables (`user_favorite_interests`, `user_favorite_sources`), 6 nouveaux endpoints, câblage `state` dans la Pertinence (`hidden`=0 ; `favorite`=floor 1.5).
+- **Mobile** : suppression du slider 1→3 + SharedPrefs `theme_priority_*`, nouveau `userInterestsProvider` (source de vérité unique), écrans Mes intérêts/Mes sources refondus, sheet feed reconnectée sur `favorites`.
+- **Backfill + sync legacy (commit 3)** : la migration peuple `user_favorite_interests` pour 100 % des users existants (cible ≥ 2 favoris, cap 3) ; au 1er lancement mobile post-MeP, un service silencieux promeut les Thèmes 3/3 hérités vers les favoris backend puis purge les SharedPrefs.
 
-## Mobile rétrocompat
+## Changements (commit 3 — détail)
 
-Le mobile actuel **ignore** les nouveaux endpoints → 0 régression attendue. Les endpoints legacy (`PUT /api/personalization/topics/{id}`, `PUT /api/sources/{id}/weight`) restent intacts pour rétrocompat le temps que le mobile rattrape en PR 22.1.2 + 22.1.3.
+### Backend
 
-`GET /api/users/top-themes` garde la forme `List[TopThemeResponse]` (mobile actuel fait `.take(2)` sur la réponse → toujours OK). Quand des favoris sont déclarés, ils priment ; sinon fallback inchangé.
+- `app/constants.py` : ajout `MIN_BACKFILL_FAVORITES=2` et `CANONICAL_THEME_SLUGS` (9 macro-thèmes).
+- `alembic/versions/22a1_interest_state_favorites.py` : extension `upgrade()` avec CTE backfill SQL pur (idempotent via `ON CONFLICT DO NOTHING`) qui construit jusqu'à 3 favoris/user dans cet ordre :
+  1. Sujets custom à `priority_multiplier=2.0`
+  2. Top weight ML Thèmes (skip ceux passés `hidden` à l'étape précédente)
+  3. Fallback `tech` + `science` pour les users sans aucun signal
+  - Ensuite `UPDATE state='favorite'` sur les rows sources + `INSERT user_interests` pour les fallback themes.
+- `tests/alembic/test_interest_state_migration.py` : 5 nouveaux tests (promo Sujet 2.0, complétion à min 2, fallback canonical, cap 3, idempotence re-run).
 
-## Migration impact
+### Mobile
 
-- **Tables touchées** : `user_interests` (+ colonne `state` + UNIQUE `(user_id, interest_slug)`), `user_topic_profiles` (+ colonne `state`), `user_sources` (+ colonne `state`).
-- **Tables créées** : `user_favorite_interests`, `user_favorite_sources` (PK composite `(user_id, position)` + CHECK position 0..2 garantissant le cap=3 au niveau DB).
-- **Type créé** : `interest_state` (PostgreSQL ENUM, 4 valeurs).
-- **Dedupe défensif** : 39 doublons `(user_id, interest_slug)` confirmés en prod via audit MCP Supabase (`mcp__supabase__execute_sql`). Migration garde la row de plus grand `weight` pour chaque paire avant de poser la UNIQUE constraint. No-op sur DB neuve.
-- **Migration de données conservatrice** : `weight ≤ 0.5` → `hidden` (0 lignes en prod actuellement, défensif pour futur) ; `priority_multiplier = 0.2` → `hidden` (75 sources + 52 topics affectés en prod). **Aucun favori auto-promu** — le user devra les déclarer explicitement via la nouvelle UI (PR 22.1.2).
-- **Downgrade** : reverse complet testé localement (`alembic downgrade -1 && alembic upgrade head` round-trip OK).
+- `apps/mobile/lib/features/my_interests/services/interests_sync_service.dart` : service one-shot lit les `SharedPreferences.theme_priority_<MacroLabel>` (legacy), promeut chaque thème à `multiplier >= 2.0` en favori via `setInterestState`, absorbe `FavoriteCapReachedException` silencieusement, purge toutes les clés legacy + pose le flag `interests_v2_legacy_synced`.
+- `apps/mobile/lib/app.dart` : `ref.watch(interestsSyncProvider)` dans `FacteurApp.build()` (pattern miroir d'`onboardingSyncProvider`).
+- `test/features/my_interests/services/interests_sync_service_test.dart` : 5 tests (promo, idempotence, cap absorption, purge prefs, macro-label inconnu).
 
-## Algo reco — note pour review
+## Mobile rétrocompat & sécurité du staged rollout
 
-La modification de `_score_behavioral` et `_score_custom_topics` touche un système calibré (V2). Garde-fous :
-- `state=followed` (default sur toutes les rows post-migration) → comportement strictement identique à pré-PR (test `test_followed_default_unchanged_from_legacy`).
-- `state=hidden` → court-circuit total (test `test_hidden_state_short_circuits_behavioral_score`).
-- `state=favorite` + `weight=1.0` → bonus identique à `state=followed` + `weight=1.5` (test `test_favorite_state_floors_weight_to_15`).
+Les endpoints legacy (`PUT /api/personalization/topics/{id}`, `PUT /api/sources/{id}/weight`, `GET /api/users/top-themes`) **restent intacts** : un client mobile pré-22.1.2 continue de fonctionner sans cassure pendant la fenêtre de roll-out. Le sync mobile s'exécute uniquement après auth, fire-and-forget, et est silencieux sur toute erreur (404, 422, 5xx).
 
-Aucun user n'a `state=hidden` ou `state=favorite` au moment du merge (seuls 75 sources + 52 topics auto-hidden par la migration sur des `priority_multiplier=0.2`, mais ces rows étaient déjà filtrées en pratique). Impact algo immédiat ≈ nul.
+## Migration impact (rappel)
+
+- **Tables touchées** : `user_interests` (+ `state` + UNIQUE `(user_id, interest_slug)`), `user_topic_profiles` (+ `state`), `user_sources` (+ `state`).
+- **Tables créées** : `user_favorite_interests`, `user_favorite_sources`.
+- **Type créé** : `interest_state` (ENUM 4 valeurs).
+- **Dedupe défensif** : 39 doublons `(user_id, interest_slug)` purgés (garde la row de plus grand weight).
+- **Migration de données** : `weight ≤ 0.5` → `hidden` ; `priority_multiplier = 0.2` → `hidden` ; **backfill** des favoris pour tous les users existants.
+- **Downgrade** : `DROP TABLE` cascade tout, round-trip testé.
+
+## Plan rollback exécutable
+
+1. **Si la migration plante au boot Railway** :
+   - Revert la PR sur GitHub → redéploie le commit précédent (chaîne pointe sur `ad01`).
+   - Cas extrême : SSH pod prod + `alembic downgrade -1` manuel.
+2. **Si la migration passe mais comportement cassé** :
+   - Revert la PR. Les endpoints legacy intacts maintiennent les anciens clients mobile.
+   - Le nouveau mobile (publié après la PR) gère gracieusement les 5xx via caches existants.
+   - Les favoris backfillés sont droppés en cascade par le downgrade (table détruite).
+3. **Intégrité post-rollback** :
+   ```sql
+   SELECT COUNT(*) FROM user_interests;        -- doit matcher baseline pre-MeP (à part les 39 doublons dédupés)
+   SELECT COUNT(*) FROM information_schema.tables WHERE table_name LIKE 'user_favorite_%';  -- = 0
+   SELECT COUNT(*) FROM pg_type WHERE typname='interest_state';  -- = 0
+   ```
+
+## Smoke tests post-MeP (à T+10min après déploiement Railway)
+
+```bash
+# 1. Healthcheck
+curl https://api.facteur.app/health  # 200
+
+# 2. Backfill effectif : aucun user à 0 favori
+psql $DATABASE_URL -c "
+  SELECT COUNT(*) FROM user_profiles up
+  WHERE NOT EXISTS (
+    SELECT 1 FROM user_favorite_interests ufi WHERE ufi.user_id = up.user_id
+  );
+"  # → 0 (ou très petit nombre d'edge cases acceptables)
+
+# 3. Distribution des favoris par user
+psql $DATABASE_URL -c "
+  SELECT cnt, COUNT(*) FROM (
+    SELECT user_id, COUNT(*) AS cnt
+    FROM user_favorite_interests GROUP BY user_id
+  ) s GROUP BY cnt ORDER BY cnt;
+"  # → majorité à 2 ou 3, aucun > 3
+
+# 4. Cap respecté
+psql $DATABASE_URL -c "
+  SELECT COUNT(*) FROM (
+    SELECT user_id FROM user_favorite_interests GROUP BY user_id HAVING COUNT(*) > 3
+  ) s;
+"  # → 0
+
+# 5. state='favorite' cohérent
+psql $DATABASE_URL -c "
+  SELECT COUNT(*) FROM user_favorite_interests ufi
+  LEFT JOIN user_interests ui ON ui.user_id = ufi.user_id AND ui.interest_slug = ufi.interest_slug
+  WHERE ufi.interest_slug IS NOT NULL AND (ui.state != 'favorite' OR ui.state IS NULL);
+"  # → 0
+
+# 6. GET interests sur compte de test
+curl -H "Authorization: Bearer $JWT_TEST" https://api.facteur.app/api/user/interests \
+  | jq '{count: .favorite_count, cap: .favorite_cap, favorites: .favorites}'
+# → favorite_count >= 2, cap = 3
+
+# 7. PATCH au-delà du cap → 422
+# (après avoir 3 favoris)
+curl -X PATCH https://api.facteur.app/api/user/interests \
+  -H "Authorization: Bearer $JWT_TEST" \
+  -d '{"kind":"theme","target_id":"sport","state":"favorite"}'  # → 422
+
+# 8. PostHog (à T+1h)
+# Dashboard PostHog : événements `interest_state_changed` doivent arriver
+# dans l'heure suivant la MeP (sync mobile des Thèmes 3/3 legacy).
+```
 
 ## PostHog events
 
-3 events flat snake_case (convention existante `waitlist_signup`, `veille_config_submitted`) :
+Hérités de PR 22.1.1 (convention flat snake_case) :
 - `interest_state_changed` (kind, target_id, new_state, prev_state)
-- `interest_favorite_reordered` (favorite_count, kind: "interests"|"sources")
+- `interest_favorite_reordered` (favorite_count, kind)
 - `interest_cap_blocked` (kind, target_id, current_count)
 
-## Cache invalidation
-
-Chaque mutation invalide `FEED_CACHE` + `SOURCES_CACHE` pour le user concerné. Pattern hérité de `app/routers/personalization.py:143-144`.
+Le sync mobile post-MeP émet `interest_state_changed` une fois par Thème legacy promu — métrique idéale pour mesurer le taux de couverture sync sur 30j.
 
 ## Test plan
 
-- [x] `pytest -v` complet : **1121 passed, 13 skipped, 0 failures** (incluant les 18 nouveaux tests Story 22.1)
-- [x] `alembic heads` → 1 ligne unique (`22a1_interest_state_favorites`)
-- [x] `alembic upgrade head` sur DB vide OK
-- [x] Round-trip `alembic downgrade -1 && alembic upgrade head` OK
-- [x] Boot serveur OK, 4 nouvelles routes enregistrées
-- [x] Pré-audit Supabase prod : 39 doublons → dedupe défensif intégré dans la migration
-- [ ] CI verte (alembic-smoke + pytest + ruff)
-- [ ] Peer review APPROVED
-
-## Files
-
-**Migration** : `packages/api/alembic/versions/22a1_interest_state_favorites.py`
-
-**Models** : `app/models/enums.py` (+InterestState), `app/models/user.py` (+state UserInterest + UniqueConstraint), `app/models/user_topic_profile.py` (+state), `app/models/source.py` (+state UserSource), `app/models/user_favorites.py` (UserFavoriteInterest + UserFavoriteSource), `app/models/__init__.py`
-
-**Schemas** : `app/schemas/user_interests.py` (request/response + cap validation)
-
-**Service** : `app/services/user_interests_service.py` (UserInterestsService + UserSourcesStateService + exceptions FavoriteCapReached, TargetNotFound, TargetNotFavorite)
-
-**Routers** : `app/routers/user_interests.py`, `app/routers/user_sources_state.py`, `app/routers/users.py` (get_top_themes étendu), `app/routers/feed.py` (topic UUID lookup), `app/main.py` (include_router × 2)
-
-**Reco** : `app/services/recommendation/scoring_engine.py` (+user_interest_states), `app/services/recommendation/pillars/pertinence.py` (câblage 2 pillars), `app/services/recommendation_service.py` (populate)
-
-**Constantes** : `app/constants.py` (`FAVORITE_CAP=3`)
-
-**Tests** : `tests/routers/test_user_interests.py`, `tests/routers/test_user_sources_state.py`, `tests/routers/test_top_themes_with_favorites.py`, `tests/recommendation/test_pertinence_state.py`, `tests/alembic/test_interest_state_migration.py`
-
-**Conftest** : `tests/conftest.py` (CREATE TYPE `interest_state` en pré-requis de `create_all` — sinon `psycopg.errors.UndefinedObject` au boot des tests)
-
-**Story doc** : `docs/stories/core/22.1.systeme-interets-unifie.md` (créée)
+- [x] `pytest -v` complet : 1121+5 passed, 0 failures (+ tests backfill)
+- [x] `flutter test` complet : 0 failure (+ 5 tests sync mobile)
+- [x] `flutter analyze` 0 issue actionnable
+- [x] `alembic heads` → 1 ligne (`22a1_interest_state_favorites`)
+- [x] `alembic upgrade head` sur DB vide OK + round-trip downgrade/upgrade OK
+- [ ] Smoke tests F1-F8 ci-dessus à T+10min post-déploiement Railway
+- [ ] Vérification PostHog `interest_state_changed` à T+1h

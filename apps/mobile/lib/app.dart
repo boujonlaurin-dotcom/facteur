@@ -9,6 +9,7 @@ import 'core/services/deep_link_service.dart';
 import 'core/services/widget_service.dart';
 import 'features/feed/providers/feed_preload_provider.dart';
 import 'features/feed/providers/feed_provider.dart';
+import 'features/my_interests/services/interests_sync_service.dart';
 import 'features/onboarding/providers/onboarding_sync_provider.dart';
 import 'features/settings/providers/theme_provider.dart';
 
@@ -95,6 +96,11 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     // Active la re-sync automatique de l'onboarding quand la session devient
     // authentifiée (best-effort, silencieux) — voir onboarding_sync_provider.dart.
     ref.watch(onboardingSyncProvider);
+
+    // Story 22.1 PR 3/3 — sync one-shot des préférences héritées du slider
+    // 1→3 (SharedPreferences `theme_priority_*`) vers les nouveaux favoris
+    // backend. Idempotent via flag, fire-and-forget, silencieux sur erreur.
+    ref.watch(interestsSyncProvider);
 
     // Bind the DeepLinkService once the router is built. Idempotent.
     final analytics = ref.read(analyticsServiceProvider);
