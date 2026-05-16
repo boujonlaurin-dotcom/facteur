@@ -1,9 +1,16 @@
-# PR — feat(interests): système 4-états unifié + favoris + backfill legacy (Story 22.1)
+# PR — feat: système d'intérêts unifié (22.1) + Flux Continu V1.8/V2.0 + couplage favoris (21.1)
 
-> **PR finale unique** regroupant les 3 commits de la story 22.1 :
-> 1. `ae59c924` — backend interest state + favorites tables + endpoints
-> 2. `2dee657a` — écrans intérêts/sources sur le moteur 4-états
-> 3. `<HEAD>` — backfill favoris legacy + sync mobile one-shot
+> **PR finale unique** regroupant la story 22.1 (système d'intérêts) ET la
+> story 21.1 (Flux Continu V1.8/V2.0 + couplage favoris) — l'absence de
+> staging impose ce ship groupé.
+>
+> Commits (depuis `origin/main`) :
+> 1. `ae59c924` — backend interest state + favorites tables + endpoints (22.1.1)
+> 2. `2dee657a` — écrans intérêts/sources sur le moteur 4-états (22.1.2)
+> 3. `0db30ad4` — backfill favoris legacy + sync mobile one-shot (22.1.3)
+> 4. Commits Flux Continu V1.8 + V2.0 (Story 21.1, ~13 commits cherry-pickés)
+> 5. `90fe4b7a` — WIP V10 : amorce couplage favoris (recovery du stash pré-pivot)
+> 6. `<HEAD>` — refacto SectionKind string-keyed + couplage favoris finalisé
 >
 > Cible : `--base main` (staging déprécié).
 
@@ -31,6 +38,71 @@
 - `apps/mobile/lib/features/my_interests/services/interests_sync_service.dart` : service one-shot lit les `SharedPreferences.theme_priority_<MacroLabel>` (legacy), promeut chaque thème à `multiplier >= 2.0` en favori via `setInterestState`, absorbe `FavoriteCapReachedException` silencieusement, purge toutes les clés legacy + pose le flag `interests_v2_legacy_synced`.
 - `apps/mobile/lib/app.dart` : `ref.watch(interestsSyncProvider)` dans `FacteurApp.build()` (pattern miroir d'`onboardingSyncProvider`).
 - `test/features/my_interests/services/interests_sync_service_test.dart` : 5 tests (promo, idempotence, cap absorption, purge prefs, macro-label inconnu).
+
+## Changements (commit 6 — couplage Flux Continu ↔ favoris finalisé)
+
+> Cette PR finalise ce que le WIP V10 (`90fe4b7a`) avait amorcé. Le couplage
+> est désormais complet, sans dette technique reportée.
+
+### Refacto `SectionKind` en clés string-based
+
+- `apps/mobile/lib/features/flux_continu/models/flux_continu_models.dart` :
+  - `enum SectionKind { essentiel, bonnes, theme }` (un seul `theme`,
+    plus de `theme1`/`theme2`).
+  - `FeedThemeSection` gagne `String? customTopicId` (XOR avec `themeSlug`)
+    pour distinguer Thème vs Sujet favori.
+  - Top-level helper `String sectionKey(FluxSection s)` : retourne
+    `'essentiel'` / `'bonnes'` / `'theme:<slug>'` / `'topic:<uuid>'`.
+  - `Map<SectionKind, bool>` → `Map<String, bool>` pour `folded`/`moreOpen`.
+    Helpers `isOpen(FluxSection)`/`isFolded(FluxSection)` (la dérivation de
+    clé reste dans le modèle).
+
+### Provider piloté par les favoris (`flux_continu_provider.dart`)
+
+- `_themes` devient une `List<FeedThemeSection>` dynamique (0..3) au lieu
+  de deux variables `_theme1`/`_theme2`.
+- `_pickFavorites()` lit `userInterestsProvider.favorites` en priorité ;
+  fallback `top-themes` legacy puis padding canonique `[tech, environment,
+  science]` pour les comptes encore sans favori (filet pour
+  pré-backfill 22.1.3).
+- Pour chaque `FavoriteRef` :
+  - `ThemeFavoriteRef(slug)` → `getFeed(theme: slug, ...)`
+  - `CustomTopicFavoriteRef(id)` → `getFeed(topic: id, ...)` (l'endpoint
+    backend `_resolve_topic_param` accepte slug OU UUID stringified
+    scoped user — pas de cross-user leak).
+- `ref.listen(userInterestsProvider, ...)` : sur changement de `favorites`,
+  appelle `_refetchThemesOnly()` qui rejoue uniquement les `getFeed(theme/
+  topic)` (économise digest + feed continu).
+- Hydration SharedPreferences tolérante : `_isLiveFoldedKey` ignore
+  silencieusement les anciennes clés `theme1`/`theme2` (purge journalier
+  les nettoie dans <24h).
+
+### Adaptations écran + widgets
+
+- `flux_continu_screen.dart` : `_isFavoriteKind` → `_isFavoriteSection`,
+  `_markSectionsAboveAsScrolledPast(FluxSection? fromSection)` (compare
+  via `sectionKey`).
+- `widgets/section_block.dart` : callback `onTapArticle(article,
+  FluxSection)` au lieu de `(article, SectionKind)`.
+- `widgets/my_interests_sheet.dart` : lit directement
+  `userInterestsProvider.favorites` (au lieu de
+  `fluxContinuProvider.sections.whereType<FeedThemeSection>()`), affiche
+  `N/3 FAVORIS`, résout label/accent via `themeMap` (Theme) ou
+  `customTopics` (Sujet).
+
+### Tests
+
+- `test/features/flux_continu/models/flux_continu_models_test.dart` :
+  +4 tests `sectionKey` (digest/theme/topic/slug-less), Maps réécrits en
+  string-keys.
+- `test/features/flux_continu/providers/flux_continu_provider_test.dart` :
+  +5 tests favoris-driven (0 favori → 3 canoniques fetched, 1 Theme,
+  1 Sujet → `getFeed(topic:)`, cap 3, hydration tolère `theme1`/`theme2`).
+- `test/features/flux_continu/widgets/my_interests_sheet_test.dart` :
+  refait sur stub `UserInterestsNotifier`, couvre custom topic + empty
+  hint.
+
+Total mobile flux_continu : **49 tests verts** (vs 6 avant).
 
 ## Mobile rétrocompat & sécurité du staged rollout
 
@@ -125,9 +197,25 @@ Le sync mobile post-MeP émet `interest_state_changed` une fois par Thème legac
 ## Test plan
 
 - [x] `pytest -v` complet : 1121+5 passed, 0 failures (+ tests backfill)
-- [x] `flutter test` complet : 0 failure (+ 5 tests sync mobile)
-- [x] `flutter analyze` 0 issue actionnable
-- [x] `alembic heads` → 1 ligne (`22a1_interest_state_favorites`)
-- [x] `alembic upgrade head` sur DB vide OK + round-trip downgrade/upgrade OK
+- [x] `flutter test test/features/flux_continu/` : 49/49 verts (5 nouveaux
+      tests couplage favoris finalisé + 1 hydration tolerance)
+- [x] `flutter test` complet : 639 tests, 36 échecs **tous pré-existants**
+      (digest stubs « Test not implemented », topic_chip icon finder, auth/
+      notification/feed scenarios — zéro régression dans `flux_continu` ou
+      `my_interests`)
+- [x] `flutter analyze` flux_continu/my_interests/tests : 0 erreur
+      (9 infos `withOpacity`/`activeColor` pré-existantes)
+- [x] `alembic heads` local → 1 ligne (`22a1_interest_state_favorites`)
+- [x] Head Alembic prod vérifié = `ad01_add_is_ad_to_contents` (matche
+      `down_revision` de la nouvelle migration — pas de drift)
+- [x] Audit prod : 39 doublons `(user_id, interest_slug)` confirmés
+      (gérés par le dedupe défensif de la migration)
+- [x] Audit prod : enum `interest_state` / table `user_favorite_interests` /
+      colonne `user_interests.state` tous absents → migration tournera
+      cleanly sans collision
+- [x] `rg "SectionKind\\.(theme1|theme2)" apps/mobile/` → 0 résultat
+- [ ] `/validate-feature` (Chrome 390x844) APPROVED : 9 scénarios A. 22.1 +
+      9 scénarios B. 21.1 + 7 scénarios C. couplage (9a→9g) du
+      `.context/qa-handoff.md`
 - [ ] Smoke tests F1-F8 ci-dessus à T+10min post-déploiement Railway
 - [ ] Vérification PostHog `interest_state_changed` à T+1h

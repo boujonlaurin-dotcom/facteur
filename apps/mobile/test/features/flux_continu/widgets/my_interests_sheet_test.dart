@@ -4,51 +4,49 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:facteur/config/theme.dart';
-import 'package:facteur/features/feed/models/content_model.dart';
-import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
-import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/my_interests_sheet.dart';
+import 'package:facteur/features/my_interests/models/user_interests_state.dart';
+import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
 
-/// Minimal stub notifier — overrides only `build()` to return a fixed state
-/// synchronously. The repository `late` fields stay uninitialized because
-/// no other notifier method is called during the widget tests.
-class _StubFluxNotifier extends FluxContinuNotifier {
-  _StubFluxNotifier(this._state);
+/// Stub UserInterestsNotifier that returns a fixed state. The sheet reads
+/// directly from userInterestsProvider so this is enough to drive the test
+/// without hitting the (absent) repository.
+class _StubUserInterestsNotifier extends UserInterestsNotifier {
+  _StubUserInterestsNotifier(this._state);
 
-  final FluxContinuState _state;
+  final UserInterestsState _state;
 
   @override
-  Future<FluxContinuState> build() async => _state;
+  Future<UserInterestsState> build() async => _state;
 }
 
-FluxContinuState _stateWithFavorites() {
-  return const FluxContinuState(
-    sections: [
-      FeedThemeSection(
-        kind: SectionKind.theme1,
-        label: 'IA & éducation',
-        accent: Color(0xFF2C3E50),
-        coreVisibleCount: 2,
-        items: <Content>[],
-        themeSlug: 'ia_edu',
-      ),
-      FeedThemeSection(
-        kind: SectionKind.theme2,
-        label: 'Climat',
-        accent: Color(0xFF6C3483),
-        coreVisibleCount: 2,
-        items: <Content>[],
-        themeSlug: 'climat',
+UserInterestsState _stateWithFavorites() {
+  return const UserInterestsState(
+    themes: [],
+    customTopics: [
+      CustomTopicInterest(
+        id: 'topic-uuid',
+        topicName: 'IA & éducation',
+        slugParent: 'tech',
+        state: InterestState.favorite,
+        priorityMultiplier: 2.0,
       ),
     ],
-    isLoading: false,
+    favorites: [
+      CustomTopicFavoriteRef(id: 'topic-uuid'),
+      ThemeFavoriteRef(slug: 'environment'),
+    ],
+    favoriteCount: 2,
+    favoriteCap: 3,
   );
 }
 
-Widget _openerHost(FluxContinuState state) {
+Widget _openerHost(UserInterestsState interests) {
   return ProviderScope(
     overrides: [
-      fluxContinuProvider.overrideWith(() => _StubFluxNotifier(state)),
+      userInterestsProvider.overrideWith(
+        () => _StubUserInterestsNotifier(interests),
+      ),
     ],
     child: MaterialApp(
       theme: ThemeData(extensions: [FacteurPalettes.light]),
@@ -72,7 +70,7 @@ void main() {
   });
 
   group('showMyInterestsBottomSheet', () {
-    testWidgets('lists the followed themes and the primary CTA',
+    testWidgets('lists the favorite themes/topics and the primary CTA',
         (tester) async {
       await tester.pumpWidget(_openerHost(_stateWithFavorites()));
 
@@ -80,13 +78,32 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Mes intérêts'), findsOneWidget);
-      expect(find.text('2 SUIVIS'), findsOneWidget);
+      expect(find.text('2/3 FAVORIS'), findsOneWidget);
+      // Custom topic name resolved from interests.customTopics
       expect(find.text('IA & éducation'), findsOneWidget);
-      expect(find.text('Climat'), findsOneWidget);
+      // Theme slug → canonical visual label
+      expect(find.text('Environnement'), findsOneWidget);
       expect(find.text('01'), findsOneWidget);
       expect(find.text('02'), findsOneWidget);
       expect(find.text('Gérer mes intérêts'), findsOneWidget);
       expect(find.text('Fermer'), findsOneWidget);
+    });
+
+    testWidgets('shows the empty hint when there are no favorites',
+        (tester) async {
+      await tester.pumpWidget(_openerHost(const UserInterestsState(
+        themes: [],
+        customTopics: [],
+        favorites: [],
+        favoriteCount: 0,
+        favoriteCap: 3,
+      )));
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Aucun favori pour le moment.'), findsOneWidget);
+      expect(find.text('0/3 FAVORIS'), findsOneWidget);
     });
 
     testWidgets('Fermer dismisses the sheet', (tester) async {

@@ -3,8 +3,29 @@ import 'package:flutter/material.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 
-/// Identifier for one of the four sections of the Flux Continu V1.8.
-enum SectionKind { essentiel, bonnes, theme1, theme2 }
+/// Identifier for the **type** of a Flux Continu V1.8 section.
+///
+/// Multiplicity (0..N) is no longer encoded here — there's a single `theme`
+/// value that can appear several times in the same flux (one per user
+/// favorite). Per-section state is keyed by [sectionKey] which combines
+/// `kind` with the underlying theme slug or custom topic id.
+enum SectionKind { essentiel, bonnes, theme }
+
+/// Stable identity for a section across rebuilds.
+///
+/// Used as a key into the `moreOpen` / `folded` maps so per-section UI state
+/// survives provider refreshes. For theme sections, the slug or custom topic
+/// id discriminates between multiple `kind == theme` instances; system
+/// sections collapse to just their kind name.
+String sectionKey(FluxSection section) {
+  return switch (section) {
+    DigestTopicSection() => section.kind.name,
+    FeedThemeSection(:final themeSlug, :final customTopicId) =>
+      customTopicId != null
+          ? 'topic:$customTopicId'
+          : 'theme:${themeSlug ?? "unknown"}',
+  };
+}
 
 /// One section of the Flux Continu V1.8 home screen.
 ///
@@ -56,10 +77,14 @@ class DigestTopicSection extends FluxSection {
   int get totalCount => topics.length;
 }
 
-/// Section backed by `GET /api/feed?theme=…` (sections #3 and #4). One
-/// card per [Content] item.
+/// Section backed by `GET /api/feed?theme=…` OR `GET /api/feed?topic=<uuid>`.
+/// One card per [Content] item. `themeSlug` carries the macro-theme slug for
+/// the closed Facteur vocabulary; `customTopicId` carries the custom-topic
+/// UUID when the favorite is a user-defined Sujet. The two are XOR (one of
+/// them is set, never both — sectionKey() relies on this).
 class FeedThemeSection extends FluxSection {
   final String? themeSlug;
+  final String? customTopicId;
   final List<Content> items;
 
   const FeedThemeSection({
@@ -69,6 +94,7 @@ class FeedThemeSection extends FluxSection {
     required super.coreVisibleCount,
     required this.items,
     this.themeSlug,
+    this.customTopicId,
     super.blurb,
     super.illustrationAsset,
   });
@@ -105,11 +131,14 @@ class FluxContinuState {
   final List<Content> feedContinu;
   final List<FeedCarouselData> feedCarousels;
   final bool isSerene;
-  final Map<SectionKind, bool> moreOpen;
+  // Per-section UI state keyed by [sectionKey]. String keys (rather than
+  // `SectionKind`) so multiple theme sections (one per favorite, 0..3) keep
+  // independent state — the legacy enum-keyed maps could not represent that.
+  final Map<String, bool> moreOpen;
   // Sections the user has fully scrolled past (rendered as compact title
   // cards). Persisted day-by-day so revisiting later in the day keeps the
   // editorial zone collapsed; reset the next day when fresh content arrives.
-  final Map<SectionKind, bool> folded;
+  final Map<String, bool> folded;
   // Whether the closing card "Vous êtes à jour" has been dismissed for the
   // day — either via the Continuer/Refermer buttons or by scrolling past it.
   // Persisted day-by-day, mirroring [folded].
@@ -139,8 +168,8 @@ class FluxContinuState {
     List<Content>? feedContinu,
     List<FeedCarouselData>? feedCarousels,
     bool? isSerene,
-    Map<SectionKind, bool>? moreOpen,
-    Map<SectionKind, bool>? folded,
+    Map<String, bool>? moreOpen,
+    Map<String, bool>? folded,
     bool? closingDismissed,
     Set<String>? dismissedIds,
     bool? isLoading,
@@ -161,12 +190,16 @@ class FluxContinuState {
     );
   }
 
-  bool isOpen(SectionKind kind) => moreOpen[kind] ?? false;
-  bool isFolded(SectionKind kind) => folded[kind] ?? false;
+  /// Convenience accessors — caller passes the section itself so the key
+  /// derivation stays inside the model. Lets widgets stay agnostic of the
+  /// string-key encoding scheme.
+  bool isOpen(FluxSection section) => moreOpen[sectionKey(section)] ?? false;
+  bool isFolded(FluxSection section) => folded[sectionKey(section)] ?? false;
 
-  /// Slugs of the two `FeedThemeSection` (Veille #1, Veille #2) that make up
-  /// today's tournée — used by the Explorer filter bar to hide chips for
-  /// themes the user has already been served above.
+  /// Slugs of the `FeedThemeSection`s that make up today's tournée — used by
+  /// the Explorer filter bar to hide chips for themes the user has already
+  /// been served above. Custom-topic-only sections (Sujet favoris) don't
+  /// surface here because they don't have a theme slug.
   List<String> get tourneeThemeSlugs => sections
       .whereType<FeedThemeSection>()
       .map((s) => s.themeSlug)

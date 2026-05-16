@@ -8,13 +8,17 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
-import '../models/flux_continu_models.dart';
-import '../providers/flux_continu_provider.dart';
+import '../../my_interests/models/user_interests_state.dart';
+import '../../my_interests/providers/user_interests_provider.dart';
+import '../utils/theme_color_mapping.dart';
 
-/// Bottom sheet listing the user's currently-followed themes (the two
-/// `FeedThemeSection` entries in the Flux Continu). Reorder is decorative
-/// only — the real management UI lives in [RoutePaths.myInterests], which
-/// the primary CTA opens.
+/// Bottom sheet listing the user's declared favorite interests (Thèmes +
+/// Sujets, up to 3). Reorder is decorative only — the real management UI
+/// lives in [RoutePaths.myInterests], which the primary CTA opens.
+///
+/// Reads directly from [userInterestsProvider] so the list reflects the
+/// user's canonical favorites instead of being inferred from whatever theme
+/// sections the Flux Continu happened to fetch.
 Future<void> showMyInterestsBottomSheet(BuildContext context) {
   return showModalBottomSheet<void>(
     context: context,
@@ -36,10 +40,12 @@ class _MyInterestsContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
-    final state = ref.watch(fluxContinuProvider).valueOrNull;
-    final sections = (state?.sections ?? const <FluxSection>[])
-        .whereType<FeedThemeSection>()
-        .toList(growable: false);
+    final interests = ref.watch(userInterestsProvider).valueOrNull;
+    final favorites = interests?.favorites ?? const <FavoriteRef>[];
+    final rows = <_FavoriteRow>[
+      for (final fav in favorites)
+        _FavoriteRow.fromRef(ref: fav, interests: interests),
+    ];
 
     return SafeArea(
       top: false,
@@ -87,7 +93,7 @@ class _MyInterestsContent extends ConsumerWidget {
                       ),
                     ),
                     Text(
-                      '${sections.length} SUIVIS',
+                      '${rows.length}/${interests?.favoriteCap ?? 3} FAVORIS',
                       style: GoogleFonts.dmSans(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -99,7 +105,7 @@ class _MyInterestsContent extends ConsumerWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Les thèmes que tu reçois dans ta tournée.',
+                  'Les intérêts qui pilotent ta tournée du jour.',
                   style: GoogleFonts.dmSans(
                     fontSize: 13,
                     height: 1.45,
@@ -107,19 +113,19 @@ class _MyInterestsContent extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 14),
-                for (var i = 0; i < sections.length; i++) ...[
+                for (var i = 0; i < rows.length; i++) ...[
                   _ThemeRow(
                     order: i + 1,
-                    section: sections[i],
+                    row: rows[i],
                     colors: colors,
                   ),
-                  if (i < sections.length - 1) const SizedBox(height: 8),
+                  if (i < rows.length - 1) const SizedBox(height: 8),
                 ],
-                if (sections.isEmpty)
+                if (rows.isEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Text(
-                      'Aucun thème suivi pour le moment.',
+                      'Aucun favori pour le moment.',
                       style: GoogleFonts.dmSans(
                         fontSize: 13,
                         color: colors.textTertiary,
@@ -169,14 +175,48 @@ class _MyInterestsContent extends ConsumerWidget {
   }
 }
 
+/// View-model bridging a [FavoriteRef] to the visuals expected by the row
+/// renderer. Resolves theme labels from the canonical visual map; for custom
+/// topics, falls back to the topic name from the interests state and the
+/// parent macro-theme accent.
+class _FavoriteRow {
+  final String label;
+  final Color accent;
+
+  const _FavoriteRow({required this.label, required this.accent});
+
+  factory _FavoriteRow.fromRef({
+    required FavoriteRef ref,
+    required UserInterestsState? interests,
+  }) {
+    return switch (ref) {
+      ThemeFavoriteRef(:final slug) => _FavoriteRow(
+          label: visualFor(slug).label,
+          accent: visualFor(slug).accent,
+        ),
+      CustomTopicFavoriteRef(:final id) => () {
+          final topic = interests?.customTopics
+              .where((t) => t.id == id)
+              .firstOrNull;
+          return _FavoriteRow(
+            label: topic?.topicName ?? 'Sujet personnalisé',
+            accent: topic == null
+                ? visualFor('').accent
+                : visualFor(topic.slugParent).accent,
+          );
+        }(),
+    };
+  }
+}
+
 class _ThemeRow extends StatelessWidget {
   final int order;
-  final FeedThemeSection section;
+  final _FavoriteRow row;
   final FacteurColors colors;
 
   const _ThemeRow({
     required this.order,
-    required this.section,
+    required this.row,
     required this.colors,
   });
 
@@ -219,14 +259,14 @@ class _ThemeRow extends StatelessWidget {
             width: 10,
             height: 10,
             decoration: BoxDecoration(
-              color: section.accent,
+              color: row.accent,
               shape: BoxShape.circle,
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              section.label,
+              row.label,
               style: GoogleFonts.dmSans(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
