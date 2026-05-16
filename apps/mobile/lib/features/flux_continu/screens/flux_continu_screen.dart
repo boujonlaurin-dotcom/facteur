@@ -214,8 +214,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             : _sectionKeys.length;
     final notifier = ref.read(fluxContinuProvider.notifier);
     for (var i = 0; i < count; i++) {
-      final kind = value.sections[i].kind;
-      if (value.isFolded(kind)) continue;
+      final section = value.sections[i];
+      if (value.isFolded(section)) continue;
       final key = _sectionKeys[i];
       final ctx = key.currentContext;
       if (ctx == null) continue;
@@ -223,7 +223,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       if (box is! RenderBox || !box.attached) continue;
       final bottom = box.localToGlobal(Offset.zero).dy + box.size.height;
       if (bottom < -32) {
-        notifier.markScrolledPastForNextSession(kind);
+        notifier.markScrolledPastForNextSession(section);
       }
     }
   }
@@ -333,15 +333,16 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   }
 
   /// Opens an article and, on return, promotes any sections the user
-  /// scrolled past (or that sit above [fromKind]) to the live folded state.
-  /// `fromKind == null` means the article was tapped from the Explorer feed
-  /// (or via scroll-to-top sweep) — every editorial section is queued.
+  /// scrolled past (or that sit above [fromSection]) to the live folded
+  /// state. `fromSection == null` means the article was tapped from the
+  /// Explorer feed (or via scroll-to-top sweep) — every editorial section
+  /// is queued.
   Future<void> _openArticle(
     BuildContext context,
     Object article, {
-    SectionKind? fromKind,
+    FluxSection? fromSection,
   }) async {
-    _markSectionsAboveAsScrolledPast(fromKind);
+    _markSectionsAboveAsScrolledPast(fromSection);
     if (article is DigestItem) {
       await context
           .push('${RoutePaths.fluxContinu}/content/${article.contentId}');
@@ -357,19 +358,21 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     ref.read(fluxContinuProvider.notifier).applyPendingFoldsToState();
   }
 
-  void _markSectionsAboveAsScrolledPast(SectionKind? fromKind) {
+  void _markSectionsAboveAsScrolledPast(FluxSection? fromSection) {
     final value = ref.read(fluxContinuProvider).valueOrNull;
     if (value == null) return;
     final notifier = ref.read(fluxContinuProvider.notifier);
-    if (fromKind == null) {
+    final fromKey =
+        fromSection == null ? null : sectionKey(fromSection);
+    if (fromKey == null) {
       for (final s in value.sections) {
-        unawaited(notifier.markScrolledPastForNextSession(s.kind));
+        unawaited(notifier.markScrolledPastForNextSession(s));
       }
       return;
     }
     for (final s in value.sections) {
-      if (s.kind == fromKind) break;
-      unawaited(notifier.markScrolledPastForNextSession(s.kind));
+      if (sectionKey(s) == fromKey) break;
+      unawaited(notifier.markScrolledPastForNextSession(s));
     }
   }
 
@@ -682,8 +685,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     );
   }
 
-  static bool _isFavoriteKind(SectionKind k) =>
-      k == SectionKind.theme1 || k == SectionKind.theme2;
+  static bool _isFavoriteSection(FluxSection s) => s is FeedThemeSection;
 
   List<Widget> _buildSectionSlivers({
     required BuildContext context,
@@ -691,16 +693,16 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     required FluxContinuNotifier notifier,
   }) {
     final firstFavoriteIndex =
-        state.sections.indexWhere((s) => _isFavoriteKind(s.kind));
+        state.sections.indexWhere(_isFavoriteSection);
     final favoriteCount =
-        state.sections.where((s) => _isFavoriteKind(s.kind)).length;
+        state.sections.where(_isFavoriteSection).length;
     final swipeLeftHintSeen =
         ref.watch(swipeLeftHintSeenProvider).valueOrNull ?? true;
     // When the user has consumed every editorial section, the inline
     // "Mes intérêts" intro reads as residual chrome — hide it so the
     // folded stack collapses tightly into the closing card.
     final allFolded = state.sections.isNotEmpty &&
-        state.sections.every((s) => state.isFolded(s.kind));
+        state.sections.every((s) => state.isFolded(s));
 
     final slivers = <Widget>[];
     for (var i = 0; i < state.sections.length; i++) {
@@ -717,19 +719,19 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         ));
       }
       final section = state.sections[i];
-      final isFavorite = _isFavoriteKind(section.kind);
+      final isFavorite = _isFavoriteSection(section);
       slivers.add(SliverToBoxAdapter(
         child: KeyedSubtree(
           key: _sectionKeys[i],
           child: SectionBlock(
             section: section,
-            isOpen: state.isOpen(section.kind),
-            isFolded: state.isFolded(section.kind),
-            onToggleMore: () => notifier.toggleMore(section.kind),
-            onUnfold: () => notifier.unfoldLocally(section.kind),
-            onFold: () => notifier.foldLocally(section.kind),
-            onTapArticle: (a, kind) =>
-                _openArticle(context, a, fromKind: kind),
+            isOpen: state.isOpen(section),
+            isFolded: state.isFolded(section),
+            onToggleMore: () => notifier.toggleMore(section),
+            onUnfold: () => notifier.unfoldLocally(section),
+            onFold: () => notifier.foldLocally(section),
+            onTapArticle: (a, s) =>
+                _openArticle(context, a, fromSection: s),
             onDismissArticle: _onSwipeDismiss,
             pendingFeedbackIds: _pendingFeedback,
             onSelectFeedbackChip: (id, chip) =>
@@ -780,7 +782,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           padding: const EdgeInsets.only(bottom: 12),
           child: FeedCarousel(
             data: carousel,
-            onArticleTap: (c) => _openArticle(context, c, fromKind: null),
+            onArticleTap: (c) => _openArticle(context, c, fromSection: null),
             onLongPressStart: (c, _) => ArticlePreviewOverlay.show(context, c),
             onLongPressMoveUpdate: (details) =>
                 ArticlePreviewOverlay.updateScroll(
@@ -823,7 +825,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           }
           return FluxContinuArticleCard(
             article: article,
-            onTap: () => _openArticle(context, article, fromKind: null),
+            onTap: () => _openArticle(context, article, fromSection: null),
             onSwipeDismiss: () => _onSwipeDismiss(article.id),
           );
         },

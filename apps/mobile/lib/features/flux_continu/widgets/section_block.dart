@@ -24,7 +24,7 @@ class SectionBlock extends StatelessWidget {
   final VoidCallback onToggleMore;
   final VoidCallback? onUnfold;
   final VoidCallback? onFold;
-  final void Function(Object article, SectionKind kind) onTapArticle;
+  final void Function(Object article, FluxSection section) onTapArticle;
   final ValueChanged<String>? onDismissArticle;
 
   /// IDs of articles currently in the inline-feedback pending state. When
@@ -42,8 +42,8 @@ class SectionBlock extends StatelessWidget {
   final VoidCallback? onSwipeHintComplete;
 
   /// Optional — when set, the banner renders a small "favorite" star at the
-  /// end of its title. Only wired for the two user-favorite sections
-  /// (`theme1` / `theme2`); null on system sections (`essentiel` / `bonnes`).
+  /// end of its title. Only wired for user-favorite sections (theme/topic);
+  /// null on system sections (`essentiel` / `bonnes`).
   final VoidCallback? onTapFavorite;
 
   const SectionBlock({
@@ -146,7 +146,7 @@ class SectionBlock extends StatelessWidget {
                 pressReviewCount: visible[i].perspectiveCount,
                 perspectiveSources: visible[i].perspectiveSources,
                 onTap: () =>
-                    onTapArticle(pickTopicLead(visible[i]), section.kind),
+                    onTapArticle(pickTopicLead(visible[i]), section),
                 onSwipeDismiss: onDismissArticle == null
                     ? null
                     : () =>
@@ -168,7 +168,7 @@ class SectionBlock extends StatelessWidget {
             else
               FluxContinuArticleCard(
                 article: visible[i],
-                onTap: () => onTapArticle(visible[i], section.kind),
+                onTap: () => onTapArticle(visible[i], section),
                 onSwipeDismiss: onDismissArticle == null
                     ? null
                     : () => onDismissArticle!(visible[i].id),

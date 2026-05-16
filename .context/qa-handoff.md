@@ -309,16 +309,80 @@ Six ajustements de la home Flux Continu V1.8 : auto-fold des sections scrollées
 
 **Résultat attendu** : comportement identique à avant — la filter bar legacy n'a pas été touchée.
 
-### Scénario 9 : Couplage Flux Continu ↔ favoris 22.1 (V10 WIP)
-**Parcours** :
-1. Avoir ≥ 1 favori en `user_favorite_interests` (via backfill 22.1 ou sync mobile)
-2. Aller sur `/flux-continu` cold launch
-3. Observer les sections « Theme1 » et « Theme2 »
+### Scénario 9 : Couplage Flux Continu ↔ favoris (finalisé)
+
+> Refacto post-WIP V10 : `SectionKind` est string-keyed (`essentiel` / `bonnes` /
+> `theme:<slug>` / `topic:<uuid>`), cap = 3 favoris, le provider écoute
+> `userInterestsProvider` et ne refetch que les sections thèmes au reorder.
+
+**9a — 0 favori (compte vierge sans backfill)**
+1. SQL : vider `user_favorite_interests` pour le user de test.
+2. Cold launch `/flux-continu`.
 
 **Résultat attendu** :
-- Les heros Theme1/Theme2 correspondent aux 2 premiers favoris (ordre canonique du provider, pas weight ML)
-- Si seulement 1 favori → Theme2 affiche fallback (à valider : skip section ou montrer top weight ML ?)
-- Si 0 favori (très improbable post-backfill) → fallback complet sur l'ancienne logique top weight ML
+- Sections : `[Essentiel, theme:tech, theme:environment, theme:science, Bonnes]`
+  (3 thèmes canoniques de fallback, hors-backfill).
+- `MyInterestsIntro` affiche « TES 3 THÈMES FAVORIS » + bouton GÉRER.
+
+**9b — 1 favori « Tech »**
+1. SQL : 1 row dans `user_favorite_interests` (interest_slug='tech', position=0).
+2. Cold launch `/flux-continu`.
+
+**Résultat attendu** :
+- Sections : `[Essentiel, MyInterestsIntro("TON THÈME FAVORI"), theme:tech, Bonnes]`.
+- Une seule section thème.
+
+**9c — 3 favoris**
+1. SQL : 3 rows dans `user_favorite_interests` (ex. tech / culture / climat).
+2. Cold launch `/flux-continu`.
+
+**Résultat attendu** :
+- 3 sections thème consécutives dans l'ordre canonique du provider.
+- Intro : « TES 3 THÈMES FAVORIS ».
+
+**9d — 1 favori Sujet (custom topic)**
+1. SQL : 1 row dans `user_favorite_interests` (custom_topic_id=<uuid d'un sujet user>).
+2. Cold launch `/flux-continu`.
+
+**Résultat attendu** :
+- Une section thème dont le titre est le `topic_name` du sujet
+  (ex. « IA & éducation »).
+- Network : appel `GET /api/feed?topic=<uuid>&...` (PAS `theme=`).
+- La section contient au moins 1 article filtré sur le slug_parent du sujet.
+
+**9e — Reorder de favoris depuis MyInterestsScreen → flux continu refetch
+sans tout réinitialiser**
+1. État initial 3 favoris [tech, culture, climat]. Flux continu visible.
+2. Sans quitter l'écran flux continu, ouvrir la sheet `MyInterestsSheet`,
+   puis taper « Gérer mes intérêts » → push MyInterestsScreen.
+3. Drag-reorder en [culture, tech, climat]. Pop retour flux continu.
+
+**Résultat attendu** :
+- Network : 3 appels `GET /api/feed?theme=<slug>` rejoués (un par favori),
+  AUCUN appel `getBothDigests` ni `GET /api/feed?page=1&limit=20` (feed continu)
+  → c'est le path `_refetchThemesOnly`.
+- Les sections apparaissent dans le nouvel ordre [culture, tech, climat]
+  sans réinitialisation du digest ni du feed continu.
+
+**9f — SharedPreferences au format string-key**
+1. Scroll past quelques sections.
+2. DevTools → Application → Local Storage.
+
+**Résultat attendu** :
+- Clé `flutter.flux_continu_folded_<YYYY-MM-DD>` contient des entries
+  format `["essentiel", "theme:tech", "topic:abc-uuid", "bonnes"]`.
+- AUCUNE entrée `theme1` ou `theme2`.
+
+**9g — Tolérance aux clés legacy au cold launch**
+1. Injecter manuellement dans localStorage la clé
+   `flutter.flux_continu_folded_<aujourd'hui>` avec valeur
+   `["essentiel", "theme1", "theme2"]`.
+2. Cold launch.
+
+**Résultat attendu** :
+- Pas de crash, pas d'erreur console.
+- Seule `essentiel` est appliquée (les `theme1`/`theme2` sont silencieusement
+  ignorées). Le purge journalier nettoiera la clé dans <24h.
 
 ## Critères d'acceptation (21.1)
 
@@ -328,13 +392,17 @@ Six ajustements de la home Flux Continu V1.8 : auto-fold des sections scrollées
 - [ ] Cold launch même jour après scroll-past : sections apparaissent déjà foldées
 - [ ] Hero « Explorer » inséré entre closing et feed continu avec illustration bike
 - [ ] Sticky cross-fade entre tab bar et filter bar au passage d'Explorer
-- [ ] Mode non-serein : ordre `[Essentiel, T1, T2, Bonnes]`
-- [ ] Mode serein : ordre `[Bonnes, T1, T2, Essentiel]`
+- [ ] Mode non-serein : ordre `[Essentiel, themes…, Bonnes]` (0..3 sections thème)
+- [ ] Mode serein : ordre `[Bonnes, themes…, Essentiel]`
 - [ ] Refinements banner (text width, illustration size, opacity, fade stops)
-- [ ] `flutter test test/features/flux_continu/` vert (20/20)
-- [ ] `flutter analyze` sur fichiers touchés sans issue
+- [ ] `flutter test test/features/flux_continu/` vert (49+ tests)
+- [ ] `flutter analyze` sur fichiers touchés sans erreur
+- [ ] `rg "SectionKind\\.(theme1|theme2)" apps/mobile/` → 0 résultat
 - [ ] FeedScreen `/feed` fonctionne identique à avant
-- [ ] Couplage Flux Continu ↔ favoris : T1/T2 lisent `user_favorite_interests`
+- [ ] Couplage Flux Continu ↔ favoris : sections lisent `userInterestsProvider.favorites`
+- [ ] Favori Sujet (custom topic) déclenche `GET /api/feed?topic=<uuid>`
+- [ ] Reorder favoris → seuls les `getFeed(theme/topic)` sont rejoués (économie digest + feed continu)
+- [ ] SharedPreferences format string-key (`theme:slug` / `topic:uuid`), tolère silencieusement les clés legacy `theme1`/`theme2`
 
 ## Zones de risque (21.1)
 
@@ -342,7 +410,8 @@ Six ajustements de la home Flux Continu V1.8 : auto-fold des sections scrollées
 - **Sticky bascule** : si le user scroll vite, l'`AnimatedSwitcher` doit cross-fader proprement.
 - **Filter bar dans FluxContinu** : `FeedFilterBar` drive `feedProvider` global. Les changements de filtre n'affectent **pas** le `feedContinu` rendu. Limitation connue, à valider en QA.
 - **Persistance SharedPreferences (web)** : sur Flutter web, `SharedPreferences` est backé par `localStorage`. La clé apparaît avec un préfixe `flutter.`.
-- **Couplage T1/T2 ↔ favoris** : le WIP V10 introduit cette dépendance. Si l'user a 0 favori (cas edge post-backfill), définir le comportement.
+- **Couplage sections ↔ favoris** : si l'user a 0 favori (cas edge post-backfill), le provider tombe sur le fallback canonique `[tech, environment, science]` pour garantir une tournée non-vide.
+- **Refacto SectionKind string-keyed** : les maps internes `folded` / `moreOpen` passent de `Map<SectionKind, bool>` à `Map<String, bool>` (clés `essentiel` / `bonnes` / `theme:<slug>` / `topic:<uuid>`). Hydratation tolérante aux anciennes clés `theme1`/`theme2` (ignorées au parse, purgées sous 24h par le purge journalier).
 
 ## Dépendances (21.1)
 

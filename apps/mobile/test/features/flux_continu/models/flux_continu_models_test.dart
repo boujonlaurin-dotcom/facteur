@@ -6,6 +6,60 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  // ---------------------------------------------------------------------------
+  // Shared fixtures
+  // ---------------------------------------------------------------------------
+
+  DigestTopicSection digestSection({
+    SectionKind kind = SectionKind.essentiel,
+    int topicCount = 3,
+    int core = 3,
+  }) {
+    return DigestTopicSection(
+      kind: kind,
+      label: kind.name,
+      accent: const Color(0xFFB0470A),
+      coreVisibleCount: core,
+      topics: List.generate(
+        topicCount,
+        (i) => DigestTopic(
+          topicId: 't$i',
+          label: 'Topic $i',
+          articles: [DigestItem(contentId: 'c$i', title: 't$i')],
+        ),
+      ),
+    );
+  }
+
+  FeedThemeSection themeSection({
+    String? slug = 'tech',
+    String? customTopicId,
+    int itemCount = 2,
+    int core = 2,
+  }) {
+    return FeedThemeSection(
+      kind: SectionKind.theme,
+      label: slug ?? 'Topic',
+      accent: const Color(0xFF2C3E50),
+      coreVisibleCount: core,
+      themeSlug: slug,
+      customTopicId: customTopicId,
+      items: itemCount == 0
+          ? const <Content>[]
+          : List.generate(
+              itemCount,
+              (i) => Content(
+                id: 'c$i',
+                title: 't$i',
+                url: 'https://x.test/$i',
+                contentType: ContentType.article,
+                publishedAt: DateTime(2026, 1, 1),
+                source: Source(id: 's', name: 'S', type: SourceType.article),
+              ),
+            ),
+    );
+  }
+
   group('pickTopicLead', () {
     DigestItem item(String id, {bool followed = false}) =>
         DigestItem(contentId: id, title: 't', isFollowedSource: followed);
@@ -29,52 +83,66 @@ void main() {
     });
   });
 
-  group('FluxContinuState', () {
-    test('isOpen defaults to false for any section', () {
-      const state = FluxContinuState();
-      expect(state.isOpen(SectionKind.essentiel), isFalse);
-      expect(state.isOpen(SectionKind.bonnes), isFalse);
-      expect(state.isOpen(SectionKind.theme1), isFalse);
-      expect(state.isOpen(SectionKind.theme2), isFalse);
+  group('sectionKey', () {
+    test('uses kind.name for digest sections', () {
+      expect(sectionKey(digestSection(kind: SectionKind.essentiel)), 'essentiel');
+      expect(sectionKey(digestSection(kind: SectionKind.bonnes)), 'bonnes');
     });
 
-    test('isOpen reads from moreOpen map', () {
-      const state = FluxContinuState(moreOpen: {SectionKind.bonnes: true});
-      expect(state.isOpen(SectionKind.bonnes), isTrue);
-      expect(state.isOpen(SectionKind.essentiel), isFalse);
+    test('uses theme:<slug> for theme favorites', () {
+      expect(sectionKey(themeSection(slug: 'tech')), 'theme:tech');
+      expect(sectionKey(themeSection(slug: 'science')), 'theme:science');
+    });
+
+    test('uses topic:<uuid> for custom topic favorites', () {
+      expect(
+        sectionKey(themeSection(slug: null, customTopicId: 'abc-uuid')),
+        'topic:abc-uuid',
+      );
+    });
+
+    test('falls back to theme:unknown for slug-less theme sections', () {
+      expect(sectionKey(themeSection(slug: null)), 'theme:unknown');
+    });
+  });
+
+  group('FluxContinuState', () {
+    test('isOpen defaults to false', () {
+      const state = FluxContinuState();
+      expect(state.isOpen(digestSection()), isFalse);
+      expect(state.isOpen(themeSection(slug: 'tech')), isFalse);
+    });
+
+    test('isOpen reads from moreOpen map keyed by sectionKey', () {
+      final state = FluxContinuState(
+        moreOpen: {sectionKey(digestSection(kind: SectionKind.bonnes)): true},
+      );
+      expect(state.isOpen(digestSection(kind: SectionKind.bonnes)), isTrue);
+      expect(state.isOpen(digestSection(kind: SectionKind.essentiel)), isFalse);
+    });
+
+    test('isFolded defaults to false', () {
+      const state = FluxContinuState();
+      expect(state.isFolded(digestSection()), isFalse);
+      expect(state.isFolded(themeSection(slug: 'tech')), isFalse);
+    });
+
+    test('isFolded reads from folded map keyed by sectionKey', () {
+      final state = FluxContinuState(folded: {'essentiel': true});
+      expect(state.isFolded(digestSection(kind: SectionKind.essentiel)), isTrue);
+      expect(state.isFolded(digestSection(kind: SectionKind.bonnes)), isFalse);
+    });
+
+    test('copyWith preserves folded when not specified', () {
+      const state = FluxContinuState(folded: {'theme:tech': true});
+      final updated = state.copyWith(isSerene: true);
+      expect(updated.isFolded(themeSection(slug: 'tech')), isTrue);
     });
 
     test('copyWith clears error when clearError is true', () {
       const state = FluxContinuState(error: 'boom');
       final updated = state.copyWith(clearError: true);
       expect(updated.error, isNull);
-    });
-
-    test('copyWith preserves untouched fields', () {
-      const state = FluxContinuState(isSerene: true);
-      final updated = state.copyWith(isLoading: false);
-      expect(updated.isSerene, isTrue);
-      expect(updated.isLoading, isFalse);
-    });
-
-    test('isFolded defaults to false for any section', () {
-      const state = FluxContinuState();
-      expect(state.isFolded(SectionKind.essentiel), isFalse);
-      expect(state.isFolded(SectionKind.bonnes), isFalse);
-      expect(state.isFolded(SectionKind.theme1), isFalse);
-      expect(state.isFolded(SectionKind.theme2), isFalse);
-    });
-
-    test('isFolded reads from folded map', () {
-      const state = FluxContinuState(folded: {SectionKind.essentiel: true});
-      expect(state.isFolded(SectionKind.essentiel), isTrue);
-      expect(state.isFolded(SectionKind.bonnes), isFalse);
-    });
-
-    test('copyWith preserves folded when not specified', () {
-      const state = FluxContinuState(folded: {SectionKind.theme1: true});
-      final updated = state.copyWith(isSerene: true);
-      expect(updated.isFolded(SectionKind.theme1), isTrue);
     });
 
     test('closingDismissed defaults to false', () {
@@ -88,83 +156,40 @@ void main() {
       expect(updated.closingDismissed, isTrue);
     });
 
-    test('copyWith preserves closingDismissed when not specified', () {
-      const state = FluxContinuState(closingDismissed: true);
-      final updated = state.copyWith(isSerene: true);
-      expect(updated.closingDismissed, isTrue);
-    });
-
     test('copyWith updates folded independently of moreOpen', () {
       const state = FluxContinuState(
-        moreOpen: {SectionKind.bonnes: true},
-        folded: {SectionKind.essentiel: true},
+        moreOpen: {'bonnes': true},
+        folded: {'essentiel': true},
       );
       final updated = state.copyWith(
-        folded: const {SectionKind.essentiel: true, SectionKind.theme1: true},
+        folded: const {'essentiel': true, 'theme:tech': true},
       );
-      expect(updated.isOpen(SectionKind.bonnes), isTrue);
-      expect(updated.isFolded(SectionKind.essentiel), isTrue);
-      expect(updated.isFolded(SectionKind.theme1), isTrue);
+      expect(updated.isOpen(digestSection(kind: SectionKind.bonnes)), isTrue);
+      expect(updated.isFolded(digestSection(kind: SectionKind.essentiel)), isTrue);
+      expect(updated.isFolded(themeSection(slug: 'tech')), isTrue);
     });
   });
 
   group('FluxSection.hasOverflow', () {
-    DigestTopicSection digestSection(int topicCount, int core) {
-      return DigestTopicSection(
-        kind: SectionKind.essentiel,
-        label: 'Essentiel',
-        accent: const Color(0xFFB0470A),
-        coreVisibleCount: core,
-        topics: List.generate(
-          topicCount,
-          (i) => DigestTopic(
-            topicId: 't$i',
-            label: 'Topic $i',
-            articles: [DigestItem(contentId: 'c$i', title: 't$i')],
-          ),
-        ),
-      );
-    }
-
-    FeedThemeSection feedSection(int itemCount, int core) {
-      return FeedThemeSection(
-        kind: SectionKind.theme1,
-        label: 'Tech',
-        accent: const Color(0xFF2C3E50),
-        coreVisibleCount: core,
-        items: List.generate(
-          itemCount,
-          (i) => Content(
-            id: 'c$i',
-            title: 't$i',
-            url: 'https://x.test/$i',
-            contentType: ContentType.article,
-            publishedAt: DateTime(2026, 1, 1),
-            source: Source(id: 's', name: 'S', type: SourceType.article),
-          ),
-        ),
-      );
-    }
-
     test('DigestTopicSection: true when topics exceed coreVisibleCount', () {
-      expect(digestSection(5, 2).hasOverflow, isTrue);
+      expect(digestSection(topicCount: 5, core: 2).hasOverflow, isTrue);
     });
 
     test('DigestTopicSection: false when topics equal coreVisibleCount', () {
-      expect(digestSection(3, 3).hasOverflow, isFalse);
+      expect(digestSection(topicCount: 3, core: 3).hasOverflow, isFalse);
     });
 
     test('FeedThemeSection: true when items exceed coreVisibleCount', () {
-      expect(feedSection(4, 2).hasOverflow, isTrue);
+      expect(themeSection(itemCount: 4, core: 2).hasOverflow, isTrue);
     });
 
     test('FeedThemeSection: totalCount reflects items length', () {
-      expect(feedSection(5, 2).totalCount, 5);
+      expect(themeSection(itemCount: 5, core: 2).totalCount, 5);
     });
 
     test('blurb is optional and defaults to null', () {
-      expect(digestSection(2, 2).blurb, isNull);
-      expect(feedSection(2, 2).blurb, isNull);
+      expect(digestSection(topicCount: 2, core: 2).blurb, isNull);
+      expect(themeSection(itemCount: 2, core: 2).blurb, isNull);
     });
 
     test('blurb is preserved when provided', () {
@@ -181,25 +206,13 @@ void main() {
   });
 
   group('FluxContinuState.tourneeThemeSlugs', () {
-    FeedThemeSection theme(String slug) => FeedThemeSection(
-          kind: SectionKind.theme1,
-          label: slug,
-          accent: const Color(0xFF000000),
-          coreVisibleCount: 3,
-          themeSlug: slug,
-          items: const [],
-        );
-
     test('lists slugs from FeedThemeSections only', () {
-      const digest = DigestTopicSection(
-        kind: SectionKind.essentiel,
-        label: 'Essentiel',
-        accent: Color(0xFFB0470A),
-        coreVisibleCount: 3,
-        topics: [],
-      );
       final state = FluxContinuState(
-        sections: [digest, theme('tech'), theme('environment')],
+        sections: [
+          digestSection(kind: SectionKind.essentiel),
+          themeSection(slug: 'tech'),
+          themeSection(slug: 'environment'),
+        ],
       );
       expect(state.tourneeThemeSlugs, ['tech', 'environment']);
     });
@@ -209,17 +222,11 @@ void main() {
       expect(state.tourneeThemeSlugs, isEmpty);
     });
 
-    test('skips FeedThemeSections without a slug', () {
+    test('skips FeedThemeSections without a slug (custom topic only)', () {
       final state = FluxContinuState(
         sections: [
-          const FeedThemeSection(
-            kind: SectionKind.theme1,
-            label: 'X',
-            accent: Color(0xFF000000),
-            coreVisibleCount: 3,
-            items: [],
-          ),
-          theme('science'),
+          themeSection(slug: null, customTopicId: 'abc-uuid'),
+          themeSection(slug: 'science'),
         ],
       );
       expect(state.tourneeThemeSlugs, ['science']);

@@ -12,6 +12,8 @@ import '../../digest/repositories/digest_repository.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart' show feedRepositoryProvider;
 import '../../feed/repositories/feed_repository.dart';
+import '../../my_interests/models/user_interests_state.dart';
+import '../../my_interests/providers/user_interests_provider.dart';
 import '../models/flux_continu_models.dart';
 import '../repositories/flux_continu_repository.dart';
 import '../utils/theme_color_mapping.dart';
@@ -35,6 +37,12 @@ const String _kBonnesBlurb =
 const String _kThemeBlurb =
     "Les articles récents sur l'un de tes sujets de prédilection — ta veille du jour, sans la chercher.";
 
+/// Hard cap on the number of favorite theme sections rendered in the tournée.
+/// Mirrors `kFavoriteCap = 3` in the my_interests provider — the value is
+/// duplicated here only because the maps key by sectionKey and we slice the
+/// favorite list during composition. Keep aligned with the backend constant.
+const int _kMaxFavoriteSections = 3;
+
 /// Prefix for the day-scoped SharedPreferences key that stores which sections
 /// the user has already scrolled past today. Keys older than today are purged
 /// at startup so a new day starts with every section expanded.
@@ -48,19 +56,12 @@ String _foldedPrefsKey(DateTime day) => '$_kFoldedPrefsKeyPrefix${_dayKey(day)}'
 String _closingPrefsKey(DateTime day) =>
     '$_kClosingPrefsKeyPrefix${_dayKey(day)}';
 
-SectionKind? _kindByName(String name) {
-  for (final k in SectionKind.values) {
-    if (k.name == name) return k;
-  }
-  return null;
-}
-
 /// Riverpod provider for the Flux Continu V1.8 home screen.
 ///
-/// Orchestrates three parallel API calls at mount, then two themed feed calls
-/// once top-themes have been resolved. Holds an ordered list of sections
-/// (already accounting for the serein swap) and a deduped feed continuation
-/// to render below the closing card.
+/// Orchestrates three parallel API calls at mount, then up to three themed
+/// feed calls once the user's favorites have been resolved. Holds an ordered
+/// list of sections (already accounting for the serein swap) and a deduped
+/// feed continuation to render below the closing card.
 final fluxContinuProvider =
     AsyncNotifierProvider<FluxContinuNotifier, FluxContinuState>(
   FluxContinuNotifier.new,
@@ -73,14 +74,16 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
   FluxSection? _essentiel;
   FluxSection? _bonnes;
-  FluxSection? _theme1;
-  FluxSection? _theme2;
+  // Up to [_kMaxFavoriteSections] theme/topic sections, ordered to mirror
+  // `userInterestsProvider.favorites`. Empty when the user has no favorites
+  // — the tournée then collapses to digest + feed continu only.
+  List<FeedThemeSection> _themes = const [];
   List<Content> _feedContinu = const [];
   List<FeedCarouselData> _feedCarousels = const [];
   bool _feedHasMore = false;
   int _feedPage = 1;
-  Map<SectionKind, bool> _moreOpen = const {};
-  Map<SectionKind, bool> _folded = const {};
+  Map<String, bool> _moreOpen = const {};
+  Map<String, bool> _folded = const {};
   bool _closingDismissed = false;
   final Set<String> _dismissedIds = <String>{};
 
@@ -92,8 +95,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// of a sliver in a [CustomScrollView] causes a visible content shift, so
   /// we defer the visual fold to the next mount where it's part of the
   /// initial layout (no transition for the user to perceive).
-  final Set<SectionKind> _persistQueued = <SectionKind>{};
+  final Set<String> _persistQueued = <String>{};
   bool _closingPersistQueued = false;
+
+  /// Snapshot of the favorite order we last fetched for. Used by the
+  /// userInterestsProvider listener to detect changes and refetch only the
+  /// theme sections (cheap) instead of the full tournée.
+  List<FavoriteRef> _lastFavorites = const [];
 
   @override
   Future<FluxContinuState> build() async {
@@ -106,6 +114,19 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         ref.invalidateSelf();
       }
     });
+
+    // React to favorite reorders / additions / removals without rebuilding
+    // the digest or feed continuation (those don't depend on favorites).
+    ref.listen<AsyncValue<UserInterestsState>>(
+      userInterestsProvider,
+      (prev, next) {
+        final nextFavorites = next.valueOrNull?.favorites;
+        if (nextFavorites == null) return;
+        if (_favoriteListsEqual(_lastFavorites, nextFavorites)) return;
+        if (!state.hasValue) return;
+        unawaited(_refetchThemesOnly(nextFavorites));
+      },
+    );
 
     return _fetchAll();
   }
@@ -151,25 +172,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       coreVisibleCount: isSerene ? 4 : 2,
     );
 
-    final picked = _pickThemes(topThemes);
-    final themeResults = await Future.wait(picked.map(
-      (slug) => _safe<FeedResponse>(
-        () => _feedRepo.getFeed(
-          page: 1,
-          limit: 10,
-          theme: slug,
-          serein: isSerene,
-        ),
-        'getFeed?theme=$slug',
-      ),
-    ));
-
-    _theme1 = picked.isNotEmpty
-        ? _buildThemeSection(picked[0], themeResults[0], SectionKind.theme1)
-        : null;
-    _theme2 = picked.length >= 2
-        ? _buildThemeSection(picked[1], themeResults[1], SectionKind.theme2)
-        : null;
+    final favorites = _pickFavorites(topThemes);
+    _lastFavorites = favorites;
+    _themes = await _fetchThemeSections(favorites, isSerene);
 
     _feedContinu = feed?.items ?? const [];
     _feedCarousels = feed?.carousels ?? const [];
@@ -187,25 +192,31 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final ordered = <FluxSection>[];
     if (isSerene) {
       if (_bonnes != null) ordered.add(_bonnes!);
-      if (_theme1 != null) ordered.add(_theme1!);
-      if (_theme2 != null) ordered.add(_theme2!);
+      ordered.addAll(_themes);
       if (_essentiel != null) ordered.add(_essentiel!);
     } else {
       if (_essentiel != null) ordered.add(_essentiel!);
-      if (_theme1 != null) ordered.add(_theme1!);
-      if (_theme2 != null) ordered.add(_theme2!);
+      ordered.addAll(_themes);
       if (_bonnes != null) ordered.add(_bonnes!);
     }
 
-    // Drop folded entries for sections that didn't survive composition
-    // (e.g. an empty Bonnes section yesterday won't exist today).
-    final kindsPresent = ordered.map((s) => s.kind).toSet();
-    final foldedFiltered = <SectionKind, bool>{
+    // Drop folded/moreOpen entries pointing at sections that didn't survive
+    // composition (e.g. a favorite was removed since the prefs were written
+    // earlier today). Keeps the maps tight and avoids stale ghosts.
+    final keysPresent = ordered.map(sectionKey).toSet();
+    final foldedFiltered = <String, bool>{
       for (final entry in _folded.entries)
-        if (entry.value && kindsPresent.contains(entry.key)) entry.key: true,
+        if (entry.value && keysPresent.contains(entry.key)) entry.key: true,
     };
     if (foldedFiltered.length != _folded.length) {
       _folded = foldedFiltered;
+    }
+    final moreOpenFiltered = <String, bool>{
+      for (final entry in _moreOpen.entries)
+        if (entry.value && keysPresent.contains(entry.key)) entry.key: true,
+    };
+    if (moreOpenFiltered.length != _moreOpen.length) {
+      _moreOpen = moreOpenFiltered;
     }
 
     return FluxContinuState(
@@ -288,7 +299,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
                   .where((t) => !_dismissedIds.contains(pickTopicLead(t).contentId))
                   .toList(growable: false),
             ),
-          FeedThemeSection(:final items, :final themeSlug) => FeedThemeSection(
+          FeedThemeSection(
+            :final items,
+            :final themeSlug,
+            :final customTopicId,
+          ) =>
+            FeedThemeSection(
               kind: s.kind,
               label: s.label,
               accent: s.accent,
@@ -296,6 +312,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
               blurb: s.blurb,
               illustrationAsset: s.illustrationAsset,
               themeSlug: themeSlug,
+              customTopicId: customTopicId,
               items: items
                   .where((c) => !_dismissedIds.contains(c.id))
                   .toList(growable: false),
@@ -310,25 +327,27 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }
 
   /// Toggle the expand/collapse state of a section's "Plus de…" overflow.
-  void toggleMore(SectionKind kind) {
+  void toggleMore(FluxSection section) {
     final current = state.valueOrNull;
     if (current == null) return;
-    final next = Map<SectionKind, bool>.from(_moreOpen);
-    next[kind] = !(next[kind] ?? false);
+    final key = sectionKey(section);
+    final next = Map<String, bool>.from(_moreOpen);
+    next[key] = !(next[key] ?? false);
     _moreOpen = next;
     state = AsyncData(current.copyWith(moreOpen: next));
   }
 
-  /// Records that the user has scrolled past [kind] in this session, **but
+  /// Records that the user has scrolled past [section] in this session, **but
   /// does not collapse it on screen**. The section will appear as a
   /// [FoldedSectionCard] on the next cold launch. This avoids the visible
   /// content shift that an in-session resize of a sliver would cause.
-  /// Idempotent both per-kind and per-session.
-  Future<void> markScrolledPastForNextSession(SectionKind kind) async {
-    if (_persistQueued.contains(kind)) return;
-    if (_folded[kind] == true) return;
-    _persistQueued.add(kind);
-    final combined = <SectionKind, bool>{
+  /// Idempotent both per-section and per-session.
+  Future<void> markScrolledPastForNextSession(FluxSection section) async {
+    final key = sectionKey(section);
+    if (_persistQueued.contains(key)) return;
+    if (_folded[key] == true) return;
+    _persistQueued.add(key);
+    final combined = <String, bool>{
       ..._folded,
       for (final k in _persistQueued) k: true,
     };
@@ -362,7 +381,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (_persistQueued.isEmpty) return;
     final current = state.valueOrNull;
     if (current == null) return;
-    final next = <SectionKind, bool>{
+    final next = <String, bool>{
       ..._folded,
       for (final k in _persistQueued) k: true,
     };
@@ -377,35 +396,42 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// Re-expands a folded section in the current session only (not persisted).
   /// Lets the user re-read a section they previously scrolled past without
   /// disabling the auto-fold for tomorrow's tournée.
-  void unfoldLocally(SectionKind kind) {
+  void unfoldLocally(FluxSection section) {
     final current = state.valueOrNull;
     if (current == null) return;
-    if (current.folded[kind] != true) return;
-    final next = Map<SectionKind, bool>.from(current.folded)..remove(kind);
+    final key = sectionKey(section);
+    if (current.folded[key] != true) return;
+    final next = Map<String, bool>.from(current.folded)..remove(key);
     _folded = next;
     state = AsyncData(current.copyWith(folded: next));
   }
 
   /// Manually folds a section in the current session only (not persisted).
   /// Symmetric of [unfoldLocally] — drives the caret tap on [SectionBanner].
-  void foldLocally(SectionKind kind) {
+  void foldLocally(FluxSection section) {
     final current = state.valueOrNull;
     if (current == null) return;
-    if (current.folded[kind] == true) return;
-    final next = Map<SectionKind, bool>.from(current.folded)..[kind] = true;
+    final key = sectionKey(section);
+    if (current.folded[key] == true) return;
+    final next = Map<String, bool>.from(current.folded)..[key] = true;
     _folded = next;
     state = AsyncData(current.copyWith(folded: next));
   }
 
-  Future<Map<SectionKind, bool>> _loadFoldedForToday() async {
+  Future<Map<String, bool>> _loadFoldedForToday() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final names = prefs.getStringList(_foldedPrefsKey(DateTime.now())) ??
           const <String>[];
       if (names.isEmpty) return const {};
+      // Parse tolerantly: legacy enum-style names (`essentiel`, `bonnes`) are
+      // still valid. Anything that doesn't match the new string-key shape
+      // (`essentiel` / `bonnes` / `theme:slug` / `topic:uuid`) — notably the
+      // dead `theme1` / `theme2` from the previous schema — is silently
+      // dropped. The day purge below will remove the prefs blob in <24h.
       return {
         for (final name in names)
-          if (_kindByName(name) case final k?) k: true,
+          if (_isLiveFoldedKey(name)) name: true,
       };
     } catch (e) {
       debugPrint('FluxContinu: _loadFoldedForToday failed: $e');
@@ -413,12 +439,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     }
   }
 
-  Future<void> _persistFolded(Map<SectionKind, bool> folded) async {
+  Future<void> _persistFolded(Map<String, bool> folded) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final names = folded.entries
           .where((e) => e.value)
-          .map((e) => e.key.name)
+          .map((e) => e.key)
           .toList();
       await prefs.setStringList(_foldedPrefsKey(DateTime.now()), names);
     } catch (e) {
@@ -525,38 +551,180 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     );
   }
 
-  FluxSection? _buildThemeSection(
-    String slug,
-    FeedResponse? feed,
-    SectionKind kind,
-  ) {
+  /// Builds a FeedThemeSection from a fetched payload. The label/accent come
+  /// from the canonical theme visual mapping for Theme favorites; for custom
+  /// topic (Sujet) favorites the caller passes the user's topic name.
+  FeedThemeSection? _buildThemeSection({
+    required FeedResponse? feed,
+    required String label,
+    required Color accent,
+    String? themeSlug,
+    String? customTopicId,
+  }) {
     final items = feed?.items ?? const <Content>[];
     if (items.length < 2) return null;
-    final visual = visualFor(slug);
     return FeedThemeSection(
-      kind: kind,
-      label: visual.label,
+      kind: SectionKind.theme,
+      label: label,
       blurb: _kThemeBlurb,
-      accent: visual.accent,
+      accent: accent,
       illustrationAsset: _kVeilleIllustration,
       coreVisibleCount: 3,
-      themeSlug: slug,
+      themeSlug: themeSlug,
+      customTopicId: customTopicId,
       items: items,
     );
   }
 
-  List<String> _pickThemes(List<TopTheme> top) {
-    final valid = top
-        .where((t) => themeMap.containsKey(t.interestSlug))
-        .map((t) => t.interestSlug)
-        .toList();
-    if (valid.length >= 2) return valid.take(2).toList();
-    if (valid.length == 1) {
-      final fallback =
-          valid.first == fallbackTheme1 ? fallbackTheme2 : fallbackTheme1;
-      return [valid.first, fallback];
+  /// Resolves the ordered list of favorite refs to render as theme sections.
+  ///
+  /// Source of truth: `userInterestsProvider.favorites` (the user-declared
+  /// favorites, cap = [_kMaxFavoriteSections]). Fallback when the provider
+  /// hasn't loaded yet OR returned an empty list: the legacy `top-themes`
+  /// endpoint (weight-based) capped to 3 entries, then canonical macro
+  /// themes. This guarantees fresh accounts always see a tournée even before
+  /// the backfill migration runs.
+  List<FavoriteRef> _pickFavorites(List<TopTheme> topFallback) {
+    final favorites =
+        ref.read(userInterestsProvider).valueOrNull?.favorites ?? const [];
+    if (favorites.isNotEmpty) {
+      return favorites.take(_kMaxFavoriteSections).toList(growable: false);
     }
-    return [fallbackTheme1, fallbackTheme2];
+    final valid = topFallback
+        .where((t) => themeMap.containsKey(t.interestSlug))
+        .map<FavoriteRef>((t) => ThemeFavoriteRef(slug: t.interestSlug))
+        .toList();
+    if (valid.length >= _kMaxFavoriteSections) {
+      return valid.take(_kMaxFavoriteSections).toList(growable: false);
+    }
+    // Pad with canonical macro themes the user is missing — order: tech,
+    // environment, science (matches the backend backfill list).
+    const canonical = [fallbackTheme1, fallbackTheme2, 'science'];
+    final present = valid
+        .whereType<ThemeFavoriteRef>()
+        .map((r) => r.slug)
+        .toSet();
+    for (final slug in canonical) {
+      if (valid.length >= _kMaxFavoriteSections) break;
+      if (present.contains(slug)) continue;
+      valid.add(ThemeFavoriteRef(slug: slug));
+      present.add(slug);
+    }
+    return valid.take(_kMaxFavoriteSections).toList(growable: false);
+  }
+
+  /// Fetches one FeedResponse per favorite ref in parallel and turns them
+  /// into FeedThemeSections. Drops sections that have fewer than 2 items
+  /// (mirrors the legacy behavior — keeps the tournée useful, never sparse).
+  Future<List<FeedThemeSection>> _fetchThemeSections(
+    List<FavoriteRef> favorites,
+    bool isSerene,
+  ) async {
+    if (favorites.isEmpty) return const [];
+    final interestsState =
+        ref.read(userInterestsProvider).valueOrNull;
+    final feeds = await Future.wait(
+      favorites.map((favRef) => _fetchOneTheme(favRef, isSerene)),
+    );
+    final sections = <FeedThemeSection>[];
+    for (var i = 0; i < favorites.length; i++) {
+      final favRef = favorites[i];
+      final feed = feeds[i];
+      final section = switch (favRef) {
+        ThemeFavoriteRef(:final slug) => _buildThemeSection(
+            feed: feed,
+            label: visualFor(slug).label,
+            accent: visualFor(slug).accent,
+            themeSlug: slug,
+          ),
+        CustomTopicFavoriteRef(:final id) => _buildThemeSection(
+            feed: feed,
+            label: _customTopicLabel(interestsState, id),
+            accent: _customTopicAccent(interestsState, id),
+            customTopicId: id,
+          ),
+      };
+      if (section != null) sections.add(section);
+    }
+    return sections;
+  }
+
+  Future<FeedResponse?> _fetchOneTheme(FavoriteRef favRef, bool isSerene) {
+    return switch (favRef) {
+      ThemeFavoriteRef(:final slug) => _safe<FeedResponse>(
+          () => _feedRepo.getFeed(
+            page: 1,
+            limit: 10,
+            theme: slug,
+            serein: isSerene,
+          ),
+          'getFeed?theme=$slug',
+        ),
+      // Backend `/api/feed` accepts a UUID stringified in the `topic` param
+      // (story 22.1) — looked up against `user_topic_profiles` scoped on the
+      // current user, so no cross-user leak.
+      CustomTopicFavoriteRef(:final id) => _safe<FeedResponse>(
+          () => _feedRepo.getFeed(
+            page: 1,
+            limit: 10,
+            topic: id,
+            serein: isSerene,
+          ),
+          'getFeed?topic=$id',
+        ),
+    };
+  }
+
+  String _customTopicLabel(UserInterestsState? interests, String id) {
+    final found = interests?.customTopics
+        .where((t) => t.id == id)
+        .firstOrNull;
+    return found?.topicName ?? 'Sujet personnalisé';
+  }
+
+  Color _customTopicAccent(UserInterestsState? interests, String id) {
+    final found = interests?.customTopics
+        .where((t) => t.id == id)
+        .firstOrNull;
+    if (found != null) {
+      return visualFor(found.slugParent).accent;
+    }
+    return visualFor('').accent;
+  }
+
+  /// Replays only the theme-section fetches against the new favorite list.
+  /// Saves the cost of refetching the digest and feed continuation, which
+  /// don't depend on favorites.
+  Future<void> _refetchThemesOnly(List<FavoriteRef> nextFavorites) async {
+    final isSerene = ref.read(sereinToggleProvider).enabled;
+    final capped = nextFavorites
+        .take(_kMaxFavoriteSections)
+        .toList(growable: false);
+    final themes = await _fetchThemeSections(capped, isSerene);
+    _lastFavorites = capped;
+    _themes = themes;
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(_compose(isSerene));
+  }
+
+  bool _favoriteListsEqual(List<FavoriteRef> a, List<FavoriteRef> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  /// Validates a string key from the legacy SharedPreferences blob against
+  /// the new sectionKey scheme. Accepts `essentiel`, `bonnes`, `theme:*`
+  /// and `topic:*`; rejects everything else (notably `theme1` / `theme2`).
+  bool _isLiveFoldedKey(String key) {
+    if (key == SectionKind.essentiel.name) return true;
+    if (key == SectionKind.bonnes.name) return true;
+    if (key.startsWith('theme:')) return true;
+    if (key.startsWith('topic:')) return true;
+    return false;
   }
 
   /// Builds the set of content_ids already rendered in the sections (digest
