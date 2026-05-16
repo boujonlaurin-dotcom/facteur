@@ -7,7 +7,8 @@ import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../custom_topics/models/topic_models.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
-import '../../custom_topics/providers/theme_priority_provider.dart';
+import '../../my_interests/models/user_interests_state.dart';
+import '../../my_interests/providers/user_interests_provider.dart';
 import '../models/content_model.dart';
 import '../repositories/feed_repository.dart';
 
@@ -108,15 +109,15 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final topicsAsync = ref.watch(customTopicsProvider);
-    final themePriorityAsync = ref.watch(themePriorityProvider);
+    final interestsAsync = ref.watch(userInterestsProvider);
 
     final topics = topicsAsync.valueOrNull ?? const <UserTopicProfile>[];
-    final themePriority =
-        themePriorityAsync.valueOrNull ?? const <String, double>{};
+    final favorites =
+        interestsAsync.valueOrNull?.favorites ?? const <FavoriteRef>[];
 
     final tabs = _buildTabModels(
       topics: topics,
-      themePriority: themePriority,
+      favorites: favorites,
       items: widget.items,
       serverCounts: widget.serverCounts,
       selectedTopicSlug: widget.selectedTopicSlug,
@@ -186,7 +187,7 @@ final Map<String, String> _apiSlugToMacroLabel = {
 @visibleForTesting
 List<FavoriteTabModel> buildFavoriteTabModelsForTest({
   required List<UserTopicProfile> topics,
-  required Map<String, double> themePriority,
+  required List<FavoriteRef> favorites,
   required List<Content> items,
   TabCounts? serverCounts,
   String? selectedTopicSlug,
@@ -195,7 +196,7 @@ List<FavoriteTabModel> buildFavoriteTabModelsForTest({
 }) =>
     _buildTabModels(
       topics: topics,
-      themePriority: themePriority,
+      favorites: favorites,
       items: items,
       serverCounts: serverCounts,
       selectedTopicSlug: selectedTopicSlug,
@@ -205,35 +206,38 @@ List<FavoriteTabModel> buildFavoriteTabModelsForTest({
 
 List<FavoriteTabModel> _buildTabModels({
   required List<UserTopicProfile> topics,
-  required Map<String, double> themePriority,
+  required List<FavoriteRef> favorites,
   required List<Content> items,
   TabCounts? serverCounts,
   String? selectedTopicSlug,
   String? selectedThemeSlug,
   String? selectedEntitySlug,
 }) {
-  final themeApiSlugs = macroThemeToApiSlug.values.toSet();
   final useServer = serverCounts != null && serverCounts.total > 0;
 
+  final favoriteCustomIds = <String>{
+    for (final f in favorites)
+      if (f is CustomTopicFavoriteRef) f.id,
+  };
+  final favoriteThemeSlugs = <String>{
+    for (final f in favorites)
+      if (f is ThemeFavoriteRef) f.slug,
+  };
+
   final entitySubjects = topics
-      .where((t) => t.entityType != null && t.priorityMultiplier == 2.0)
+      .where((t) => t.entityType != null && favoriteCustomIds.contains(t.id))
       .toList()
     ..sort((a, b) => b.compositeScore.compareTo(a.compositeScore));
 
   final topicSubjects = topics
       .where((t) =>
-          t.entityType == null &&
-          t.priorityMultiplier == 2.0 &&
-          !themeApiSlugs.contains(t.slugParent))
+          t.entityType == null && favoriteCustomIds.contains(t.id))
       .toList()
-    ..sort((a, b) {
-      final byPriority = b.priorityMultiplier.compareTo(a.priorityMultiplier);
-      if (byPriority != 0) return byPriority;
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-    });
+    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
   final favoriteThemes = macroThemeOrder
-      .where((label) => (themePriority[label] ?? 1.0) == 2.0)
+      .where((label) =>
+          favoriteThemeSlugs.contains(macroThemeToApiSlug[label]))
       .toList();
 
   final cutoff = DateTime.now().subtract(const Duration(hours: 48));

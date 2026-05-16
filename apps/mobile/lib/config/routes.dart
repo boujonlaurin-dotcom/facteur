@@ -21,7 +21,7 @@ import '../features/settings/screens/account_screen.dart';
 import '../features/settings/screens/notifications_screen.dart';
 import '../features/settings/screens/about_screen.dart';
 import '../features/settings/widgets/settings_sheet.dart';
-import '../features/custom_topics/screens/my_interests_screen.dart';
+import '../features/my_interests/screens/my_interests_screen.dart';
 import '../features/custom_topics/screens/topic_explorer_screen.dart';
 import '../features/progress/screens/progressions_screen.dart';
 import '../features/progress/screens/quiz_screen.dart';

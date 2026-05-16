@@ -18,7 +18,6 @@ import '../models/topic_models.dart';
 import '../providers/algorithm_profile_provider.dart';
 import '../providers/custom_topics_provider.dart';
 import '../providers/personalization_provider.dart';
-import 'topic_priority_slider.dart';
 import '../../../widgets/design/priority_slider.dart';
 import '../../sources/providers/sources_providers.dart';
 
@@ -475,8 +474,9 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                     : null;
                 return _PulseHighlight(
                   active: shouldHighlight,
-                  child: TopicPrioritySlider(
+                  child: PrioritySlider(
                     currentMultiplier: matchedTopic.priorityMultiplier,
+                    labels: const ['Moins', 'Normal', 'Plus'],
                     fillWidth: true,
                     onChanged: (multiplier) async {
                       try {
