@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 
@@ -14,12 +15,25 @@ class SectionBanner extends StatelessWidget {
   final Color accent;
   final String? illustrationAsset;
 
+  /// Optional callback fired when the banner is tapped — drives the manual
+  /// fold gesture on editorial sections (caret `expand_less` to the right of
+  /// the title). When null, the banner is non-interactive (legacy behavior).
+  final VoidCallback? onTapFold;
+
+  /// Optional callback for the inline favorite star, posed at the end of the
+  /// title's last line. When null, no star is rendered — the banner layout is
+  /// strictly identical to the legacy V1.8 banner. Only the two user-favorite
+  /// sections (theme1 / theme2) wire this up.
+  final VoidCallback? onTapFavorite;
+
   const SectionBanner({
     super.key,
     required this.title,
     required this.accent,
     this.blurb,
     this.illustrationAsset,
+    this.onTapFold,
+    this.onTapFavorite,
   });
 
   @override
@@ -27,22 +41,27 @@ class SectionBanner extends StatelessWidget {
     final colors = context.facteurColors;
     final hasIllustration = illustrationAsset != null;
     // Reserve the right half for the illustration when present, so the
-    // title and blurb never bleed under the asset (QA Laurin 2026-05-14).
-    final textWidthFactor = hasIllustration ? 0.58 : 0.92;
+    // title and blurb never bleed under the asset (QA Laurin 2026-05-14 — V1.8 final).
+    final textWidthFactor = hasIllustration ? 0.70 : 0.92;
     // `width: double.infinity` is required because the parent SectionBlock
     // Column uses `CrossAxisAlignment.start`, which would otherwise size
     // this Container to its intrinsic width and leave parchment showing
     // past the gradient on the right.
-    return Container(
+    // Top-only radius : the cards below the banner butt up against its
+    // bottom edge, so rounding the bottom would carve out a parchment notch.
+    const topRadius = BorderRadius.vertical(top: Radius.circular(10));
+    final container = Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(0, 4, 0, 16),
       constraints: const BoxConstraints(minHeight: 132),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
+        borderRadius: topRadius,
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            accent.withValues(alpha: 0.14),
+            accent.withValues(alpha: 0.09),
             accent.withValues(alpha: 0.02),
           ],
         ),
@@ -63,7 +82,7 @@ class SectionBanner extends StatelessWidget {
                     center: Alignment.topRight,
                     radius: 1.0,
                     colors: [
-                      accent.withValues(alpha: 0.12),
+                      accent.withValues(alpha: 0.07),
                       accent.withValues(alpha: 0.0),
                     ],
                   ),
@@ -74,6 +93,18 @@ class SectionBanner extends StatelessWidget {
           if (illustrationAsset != null)
             Positioned.fill(
               child: _BannerIllustration(asset: illustrationAsset!),
+            ),
+          if (onTapFold != null)
+            Positioned(
+              top: 12,
+              right: 12,
+              child: IgnorePointer(
+                child: Icon(
+                  Icons.expand_less,
+                  size: 16,
+                  color: colors.textPrimary.withValues(alpha: 0.45),
+                ),
+              ),
             ),
           Padding(
             padding: const EdgeInsets.fromLTRB(22, 16, 22, 18),
@@ -86,7 +117,7 @@ class SectionBanner extends StatelessWidget {
                   height: 2,
                   margin: const EdgeInsets.only(bottom: 12),
                   decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.85),
+                    color: accent.withValues(alpha: 0.80),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -95,14 +126,28 @@ class SectionBanner extends StatelessWidget {
                   alignment: AlignmentDirectional.centerStart,
                   child: Padding(
                     padding: const EdgeInsets.only(top: 4, bottom: 6),
-                    child: Text(
-                      title,
-                      style: GoogleFonts.fraunces(
-                        fontSize: 25,
-                        fontWeight: FontWeight.w700,
-                        height: 1.06,
-                        letterSpacing: -0.5,
-                        color: colors.textPrimary,
+                    child: Text.rich(
+                      TextSpan(
+                        text: title,
+                        children: onTapFavorite == null
+                            ? null
+                            : <InlineSpan>[
+                                const TextSpan(text: '  '),
+                                WidgetSpan(
+                                  alignment: PlaceholderAlignment.middle,
+                                  child: _FavoriteStar(
+                                    color: colors.primary,
+                                    onTap: onTapFavorite!,
+                                  ),
+                                ),
+                              ],
+                        style: GoogleFonts.fraunces(
+                          fontSize: 25,
+                          fontWeight: FontWeight.w700,
+                          height: 1.06,
+                          letterSpacing: -0.5,
+                          color: colors.textPrimary,
+                        ),
                       ),
                     ),
                   ),
@@ -126,6 +171,48 @@ class SectionBanner extends StatelessWidget {
         ],
       ),
     );
+    if (onTapFold == null) return container;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTapFold,
+        borderRadius: topRadius,
+        splashColor: accent.withValues(alpha: 0.08),
+        highlightColor: accent.withValues(alpha: 0.04),
+        child: container,
+      ),
+    );
+  }
+}
+
+/// Inline "favorite" affordance posed at the end of a banner's title (last
+/// line), used to signal that a section is one of the user's two configurable
+/// favorites. Kept deliberately small — the rule is that this should not
+/// disturb the title/blurb/illustration layout.
+class _FavoriteStar extends StatelessWidget {
+  final Color color;
+  final VoidCallback onTap;
+
+  const _FavoriteStar({required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Gérer mes thèmes favoris',
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          child: Icon(
+            PhosphorIcons.star(PhosphorIconsStyle.fill),
+            size: 14,
+            color: color,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -140,7 +227,7 @@ class _BannerIllustration extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Align(
-      alignment: Alignment.bottomRight,
+      alignment: const Alignment(1.15, 0.55),
       child: IgnorePointer(
         child: ShaderMask(
           blendMode: BlendMode.dstIn,
@@ -148,18 +235,21 @@ class _BannerIllustration extends StatelessWidget {
             begin: Alignment.centerRight,
             end: Alignment.centerLeft,
             colors: [Colors.black, Colors.transparent],
-            stops: [0.55, 1.0],
+            stops: [0.50, 1.0],
           ).createShader(rect),
           child: Padding(
-            padding: const EdgeInsets.only(right: 4, bottom: 2),
-            child: Image.asset(
-              asset,
-              height: 136,
-              // Source PNGs are 1024² — decode at 2× display height to
-              // keep texture memory bounded (saves ~10× per image).
-              cacheHeight: 272,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            padding: const EdgeInsets.only(right: 0, bottom: 2),
+            child: Opacity(
+              opacity: 0.72,
+              child: Image.asset(
+                asset,
+                height: 120,
+                // Source PNGs are 1024² — decode at 2× display height to
+                // keep texture memory bounded (saves ~10× per image).
+                cacheHeight: 240,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
             ),
           ),
         ),

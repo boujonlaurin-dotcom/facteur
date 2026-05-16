@@ -43,6 +43,10 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
   final VoidCallback onTapActiveTab;
   final VoidCallback onTapActiveTabRefresh;
   final VoidCallback onAddFavorite;
+  /// API slugs (macro themes) to omit from the tab list. Used by the Flux
+  /// Continu Explorer filter bar to hide themes already covered by the day's
+  /// tournée — avoiding the "double serving" of the same theme.
+  final List<String> excludedThemeSlugs;
 
   const FavoriteTopicTabs({
     super.key,
@@ -55,6 +59,7 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
     required this.onTapActiveTab,
     required this.onTapActiveTabRefresh,
     required this.onAddFavorite,
+    this.excludedThemeSlugs = const [],
   });
 
   @override
@@ -123,6 +128,7 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
       selectedTopicSlug: widget.selectedTopicSlug,
       selectedThemeSlug: widget.selectedThemeSlug,
       selectedEntitySlug: widget.selectedEntitySlug,
+      excludedThemeSlugs: widget.excludedThemeSlugs,
     );
 
     _activeKey = null;
@@ -193,6 +199,7 @@ List<FavoriteTabModel> buildFavoriteTabModelsForTest({
   String? selectedTopicSlug,
   String? selectedThemeSlug,
   String? selectedEntitySlug,
+  List<String> excludedThemeSlugs = const [],
 }) =>
     _buildTabModels(
       topics: topics,
@@ -202,6 +209,7 @@ List<FavoriteTabModel> buildFavoriteTabModelsForTest({
       selectedTopicSlug: selectedTopicSlug,
       selectedThemeSlug: selectedThemeSlug,
       selectedEntitySlug: selectedEntitySlug,
+      excludedThemeSlugs: excludedThemeSlugs,
     );
 
 List<FavoriteTabModel> _buildTabModels({
@@ -212,6 +220,7 @@ List<FavoriteTabModel> _buildTabModels({
   String? selectedTopicSlug,
   String? selectedThemeSlug,
   String? selectedEntitySlug,
+  List<String> excludedThemeSlugs = const [],
 }) {
   final useServer = serverCounts != null && serverCounts.total > 0;
 
@@ -296,6 +305,7 @@ List<FavoriteTabModel> _buildTabModels({
   for (final label in favoriteThemes) {
     final apiSlug = macroThemeToApiSlug[label];
     if (apiSlug == null) continue;
+    if (excludedThemeSlugs.contains(apiSlug)) continue;
     favoriteTabs.add(FavoriteTabModel(
       kind: FavoriteTabKind.theme,
       slug: apiSlug,

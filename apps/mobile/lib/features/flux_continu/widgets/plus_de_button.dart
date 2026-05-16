@@ -4,12 +4,11 @@ import '../../../config/theme.dart';
 
 /// "Plus de…" expand/collapse button for a Flux Continu section.
 ///
-/// Visual: dashed-bordered pill with the section accent color. Tap toggles
-/// the section's overflow articles. The provider owns the state — this
-/// widget is purely presentational.
+/// Soft off-white pill, single neutral colour across all sections — section
+/// accents stay confined to the hero banner so the bottom-of-section CTA
+/// reads as quiet UI chrome rather than as a second hero element.
 class PlusDeButton extends StatelessWidget {
   final String sectionLabel;
-  final Color accent;
   final bool isOpen;
   final int hiddenCount;
   final VoidCallback onTap;
@@ -17,7 +16,6 @@ class PlusDeButton extends StatelessWidget {
   const PlusDeButton({
     super.key,
     required this.sectionLabel,
-    required this.accent,
     required this.isOpen,
     required this.hiddenCount,
     required this.onTap,
@@ -25,42 +23,36 @@ class PlusDeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.facteurColors;
     final label = isOpen
         ? 'Replier $sectionLabel'
         : 'Plus de $sectionLabel${hiddenCount > 0 ? " (+$hiddenCount)" : ""}';
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        FacteurSpacing.space4,
-        FacteurSpacing.space2,
-        FacteurSpacing.space4,
-        FacteurSpacing.space3,
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(FacteurRadius.pill),
-        child: CustomPaint(
-          painter: _DashedBorderPainter(color: accent, radius: 24),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Material(
+        color: colors.surfaceElevated.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
           child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space4,
-              vertical: FacteurSpacing.space2,
-            ),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
                   isOpen ? Icons.expand_less : Icons.expand_more,
-                  color: accent,
+                  color: colors.textSecondary,
                   size: 18,
                 ),
                 const SizedBox(width: 6),
                 Text(
                   label,
-                  style:
-                      Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: accent,
-                            fontWeight: FontWeight.w600,
-                          ),
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: colors.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
                 ),
               ],
             ),
@@ -69,40 +61,4 @@ class PlusDeButton extends StatelessWidget {
       ),
     );
   }
-}
-
-class _DashedBorderPainter extends CustomPainter {
-  static const double _dashLength = 4;
-  static const double _gap = 3;
-
-  final Color color;
-  final double radius;
-
-  _DashedBorderPainter({required this.color, required this.radius});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.2
-      ..style = PaintingStyle.stroke;
-
-    final rrect = RRect.fromRectAndRadius(
-      Offset.zero & size,
-      Radius.circular(radius),
-    );
-    final path = Path()..addRRect(rrect);
-    for (final metric in path.computeMetrics()) {
-      double distance = 0;
-      while (distance < metric.length) {
-        final next = (distance + _dashLength).clamp(0.0, metric.length);
-        canvas.drawPath(metric.extractPath(distance, next), paint);
-        distance = next + _gap;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_DashedBorderPainter old) =>
-      old.color != color || old.radius != radius;
 }
