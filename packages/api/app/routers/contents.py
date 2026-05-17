@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
 from app.models.content import Content
-from app.models.enums import ContentType
+from app.models.enums import BiasStance, ContentType
 from app.schemas.collection import SaveContentRequest
 from app.schemas.content import (
     ArticleFeedbackRequest,
@@ -25,6 +25,7 @@ from app.services.collection_service import CollectionService
 from app.services.content_extractor import ContentExtractor
 from app.services.content_service import ContentService
 from app.services.feed_cache import FEED_CACHE
+from app.services.title_annotation_service import get_title_annotation_service
 
 logger = structlog.get_logger()
 
@@ -722,6 +723,69 @@ async def _load_stored_perspectives_for_representative(
     return None
 
 
+async def _attach_highlight_spans(
+    db: AsyncSession,
+    content: Content,
+    perspectives_dicts: list[dict],
+) -> None:
+    """Mutate `perspectives_dicts` in-place adding `highlight_spans` to each.
+
+    Looks up cached strong_tokens for the cluster (computing & persisting if
+    missing), then diffs the reference article's tokens against each
+    perspective's. Perspectives that aren't part of any DB cluster
+    (pure Google News results) get their tokens computed in one batched
+    spaCy call. Any failure → every perspective gets `highlight_spans: []`.
+    """
+    if not content.cluster_id:
+        for p in perspectives_dicts:
+            p["highlight_spans"] = []
+        return
+
+    try:
+        svc = get_title_annotation_service()
+        annotations = await svc.get_or_compute_cluster_annotations(
+            db, content.cluster_id
+        )
+        ref_tokens = annotations.tokens_by_id.get(content.id) or (
+            svc.compute_strong_tokens(content.title or "")
+        )
+
+        # Collect off-cluster perspective titles once and run a single
+        # batched spaCy call instead of N synchronous invocations on the
+        # event loop.
+        off_cluster_indices: list[int] = []
+        off_cluster_titles: list[str] = []
+        for i, p in enumerate(perspectives_dicts):
+            if annotations.id_by_url.get(p.get("url") or "") is None:
+                off_cluster_indices.append(i)
+                off_cluster_titles.append(p.get("title") or "")
+        off_cluster_tokens = await svc.compute_strong_tokens_batch(off_cluster_titles)
+        tokens_by_index: dict[int, list[dict]] = dict(
+            zip(off_cluster_indices, off_cluster_tokens, strict=True)
+        )
+
+        for i, p in enumerate(perspectives_dicts):
+            alt_id = annotations.id_by_url.get(p.get("url") or "")
+            alt_tokens = (
+                annotations.tokens_by_id.get(alt_id, [])
+                if alt_id is not None
+                else tokens_by_index.get(i, [])
+            )
+            p["highlight_spans"] = svc.diff_spans(
+                ref_tokens,
+                alt_tokens,
+                p.get("bias_stance") or BiasStance.UNKNOWN.value,
+            )
+    except Exception:
+        logger.exception(
+            "highlight_spans_failed",
+            content_id=str(content.id),
+            cluster_id=str(content.cluster_id),
+        )
+        for p in perspectives_dicts:
+            p.setdefault("highlight_spans", [])
+
+
 @router.get("/{content_id}/perspectives", status_code=status.HTTP_200_OK)
 async def get_perspectives(
     content_id: UUID,
@@ -871,6 +935,8 @@ async def get_perspectives(
         cached_row = analysis_result.scalars().first()
         cached_analysis = cached_row.analysis_text if cached_row else None
 
+        await _attach_highlight_spans(db, content, stored_perspectives)
+
         response = {
             "content_id": cache_key,
             # Empty keywords: the snapshot was built without re-running the
@@ -999,22 +1065,25 @@ async def get_perspectives(
     if cached_row:
         cached_analysis = cached_row.analysis_text
 
+    perspectives_dicts = [
+        {
+            "title": p.title,
+            "url": p.url,
+            "source_name": p.source_name,
+            "source_domain": p.source_domain,
+            "bias_stance": p.bias_stance,
+            "published_at": p.published_at,
+            "description": p.description,
+        }
+        for p in perspectives
+    ]
+    await _attach_highlight_spans(db, content, perspectives_dicts)
+
     response = {
         "content_id": cache_key,
         "keywords": keywords,
         "source_bias_stance": source_bias_stance,
-        "perspectives": [
-            {
-                "title": p.title,
-                "url": p.url,
-                "source_name": p.source_name,
-                "source_domain": p.source_domain,
-                "bias_stance": p.bias_stance,
-                "published_at": p.published_at,
-                "description": p.description,
-            }
-            for p in perspectives
-        ],
+        "perspectives": perspectives_dicts,
         "bias_distribution": bias_distribution,
         "comparison_quality": comparison_quality,
         "should_display": should_display,
