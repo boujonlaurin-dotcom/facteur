@@ -320,6 +320,93 @@ async def test_attach_highlight_spans_swallows_exceptions(
         "app.routers.contents.get_title_annotation_service",
         return_value=BrokenService(),
     ):
-        await _attach_highlight_spans(db_session, cluster_setup["ref"], perspectives)
+        pivot = await _attach_highlight_spans(
+            db_session, cluster_setup["ref"], perspectives
+        )
 
     assert perspectives[0]["highlight_spans"] == []
+    assert perspectives[0]["shared_tokens"] == []
+    assert pivot is None
+
+
+@pytest.mark.asyncio
+async def test_attach_highlight_spans_returns_reference_pivot_and_shared_tokens(
+    db_session, cluster_setup
+):
+    """Happy path: ref pivot bubbles up, alt perspective carries shared_tokens."""
+    docs = {
+        "Tsahal frappe Gaza": FakeDoc(
+            tokens=[
+                FakeToken("Tsahal", 0, "PROPN", "Tsahal"),
+                FakeToken("frappe", 7, "VERB", "frapper"),
+                FakeToken("Gaza", 14, "PROPN", "Gaza"),
+            ],
+        ),
+        "Armée israélienne bombarde Gaza": FakeDoc(
+            tokens=[
+                FakeToken("Armée", 0, "NOUN", "armée"),
+                FakeToken("israélienne", 6, "ADJ", "israélien"),
+                FakeToken("bombarde", 18, "VERB", "bombarder"),
+                FakeToken("Gaza", 27, "PROPN", "Gaza"),
+            ],
+        ),
+    }
+    fake_svc = service_with_nlp(FakeNlp(docs))
+
+    perspectives = [
+        {
+            "title": "Armée israélienne bombarde Gaza",
+            "url": cluster_setup["alt_a"].url,
+            "bias_stance": "left",
+        }
+    ]
+    with patch(
+        "app.routers.contents.get_title_annotation_service",
+        return_value=fake_svc,
+    ):
+        pivot = await _attach_highlight_spans(
+            db_session, cluster_setup["ref"], perspectives
+        )
+
+    assert pivot == {"start": 7, "end": 13, "text": "frappe"}
+    shared = perspectives[0]["shared_tokens"]
+    assert [s["text"] for s in shared] == ["Gaza"]
+    assert shared[0]["start"] == 27
+    assert "bias" not in shared[0]
+
+
+@pytest.mark.asyncio
+async def test_attach_highlight_spans_returns_none_pivot_without_cluster(db_session):
+    """No cluster_id → no pivot computed, shared_tokens defaulted to []."""
+    source = Source(
+        id=uuid4(),
+        name="Solo",
+        url="https://solo2.fr",
+        feed_url=f"https://solo2.fr/feed-{uuid4()}.xml",
+        type=SourceType.ARTICLE,
+        theme="society",
+        is_active=True,
+        is_curated=False,
+    )
+    db_session.add(source)
+    await db_session.commit()
+    standalone = Content(
+        id=uuid4(),
+        source_id=source.id,
+        title="Standalone",
+        url="https://solo2.fr/x",
+        published_at=datetime.now(UTC),
+        content_type=ContentType.ARTICLE,
+        guid="solo2-x",
+        cluster_id=None,
+    )
+    db_session.add(standalone)
+    await db_session.commit()
+
+    perspectives = [
+        {"title": "Anything", "url": "https://other.fr/y", "bias_stance": "left"}
+    ]
+    pivot = await _attach_highlight_spans(db_session, standalone, perspectives)
+
+    assert pivot is None
+    assert perspectives[0]["shared_tokens"] == []

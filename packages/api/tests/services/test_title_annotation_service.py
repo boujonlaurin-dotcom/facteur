@@ -160,6 +160,79 @@ def test_diff_spans_preserves_offsets():
     assert spans[0]["end"] == 21
 
 
+# --- compute_shared_tokens --------------------------------------------------
+
+
+def test_compute_shared_tokens_returns_alt_spans_with_matching_lemma():
+    ref = [_tok("ministre", "ministre"), _tok("réforme", "réforme", start=10)]
+    alt = [
+        _tok("Ministre", "ministre", start=0),
+        _tok("brutale", "brutal", pos="ADJ", start=10),
+        _tok("Réformes", "réforme", start=20),
+    ]
+    svc = service_with_nlp(None)
+
+    shared = svc.compute_shared_tokens(ref, alt)
+    texts = [s["text"] for s in shared]
+
+    assert texts == ["Ministre", "Réformes"]
+    # No bias / pos fields exposed — just position + text
+    assert all(set(s.keys()) == {"start", "end", "text"} for s in shared)
+
+
+def test_compute_shared_tokens_preserves_alt_offsets():
+    ref = [_tok("guerre", "guerre")]
+    alt = [_tok("guerre", "guerre", start=42)]
+    svc = service_with_nlp(None)
+
+    shared = svc.compute_shared_tokens(ref, alt)
+    assert shared == [{"start": 42, "end": 48, "text": "guerre"}]
+
+
+def test_compute_shared_tokens_empty_when_no_overlap():
+    ref = [_tok("paix", "paix")]
+    alt = [_tok("guerre", "guerre", start=10)]
+    svc = service_with_nlp(None)
+    assert svc.compute_shared_tokens(ref, alt) == []
+
+
+def test_compute_shared_tokens_is_uncapped():
+    """Unlike diff_spans, shared has no MAX cap — the front renders them all."""
+    ref = [_tok(f"w{i}", f"w{i}", start=i * 5) for i in range(8)]
+    alt = [_tok(f"W{i}", f"w{i}", start=i * 5) for i in range(8)]
+    svc = service_with_nlp(None)
+    assert len(svc.compute_shared_tokens(ref, alt)) == 8
+
+
+# --- compute_reference_pivot ------------------------------------------------
+
+
+def test_compute_reference_pivot_returns_first_verb():
+    ref = [
+        _tok("Macron", "Macron", pos="PROPN", start=0),
+        _tok("annonce", "annoncer", pos="VERB", start=7),
+        _tok("réforme", "réforme", pos="NOUN", start=15),
+        _tok("présente", "présenter", pos="VERB", start=23),
+    ]
+    svc = service_with_nlp(None)
+    pivot = svc.compute_reference_pivot(ref)
+    assert pivot == {"start": 7, "end": 14, "text": "annonce"}
+
+
+def test_compute_reference_pivot_none_when_no_verb():
+    ref = [
+        _tok("Macron", "Macron", pos="PROPN"),
+        _tok("réforme", "réforme", pos="NOUN", start=7),
+    ]
+    svc = service_with_nlp(None)
+    assert svc.compute_reference_pivot(ref) is None
+
+
+def test_compute_reference_pivot_none_when_empty():
+    svc = service_with_nlp(None)
+    assert svc.compute_reference_pivot([]) is None
+
+
 # --- get_or_compute_cluster_annotations -------------------------------------
 
 

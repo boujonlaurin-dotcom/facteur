@@ -727,19 +727,24 @@ async def _attach_highlight_spans(
     db: AsyncSession,
     content: Content,
     perspectives_dicts: list[dict],
-) -> None:
-    """Mutate `perspectives_dicts` in-place adding `highlight_spans` to each.
+) -> dict | None:
+    """Mutate `perspectives_dicts` in-place adding `highlight_spans` + `shared_tokens`.
 
     Looks up cached strong_tokens for the cluster (computing & persisting if
     missing), then diffs the reference article's tokens against each
     perspective's. Perspectives that aren't part of any DB cluster
     (pure Google News results) get their tokens computed in one batched
-    spaCy call. Any failure → every perspective gets `highlight_spans: []`.
+    spaCy call. Any failure → every perspective gets empty lists.
+
+    Returns the reference title's pivot verb span `{start, end, text}` or
+    `None` — the caller bubbles it up to the response root so the front can
+    wash the pivot in the `cm-ref-inline` block.
     """
     if not content.cluster_id:
         for p in perspectives_dicts:
             p["highlight_spans"] = []
-        return
+            p["shared_tokens"] = []
+        return None
 
     try:
         svc = get_title_annotation_service()
@@ -776,6 +781,9 @@ async def _attach_highlight_spans(
                 alt_tokens,
                 p.get("bias_stance") or BiasStance.UNKNOWN.value,
             )
+            p["shared_tokens"] = svc.compute_shared_tokens(ref_tokens, alt_tokens)
+
+        return svc.compute_reference_pivot(ref_tokens)
     except Exception:
         logger.exception(
             "highlight_spans_failed",
@@ -784,6 +792,8 @@ async def _attach_highlight_spans(
         )
         for p in perspectives_dicts:
             p.setdefault("highlight_spans", [])
+            p.setdefault("shared_tokens", [])
+        return None
 
 
 @router.get("/{content_id}/perspectives", status_code=status.HTTP_200_OK)
@@ -935,7 +945,9 @@ async def get_perspectives(
         cached_row = analysis_result.scalars().first()
         cached_analysis = cached_row.analysis_text if cached_row else None
 
-        await _attach_highlight_spans(db, content, stored_perspectives)
+        reference_pivot = await _attach_highlight_spans(
+            db, content, stored_perspectives
+        )
 
         response = {
             "content_id": cache_key,
@@ -950,6 +962,7 @@ async def get_perspectives(
             "should_display": should_display,
             "analysis": cached_analysis,
             "analysis_cached": cached_analysis is not None,
+            "reference_pivot": reference_pivot,
         }
         _perspectives_cache[cache_key] = response
         logger.info(
@@ -1077,7 +1090,9 @@ async def get_perspectives(
         }
         for p in perspectives
     ]
-    await _attach_highlight_spans(db, content, perspectives_dicts)
+    reference_pivot = await _attach_highlight_spans(
+        db, content, perspectives_dicts
+    )
 
     response = {
         "content_id": cache_key,
@@ -1089,6 +1104,7 @@ async def get_perspectives(
         "should_display": should_display,
         "analysis": cached_analysis,
         "analysis_cached": cached_analysis is not None,
+        "reference_pivot": reference_pivot,
     }
 
     # Store in cache (TTLCache handles expiration automatically)
