@@ -378,10 +378,7 @@ class UserSourcesStateService:
                     target_id=str(source_id),
                     current_count=len(existing),
                 )
-            if position is None:
-                taken = {f.position for f in existing}
-                position = next(p for p in range(FAVORITE_CAP) if p not in taken)
-            elif any(f.position == position for f in existing):
+            if position is None or any(f.position == position for f in existing):
                 taken = {f.position for f in existing}
                 position = next(p for p in range(FAVORITE_CAP) if p not in taken)
 
