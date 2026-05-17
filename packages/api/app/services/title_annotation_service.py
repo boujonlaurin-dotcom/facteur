@@ -164,6 +164,35 @@ class TitleAnnotationService:
             for t in ranked[: self.MAX_HIGHLIGHTED_PER_TITLE]
         ]
 
+    def compute_shared_tokens(
+        self, ref_tokens: list[dict], alt_tokens: list[dict]
+    ) -> list[dict]:
+        """Return spans of `alt_tokens` whose lemma IS present in `ref_tokens`.
+
+        Symmetric to `diff_spans`: same lemma comparison, opposite filter,
+        no cap (the front wants every shared token rendered in tertiary so
+        the diff visualisation stays coherent). Preserves the alt token
+        ordering. Each span is `{start, end, text}` — no bias, no pos.
+        """
+        ref_lemmas = {t["lemma"] for t in ref_tokens}
+        return [
+            {"start": t["start"], "end": t["end"], "text": t["text"]}
+            for t in alt_tokens
+            if t["lemma"] in ref_lemmas
+        ]
+
+    def compute_reference_pivot(self, ref_tokens: list[dict]) -> dict | None:
+        """Return the first VERB span in `ref_tokens` as `{start, end, text}`.
+
+        Used by the hi-fi `cm-ref-inline` block to render the reference
+        title's pivot verb with a grey wash. Falls back to `None` when no
+        verb is found — the front then renders the title without wash.
+        """
+        for t in ref_tokens:
+            if t.get("pos") == "VERB":
+                return {"start": t["start"], "end": t["end"], "text": t["text"]}
+        return None
+
     async def get_or_compute_cluster_annotations(
         self, db: AsyncSession, cluster_id: UUID
     ) -> ClusterAnnotations:
