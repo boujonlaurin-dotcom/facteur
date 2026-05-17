@@ -1090,9 +1090,7 @@ async def get_perspectives(
         }
         for p in perspectives
     ]
-    reference_pivot = await _attach_highlight_spans(
-        db, content, perspectives_dicts
-    )
+    reference_pivot = await _attach_highlight_spans(db, content, perspectives_dicts)
 
     response = {
         "content_id": cache_key,
