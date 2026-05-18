@@ -1,193 +1,99 @@
-# QA Handoff — Refonte hi-fi Couverture médiatique (Story 7.4 Sprint 2 front)
+# QA Handoff — Feed staggered loading
 
-> Reconvergence des deux workstreams (`22.1.x-backend-interests` + `flux-continu-v18-refonte` + WIP V10) sur la branche `22.1.1-backend-interests`. UNE PR vers `main`.
+> Rempli par l'agent dev pour input à `/validate-feature`.
 
-## Vue d'ensemble
+## Feature développée
 
-Deux features shippées ensemble :
-
-1. **Système d'intérêts 4-états unifié + favoris + backfill (Story 22.1)** — Backend (migration + endpoints + services), mobile screens, sync mobile one-shot.
-2. **Flux Continu V1.8 + finitions V2.0 (Story 21.1)** — Home Flux Continu, hero Explorer, sticky bascule tab bar ↔ filter bar, fold différé entre sessions.
-
-Refonte hi-fi du panneau « Couverture médiatique » sur l'écran article (front) :
-- Bandeau `cm-panel-inline` (hairlines, spectrum 5-segs, "N médias", caret)
-- Carte dépliée : bloc référence (wash verbe-pivot gris), 8 lignes variantes avec **diff lexical animé en cascade** (Mode 3 fidèle : shared en tertiary, key en wash bias)
-- CTA Analyse Facteur en card dashed déprioritée
-- Nouveau badge polarisation (3 niveaux) dans la meta-row des `FeedCard` des articles topicalisés du digest L'Essentiel
-
-L'animation cascade des surlignages se déclenche **1×** à l'ouverture de la carte dépliée. Feeling visé : « Facteur analyse en temps réel les divergences entre sources ».
+Refonte du chargement initial du `FeedScreen` en 3 phases progressives (`critical` → `postFrame` → `idle`) pour :
+1. Réduire le burst de requêtes HTTP au mount (de ~8 simultanées à 2 critiques)
+2. Afficher prioritairement le digest et le shell du feed
+3. Conserver le loader éditorial (citations `loaderBlurbs`) qui apparaît à t=3 s quand le feed met du temps
 
 ## PR associée
 
-À créer juste après ce handoff (`gh pr create --base main`).
+Sera créée vers `main` après QA — branche `claude/feed-staggered-loading`.
 
-PO Laurin a signalé : « En scroll-down continu, des "sauts" apparaissent toujours en arrivant à la fin d'une section. » Quatre approches in-session ont échoué (trigger naïf, `userScrollDirection`, `correctBy` post-frame, `SliverList` natif) — toutes laissaient un décalage visible parce qu'un resize de sliver dans un `CustomScrollView` impose mécaniquement de réaligner le contenu en dessous.
-
-**Pivot UX** : abandonner le fold pendant la session active. Le scroll-past est désormais **détecté mais persisté en silence** — la section reste expanded à l'écran jusqu'à ce que le user quitte/relance l'app. Au prochain cold launch, les sections "consommées" lors de la session précédente apparaissent déjà en `FoldedSectionCard` (la transition fold→expanded n'est plus visible parce qu'elle est portée par l'initial layout, pas par un changement en cours de session).
-
-**Critères d'acceptation V2.0** :
-1. Pendant une session active, **aucune section ne se replie automatiquement au scroll** — le user voit toujours le hero plein-format, même après l'avoir scrollé.
-2. Aucun saut visuel, aucun stutter pendant le scroll continu (puisqu'il n'y a plus aucun resize).
-3. Cold-launch d'une nouvelle session (kill + relaunch) → les sections scrollées past lors de la session précédente apparaissent déjà en `FoldedSectionCard` au top du flux.
-4. Tap sur folded card → ré-expansion locale (state-only, non persistée, comme avant).
-5. La closing card « Vous êtes à jour » suit la même logique.
-
-## Feature développée (21.1)
-
-Six ajustements de la home Flux Continu V1.8 : auto-fold des sections scrollées en cartes-titre compactes (persisté par jour), hero « Explorer » qui sépare la zone éditoriale du feed continu, bascule sticky tab bar ↔ filter bar au passage du hero Explorer, Bonnes Nouvelles en dernière position (non-serein) ou en tête (serein), refinements visuels des heros (texte plus large, illustration plus discrète).
-
-## Écrans impactés (21.1)
+## Écrans impactés
 
 | Écran | Route | Modifié / Nouveau |
-|---|---|---|
-| Détail article (bottom layout) | `/feed/:contentId` | Modifié — `PerspectivesInlineSection` refondu |
-| Détail article (top layout) | `/digest/:contentId` | Modifié — idem, 2 call-sites |
-| Digest L'Essentiel | `/digest` | Modifié — `FeedCard` accepte `divergenceLevel` ; câblé via `topic_section.dart` |
+|-------|-------|-------------------|
+| Feed principal | `/feed` | **Modifié** (staggered loading) |
 
-### Scénario 2 : Tap sur folded card = ré-expansion locale
+## Scénarios de test
+
+### Scénario 1 : Cold start happy path
+
 **Parcours** :
-1. Après scénario 1, scroll vers le haut pour revoir les folded cards
-2. Tap sur une carte foldée (ex. Essentiel)
+1. Logout (si déjà connecté).
+2. Login.
+3. Atterrir sur `/feed`.
+4. Capturer des screenshots à : t=200 ms, t=1 s, t=3 s, t=5 s.
+5. Ouvrir DevTools Network pour compter les requêtes HTTP par tranche temporelle.
 
 **Résultat attendu** :
-- La carte se ré-expanse en hero complet (banner + cards + Plus de…)
-- Pas de persistance : recharger la page (F5) la laisse foldée à nouveau
+- **t=200 ms** : shell (logo + avatar) + `DigestEntryCard` (avec son shimmer interne) + `LoadingView` éditoriale (`FacteurLoader` visible) dans le sliver feed. Filter bar visible mais badges onglets vides.
+- **t=1 s** : digest rendu si l'API a répondu, filter bar peuplée (badges + sources). Feed encore en loading si réseau lent.
+- **t=3 s** : si feed pas encore arrivé, la citation `EditorialLoaderCard` apparaît (texte + attribution Camus/Beuve-Méry/etc.).
+- **t=5 s** : feed rendu intégralement.
+- **Réseau** : ≤ 2 requêtes HTTP à t=0 (digest/both + feed?page=1). ≤ 5 à t=300 ms (ajout tab-counts, user-sources, first-impression deps). Le reste (custom-topics, app/update, swipe-hint…) déclenché après t+800 ms ou après l'arrivée des données feed.
 
-### Scénario 1 — Happy path : animation cascade Mode 3
-
-**Parcours** :
-1. Ouvrir un article du digest L'Essentiel couvert par ≥5 médias avec topic polarisé (idéalement actu politique récente)
-2. Vérifier le bandeau replié sous le titre : `Couverture médiatique` + spectrum 5 segments distincts + `N médias` + caret
-3. Tap sur le bandeau → carte se déplie
-
-**Résultats attendus** :
-- Bloc référence visible (border-left ocre, titre `Fraunces` 16.5/600). Si verbe-pivot retourné par le back, **wash gris apparaît** sur le verbe ~80 ms après l'ouverture, fade-in 300 ms.
-- 8 lignes variantes apparaissent (border-left 4 px couleur bias). Sur chaque ligne, les **tokens partagés deviennent gris** et les **tokens divergents reçoivent un wash de la couleur du bias** dans une cascade séquentielle ordonnée par position (gauche → droite), 25 ms entre tokens, 220 ms par token (`easeOutCubic`).
-- Toutes les lignes animent **en parallèle** — feeling « scan simultané ».
-- CTA `Analyse Facteur` dashed border en bas, déprioritée.
-
-### Scénario 2 — Tap variant ouvre navigateur externe
+### Scénario 2 : Pull-to-refresh
 
 **Parcours** :
-1. Sur la carte dépliée, tap n'importe quelle ligne variante.
+1. Sur `/feed`, tirer vers le bas pour déclencher le `RefreshIndicator`.
+2. Observer le comportement réseau et UI.
 
-**Résultat attendu** : le navigateur in-app/externe s'ouvre sur l'URL du variant. Pas de crash. Le panel reste ouvert au retour.
+**Résultat attendu** :
+- Le feed se recharge.
+- La phase reste `idle` (les widgets sont déjà montés), donc tous les providers se rafraîchissent en parallèle — c'est cohérent avec l'attente utilisateur d'un refresh global.
+- Aucun flash de placeholder (les badges, sources, etc. restent visibles pendant le refresh).
 
-### Scénario 3 — Tap CTA Analyse Facteur
-
-**Parcours** :
-1. Tap sur "Lancer →" dans la card CTA dashed.
-
-**Résultat attendu** : le CTA disparaît, remplacé par `PerspectivesAnalysisZone` (skeleton 3 lignes → résultat Markdown). UI inchangée vs. avant la refonte (mêmes états loading/done/error).
-
-### Scénario 4 — Mode 2 dégradé (back pas encore déployé)
+### Scénario 3 : Toggle Serein
 
 **Parcours** :
-1. Si le back ne renvoie pas `shared_tokens` (ancien déploiement), ouvrir un article avec perspectives.
+1. Sur `/feed`, basculer le toggle Serein dans le `DigestEntryCard`.
+2. Observer.
 
-**Résultat attendu** : la carte se déplie. Les variants rendent leur titre avec les `highlight_spans` en wash bias, et le reste en `text_tertiary` (mode 2 fallback automatique, pas de crash). Cascade animée toujours active.
+**Résultat attendu** :
+- Le toggle fonctionne comme avant (refresh feed avec `isSerein` updated).
+- Pas de régression sur l'affichage du `DigestEntryCard` (ordre des deux cartes change selon le toggle).
 
-### Scénario 5 — Replier → re-ouvrir relance la cascade
-
-**Parcours** :
-1. Carte dépliée avec animation jouée.
-2. Tap bandeau → carte se replie.
-3. Tap bandeau → carte se déplie de nouveau.
-
-**Résultat attendu** : nouvelle cascade jouée intégralement (animation 1× par expand). Pas de "snap" instantané.
-
-### Scénario 6 — Article hors digest (live path) sans cluster
+### Scénario 4 : SearchFilterSheet (trending topics)
 
 **Parcours** :
-1. Ouvrir un article live (non-digest) qui n'a pas de cluster ou pour lequel le back ne peut pas calculer les annotations.
+1. Sur `/feed`, ouvrir la `SearchFilterSheet` (icône loupe dans filter bar).
+2. Observer les trending topics.
 
-**Résultats attendus** :
-- `highlightSpans` et `sharedTokens` vides sur les variants → DiffTitle rend le titre plein en `text_primary` (pas de wash).
-- `referencePivot` null → bloc référence rendu sans wash.
+**Résultat attendu** :
+- Les trending topics se chargent à l'ouverture de la sheet (lazy), pas au mount du feed.
+- Aucune régression vs avant.
+
+### Scénario 5 : Cas réseau lent (3G simulé)
+
+**Parcours** :
+1. Chrome DevTools → Network → Throttling "Slow 3G".
+2. Hard reload sur `/feed`.
+3. Observer.
+
+**Résultat attendu** :
+- Le shell + `LoadingView` apparaissent immédiatement.
+- La citation `EditorialLoaderCard` apparaît à t=3 s, rendant l'attente moins frustrante.
+- Le digest s'affiche dès que `/digest/both` répond (probablement avant le feed sur 3G car payload plus léger).
 - Aucune erreur console.
 
-> **Regression Bug Couverture (2026-05-18)** : avant fix, ce scénario rendait *tous* les titres en `text_tertiary` (gris pâle uniforme) au lieu de `text_primary`. Couvert par `diff_title_test.dart:122` qui asserte maintenant explicitement la couleur du chunk plain. Cf. `docs/bugs/bug-couverture-mediatique-surlignages.md`.
+## Critères d'acceptation
 
-### Scénario 8 — Bandeau cm-panel-inline en viewport étroit (390px)
+- [ ] Le shell du feed (header + DigestEntryCard placeholder + LoadingView) est visible en moins de 300 ms après navigation vers `/feed`.
+- [ ] Le digest s'affiche dès que `GET /api/digest/both` répond, sans attendre `/api/feed`.
+- [ ] La citation `EditorialLoaderCard` apparaît bien à t=3 s sur réseau lent.
+- [ ] Au plus 2 requêtes HTTP sortent à t=0 (digest + feed).
+- [ ] PostHog reçoit les events `feed_load_timing` avec les 2 milestones (`first_paint`, `digest_visible`) et un `duration_ms` plausible.
+- [ ] Aucune régression sur : pull-to-refresh, toggle Serein, filter bar, search sheet, navigation vers un article.
+- [ ] Aucune erreur console pendant tout le parcours.
 
-**Parcours** :
-1. Ouvrir un article avec perspectives en viewport iPhone (390×844).
-2. Vérifier le bandeau replié : titre + spectrum + count + caret tous visibles sans clipping ni warning console `RenderFlex overflowed`.
+## Notes pour l'agent QA
 
-**Résultat attendu** :
-- Aucun overflow Flutter dans la console.
-- `CoverageSpectrumBar` 5-segs visible entre le titre et le count.
-- Si le titre « Couverture médiatique » est trop long (ne devrait pas arriver, mais théoriquement), il s'ellipsis au lieu de pousser le spectrum hors écran.
-
-> **Regression Bug Couverture (2026-05-18)** : avant fix, le `Row` du bandeau débordait de 131 px sur 390 px, repoussant le spectrum hors écran. Couvert par `perspectives_inline_overflow_test.dart` qui pump le bandeau en viewport contraint et vérifie l'absence d'exception. Cf. `docs/bugs/bug-couverture-mediatique-surlignages.md`.
-
-### Scénario 7 — Badge polarisation digest
-
-**Parcours** :
-1. Aller sur le digest L'Essentiel du jour.
-2. Vérifier la meta-row de chaque article topicalisé.
-
-**Résultats attendus** :
-- Sujets `divergenceLevel='high'` → badge `POLARISÉ` (glyphe 2 paires brique+marine, label noir bold)
-- Sujets `divergenceLevel='medium'` → badge `AVIS VARIÉS` (5 dots étalés gris, label tertiary)
-- Sujets `divergenceLevel='low'` → badge `CONSENSUS` (3 dots groupés gris, label tertiary)
-- Articles Pépite, Coup de cœur, actu_decalee → **aucun badge** (silence, conforme au hand-off)
-
-### Scénario 9 — Refinements post-merge (2026-05-18)
-
-**R1 — Un seul CTA Analyse Facteur**
-
-**Parcours** :
-1. Ouvrir un article in-app du digest L'Essentiel.
-2. Déplier `Couverture médiatique`.
-
-**Résultat attendu** : le bouton flottant « Lancer l'analyse Facteur » en bas-droit a disparu. Seul reste le **CTA dashed** en bas du bloc déplié, qui déclenche correctement l'analyse.
-
-**R2 — Bandeau compact avec compteur dans le titre**
-
-**Parcours** :
-1. Sur le bandeau replié, observer la composition du Row.
-
-**Résultat attendu** : titre `Couverture médiatique (N)` à gauche, spectrum 5-segs, caret. **Le `Text "N médias"` séparé n'existe plus**. Aucun overflow en 390 px (couvert par `perspectives_inline_overflow_test.dart` mis à jour).
-
-**R3 — L'article courant n'apparaît jamais comme variant**
-
-**Parcours** :
-1. Ouvrir un article du digest dont la couverture inclut au moins 3-4 variants.
-2. Déplier la section, scroller la liste des variants.
-
-**Résultat attendu** : aucune card de variant ne pointe vers l'URL de l'article actuellement lu (pas de doublon avec le bloc `CET ARTICLE`). Le compteur `(N)` reflète la liste filtrée (1 entrée de moins par rapport à avant le fix). Le spectrum reste cohérent avec la liste affichée.
-
-**R4 — Label CET ARTICLE + divider sous bloc + dividers entre variants renforcés**
-
-**Parcours** :
-1. Déplier `Couverture médiatique` sur un article avec cluster.
-
-**Résultat attendu** :
-- Le label en haut du bloc référence affiche `CET ARTICLE` (et non plus `VOTRE ARTICLE`).
-- Un **divider gris** (alpha 0.18, marges latérales 16 px) sépare clairement le bloc référence du premier variant.
-- Les dividers entre variants sont **légèrement plus visibles** qu'avant (alpha 0.08 vs. 0.05). Pas d'effet agressif, juste un cran de plus.
-
-## Critères d'acceptation (21.1)
-
-- [ ] Bandeau hairlines + spectrum 5-segs distincts + count + caret rendus correctement (replié)
-- [ ] Bloc référence + 8 lignes variantes + CTA dashed (déplié)
-- [ ] Animation cascade des surlignages déclenchée 1× à l'expand, fade-in fluide
-- [ ] Tap variant → navigateur externe, pas de crash
-- [ ] Mode 2 dégradé fonctionne si back n'expose pas `shared_tokens`
-- [ ] Badge polarisation sur articles topicalisés du digest seulement
-- [ ] Zéro régression sur la suite Flutter (`flutter test` 619/619 ou plus selon parent)
-
-## Zones de risque (21.1)
-
-1. **Timing animation** : la cascade utilise un `Future.delayed(80 ms)` avant de démarrer. Si la frame de l'expand prend > 80 ms (jank initial), l'animation peut paraître saccadée. Tester sur device réel iOS et Android.
-2. **Titres très longs** : `DiffTitle` est en `maxLines: 2 ellipsis`. Un titre avec beaucoup de spans après la troncature pourrait avoir des spans visuellement absents (le wash est attaché à un `WidgetSpan` qui peut wrapper différemment). Vérifier sur titres > 100 caractères.
-3. **GoogleFonts.fraunces / GoogleFonts.courierPrime** : chargement réseau au premier render. Vérifier qu'il n'y a pas de flash de fallback (fontStyle.italic Times New Roman) — sur Android cold start spécifiquement.
-4. **Spectrum bar** : avec une distribution totalement vide `{}` (back KO), tous les segments rendus avec floor=1. C'est lu visuellement comme « répartition uniforme » — confirmer que ce fallback est OK ou s'il faut masquer le spectrum (actuellement pas masqué).
-5. **Polarisé bicolore (brique+marine)** : vérifier le contraste WCAG du label noir bold sur fond carte ; la couleur des dots utilise `biasLeft`/`biasRight` qui peuvent être proches en thème sombre.
-
-## Dépendances (21.1)
-
-- **Back** : `GET /contents/{id}/perspectives` doit retourner `highlight_spans` (PR #616, déjà mergée) + `shared_tokens` + `reference_pivot` (PR #618, en review). Tant que PR #618 n'est pas mergée + déployée Railway, le front rend en Mode 2 dégradé (pas de Mode 3 fidèle).
-- **GoogleFonts** : `fraunces` et `courierPrime` (déjà utilisés ailleurs dans l'app, pas de nouvel asset à déclarer).
-- **Aucun changement de DB / migration**.
+- Le `FeedScreen` est `apps/mobile/lib/features/feed/screens/feed_screen.dart`.
+- Le provider de phase : `apps/mobile/lib/features/feed/providers/feed_load_phase_provider.dart`.
+- Le tracking analytics : `AnalyticsService.trackFeedLoadTiming` (`milestone` + `durationMs`).
+- Pour observer les phases en runtime : Riverpod DevTools → `feedLoadPhaseProvider`.
