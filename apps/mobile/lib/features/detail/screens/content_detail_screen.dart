@@ -25,6 +25,8 @@ import '../../../core/providers/navigation_providers.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
+import '../../my_interests/models/user_interests_state.dart' show InterestState;
+import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
 import '../../../widgets/sunflower_icon.dart';
@@ -2142,6 +2144,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
+    // Live follow state — relies on the unified 4-state interests provider
+    // so the chip reflects an optimistic toggle from anywhere in the app
+    // (and disappears the instant the user taps "+ Suivre" below).
+    final sourcesState = ref.watch(userSourcesStateProvider).valueOrNull;
+    final liveState = sourcesState?.stateOf(content.source.id);
+    final isFollowedLive = liveState == InterestState.followed ||
+        liveState == InterestState.favorite ||
+        // Fallback to the article payload before the provider has loaded —
+        // avoids a flash of the chip on cold open.
+        (liveState == null && content.isFollowedSource);
+
     // ColoredBox fills the status bar area; SafeArea pushes content below it
     final headerContent = ColoredBox(
       color: colors.backgroundPrimary,
@@ -2331,6 +2344,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           ),
                         ), // _SourceBadgeNudge
                       ),
+                      if (!isFollowedLive) ...[
+                        const SizedBox(width: 8),
+                        _FollowSourceChip(
+                          sourceId: content.source.id,
+                          colors: colors,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -3596,6 +3616,89 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 }
 
 /// Subtle periodic nudge on the source badge to hint at long-press.
+/// Compact "+ Suivre" chip shown in the reader header when the article's
+/// source is not yet followed. Tap = optimistic follow via
+/// [userSourcesStateProvider]; the chip vanishes on the next rebuild because
+/// the live state flips to [InterestState.followed].
+class _FollowSourceChip extends ConsumerStatefulWidget {
+  final String sourceId;
+  final FacteurColors colors;
+
+  const _FollowSourceChip({required this.sourceId, required this.colors});
+
+  @override
+  ConsumerState<_FollowSourceChip> createState() => _FollowSourceChipState();
+}
+
+class _FollowSourceChipState extends ConsumerState<_FollowSourceChip> {
+  bool _busy = false;
+
+  Future<void> _onTap() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    HapticFeedback.lightImpact();
+    try {
+      await ref
+          .read(userSourcesStateProvider.notifier)
+          .setSourceState(widget.sourceId, InterestState.followed);
+      if (!mounted) return;
+      NotificationService.showSuccess(
+        'Source ajoutée à votre veille',
+        context: context,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      NotificationService.showError(
+        'Impossible de suivre la source',
+        context: context,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.colors;
+    return Material(
+      color: c.primary,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: _busy ? null : _onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_busy)
+                const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    valueColor: AlwaysStoppedAnimation(Colors.white),
+                  ),
+                )
+              else
+                const Icon(Icons.add, size: 14, color: Colors.white),
+              const SizedBox(width: 4),
+              Text(
+                'Suivre',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.2,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SourceBadgeNudge extends StatefulWidget {
   final Widget child;
 

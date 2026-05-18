@@ -26,6 +26,7 @@ class FluxArticleVM {
   final ContentType contentType;
   final int? durationSeconds;
   final DateTime? publishedAt;
+  final bool isFollowedSource;
 
   const FluxArticleVM({
     required this.contentId,
@@ -37,6 +38,7 @@ class FluxArticleVM {
     this.themeLabel,
     this.durationSeconds,
     this.publishedAt,
+    this.isFollowedSource = false,
   });
 
   factory FluxArticleVM.from(Object article) {
@@ -54,6 +56,7 @@ class FluxArticleVM {
         contentType: article.contentType,
         durationSeconds: article.durationSeconds,
         publishedAt: article.publishedAt,
+        isFollowedSource: article.isFollowedSource,
       );
     }
     if (article is Content) {
@@ -67,6 +70,7 @@ class FluxArticleVM {
         contentType: article.contentType,
         durationSeconds: article.durationSeconds,
         publishedAt: article.publishedAt,
+        isFollowedSource: article.isFollowedSource,
       );
     }
     throw ArgumentError('Unsupported article type: ${article.runtimeType}');
@@ -338,6 +342,18 @@ class _Footer extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
         ),
+        if (!vm.isFollowedSource) ...[
+          const SizedBox(width: 3),
+          Text(
+            '+',
+            style: GoogleFonts.dmSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: colors.primary,
+              height: 1.4,
+            ),
+          ),
+        ],
         if (vm.themeLabel != null && vm.themeLabel!.trim().isNotEmpty) ...[
           const SizedBox(width: 6),
           _ThemePill(label: vm.themeLabel!, colors: colors),

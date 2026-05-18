@@ -6,7 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../digest/models/digest_models.dart';
 import '../../digest/models/dual_digest_response.dart';
-import '../../digest/providers/digest_provider.dart' show digestRepositoryProvider;
+import '../../digest/providers/digest_provider.dart'
+    show digestRepositoryProvider;
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/repositories/digest_repository.dart';
 import '../../feed/models/content_model.dart';
@@ -25,17 +26,17 @@ const Color _kEssentielAccent = Color(0xFFB0470A);
 const Color _kBonnesAccent = Color(0xFF2E7D32);
 
 /// Illustration asset associated with each editorial section.
-const String _kEssentielIllustration = 'assets/notifications/facteur_avatar.png';
+const String _kEssentielIllustration =
+    'assets/notifications/facteur_avatar.png';
 const String _kBonnesIllustration = 'assets/notifications/facteur_goodnews.png';
 const String _kVeilleIllustration = 'assets/notifications/facteur_veille.png';
 
 /// Blurbs rendered under each section title.
 const String _kEssentielBlurb =
-    "Trois lectures denses pour saisir ce qui pèse aujourd'hui — sans tout lire.";
-const String _kBonnesBlurb =
-    'Des initiatives concrètes, des victoires petites et grandes, pour repartir.';
+    "L'essentiel des actus les plus couvertes en France aujourd'hui, en privilégiant tes sources.";
+const String _kBonnesBlurb = 'Un peu d\'amour, dans ce monde de brutes ?';
 const String _kThemeBlurb =
-    "Les articles récents sur l'un de tes sujets de prédilection — ta veille du jour, sans la chercher.";
+    "Les derniers articles sur les sujets que tu suis le plus.";
 
 /// Hard cap on the number of favorite theme sections rendered in the tournée.
 /// Mirrors `kFavoriteCap = 3` in the my_interests provider — the value is
@@ -51,7 +52,8 @@ const String _kClosingPrefsKeyPrefix = 'flux_continu_closing_dismissed_';
 
 String _dayKey(DateTime day) => day.toIso8601String().substring(0, 10);
 
-String _foldedPrefsKey(DateTime day) => '$_kFoldedPrefsKeyPrefix${_dayKey(day)}';
+String _foldedPrefsKey(DateTime day) =>
+    '$_kFoldedPrefsKeyPrefix${_dayKey(day)}';
 
 String _closingPrefsKey(DateTime day) =>
     '$_kClosingPrefsKeyPrefix${_dayKey(day)}';
@@ -296,7 +298,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
               blurb: s.blurb,
               illustrationAsset: s.illustrationAsset,
               topics: topics
-                  .where((t) => !_dismissedIds.contains(pickTopicLead(t).contentId))
+                  .where((t) =>
+                      !_dismissedIds.contains(pickTopicLead(t).contentId))
                   .toList(growable: false),
             ),
           FeedThemeSection(
@@ -442,10 +445,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   Future<void> _persistFolded(Map<String, bool> folded) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final names = folded.entries
-          .where((e) => e.value)
-          .map((e) => e.key)
-          .toList();
+      final names =
+          folded.entries.where((e) => e.value).map((e) => e.key).toList();
       await prefs.setStringList(_foldedPrefsKey(DateTime.now()), names);
     } catch (e) {
       debugPrint('FluxContinu: _persistFolded failed: $e');
@@ -600,10 +601,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // Pad with canonical macro themes the user is missing — order: tech,
     // environment, science (matches the backend backfill list).
     const canonical = [fallbackTheme1, fallbackTheme2, 'science'];
-    final present = valid
-        .whereType<ThemeFavoriteRef>()
-        .map((r) => r.slug)
-        .toSet();
+    final present =
+        valid.whereType<ThemeFavoriteRef>().map((r) => r.slug).toSet();
     for (final slug in canonical) {
       if (valid.length >= _kMaxFavoriteSections) break;
       if (present.contains(slug)) continue;
@@ -621,8 +620,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     bool isSerene,
   ) async {
     if (favorites.isEmpty) return const [];
-    final interestsState =
-        ref.read(userInterestsProvider).valueOrNull;
+    final interestsState = ref.read(userInterestsProvider).valueOrNull;
     final feeds = await Future.wait(
       favorites.map((favRef) => _fetchOneTheme(favRef, isSerene)),
     );
@@ -676,16 +674,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }
 
   String _customTopicLabel(UserInterestsState? interests, String id) {
-    final found = interests?.customTopics
-        .where((t) => t.id == id)
-        .firstOrNull;
+    final found = interests?.customTopics.where((t) => t.id == id).firstOrNull;
     return found?.topicName ?? 'Sujet personnalisé';
   }
 
   Color _customTopicAccent(UserInterestsState? interests, String id) {
-    final found = interests?.customTopics
-        .where((t) => t.id == id)
-        .firstOrNull;
+    final found = interests?.customTopics.where((t) => t.id == id).firstOrNull;
     if (found != null) {
       return visualFor(found.slugParent).accent;
     }
@@ -697,9 +691,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// don't depend on favorites.
   Future<void> _refetchThemesOnly(List<FavoriteRef> nextFavorites) async {
     final isSerene = ref.read(sereinToggleProvider).enabled;
-    final capped = nextFavorites
-        .take(_kMaxFavoriteSections)
-        .toList(growable: false);
+    final capped =
+        nextFavorites.take(_kMaxFavoriteSections).toList(growable: false);
     final themes = await _fetchThemeSections(capped, isSerene);
     _lastFavorites = capped;
     _themes = themes;

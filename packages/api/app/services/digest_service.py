@@ -2114,8 +2114,19 @@ class DigestService:
         Maps editorial subjects to topics + flat items for backward compatibility
         with existing mobile clients.
         """
+        from app.models.source import UserSource
+
         items_data = digest.items if isinstance(digest.items, dict) else {}
         subjects_data = items_data.get("subjects", [])
+
+        # Recompute is_followed_source from the live UserSource table rather
+        # than trusting the editorial pipeline's static `is_user_source` field.
+        # The editorial digest is generated globally (match_global) and hard-
+        # codes that flag to False, so the cached value is per-user wrong.
+        followed_result = await self.session.execute(
+            select(UserSource.source_id).where(UserSource.user_id == user_id)
+        )
+        followed_source_ids: set[UUID] = set(followed_result.scalars().all())
 
         # Collect all content_ids (actu + deep + pepite + coup_de_coeur)
         all_content_ids: list[UUID] = []
@@ -2227,7 +2238,7 @@ class DigestService:
                     rank=art_idx + 1,
                     reason=reason,
                     badge=art_data.get("badge"),
-                    is_followed_source=art_data.get("is_user_source", False),
+                    is_followed_source=content.source_id in followed_source_ids,
                     recommendation_reason=None,
                     is_read=action_state["is_read"],
                     is_saved=action_state["is_saved"],
@@ -2549,9 +2560,21 @@ class DigestService:
         Produces both `topics` (new grouped format) and `items` (flat legacy)
         so that old mobile clients continue to work.
         """
+        from app.models.source import UserSource
+
         topics_data = (
             digest.items.get("topics", []) if isinstance(digest.items, dict) else []
         )
+
+        # Same rationale as _build_editorial_response: the cached
+        # `is_followed_source` in the JSONB was computed at generation time
+        # against a possibly different user set (digest may be shared across
+        # users in some paths). Always recompute against the current
+        # UserSource table so the badge in mobile reflects reality.
+        followed_result = await self.session.execute(
+            select(UserSource.source_id).where(UserSource.user_id == user_id)
+        )
+        followed_source_ids: set[UUID] = set(followed_result.scalars().all())
 
         # Collect all content_ids across all topics
         all_content_ids: list[UUID] = []
@@ -2643,7 +2666,7 @@ class DigestService:
                     source=content.source,
                     rank=art_data.get("rank", 1),
                     reason=art_data.get("reason", ""),
-                    is_followed_source=art_data.get("is_followed_source", False),
+                    is_followed_source=content.source_id in followed_source_ids,
                     recommendation_reason=recommendation_reason,
                     is_read=action_state["is_read"],
                     is_saved=action_state["is_saved"],

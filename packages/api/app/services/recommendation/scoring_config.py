@@ -22,6 +22,14 @@ class ScoringWeights:
     # Réduit de 40→35 pour ne pas dominer la pertinence thématique.
     TRUSTED_SOURCE = 35.0
 
+    # Bonus additionnel appliqué *uniquement dans le digest* (Essentiel +
+    # Bonnes Nouvelles) en plus de TRUSTED_SOURCE. Le pool digest inclut déjà
+    # les sources suivies en étape 1, mais le ranking + la diversité (1
+    # article/source) les évinçaient souvent ; ce bonus garantit qu'un
+    # article de source suivie passe devant un curated comparable, sans
+    # écraser un curated nettement plus pertinent (trending fort, etc.).
+    DIGEST_TRUSTED_SOURCE_BONUS = 60.0
+
     # Bonus pour une source non suivie mais "Standard" (vs suivie).
     # Augmenté de 10→15 pour encourager les sources secondaires.
     STANDARD_SOURCE = 15.0

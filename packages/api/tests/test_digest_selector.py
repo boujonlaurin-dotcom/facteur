@@ -921,3 +921,145 @@ class TestScoreCandidatesSportPenalty:
         _, _, breakdown = scored[0]
         labels = [b.label for b in breakdown]
         assert "Sport (priorité réduite)" in labels
+
+
+# ─── Tests: DIGEST_TRUSTED_SOURCE_BONUS ──────────────────────────────────────
+
+
+class TestScoreCandidatesFollowedSourceBoost:
+    """Articles de sources suivies reçoivent un bonus exclusif au digest."""
+
+    @pytest.fixture
+    def followed_src(self):
+        return make_source(name="Followed", theme="tech")
+
+    @pytest.fixture
+    def other_src(self):
+        return make_source(name="Other", theme="tech")
+
+    @pytest.fixture
+    def context(self, followed_src):
+        return DigestContext(
+            user_id=uuid4(),
+            user_profile=Mock(),
+            user_interests={"tech"},
+            user_interest_weights={"tech": 1.0},
+            followed_source_ids={followed_src.id},
+            custom_source_ids=set(),
+            user_prefs={},
+            user_subtopics=set(),
+            user_subtopic_weights={},
+            muted_sources=set(),
+            muted_themes=set(),
+            muted_topics=set(),
+            muted_content_types=set(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_followed_source_gets_digest_bonus(
+        self, selector, context, followed_src, other_src
+    ):
+        """Article d'une source suivie reçoit DIGEST_TRUSTED_SOURCE_BONUS en sus."""
+        from app.services.recommendation.scoring_config import ScoringWeights
+
+        now = datetime.now(timezone.utc)
+        followed_content = make_content(source=followed_src, theme="tech", published_at=now)
+        other_content = make_content(source=other_src, theme="tech", published_at=now)
+
+        selector.rec_service = Mock()
+        selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
+        selector.rec_service.scoring_engine = Mock()
+        # CoreLayer's TRUSTED_SOURCE is already folded into base_score by
+        # compute_score in production; we mock it as a constant for both so
+        # the only differential measurable is the digest-specific bonus.
+        selector.rec_service.scoring_engine.compute_score = Mock(return_value=100.0)
+
+        scored = await selector._score_candidates(
+            [followed_content, other_content], context, mode="pour_vous"
+        )
+
+        by_id = {c.id: (s, bd) for c, s, bd in scored}
+        followed_score, followed_breakdown = by_id[followed_content.id]
+        other_score, _ = by_id[other_content.id]
+
+        assert followed_score - other_score == pytest.approx(
+            ScoringWeights.DIGEST_TRUSTED_SOURCE_BONUS
+        )
+        labels = [b.label for b in followed_breakdown]
+        assert "Priorité source suivie (digest)" in labels
+
+    @pytest.mark.asyncio
+    async def test_followed_outranks_curated_when_scores_close(
+        self, selector, context, followed_src, other_src
+    ):
+        """Avec un base_score un peu inférieur, le followed gagne quand même."""
+        from app.services.recommendation.scoring_config import ScoringWeights
+
+        now = datetime.now(timezone.utc)
+        followed_content = make_content(source=followed_src, theme="tech", published_at=now)
+        other_content = make_content(source=other_src, theme="tech", published_at=now)
+
+        # Curated outscores by < bonus → followed should still win after stack.
+        gap = ScoringWeights.DIGEST_TRUSTED_SOURCE_BONUS - 5.0
+
+        def fake_compute(content, ctx):
+            return 100.0 if content.source_id == followed_src.id else 100.0 + gap
+
+        selector.rec_service = Mock()
+        selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
+        selector.rec_service.scoring_engine = Mock()
+        selector.rec_service.scoring_engine.compute_score = Mock(side_effect=fake_compute)
+
+        scored = await selector._score_candidates(
+            [followed_content, other_content], context, mode="pour_vous"
+        )
+
+        by_id = {c.id: s for c, s, _ in scored}
+        assert by_id[followed_content.id] > by_id[other_content.id]
+
+    @pytest.mark.asyncio
+    async def test_followed_loses_when_curated_far_better(
+        self, selector, context, followed_src, other_src
+    ):
+        """Boost reste souple : un curated nettement meilleur passe devant."""
+        from app.services.recommendation.scoring_config import ScoringWeights
+
+        now = datetime.now(timezone.utc)
+        followed_content = make_content(source=followed_src, theme="tech", published_at=now)
+        other_content = make_content(source=other_src, theme="tech", published_at=now)
+
+        # Gap > bonus → curated wins, diversité préservée.
+        gap = ScoringWeights.DIGEST_TRUSTED_SOURCE_BONUS + 50.0
+
+        def fake_compute(content, ctx):
+            return 100.0 if content.source_id == followed_src.id else 100.0 + gap
+
+        selector.rec_service = Mock()
+        selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
+        selector.rec_service.scoring_engine = Mock()
+        selector.rec_service.scoring_engine.compute_score = Mock(side_effect=fake_compute)
+
+        scored = await selector._score_candidates(
+            [followed_content, other_content], context, mode="pour_vous"
+        )
+
+        by_id = {c.id: s for c, s, _ in scored}
+        assert by_id[other_content.id] > by_id[followed_content.id]
+
+    @pytest.mark.asyncio
+    async def test_no_bonus_when_source_not_followed(
+        self, selector, context, other_src
+    ):
+        """Aucun breakdown ni bonus si l'article n'est d'aucune source suivie."""
+        now = datetime.now(timezone.utc)
+        content = make_content(source=other_src, theme="tech", published_at=now)
+
+        selector.rec_service = Mock()
+        selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
+        selector.rec_service.scoring_engine = Mock()
+        selector.rec_service.scoring_engine.compute_score = Mock(return_value=100.0)
+
+        scored = await selector._score_candidates([content], context, mode="pour_vous")
+        _, _, breakdown = scored[0]
+        labels = [b.label for b in breakdown]
+        assert "Priorité source suivie (digest)" not in labels
