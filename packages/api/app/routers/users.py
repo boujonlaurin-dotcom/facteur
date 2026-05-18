@@ -330,12 +330,16 @@ async def get_top_themes(
     user_uuid = UUID(user_id)
 
     fav_rows = (
-        await db.execute(
-            sa_select(UserFavoriteInterest)
-            .where(UserFavoriteInterest.user_id == user_uuid)
-            .order_by(UserFavoriteInterest.position)
+        (
+            await db.execute(
+                sa_select(UserFavoriteInterest)
+                .where(UserFavoriteInterest.user_id == user_uuid)
+                .order_by(UserFavoriteInterest.position)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     if fav_rows:
         # Résolution Theme/Sujet → slug. Pour les Sujets, on projette sur

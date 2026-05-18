@@ -61,22 +61,34 @@ class UserInterestsService:
 
     async def get_interests(self, user_id: UUID) -> UserInterestsResponse:
         themes_rows = (
-            await self.db.execute(
-                select(UserInterest).where(UserInterest.user_id == user_id)
+            (
+                await self.db.execute(
+                    select(UserInterest).where(UserInterest.user_id == user_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         topics_rows = (
-            await self.db.execute(
-                select(UserTopicProfile).where(UserTopicProfile.user_id == user_id)
+            (
+                await self.db.execute(
+                    select(UserTopicProfile).where(UserTopicProfile.user_id == user_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         favs_rows = (
-            await self.db.execute(
-                select(UserFavoriteInterest)
-                .where(UserFavoriteInterest.user_id == user_id)
-                .order_by(UserFavoriteInterest.position)
+            (
+                await self.db.execute(
+                    select(UserFavoriteInterest)
+                    .where(UserFavoriteInterest.user_id == user_id)
+                    .order_by(UserFavoriteInterest.position)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         favorites = [
             FavoriteRef(
@@ -181,18 +193,25 @@ class UserInterestsService:
         """
         # Lecture des favoris actuels du user.
         existing = (
-            await self.db.execute(
-                select(UserFavoriteInterest).where(
-                    UserFavoriteInterest.user_id == user_id
+            (
+                await self.db.execute(
+                    select(UserFavoriteInterest).where(
+                        UserFavoriteInterest.user_id == user_id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         # Find current row matching this target (si elle existe).
         def _matches(fav: UserFavoriteInterest) -> bool:
             if kind == "theme":
                 return fav.interest_slug == target_id
-            return fav.custom_topic_id is not None and str(fav.custom_topic_id) == target_id
+            return (
+                fav.custom_topic_id is not None
+                and str(fav.custom_topic_id) == target_id
+            )
 
         current = next((f for f in existing if _matches(f)), None)
 
@@ -200,7 +219,9 @@ class UserInterestsService:
             if current is not None:
                 # Déjà favori — éventuellement bouger la position.
                 if position is not None and current.position != position:
-                    if any(f.position == position and f is not current for f in existing):
+                    if any(
+                        f.position == position and f is not current for f in existing
+                    ):
                         # Conflit de position : on laisse au /reorder le soin
                         # d'arbitrer (ou raise ?). Pour l'instant : ignore.
                         return
@@ -298,17 +319,25 @@ class UserSourcesStateService:
 
     async def get_sources_state(self, user_id: UUID) -> UserSourcesStateResponse:
         sources_rows = (
-            await self.db.execute(
-                select(UserSource).where(UserSource.user_id == user_id)
+            (
+                await self.db.execute(
+                    select(UserSource).where(UserSource.user_id == user_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         favs_rows = (
-            await self.db.execute(
-                select(UserFavoriteSource)
-                .where(UserFavoriteSource.user_id == user_id)
-                .order_by(UserFavoriteSource.position)
+            (
+                await self.db.execute(
+                    select(UserFavoriteSource)
+                    .where(UserFavoriteSource.user_id == user_id)
+                    .order_by(UserFavoriteSource.position)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         return UserSourcesStateResponse(
             sources=[SourceStateResponse.model_validate(s) for s in sources_rows],
@@ -335,9 +364,7 @@ class UserSourcesStateService:
             )
         ).scalar_one_or_none()
         if row is None:
-            raise TargetNotFound(
-                f"source {source_id} not followed by user {user_id}"
-            )
+            raise TargetNotFound(f"source {source_id} not followed by user {user_id}")
         prev_state = row.state
         row.state = state
 
@@ -355,12 +382,16 @@ class UserSourcesStateService:
         position: int | None,
     ) -> None:
         existing = (
-            await self.db.execute(
-                select(UserFavoriteSource).where(
-                    UserFavoriteSource.user_id == user_id
+            (
+                await self.db.execute(
+                    select(UserFavoriteSource).where(
+                        UserFavoriteSource.user_id == user_id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         current = next((f for f in existing if f.source_id == source_id), None)
 
         if state == InterestState.FAVORITE:
