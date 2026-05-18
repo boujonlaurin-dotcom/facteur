@@ -133,6 +133,41 @@ Six ajustements de la home Flux Continu V1.8 : auto-fold des sections scrollées
 - Sujets `divergenceLevel='low'` → badge `CONSENSUS` (3 dots groupés gris, label tertiary)
 - Articles Pépite, Coup de cœur, actu_decalee → **aucun badge** (silence, conforme au hand-off)
 
+### Scénario 9 — Refinements post-merge (2026-05-18)
+
+**R1 — Un seul CTA Analyse Facteur**
+
+**Parcours** :
+1. Ouvrir un article in-app du digest L'Essentiel.
+2. Déplier `Couverture médiatique`.
+
+**Résultat attendu** : le bouton flottant « Lancer l'analyse Facteur » en bas-droit a disparu. Seul reste le **CTA dashed** en bas du bloc déplié, qui déclenche correctement l'analyse.
+
+**R2 — Bandeau compact avec compteur dans le titre**
+
+**Parcours** :
+1. Sur le bandeau replié, observer la composition du Row.
+
+**Résultat attendu** : titre `Couverture médiatique (N)` à gauche, spectrum 5-segs, caret. **Le `Text "N médias"` séparé n'existe plus**. Aucun overflow en 390 px (couvert par `perspectives_inline_overflow_test.dart` mis à jour).
+
+**R3 — L'article courant n'apparaît jamais comme variant**
+
+**Parcours** :
+1. Ouvrir un article du digest dont la couverture inclut au moins 3-4 variants.
+2. Déplier la section, scroller la liste des variants.
+
+**Résultat attendu** : aucune card de variant ne pointe vers l'URL de l'article actuellement lu (pas de doublon avec le bloc `CET ARTICLE`). Le compteur `(N)` reflète la liste filtrée (1 entrée de moins par rapport à avant le fix). Le spectrum reste cohérent avec la liste affichée.
+
+**R4 — Label CET ARTICLE + divider sous bloc + dividers entre variants renforcés**
+
+**Parcours** :
+1. Déplier `Couverture médiatique` sur un article avec cluster.
+
+**Résultat attendu** :
+- Le label en haut du bloc référence affiche `CET ARTICLE` (et non plus `VOTRE ARTICLE`).
+- Un **divider gris** (alpha 0.18, marges latérales 16 px) sépare clairement le bloc référence du premier variant.
+- Les dividers entre variants sont **légèrement plus visibles** qu'avant (alpha 0.08 vs. 0.05). Pas d'effet agressif, juste un cran de plus.
+
 ## Critères d'acceptation (21.1)
 
 - [ ] Bandeau hairlines + spectrum 5-segs distincts + count + caret rendus correctement (replié)
