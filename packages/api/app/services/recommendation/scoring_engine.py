@@ -6,6 +6,7 @@ from uuid import UUID
 import structlog
 
 from app.models.content import Content
+from app.models.enums import InterestState
 from app.models.user import UserProfile
 
 logger = structlog.get_logger()
@@ -39,6 +40,10 @@ class ScoringContext:
         source_priority_multipliers: dict[UUID, float] = None,
         # Premium Sources: source_ids where user has a subscription
         subscribed_source_ids: set[UUID] = None,
+        # Story 22.1: declared interest state (hidden/unfollowed/followed/favorite)
+        # par interest_slug. Sujets (custom topics) portent leur state sur l'objet
+        # ORM directement, pas dans cette dict.
+        user_interest_states: dict[str, InterestState] | None = None,
     ):
         self.user_profile = user_profile
         self.user_interests = user_interests
@@ -68,6 +73,9 @@ class ScoringContext:
 
         # Premium Sources
         self.subscribed_source_ids = subscribed_source_ids or set()
+
+        # Story 22.1: declared interest state per theme slug.
+        self.user_interest_states = user_interest_states or {}
 
         # Diagnostics pour explicabilité
         self.reasons: dict[UUID, dict[str, Any]] = {}

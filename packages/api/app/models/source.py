@@ -20,7 +20,13 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-from app.models.enums import BiasOrigin, BiasStance, ReliabilityScore, SourceType
+from app.models.enums import (
+    BiasOrigin,
+    BiasStance,
+    InterestState,
+    ReliabilityScore,
+    SourceType,
+)
 
 
 class Source(Base):
@@ -177,6 +183,17 @@ class UserSource(Base):
     # Premium source: user declares they have a subscription to this source
     has_subscription: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
+    )
+    state: Mapped[InterestState] = mapped_column(
+        Enum(
+            InterestState,
+            name="interest_state",
+            create_type=False,
+            values_callable=lambda e: [v.value for v in e],
+        ),
+        nullable=False,
+        default=InterestState.FOLLOWED,
+        server_default=InterestState.FOLLOWED.value,
     )
 
     # Relations

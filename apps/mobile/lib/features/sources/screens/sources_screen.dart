@@ -10,6 +10,12 @@ import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../../../shared/widgets/states/laurin_fallback_view.dart';
 
 import '../../custom_topics/providers/algorithm_profile_provider.dart';
+import '../../my_interests/models/user_interests_state.dart' show InterestState;
+import '../../my_interests/models/user_sources_state.dart';
+import '../../my_interests/providers/user_sources_state_provider.dart';
+import '../../my_interests/repositories/user_interests_repository.dart';
+import '../../my_interests/widgets/favorites_reorderable_section.dart';
+import '../../my_interests/widgets/interest_state_picker_sheet.dart';
 import '../../settings/providers/paid_content_provider.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
@@ -84,10 +90,57 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     });
   }
 
+  Future<void> _pickSourceState(Source source) async {
+    final state = ref.read(userSourcesStateProvider).value;
+    final atCap = state?.isAtCap ?? false;
+    final currentState = state?.stateOf(source.id) ?? InterestState.followed;
+
+    final picked = await InterestStatePickerSheet.show(
+      context,
+      title: source.name,
+      currentState: currentState,
+      favoriteAvailable:
+          !atCap || currentState == InterestState.favorite,
+    );
+    if (picked == null || picked == currentState) return;
+
+    if (picked == InterestState.favorite && atCap) {
+      _showCapSnackbar();
+      return;
+    }
+
+    try {
+      await ref
+          .read(userSourcesStateProvider.notifier)
+          .setSourceState(source.id, picked);
+    } on FavoriteCapReachedException {
+      _showCapSnackbar();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Impossible de mettre à jour cette source.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  void _showCapSnackbar() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+            'Tu as déjà 3 sources favorites. Retire-en une d\'abord.'),
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final sourcesAsync = ref.watch(userSourcesProvider);
+    final sourcesStateAsync = ref.watch(userSourcesStateProvider);
 
     // Synchronise le compteur d'échecs consécutifs avec l'état du provider —
     // mêmes règles que feed_screen.dart : incrémente sur 1ère AsyncError,
@@ -270,7 +323,30 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
                 _IntroBlock(colors: colors),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
+                // Story 22.1 — section Favoris (drag-reorderable, cap 3).
+                _SourceFavoritesSection(
+                  favorites:
+                      sourcesStateAsync.value?.favorites ?? const [],
+                  allSources: allSources,
+                  onReorder: (reordered) async {
+                    try {
+                      await ref
+                          .read(userSourcesStateProvider.notifier)
+                          .reorderFavorites(reordered);
+                    } catch (_) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                              'Impossible de réordonner les favoris.'),
+                          duration: Duration(seconds: 3),
+                        ),
+                      );
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
                 if (premiumSources.isNotEmpty)
                   _buildCollapsibleSection(
                     title: 'Mes abonnements Premium',
@@ -469,9 +545,17 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   Widget _buildSourceItem(Source source) {
     final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
     final sourceUsage = algoProfile?.sourceAffinities[source.id];
+    final isFavorite = ref
+            .watch(userSourcesStateProvider)
+            .value
+            ?.favorites
+            .any((f) => f.sourceId == source.id) ??
+        false;
     return SourceListItem(
       source: source,
       usageWeight: sourceUsage,
+      isFavorite: isFavorite,
+      onPickInterestState: () => _pickSourceState(source),
       onTap: () {
         ref
             .read(userSourcesProvider.notifier)
@@ -494,6 +578,61 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
             .read(userSourcesProvider.notifier)
             .toggleSubscription(source.id, source.hasSubscription);
       },
+    );
+  }
+}
+
+/// Story 22.1 — bloc Favoris pour les sources.
+class _SourceFavoritesSection extends StatelessWidget {
+  final List<SourceFavoriteRef> favorites;
+  final List<Source> allSources;
+  final void Function(List<SourceFavoriteRef> reordered) onReorder;
+
+  const _SourceFavoritesSection({
+    required this.favorites,
+    required this.allSources,
+    required this.onReorder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final byId = {for (final s in allSources) s.id: s};
+
+    return FavoritesReorderableSection<SourceFavoriteRef>(
+      items: favorites,
+      keyOf: (r) => ValueKey('source:${r.sourceId}'),
+      emptyStateText:
+          'Aucune source favorite — étoile une source pour la retrouver ici.',
+      padding: EdgeInsets.zero,
+      itemBuilder: (context, refItem) {
+        final source = byId[refItem.sourceId];
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            children: [
+              Icon(
+                PhosphorIcons.star(PhosphorIconsStyle.fill),
+                color: colors.primary,
+                size: 14,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  source?.name ?? 'Source',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: colors.textPrimary,
+                      ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+      onReorder: onReorder,
     );
   }
 }

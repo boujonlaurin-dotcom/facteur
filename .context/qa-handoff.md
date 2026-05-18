@@ -1,6 +1,13 @@
 # QA Handoff — Refonte hi-fi Couverture médiatique (Story 7.4 Sprint 2 front)
 
-## Feature développée
+> Reconvergence des deux workstreams (`22.1.x-backend-interests` + `flux-continu-v18-refonte` + WIP V10) sur la branche `22.1.1-backend-interests`. UNE PR vers `main`.
+
+## Vue d'ensemble
+
+Deux features shippées ensemble :
+
+1. **Système d'intérêts 4-états unifié + favoris + backfill (Story 22.1)** — Backend (migration + endpoints + services), mobile screens, sync mobile one-shot.
+2. **Flux Continu V1.8 + finitions V2.0 (Story 21.1)** — Home Flux Continu, hero Explorer, sticky bascule tab bar ↔ filter bar, fold différé entre sessions.
 
 Refonte hi-fi du panneau « Couverture médiatique » sur l'écran article (front) :
 - Bandeau `cm-panel-inline` (hairlines, spectrum 5-segs, "N médias", caret)
@@ -14,7 +21,22 @@ L'animation cascade des surlignages se déclenche **1×** à l'ouverture de la c
 
 À créer juste après ce handoff (`gh pr create --base main`).
 
-## Écrans impactés
+PO Laurin a signalé : « En scroll-down continu, des "sauts" apparaissent toujours en arrivant à la fin d'une section. » Quatre approches in-session ont échoué (trigger naïf, `userScrollDirection`, `correctBy` post-frame, `SliverList` natif) — toutes laissaient un décalage visible parce qu'un resize de sliver dans un `CustomScrollView` impose mécaniquement de réaligner le contenu en dessous.
+
+**Pivot UX** : abandonner le fold pendant la session active. Le scroll-past est désormais **détecté mais persisté en silence** — la section reste expanded à l'écran jusqu'à ce que le user quitte/relance l'app. Au prochain cold launch, les sections "consommées" lors de la session précédente apparaissent déjà en `FoldedSectionCard` (la transition fold→expanded n'est plus visible parce qu'elle est portée par l'initial layout, pas par un changement en cours de session).
+
+**Critères d'acceptation V2.0** :
+1. Pendant une session active, **aucune section ne se replie automatiquement au scroll** — le user voit toujours le hero plein-format, même après l'avoir scrollé.
+2. Aucun saut visuel, aucun stutter pendant le scroll continu (puisqu'il n'y a plus aucun resize).
+3. Cold-launch d'une nouvelle session (kill + relaunch) → les sections scrollées past lors de la session précédente apparaissent déjà en `FoldedSectionCard` au top du flux.
+4. Tap sur folded card → ré-expansion locale (state-only, non persistée, comme avant).
+5. La closing card « Vous êtes à jour » suit la même logique.
+
+## Feature développée (21.1)
+
+Six ajustements de la home Flux Continu V1.8 : auto-fold des sections scrollées en cartes-titre compactes (persisté par jour), hero « Explorer » qui sépare la zone éditoriale du feed continu, bascule sticky tab bar ↔ filter bar au passage du hero Explorer, Bonnes Nouvelles en dernière position (non-serein) ou en tête (serein), refinements visuels des heros (texte plus large, illustration plus discrète).
+
+## Écrans impactés (21.1)
 
 | Écran | Route | Modifié / Nouveau |
 |---|---|---|
@@ -22,7 +44,14 @@ L'animation cascade des surlignages se déclenche **1×** à l'ouverture de la c
 | Détail article (top layout) | `/digest/:contentId` | Modifié — idem, 2 call-sites |
 | Digest L'Essentiel | `/digest` | Modifié — `FeedCard` accepte `divergenceLevel` ; câblé via `topic_section.dart` |
 
-## Scénarios de test
+### Scénario 2 : Tap sur folded card = ré-expansion locale
+**Parcours** :
+1. Après scénario 1, scroll vers le haut pour revoir les folded cards
+2. Tap sur une carte foldée (ex. Essentiel)
+
+**Résultat attendu** :
+- La carte se ré-expanse en hero complet (banner + cards + Plus de…)
+- Pas de persistance : recharger la page (F5) la laisse foldée à nouveau
 
 ### Scénario 1 — Happy path : animation cascade Mode 3
 
@@ -104,7 +133,7 @@ L'animation cascade des surlignages se déclenche **1×** à l'ouverture de la c
 - Sujets `divergenceLevel='low'` → badge `CONSENSUS` (3 dots groupés gris, label tertiary)
 - Articles Pépite, Coup de cœur, actu_decalee → **aucun badge** (silence, conforme au hand-off)
 
-## Critères d'acceptation
+## Critères d'acceptation (21.1)
 
 - [ ] Bandeau hairlines + spectrum 5-segs distincts + count + caret rendus correctement (replié)
 - [ ] Bloc référence + 8 lignes variantes + CTA dashed (déplié)
@@ -114,7 +143,7 @@ L'animation cascade des surlignages se déclenche **1×** à l'ouverture de la c
 - [ ] Badge polarisation sur articles topicalisés du digest seulement
 - [ ] Zéro régression sur la suite Flutter (`flutter test` 619/619 ou plus selon parent)
 
-## Zones de risque
+## Zones de risque (21.1)
 
 1. **Timing animation** : la cascade utilise un `Future.delayed(80 ms)` avant de démarrer. Si la frame de l'expand prend > 80 ms (jank initial), l'animation peut paraître saccadée. Tester sur device réel iOS et Android.
 2. **Titres très longs** : `DiffTitle` est en `maxLines: 2 ellipsis`. Un titre avec beaucoup de spans après la troncature pourrait avoir des spans visuellement absents (le wash est attaché à un `WidgetSpan` qui peut wrapper différemment). Vérifier sur titres > 100 caractères.
@@ -122,7 +151,7 @@ L'animation cascade des surlignages se déclenche **1×** à l'ouverture de la c
 4. **Spectrum bar** : avec une distribution totalement vide `{}` (back KO), tous les segments rendus avec floor=1. C'est lu visuellement comme « répartition uniforme » — confirmer que ce fallback est OK ou s'il faut masquer le spectrum (actuellement pas masqué).
 5. **Polarisé bicolore (brique+marine)** : vérifier le contraste WCAG du label noir bold sur fond carte ; la couleur des dots utilise `biasLeft`/`biasRight` qui peuvent être proches en thème sombre.
 
-## Dépendances
+## Dépendances (21.1)
 
 - **Back** : `GET /contents/{id}/perspectives` doit retourner `highlight_spans` (PR #616, déjà mergée) + `shared_tokens` + `reference_pivot` (PR #618, en review). Tant que PR #618 n'est pas mergée + déployée Railway, le front rend en Mode 2 dégradé (pas de Mode 3 fidèle).
 - **GoogleFonts** : `fraunces` et `courierPrime` (déjà utilisés ailleurs dans l'app, pas de nouvel asset à déclarer).

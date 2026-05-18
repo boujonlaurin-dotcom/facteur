@@ -313,19 +313,76 @@ async def get_top_themes(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> list[TopThemeResponse]:
-    """Retourne les thèmes de l'utilisateur triés par poids décroissant.
+    """Retourne les thèmes de l'utilisateur, dans l'ordre canonique des favoris
+    si déclarés, sinon en fallback sur le poids appris.
 
-    Themes with no recent articles (last 14 days) are excluded.
+    Story 22.1 — la table `user_favorite_interests` (ordre user) prime ; les
+    Sujets favoris (custom topics) sont projetés sur leur `slug_parent` pour
+    rester compatibles avec le format `TopThemeResponse` (rétrocompat mobile).
+    Cap à 3 côté serveur pour rester cohérent avec `FAVORITE_CAP`. Les thèmes
+    sans article récent (14 derniers jours) sont exclus du fallback.
     """
+    from app.constants import FAVORITE_CAP
     from app.models.content import Content
+    from app.models.user_favorites import UserFavoriteInterest
+    from app.models.user_topic_profile import UserTopicProfile
 
+    user_uuid = UUID(user_id)
+
+    fav_rows = (
+        (
+            await db.execute(
+                sa_select(UserFavoriteInterest)
+                .where(UserFavoriteInterest.user_id == user_uuid)
+                .order_by(UserFavoriteInterest.position)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    if fav_rows:
+        # Résolution Theme/Sujet → slug. Pour les Sujets, on projette sur
+        # `slug_parent` (ex: custom_topic "Donald Trump" → slug "international").
+        # Le mobile actuel n'a qu'un champ `interest_slug` — la perte d'info
+        # est actée jusqu'à la PR 22.1.3 qui enrichira la forme.
+        custom_topic_ids = [
+            row.custom_topic_id for row in fav_rows if row.custom_topic_id
+        ]
+        topic_slug_by_id: dict[UUID, str] = {}
+        if custom_topic_ids:
+            topic_rows = (
+                await db.execute(
+                    sa_select(UserTopicProfile.id, UserTopicProfile.slug_parent).where(
+                        UserTopicProfile.id.in_(custom_topic_ids)
+                    )
+                )
+            ).all()
+            topic_slug_by_id = {row[0]: row[1] for row in topic_rows}
+
+        seen: set[str] = set()
+        out: list[TopThemeResponse] = []
+        for row in fav_rows:
+            slug = (
+                row.interest_slug
+                if row.interest_slug
+                else topic_slug_by_id.get(row.custom_topic_id)
+            )
+            if slug is None or slug in seen:
+                continue
+            seen.add(slug)
+            out.append(
+                TopThemeResponse(interest_slug=slug, weight=1.5, article_count=0)
+            )
+        return out[:FAVORITE_CAP]
+
+    # Fallback : sort weight desc, exclure les thèmes sans article 14j.
     service = UserService(db)
     interests = await service.get_interests(user_id)
 
     if not interests:
         return []
 
-    # Count recent articles per theme (last 14 days) in a single query
     cutoff = datetime.now(UTC) - timedelta(days=14)
     slugs = [i.interest_slug for i in interests]
     count_rows = (
@@ -346,7 +403,7 @@ async def get_top_themes(
         )
         for i in themes
         if theme_counts.get(i.interest_slug, 0) > 0
-    ]
+    ][:FAVORITE_CAP]
 
 
 # ─── Account deletion ────────────────────────────────────────────────────────
