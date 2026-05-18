@@ -2,7 +2,6 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../models/user_interests_state.dart';
@@ -72,59 +71,17 @@ class InterestStatePickerSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            _StateOption(
-              state: InterestState.favorite,
-              label: 'Favori',
-              description:
-                  'En haut de votre flux. Les 3 premiers sont dans la Tournée du jour.',
-              iconBuilder: (color) => Icon(
-                PhosphorIcons.star(PhosphorIconsStyle.fill),
-                color: color,
-                size: 22,
+            for (final state in const [
+              InterestState.favorite,
+              InterestState.followed,
+              InterestState.unfollowed,
+              InterestState.hidden,
+            ])
+              _StateOption(
+                state: state,
+                accent: state.accent(colors),
+                isSelected: currentState == state,
               ),
-              accent: colors.primary,
-              isSelected: currentState == InterestState.favorite,
-              enabled: true,
-            ),
-            _StateOption(
-              state: InterestState.followed,
-              label: 'Suivi',
-              description: 'Présent dans votre flux',
-              iconBuilder: (color) => Icon(
-                PhosphorIcons.check(PhosphorIconsStyle.bold),
-                color: color,
-                size: 22,
-              ),
-              accent: colors.success,
-              isSelected: currentState == InterestState.followed,
-              enabled: true,
-            ),
-            _StateOption(
-              state: InterestState.unfollowed,
-              label: 'Neutre',
-              description: 'Apparaît seulement si très pertinent',
-              iconBuilder: (color) => Icon(
-                PhosphorIcons.minus(PhosphorIconsStyle.bold),
-                color: color,
-                size: 22,
-              ),
-              accent: colors.textSecondary,
-              isSelected: currentState == InterestState.unfollowed,
-              enabled: true,
-            ),
-            _StateOption(
-              state: InterestState.hidden,
-              label: 'Masqué',
-              description: 'Ne plus voir dans le flux',
-              iconBuilder: (color) => Icon(
-                PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
-                color: color,
-                size: 22,
-              ),
-              accent: colors.textTertiary,
-              isSelected: currentState == InterestState.hidden,
-              enabled: true,
-            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -135,21 +92,13 @@ class InterestStatePickerSheet extends StatelessWidget {
 
 class _StateOption extends StatelessWidget {
   final InterestState state;
-  final String label;
-  final String description;
-  final Widget Function(Color) iconBuilder;
   final Color accent;
   final bool isSelected;
-  final bool enabled;
 
   const _StateOption({
     required this.state,
-    required this.label,
-    required this.description,
-    required this.iconBuilder,
     required this.accent,
     required this.isSelected,
-    required this.enabled,
   });
 
   @override
@@ -157,54 +106,46 @@ class _StateOption extends StatelessWidget {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
-    return Opacity(
-      opacity: enabled ? 1.0 : 0.5,
-      child: InkWell(
-        onTap: enabled ? () => Navigator.of(context).pop(state) : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: accent.withOpacity(0.12),
-                ),
-                alignment: Alignment.center,
-                child: iconBuilder(accent),
+    return InkWell(
+      onTap: () => Navigator.of(context).pop(state),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: accent.withOpacity(0.12),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: colors.textPrimary,
-                      ),
+              alignment: Alignment.center,
+              child: Icon(state.iconData, color: accent, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    state.label,
+                    style: textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colors.textPrimary,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      description,
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colors.textTertiary,
-                      ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    state.description,
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colors.textTertiary,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              if (isSelected)
-                Icon(
-                  PhosphorIcons.check(PhosphorIconsStyle.bold),
-                  color: accent,
-                  size: 18,
-                ),
-            ],
-          ),
+            ),
+            if (isSelected) Icon(Icons.check, color: accent, size: 18),
+          ],
         ),
       ),
     );

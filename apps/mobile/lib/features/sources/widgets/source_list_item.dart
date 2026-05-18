@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_stamp.dart';
-import '../../../widgets/design/priority_slider.dart';
 import '../models/source_model.dart';
 import 'source_detail_modal.dart';
 import 'source_logo_avatar.dart';
@@ -11,9 +10,7 @@ class SourceListItem extends StatelessWidget {
   final Source source;
   final VoidCallback? onTap;
   final VoidCallback? onToggleMute;
-  final ValueChanged<double>? onWeightChanged;
   final VoidCallback? onToggleSubscription;
-  final double? usageWeight;
   /// Story 22.1 — ouvre le picker 4-états (callback optionnel).
   /// `true` → la source est actuellement en favori (étoile pleine).
   final VoidCallback? onPickInterestState;
@@ -23,9 +20,7 @@ class SourceListItem extends StatelessWidget {
     super.key,
     required this.source,
     this.onTap,
-    this.usageWeight,
     this.onToggleMute,
-    this.onWeightChanged,
     this.onToggleSubscription,
     this.onPickInterestState,
     this.isFavorite = false,
@@ -63,7 +58,6 @@ class SourceListItem extends StatelessWidget {
             onToggleTrust: onTap ?? () {},
             onToggleMute: onToggleMute,
             onToggleSubscription: onToggleSubscription,
-            usageWeight: usageWeight,
           ),
         );
       },
@@ -170,17 +164,6 @@ class SourceListItem extends StatelessWidget {
                     color: isFavorite ? colors.primary : colors.textTertiary,
                     size: 18,
                   ),
-                ),
-              ],
-
-              // Priority slider for trusted, non-muted sources
-              if (!isMuted && isTrusted && onWeightChanged != null) ...[
-                const SizedBox(width: 6),
-                PrioritySlider(
-                  key: ValueKey(source.priorityMultiplier),
-                  currentMultiplier: source.priorityMultiplier,
-                  onChanged: onWeightChanged!,
-                  usageWeight: usageWeight,
                 ),
               ],
 

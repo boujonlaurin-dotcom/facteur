@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
-import '../../../widgets/design/priority_slider.dart';
+import '../../my_interests/widgets/interest_state_pill.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
@@ -15,8 +15,6 @@ class SourceDetailModal extends ConsumerWidget {
   final VoidCallback? onToggleMute;
   final VoidCallback? onCopyFeedUrl;
   final VoidCallback? onToggleSubscription;
-  final ValueChanged<double>? onPriorityChanged; // Epic 12: frequency slider
-  final double? usageWeight;
   final List<SmartSearchRecentItem>? recentItems;
 
   const SourceDetailModal({
@@ -26,8 +24,6 @@ class SourceDetailModal extends ConsumerWidget {
     this.onToggleMute,
     this.onCopyFeedUrl,
     this.onToggleSubscription,
-    this.onPriorityChanged,
-    this.usageWeight,
     this.recentItems,
   });
 
@@ -166,8 +162,7 @@ class SourceDetailModal extends ConsumerWidget {
               ],
             ),
           ),
-          // Epic 12: Priority slider (only for trusted/followed sources)
-          if (onPriorityChanged != null && displaySource.isTrusted) ...[
+          if (displaySource.isTrusted) ...[
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -177,41 +172,28 @@ class SourceDetailModal extends ConsumerWidget {
                 border: Border.all(
                     color: colors.textTertiary.withOpacity(0.2)),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      Icon(
-                        PhosphorIcons.slidersHorizontal(
-                            PhosphorIconsStyle.regular),
-                        size: 18,
-                        color: colors.textSecondary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Fréquence',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              color: colors.textPrimary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                      ),
-                      const Spacer(),
-                      PrioritySlider(
-                        key: ValueKey(source.id),
-                        currentMultiplier: displaySource.priorityMultiplier,
-                        onChanged: onPriorityChanged!,
-                        usageWeight: usageWeight,
-                      ),
-                    ],
+                  Icon(
+                    PhosphorIcons.slidersHorizontal(
+                        PhosphorIconsStyle.regular),
+                    size: 18,
+                    color: colors.textSecondary,
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Ajustez à quel point vous souhaitez voir cette source',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.textSecondary,
-                          height: 1.3,
-                        ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Place cette source dans votre flux',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textSecondary,
+                            height: 1.3,
+                          ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SourceStatePill(
+                    sourceId: source.id,
+                    title: source.name,
                   ),
                 ],
               ),

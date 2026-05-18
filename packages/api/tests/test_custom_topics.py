@@ -124,27 +124,6 @@ class TestUserTopicProfileModel:
             await db_session.commit()
 
     @pytest.mark.asyncio
-    async def test_update_priority_multiplier(self, db_session, test_user):
-        """Test updating the priority multiplier."""
-        topic = UserTopicProfile(
-            user_id=test_user.user_id,
-            topic_name="Climat",
-            slug_parent="climate",
-            keywords=["réchauffement"],
-        )
-        db_session.add(topic)
-        await db_session.commit()
-
-        # Update
-        topic.priority_multiplier = 2.0
-        await db_session.commit()
-
-        result = await db_session.scalar(
-            select(UserTopicProfile).where(UserTopicProfile.id == topic.id)
-        )
-        assert result.priority_multiplier == 2.0
-
-    @pytest.mark.asyncio
     async def test_delete_topic(self, db_session, test_user):
         """Test deleting a topic."""
         topic = UserTopicProfile(
