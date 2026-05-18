@@ -34,7 +34,7 @@ void main() {
               children: [
                 Expanded(
                   child: Text(
-                    'Couverture médiatique',
+                    'Couverture médiatique (5)',
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
                     style: GoogleFonts.dmSans(
@@ -53,12 +53,6 @@ void main() {
                   'right': 1,
                 }),
                 const SizedBox(width: 10),
-                Text(
-                  '5 médias',
-                  style: GoogleFonts.courierPrime(
-                      fontSize: 10.5, fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(width: 8),
                 Icon(PhosphorIcons.caretDown(PhosphorIconsStyle.regular),
                     size: 14),
               ],
