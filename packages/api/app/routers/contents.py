@@ -564,6 +564,49 @@ _analysis_cache: TTLCache = TTLCache(maxsize=256, ttl=7200)
 _perspectives_cache: TTLCache = TTLCache(maxsize=256, ttl=7200)
 
 
+def _normalize_url_for_match(raw: str | None) -> str:
+    """Normalize a URL for equality matching across sources.
+
+    Strips scheme, www. prefix, trailing slash, and lowercases the host. The
+    path is kept verbatim (after rstrip "/") so two URLs differing only in
+    scheme/www/trailing-slash collapse to the same key — sufficient to detect
+    the reference article inside a perspectives list without an exact match.
+    """
+    if not raw:
+        return ""
+    from urllib.parse import urlparse
+
+    try:
+        u = urlparse(raw.strip())
+        host = (u.netloc or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        path = (u.path or "").rstrip("/")
+        return f"{host}{path}"
+    except Exception:
+        return raw.strip().lower()
+
+
+def _recompute_bias_distribution(perspectives: list[dict]) -> dict[str, int]:
+    """Tally bias counts across a list of perspective dicts.
+
+    Mirrors the live-path computation in ``get_perspectives`` so a filtered
+    snapshot stays consistent with the (smaller) list returned to the front.
+    """
+    bias_distribution: dict[str, int] = {
+        "left": 0,
+        "center-left": 0,
+        "center": 0,
+        "center-right": 0,
+        "right": 0,
+    }
+    for p in perspectives:
+        stance = p.get("bias_stance") if isinstance(p, dict) else None
+        if stance in bias_distribution:
+            bias_distribution[stance] += 1
+    return bias_distribution
+
+
 async def _load_cluster_articles_for_representative(
     db: AsyncSession,
     content_id: UUID,
@@ -644,12 +687,17 @@ async def _load_cluster_articles_for_representative(
         return []
 
     try:
-        uuids = [UUID(i) for i in match_ids]
+        # Exclude the reference article itself — it must not show up as one
+        # of its own "alternative perspectives" in the bottom-sheet.
+        uuids = [UUID(i) for i in match_ids if i != target_str]
     except (ValueError, TypeError):
         logger.warning(
             "perspectives_cluster_invalid_uuid",
             content_id=str(content_id),
         )
+        return []
+
+    if not uuids:
         return []
 
     content_stmt = (
@@ -913,6 +961,22 @@ async def get_perspectives(
 
     if stored is not None:
         stored_perspectives, stored_bias = stored
+        # Strip the reference article from the persisted snapshot — the
+        # pipeline doesn't pre-filter it, and the UI must not show the
+        # currently-open article as one of its alternative perspectives.
+        ref_url_key = _normalize_url_for_match(content.url)
+        if ref_url_key:
+            filtered = [
+                p
+                for p in stored_perspectives
+                if _normalize_url_for_match(
+                    p.get("url") if isinstance(p, dict) else None
+                )
+                != ref_url_key
+            ]
+            if len(filtered) != len(stored_perspectives):
+                stored_perspectives = filtered
+                stored_bias = _recompute_bias_distribution(stored_perspectives)
         bias_groups = len([v for v in stored_bias.values() if v > 0])
         count = len(stored_perspectives)
         has_entities = bool(
@@ -1011,7 +1075,16 @@ async def get_perspectives(
     ]
 
     # Single source of truth for the 3 UI counters — mirror pipeline.py.
-    merged = cluster_perspectives + new_gnews
+    # Safety filter: drop any perspective whose URL matches the reference
+    # article (cluster query already filters by id, this guards against
+    # Google News surfacing the same canonical URL).
+    ref_url_key_live = _normalize_url_for_match(content.url)
+    merged = [
+        p
+        for p in (cluster_perspectives + new_gnews)
+        if not ref_url_key_live
+        or _normalize_url_for_match(getattr(p, "url", None)) != ref_url_key_live
+    ]
     perspectives = [p for p in merged if p.bias_stance != "unknown"]
 
     logger.info(
