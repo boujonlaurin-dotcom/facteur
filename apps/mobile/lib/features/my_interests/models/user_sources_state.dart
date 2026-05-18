@@ -109,5 +109,4 @@ class UserSourcesState {
         InterestState.unfollowed;
   }
 
-  bool get isAtCap => favoriteCount >= favoriteCap;
 }

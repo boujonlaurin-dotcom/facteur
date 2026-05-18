@@ -1,8 +1,9 @@
-/// Story 22.1 — section « Favoris (n/3) » réordonnable.
+/// Story 22.1 — section « Favoris » réordonnable.
 ///
-/// Conçue pour fonctionner avec n'importe quel type d'item (intérêts ou sources)
-/// via un builder. Cap d'affichage = 3 ; tout overflow est tronqué silencieusement
-/// (la cap est imposée par le backend, ce widget reste défensif).
+/// Cap retiré (Story 22.2) : l'utilisateur peut épingler autant de favoris
+/// qu'il veut. Les `kFavoriteCap` (3) premiers items, par position, sont
+/// matérialisés visuellement comme appartenant à la « Tournée du jour » via
+/// un divider + caption au-dessus du (kFavoriteCap)-ième item.
 library;
 
 import 'package:flutter/material.dart';
@@ -37,8 +38,6 @@ class FavoritesReorderableSection<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
-    final clamped =
-        items.length > kFavoriteCap ? items.sublist(0, kFavoriteCap) : items;
 
     return Padding(
       padding: padding,
@@ -58,24 +57,29 @@ class FavoritesReorderableSection<T> extends StatelessWidget {
                 FacteurSpacing.space4,
                 FacteurSpacing.space1,
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    PhosphorIcons.star(PhosphorIconsStyle.fill),
-                    color: colors.primary,
-                    size: 16,
+                  Row(
+                    children: [
+                      Icon(
+                        PhosphorIcons.star(PhosphorIconsStyle.fill),
+                        color: colors.primary,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Favoris',
+                        style: textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: colors.textPrimary,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(height: 2),
                   Text(
-                    'Favoris',
-                    style: textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: colors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '(${clamped.length}/$kFavoriteCap)',
+                    'Les $kFavoriteCap premiers (ordre modifiable) sont dans votre Tournée du jour.',
                     style: textTheme.bodySmall?.copyWith(
                       color: colors.textTertiary,
                     ),
@@ -83,7 +87,7 @@ class FavoritesReorderableSection<T> extends StatelessWidget {
                 ],
               ),
             ),
-            if (clamped.isEmpty)
+            if (items.isEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(
                   FacteurSpacing.space4,
@@ -103,36 +107,81 @@ class FavoritesReorderableSection<T> extends StatelessWidget {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 buildDefaultDragHandles: false,
-                itemCount: clamped.length,
+                itemCount: items.length,
                 padding: const EdgeInsets.only(bottom: FacteurSpacing.space2),
                 itemBuilder: (context, index) {
-                  final item = clamped[index];
-                  return Padding(
+                  final item = items[index];
+                  final inTour = index < kFavoriteCap;
+                  final isTourBoundary =
+                      index == kFavoriteCap && items.length > kFavoriteCap;
+                  return Column(
                     key: keyOf(item),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: FacteurSpacing.space2,
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(child: itemBuilder(context, item)),
-                        ReorderableDragStartListener(
-                          index: index,
-                          child: Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: Icon(
-                              PhosphorIcons.dotsSixVertical(
-                                  PhosphorIconsStyle.regular),
-                              color: colors.textTertiary,
-                              size: 18,
-                            ),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (isTourBoundary)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            FacteurSpacing.space4,
+                            FacteurSpacing.space2,
+                            FacteurSpacing.space4,
+                            FacteurSpacing.space1,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Divider(
+                                  color: colors.surfaceElevated,
+                                  height: 1,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Hors Tournée du jour',
+                                style: textTheme.bodySmall?.copyWith(
+                                  color: colors.textTertiary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Divider(
+                                  color: colors.surfaceElevated,
+                                  height: 1,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: FacteurSpacing.space2,
+                        ),
+                        child: Opacity(
+                          opacity: inTour ? 1.0 : 0.55,
+                          child: Row(
+                            children: [
+                              Expanded(child: itemBuilder(context, item)),
+                              ReorderableDragStartListener(
+                                index: index,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(8),
+                                  child: Icon(
+                                    PhosphorIcons.dotsSixVertical(
+                                        PhosphorIconsStyle.regular),
+                                    color: colors.textTertiary,
+                                    size: 18,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   );
                 },
                 onReorder: (oldIndex, newIndex) {
-                  final reordered = [...clamped];
+                  final reordered = [...items];
                   final adjusted = newIndex > oldIndex ? newIndex - 1 : newIndex;
                   final moved = reordered.removeAt(oldIndex);
                   reordered.insert(adjusted, moved);

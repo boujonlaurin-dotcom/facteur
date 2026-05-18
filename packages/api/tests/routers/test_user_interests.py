@@ -97,14 +97,14 @@ async def test_patch_promotes_theme_to_favorite(auth_user_with_themes, db_sessio
 
 
 @pytest.mark.asyncio
-async def test_patch_returns_422_when_cap_reached(
+async def test_patch_accepts_more_than_cap_favorites(
     auth_user_with_themes, db_session
 ):
-    """Au-delà du 3ème favori, le 4ème renvoie 422 favorite_cap_reached."""
+    """Story 22.2 — cap retiré : un 4e favori est accepté (position=3)."""
     transport = ASGITransport(app=app)
     with patch(
         "app.routers.user_interests.get_posthog_client", return_value=MagicMock()
-    ) as mock_ph:
+    ):
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             for slug in ("tech", "society", "culture"):
                 resp = await ac.patch(
@@ -117,14 +117,11 @@ async def test_patch_returns_422_when_cap_reached(
                 "/api/user/interests",
                 json={"kind": "theme", "target_id": "science", "state": "favorite"},
             )
-    assert resp4.status_code == 422
-    assert resp4.json()["detail"] == {
-        "error": "favorite_cap_reached",
-        "cap": FAVORITE_CAP,
-    }
-    capture = mock_ph.return_value.capture
-    events = [c.kwargs.get("event") for c in capture.call_args_list]
-    assert "interest_cap_blocked" in events
+    assert resp4.status_code == 200, resp4.text
+    body = resp4.json()
+    assert body["favorite_count"] == 4
+    positions = sorted(f["position"] for f in body["favorites"])
+    assert positions == [0, 1, 2, 3]
 
 
 @pytest.mark.asyncio

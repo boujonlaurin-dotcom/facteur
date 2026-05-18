@@ -24,7 +24,6 @@ import '../../digest/providers/serein_toggle_provider.dart';
 import '../../feed/repositories/personalization_repository.dart';
 import '../models/user_interests_state.dart';
 import '../providers/user_interests_provider.dart';
-import '../repositories/user_interests_repository.dart' show FavoriteCapReachedException;
 import '../widgets/favorites_reorderable_section.dart';
 import '../widgets/interest_state_picker_sheet.dart';
 
@@ -70,47 +69,22 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
     }
   }
 
-  void _showCapSnackbar() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text(
-            'Tu as déjà 3 favoris. Retire-en un d\'abord pour en ajouter un nouveau.'),
-        duration: const Duration(seconds: 3),
-        action: SnackBarAction(
-          label: 'OK',
-          onPressed: () =>
-              ScaffoldMessenger.of(context).hideCurrentSnackBar(),
-        ),
-      ),
-    );
-  }
-
   Future<void> _pickState({
     required String title,
     required FavoriteRef refTarget,
     required InterestState currentState,
   }) async {
-    final interests = ref.read(userInterestsProvider).value;
-    final atCap = interests?.isAtCap ?? false;
     final selected = await InterestStatePickerSheet.show(
       context,
       title: title,
       currentState: currentState,
-      favoriteAvailable: !atCap || currentState == InterestState.favorite,
     );
     if (selected == null || selected == currentState) return;
-
-    if (selected == InterestState.favorite && atCap) {
-      _showCapSnackbar();
-      return;
-    }
 
     try {
       await ref
           .read(userInterestsProvider.notifier)
           .setInterestState(refTarget, selected);
-    } on FavoriteCapReachedException {
-      _showCapSnackbar();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -386,7 +360,7 @@ class _HeroBlock extends StatelessWidget {
           Text(
             sereinMode
                 ? 'Choisissez ce qui reste dans vos bonnes nouvelles. Cochez pour garder, décochez pour mettre de côté.'
-                : 'Étoilez vos favoris (jusqu\'à 3) pour les voir en tête du flux. Masquez ce qui ne vous parle pas.',
+                : 'Étoilez vos favoris pour les voir en tête du flux. Les 3 premiers (ordre modifiable) constituent votre Tournée du jour.',
             style: textTheme.bodyMedium?.copyWith(
               color: colors.textSecondary,
             ),
@@ -568,8 +542,14 @@ class _ThemeBlock extends ConsumerWidget {
         .firstOrNull;
     final themeState = themeRow?.state ?? InterestState.unfollowed;
 
+    // slug_parent en DB est un slug fin (ex. 'cinema', 'ai', 'feminism'). On
+    // remonte au macro-thème via getTopicMacroTheme() pour matcher le bloc
+    // affiché. Avant : comparaison directe `slugParent == themeSlug` qui
+    // masquait ~85% des sujets followed (PR #622).
     final topics = interests.customTopics
-        .where((c) => c.slugParent == themeSlug && c.state != InterestState.hidden)
+        .where((c) =>
+            getTopicMacroTheme(c.slugParent) == macroLabel &&
+            c.state != InterestState.hidden)
         .toList();
 
     // Hide the whole block in normal mode when there's nothing to show

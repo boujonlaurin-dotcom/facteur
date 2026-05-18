@@ -227,18 +227,10 @@ class UserInterestsService:
                         return
                     current.position = position
                 return
-            # Nouveau favori : check cap.
-            if len(existing) >= FAVORITE_CAP:
-                raise FavoriteCapReached(
-                    kind=kind, target_id=target_id, current_count=len(existing)
-                )
-            if position is None:
-                taken = {f.position for f in existing}
-                position = next(p for p in range(FAVORITE_CAP) if p not in taken)
-            elif any(f.position == position for f in existing):
-                # Slot occupé — fallback sur next free.
-                taken = {f.position for f in existing}
-                position = next(p for p in range(FAVORITE_CAP) if p not in taken)
+            # Nouveau favori : plus de cap dur (Story 22.2). Append à la fin.
+            taken = {f.position for f in existing}
+            if position is None or position in taken:
+                position = (max(taken) + 1) if taken else 0
 
             row = UserFavoriteInterest(
                 user_id=user_id,
@@ -403,15 +395,10 @@ class UserSourcesStateService:
                         return
                     current.position = position
                 return
-            if len(existing) >= FAVORITE_CAP:
-                raise FavoriteCapReached(
-                    kind="source",
-                    target_id=str(source_id),
-                    current_count=len(existing),
-                )
-            if position is None or any(f.position == position for f in existing):
-                taken = {f.position for f in existing}
-                position = next(p for p in range(FAVORITE_CAP) if p not in taken)
+            # Plus de cap dur (Story 22.2) — append à la fin.
+            taken = {f.position for f in existing}
+            if position is None or position in taken:
+                position = (max(taken) + 1) if taken else 0
 
             self.db.add(
                 UserFavoriteSource(
