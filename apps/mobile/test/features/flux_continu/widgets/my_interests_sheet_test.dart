@@ -78,7 +78,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Mes intérêts'), findsOneWidget);
-      expect(find.text('2/3 FAVORIS'), findsOneWidget);
+      expect(find.text('2 FAVORIS'), findsOneWidget);
       // Custom topic name resolved from interests.customTopics
       expect(find.text('IA & éducation'), findsOneWidget);
       // Theme slug → canonical visual label
@@ -103,7 +103,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Aucun favori pour le moment.'), findsOneWidget);
-      expect(find.text('0/3 FAVORIS'), findsOneWidget);
+      expect(find.text('0 FAVORIS'), findsOneWidget);
     });
 
     testWidgets('Fermer dismisses the sheet', (tester) async {

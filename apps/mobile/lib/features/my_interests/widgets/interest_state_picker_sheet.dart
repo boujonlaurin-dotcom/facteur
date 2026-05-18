@@ -10,13 +10,11 @@ import '../models/user_interests_state.dart';
 class InterestStatePickerSheet extends StatelessWidget {
   final String title;
   final InterestState currentState;
-  final bool favoriteAvailable;
 
   const InterestStatePickerSheet({
     super.key,
     required this.title,
     required this.currentState,
-    this.favoriteAvailable = true,
   });
 
   /// Affiche le picker et retourne l'état choisi (ou `null` si annulé).
@@ -24,7 +22,6 @@ class InterestStatePickerSheet extends StatelessWidget {
     BuildContext context, {
     required String title,
     required InterestState currentState,
-    bool favoriteAvailable = true,
   }) {
     return showModalBottomSheet<InterestState>(
       context: context,
@@ -33,7 +30,6 @@ class InterestStatePickerSheet extends StatelessWidget {
       builder: (_) => InterestStatePickerSheet(
         title: title,
         currentState: currentState,
-        favoriteAvailable: favoriteAvailable,
       ),
     );
   }
@@ -79,9 +75,8 @@ class InterestStatePickerSheet extends StatelessWidget {
             _StateOption(
               state: InterestState.favorite,
               label: 'Favori',
-              description: favoriteAvailable
-                  ? 'En haut de votre flux, jusqu\'à 3'
-                  : 'Limite atteinte (3) — retirez-en un d\'abord',
+              description:
+                  'En haut de votre flux. Les 3 premiers sont dans la Tournée du jour.',
               iconBuilder: (color) => Icon(
                 PhosphorIcons.star(PhosphorIconsStyle.fill),
                 color: color,
@@ -89,8 +84,7 @@ class InterestStatePickerSheet extends StatelessWidget {
               ),
               accent: colors.primary,
               isSelected: currentState == InterestState.favorite,
-              enabled:
-                  favoriteAvailable || currentState == InterestState.favorite,
+              enabled: true,
             ),
             _StateOption(
               state: InterestState.followed,

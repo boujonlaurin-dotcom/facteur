@@ -204,5 +204,4 @@ class UserInterestsState {
     };
   }
 
-  bool get isAtCap => favoriteCount >= favoriteCap;
 }

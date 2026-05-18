@@ -7,11 +7,13 @@ sont hard-codées pour rester en phase avec le mobile (constante miroir
 """
 
 FAVORITE_CAP: int = 3
-"""Cap dur du nombre de favoris par catégorie (intérêts vs sources, séparés).
+"""Cap d'affichage de la « Tournée du jour » (Story 22.2 — révision 2026-05-18).
 
-Story 22.1 — décision PO 2026-05-15 : cap=3, hard-coded partagé serveur+client,
-modifié par redeploy. Cap appliqué séparément aux intérêts (Thèmes+Sujets) et
-aux Sources.
+N'est PLUS un cap dur : l'utilisateur peut avoir > 3 favoris ; seuls les 3
+premiers (ordre `position` modifiable) sont retenus pour la Tournée du jour.
+Conservé sous le nom `FAVORITE_CAP` pour compat des imports ; sémantiquement
+équivalent à `DAILY_TOUR_CAP`. Mirror mobile : `dailyTourCap` dans
+`apps/mobile/lib/config/constants.dart`.
 """
 
 MIN_BACKFILL_FAVORITES: int = 2

@@ -313,14 +313,14 @@ async def get_top_themes(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> list[TopThemeResponse]:
-    """Retourne les thèmes de l'utilisateur, dans l'ordre canonique des favoris
-    si déclarés, sinon en fallback sur le poids appris.
+    """Retourne les thèmes de la « Tournée du jour ».
 
     Story 22.1 — la table `user_favorite_interests` (ordre user) prime ; les
     Sujets favoris (custom topics) sont projetés sur leur `slug_parent` pour
     rester compatibles avec le format `TopThemeResponse` (rétrocompat mobile).
-    Cap à 3 côté serveur pour rester cohérent avec `FAVORITE_CAP`. Les thèmes
-    sans article récent (14 derniers jours) sont exclus du fallback.
+    Story 22.2 — le user peut avoir > 3 favoris, mais seuls les `FAVORITE_CAP`
+    premiers (par `position` ASC) sont sélectionnés pour la Tournée du jour.
+    Les thèmes sans article récent (14 derniers jours) sont exclus du fallback.
     """
     from app.constants import FAVORITE_CAP
     from app.models.content import Content

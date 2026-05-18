@@ -1,7 +1,9 @@
-"""Favoris ordonnés — Story 22.1.
+"""Favoris ordonnés — Story 22.1 (cap retiré 2026-05-18, Story 22.2).
 
-Deux tables dédiées (intérêts vs sources) parce que le cap=3 est séparé pour
-chaque catégorie. La position 0..2 est garantie par CHECK + PK composite.
+Deux tables dédiées (intérêts vs sources). La position n'est plus bornée à
+0..2 : l'utilisateur peut épingler autant de favoris qu'il veut, et seuls
+les `FAVORITE_CAP` premiers (par position ASC) sont affichés dans la
+« Tournée du jour ».
 """
 
 from datetime import UTC, datetime
@@ -23,18 +25,14 @@ from app.database import Base
 
 
 class UserFavoriteInterest(Base):
-    """Favori intérêt (Thème OU Sujet, XOR), ordonné par position 0..2.
+    """Favori intérêt (Thème OU Sujet, XOR), ordonné par position.
 
-    PK composite (user_id, position) → garantit unicité du slot et cap=3.
-    Aucune ligne ne peut exister à position=3+.
+    PK composite (user_id, position) → garantit unicité du slot. La position
+    est entière >= 0 (plus de cap dur depuis 2026-05-18).
     """
 
     __tablename__ = "user_favorite_interests"
     __table_args__ = (
-        CheckConstraint(
-            "position BETWEEN 0 AND 2",
-            name="user_favorite_interests_position_range",
-        ),
         CheckConstraint(
             "(interest_slug IS NOT NULL)::int + (custom_topic_id IS NOT NULL)::int = 1",
             name="user_favorite_interests_target_xor",
@@ -61,7 +59,7 @@ class UserFavoriteInterest(Base):
 
 
 class UserFavoriteSource(Base):
-    """Favori source, ordonné par position 0..2.
+    """Favori source, ordonné par position (>=0, plus de cap dur depuis 2026-05-18).
 
     UNIQUE (user_id, source_id) en plus du PK composite : un même source ne
     peut pas occuper deux slots simultanément.
@@ -69,10 +67,6 @@ class UserFavoriteSource(Base):
 
     __tablename__ = "user_favorite_sources"
     __table_args__ = (
-        CheckConstraint(
-            "position BETWEEN 0 AND 2",
-            name="user_favorite_sources_position_range",
-        ),
         UniqueConstraint(
             "user_id", "source_id", name="user_favorite_sources_user_source_uniq"
         ),

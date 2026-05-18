@@ -1,9 +1,9 @@
-"""Schemas — système d'intérêts unifié (Story 22.1).
+"""Schemas — système d'intérêts unifié (Story 22.1, cap retiré Story 22.2).
 
 Couvre les écrans « Mes intérêts » (Thèmes + Sujets) et « Mes sources ». L'enum
 `InterestState` est l'axe sémantique unique (hidden/unfollowed/followed/favorite)
-partagé par les 3 entités. Le cap `FAVORITE_CAP=3` est appliqué séparément aux
-intérêts et aux sources.
+partagé par les 3 entités. `FAVORITE_CAP=3` n'est plus une limite dure mais le
+cap d'affichage de la « Tournée du jour » (les 3 premiers favoris par position).
 """
 
 from typing import Literal
@@ -11,7 +11,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.constants import FAVORITE_CAP
 from app.models.enums import InterestState
 
 InterestKind = Literal["theme", "custom_topic"]
@@ -22,7 +21,7 @@ class FavoriteRef(BaseModel):
 
     kind: InterestKind
     target_id: str  # interest_slug (theme) ou str(UUID) (custom_topic)
-    position: int = Field(ge=0, le=FAVORITE_CAP - 1)
+    position: int = Field(ge=0)
 
 
 class ThemeInterestResponse(BaseModel):
@@ -68,7 +67,7 @@ class SetInterestStateRequest(BaseModel):
     kind: InterestKind
     target_id: str
     state: InterestState
-    position: int | None = Field(None, ge=0, le=FAVORITE_CAP - 1)
+    position: int | None = Field(None, ge=0)
 
 
 class ReorderFavoritesRequest(BaseModel):
@@ -82,9 +81,7 @@ class ReorderFavoritesRequest(BaseModel):
 
     @field_validator("favorites")
     @classmethod
-    def _validate_cap_and_positions(cls, v: list[FavoriteRef]) -> list[FavoriteRef]:
-        if len(v) > FAVORITE_CAP:
-            raise ValueError(f"too many favorites (max={FAVORITE_CAP})")
+    def _validate_positions(cls, v: list[FavoriteRef]) -> list[FavoriteRef]:
         positions = [f.position for f in v]
         if sorted(positions) != list(range(len(v))):
             raise ValueError("positions must be a contiguous 0..N-1 sequence")
@@ -105,7 +102,7 @@ class SourceFavoriteRef(BaseModel):
     """Favori source ordonné (pas de XOR, juste position + source_id)."""
 
     source_id: UUID
-    position: int = Field(ge=0, le=FAVORITE_CAP - 1)
+    position: int = Field(ge=0)
 
 
 class UserSourcesStateResponse(BaseModel):
@@ -122,7 +119,7 @@ class SetSourceStateRequest(BaseModel):
 
     source_id: UUID
     state: InterestState
-    position: int | None = Field(None, ge=0, le=FAVORITE_CAP - 1)
+    position: int | None = Field(None, ge=0)
 
 
 class ReorderSourceFavoritesRequest(BaseModel):
@@ -132,11 +129,7 @@ class ReorderSourceFavoritesRequest(BaseModel):
 
     @field_validator("favorites")
     @classmethod
-    def _validate_cap_and_positions(
-        cls, v: list[SourceFavoriteRef]
-    ) -> list[SourceFavoriteRef]:
-        if len(v) > FAVORITE_CAP:
-            raise ValueError(f"too many favorites (max={FAVORITE_CAP})")
+    def _validate_positions(cls, v: list[SourceFavoriteRef]) -> list[SourceFavoriteRef]:
         positions = [f.position for f in v]
         if sorted(positions) != list(range(len(v))):
             raise ValueError("positions must be a contiguous 0..N-1 sequence")

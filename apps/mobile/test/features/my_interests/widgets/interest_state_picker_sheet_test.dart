@@ -68,7 +68,7 @@ void main() {
     expect(returned, InterestState.hidden);
   });
 
-  testWidgets('favorite option disabled when cap reached and not currently favorite',
+  testWidgets('Story 22.2 — favorite option is always tappable (cap removed)',
       (tester) async {
     InterestState? returned;
     await tester.pumpWidget(
@@ -82,7 +82,6 @@ void main() {
                   context,
                   title: 'Sport',
                   currentState: InterestState.followed,
-                  favoriteAvailable: false,
                 );
               },
               child: const Text('open'),
@@ -95,12 +94,9 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    // Tapping disabled "Favori" should not pop the sheet (InkWell.onTap = null).
     await tester.tap(find.text('Favori'));
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
 
-    expect(returned, isNull);
-    // The sheet is still open.
-    expect(find.text('Favori'), findsOneWidget);
+    expect(returned, InterestState.favorite);
   });
 }

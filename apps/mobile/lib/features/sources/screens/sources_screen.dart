@@ -92,29 +92,19 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
 
   Future<void> _pickSourceState(Source source) async {
     final state = ref.read(userSourcesStateProvider).value;
-    final atCap = state?.isAtCap ?? false;
     final currentState = state?.stateOf(source.id) ?? InterestState.followed;
 
     final picked = await InterestStatePickerSheet.show(
       context,
       title: source.name,
       currentState: currentState,
-      favoriteAvailable:
-          !atCap || currentState == InterestState.favorite,
     );
     if (picked == null || picked == currentState) return;
-
-    if (picked == InterestState.favorite && atCap) {
-      _showCapSnackbar();
-      return;
-    }
 
     try {
       await ref
           .read(userSourcesStateProvider.notifier)
           .setSourceState(source.id, picked);
-    } on FavoriteCapReachedException {
-      _showCapSnackbar();
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -124,16 +114,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
         ),
       );
     }
-  }
-
-  void _showCapSnackbar() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-            'Tu as déjà 3 sources favorites. Retire-en une d\'abord.'),
-        duration: Duration(seconds: 3),
-      ),
-    );
   }
 
   @override

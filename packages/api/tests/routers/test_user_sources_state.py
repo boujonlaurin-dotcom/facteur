@@ -94,7 +94,8 @@ async def test_patch_promotes_source_to_favorite(auth_user_with_sources):
 
 
 @pytest.mark.asyncio
-async def test_source_cap_reached(auth_user_with_sources):
+async def test_source_accepts_more_than_cap_favorites(auth_user_with_sources):
+    """Story 22.2 — cap retiré : un 4e favori est accepté (position=3)."""
     _, sources = auth_user_with_sources
     transport = ASGITransport(app=app)
     with patch(
@@ -108,12 +109,12 @@ async def test_source_cap_reached(auth_user_with_sources):
                     json={"source_id": str(s.id), "state": "favorite"},
                 )
                 assert ok.status_code == 200, ok.text
-            ko = await ac.patch(
+            ok4 = await ac.patch(
                 "/api/user/sources",
                 json={"source_id": str(sources[3].id), "state": "favorite"},
             )
-    assert ko.status_code == 422
-    assert ko.json()["detail"] == {
-        "error": "favorite_cap_reached",
-        "cap": FAVORITE_CAP,
-    }
+    assert ok4.status_code == 200, ok4.text
+    body = ok4.json()
+    assert body["favorite_count"] == 4
+    positions = sorted(f["position"] for f in body["favorites"])
+    assert positions == [0, 1, 2, 3]

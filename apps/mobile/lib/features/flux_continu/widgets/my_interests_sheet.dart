@@ -93,7 +93,7 @@ class _MyInterestsContent extends ConsumerWidget {
                       ),
                     ),
                     Text(
-                      '${rows.length}/${interests?.favoriteCap ?? 3} FAVORIS',
+                      '${rows.length} FAVORIS',
                       style: GoogleFonts.dmSans(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
