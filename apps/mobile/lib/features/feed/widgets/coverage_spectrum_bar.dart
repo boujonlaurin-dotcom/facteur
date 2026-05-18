@@ -38,6 +38,10 @@ class CoverageSpectrumBar extends StatelessWidget {
       width: 96,
       height: 9,
       child: Row(
+        // stretch : sans ça, le DecoratedBox sans enfant reçoit une contrainte
+        // cross-axis loose (0..9) et se peint à hauteur 0 → invisible. cf.
+        // coverage_spectrum_visible_test.dart.
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: List.generate(_keys.length, (i) {
           final count = distribution[_keys[i]] ?? 0;
           return Expanded(

@@ -1342,16 +1342,20 @@ class _PerspectivesInlineSectionState
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  'Couverture médiatique',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.1,
-                    color: colors.textPrimary,
+                Expanded(
+                  child: Text(
+                    'Couverture médiatique',
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.1,
+                      color: colors.textPrimary,
+                    ),
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 12),
                 CoverageSpectrumBar(distribution: widget.biasDistribution),
                 const SizedBox(width: 10),
                 Text(

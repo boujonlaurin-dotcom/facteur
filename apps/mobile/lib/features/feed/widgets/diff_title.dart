@@ -156,19 +156,22 @@ class _DiffTitleState extends State<DiffTitle>
       chunks.add(_Chunk(text: title.substring(cursor), type: tailType));
     }
 
+    _chunks = chunks;
+    _animatedSpanCount = animIndex;
+
     // Mode 2 : passe en revue tout le titre — les portions plain qui ne sont
     // pas key doivent être en tertiary. On corrige les chunks plain en
-    // dimmedFallback si on est en Mode 2.
-    if (!useSharedAsTertiary) {
-      for (var i = 0; i < chunks.length; i++) {
-        if (chunks[i].type == _ChunkType.plain) {
-          chunks[i] = _Chunk(text: chunks[i].text, type: _ChunkType.dimmedFallback);
+    // dimmedFallback si on est en Mode 2. Requiert au moins un key span :
+    // sans aucun span (back retourne highlight_spans=[] et shared_tokens=[],
+    // ex. cluster_id NULL), tout dimmer ferait apparaître le titre uniformément
+    // en gris — le comportement attendu est un rendu plain textPrimary normal.
+    if (!useSharedAsTertiary && _animatedSpanCount > 0) {
+      for (var i = 0; i < _chunks.length; i++) {
+        if (_chunks[i].type == _ChunkType.plain) {
+          _chunks[i] = _Chunk(text: _chunks[i].text, type: _ChunkType.dimmedFallback);
         }
       }
     }
-
-    _chunks = chunks;
-    _animatedSpanCount = animIndex;
   }
 
   double _easedProgressFor(int spanIndex) {

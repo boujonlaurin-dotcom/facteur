@@ -119,8 +119,13 @@ void main() {
       expect(combined.contains('annonce'), isTrue);
     });
 
-    testWidgets('titre sans aucun span → texte plain, pas de Container animé',
+    testWidgets(
+        'titre sans aucun span → rendu plain en textPrimary (pas dimmedFallback)',
         (tester) async {
+      // Regression Bug Couverture #1 : quand le back renvoie highlight_spans=[]
+      // ET shared_tokens=[] (ex. article sans cluster_id), DiffTitle ne doit
+      // PAS dimmer le titre entier en textTertiary — il doit rester en
+      // textPrimary, comme un titre standard sans diff.
       await tester.pumpWidget(host(DiffTitle(
         title: 'Aucune divergence détectée',
         highlightSpans: const [],
@@ -131,8 +136,21 @@ void main() {
       )));
       await tester.pumpAndSettle();
 
-      final combined = _richTextStrings(tester).join();
-      expect(combined, contains('Aucune divergence détectée'));
+      final richText = tester.widget<RichText>(find.byType(RichText));
+      final root = richText.text as TextSpan;
+      expect(root.children, isNotNull);
+      expect(root.children!.length, 1,
+          reason: 'Un unique chunk plain attendu');
+      final only = root.children!.first as TextSpan;
+      expect(only.text, 'Aucune divergence détectée');
+
+      final expectedPrimary =
+          FacteurTheme.lightTheme.extension<FacteurColors>()!.textPrimary;
+      final expectedTertiary =
+          FacteurTheme.lightTheme.extension<FacteurColors>()!.textTertiary;
+      expect(only.style?.color, expectedPrimary,
+          reason: 'Le chunk doit être en textPrimary, pas dimmedFallback');
+      expect(only.style?.color, isNot(expectedTertiary));
     });
   });
 }
