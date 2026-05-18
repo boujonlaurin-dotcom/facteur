@@ -78,7 +78,6 @@ class SectionBlock extends StatelessWidget {
   Widget _buildFolded() {
     return FoldedSectionCard(
       title: section.label,
-      accent: section.accent,
       articleCount: section.totalCount,
       onTap: onUnfold,
     );
