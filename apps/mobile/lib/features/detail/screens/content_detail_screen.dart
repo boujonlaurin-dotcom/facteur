@@ -3661,8 +3661,14 @@ class _FollowSourceChipState extends ConsumerState<_FollowSourceChip> {
   Widget build(BuildContext context) {
     final c = widget.colors;
     return Material(
-      color: c.primary,
-      borderRadius: BorderRadius.circular(12),
+      color: c.backgroundSecondary,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(
+          color: c.textTertiary.withValues(alpha: 0.3),
+          width: 1,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: _busy ? null : _onTap,
@@ -3672,21 +3678,21 @@ class _FollowSourceChipState extends ConsumerState<_FollowSourceChip> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (_busy)
-                const SizedBox(
+                SizedBox(
                   width: 12,
                   height: 12,
                   child: CircularProgressIndicator(
                     strokeWidth: 1.5,
-                    valueColor: AlwaysStoppedAnimation(Colors.white),
+                    valueColor: AlwaysStoppedAnimation(c.textSecondary),
                   ),
                 )
               else
-                const Icon(Icons.add, size: 14, color: Colors.white),
+                Icon(Icons.add, size: 14, color: c.textSecondary),
               const SizedBox(width: 4),
               Text(
                 'Suivre',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Colors.white,
+                      color: c.textSecondary,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.2,
                     ),
