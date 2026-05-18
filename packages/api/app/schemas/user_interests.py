@@ -129,9 +129,7 @@ class ReorderSourceFavoritesRequest(BaseModel):
 
     @field_validator("favorites")
     @classmethod
-    def _validate_positions(
-        cls, v: list[SourceFavoriteRef]
-    ) -> list[SourceFavoriteRef]:
+    def _validate_positions(cls, v: list[SourceFavoriteRef]) -> list[SourceFavoriteRef]:
         positions = [f.position for f in v]
         if sorted(positions) != list(range(len(v))):
             raise ValueError("positions must be a contiguous 0..N-1 sequence")
