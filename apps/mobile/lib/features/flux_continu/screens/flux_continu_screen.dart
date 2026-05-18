@@ -29,7 +29,7 @@ import '../../gamification/widgets/streak_indicator.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
 import '../../notifications/widgets/notification_renudge_banner.dart';
 import '../../well_informed/widgets/well_informed_prompt.dart';
-import '../../../shared/widgets/loaders/facteur_loader.dart';
+import '../../../shared/widgets/loaders/loading_view.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
 import '../../feed/widgets/feed_filter_bar.dart';
@@ -480,7 +480,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         child: Stack(
           children: [
             state.when(
-              loading: () => const _LoadingView(),
+              loading: () => const LoadingView(),
               error: (e, _) => _ErrorView(
                 error: e,
                 onRetry: () =>
@@ -1063,15 +1063,6 @@ class _PullToRefreshHintState extends State<_PullToRefreshHint>
         ),
       ),
     );
-  }
-}
-
-class _LoadingView extends StatelessWidget {
-  const _LoadingView();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: FacteurLoader(width: 96, height: 96));
   }
 }
 
