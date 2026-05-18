@@ -121,6 +121,8 @@ def stratify_followed_first(
     followed = [it for it in items if it[0].source_id in followed_source_ids]
     others = [it for it in items if it[0].source_id not in followed_source_ids]
     return followed + others
+
+
 from app.services.recommendation.filter_presets import (
     apply_entity_filter,
     apply_keyword_filter,
