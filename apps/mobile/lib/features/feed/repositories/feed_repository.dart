@@ -952,6 +952,9 @@ class PerspectivesResponse {
   final bool shouldDisplay;
   final String? analysis;
   final bool analysisCached;
+  /// Verbe-pivot du titre de l'article lu — wash gris dans `cm-ref-inline`.
+  /// `null` si le back n'a trouvé aucun verbe ou si déploiement back en retard.
+  final TokenSpan? referencePivot;
 
   PerspectivesResponse({
     required this.perspectives,
@@ -962,6 +965,7 @@ class PerspectivesResponse {
     this.shouldDisplay = false,
     this.analysis,
     this.analysisCached = false,
+    this.referencePivot,
   });
 
   factory PerspectivesResponse.fromJson(Map<String, dynamic> json) {
@@ -992,7 +996,60 @@ class PerspectivesResponse {
       shouldDisplay: (json['should_display'] as bool?) ?? false,
       analysis: json['analysis'] as String?,
       analysisCached: (json['analysis_cached'] as bool?) ?? false,
+      referencePivot: TokenSpan.fromJsonOrNull(json['reference_pivot']),
     );
+  }
+}
+
+/// Span de surlignage colorisé selon le bord de la source.
+/// Renvoyé par le back via `highlight_spans: [{start,end,text,bias}]`.
+class HighlightSpan {
+  final int start;
+  final int end;
+  final String text;
+  final String bias;
+
+  const HighlightSpan({
+    required this.start,
+    required this.end,
+    required this.text,
+    required this.bias,
+  });
+
+  factory HighlightSpan.fromJson(Map<String, dynamic> json) {
+    return HighlightSpan(
+      start: (json['start'] as num?)?.toInt() ?? 0,
+      end: (json['end'] as num?)?.toInt() ?? 0,
+      text: (json['text'] as String?) ?? '',
+      bias: (json['bias'] as String?) ?? 'unknown',
+    );
+  }
+}
+
+/// Span neutre (sans couleur de bias) utilisé pour `shared_tokens` (tokens
+/// communs entre titre variant et référence) et `reference_pivot` (verbe).
+class TokenSpan {
+  final int start;
+  final int end;
+  final String text;
+
+  const TokenSpan({
+    required this.start,
+    required this.end,
+    required this.text,
+  });
+
+  factory TokenSpan.fromJson(Map<String, dynamic> json) {
+    return TokenSpan(
+      start: (json['start'] as num?)?.toInt() ?? 0,
+      end: (json['end'] as num?)?.toInt() ?? 0,
+      text: (json['text'] as String?) ?? '',
+    );
+  }
+
+  static TokenSpan? fromJsonOrNull(dynamic raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    return TokenSpan.fromJson(raw);
   }
 }
 
@@ -1004,6 +1061,12 @@ class PerspectiveData {
   final String sourceDomain;
   final String biasStance;
   final String? publishedAt;
+  /// Spans divergents du titre variant vs. référence (colorisés par bias).
+  /// Liste vide si la chaîne back n'a pas pu calculer (cluster manquant, etc.).
+  final List<HighlightSpan> highlightSpans;
+  /// Spans partagés avec la référence — rendus en `text_tertiary` côté front
+  /// pour faire ressortir les divergences. Liste vide en mode dégradé Mode 2.
+  final List<TokenSpan> sharedTokens;
 
   PerspectiveData({
     required this.title,
@@ -1012,9 +1075,13 @@ class PerspectiveData {
     required this.sourceDomain,
     required this.biasStance,
     this.publishedAt,
+    this.highlightSpans = const [],
+    this.sharedTokens = const [],
   });
 
   factory PerspectiveData.fromJson(Map<String, dynamic> json) {
+    final rawHighlights = json['highlight_spans'] as List<dynamic>?;
+    final rawShared = json['shared_tokens'] as List<dynamic>?;
     return PerspectiveData(
       title: (json['title'] as String?) ?? '',
       url: (json['url'] as String?) ?? '',
@@ -1022,6 +1089,16 @@ class PerspectiveData {
       sourceDomain: (json['source_domain'] as String?) ?? '',
       biasStance: (json['bias_stance'] as String?) ?? 'unknown',
       publishedAt: json['published_at'] as String?,
+      highlightSpans: rawHighlights == null
+          ? const []
+          : rawHighlights
+              .map((e) => HighlightSpan.fromJson(e as Map<String, dynamic>))
+              .toList(),
+      sharedTokens: rawShared == null
+          ? const []
+          : rawShared
+              .map((e) => TokenSpan.fromJson(e as Map<String, dynamic>))
+              .toList(),
     );
   }
 }

@@ -1,93 +1,129 @@
-# QA Handoff — Couverture médiatique sous le titre du reader
+# QA Handoff — Refonte hi-fi Couverture médiatique (Story 7.4 Sprint 2 front)
 
 ## Feature développée
 
-Section "Couverture médiatique" repositionnée sous le titre dans les deux modes de reader (in-app + scroll-to-site), avec titre raffiné au DS, badge "Couvert par X médias" en état ouvert, et suppression complète de l'ancienne UX footer (boutons "Voir perspectives" / "Retour à l'article", sticky header, méthode de check).
+Refonte hi-fi du panneau « Couverture médiatique » sur l'écran article (front) :
+- Bandeau `cm-panel-inline` (hairlines, spectrum 5-segs, "N médias", caret)
+- Carte dépliée : bloc référence (wash verbe-pivot gris), 8 lignes variantes avec **diff lexical animé en cascade** (Mode 3 fidèle : shared en tertiary, key en wash bias)
+- CTA Analyse Facteur en card dashed déprioritée
+- Nouveau badge polarisation (3 niveaux) dans la meta-row des `FeedCard` des articles topicalisés du digest L'Essentiel
+
+L'animation cascade des surlignages se déclenche **1×** à l'ouverture de la carte dépliée. Feeling visé : « Facteur analyse en temps réel les divergences entre sources ».
 
 ## PR associée
 
-À créer via `/go` (base `main`).
+À créer juste après ce handoff (`gh pr create --base main`).
 
 ## Écrans impactés
 
 | Écran | Route | Modifié / Nouveau |
-|-------|-------|-------------------|
-| Reader article (mode in-app, htmlContent Flutter) | `/article/:id` | Modifié |
-| Reader article (mode scroll-to-site, WebView sous-jacente) | `/article/:id` | Modifié |
+|---|---|---|
+| Détail article (bottom layout) | `/feed/:contentId` | Modifié — `PerspectivesInlineSection` refondu |
+| Détail article (top layout) | `/digest/:contentId` | Modifié — idem, 2 call-sites |
+| Digest L'Essentiel | `/digest` | Modifié — `FeedCard` accepte `divergenceLevel` ; câblé via `topic_section.dart` |
 
 ## Scénarios de test
 
-### Scénario 1 : Reader in-app, article avec perspectives
+### Scénario 1 — Happy path : animation cascade Mode 3
+
 **Parcours** :
-1. Ouvrir un article avec `htmlContent` non vide et perspectives disponibles
-2. Observer la section "Couverture médiatique" sous le titre (repliée par défaut)
-3. Tap sur le header de la section pour l'ouvrir
-4. Tap à nouveau pour la refermer
+1. Ouvrir un article du digest L'Essentiel couvert par ≥5 médias avec topic polarisé (idéalement actu politique récente)
+2. Vérifier le bandeau replié sous le titre : `Couverture médiatique` + spectrum 5 segments distincts + `N médias` + caret
+3. Tap sur le bandeau → carte se déplie
+
+**Résultats attendus** :
+- Bloc référence visible (border-left ocre, titre `Fraunces` 16.5/600). Si verbe-pivot retourné par le back, **wash gris apparaît** sur le verbe ~80 ms après l'ouverture, fade-in 300 ms.
+- 8 lignes variantes apparaissent (border-left 4 px couleur bias). Sur chaque ligne, les **tokens partagés deviennent gris** et les **tokens divergents reçoivent un wash de la couleur du bias** dans une cascade séquentielle ordonnée par position (gauche → droite), 25 ms entre tokens, 220 ms par token (`easeOutCubic`).
+- Toutes les lignes animent **en parallèle** — feeling « scan simultané ».
+- CTA `Analyse Facteur` dashed border en bas, déprioritée.
+
+### Scénario 2 — Tap variant ouvre navigateur externe
+
+**Parcours** :
+1. Sur la carte dépliée, tap n'importe quelle ligne variante.
+
+**Résultat attendu** : le navigateur in-app/externe s'ouvre sur l'URL du variant. Pas de crash. Le panel reste ouvert au retour.
+
+### Scénario 3 — Tap CTA Analyse Facteur
+
+**Parcours** :
+1. Tap sur "Lancer →" dans la card CTA dashed.
+
+**Résultat attendu** : le CTA disparaît, remplacé par `PerspectivesAnalysisZone` (skeleton 3 lignes → résultat Markdown). UI inchangée vs. avant la refonte (mêmes états loading/done/error).
+
+### Scénario 4 — Mode 2 dégradé (back pas encore déployé)
+
+**Parcours** :
+1. Si le back ne renvoie pas `shared_tokens` (ancien déploiement), ouvrir un article avec perspectives.
+
+**Résultat attendu** : la carte se déplie. Les variants rendent leur titre avec les `highlight_spans` en wash bias, et le reste en `text_tertiary` (mode 2 fallback automatique, pas de crash). Cascade animée toujours active.
+
+### Scénario 5 — Replier → re-ouvrir relance la cascade
+
+**Parcours** :
+1. Carte dépliée avec animation jouée.
+2. Tap bandeau → carte se replie.
+3. Tap bandeau → carte se déplie de nouveau.
+
+**Résultat attendu** : nouvelle cascade jouée intégralement (animation 1× par expand). Pas de "snap" instantané.
+
+### Scénario 6 — Article hors digest (live path) sans cluster
+
+**Parcours** :
+1. Ouvrir un article live (non-digest) qui n'a pas de cluster ou pour lequel le back ne peut pas calculer les annotations.
+
+**Résultats attendus** :
+- `highlightSpans` et `sharedTokens` vides sur les variants → DiffTitle rend le titre plein en `text_primary` (pas de wash).
+- `referencePivot` null → bloc référence rendu sans wash.
+- Aucune erreur console.
+
+> **Regression Bug Couverture (2026-05-18)** : avant fix, ce scénario rendait *tous* les titres en `text_tertiary` (gris pâle uniforme) au lieu de `text_primary`. Couvert par `diff_title_test.dart:122` qui asserte maintenant explicitement la couleur du chunk plain. Cf. `docs/bugs/bug-couverture-mediatique-surlignages.md`.
+
+### Scénario 8 — Bandeau cm-panel-inline en viewport étroit (390px)
+
+**Parcours** :
+1. Ouvrir un article avec perspectives en viewport iPhone (390×844).
+2. Vérifier le bandeau replié : titre + spectrum + count + caret tous visibles sans clipping ni warning console `RenderFlex overflowed`.
 
 **Résultat attendu** :
-- Section encadrée par 2 dividers, entre titre et description
-- Titre "Couverture médiatique" rendu en `labelLarge` + `textSecondary` (subtil)
-- En état ouvert : badge pill "Couvert par N médias" avec fond `primary.withValues(alpha: 0.1)`, texte `labelMedium` couleur `primary`, juste sous le header et avant la bias bar
-- Animation smooth, scroll-into-view à l'ouverture
+- Aucun overflow Flutter dans la console.
+- `CoverageSpectrumBar` 5-segs visible entre le titre et le count.
+- Si le titre « Couverture médiatique » est trop long (ne devrait pas arriver, mais théoriquement), il s'ellipsis au lieu de pousser le spectrum hors écran.
 
-### Scénario 2 : Reader in-app, article sans perspectives
-**Parcours** : Ouvrir un article sans comparaisons (perspectives vides ou null)
+> **Regression Bug Couverture (2026-05-18)** : avant fix, le `Row` du bandeau débordait de 131 px sur 390 px, repoussant le spectrum hors écran. Couvert par `perspectives_inline_overflow_test.dart` qui pump le bandeau en viewport contraint et vérifie l'absence d'exception. Cf. `docs/bugs/bug-couverture-mediatique-surlignages.md`.
 
-**Résultat attendu** : Titre → description directement, aucun divider, aucune section visible
+### Scénario 7 — Badge polarisation digest
 
-### Scénario 3 : Reader scroll-to-site, article avec perspectives
 **Parcours** :
-1. Ouvrir un article qualifiant pour le mode scroll-to-site
-2. Vérifier structure : header (thumbnail/tags/titre/temps de lecture) → divider → section perspectives → divider → corps article
-3. Scroll jusqu'au bas du corps article
+1. Aller sur le digest L'Essentiel du jour.
+2. Vérifier la meta-row de chaque article topicalisé.
 
-**Résultat attendu** :
-- Section perspectives apparaît entre header et corps, même rendu que le mode in-app (titre + badge en état ouvert)
-- WebView s'active au même seuil de scroll qu'avant (corps article scrollé), pas plus tôt
-- Pas de duplication du titre, pas de chevauchement avec le chrome de l'app
-
-### Scénario 4 : Reader scroll-to-site, article sans perspectives
-**Parcours** : Ouvrir un article scroll-to-site sans perspectives
-
-**Résultat attendu** : Header → corps directement, comportement WebView inchangé
-
-### Scénario 5 : Footer
-**Parcours** : Sur n'importe quel article
-
-**Résultat attendu** : Plus aucun bouton "Voir perspectives" (œil) ni "Retour à l'article" (newspaper + arrowUp) dans le footer. Seuls restent : CTA "Lire sur…", Sauvegarder, Recommander.
-
-### Scénario 6 : Bouton flottant "Lancer l'analyse Facteur" (in-app uniquement)
-**Parcours** :
-1. Ouvrir un article in-app avec perspectives
-2. Ouvrir la section
-3. Vérifier que le bouton flottant apparaît
-4. Refermer la section
-
-**Résultat attendu** : Bouton visible uniquement quand la section est ouverte ET analysis state == idle ET perspectives non vides. Disparaît à la fermeture.
-
-### Scénario 7 : Dark mode
-**Parcours** : Activer le mode sombre, parcourir les scénarios 1–4
-
-**Résultat attendu** : Badge, dividers et couleurs DS suivent le thème.
+**Résultats attendus** :
+- Sujets `divergenceLevel='high'` → badge `POLARISÉ` (glyphe 2 paires brique+marine, label noir bold)
+- Sujets `divergenceLevel='medium'` → badge `AVIS VARIÉS` (5 dots étalés gris, label tertiary)
+- Sujets `divergenceLevel='low'` → badge `CONSENSUS` (3 dots groupés gris, label tertiary)
+- Articles Pépite, Coup de cœur, actu_decalee → **aucun badge** (silence, conforme au hand-off)
 
 ## Critères d'acceptation
 
-- [ ] Section "Couverture médiatique" sous le titre, avant la description/corps, dans les deux modes de reader
-- [ ] Section encadrée par 2 dividers, masquée si aucune perspective
-- [ ] Titre de section au DS (`labelLarge` / `textSecondary`)
-- [ ] Badge "Couvert par X médias" visible uniquement en état ouvert
-- [ ] Suppression totale des boutons footer perspectives
-- [ ] Mode scroll-to-site : WebView s'active au même seuil que sur main
-- [ ] `flutter analyze` sans warning ni erreur sur les fichiers modifiés
-- [ ] Pas de nouveau test en échec (regressions)
+- [ ] Bandeau hairlines + spectrum 5-segs distincts + count + caret rendus correctement (replié)
+- [ ] Bloc référence + 8 lignes variantes + CTA dashed (déplié)
+- [ ] Animation cascade des surlignages déclenchée 1× à l'expand, fade-in fluide
+- [ ] Tap variant → navigateur externe, pas de crash
+- [ ] Mode 2 dégradé fonctionne si back n'expose pas `shared_tokens`
+- [ ] Badge polarisation sur articles topicalisés du digest seulement
+- [ ] Zéro régression sur la suite Flutter (`flutter test` 619/619 ou plus selon parent)
 
 ## Zones de risque
 
-1. **`_articleKey` et `_computeScrollOffsets`** (mode scroll-to-site) : la clé reste sur le wrapper du corps article uniquement. Un mauvais positionnement déclencherait la WebView trop tôt ou trop tard.
-2. **Backgrounds opaques** : chaque enfant top-level (header, dividers, perspectives, article) a `color: colors.backgroundPrimary` pour masquer la WebView. Un oubli laisserait la WebView transparaître.
-3. **Prédicat du bouton flottant `Lancer l'analyse`** — désormais piloté par `_perspectivesExpanded` au lieu de `_atPerspectivesSection` (scroll-driven). Devrait apparaître dès l'ouverture de la section.
+1. **Timing animation** : la cascade utilise un `Future.delayed(80 ms)` avant de démarrer. Si la frame de l'expand prend > 80 ms (jank initial), l'animation peut paraître saccadée. Tester sur device réel iOS et Android.
+2. **Titres très longs** : `DiffTitle` est en `maxLines: 2 ellipsis`. Un titre avec beaucoup de spans après la troncature pourrait avoir des spans visuellement absents (le wash est attaché à un `WidgetSpan` qui peut wrapper différemment). Vérifier sur titres > 100 caractères.
+3. **GoogleFonts.fraunces / GoogleFonts.courierPrime** : chargement réseau au premier render. Vérifier qu'il n'y a pas de flash de fallback (fontStyle.italic Times New Roman) — sur Android cold start spécifiquement.
+4. **Spectrum bar** : avec une distribution totalement vide `{}` (back KO), tous les segments rendus avec floor=1. C'est lu visuellement comme « répartition uniforme » — confirmer que ce fallback est OK ou s'il faut masquer le spectrum (actuellement pas masqué).
+5. **Polarisé bicolore (brique+marine)** : vérifier le contraste WCAG du label noir bold sur fond carte ; la couleur des dots utilise `biasLeft`/`biasRight` qui peuvent être proches en thème sombre.
 
 ## Dépendances
 
-- `GET /api/perspectives/:contentId` — backend de comparaisons (inchangé)
-- Aucun changement API ; uniquement UI mobile.
+- **Back** : `GET /contents/{id}/perspectives` doit retourner `highlight_spans` (PR #616, déjà mergée) + `shared_tokens` + `reference_pivot` (PR #618, en review). Tant que PR #618 n'est pas mergée + déployée Railway, le front rend en Mode 2 dégradé (pas de Mode 3 fidèle).
+- **GoogleFonts** : `fraunces` et `courierPrime` (déjà utilisés ailleurs dans l'app, pas de nouvel asset à déclarer).
+- **Aucun changement de DB / migration**.

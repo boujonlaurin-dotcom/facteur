@@ -7,6 +7,7 @@ import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/utils/article_title_layout.dart';
 import 'package:facteur/features/feed/widgets/reading_badge.dart';
 import 'package:facteur/widgets/design/facteur_card.dart';
+import 'package:facteur/features/digest/widgets/divergence_inline_badge.dart';
 import 'package:facteur/widgets/design/facteur_image.dart';
 import 'package:facteur/widgets/design/facteur_thumbnail.dart';
 import 'package:facteur/widgets/design/video_play_overlay.dart';
@@ -61,6 +62,11 @@ class FeedCard extends StatefulWidget {
   /// Optional GlobalKey attached to the card outer. Used by `NudgeHost` for
   /// the `feed_preview_longpress` spotlight.
   final GlobalKey? cardAnchorKey;
+  /// Niveau de divergence éditoriale du sujet ('low' / 'medium' / 'high').
+  /// Quand non-null, affiche un `DivergenceInlineBadge` poussé à droite de
+  /// la meta-row (recency / paywall). Câblé depuis `topic_section.dart`
+  /// pour les articles topicalisés uniquement — silence ailleurs.
+  final String? divergenceLevel;
 
   const FeedCard({
     super.key,
@@ -97,6 +103,7 @@ class FeedCard extends StatefulWidget {
     this.denseLayout = false,
     this.badgeAnchorKey,
     this.cardAnchorKey,
+    this.divergenceLevel,
   });
 
   @override
@@ -430,6 +437,17 @@ class _FeedCardState extends State<FeedCard>
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
+                              ),
+                            ],
+
+                            // Divergence inline badge (topicalisé seulement).
+                            // Poussé en fin de meta-row pour rester visible
+                            // même quand source + timeago + paywall remplissent
+                            // la ligne — silence si null.
+                            if (widget.divergenceLevel != null) ...[
+                              const SizedBox(width: FacteurSpacing.space2),
+                              DivergenceInlineBadge(
+                                divergenceLevel: widget.divergenceLevel,
                               ),
                             ],
                           ],
