@@ -6,6 +6,15 @@ import 'package:facteur/core/api/notification_preferences_api_service.dart';
 import 'package:facteur/core/services/posthog_service.dart';
 import 'package:facteur/features/notifications/widgets/notification_activation_modal.dart';
 
+enum FeedLoadMilestone {
+  firstPaint('first_paint'),
+  digestVisible('digest_visible'),
+  fullyLoaded('fully_loaded');
+
+  const FeedLoadMilestone(this.eventValue);
+  final String eventValue;
+}
+
 class AnalyticsService {
   final ApiClient? _apiClient;
   final PostHogService? _posthog;
@@ -207,6 +216,21 @@ class AnalyticsService {
   /// @deprecated Use [trackFeedSession] instead.
   Future<void> trackFeedComplete() async {
     await _logEvent('feed_complete', {'session_id': _sessionId});
+  }
+
+  /// Mesure la progression du chargement progressif du feed.
+  /// [durationMs] : ms depuis le mount du `FeedScreen`.
+  Future<void> trackFeedLoadTiming({
+    required FeedLoadMilestone milestone,
+    required int durationMs,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'milestone': milestone.eventValue,
+      'duration_ms': durationMs,
+    };
+    await _logEvent('feed_load_timing', props);
+    await _capturePostHog('feed_load_timing', props);
   }
 
   Future<void> trackSourceAdd(String sourceId) async {
