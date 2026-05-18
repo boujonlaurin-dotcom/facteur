@@ -25,7 +25,6 @@ from tests.fixtures.fake_spacy import (
     service_with_nlp,
 )
 
-
 # --- Cluster fixture --------------------------------------------------------
 
 
@@ -85,8 +84,13 @@ async def cluster_setup(db_session):
 
 
 @pytest.mark.asyncio
-async def test_attach_highlight_spans_empty_for_content_without_cluster(db_session):
-    """No cluster_id → every perspective gets an empty highlight_spans list."""
+async def test_attach_highlight_spans_computes_for_content_without_cluster(db_session):
+    """No cluster_id → highlight_spans are still computed via the off-cluster batch.
+
+    Regression for the prod incident where clustering was never activated,
+    so the early-return on `not content.cluster_id` silently disabled the
+    feature for every article.
+    """
     source = Source(
         id=uuid4(),
         name="Solo",
@@ -102,7 +106,7 @@ async def test_attach_highlight_spans_empty_for_content_without_cluster(db_sessi
     standalone = Content(
         id=uuid4(),
         source_id=source.id,
-        title="Standalone",
+        title="Tsahal frappe Gaza",
         url="https://solo.fr/x",
         published_at=datetime.now(UTC),
         content_type=ContentType.ARTICLE,
@@ -112,12 +116,44 @@ async def test_attach_highlight_spans_empty_for_content_without_cluster(db_sessi
     db_session.add(standalone)
     await db_session.commit()
 
-    perspectives = [
-        {"title": "Anything", "url": "https://other.fr/x", "bias_stance": "left"}
-    ]
-    await _attach_highlight_spans(db_session, standalone, perspectives)
+    docs = {
+        "Tsahal frappe Gaza": FakeDoc(
+            tokens=[
+                FakeToken("Tsahal", 0, "PROPN", "Tsahal"),
+                FakeToken("frappe", 7, "VERB", "frapper"),
+                FakeToken("Gaza", 14, "PROPN", "Gaza"),
+            ],
+        ),
+        "Une frappe sur Gaza fait 20 morts": FakeDoc(
+            tokens=[
+                FakeToken("frappe", 4, "NOUN", "frappe"),
+                FakeToken("Gaza", 14, "PROPN", "Gaza"),
+                FakeToken("morts", 25, "NOUN", "mort"),
+            ],
+        ),
+    }
+    fake_svc = service_with_nlp(FakeNlp(docs))
 
-    assert perspectives[0]["highlight_spans"] == []
+    perspectives = [
+        {
+            "title": "Une frappe sur Gaza fait 20 morts",
+            "url": "https://other.fr/x",
+            "bias_stance": "left",
+        }
+    ]
+    with patch(
+        "app.routers.contents.get_title_annotation_service",
+        return_value=fake_svc,
+    ):
+        pivot = await _attach_highlight_spans(db_session, standalone, perspectives)
+
+    texts = {s["text"] for s in perspectives[0]["highlight_spans"]}
+    assert "morts" in texts  # diverges from ref (lemma not in {Tsahal, frapper, Gaza})
+    assert all(s["bias"] == "left" for s in perspectives[0]["highlight_spans"])
+    # Reference pivot still resolves to the ref title's first VERB.
+    assert pivot == {"start": 7, "end": 13, "text": "frappe"}
+    # Shared tokens (lemma match): "Gaza".
+    assert [s["text"] for s in perspectives[0]["shared_tokens"]] == ["Gaza"]
 
 
 @pytest.mark.asyncio
@@ -376,8 +412,13 @@ async def test_attach_highlight_spans_returns_reference_pivot_and_shared_tokens(
 
 
 @pytest.mark.asyncio
-async def test_attach_highlight_spans_returns_none_pivot_without_cluster(db_session):
-    """No cluster_id → no pivot computed, shared_tokens defaulted to []."""
+async def test_attach_highlight_spans_without_cluster_skips_db_scan(db_session):
+    """No cluster_id → cluster cache lookup is skipped (no `WHERE cluster_id IS NULL` scan).
+
+    Guards against the cheap-to-make regression of calling
+    `get_or_compute_cluster_annotations(None)`, which would iterate every
+    standalone Content row in the DB.
+    """
     source = Source(
         id=uuid4(),
         name="Solo",
@@ -403,10 +444,26 @@ async def test_attach_highlight_spans_returns_none_pivot_without_cluster(db_sess
     db_session.add(standalone)
     await db_session.commit()
 
+    fake_svc = service_with_nlp(FakeNlp({}))
+    cluster_calls: list[object] = []
+
+    async def tracking_cluster_lookup(_db, cluster_id):
+        cluster_calls.append(cluster_id)
+        from app.services.title_annotation_service import ClusterAnnotations
+
+        return ClusterAnnotations()
+
+    fake_svc.get_or_compute_cluster_annotations = tracking_cluster_lookup
+
     perspectives = [
         {"title": "Anything", "url": "https://other.fr/y", "bias_stance": "left"}
     ]
-    pivot = await _attach_highlight_spans(db_session, standalone, perspectives)
+    with patch(
+        "app.routers.contents.get_title_annotation_service",
+        return_value=fake_svc,
+    ):
+        await _attach_highlight_spans(db_session, standalone, perspectives)
 
-    assert pivot is None
+    assert cluster_calls == []  # no DB scan on cluster_id IS NULL
+    assert perspectives[0]["highlight_spans"] == []
     assert perspectives[0]["shared_tokens"] == []

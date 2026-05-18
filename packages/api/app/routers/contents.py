@@ -25,7 +25,10 @@ from app.services.collection_service import CollectionService
 from app.services.content_extractor import ContentExtractor
 from app.services.content_service import ContentService
 from app.services.feed_cache import FEED_CACHE
-from app.services.title_annotation_service import get_title_annotation_service
+from app.services.title_annotation_service import (
+    ClusterAnnotations,
+    get_title_annotation_service,
+)
 
 logger = structlog.get_logger()
 
@@ -788,16 +791,16 @@ async def _attach_highlight_spans(
     `None` — the caller bubbles it up to the response root so the front can
     wash the pivot in the `cm-ref-inline` block.
     """
-    if not content.cluster_id:
-        for p in perspectives_dicts:
-            p["highlight_spans"] = []
-            p["shared_tokens"] = []
-        return None
-
     try:
         svc = get_title_annotation_service()
-        annotations = await svc.get_or_compute_cluster_annotations(
-            db, content.cluster_id
+        # Skip the cluster cache lookup when the content isn't clustered —
+        # otherwise `get_or_compute_cluster_annotations(None)` would scan
+        # every `Content` row with `cluster_id IS NULL`. The off-cluster
+        # batch below handles all perspectives in that case.
+        annotations = (
+            await svc.get_or_compute_cluster_annotations(db, content.cluster_id)
+            if content.cluster_id
+            else ClusterAnnotations()
         )
         ref_tokens = annotations.tokens_by_id.get(content.id) or (
             svc.compute_strong_tokens(content.title or "")
@@ -836,7 +839,7 @@ async def _attach_highlight_spans(
         logger.exception(
             "highlight_spans_failed",
             content_id=str(content.id),
-            cluster_id=str(content.cluster_id),
+            cluster_id=str(content.cluster_id) if content.cluster_id else None,
         )
         for p in perspectives_dicts:
             p.setdefault("highlight_spans", [])
