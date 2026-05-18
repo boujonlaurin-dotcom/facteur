@@ -17,7 +17,6 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import '../../../config/theme.dart';
-import '../../../config/topic_labels.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../feed/models/content_model.dart';
@@ -41,7 +40,6 @@ import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/widgets/nudge_inline_banner.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/widgets/editorial_badge.dart';
-import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
@@ -1839,8 +1837,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               // boutons icônes à droite); fills width pour video/audio.
               // Article: dynamic "Article complet" / "Lire via Navigateur"
               // with permanent-orange logic. Video/audio: simple external CTA.
-              Flexible(
-                fit: FlexFit.loose,
+              Expanded(
                 child: SizedBox(
                   height: 53,
                   child: isArticle
@@ -1855,7 +1852,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                       final label = isWebViewMode
                           ? 'Lire via Navigateur'
-                          : 'Article complet';
+                          : 'Lire sur ${content.source.name}';
                       final showLogo = !isWebViewMode;
                       final iconData = isWebViewMode
                           ? PhosphorIcons.arrowUpRight(
@@ -1944,10 +1941,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       : _buildExternalCtaButton(context, content),
                 ),
               ),
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
+              const SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
               // Sauvegarder (long-press → collection picker)
               GestureDetector(
                 onLongPress: () {
@@ -2000,8 +1997,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   tooltip: 'Recommander',
                 ),
               ),
-                  ],
-                ),
+                ],
               ),
             ],
           ),
@@ -2373,12 +2369,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final labelStyle = textTheme.labelSmall;
-    final topicsAsync = ref.watch(customTopicsProvider);
-    final followedNames = (topicsAsync.valueOrNull ?? [])
-        .where((t) => t.canonicalName != null)
-        .map((t) => t.canonicalName!.toLowerCase())
-        .toSet();
-
     // Build ordered chip list: (widget, estimatedWidth)
     final chips = <({Widget widget, double width})>[];
 
@@ -2403,108 +2393,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ));
     }
 
-    if (content.topics.isNotEmpty) {
-      final macroTheme = getTopicMacroTheme(content.topics.first);
-      if (macroTheme != null) {
-        final emoji = getMacroThemeEmoji(macroTheme);
-        final label = '${emoji.isNotEmpty ? '$emoji ' : ''}$macroTheme';
-        chips.add((
-          widget: GestureDetector(
-            onTap: () => TopicChip.showArticleSheet(context, content,
-                initialSection: ArticleSheetSection.topic),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: colors.textTertiary.withValues(alpha: 0.20),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                label,
-                style: labelStyle?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
-          width: _measureChipWidth(label, labelStyle),
-        ));
-      }
-      final topicLabel = getTopicLabel(content.topics.first);
-      // Skip topic chip when its label duplicates the macro-theme name.
-      if (topicLabel.toLowerCase() != macroTheme?.toLowerCase()) {
-        chips.add((
-          widget: GestureDetector(
-            onTap: () => TopicChip.showArticleSheet(context, content,
-                initialSection: ArticleSheetSection.topic),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: colors.textTertiary.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                topicLabel,
-                style: labelStyle?.copyWith(
-                  color: colors.textTertiary,
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
-          width: _measureChipWidth(topicLabel, labelStyle),
-        ));
-      }
-    }
-
-    for (final entity in content.entities) {
-      final isFollowed = followedNames.contains(entity.text.toLowerCase());
+    final subjectCount = content.topics.length + content.entities.length;
+    if (subjectCount > 0) {
+      final label = subjectCount == 1 ? '1 sujet' : '$subjectCount sujets';
       chips.add((
         widget: GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(context, content,
-              initialSection: ArticleSheetSection.entities),
+          onTap: () => TopicChip.showArticleSheet(context, content),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: isFollowed
-                  ? const Color(0xFFE07A5F).withValues(alpha: 0.15)
-                  : colors.textTertiary.withValues(alpha: 0.12),
+              color: colors.textTertiary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 100),
-                  child: Text(
-                    entity.text,
-                    style: labelStyle?.copyWith(
-                      color: isFollowed
-                          ? const Color(0xFFE07A5F)
-                          : colors.textTertiary,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (isFollowed) ...[
-                  const SizedBox(width: 3),
-                  Icon(
-                    PhosphorIcons.check(PhosphorIconsStyle.bold),
-                    size: 10,
-                    color: const Color(0xFFE07A5F),
-                  ),
-                ],
-              ],
+            child: Text(
+              label,
+              style: labelStyle?.copyWith(
+                color: colors.textTertiary,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ),
-        width: _measureChipWidth(entity.text, labelStyle, isEntity: true),
+        width: _measureChipWidth(label, labelStyle),
       ));
     }
 
@@ -2864,6 +2774,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               horizontal: FacteurSpacing.space4),
                           child: Divider(color: colors.textTertiary.withValues(alpha: 0.3), height: 1, thickness: 1),
                         ),
+                        const SizedBox(height: FacteurSpacing.space4),
                       ],
 
                       // ZONE 2: Article body — _articleKey scopes scroll-bridge
