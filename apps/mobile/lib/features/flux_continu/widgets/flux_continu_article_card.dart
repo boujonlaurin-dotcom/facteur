@@ -349,7 +349,7 @@ class _Footer extends StatelessWidget {
             style: GoogleFonts.dmSans(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: colors.primary,
+              color: colors.textTertiary,
               height: 1.4,
             ),
           ),
