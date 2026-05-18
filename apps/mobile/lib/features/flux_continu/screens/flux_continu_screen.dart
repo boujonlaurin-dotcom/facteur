@@ -337,12 +337,24 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// state. `fromSection == null` means the article was tapped from the
   /// Explorer feed (or via scroll-to-top sweep) — every editorial section
   /// is queued.
+  ///
+  /// The section the article was tapped from is excluded from the fold on
+  /// return so the user finds the section still expanded at the same scroll
+  /// position. For sections that *do* fold (those above [fromSection], or
+  /// all of them when reading from Explorer), we measure their cumulative
+  /// height before and after the resize and apply a silent
+  /// [ScrollPosition.correctBy] so the article the user just left stays
+  /// visually anchored.
   Future<void> _openArticle(
     BuildContext context,
     Object article, {
     FluxSection? fromSection,
   }) async {
     _markSectionsAboveAsScrolledPast(fromSection);
+    final exceptKeys = fromSection == null
+        ? const <String>{}
+        : {sectionKey(fromSection)};
+    final heightsBefore = _measureFoldCandidateHeights(exceptKeys);
     if (article is DigestItem) {
       await context
           .push('${RoutePaths.fluxContinu}/content/${article.contentId}');
@@ -355,7 +367,44 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       return;
     }
     if (!mounted) return;
-    ref.read(fluxContinuProvider.notifier).applyPendingFoldsToState();
+    ref
+        .read(fluxContinuProvider.notifier)
+        .applyPendingFoldsToState(exceptKeys: exceptKeys);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      final heightsAfter = _measureFoldCandidateHeights(exceptKeys);
+      final delta = heightsBefore - heightsAfter;
+      if (delta <= 0.5) return;
+      final position = _scroll.position;
+      final corrected =
+          (position.pixels - delta).clamp(0.0, position.maxScrollExtent);
+      position.correctBy(corrected - position.pixels);
+    });
+  }
+
+  /// Cumulative on-screen height of the sections queued for fold (minus
+  /// [exceptKeys]). Used as the delta to compensate scroll offset when the
+  /// fold happens above the viewport.
+  double _measureFoldCandidateHeights(Set<String> exceptKeys) {
+    final value = ref.read(fluxContinuProvider).valueOrNull;
+    if (value == null) return 0.0;
+    final queued =
+        ref.read(fluxContinuProvider.notifier).persistQueuedSnapshot();
+    if (queued.isEmpty) return 0.0;
+    final count = math.min(value.sections.length, _sectionKeys.length);
+    double sum = 0.0;
+    for (var i = 0; i < count; i++) {
+      final section = value.sections[i];
+      final key = sectionKey(section);
+      if (!queued.contains(key)) continue;
+      if (exceptKeys.contains(key)) continue;
+      final ctx = _sectionKeys[i].currentContext;
+      if (ctx == null) continue;
+      final box = ctx.findRenderObject();
+      if (box is! RenderBox || !box.attached) continue;
+      sum += box.size.height;
+    }
+    return sum;
   }
 
   void _markSectionsAboveAsScrolledPast(FluxSection? fromSection) {
