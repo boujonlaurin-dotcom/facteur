@@ -2873,6 +2873,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                     sourceDomain: p.sourceDomain,
                                     biasStance: p.biasStance,
                                     publishedAt: p.publishedAt,
+                                    highlightSpans: p.highlightSpans,
+                                    sharedTokens: p.sharedTokens,
                                   ),
                                 )
                                 .toList(),
@@ -2898,6 +2900,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             analysisZoneKey: _analysisZoneKey,
                             isExpanded: _perspectivesExpanded,
                             onToggle: _onPerspectivesToggle,
+                            referenceTitle: _content?.title ?? '',
+                            referencePivot:
+                                _perspectivesResponse!.referencePivot,
                           ),
                         ),
                         Container(
@@ -3426,6 +3431,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             sourceDomain: p.sourceDomain,
                             biasStance: p.biasStance,
                             publishedAt: p.publishedAt,
+                            highlightSpans: p.highlightSpans,
+                            sharedTokens: p.sharedTokens,
                           ),
                         )
                         .toList(),
@@ -3447,6 +3454,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     analysisZoneKey: _analysisZoneKey,
                     isExpanded: _perspectivesExpanded,
                     onToggle: _onPerspectivesToggle,
+                    referenceTitle: _content?.title ?? '',
+                    referencePivot: _perspectivesResponse!.referencePivot,
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(

@@ -1113,6 +1113,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             descriptionFontSize: 15,
             titleMaxLines: _digestTitleMaxLines,
             denseLayout: true,
+            divergenceLevel: widget.topic.divergenceLevel,
             onImageError: () => _onImageError(article.contentId),
             onTap: () => widget.onArticleTap(article),
             onSourceTap: widget.onSourceTap != null && article.source?.id != null
@@ -1159,6 +1160,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           descriptionFontSize: 15,
           titleMaxLines: _digestTitleMaxLines,
           denseLayout: true,
+          divergenceLevel: widget.topic.divergenceLevel,
           onImageError: () => _onImageError(article.contentId),
           onTap: () => widget.onArticleTap(article),
           onSourceTap: widget.onSourceTap != null && article.source?.id != null
