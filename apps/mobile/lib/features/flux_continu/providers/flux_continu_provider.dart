@@ -380,13 +380,22 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// `folded` state. Called only at moments where the editorial slivers
   /// are above the viewport (return from an Explorer article, scroll-to-top
   /// button) so the resulting resize is invisible to the user. Idempotent.
-  void applyPendingFoldsToState() {
+  ///
+  /// [exceptKeys] lets the caller skip specific section keys — typically the
+  /// section the user just read an article from, which must stay expanded on
+  /// return per the "fold only when leaving the section" rule. Excluded keys
+  /// remain in [_persistQueued] (and in SharedPreferences) so they will be
+  /// folded on the next cold launch — the section is considered consumed for
+  /// tomorrow's tournée even though we keep it visible right now.
+  void applyPendingFoldsToState({Set<String> exceptKeys = const {}}) {
     if (_persistQueued.isEmpty) return;
     final current = state.valueOrNull;
     if (current == null) return;
+    final toPromote = _persistQueued.difference(exceptKeys);
+    if (toPromote.isEmpty) return;
     final next = <String, bool>{
       ..._folded,
-      for (final k in _persistQueued) k: true,
+      for (final k in toPromote) k: true,
     };
     if (next.length == _folded.length &&
         next.entries.every((e) => _folded[e.key] == e.value)) {
@@ -395,6 +404,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     _folded = next;
     state = AsyncData(current.copyWith(folded: next));
   }
+
+  /// Read-only snapshot of the sections queued for fold at next apply.
+  /// Used by the screen to compute the height delta of slivers that are
+  /// about to resize, so it can compensate the scroll offset.
+  Set<String> persistQueuedSnapshot() => Set.unmodifiable(_persistQueued);
 
   /// Re-expands a folded section in the current session only (not persisted).
   /// Lets the user re-read a section they previously scrolled past without

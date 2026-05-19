@@ -3,6 +3,11 @@
 /// Modèles Dart alignés sur `packages/api/app/schemas/user_interests.py`.
 library;
 
+import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
+
+import '../../../config/theme.dart';
+
 /// État sémantique unique appliqué à Thèmes, Sujets et Sources.
 /// Aligné sur `app.models.enums.InterestState`.
 enum InterestState {
@@ -19,6 +24,62 @@ enum InterestState {
   }
 
   String toJson() => name;
+}
+
+/// Rendu visuel canonique d'un [InterestState] (label, icône, couleur d'accent,
+/// description longue). Source de vérité unique pour le picker et les pills.
+extension InterestStateVisuals on InterestState {
+  String get label {
+    switch (this) {
+      case InterestState.favorite:
+        return 'Favori';
+      case InterestState.followed:
+        return 'Suivi';
+      case InterestState.unfollowed:
+        return 'Neutre';
+      case InterestState.hidden:
+        return 'Masqué';
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case InterestState.favorite:
+        return 'En haut de votre flux. Les 3 premiers sont dans la Tournée du jour.';
+      case InterestState.followed:
+        return 'Présent dans votre flux';
+      case InterestState.unfollowed:
+        return 'Apparaît seulement si très pertinent';
+      case InterestState.hidden:
+        return 'Ne plus voir dans le flux';
+    }
+  }
+
+  IconData get iconData {
+    switch (this) {
+      case InterestState.favorite:
+        return PhosphorIcons.star(PhosphorIconsStyle.fill);
+      case InterestState.followed:
+        return PhosphorIcons.check(PhosphorIconsStyle.bold);
+      case InterestState.unfollowed:
+        return PhosphorIcons.minus(PhosphorIconsStyle.bold);
+      case InterestState.hidden:
+        return PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular);
+    }
+  }
+
+  Color accent(FacteurColors colors) {
+    switch (this) {
+      case InterestState.favorite:
+        return colors.primary;
+      case InterestState.followed:
+        return colors.success;
+      case InterestState.unfollowed:
+        return colors.textSecondary;
+      case InterestState.hidden:
+        return colors.textTertiary;
+    }
+  }
 }
 
 /// Discrimine un favori : soit un Thème (slug fermé), soit un Sujet personnalisé (UUID).

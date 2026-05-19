@@ -4,20 +4,18 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../config/theme.dart';
 
 /// Compact "menu-list" version of [SectionBanner] used when the user has
-/// already consumed a section. Identity reduces to: accent filet (brand cue),
-/// section title, article count, chevron — over the bare parchment, with a
-/// hairline separator. No accent fill, no illustration: the card recedes to
-/// pure navigation once the day's content has been read.
+/// already consumed a section. Identity reduces to: section title, article
+/// count, chevron — over the bare parchment, with a hairline separator.
+/// No accent fill, no illustration: the card recedes to pure navigation
+/// once the day's content has been read.
 class FoldedSectionCard extends StatelessWidget {
   final String title;
-  final Color accent;
   final int? articleCount;
   final VoidCallback? onTap;
 
   const FoldedSectionCard({
     super.key,
     required this.title,
-    required this.accent,
     this.articleCount,
     this.onTap,
   });
@@ -43,15 +41,6 @@ class FoldedSectionCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Container(
-                width: 18,
-                height: 1.5,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.70),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   title,

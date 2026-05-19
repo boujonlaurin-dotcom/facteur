@@ -254,6 +254,69 @@ void main() {
       expect(after, isNotNull);
       expect(after!.folded, equals(initial.folded));
     });
+
+    test('persistQueuedSnapshot exposes queued section keys', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+
+      await container.read(fluxContinuProvider.future);
+      final notifier = container.read(fluxContinuProvider.notifier);
+
+      expect(notifier.persistQueuedSnapshot(), isEmpty);
+
+      const essentiel = DigestTopicSection(
+        kind: SectionKind.essentiel,
+        label: 'Essentiel',
+        accent: Color(0xFFB0470A),
+        coreVisibleCount: 3,
+        topics: [],
+      );
+      const tech = FeedThemeSection(
+        kind: SectionKind.theme,
+        label: 'Tech',
+        accent: Color(0xFF2C3E50),
+        coreVisibleCount: 3,
+        themeSlug: 'tech',
+        items: [],
+      );
+      await notifier.markScrolledPastForNextSession(essentiel);
+      await notifier.markScrolledPastForNextSession(tech);
+
+      expect(
+        notifier.persistQueuedSnapshot(),
+        equals(<String>{'essentiel', 'theme:tech'}),
+      );
+    });
+
+    test('applyPendingFoldsToState(exceptKeys: all) is a no-op', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+
+      final initial = await container.read(fluxContinuProvider.future);
+      final notifier = container.read(fluxContinuProvider.notifier);
+
+      const essentiel = DigestTopicSection(
+        kind: SectionKind.essentiel,
+        label: 'Essentiel',
+        accent: Color(0xFFB0470A),
+        coreVisibleCount: 3,
+        topics: [],
+      );
+      await notifier.markScrolledPastForNextSession(essentiel);
+
+      notifier.applyPendingFoldsToState(exceptKeys: {'essentiel'});
+      final after = container.read(fluxContinuProvider).valueOrNull;
+
+      // Excluded keys are never promoted — state.folded stays unchanged.
+      expect(after, isNotNull);
+      expect(after!.folded, equals(initial.folded));
+      // But the queue is preserved (so the cold-launch persist still applies).
+      expect(notifier.persistQueuedSnapshot(), contains('essentiel'));
+    });
   });
 
   group('FluxContinuNotifier — favorites-driven theme sections', () {

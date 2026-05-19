@@ -34,7 +34,6 @@ from app.schemas.source import (
     ThemeSourceGroup,
     ThemeSourcesResponse,
     UpdateSourceSubscriptionRequest,
-    UpdateSourceWeightRequest,
 )
 from app.services.feed_cache import FEED_CACHE
 from app.services.pepite_service import PepiteService
@@ -579,31 +578,6 @@ async def detect_source(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-
-
-@router.put("/{source_id}/weight", response_model=SourceResponse)
-async def update_source_weight(
-    source_id: UUID,
-    data: UpdateSourceWeightRequest,
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-) -> SourceResponse:
-    """Mettre à jour le poids d'une source (0.2, 1.0, 2.0)."""
-    service = SourceService(db)
-    result = await service.update_source_weight(
-        user_id, str(source_id), data.priority_multiplier
-    )
-
-    if not result:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Source not found or not followed by user",
-        )
-
-    await db.commit()
-    FEED_CACHE.invalidate(UUID(user_id))
-    SOURCES_CACHE.invalidate(UUID(user_id))
-    return result
 
 
 @router.put("/{source_id}/subscription", response_model=SourceResponse)

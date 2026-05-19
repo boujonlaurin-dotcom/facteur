@@ -6,8 +6,8 @@ import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
-import '../../../widgets/design/priority_slider.dart';
 import '../../custom_topics/providers/personalization_provider.dart';
+import '../../my_interests/widgets/interest_state_pill.dart';
 import '../../feed/models/content_model.dart' show ContentType;
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/personalization_repository.dart';
@@ -387,17 +387,7 @@ class DigestPersonalizationSheet extends ConsumerWidget {
     FacteurColors colors,
     SourceMini source,
   ) {
-    // Look up current multiplier from the full sources list
     final sourcesAsync = ref.watch(userSourcesProvider);
-    final currentMultiplier = sourcesAsync.whenOrNull(
-          data: (sources) {
-            final match = sources.where((s) => s.id == source.id).firstOrNull;
-            return match?.priorityMultiplier;
-          },
-        ) ??
-        1.0;
-
-    // Only show slider if source is trusted (not muted)
     final isTrusted = sourcesAsync.whenOrNull(
           data: (sources) {
             final match = sources.where((s) => s.id == source.id).firstOrNull;
@@ -406,16 +396,14 @@ class DigestPersonalizationSheet extends ConsumerWidget {
         ) ??
         false;
 
-    if (!isTrusted) return const SizedBox.shrink();
+    if (!isTrusted || source.id == null) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       child: Row(
         children: [
           Icon(
-            currentMultiplier == 2.0
-                ? PhosphorIcons.star(PhosphorIconsStyle.fill)
-                : PhosphorIcons.slidersHorizontal(PhosphorIconsStyle.regular),
+            PhosphorIcons.slidersHorizontal(PhosphorIconsStyle.regular),
             color: colors.textPrimary,
             size: 20,
           ),
@@ -432,13 +420,9 @@ class DigestPersonalizationSheet extends ConsumerWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          PrioritySlider(
-            currentMultiplier: currentMultiplier,
-            onChanged: (multiplier) {
-              ref
-                  .read(userSourcesProvider.notifier)
-                  .updateWeight(source.id!, multiplier);
-            },
+          SourceStatePill(
+            sourceId: source.id!,
+            title: source.name,
           ),
         ],
       ),

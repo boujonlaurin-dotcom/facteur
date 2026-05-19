@@ -85,7 +85,7 @@ class FluxArticleVM {
 ///   the right (radius 10).
 /// - Footer row (single-line) : source dot + name · theme pill · clock·time
 ///   · optional press-review trailing (Essentiel sections only).
-class FluxContinuArticleCard extends StatelessWidget {
+class FluxContinuArticleCard extends StatefulWidget {
   final Object article;
   final VoidCallback? onTap;
   final VoidCallback? onSwipeDismiss;
@@ -108,10 +108,22 @@ class FluxContinuArticleCard extends StatelessWidget {
   });
 
   @override
+  State<FluxContinuArticleCard> createState() => _FluxContinuArticleCardState();
+}
+
+class _FluxContinuArticleCardState extends State<FluxContinuArticleCard> {
+  bool _thumbErrored = false;
+
+  @override
   Widget build(BuildContext context) {
-    final vm = FluxArticleVM.from(article);
+    final vm = FluxArticleVM.from(widget.article);
     final colors = context.facteurColors;
-    final hasThumb = vm.thumbnailUrl != null && vm.thumbnailUrl!.isNotEmpty;
+    // Reclaim the thumb slot when the network image fails — avoids the
+    // grey/broken visual reported on many Reporterre articles (cached
+    // vignettes that 404 or load empty).
+    final hasThumb = vm.thumbnailUrl != null &&
+        vm.thumbnailUrl!.isNotEmpty &&
+        !_thumbErrored;
 
     Widget card = Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -120,13 +132,13 @@ class FluxContinuArticleCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         elevation: 0,
         child: GestureDetector(
-          onLongPressStart: (_) =>
-              ArticlePreviewOverlay.show(context, articleToContent(article)),
+          onLongPressStart: (_) => ArticlePreviewOverlay.show(
+              context, articleToContent(widget.article)),
           onLongPressMoveUpdate: (details) => ArticlePreviewOverlay.updateScroll(
               details.localOffsetFromOrigin.dy),
           onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
           child: InkWell(
-            onTap: onTap,
+            onTap: widget.onTap,
             borderRadius: BorderRadius.circular(12),
             child: Ink(
               decoration: BoxDecoration(
@@ -169,6 +181,11 @@ class FluxContinuArticleCard extends StatelessWidget {
                             url: vm.thumbnailUrl!,
                             isVideo: _isVideo(vm.contentType),
                             accent: colors.primary,
+                            onError: () {
+                              if (mounted && !_thumbErrored) {
+                                setState(() => _thumbErrored = true);
+                              }
+                            },
                           ),
                         ],
                       ],
@@ -177,9 +194,10 @@ class FluxContinuArticleCard extends StatelessWidget {
                     _Footer(
                       vm: vm,
                       colors: colors,
-                      showPressReview: isEssentiel && pressReviewCount > 0,
-                      pressReviewCount: pressReviewCount,
-                      perspectiveSources: perspectiveSources,
+                      showPressReview:
+                          widget.isEssentiel && widget.pressReviewCount > 0,
+                      pressReviewCount: widget.pressReviewCount,
+                      perspectiveSources: widget.perspectiveSources,
                     ),
                   ],
                 ),
@@ -190,12 +208,12 @@ class FluxContinuArticleCard extends StatelessWidget {
       ),
     );
 
-    if (onTap != null) {
+    if (widget.onTap != null) {
       card = SwipeToOpenCard(
-        onSwipeOpen: onTap!,
-        onSwipeDismiss: onSwipeDismiss,
-        enableHintAnimation: enableSwipeHint,
-        onHintAnimationComplete: onSwipeHintComplete,
+        onSwipeOpen: widget.onTap!,
+        onSwipeDismiss: widget.onSwipeDismiss,
+        enableHintAnimation: widget.enableSwipeHint,
+        onHintAnimationComplete: widget.onSwipeHintComplete,
         child: card,
       );
     }
@@ -247,17 +265,18 @@ class _Thumbnail extends StatelessWidget {
   final String url;
   final bool isVideo;
   final Color accent;
+  final VoidCallback onError;
 
   const _Thumbnail({
     required this.url,
     required this.isVideo,
     required this.accent,
+    required this.onError,
   });
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final placeholder = Container(
+    final loadingPlaceholder = Container(
       width: 78,
       height: 78,
       decoration: BoxDecoration(
@@ -271,21 +290,69 @@ class _Thumbnail extends StatelessWidget {
         ),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Icon(
-        isVideo ? Icons.play_arrow_rounded : Icons.article_outlined,
-        color: colors.textTertiary,
-        size: 24,
-      ),
     );
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
-      child: FacteurImage(
-        imageUrl: url,
+      child: SizedBox(
         width: 78,
         height: 78,
-        placeholder: (_) => placeholder,
-        errorWidget: (_) => placeholder,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            FacteurImage(
+              imageUrl: url,
+              width: 78,
+              height: 78,
+              placeholder: (_) => loadingPlaceholder,
+              errorWidget: (_) {
+                // Bubble up so the parent card can drop the thumb slot
+                // entirely (next rebuild). Returning shrink keeps the
+                // current frame from flashing a placeholder.
+                WidgetsBinding.instance
+                    .addPostFrameCallback((_) => onError());
+                return const SizedBox.shrink();
+              },
+            ),
+            if (isVideo)
+              const Center(
+                child: _VideoPlayBadge(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Small play badge overlay for YouTube/video thumbnails — sized for the
+/// 78×78 article-card thumb (the shared [VideoPlayOverlay] is tuned for
+/// large reader hero images).
+class _VideoPlayBadge extends StatelessWidget {
+  const _VideoPlayBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.88),
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Icon(
+          PhosphorIcons.play(PhosphorIconsStyle.fill),
+          size: 14,
+          color: Colors.black87,
+        ),
       ),
     );
   }

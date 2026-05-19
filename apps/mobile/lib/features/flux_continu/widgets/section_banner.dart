@@ -112,15 +112,6 @@ class SectionBanner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 28,
-                  height: 2,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.80),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
                 FractionallySizedBox(
                   widthFactor: textWidthFactor,
                   alignment: AlignmentDirectional.centerStart,
@@ -243,10 +234,10 @@ class _BannerIllustration extends StatelessWidget {
               opacity: 0.72,
               child: Image.asset(
                 asset,
-                height: 120,
+                height: 96,
                 // Source PNGs are 1024² — decode at 2× display height to
                 // keep texture memory bounded (saves ~10× per image).
-                cacheHeight: 240,
+                cacheHeight: 192,
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => const SizedBox.shrink(),
               ),

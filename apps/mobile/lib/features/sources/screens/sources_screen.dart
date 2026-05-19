@@ -9,11 +9,9 @@ import '../../../shared/widgets/fab_nudge_bubble.dart';
 import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../../../shared/widgets/states/laurin_fallback_view.dart';
 
-import '../../custom_topics/providers/algorithm_profile_provider.dart';
 import '../../my_interests/models/user_interests_state.dart' show InterestState;
 import '../../my_interests/models/user_sources_state.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
-import '../../my_interests/repositories/user_interests_repository.dart';
 import '../../my_interests/widgets/favorites_reorderable_section.dart';
 import '../../my_interests/widgets/interest_state_picker_sheet.dart';
 import '../../settings/providers/paid_content_provider.dart';
@@ -523,8 +521,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   }
 
   Widget _buildSourceItem(Source source) {
-    final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
-    final sourceUsage = algoProfile?.sourceAffinities[source.id];
     final isFavorite = ref
             .watch(userSourcesStateProvider)
             .value
@@ -533,7 +529,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
         false;
     return SourceListItem(
       source: source,
-      usageWeight: sourceUsage,
       isFavorite: isFavorite,
       onPickInterestState: () => _pickSourceState(source),
       onTap: () {
@@ -546,13 +541,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
             .read(userSourcesProvider.notifier)
             .toggleMute(source.id, source.isMuted);
       },
-      onWeightChanged: source.isTrusted && !source.isMuted
-          ? (multiplier) {
-              ref
-                  .read(userSourcesProvider.notifier)
-                  .updateWeight(source.id, multiplier);
-            }
-          : null,
       onToggleSubscription: () {
         ref
             .read(userSourcesProvider.notifier)
