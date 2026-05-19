@@ -449,9 +449,7 @@ async def read_digest_or_fallback(
         .order_by(DailyDigest.generated_at.desc())
         .limit(1)
     )
-    yesterday_clone = (
-        await session.execute(yesterday_clone_stmt)
-    ).scalar_one_or_none()
+    yesterday_clone = (await session.execute(yesterday_clone_stmt)).scalar_one_or_none()
     if yesterday_clone is not None:
         _schedule_background_regen(
             user_id=user_id, target_date=target_date, is_serene=is_serene
