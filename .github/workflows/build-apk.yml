@@ -62,10 +62,10 @@ jobs:
         id: version
         run: echo "version=beta-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
 
-      - name: Build APK
+      - name: Build APK (beta flavor — side-loaded GitHub Releases)
         run: |
           cd apps/mobile
-          flutter build apk --release \
+          flutter build apk --release --flavor beta \
             --build-number=${{ github.run_number }} \
             --dart-define="API_BASE_URL=${{ github.event.inputs.api_base_url || vars.API_BASE_URL || 'https://facteur-production.up.railway.app/api' }}" \
             --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
@@ -81,11 +81,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: facteur-app-release
-          path: apps/mobile/build/app/outputs/flutter-apk/app-release.apk
+          path: apps/mobile/build/app/outputs/flutter-apk/app-beta-release.apk
 
       - name: Rename APK
         run: |
-          mv apps/mobile/build/app/outputs/flutter-apk/app-release.apk \
+          mv apps/mobile/build/app/outputs/flutter-apk/app-beta-release.apk \
              apps/mobile/build/app/outputs/flutter-apk/Facteur-${{ steps.version.outputs.version }}.apk
 
       - name: Create Beta Release

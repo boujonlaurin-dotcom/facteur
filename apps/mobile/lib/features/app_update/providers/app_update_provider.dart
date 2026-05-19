@@ -54,6 +54,7 @@ class AppUpdateInfo {
 final appUpdateProvider =
     FutureProvider.autoDispose<AppUpdateInfo?>((ref) async {
   if (!AppUpdateConstants.isReleaseBuild) return null;
+  if (AppUpdateConstants.isPlayStoreBuild) return null;
 
   try {
     final apiClient = ref.read(apiClientProvider);

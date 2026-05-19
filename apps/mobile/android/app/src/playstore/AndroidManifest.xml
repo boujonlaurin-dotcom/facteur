@@ -1,0 +1,4 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Présent pour matérialiser le flavor Gradle. Aucune permission
+         supplémentaire au-delà de src/main/AndroidManifest.xml. -->
+</manifest>

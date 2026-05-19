@@ -41,6 +41,22 @@ android {
         versionName = flutter.versionName
     }
 
+    // Canal `beta` = APK side-loaded via GitHub Releases (auto-update intégré,
+    // garde REQUEST_INSTALL_PACKAGES). Canal `playstore` = AAB Play Store
+    // (sans cette permission, pas d'auto-update).
+    flavorDimensions += "channel"
+
+    productFlavors {
+        create("beta") {
+            dimension = "channel"
+            applicationIdSuffix = ".beta"
+            versionNameSuffix = "-beta"
+        }
+        create("playstore") {
+            dimension = "channel"
+        }
+    }
+
     signingConfigs {
         if (keystorePropertiesFile.exists()) {
             create("release") {
