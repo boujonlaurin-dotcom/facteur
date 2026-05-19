@@ -183,6 +183,54 @@ class TestSelectTopics:
 
         assert len(result) == 1
 
+    @pytest.mark.asyncio
+    async def test_filters_singletons_when_enough_multi_source(self):
+        """Régression bug-essentiel-pipeline.md : si on a assez de clusters
+        multi-source (≥2 sources), les singletons ne doivent JAMAIS être
+        présentés au LLM. Sinon le digest sort avec source_count=[1,1,...]."""
+        clusters = [
+            _make_cluster("c1", "Retraites", source_count=4, theme="politique"),
+            _make_cluster("c2", "Inflation", source_count=3, theme="economie"),
+            _make_cluster("c3", "Canicule", source_count=2, theme="environnement"),
+            _make_cluster("c4", "Logement", source_count=2, theme="societe"),
+            _make_cluster("c5", "Tech", source_count=2, theme="technologie"),
+            _make_cluster("c6", "Solo1", source_count=1, theme="culture"),
+            _make_cluster("c7", "Solo2", source_count=1, theme="sport"),
+        ]
+
+        llm = MagicMock()
+        llm.is_ready = False  # force deterministic + capture le pool retenu
+
+        svc = CurationService(llm, _make_config(subjects_count=5))
+        result = await svc.select_topics(clusters)
+
+        assert len(result) == 5
+        # Aucun singleton ne doit apparaître alors qu'on a 5 clusters multi-source.
+        topic_ids = {t.topic_id for t in result}
+        assert "c6" not in topic_ids
+        assert "c7" not in topic_ids
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_singletons_when_multi_source_insufficient(self):
+        """Jours pauvres (week-end, fériés) : si moins de N clusters multi-source,
+        on retombe sur le pool complet plutôt que de retourner < N sujets."""
+        clusters = [
+            _make_cluster("c1", "Retraites", source_count=2, theme="politique"),
+            _make_cluster("c2", "Inflation", source_count=2, theme="economie"),
+            _make_cluster("c3", "Solo1", source_count=1, theme="culture"),
+            _make_cluster("c4", "Solo2", source_count=1, theme="sport"),
+            _make_cluster("c5", "Solo3", source_count=1, theme="sciences"),
+        ]
+
+        llm = MagicMock()
+        llm.is_ready = False
+
+        svc = CurationService(llm, _make_config(subjects_count=5))
+        result = await svc.select_topics(clusters)
+
+        # Sans fallback, on n'aurait que 2 sujets ; avec fallback, on a les 5.
+        assert len(result) == 5
+
 
 class TestDeterministicSelect:
     def test_theme_diversity(self):

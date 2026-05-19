@@ -332,20 +332,23 @@ class EditorialPipelineService:
         )
 
         # ÉTAPE 3A-bis: trim au target_subject_count.
-        # On a oversamplé de _SUBJECT_BUFFER ; on conserve les sujets avec au
-        # moins un actu OU un deep article, dans l'ordre, jusqu'à atteindre
-        # `target_subject_count`. Les sujets vides sont droppés ici (loggés
-        # en warning), mais le buffer permet généralement de combler.
-        # Si on retombe quand même < target, on logge en error pour visibilité.
+        # On a oversamplé de _SUBJECT_BUFFER ; on exige qu'un sujet ait un
+        # `actu_article` (parution récente). Un sujet avec seulement un
+        # `deep_article` (parfois plusieurs jours) ne mérite pas d'être
+        # promu en article principal — sa place est sur le rail "Prendre
+        # du recul", pas dans les 5 sujets du jour. Cf. bug-essentiel-pipeline.md.
+        # Le buffer permet généralement de combler les drops ; si on retombe
+        # quand même < target, on logge en error pour visibilité.
         empty_dropped: list[str] = []
         kept: list[EditorialSubject] = []
         for s in subjects:
-            if s.actu_article is None and s.deep_article is None:
+            if s.actu_article is None:
                 empty_dropped.append(s.label or s.topic_id)
                 logger.warning(
-                    "editorial_pipeline.subject_no_articles",
+                    "editorial_pipeline.subject_no_actu",
                     topic_id=s.topic_id,
                     label=s.label,
+                    had_deep=s.deep_article is not None,
                 )
                 continue
             kept.append(s)

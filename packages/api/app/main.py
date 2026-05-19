@@ -285,7 +285,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     from app.jobs.digest_generation_job import run_digest_generation
                     from app.models.daily_digest import DailyDigest
                     from app.models.user import UserProfile
-                    from app.utils.time import now_paris
+                    from app.utils.time import is_before_paris_time, now_paris
                     from app.workers.scheduler import (
                         DIGEST_CRON_HOUR_PARIS,
                         DIGEST_CRON_MINUTE_PARIS,
@@ -302,11 +302,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     #   Si la fenêtre 07:30-10:00 est ratée, c'est cuit pour
                     #   la journée — mieux qu'un digest pourri à 16h.
                     now = now_paris()
-                    cron_minutes = (
-                        DIGEST_CRON_HOUR_PARIS * 60 + DIGEST_CRON_MINUTE_PARIS
+                    too_early = is_before_paris_time(
+                        now, DIGEST_CRON_HOUR_PARIS, DIGEST_CRON_MINUTE_PARIS
                     )
-                    now_minutes = now.hour * 60 + now.minute
-                    if now_minutes < cron_minutes or now.hour >= 10:
+                    if too_early or now.hour >= 10:
                         logger.info(
                             "digest_startup_catchup_outside_window",
                             now_paris=str(now),

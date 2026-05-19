@@ -225,8 +225,23 @@ class CurationService:
                 c for c in clusters if c.cluster_id not in excluded_cluster_ids
             ]
 
+        # Préférer les clusters multi-source — un sujet du jour doit être
+        # repris par au moins 2 médias pour mériter le digest. Fallback aux
+        # singletons si le pool multi-source est insuffisant (week-end,
+        # jours fériés). Symétrique de `a_la_une_pool` (pipeline.py:176-179).
+        # Cf. bug-essentiel-pipeline.md.
+        multi_source = [c for c in available if len(c.source_ids) >= 2]
+        pool = multi_source if len(multi_source) >= count else available
+        if pool is not multi_source:
+            logger.info(
+                "curation.fallback_singletons_allowed",
+                multi_source=len(multi_source),
+                total=len(available),
+                required=count,
+            )
+
         # Take top clusters by source count
-        top_clusters = sorted(available, key=lambda c: len(c.source_ids), reverse=True)[
+        top_clusters = sorted(pool, key=lambda c: len(c.source_ids), reverse=True)[
             :limit
         ]
 

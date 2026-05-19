@@ -500,6 +500,80 @@ class TestSubjectTrimAndRenumber:
         assert all(s.is_a_la_une is False for s in result.subjects[1:])
 
 
+    @pytest.mark.asyncio
+    async def test_drops_subject_with_only_deep_article(self, mock_dependencies):
+        """Régression bug-essentiel-pipeline.md : un sujet avec deep mais sans
+        actu fraîche ne doit PAS être promu en article principal du digest.
+        Le deep ancien (parfois plusieurs jours) finissait sinon en rang 1
+        quand actu_article était null."""
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        session = AsyncMock()
+        svc = EditorialPipelineService(session)
+
+        clusters = [_make_cluster_mock(f"c{i}", f"Cluster {i}") for i in range(1, 7)]
+
+        with patch(
+            "app.services.editorial.pipeline.ImportanceDetector"
+        ) as mock_detector_cls:
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = clusters
+            mock_detector_cls.return_value = mock_detector
+
+            mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
+                topic_id="c1",
+                label="A la une",
+                selection_reason="r",
+                deep_angle="D",
+                source_count=3,
+            )
+            mock_dependencies["curation"].select_topics.return_value = [
+                SelectedTopic(
+                    topic_id=f"c{i}",
+                    label=f"C{i}",
+                    selection_reason="r",
+                    deep_angle="D",
+                )
+                for i in range(2, 8)
+            ]
+            # c5 reçoit un deep mais aucun actu — doit être droppé.
+            deep_for_c5 = MagicMock(spec=MatchedDeepArticle)
+            deep_for_c5.content_id = uuid4()
+            deep_for_c5.source_id = uuid4()
+            mock_dependencies["deep"].match_for_topics.return_value = {
+                f"c{i}": None for i in range(1, 8)
+            } | {"c5": deep_for_c5}
+
+            def _populate_all_actus_except_c5(
+                subjects, clusters, excluded_source_ids=None, excluded_content_ids=None
+            ):
+                out = []
+                for s in subjects:
+                    if s.topic_id == "c5":
+                        # deep already attached by match_for_topics; pas d'actu.
+                        out.append(s)
+                        continue
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies[
+                "actu"
+            ].match_global.side_effect = _populate_all_actus_except_c5
+
+            result = await svc.compute_global_context([_make_content_mock()])
+
+        assert result is not None
+        topic_ids = [s.topic_id for s in result.subjects]
+        assert "c5" not in topic_ids, (
+            f"c5 a un deep mais pas d'actu — il doit être droppé, got {topic_ids}"
+        )
+        # Tous les sujets gardés ont une actu fraîche.
+        assert all(s.actu_article is not None for s in result.subjects)
+
+
 class TestRunForUser:
     def test_populates_actu_articles(self, mock_dependencies):
         from app.services.editorial.pipeline import EditorialPipelineService

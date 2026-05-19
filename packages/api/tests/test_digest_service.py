@@ -541,6 +541,8 @@ class TestBackgroundRegenRateLimit:
 
     def test_rate_limit_blocks_repeat_calls_within_cooldown(self):
         """Second call within cooldown window is a no-op."""
+        from datetime import datetime
+
         from app.services import digest_service
 
         # Reset rate limit dict
@@ -549,7 +551,12 @@ class TestBackgroundRegenRateLimit:
         user_id = uuid4()
         target_date = date.today()
 
-        with patch("asyncio.create_task") as mock_create_task:
+        # Fixe l'heure à 09:00 Paris pour passer la garde horaire (Fix 1).
+        after_cron = datetime.combine(target_date, datetime.min.time()).replace(hour=9)
+        with (
+            patch("app.utils.time.now_paris", return_value=after_cron),
+            patch("asyncio.create_task") as mock_create_task,
+        ):
             digest_service._schedule_background_regen(
                 user_id=user_id, target_date=target_date, is_serene=False
             )
@@ -561,6 +568,8 @@ class TestBackgroundRegenRateLimit:
 
     def test_rate_limit_independent_per_serene_variant(self):
         """(user, date, False) and (user, date, True) are separate buckets."""
+        from datetime import datetime
+
         from app.services import digest_service
 
         digest_service._BG_REGEN_RATE_LIMIT.clear()
@@ -568,7 +577,11 @@ class TestBackgroundRegenRateLimit:
         user_id = uuid4()
         target_date = date.today()
 
-        with patch("asyncio.create_task") as mock_create_task:
+        after_cron = datetime.combine(target_date, datetime.min.time()).replace(hour=9)
+        with (
+            patch("app.utils.time.now_paris", return_value=after_cron),
+            patch("asyncio.create_task") as mock_create_task,
+        ):
             digest_service._schedule_background_regen(
                 user_id=user_id, target_date=target_date, is_serene=False
             )
@@ -577,6 +590,90 @@ class TestBackgroundRegenRateLimit:
             )
             # Both should go through — different variants
             assert mock_create_task.call_count == 2
+
+
+class TestBackgroundRegenCronGuard:
+    """Fix 1 — bug-essentiel-pipeline.md.
+
+    Avant 07:30 Paris, `_schedule_background_regen` doit refuser de générer
+    pour `target_date == today` : à minuit, le pool 48h est saturé du soir
+    précédent et les Unes du matin n'existent pas encore, donc le digest qui
+    serait produit est mauvais ET bloque la régen du cron de 07:30 via
+    `digest_background_regen_skipped_good_format`."""
+
+    def test_skips_when_called_before_cron_hour(self):
+        from datetime import datetime
+
+        from app.services import digest_service
+
+        digest_service._BG_REGEN_RATE_LIMIT.clear()
+
+        user_id = uuid4()
+        target_date = date.today()
+        before_cron = datetime.combine(target_date, datetime.min.time()).replace(
+            hour=2, minute=0
+        )
+
+        with (
+            patch("app.utils.time.now_paris", return_value=before_cron),
+            patch("asyncio.create_task") as mock_create_task,
+        ):
+            digest_service._schedule_background_regen(
+                user_id=user_id, target_date=target_date, is_serene=False
+            )
+
+        assert mock_create_task.call_count == 0
+        # La garde ne doit pas non plus consommer le slot rate-limit.
+        assert (user_id, target_date, False) not in digest_service._BG_REGEN_RATE_LIMIT
+
+    def test_proceeds_when_called_at_or_after_cron_hour(self):
+        from datetime import datetime
+
+        from app.services import digest_service
+
+        digest_service._BG_REGEN_RATE_LIMIT.clear()
+
+        user_id = uuid4()
+        target_date = date.today()
+        at_cron = datetime.combine(target_date, datetime.min.time()).replace(
+            hour=7, minute=30
+        )
+
+        with (
+            patch("app.utils.time.now_paris", return_value=at_cron),
+            patch("asyncio.create_task") as mock_create_task,
+        ):
+            digest_service._schedule_background_regen(
+                user_id=user_id, target_date=target_date, is_serene=False
+            )
+
+        assert mock_create_task.call_count == 1
+
+    def test_guard_only_applies_to_today(self):
+        """La garde protège uniquement target_date == today. Une régen pour
+        hier (ou un autre jour passé) doit toujours passer, à n'importe
+        quelle heure."""
+        from datetime import datetime
+
+        from app.services import digest_service
+
+        digest_service._BG_REGEN_RATE_LIMIT.clear()
+
+        user_id = uuid4()
+        yesterday = date.today() - timedelta(days=1)
+        before_cron = datetime.combine(date.today(), datetime.min.time()).replace(
+            hour=2, minute=0
+        )
+
+        with (
+            patch("app.utils.time.now_paris", return_value=before_cron),
+            patch("asyncio.create_task") as mock_create_task,
+        ):
+            digest_service._schedule_background_regen(
+                user_id=user_id, target_date=yesterday, is_serene=False
+            )
+
+        assert mock_create_task.call_count == 1
 
 
 # ─── Tests: Phase 5.2 — deferred stale-format deletion ────────────────────────
