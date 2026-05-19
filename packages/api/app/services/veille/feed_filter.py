@@ -40,9 +40,7 @@ class VeilleFilters:
     keywords: list[str] = field(default_factory=list)
 
     def has_any(self) -> bool:
-        return bool(
-            self.themes or self.topic_slugs or self.source_ids or self.keywords
-        )
+        return bool(self.themes or self.topic_slugs or self.source_ids or self.keywords)
 
 
 async def _get_active_config(
@@ -124,9 +122,7 @@ def build_or_predicate(filters: VeilleFilters):
     return or_(*clauses) if clauses else None
 
 
-def _matched_axes(
-    content: Content, filters: VeilleFilters
-) -> list[str]:
+def _matched_axes(content: Content, filters: VeilleFilters) -> list[str]:
     """Calcule sur quels axes l'article matche (info exposée au front)."""
     axes: list[str] = []
     if filters.themes and content.theme in filters.themes:
@@ -178,9 +174,7 @@ async def fetch_veille_feed(
         UserContentStatus.user_id == user_id,
         or_(
             UserContentStatus.is_hidden,
-            UserContentStatus.status.in_(
-                [ContentStatus.SEEN, ContentStatus.CONSUMED]
-            ),
+            UserContentStatus.status.in_([ContentStatus.SEEN, ContentStatus.CONSUMED]),
         ),
     )
 
@@ -210,9 +204,7 @@ async def fetch_veille_feed(
         query = query.order_by(Content.published_at.desc())
 
     rows = (
-        (await session.execute(query.limit(limit + 1).offset(offset)))
-        .scalars()
-        .all()
+        (await session.execute(query.limit(limit + 1).offset(offset))).scalars().all()
     )
     has_more = len(rows) > limit
     items = rows[:limit]

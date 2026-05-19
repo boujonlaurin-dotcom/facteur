@@ -148,9 +148,7 @@ async def _hydrate_response(
             if vs.source_id in sources_by_id
         ],
         keywords=[
-            VeilleKeywordResponse(
-                id=kw.id, keyword=kw.keyword, position=kw.position
-            )
+            VeilleKeywordResponse(id=kw.id, keyword=kw.keyword, position=kw.position)
             for kw in keywords_rows
         ],
     )

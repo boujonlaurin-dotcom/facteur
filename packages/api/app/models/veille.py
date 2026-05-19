@@ -155,9 +155,7 @@ class VeilleKeyword(Base):
 
     __tablename__ = "veille_keywords"
     __table_args__ = (
-        UniqueConstraint(
-            "veille_config_id", "keyword", name="uq_veille_keywords"
-        ),
+        UniqueConstraint("veille_config_id", "keyword", name="uq_veille_keywords"),
         Index("ix_veille_keywords_config", "veille_config_id"),
     )
 

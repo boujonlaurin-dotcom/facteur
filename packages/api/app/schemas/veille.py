@@ -157,9 +157,7 @@ class VeilleConfigUpsert(BaseModel):
 
     def model_post_init(self, __context: object) -> None:
         if not (self.topics or self.source_selections or self.keywords):
-            raise ValueError(
-                "Au moins un topic, une source ou un mot-clé est requis."
-            )
+            raise ValueError("Au moins un topic, une source ou un mot-clé est requis.")
 
 
 class VeilleSourceExample(BaseModel):
