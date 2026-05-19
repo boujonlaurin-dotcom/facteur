@@ -15,7 +15,7 @@ Les positions restantes peuvent contenir des trous — c'est intentionnel et
 inoffensif : `GET /user/interests` les retourne triés par position et le
 prochain `reorder` côté mobile compactera 0..N-1.
 
-Revision ID: 23a3_downgrade_custom_topic_favorites
+Revision ID: 23a3_custom_topic_fav_drop
 Revises: vf02_favorite_veille_target
 Create Date: 2026-05-19
 
@@ -23,7 +23,7 @@ Create Date: 2026-05-19
 
 from alembic import op
 
-revision: str = "23a3_downgrade_custom_topic_favorites"
+revision: str = "23a3_custom_topic_fav_drop"
 down_revision: str | None = "vf02_favorite_veille_target"
 branch_labels: str | None = None
 depends_on: str | None = None
