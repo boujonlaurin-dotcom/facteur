@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# Slugs autorisés pour `theme_id` dans les requêtes de suggestion. Doit
-# rester aligné avec la contrainte SQL `ck_source_theme_valid` (cf.
-# alembic/versions/*_add_*_to_constraint.py) ET avec la liste des thèmes
-# Facteur côté front (`kVeilleFacteurThemes`) + onboarding
-# (`user_service.py:170`). Un slug hors liste → 422 immédiat.
 VeilleThemeSlug = Literal[
     "tech",
     "society",
@@ -25,8 +20,11 @@ VeilleThemeSlug = Literal[
     "sport",
 ]
 
+MAX_KEYWORDS_PER_CONFIG = 20
 
-# ─── Sub-objects ─────────────────────────────────────────────────────────────
+
+def _normalize_keyword(raw: str) -> str:
+    return " ".join(raw.split()).lower()
 
 
 class VeilleTopicResponse(BaseModel):
@@ -65,7 +63,12 @@ class VeilleSourceResponse(BaseModel):
     position: int = 0
 
 
-# ─── Config (GET / POST / PATCH) ─────────────────────────────────────────────
+class VeilleKeywordResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    keyword: str
+    position: int = 0
 
 
 class VeilleConfigResponse(BaseModel):
@@ -75,19 +78,13 @@ class VeilleConfigResponse(BaseModel):
     user_id: UUID
     theme_id: str
     theme_label: str
-    frequency: Literal["weekly", "biweekly", "monthly"]
-    day_of_week: int | None = None
-    delivery_hour: int = 7
-    timezone: str = "Europe/Paris"
     status: Literal["active", "paused", "archived"]
-    last_delivered_at: datetime | None = None
-    next_scheduled_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     topics: list[VeilleTopicResponse] = []
     sources: list[VeilleSourceResponse] = []
+    keywords: list[VeilleKeywordResponse] = []
     purpose: str | None = None
-    purpose_other: str | None = None
     editorial_brief: str | None = None
     preset_id: str | None = None
 
@@ -118,145 +115,49 @@ class VeilleSourceSelection(BaseModel):
     position: int = Field(default=0, ge=0)
 
 
+class VeilleKeywordSelection(BaseModel):
+    """Mot-clé / angle libre saisi par l'utilisateur — normalisé lowercase."""
+
+    keyword: str = Field(min_length=2, max_length=60)
+    position: int = Field(default=0, ge=0)
+
+    @field_validator("keyword")
+    @classmethod
+    def _normalize(cls, v: str) -> str:
+        return _normalize_keyword(v)
+
+
 class VeilleConfigUpsert(BaseModel):
+    """Upsert config veille. Au moins UN parmi topics/sources/keywords requis."""
+
     theme_id: str = Field(min_length=1, max_length=50)
     theme_label: str = Field(min_length=1, max_length=120)
     topics: list[VeilleTopicSelection] = Field(default_factory=list)
-    # min_length=1 garantit qu'aucune config n'est créée sans source résolue —
-    # cf. bug-veille-config-without-sources.md (digest vide systématique quand
-    # le mobile retombait sur un fallback mock sans `apiSourceId`).
-    source_selections: list[VeilleSourceSelection] = Field(min_length=1)
-    frequency: Literal["weekly", "biweekly", "monthly"]
-    day_of_week: int | None = Field(default=None, ge=0, le=6)
-    delivery_hour: int = Field(default=7, ge=0, le=23)
-    timezone: str = Field(default="Europe/Paris", max_length=64)
-    # V1 personalization — acceptés par le schéma (PR A) mais persistance
-    # cablée plus tard (PR B).
+    source_selections: list[VeilleSourceSelection] = Field(default_factory=list)
+    keywords: list[VeilleKeywordSelection] = Field(
+        default_factory=list, max_length=MAX_KEYWORDS_PER_CONFIG
+    )
     purpose: str | None = Field(default=None, max_length=80)
-    purpose_other: str | None = Field(default=None, max_length=80)
     editorial_brief: str | None = Field(default=None, max_length=280)
     preset_id: str | None = Field(default=None, max_length=80)
 
+    @field_validator("keywords")
+    @classmethod
+    def _dedupe_keywords(
+        cls, v: list[VeilleKeywordSelection]
+    ) -> list[VeilleKeywordSelection]:
+        seen: set[str] = set()
+        out: list[VeilleKeywordSelection] = []
+        for kw in v:
+            if kw.keyword in seen:
+                continue
+            seen.add(kw.keyword)
+            out.append(kw)
+        return out
 
-class VeilleConfigPatch(BaseModel):
-    frequency: Literal["weekly", "biweekly", "monthly"] | None = None
-    day_of_week: int | None = Field(default=None, ge=0, le=6)
-    delivery_hour: int | None = Field(default=None, ge=0, le=23)
-    timezone: str | None = Field(default=None, max_length=64)
-    status: Literal["active", "paused", "archived"] | None = None
-    purpose: str | None = Field(default=None, max_length=80)
-    purpose_other: str | None = Field(default=None, max_length=80)
-    editorial_brief: str | None = Field(default=None, max_length=280)
-    preset_id: str | None = Field(default=None, max_length=80)
-
-
-# ─── Suggestions ─────────────────────────────────────────────────────────────
-
-
-class VeilleTopicSuggestion(BaseModel):
-    topic_id: str
-    label: str
-    reason: str | None = None
-
-
-class VeilleSuggestTopicsRequest(BaseModel):
-    theme_id: VeilleThemeSlug
-    theme_label: str = Field(min_length=1, max_length=120)
-    selected_topic_ids: list[str] = Field(default_factory=list)
-    exclude_topic_ids: list[str] = Field(default_factory=list)
-    purpose: str | None = Field(default=None, max_length=80)
-    purpose_other: str | None = Field(default=None, max_length=80)
-    editorial_brief: str | None = Field(default=None, max_length=280)
-
-
-class VeilleSourceSuggestion(BaseModel):
-    source_id: UUID
-    name: str
-    url: str
-    feed_url: str
-    theme: str
-    why: str | None = None
-    is_already_followed: bool = False
-    relevance_score: float | None = None
-
-
-class VeilleSourceSuggestionsResponse(BaseModel):
-    sources: list[VeilleSourceSuggestion]
-
-
-class VeilleSuggestSourcesRequest(BaseModel):
-    theme_id: VeilleThemeSlug
-    topic_labels: list[str] = Field(default_factory=list)
-    exclude_source_ids: list[UUID] = Field(default_factory=list)
-    purpose: str | None = Field(default=None, max_length=80)
-    purpose_other: str | None = Field(default=None, max_length=80)
-    editorial_brief: str | None = Field(default=None, max_length=280)
-
-
-# ─── Deliveries ──────────────────────────────────────────────────────────────
-
-
-class VeilleDeliveryListItem(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    veille_config_id: UUID
-    target_date: date
-    generation_state: Literal["pending", "running", "succeeded", "failed"]
-    item_count: int = 0
-    generated_at: datetime | None = None
-    created_at: datetime
-
-
-class VeilleDeliveryArticle(BaseModel):
-    """Article référencé dans un cluster d'une livraison veille."""
-
-    content_id: UUID
-    source_id: UUID
-    title: str
-    url: str
-    excerpt: str = ""
-    published_at: datetime
-
-
-class VeilleDeliveryItem(BaseModel):
-    """Cluster thématique exposé au front (Story 18.2)."""
-
-    cluster_id: str
-    title: str
-    articles: list[VeilleDeliveryArticle] = Field(default_factory=list)
-    why_it_matters: str = ""
-
-
-class VeilleDeliveryResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    veille_config_id: UUID
-    target_date: date
-    items: list[VeilleDeliveryItem] = Field(default_factory=list)
-    generation_state: Literal["pending", "running", "succeeded", "failed"]
-    attempts: int
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
-    last_error: str | None = None
-    version: int
-    generated_at: datetime | None = None
-    created_at: datetime
-    updated_at: datetime
-
-
-class VeilleGenerateRequest(BaseModel):
-    """Force une génération pour la config courante au target_date=today."""
-
-    target_date: date | None = None
-
-
-class VeilleGenerateFirstResponse(BaseModel):
-    """Réponse 202 du POST /deliveries/generate-first."""
-
-    delivery_id: UUID
-    estimated_seconds: int = 60
+    def model_post_init(self, __context: object) -> None:
+        if not (self.topics or self.source_selections or self.keywords):
+            raise ValueError("Au moins un topic, une source ou un mot-clé est requis.")
 
 
 class VeilleSourceExample(BaseModel):
@@ -266,9 +167,6 @@ class VeilleSourceExample(BaseModel):
     url: str
     published_at: datetime | None = None
     excerpt: str = ""
-
-
-# ─── Presets (V1 onboarding) ─────────────────────────────────────────────────
 
 
 class VeillePresetResponse(BaseModel):
@@ -288,3 +186,32 @@ class VeillePresetResponse(BaseModel):
     purposes: list[str] = Field(default_factory=list)
     editorial_brief: str = ""
     sources: list[VeilleSourceLite] = Field(default_factory=list)
+
+
+class VeilleFeedArticle(BaseModel):
+    """Article exposé par GET /api/veille/feed."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    title: str
+    url: str
+    description: str | None = None
+    published_at: datetime | None = None
+    source: VeilleSourceLite
+    theme: str | None = None
+    topics: list[str] = Field(default_factory=list)
+    thumbnail_url: str | None = None
+    matched_on: list[Literal["theme", "topic", "source", "keyword"]] = Field(
+        default_factory=list
+    )
+
+
+class VeilleFeedResponse(BaseModel):
+    """Réponse de GET /api/veille/feed."""
+
+    items: list[VeilleFeedArticle] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+    has_more: bool = False

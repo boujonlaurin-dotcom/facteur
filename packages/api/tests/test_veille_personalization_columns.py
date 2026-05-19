@@ -28,13 +28,8 @@ async def test_veille_config_persists_v1_personalization_fields(db_session):
         user_id=user.user_id,
         theme_id="tech",
         theme_label="Technologie",
-        frequency="weekly",
-        day_of_week=0,
-        delivery_hour=7,
-        timezone="Europe/Paris",
         status=VeilleStatus.ACTIVE.value,
         purpose="progresser_au_travail",
-        purpose_other=None,
         editorial_brief="Plutôt analyses concrètes que hype.",
         preset_id="ia_agentique",
     )
@@ -43,7 +38,6 @@ async def test_veille_config_persists_v1_personalization_fields(db_session):
     await db_session.refresh(cfg)
 
     assert cfg.purpose == "progresser_au_travail"
-    assert cfg.purpose_other is None
     assert cfg.editorial_brief == "Plutôt analyses concrètes que hype."
     assert cfg.preset_id == "ia_agentique"
 
