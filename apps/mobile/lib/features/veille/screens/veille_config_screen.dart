@@ -47,7 +47,7 @@ class VeilleConfigScreen extends ConsumerWidget {
       // redirect vers le dashboard. context.go est idempotent, donc même si le
       // postFrameCallback se ré-arme à chaque rebuild, GoRouter dédupe.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) context.go(RoutePaths.veilleDashboard);
+        if (context.mounted) context.go(RoutePaths.fluxContinu);
       });
     } else if (editMode && activeCfgValue != null && state.selectedTheme == null) {
       // Mode édition : hydrate l'état une seule fois depuis la config active.
@@ -76,7 +76,7 @@ class VeilleConfigScreen extends ConsumerWidget {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Veille mise à jour')),
           );
-          context.go(RoutePaths.veilleDashboard);
+          context.go(RoutePaths.fluxContinu);
           return;
         }
 
@@ -111,11 +111,15 @@ class VeilleConfigScreen extends ConsumerWidget {
         if (!context.mounted) return;
         // Succès → ouverture directe du digest (effet Wow). Échec/timeout →
         // fallback dashboard, le snackbar ayant déjà informé le user.
-        if (pollSucceeded && deliveryId != null) {
-          context.go('${RoutePaths.veilleDeliveries}/$deliveryId');
-        } else {
-          context.go(RoutePaths.veilleDashboard);
+        // Succès ou échec/timeout → on retourne au flux continu où la veille
+        // apparaît désormais comme un slot de la Tournée du jour.
+        // (deliveryId/pollSucceeded sont conservés pour observabilité dans
+        // les logs Sentry mais ne pilotent plus la navigation.)
+        if (deliveryId != null && pollSucceeded) {
+          // no-op — placeholder pour ne pas casser les vars en attente du
+          // refactor commit 2 qui retire complètement submitAndGenerateFirst.
         }
+        context.go(RoutePaths.fluxContinu);
       } on VeilleApiException catch (e) {
         if (!context.mounted) return;
         // 422 = validation backend (ex: source_selections vide). Ne pas

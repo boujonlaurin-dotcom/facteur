@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import '../../../core/api/api_client.dart';
 import '../models/veille_config_dto.dart';
 import '../models/veille_delivery.dart';
+import '../models/veille_source_example.dart';
 import '../models/veille_suggestion.dart';
 
 /// Levée quand `GET /api/veille/config` renvoie 404 — pas de veille active

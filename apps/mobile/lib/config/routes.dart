@@ -29,9 +29,6 @@ import '../features/progress/screens/quiz_screen.dart';
 import '../features/subscription/screens/paywall_screen.dart';
 import '../features/digest/screens/digest_screen.dart';
 import '../features/veille/screens/veille_config_screen.dart';
-import '../features/veille/screens/veille_dashboard_screen.dart';
-import '../features/veille/screens/veille_deliveries_screen.dart';
-import '../features/veille/screens/veille_delivery_detail_screen.dart';
 import '../features/lettres/screens/courrier_screen.dart';
 import '../features/lettres/screens/open_letter_screen.dart';
 import '../features/digest/screens/closure_screen.dart';
@@ -75,9 +72,6 @@ class RouteNames {
   static const String topicExplorer = 'topic-explorer';
   static const String themeSources = 'theme-sources';
   static const String veilleConfig = 'veille-config';
-  static const String veilleDashboard = 'veille-dashboard';
-  static const String veilleDeliveries = 'veille-deliveries';
-  static const String veilleDeliveryDetail = 'veille-delivery-detail';
   static const String lettres = 'lettres';
   static const String openLetter = 'open-letter';
 }
@@ -110,9 +104,6 @@ class RoutePaths {
   static const String paywall = '/paywall';
   static const String emailConfirmation = '/email-confirmation';
   static const String veilleConfig = '/veille/config';
-  static const String veilleDashboard = '/veille/dashboard';
-  static const String veilleDeliveries = '/veille/deliveries';
-  static const String veilleDeliveryDetail = '/veille/deliveries/:id';
   static const String lettres = '/lettres';
   static const String openLetter = '/lettres/:id';
 }
@@ -440,8 +431,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
 
-      // Veille Config — flow de configuration "Ma veille" (4 étapes).
+      // Veille Config — flow de configuration "Ma veille".
       // Hors ShellRoute pour cacher la bottom nav (full-screen modal).
+      // Entry point depuis Mes intérêts (CTA ou menu favori veille).
       GoRoute(
         path: RoutePaths.veilleConfig,
         name: RouteNames.veilleConfig,
@@ -451,35 +443,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             child: VeilleConfigScreen(editMode: isEdit),
           );
         },
-      ),
-
-      // Veille Dashboard — vue de la config existante (édit/pause/delete).
-      GoRoute(
-        path: RoutePaths.veilleDashboard,
-        name: RouteNames.veilleDashboard,
-        pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-          child: VeilleDashboardScreen(),
-        ),
-      ),
-
-      // Veille Deliveries — historique des livraisons.
-      GoRoute(
-        path: RoutePaths.veilleDeliveries,
-        name: RouteNames.veilleDeliveries,
-        pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-          child: VeilleDeliveriesScreen(),
-        ),
-      ),
-
-      // Veille Delivery Detail — clusters + articles.
-      GoRoute(
-        path: RoutePaths.veilleDeliveryDetail,
-        name: RouteNames.veilleDeliveryDetail,
-        pageBuilder: (context, state) => FullSwipeCupertinoPage(
-          child: VeilleDeliveryDetailScreen(
-            deliveryId: state.pathParameters['id']!,
-          ),
-        ),
       ),
 
       // Lettres du Facteur — onboarding doux (story 19.1).

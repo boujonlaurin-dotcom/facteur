@@ -218,12 +218,13 @@ class DeepLinkService {
         (host.isEmpty && segments.isNotEmpty && segments.first == 'veille');
 
     if (isVeille) {
-      // `io.supabase.facteur://veille/dashboard` → `/veille/dashboard`.
-      // Toute autre cible veille (deliveries, …) inconnue tombe en fallback
-      // sur le dashboard plutôt que l'errorBuilder GoRouter.
+      // La veille n'a plus d'écran dédié — son contenu vit dans la Tournée
+      // du jour (slot kind=veille). Les anciens deep links widget
+      // `io.supabase.facteur://veille/dashboard` sont redirigés vers le
+      // flux continu, où la section veille apparaît avec son accent dédié.
       return const WidgetDeepLinkAction(
         target: WidgetDeepLinkTarget.veille,
-        route: RoutePaths.veilleDashboard,
+        route: RoutePaths.fluxContinu,
       );
     }
 
