@@ -205,6 +205,13 @@ class _FavoriteRow {
                 : visualFor(topic.slugParent).accent,
           );
         }(),
+      // Veille : accent dédié sectionVeille1 + label "Ma veille" (Story 23.2 PR-4).
+      // Le label précis (theme_label de la VeilleConfig) sera résolu en
+      // commit 5 via veilleActiveConfigProvider.
+      VeilleFavoriteRef() => const _FavoriteRow(
+          label: 'Ma veille',
+          accent: Color(0xFF2C3E50),
+        ),
     };
   }
 }

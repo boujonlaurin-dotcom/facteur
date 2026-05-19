@@ -655,6 +655,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
             accent: _customTopicAccent(interestsState, id),
             customTopicId: id,
           ),
+        // VeilleFavoriteRef : section veille rendue par commit 5 (Story 23.2).
+        // Pour commit 4, on retourne null — la veille apparaît dans la liste
+        // favoris de Mes intérêts mais ne génère pas encore de slot Tournée.
+        VeilleFavoriteRef() => null,
       };
       if (section != null) sections.add(section);
     }
@@ -684,6 +688,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
           ),
           'getFeed?topic=$id',
         ),
+      // VeilleFavoriteRef : intégration Tournée traitée en commit 5
+      // (Story 23.2 PR-4). Pour l'instant, no-op.
+      VeilleFavoriteRef() => Future<FeedResponse?>.value(null),
     };
   }
 

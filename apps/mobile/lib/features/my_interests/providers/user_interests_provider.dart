@@ -98,6 +98,11 @@ class UserInterestsNotifier extends AsyncNotifier<UserInterestsState> {
         if (idx >= 0) {
           customTopics[idx] = customTopics[idx].copyWith(state: newState);
         }
+      case VeilleFavoriteRef():
+        // La veille n'a pas d'entrée themes/customTopics — son état est
+        // implicite (présence dans `favorites` = favori, suppression =
+        // archive via DELETE /api/veille/config). Pas de mutation locale ici.
+        break;
     }
 
     var favorites = [...current.favorites];
