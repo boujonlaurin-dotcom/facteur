@@ -819,9 +819,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                 Row(
                   children: [
                     Icon(
-                      isSubscribed
-                          ? PhosphorIcons.crown(PhosphorIconsStyle.fill)
-                          : PhosphorIcons.crown(PhosphorIconsStyle.regular),
+                      PhosphorIcons.link(PhosphorIconsStyle.regular),
                       size: 18,
                       color:
                           isSubscribed ? colorScheme.primary : colors.textSecondary,
@@ -829,7 +827,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        "J'ai un abonnement payant",
+                        'Associer mon abonnement',
                         style: textTheme.bodyMedium?.copyWith(
                           color: colors.textPrimary,
                           fontWeight: FontWeight.w500,

@@ -150,8 +150,9 @@ class SourceListItem extends StatelessWidget {
                 ),
               ),
 
-              // Story 22.1 — favori star (always visible when callback provided)
-              if (onPickInterestState != null) ...[
+              // Source suivie : étoile (favori toggle via picker).
+              // Source non suivie : "+" pour suivre. Jamais les deux.
+              if (!isMuted && isTrusted && onPickInterestState != null)
                 IconButton(
                   onPressed: onPickInterestState,
                   padding: EdgeInsets.zero,
@@ -164,11 +165,8 @@ class SourceListItem extends StatelessWidget {
                     color: isFavorite ? colors.primary : colors.textTertiary,
                     size: 18,
                   ),
-                ),
-              ],
-
-              // "+" icon for unfollowed sources
-              if (!isMuted && !isTrusted)
+                )
+              else if (!isMuted && !isTrusted)
                 Icon(
                   PhosphorIcons.plus(PhosphorIconsStyle.bold),
                   size: 20,

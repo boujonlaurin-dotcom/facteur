@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
+import '../../my_interests/models/user_interests_state.dart';
+import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../my_interests/widgets/interest_state_pill.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
@@ -324,6 +326,46 @@ class SourceDetailModal extends ConsumerWidget {
                   ? PhosphorIcons.check()
                   : PhosphorIcons.shieldCheck(),
             ),
+            if (displaySource.isTrusted) ...[
+              const SizedBox(height: 8),
+              Builder(builder: (context) {
+                final isFavorite = ref
+                        .watch(userSourcesStateProvider)
+                        .valueOrNull
+                        ?.favorites
+                        .any((f) => f.sourceId == source.id) ??
+                    false;
+                return FacteurButton(
+                  onPressed: () async {
+                    final next = isFavorite
+                        ? InterestState.followed
+                        : InterestState.favorite;
+                    try {
+                      await ref
+                          .read(userSourcesStateProvider.notifier)
+                          .setSourceState(source.id, next);
+                      if (context.mounted) Navigator.pop(context);
+                    } catch (_) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content:
+                              Text('Impossible de mettre à jour cette source.'),
+                          duration: Duration(seconds: 3),
+                        ),
+                      );
+                    }
+                  },
+                  label: isFavorite
+                      ? 'Retirer des favoris'
+                      : 'Ajouter aux favoris',
+                  type: FacteurButtonType.secondary,
+                  icon: isFavorite
+                      ? PhosphorIcons.star(PhosphorIconsStyle.regular)
+                      : PhosphorIcons.star(PhosphorIconsStyle.fill),
+                );
+              }),
+            ],
             if (onToggleSubscription != null) ...[
               const SizedBox(height: 8),
               FacteurButton(
@@ -332,12 +374,10 @@ class SourceDetailModal extends ConsumerWidget {
                   Navigator.pop(context);
                 },
                 label: displaySource.hasSubscription
-                    ? 'Ne plus marquer comme Premium'
-                    : 'J\'ai un abonnement',
+                    ? 'Dissocier mon abonnement'
+                    : 'Associer mon abonnement',
                 type: FacteurButtonType.secondary,
-                icon: displaySource.hasSubscription
-                    ? PhosphorIcons.star(PhosphorIconsStyle.regular)
-                    : PhosphorIcons.star(PhosphorIconsStyle.fill),
+                icon: PhosphorIcons.link(PhosphorIconsStyle.regular),
               ),
             ],
             if (onToggleMute != null) ...[
