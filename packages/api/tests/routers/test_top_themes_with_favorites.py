@@ -16,6 +16,7 @@ from app.main import app
 from app.models.enums import InterestState
 from app.models.user import UserInterest, UserProfile
 from app.models.user_favorites import UserFavoriteInterest
+from app.models.veille import VeilleConfig, VeilleStatus
 
 
 @pytest_asyncio.fixture
@@ -89,3 +90,78 @@ async def test_falls_back_to_weight_when_no_favorites(
     assert resp.status_code == 200
     # Pas d'articles → fallback retourne [] (filtre 14j).
     assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_top_themes_includes_veille_with_kind_discriminator(
+    user_with_4_interests, db_session
+):
+    """Story 23.1 PR-3 : un favori veille est sérialisé avec kind=veille +
+    veille_config_id, son slug est le theme_id de la VeilleConfig."""
+    user_id = user_with_4_interests
+    cfg = VeilleConfig(
+        id=uuid4(),
+        user_id=user_id,
+        theme_id="tech",
+        theme_label="Tech",
+        status=VeilleStatus.ACTIVE.value,
+    )
+    db_session.add(cfg)
+    await db_session.flush()
+    db_session.add(
+        UserFavoriteInterest(
+            user_id=user_id, position=0, interest_slug="society"
+        )
+    )
+    db_session.add(
+        UserFavoriteInterest(user_id=user_id, position=1, veille_config_id=cfg.id)
+    )
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.get("/api/users/top-themes")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 2
+    assert body[0]["interest_slug"] == "society"
+    assert body[0]["kind"] == "theme"
+    assert body[0]["veille_config_id"] is None
+    assert body[1]["interest_slug"] == "tech"
+    assert body[1]["kind"] == "veille"
+    assert body[1]["veille_config_id"] == str(cfg.id)
+
+
+@pytest.mark.asyncio
+async def test_top_themes_skips_archived_veille_favorite(
+    user_with_4_interests, db_session
+):
+    """Un favori orphelin (cfg archivée hors transaction) est skippé."""
+    user_id = user_with_4_interests
+    cfg = VeilleConfig(
+        id=uuid4(),
+        user_id=user_id,
+        theme_id="tech",
+        theme_label="Tech",
+        status=VeilleStatus.ARCHIVED.value,
+    )
+    db_session.add(cfg)
+    await db_session.flush()
+    db_session.add(
+        UserFavoriteInterest(
+            user_id=user_id, position=0, interest_slug="society"
+        )
+    )
+    db_session.add(
+        UserFavoriteInterest(user_id=user_id, position=1, veille_config_id=cfg.id)
+    )
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.get("/api/users/top-themes")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["interest_slug"] == "society"
+    assert body[0]["kind"] == "theme"

@@ -18,6 +18,7 @@ from app.dependencies import get_current_user_id
 from app.models.content import Content
 from app.models.enums import SourceType
 from app.models.source import Source
+from app.models.user_favorites import UserFavoriteInterest
 from app.models.veille import (
     VeilleConfig,
     VeilleKeyword,
@@ -39,6 +40,7 @@ from app.schemas.veille import (
 )
 from app.services.rss_parser import RSSParser
 from app.services.source_service import SourceService
+from app.services.user_interests_service import ensure_veille_favorite
 from app.services.veille.feed_filter import fetch_veille_feed
 
 logger = structlog.get_logger()
@@ -307,6 +309,10 @@ async def upsert_config(
             detail="Sélectionne au moins un thème, une source ou un mot-clé.",
         )
 
+    # La veille est un favori d'intérêt — on garantit sa présence dans
+    # user_favorite_interests à chaque upsert (idempotent).
+    await ensure_veille_favorite(db, user_uuid, cfg.id)
+
     await db.commit()
     await db.refresh(cfg)
 
@@ -339,6 +345,14 @@ async def delete_config(
     cfg = await _get_active_config(db, user_uuid)
     if cfg is None:
         return None
+    # Retire d'abord le favori, puis archive la config — même transaction,
+    # garantit qu'aucun favori orphelin ne survit à un crash entre les deux.
+    await db.execute(
+        delete(UserFavoriteInterest).where(
+            UserFavoriteInterest.user_id == user_uuid,
+            UserFavoriteInterest.veille_config_id == cfg.id,
+        )
+    )
     cfg.status = VeilleStatus.ARCHIVED.value
     await db.commit()
     return None

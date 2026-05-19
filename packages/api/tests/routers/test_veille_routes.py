@@ -12,6 +12,8 @@ from uuid import uuid4
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from sqlalchemy import select
+
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.main import app
@@ -19,6 +21,8 @@ from app.models.content import Content
 from app.models.enums import ContentType, SourceType
 from app.models.source import Source
 from app.models.user import UserProfile
+from app.models.user_favorites import UserFavoriteInterest
+from app.models.veille import VeilleConfig, VeilleStatus
 
 
 @pytest_asyncio.fixture
@@ -196,6 +200,130 @@ class TestConfigCRUD:
             d2 = await c.delete("/api/veille/config")
         assert d1.status_code == 204
         assert d2.status_code == 204
+
+
+class TestFavoriteIntegration:
+    """Story 23.1 PR-3 : POST /config crée un favori, DELETE /config le retire."""
+
+    async def _favorites(self, db_session, user_id):
+        rows = (
+            await db_session.execute(
+                select(UserFavoriteInterest).where(
+                    UserFavoriteInterest.user_id == user_id
+                )
+            )
+        ).scalars().all()
+        return list(rows)
+
+    async def test_post_config_auto_creates_favorite(
+        self, auth_user, curated_tech_source, db_session
+    ):
+        payload = {
+            "theme_id": "tech",
+            "theme_label": "Tech",
+            "source_selections": [
+                {"kind": "followed", "source_id": str(curated_tech_source.id)}
+            ],
+        }
+        async with _client() as c:
+            r = await c.post("/api/veille/config", json=payload)
+        assert r.status_code == 200
+        cfg_id = r.json()["id"]
+
+        favs = await self._favorites(db_session, auth_user)
+        assert len(favs) == 1
+        assert str(favs[0].veille_config_id) == cfg_id
+        assert favs[0].position == 0
+        assert favs[0].interest_slug is None
+        assert favs[0].custom_topic_id is None
+
+    async def test_post_config_idempotent_favorite(
+        self, auth_user, curated_tech_source, db_session
+    ):
+        payload = {
+            "theme_id": "tech",
+            "theme_label": "Tech",
+            "source_selections": [
+                {"kind": "followed", "source_id": str(curated_tech_source.id)}
+            ],
+        }
+        async with _client() as c:
+            await c.post("/api/veille/config", json=payload)
+            await c.post("/api/veille/config", json=payload)
+
+        favs = await self._favorites(db_session, auth_user)
+        assert len(favs) == 1
+        assert favs[0].position == 0
+
+    async def test_post_config_favorite_appended_when_others_exist(
+        self, auth_user, curated_tech_source, db_session
+    ):
+        db_session.add(
+            UserFavoriteInterest(
+                user_id=auth_user, position=0, interest_slug="tech"
+            )
+        )
+        db_session.add(
+            UserFavoriteInterest(
+                user_id=auth_user, position=1, interest_slug="society"
+            )
+        )
+        await db_session.commit()
+
+        payload = {
+            "theme_id": "tech",
+            "theme_label": "Tech",
+            "source_selections": [
+                {"kind": "followed", "source_id": str(curated_tech_source.id)}
+            ],
+        }
+        async with _client() as c:
+            r = await c.post("/api/veille/config", json=payload)
+        assert r.status_code == 200
+
+        favs = sorted(
+            await self._favorites(db_session, auth_user), key=lambda f: f.position
+        )
+        assert len(favs) == 3
+        assert favs[2].position == 2
+        assert favs[2].veille_config_id is not None
+
+    async def test_delete_config_removes_favorite_in_same_tx(
+        self, auth_user, curated_tech_source, db_session
+    ):
+        payload = {
+            "theme_id": "tech",
+            "theme_label": "Tech",
+            "source_selections": [
+                {"kind": "followed", "source_id": str(curated_tech_source.id)}
+            ],
+        }
+        async with _client() as c:
+            create = await c.post("/api/veille/config", json=payload)
+            assert create.status_code == 200
+            cfg_id = create.json()["id"]
+            d = await c.delete("/api/veille/config")
+        assert d.status_code == 204
+
+        favs = await self._favorites(db_session, auth_user)
+        assert favs == []
+
+        cfg = (
+            await db_session.execute(
+                select(VeilleConfig).where(VeilleConfig.id == cfg_id)
+            )
+        ).scalar_one()
+        assert cfg.status == VeilleStatus.ARCHIVED.value
+
+    async def test_delete_config_idempotent_when_no_favorite_row(
+        self, auth_user, db_session
+    ):
+        async with _client() as c:
+            d = await c.delete("/api/veille/config")
+        assert d.status_code == 204
+
+        favs = await self._favorites(db_session, auth_user)
+        assert favs == []
 
 
 class TestFeed:

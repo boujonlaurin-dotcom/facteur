@@ -1,4 +1,4 @@
-"""Favoris ordonnés — Story 22.1 (cap retiré 2026-05-18, Story 22.2).
+"""Favoris ordonnés — intérêts (Thème/Sujet/Veille, XOR) et sources.
 
 Deux tables dédiées (intérêts vs sources). La position n'est plus bornée à
 0..2 : l'utilisateur peut épingler autant de favoris qu'il veut, et seuls
@@ -25,7 +25,7 @@ from app.database import Base
 
 
 class UserFavoriteInterest(Base):
-    """Favori intérêt (Thème OU Sujet, XOR), ordonné par position.
+    """Favori intérêt (Thème OU Sujet OU Veille, XOR 3-way), ordonné par position.
 
     PK composite (user_id, position) → garantit unicité du slot. La position
     est entière >= 0 (plus de cap dur depuis 2026-05-18).
@@ -34,8 +34,10 @@ class UserFavoriteInterest(Base):
     __tablename__ = "user_favorite_interests"
     __table_args__ = (
         CheckConstraint(
-            "(interest_slug IS NOT NULL)::int + (custom_topic_id IS NOT NULL)::int = 1",
-            name="user_favorite_interests_target_xor",
+            "(interest_slug IS NOT NULL)::int "
+            "+ (custom_topic_id IS NOT NULL)::int "
+            "+ (veille_config_id IS NOT NULL)::int = 1",
+            name="user_favorite_interests_target_xor_v2",
         ),
     )
 
@@ -49,6 +51,11 @@ class UserFavoriteInterest(Base):
     custom_topic_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("user_topic_profiles.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    veille_config_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("veille_configs.id", ondelete="CASCADE"),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(

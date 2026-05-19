@@ -20,6 +20,7 @@ from app.main import app
 from app.models.enums import InterestState
 from app.models.user import UserInterest, UserProfile
 from app.models.user_favorites import UserFavoriteInterest
+from app.models.veille import VeilleConfig, VeilleStatus
 
 
 @pytest_asyncio.fixture
@@ -71,6 +72,37 @@ async def test_get_returns_empty_state_for_blank_user(auth_user):
     assert body["favorites"] == []
     assert body["favorite_count"] == 0
     assert body["favorite_cap"] == FAVORITE_CAP
+
+
+@pytest.mark.asyncio
+async def test_get_interests_returns_veille_favorite(auth_user, db_session):
+    """Story 23.1 PR-3 : un favori veille apparaît avec kind=veille et
+    target_id = str(veille_config_id)."""
+    cfg = VeilleConfig(
+        id=uuid4(),
+        user_id=auth_user,
+        theme_id="tech",
+        theme_label="Tech",
+        status=VeilleStatus.ACTIVE.value,
+    )
+    db_session.add(cfg)
+    await db_session.flush()
+    db_session.add(
+        UserFavoriteInterest(
+            user_id=auth_user, position=0, veille_config_id=cfg.id
+        )
+    )
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.get("/api/user/interests")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["favorite_count"] == 1
+    assert body["favorites"][0]["kind"] == "veille"
+    assert body["favorites"][0]["target_id"] == str(cfg.id)
+    assert body["favorites"][0]["position"] == 0
 
 
 @pytest.mark.asyncio

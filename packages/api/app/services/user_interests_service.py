@@ -18,6 +18,7 @@ from app.models.source import UserSource
 from app.models.user import UserInterest
 from app.models.user_favorites import UserFavoriteInterest, UserFavoriteSource
 from app.models.user_topic_profile import UserTopicProfile
+from app.models.veille import VeilleConfig, VeilleStatus
 from app.schemas.user_interests import (
     CustomTopicInterestResponse,
     FavoriteRef,
@@ -90,14 +91,17 @@ class UserInterestsService:
             .all()
         )
 
-        favorites = [
-            FavoriteRef(
-                kind="theme" if row.interest_slug else "custom_topic",
-                target_id=row.interest_slug or str(row.custom_topic_id),
-                position=row.position,
+        favorites: list[FavoriteRef] = []
+        for row in favs_rows:
+            if row.interest_slug:
+                kind, target_id = "theme", row.interest_slug
+            elif row.custom_topic_id:
+                kind, target_id = "custom_topic", str(row.custom_topic_id)
+            else:
+                kind, target_id = "veille", str(row.veille_config_id)
+            favorites.append(
+                FavoriteRef(kind=kind, target_id=target_id, position=row.position)
             )
-            for row in favs_rows
-        ]
 
         return UserInterestsResponse(
             themes=[ThemeInterestResponse.model_validate(t) for t in themes_rows],
@@ -208,6 +212,11 @@ class UserInterestsService:
         def _matches(fav: UserFavoriteInterest) -> bool:
             if kind == "theme":
                 return fav.interest_slug == target_id
+            if kind == "veille":
+                return (
+                    fav.veille_config_id is not None
+                    and str(fav.veille_config_id) == target_id
+                )
             return (
                 fav.custom_topic_id is not None
                 and str(fav.custom_topic_id) == target_id
@@ -237,6 +246,7 @@ class UserInterestsService:
                 position=position,
                 interest_slug=target_id if kind == "theme" else None,
                 custom_topic_id=UUID(target_id) if kind == "custom_topic" else None,
+                veille_config_id=UUID(target_id) if kind == "veille" else None,
             )
             self.db.add(row)
         else:
@@ -265,6 +275,25 @@ class UserInterestsService:
                 if row is None or row.state != InterestState.FAVORITE:
                     raise TargetNotFavorite(
                         f"theme {fav.target_id} is not favorite for user {user_id}"
+                    )
+            elif fav.kind == "veille":
+                try:
+                    veille_uuid = UUID(fav.target_id)
+                except ValueError as e:
+                    raise TargetNotFound(
+                        f"invalid veille_config id: {fav.target_id}"
+                    ) from e
+                cfg = (
+                    await self.db.execute(
+                        select(VeilleConfig).where(
+                            VeilleConfig.user_id == user_id,
+                            VeilleConfig.id == veille_uuid,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if cfg is None or cfg.status != VeilleStatus.ACTIVE.value:
+                    raise TargetNotFavorite(
+                        f"veille {fav.target_id} is not active for user {user_id}"
                     )
             else:
                 try:
@@ -298,9 +327,50 @@ class UserInterestsService:
                     custom_topic_id=UUID(fav.target_id)
                     if fav.kind == "custom_topic"
                     else None,
+                    veille_config_id=UUID(fav.target_id)
+                    if fav.kind == "veille"
+                    else None,
                 )
             )
         await self.db.commit()
+
+
+async def ensure_veille_favorite(
+    db: AsyncSession, user_id: UUID, veille_config_id: UUID
+) -> int:
+    """Idempotent : garantit que la veille active du user figure dans `user_favorite_interests`.
+
+    Si une row existe déjà avec ce `veille_config_id`, retourne sa position
+    sans rien faire. Sinon, append à la fin (`max(position)+1`, ou 0 si la
+    table est vide pour ce user). Ne commit pas — l'appelant (router veille)
+    gère la transaction englobante.
+    """
+    existing = (
+        (
+            await db.execute(
+                select(UserFavoriteInterest).where(
+                    UserFavoriteInterest.user_id == user_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for fav in existing:
+        if fav.veille_config_id == veille_config_id:
+            return fav.position
+
+    taken = {f.position for f in existing}
+    position = (max(taken) + 1) if taken else 0
+    db.add(
+        UserFavoriteInterest(
+            user_id=user_id,
+            position=position,
+            veille_config_id=veille_config_id,
+        )
+    )
+    await db.flush()
+    return position
 
 
 class UserSourcesStateService:

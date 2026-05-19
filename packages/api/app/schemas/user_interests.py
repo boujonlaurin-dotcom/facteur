@@ -13,14 +13,17 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import InterestState
 
-InterestKind = Literal["theme", "custom_topic"]
+InterestKind = Literal["theme", "custom_topic", "veille"]
 
 
 class FavoriteRef(BaseModel):
-    """Référence ordonnée vers un favori (Thème OU Sujet)."""
+    """Référence ordonnée vers un favori (Thème, Sujet, ou Veille).
+
+    Pour `kind="veille"`, `target_id` est `str(veille_config_id)` (UUID).
+    """
 
     kind: InterestKind
-    target_id: str  # interest_slug (theme) ou str(UUID) (custom_topic)
+    target_id: str
     position: int = Field(ge=0)
 
 

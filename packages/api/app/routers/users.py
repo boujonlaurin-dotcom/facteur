@@ -4,6 +4,7 @@ import hashlib
 import logging
 import time
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 from uuid import UUID
 
 import certifi
@@ -301,11 +302,18 @@ async def update_preference(
 
 
 class TopThemeResponse(BaseModel):
-    """Un thème utilisateur avec son poids."""
+    """Un slot de la Tournée du jour.
+
+    Pour `kind="veille"`, `interest_slug` est le `theme_id` (slug parent) de la
+    `VeilleConfig` et `veille_config_id` est rempli — le mobile dispatche alors
+    vers `/api/veille/feed` au lieu de `/api/feed?theme=`.
+    """
 
     interest_slug: str
     weight: float
     article_count: int = 0
+    kind: Literal["theme", "veille"] = "theme"
+    veille_config_id: UUID | None = None
 
 
 @router.get("/top-themes", response_model=list[TopThemeResponse])
@@ -326,6 +334,7 @@ async def get_top_themes(
     from app.models.content import Content
     from app.models.user_favorites import UserFavoriteInterest
     from app.models.user_topic_profile import UserTopicProfile
+    from app.models.veille import VeilleConfig, VeilleStatus
 
     user_uuid = UUID(user_id)
 
@@ -344,8 +353,9 @@ async def get_top_themes(
     if fav_rows:
         # Résolution Theme/Sujet → slug. Pour les Sujets, on projette sur
         # `slug_parent` (ex: custom_topic "Donald Trump" → slug "international").
-        # Le mobile actuel n'a qu'un champ `interest_slug` — la perte d'info
-        # est actée jusqu'à la PR 22.1.3 qui enrichira la forme.
+        # Pour Veille, on hydrate la VeilleConfig pour récupérer son `theme_id`
+        # et on n'expose le slot que si la config est encore active — un favori
+        # orphelin (cfg archivée hors transaction) est skippé silencieusement.
         custom_topic_ids = [
             row.custom_topic_id for row in fav_rows if row.custom_topic_id
         ]
@@ -360,17 +370,59 @@ async def get_top_themes(
             ).all()
             topic_slug_by_id = {row[0]: row[1] for row in topic_rows}
 
-        seen: set[str] = set()
+        veille_cfg_ids = [
+            row.veille_config_id for row in fav_rows if row.veille_config_id
+        ]
+        veille_by_id: dict[UUID, VeilleConfig] = {}
+        if veille_cfg_ids:
+            veille_rows = (
+                (
+                    await db.execute(
+                        sa_select(VeilleConfig).where(
+                            VeilleConfig.id.in_(veille_cfg_ids),
+                            VeilleConfig.status == VeilleStatus.ACTIVE.value,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            veille_by_id = {cfg.id: cfg for cfg in veille_rows}
+
+        # Dedup key = (kind, slug) : un favori veille et un favori thème
+        # partageant le même slug parent coexistent (sources distinctes).
+        seen: set[tuple[str, str]] = set()
         out: list[TopThemeResponse] = []
         for row in fav_rows:
+            if row.veille_config_id:
+                cfg = veille_by_id.get(row.veille_config_id)
+                if cfg is None:
+                    continue
+                key = ("veille", cfg.theme_id)
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(
+                    TopThemeResponse(
+                        interest_slug=cfg.theme_id,
+                        weight=1.5,
+                        article_count=0,
+                        kind="veille",
+                        veille_config_id=cfg.id,
+                    )
+                )
+                continue
             slug = (
                 row.interest_slug
                 if row.interest_slug
                 else topic_slug_by_id.get(row.custom_topic_id)
             )
-            if slug is None or slug in seen:
+            if slug is None:
                 continue
-            seen.add(slug)
+            key = ("theme", slug)
+            if key in seen:
+                continue
+            seen.add(key)
             out.append(
                 TopThemeResponse(interest_slug=slug, weight=1.5, article_count=0)
             )
