@@ -9,11 +9,13 @@ import '../models/user_interests_state.dart';
 class InterestStatePickerSheet extends StatelessWidget {
   final String title;
   final InterestState currentState;
+  final bool allowFavorite;
 
   const InterestStatePickerSheet({
     super.key,
     required this.title,
     required this.currentState,
+    this.allowFavorite = true,
   });
 
   /// Affiche le picker et retourne l'état choisi (ou `null` si annulé).
@@ -21,6 +23,7 @@ class InterestStatePickerSheet extends StatelessWidget {
     BuildContext context, {
     required String title,
     required InterestState currentState,
+    bool allowFavorite = true,
   }) {
     return showModalBottomSheet<InterestState>(
       context: context,
@@ -29,6 +32,7 @@ class InterestStatePickerSheet extends StatelessWidget {
       builder: (_) => InterestStatePickerSheet(
         title: title,
         currentState: currentState,
+        allowFavorite: allowFavorite,
       ),
     );
   }
@@ -71,8 +75,8 @@ class InterestStatePickerSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            for (final state in const [
-              InterestState.favorite,
+            for (final state in [
+              if (allowFavorite) InterestState.favorite,
               InterestState.followed,
               InterestState.unfollowed,
               InterestState.hidden,

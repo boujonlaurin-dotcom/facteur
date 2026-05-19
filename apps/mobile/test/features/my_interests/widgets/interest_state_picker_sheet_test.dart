@@ -99,4 +99,34 @@ void main() {
 
     expect(returned, InterestState.favorite);
   });
+
+  testWidgets('Story 23.3 — allowFavorite=false hides the Favori option',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: FacteurTheme.lightTheme,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => InterestStatePickerSheet.show(
+                context,
+                title: 'Plongée',
+                currentState: InterestState.followed,
+                allowFavorite: false,
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Favori'), findsNothing);
+    expect(find.text('Suivi'), findsOneWidget);
+    expect(find.text('Neutre'), findsOneWidget);
+    expect(find.text('Masqué'), findsOneWidget);
+  });
 }

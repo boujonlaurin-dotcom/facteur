@@ -52,6 +52,21 @@ class TargetNotFavorite(Exception):
     """Tentative de reorder qui inclut un target dont le state n'est pas favorite."""
 
 
+class CustomTopicFavoriteForbidden(Exception):
+    """Un custom_topic ne peut pas atteindre l'état favorite.
+
+    Le filtrage feed résout en `slug_parent` (un des 51 slugs Mistral) — un sujet
+    précis comme « Plongée » renverrait tout le sport. Passer par la veille
+    (filtrage strict multi-axes) pour les sujets précis.
+    """
+
+    def __init__(self, target_id: str):
+        self.target_id = target_id
+        super().__init__(
+            f"custom_topic {target_id} cannot be promoted to favorite (use veille instead)"
+        )
+
+
 class UserInterestsService:
     """CRUD sur l'état déclaré des Thèmes + Sujets + favoris ordonnés."""
 
@@ -125,6 +140,9 @@ class UserInterestsService:
     ) -> InterestState | None:
         """Mute le state d'un Thème ou Sujet. Returns the previous state, or None
         if the target was created on the fly (theme without prior row)."""
+        if kind == "custom_topic" and state == InterestState.FAVORITE:
+            raise CustomTopicFavoriteForbidden(target_id)
+
         prev_state: InterestState | None = None
 
         if kind == "theme":
@@ -263,6 +281,8 @@ class UserInterestsService:
         INSERT(s) atomique.
         """
         for fav in favorites:
+            if fav.kind == "custom_topic":
+                raise CustomTopicFavoriteForbidden(fav.target_id)
             if fav.kind == "theme":
                 row = (
                     await self.db.execute(
@@ -294,25 +314,6 @@ class UserInterestsService:
                 if cfg is None or cfg.status != VeilleStatus.ACTIVE.value:
                     raise TargetNotFavorite(
                         f"veille {fav.target_id} is not active for user {user_id}"
-                    )
-            else:
-                try:
-                    topic_uuid = UUID(fav.target_id)
-                except ValueError as e:
-                    raise TargetNotFound(
-                        f"invalid custom_topic id: {fav.target_id}"
-                    ) from e
-                row = (
-                    await self.db.execute(
-                        select(UserTopicProfile).where(
-                            UserTopicProfile.user_id == user_id,
-                            UserTopicProfile.id == topic_uuid,
-                        )
-                    )
-                ).scalar_one_or_none()
-                if row is None or row.state != InterestState.FAVORITE:
-                    raise TargetNotFavorite(
-                        f"custom_topic {fav.target_id} is not favorite for user {user_id}"
                     )
 
         await self.db.execute(

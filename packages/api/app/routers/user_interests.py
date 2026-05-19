@@ -26,6 +26,7 @@ from app.services.feed_cache import FEED_CACHE
 from app.services.posthog_client import get_posthog_client
 from app.services.sources_cache import SOURCES_CACHE
 from app.services.user_interests_service import (
+    CustomTopicFavoriteForbidden,
     FavoriteCapReached,
     TargetNotFavorite,
     TargetNotFound,
@@ -69,6 +70,11 @@ async def set_interest_state(
             state=body.state,
             position=body.position,
         )
+    except CustomTopicFavoriteForbidden as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": "custom_topic_favorite_forbidden"},
+        ) from e
     except FavoriteCapReached as e:
         get_posthog_client().capture(
             user_id=user_uuid,
@@ -111,6 +117,11 @@ async def reorder_favorites(
 
     try:
         await service.reorder_favorites(user_uuid, body.favorites)
+    except CustomTopicFavoriteForbidden as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": "custom_topic_favorite_forbidden"},
+        ) from e
     except TargetNotFavorite as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)

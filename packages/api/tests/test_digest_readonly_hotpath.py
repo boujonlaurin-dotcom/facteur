@@ -191,6 +191,61 @@ async def test_step3_yesterday_fallback_marks_stale_and_schedules_regen(mock_ses
     )
 
 
+# ─── Step 3b — clone yesterday from any user (new-user-at-night case) ────────
+
+
+@pytest.mark.asyncio
+async def test_step3b_clones_yesterday_from_any_user_when_own_missing(mock_session):
+    """Régression bug-essentiel-pipeline.md : un nouvel user inscrit à 02h Paris
+    n'a aucun digest. Le bg regen est bloqué jusqu'à 07h30 (Fix 1). Sans le
+    step 3b, il tomberait sur le 7-day fallback (vide pour lui aussi) puis
+    sur le 202 "préparation". On veut qu'il voie l'Essentiel de la veille
+    pré-existant d'un autre user, rendu éphémèrement (PAS persisté pour ne
+    pas tripper le guard `digest_background_regen_skipped_good_format`)."""
+    user_id = uuid4()
+    target = date.today()
+    yesterday = target - timedelta(days=1)
+
+    yesterday_clone_row = _make_digest_row(
+        user_id=uuid4(),  # un autre user
+        target_date=yesterday,
+        is_serene=False,
+    )
+    rendered = _make_response()
+
+    exec_result = Mock()
+    exec_result.scalar_one_or_none = Mock(return_value=yesterday_clone_row)
+    mock_session.execute = AsyncMock(return_value=exec_result)
+
+    with (
+        patch.object(
+            digest_service.DigestService,
+            "_get_existing_digest",
+            new=AsyncMock(return_value=None),  # ni today, ni yesterday own
+        ),
+        patch.object(
+            digest_service.DigestService,
+            "_try_clone_global_editorial_digest",
+            new=AsyncMock(return_value=None),  # personne n'a today
+        ),
+        patch.object(
+            digest_service.DigestService,
+            "_build_digest_response",
+            new=AsyncMock(return_value=rendered),
+        ),
+        patch.object(digest_service, "_schedule_background_regen") as regen_mock,
+    ):
+        out = await read_digest_or_fallback(
+            mock_session, user_id, target, is_serene=False
+        )
+
+    assert out is rendered
+    assert out.is_stale_fallback is True
+    regen_mock.assert_called_once_with(
+        user_id=user_id, target_date=target, is_serene=False
+    )
+
+
 # ─── Step 4 — 7-day fallback ──────────────────────────────────────────────────
 
 

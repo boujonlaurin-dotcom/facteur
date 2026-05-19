@@ -20,6 +20,7 @@ from app.main import app
 from app.models.enums import InterestState
 from app.models.user import UserInterest, UserProfile
 from app.models.user_favorites import UserFavoriteInterest
+from app.models.user_topic_profile import UserTopicProfile
 from app.models.veille import VeilleConfig, VeilleStatus
 
 
@@ -250,6 +251,112 @@ async def test_reorder_swaps_positions(auth_user_with_themes, db_session):
         "tech",
         "society",
     ]
+
+
+@pytest.mark.asyncio
+async def test_patch_rejects_favorite_for_custom_topic(auth_user, db_session):
+    """Story 23.3 — promouvoir un custom_topic en favori → 422.
+
+    Le filtrage feed d'un custom_topic favori résout en slug_parent (taxonomie
+    Mistral 51 slugs) : « Plongée » remonterait tout le sport. Les sujets
+    précis doivent passer par la veille.
+    """
+    topic = UserTopicProfile(
+        user_id=auth_user,
+        topic_name="Plongée",
+        slug_parent="sport",
+        state=InterestState.FOLLOWED,
+    )
+    db_session.add(topic)
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    with patch(
+        "app.routers.user_interests.get_posthog_client", return_value=MagicMock()
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.patch(
+                "/api/user/interests",
+                json={
+                    "kind": "custom_topic",
+                    "target_id": str(topic.id),
+                    "state": "favorite",
+                },
+            )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["error"] == "custom_topic_favorite_forbidden"
+
+    # state inchangé en DB
+    await db_session.refresh(topic)
+    assert topic.state == InterestState.FOLLOWED
+
+
+@pytest.mark.asyncio
+async def test_patch_allows_followed_for_custom_topic(auth_user, db_session):
+    """Story 23.3 — passer un custom_topic en followed reste OK (boost scoring)."""
+    topic = UserTopicProfile(
+        user_id=auth_user,
+        topic_name="Plongée",
+        slug_parent="sport",
+        state=InterestState.UNFOLLOWED,
+    )
+    db_session.add(topic)
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    with patch(
+        "app.routers.user_interests.get_posthog_client", return_value=MagicMock()
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.patch(
+                "/api/user/interests",
+                json={
+                    "kind": "custom_topic",
+                    "target_id": str(topic.id),
+                    "state": "followed",
+                },
+            )
+    assert resp.status_code == 200
+    await db_session.refresh(topic)
+    assert topic.state == InterestState.FOLLOWED
+
+
+@pytest.mark.asyncio
+async def test_reorder_rejects_custom_topic(auth_user_with_themes, db_session):
+    """Story 23.3 — un reorder qui inclut un custom_topic → 422."""
+    topic = UserTopicProfile(
+        user_id=auth_user_with_themes,
+        topic_name="Plongée",
+        slug_parent="sport",
+        state=InterestState.FOLLOWED,
+    )
+    db_session.add(topic)
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    with patch(
+        "app.routers.user_interests.get_posthog_client", return_value=MagicMock()
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            await ac.patch(
+                "/api/user/interests",
+                json={"kind": "theme", "target_id": "tech", "state": "favorite"},
+            )
+            resp = await ac.post(
+                "/api/user/interests/reorder",
+                json={
+                    "favorites": [
+                        {"kind": "theme", "target_id": "tech", "position": 0},
+                        {
+                            "kind": "custom_topic",
+                            "target_id": str(topic.id),
+                            "position": 1,
+                        },
+                    ]
+                },
+            )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["error"] == "custom_topic_favorite_forbidden"
 
 
 @pytest.mark.asyncio

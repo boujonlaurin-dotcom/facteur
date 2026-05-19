@@ -78,6 +78,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
       context,
       title: title,
       currentState: currentState,
+      allowFavorite: refTarget is! CustomTopicFavoriteRef,
     );
     if (selected == null || selected == currentState) return;
 
@@ -608,7 +609,7 @@ class _ThemeBlock extends ConsumerWidget {
             children: [
               if (sereinMode)
                 ...topics.map((topic) => _SereinTopicRow(topic: topic))
-              else
+              else ...[
                 ...topics.map(
                   (topic) => _TopicRow(
                     topic: topic,
@@ -616,6 +617,8 @@ class _ThemeBlock extends ConsumerWidget {
                         onPickTopicState(topic.id, topic.topicName, topic.state),
                   ),
                 ),
+                _AddTopicInlineButton(themeSlug: themeSlug),
+              ],
               const SizedBox(height: FacteurSpacing.space2),
             ],
           ),
@@ -673,6 +676,45 @@ class _DiscoverHint extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AddTopicInlineButton extends StatelessWidget {
+  final String themeSlug;
+
+  const _AddTopicInlineButton({required this.themeSlug});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+
+    return InkWell(
+      onTap: () => EntityAddSheet.show(context, themeSlug: themeSlug),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: FacteurSpacing.space4,
+          vertical: FacteurSpacing.space2,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              PhosphorIcons.plus(PhosphorIconsStyle.regular),
+              size: 14,
+              color: colors.textTertiary,
+            ),
+            const SizedBox(width: FacteurSpacing.space2),
+            Text(
+              'Ajouter un sujet',
+              style: textTheme.bodySmall?.copyWith(
+                color: colors.textTertiary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
         ),
       ),
     );

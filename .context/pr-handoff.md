@@ -1,30 +1,42 @@
-# PR — fix: surlignage progressif des titres (Couverture médiatique) invisible en prod
+# PR — fix: custom_topic→favori interdit + 3 régressions pipeline Essentiel
 
 ## Summary
 
-Surlignage progressif des titres invisible en prod (section "Couverture médiatique" / perspectives) car la pipeline backend renvoyait toujours `highlight_spans: []`. Vérifié sur Supabase : `0 / 41 045` contents ont un `cluster_id`, donc l'early-return `if not content.cluster_id` de `_attach_highlight_spans` court-circuitait pour tous les articles. Le batch off-cluster `nlp.pipe()` prévu plus bas n'était jamais atteint.
+Deux corrections indépendantes regroupées :
 
-Bug doc complet : `docs/bugs/bug-perspectives-highlight-spans-missing.md`.
+**1. Story 23.3 — custom_topic ne peut plus être épinglé favori**
 
-## Changes
+Un sujet personnalisé (« Plongée », « Elon Musk »…) ne peut plus passer à l'état `favorite`. La pipeline Mistral classe les articles sur 51 slugs figés ; un custom_topic mappe toujours sur son `slug_parent` (ex. « Plongée » → `sport`), donc filtrer via favori custom_topic remontait tout le sport, pas la plongée. Décision PO : seuls les thèmes et les veilles peuvent être favoris.
 
-### Backend — Cause racine
-- `packages/api/app/routers/contents.py` (`_attach_highlight_spans`) : retire l'early-return sur `not content.cluster_id`. La fonction n'appelle `get_or_compute_cluster_annotations()` que si `cluster_id` est présent (évite un scan `WHERE cluster_id IS NULL` sur les 41 k contents standalone). Le batch off-cluster existant calcule alors les tokens spaCy pour toutes les perspectives, `ref_tokens` est obtenu via le fallback `compute_strong_tokens(title)`, et `diff_spans` / `compute_shared_tokens` / `compute_reference_pivot` produisent les données attendues par le mobile.
+- **Backend** : nouvelle exception `CustomTopicFavoriteForbidden` levée dans `set_state()` et `reorder_favorites()` si `kind=="custom_topic"` + `state==FAVORITE`. Router mappe → 422 `{"error": "custom_topic_favorite_forbidden"}`.
+- **Mobile** : `InterestStatePickerSheet` accepte un flag `allowFavorite` (default `true`). Le `_pickState` passe `allowFavorite: refTarget is! CustomTopicFavoriteRef`. Un bouton inline `_AddTopicInlineButton` est réintroduit en bas de chaque `_ThemeBlock` (remplace le FAB global pour les thèmes déjà suivis).
+- **Migration** `23a3_downgrade_custom_topic_favorites` : downgrade silencieux — `user_topic_profiles.state` favorite→followed + DELETE des rows `user_favorite_interests` avec `custom_topic_id IS NOT NULL`.
 
-### Mobile — Bug latent
-- `apps/mobile/lib/features/digest/widgets/topic_section.dart` et `article_viewer_modal.dart` : les 2 mappings `PerspectiveData → Perspective` oubliaient `highlightSpans` et `sharedTokens`. Le widget `DiffTitle` recevait `const []` et basculait silencieusement en Mode 2 fallback. Ajout des 2 champs dans les 2 mappings.
+**2. Fix pipeline "Essentiel du jour" (3 régressions)**
 
-### Tests
-- `packages/api/tests/routers/test_contents_perspectives_highlights.py` :
-  - Remplace l'ancien test qui assertait `highlight_spans == []` sans cluster (comportement bogué) par `test_attach_highlight_spans_computes_for_content_without_cluster` validant le nouveau contrat.
-  - Ajoute `test_attach_highlight_spans_without_cluster_skips_db_scan` pour garder l'invariant "pas de scan DB sur cluster_id IS NULL".
+Cause racine commune : `_schedule_background_regen` n'avait aucune garde horaire et générait le digest à 00h Paris, avant les Unes du matin, puis bloquait le cron 07h30 via `digest_background_regen_skipped_good_format`.
+
+- **Fix 1 — garde horaire** : refuse de spawner pour `target_date == today` avant `DIGEST_CRON_HOUR_PARIS:DIGEST_CRON_MINUTE_PARIS` (07:30 Paris).
+- **Fix 1bis — clone yesterday ephemeral** : nouvel user inscrit la nuit → rendu éphémère du digest editorial_v1 de la veille d'un autre user (`is_stale_fallback=True`, jamais persisté).
+- **Fix 2 — drop subject sans `actu_article`** : `pipeline.py:343` passe de `actu is None AND deep is None` à `actu is None` — un sujet deep-only va sur le rail "Prendre du recul".
+- **Fix 3 — filtre multi-source avant LLM** : `curation.py:218-243` pré-filtre le pool à `source_count >= 2` avant LLM, fallback à `available` si pool < count.
 
 ## Test plan
 
-- [x] `pytest tests/routers/test_contents_perspectives_highlights.py` → 8/8 passent
-- [x] Suite backend complète → 1167 passed, 13 skipped
-- [x] `flutter analyze` sur les 2 fichiers mobile modifiés → 0 erreurs
-- [x] `flutter test` widgets touchés (DiffTitle, PerspectivesInline, fromJson) → 20/20 passent
-- [ ] **Validation prod après merge** : appeler `GET /api/v1/contents/{id}/perspectives` sur un article récent et vérifier que `.perspectives[0].highlight_spans` est non-vide. Visuellement, ouvrir la section "Couverture médiatique" d'un article avec ≥ 3 sources et observer le surlignage progressif des titres dans la vue inline (`PerspectivesInlineSection` → `DiffTitle`).
+- [x] `pytest tests/routers/test_user_interests.py` (107 cases, 422 sur custom_topic+favorite)
+- [x] `pytest tests/test_digest_service.py` (23 passed)
+- [x] `pytest tests/test_digest_readonly_hotpath.py` (11 passed)
+- [x] `pytest tests/editorial/test_pipeline.py` (12 passed)
+- [x] `pytest tests/editorial/test_curation.py` (13 passed)
+- [x] `flutter test test/features/my_interests/` (11 passed, dont Story 23.3 `allowFavorite=false`)
+- [x] `flutter analyze` — 0 erreurs
+- [x] Alembic 1 head : `23a3_downgrade_custom_topic_favorites`
+- [ ] Post-deploy : `SELECT state, COUNT(*) FROM user_topic_profiles WHERE kind='custom_topic' AND state='favorite'` → 0 rows.
+- [ ] Post-deploy : `SELECT MIN(generated_at AT TIME ZONE 'Europe/Paris') FROM daily_digest WHERE target_date = CURRENT_DATE` → ≥ 07:30.
+- [ ] Post-deploy : `source_count` du rang 1 ≥ 3, aucun subject avec `actu_article = null`.
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+## Zones à risque
+
+- `user_interests_service.py` / `routers/user_interests.py` : mutation path favoris
+- `digest_service.py` : hotpath lecture digest (step 3b)
+- `alembic/versions/23a3_*` : migration one-shot destructive (pas de downgrade)

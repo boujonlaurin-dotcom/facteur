@@ -89,6 +89,35 @@ def _schedule_background_regen(
     """
     import time as _time
 
+    # Garde horaire : ne JAMAIS générer un digest pour `target_date == today`
+    # avant l'heure du cron principal. Sinon le pool `published_at >= now - 48h`
+    # est saturé d'articles du soir précédent et les Unes du matin (Le Monde
+    # ~06h30, Figaro/Libé ~07h) ne sont pas encore publiées. Conséquences :
+    # clusters petits + deeps anciens promus en article principal + digest
+    # gravé en DB qui bloque la régénération du cron 07:30 via
+    # `digest_background_regen_skipped_good_format`. Cf. bug-essentiel-pipeline.md.
+    # Reprend exactement la garde appliquée au startup catchup (main.py:304-317).
+    from app.utils.time import now_paris
+    from app.workers.scheduler import (
+        DIGEST_CRON_HOUR_PARIS,
+        DIGEST_CRON_MINUTE_PARIS,
+    )
+
+    now = now_paris()
+    if target_date == now.date():
+        cron_minutes = DIGEST_CRON_HOUR_PARIS * 60 + DIGEST_CRON_MINUTE_PARIS
+        now_minutes = now.hour * 60 + now.minute
+        if now_minutes < cron_minutes:
+            logger.info(
+                "digest_background_regen_skipped_too_early",
+                user_id=str(user_id),
+                target_date=str(target_date),
+                is_serene=is_serene,
+                now_paris=now.strftime("%H:%M"),
+                cron_at=f"{DIGEST_CRON_HOUR_PARIS:02d}:{DIGEST_CRON_MINUTE_PARIS:02d}",
+            )
+            return
+
     key = (user_id, target_date, is_serene)
     now_mono = _time.monotonic()
     last = _BG_REGEN_RATE_LIMIT.get(key)
@@ -327,11 +356,15 @@ async def read_digest_or_fallback(
     2. Any other user's ``editorial_v1`` digest for today (clone, since
        editorial output is user-agnostic).
     3. Yesterday's ``editorial_v1``/``topics_v1`` digest for this user.
+    3b. Any other user's ``editorial_v1`` digest for *yesterday* (rendered
+        ephemerally, NOT persisted — persisting would graveyard the row as
+        today's editorial_v1 and trip the cron's "good format already exists"
+        guard at 07:30). Covers the new-user-signing-up-at-night case.
     4. Most recent digest within the last ``_HOTPATH_FALLBACK_DAYS`` days for
        this user.
     5. Nothing → schedule regen, return None.
 
-    Steps 3 and 4 set ``response.is_stale_fallback = True`` so the mobile
+    Steps 3, 3b and 4 set ``response.is_stale_fallback = True`` so the mobile
     client (already wired since #422) auto-refetches silently when the
     background regen lands.
     """
@@ -393,6 +426,53 @@ async def read_digest_or_fallback(
                 "digest_hotpath_yesterday_render_failed",
                 user_id=str(user_id),
                 format_version=yesterday_digest.format_version,
+            )
+
+    # 3b. Any other user's editorial_v1 for *yesterday*, rendered ephemerally.
+    # Covers a new user signing up before the morning batch: they have no
+    # own digest (steps 1 & 3 miss), no editorial_v1 today exists yet
+    # (step 2 misses — the bg regen guard blocks generation until 07:30
+    # Paris), so without this fallback they would land on the 7-day step
+    # (also empty for new users) and end up with a 202. We render any
+    # existing yesterday editorial_v1 — strictly ephemeral, never persisted,
+    # because writing a row with `target_date == today + format_version ==
+    # editorial_v1` would make the morning cron skip the real regeneration
+    # via `digest_background_regen_skipped_good_format`.
+    yesterday_clone_stmt = (
+        select(DailyDigest)
+        .where(
+            and_(
+                DailyDigest.user_id != user_id,
+                DailyDigest.target_date == yesterday,
+                DailyDigest.is_serene == is_serene,
+                DailyDigest.format_version == "editorial_v1",
+            )
+        )
+        .order_by(DailyDigest.generated_at.desc())
+        .limit(1)
+    )
+    yesterday_clone = (
+        await session.execute(yesterday_clone_stmt)
+    ).scalar_one_or_none()
+    if yesterday_clone is not None:
+        _schedule_background_regen(
+            user_id=user_id, target_date=target_date, is_serene=is_serene
+        )
+        try:
+            response = await svc._build_digest_response(yesterday_clone, user_id)
+            response.is_stale_fallback = True
+            logger.warning(
+                "digest_hotpath_serving_yesterday_clone",
+                user_id=str(user_id),
+                yesterday_date=str(yesterday),
+                source_user_id=str(yesterday_clone.user_id),
+            )
+            return response
+        except Exception:
+            logger.exception(
+                "digest_hotpath_yesterday_clone_render_failed",
+                user_id=str(user_id),
+                yesterday_date=str(yesterday),
             )
 
     # 4. Last 7 days fallback for this user.
