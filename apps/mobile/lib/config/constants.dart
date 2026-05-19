@@ -291,6 +291,16 @@ class ExternalLinks {
       'https://chat.whatsapp.com/Fq4oKgSDEgc9AmAyZR9uhJ?mode=gi_t';
 }
 
+/// Liens légaux et support — exposés via le backend FastAPI (`/legal/*`).
+/// Synchronisés avec `packages/api/app/routers/legal.py`.
+class LegalLinks {
+  LegalLinks._();
+
+  static const String privacy = 'https://api.facteur.app/legal/privacy';
+  static const String terms = 'https://api.facteur.app/legal/terms';
+  static const String supportEmail = 'mailto:support@facteur.app';
+}
+
 /// Contact direct du créateur — utilisé par le fallback "Quelques pépins"
 /// quand l'app n'arrive plus à charger malgré plusieurs retries.
 class LaurinContact {

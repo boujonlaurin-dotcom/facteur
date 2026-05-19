@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../config/constants.dart';
 import '../../../config/routes.dart';
 import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
@@ -84,6 +86,8 @@ class SettingsSheet extends ConsumerWidget {
                       _ContentShortcuts(),
                       SizedBox(height: FacteurSpacing.space4),
                       _FeedbackTile(),
+                      SizedBox(height: FacteurSpacing.space4),
+                      _LegalShortcuts(),
                     ],
                   ),
                 ),
@@ -389,6 +393,44 @@ class _FeedbackTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _LegalShortcuts extends StatelessWidget {
+  const _LegalShortcuts();
+
+  Future<void> _open(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SheetCard(
+      child: Column(
+        children: [
+          _ShortcutTile(
+            icon: PhosphorIcons.shieldCheck(PhosphorIconsStyle.regular),
+            label: 'Politique de confidentialité',
+            onTap: () => _open(LegalLinks.privacy),
+          ),
+          const _Divider(),
+          _ShortcutTile(
+            icon: PhosphorIcons.fileText(PhosphorIconsStyle.regular),
+            label: 'Conditions d\'utilisation',
+            onTap: () => _open(LegalLinks.terms),
+          ),
+          const _Divider(),
+          _ShortcutTile(
+            icon: PhosphorIcons.lifebuoy(PhosphorIconsStyle.regular),
+            label: 'Contacter le support',
+            onTap: () => _open(LegalLinks.supportEmail),
+          ),
+        ],
       ),
     );
   }
