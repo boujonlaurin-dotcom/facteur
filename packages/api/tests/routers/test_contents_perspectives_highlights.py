@@ -340,6 +340,33 @@ async def test_attach_highlight_spans_batches_off_cluster_titles_in_one_executor
 
 
 @pytest.mark.asyncio
+async def test_attach_highlight_spans_returns_empty_when_nlp_unavailable(
+    db_session, cluster_setup
+):
+    """`_nlp is None` → spans vides sans crash (cf. bug doc round 2)."""
+    fake_svc = service_with_nlp(None)
+
+    perspectives = [
+        {
+            "title": "Une frappe sur Gaza fait 20 morts",
+            "url": "https://other.fr/x",
+            "bias_stance": "left",
+        }
+    ]
+    with patch(
+        "app.routers.contents.get_title_annotation_service",
+        return_value=fake_svc,
+    ):
+        pivot = await _attach_highlight_spans(
+            db_session, cluster_setup["ref"], perspectives
+        )
+
+    assert perspectives[0]["highlight_spans"] == []
+    assert perspectives[0]["shared_tokens"] == []
+    assert pivot is None
+
+
+@pytest.mark.asyncio
 async def test_attach_highlight_spans_swallows_exceptions(
     db_session, cluster_setup
 ):

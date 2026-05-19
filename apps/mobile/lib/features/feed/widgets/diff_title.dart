@@ -42,7 +42,7 @@ class DiffTitle extends StatefulWidget {
     required this.biasColor,
     required this.baseStyle,
     this.animateIn = true,
-    this.maxLines = 2,
+    this.maxLines = 4,
   });
 
   @override

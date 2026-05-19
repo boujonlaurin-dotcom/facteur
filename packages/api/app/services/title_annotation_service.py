@@ -68,6 +68,10 @@ class TitleAnnotationService:
         if self._nlp is None:
             logger.warning("title_annotation.nlp_unavailable")
 
+    @property
+    def is_nlp_available(self) -> bool:
+        return self._nlp is not None
+
     def _doc_to_tokens(self, doc) -> list[dict]:
         """Convert a spaCy Doc into our strong-token shape."""
         if doc is None:

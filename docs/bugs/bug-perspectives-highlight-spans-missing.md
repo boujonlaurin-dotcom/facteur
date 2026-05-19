@@ -1,8 +1,8 @@
 # Bug: Surlignage progressif des titres invisible en prod (Couverture médiatique)
 
-## Status: IN PROGRESS
+## Status: IN PROGRESS (round 2 — vraie cause racine)
 
-## Date: 2026-05-18
+## Date: 2026-05-18 (round 1), 2026-05-19 (round 2)
 
 ## Symptômes
 
@@ -102,3 +102,85 @@ Note : la snapshot stockée dans `daily_digest.items` ne contiendra toujours pas
 Étendre `packages/api/tests/routers/test_contents_perspectives_highlights.py` :
 - Cas "content sans cluster_id" → `highlight_spans` non-vide pour les perspectives qui divergent du titre référence.
 - Cas "content avec cluster_id" inchangé (régression).
+
+---
+
+## Round 2 — re-test post-déploiement PR #624 : toujours invisible
+
+PR #624 mergée + déployée sur Railway. Re-test mobile : **aucun surlignage**.
+Les Causes B et C ci-dessus étaient des effets, pas les vraies racines. Deux
+bugs indépendants se cumulent et la PR #624 n'en règle aucun pour le chemin
+réellement utilisé par l'utilisateur ("Couverture médiatique" = modale).
+
+### Cause racine #1 — Backend : spaCy n'est plus installé en prod
+
+`packages/api/requirements-ml.txt` (ligne 9) :
+```
+# spacy==3.8.11 (NER, ~100MB RAM)
+```
+…liste spaCy parmi les *"Previous local dependencies (removed)"*. Le
+`requirements.txt` ne contient effectivement plus `spacy`, et le `Dockerfile`
+ne télécharge plus le modèle `fr_core_news_md`.
+
+Chaîne de dégradation 100 % silencieuse :
+1. `ner_service.py:_load_model()` catche `ImportError` → `self._nlp = None`
+   (log unique `ner.spacy_not_installed`)
+2. `title_annotation_service.py:__init__` log `title_annotation.nlp_unavailable`
+   puis continue avec `_nlp = None`
+3. `compute_strong_tokens` / `compute_strong_tokens_batch` retournent `[]` dès
+   que `_nlp is None`
+4. `routers/contents.py:_attach_highlight_spans` (lignes 838-847) catche toute
+   exception et pose `highlight_spans=[]` partout
+
+→ Le batch off-cluster `nlp.pipe()` que la PR #624 a "réactivé" en supprimant
+l'early-return ne tourne donc **jamais** : il n'y a pas de `nlp` à appeler.
+
+### Cause racine #2 — Mobile : la modale ignore complètement DiffTitle
+
+"Couverture médiatique" ouvre :
+- `apps/mobile/lib/features/digest/widgets/topic_section.dart:878` →
+  `showModalBottomSheet(PerspectivesBottomSheet(...))`
+- `apps/mobile/lib/features/feed/widgets/article_viewer_modal.dart:165` →
+  idem
+
+Dans cette modale, `_PerspectiveCard.build()`
+(`perspectives_bottom_sheet.dart:611`) rend le titre via un **`Text()` brut** —
+pas `DiffTitle`. Les champs `highlightSpans` / `sharedTokens` ajoutés sur l'objet
+`Perspective` par la PR #624 arrivent bien sur l'objet mais sont **totalement
+ignorés** par ce widget.
+
+Le widget inline `_VariantRow` (ligne 1785 du même fichier) utilise bien
+`DiffTitle`, mais ce n'est pas le chemin que l'utilisateur emprunte depuis
+"Couverture médiatique".
+
+→ Conséquence : même après le fix Cause racine #1 (backend), le titre de la
+modale resterait gris uni. La PR #624 a corrigé deux faux problèmes.
+
+## Fix round 2
+
+### Backend
+- `packages/api/requirements.txt` : ajouter `spacy==3.8.11`
+- `packages/api/Dockerfile` : ajouter `RUN python -m spacy download fr_core_news_md`
+- `packages/api/requirements-ml.txt` : retirer le commentaire "removed" sur spacy
+- Nouvel endpoint `/api/internal/admin/ner-health` : retourne
+  `{nlp_available, model_version, sample_tokens}` pour un titre canonique →
+  permet de diagnostiquer sans redéployer à l'aveugle la prochaine fois.
+
+### Mobile
+- `perspectives_bottom_sheet.dart` (`_PerspectiveCard`, ligne 611) :
+  migration `Text(...)` → `DiffTitle(...)` en suivant le pattern de
+  `_VariantRow` ligne 1785.
+- `maxLines: 4` propagé sur tous les usages de `DiffTitle` (le défaut à 2
+  coupait trop tôt et masquait la moitié des mots-clés divergents).
+
+### Leçons apprises
+- **Une suppression "soft" de spaCy (retirée du requirements.txt + commentée
+  dans requirements-ml.txt) sans audit des appelants laisse des chaînes de
+  code qui tournent dans le vide.** Les logs `nlp_unavailable` étaient bien
+  émis, mais personne ne les surveillait.
+- **Pas d'endpoint de santé interne pour les services ML** → la seule façon
+  de détecter ce drift était d'observer l'UX cassée. À corriger avec
+  `/admin/ner-health`.
+- **Les tests existants mockaient `FakeNlp`** : ils ne pouvaient pas détecter
+  l'absence réelle de spaCy en prod. Limite connue, à compléter à terme par
+  un smoke test E2E qui appelle l'endpoint health au boot.

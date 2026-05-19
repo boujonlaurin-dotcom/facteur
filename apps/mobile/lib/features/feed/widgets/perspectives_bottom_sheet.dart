@@ -608,18 +608,25 @@ class _PerspectiveCard extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: Text(
-                          perspective.title
+                        child: DiffTitle(
+                          title: perspective.title
                               .replaceAll(RegExp(r'\s+[-–|]\s+[^-–|]+$'), '')
                               .trim(),
-                          style: textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w500,
-                            color: colors.textPrimary,
-                            fontSize:
-                                (textTheme.bodyMedium?.fontSize ?? 14) + 1,
-                          ),
+                          highlightSpans: perspective.highlightSpans,
+                          sharedTokens: perspective.sharedTokens,
+                          biasColor: perspective.getBiasColor(colors),
+                          baseStyle: textTheme.bodyMedium?.copyWith(
+                                color: colors.textPrimary,
+                                fontSize:
+                                    (textTheme.bodyMedium?.fontSize ?? 14) + 1,
+                                height: 1.35,
+                              ) ??
+                              TextStyle(
+                                color: colors.textPrimary,
+                                fontSize: 15,
+                                height: 1.35,
+                              ),
                           maxLines: 4,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const SizedBox(width: 8),
