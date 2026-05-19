@@ -29,9 +29,7 @@ from app.models.user_personalization import UserPersonalization
 from app.models.user_topic_profile import UserTopicProfile
 from app.models.veille import (
     VeilleConfig,
-    VeilleDelivery,
-    VeilleFrequency,
-    VeilleGenerationState,
+    VeilleKeyword,
     VeilleSource,
     VeilleSourceKind,
     VeilleStatus,
@@ -107,14 +105,12 @@ __all__ = [
     "UserEntityPreference",
     # Self-reported "well-informed" score (Story 14.3)
     "UserWellInformedRating",
-    # Ma veille (Epic 18)
+    # Ma veille (Story 23.1)
     "VeilleConfig",
     "VeilleTopic",
     "VeilleSource",
-    "VeilleDelivery",
-    "VeilleFrequency",
+    "VeilleKeyword",
     "VeilleStatus",
     "VeilleTopicKind",
     "VeilleSourceKind",
-    "VeilleGenerationState",
 ]
