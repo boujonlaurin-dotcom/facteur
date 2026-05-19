@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -206,6 +208,10 @@ Future<void> _bootstrap() async {
     final hasSession = Supabase.instance.client.auth.currentSession != null;
     debugPrint('Main: Supabase Session restored immediately: $hasSession');
 
+    // RevenueCat — initialiser avant PostHog pour qu'un éventuel `logIn`
+    // post-restoration de session parte sans race avec le listener auth ci-bas.
+    await _bootstrapRevenueCat();
+
     // Story 14.1 — init PostHog after Supabase so we can piggyback on the
     // auth state stream to identify/reset the distinct_id automatically.
     final posthog = PostHogService();
@@ -243,10 +249,12 @@ Future<void> _bootstrap() async {
               userId: user.id,
               properties: _userIdentifyProperties(user),
             );
+            unawaited(_revenueCatLogIn(user.id));
           }
           break;
         case AuthChangeEvent.signedOut:
           posthog.reset();
+          unawaited(_revenueCatLogOut());
           break;
         default:
           break;
@@ -264,6 +272,56 @@ Future<void> _bootstrap() async {
   debugPrint('Main: Calling runApp...');
   runApp(const ProviderScope(child: FacteurApp()));
   debugPrint('Main: runApp called.');
+}
+
+/// Initialise le SDK RevenueCat. No-op si la clé pour la plateforme courante
+/// n'est pas fournie (dev local sans IAP), ou si on tourne sur une plateforme
+/// non supportée par `purchases_flutter` (web/desktop).
+Future<void> _bootstrapRevenueCat() async {
+  final apiKey = _revenueCatApiKey();
+  if (apiKey.isEmpty) {
+    debugPrint('Main: RevenueCat skipped (no API key for this platform).');
+    return;
+  }
+  try {
+    await Purchases.setLogLevel(LogLevel.warn);
+    await Purchases.configure(PurchasesConfiguration(apiKey));
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user != null) {
+      await Purchases.logIn(user.id);
+    }
+    debugPrint('Main: RevenueCat configured.');
+  } catch (e) {
+    debugPrint('Main: RevenueCat init failed (non-critical): $e');
+  }
+}
+
+Future<void> _revenueCatLogIn(String userId) async {
+  if (_revenueCatApiKey().isEmpty) return;
+  try {
+    await Purchases.logIn(userId);
+  } catch (e) {
+    debugPrint('Main: RevenueCat logIn failed: $e');
+  }
+}
+
+Future<void> _revenueCatLogOut() async {
+  if (_revenueCatApiKey().isEmpty) return;
+  try {
+    await Purchases.logOut();
+  } catch (e) {
+    debugPrint('Main: RevenueCat logOut failed: $e');
+  }
+}
+
+String _revenueCatApiKey() {
+  if (Platform.isIOS || Platform.isMacOS) {
+    return RevenueCatConstants.appleApiKey;
+  }
+  if (Platform.isAndroid) {
+    return RevenueCatConstants.androidApiKey;
+  }
+  return '';
 }
 
 /// User properties pushed à chaque `$identify` PostHog. Permet de filtrer

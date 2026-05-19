@@ -102,11 +102,29 @@ class SupabaseConstants {
 class RevenueCatConstants {
   RevenueCatConstants._();
 
-  /// Clé API iOS
-  static const String iosApiKey = String.fromEnvironment(
+  /// Clé SDK Apple (App Store).
+  /// `REVENUECAT_APPLE_KEY` est le nom canonique ; `REVENUECAT_IOS_KEY` reste
+  /// lu en fallback pour ne pas casser les builds CI déjà configurés.
+  static const String _appleKey = String.fromEnvironment(
+    'REVENUECAT_APPLE_KEY',
+    defaultValue: '',
+  );
+  static const String _iosKeyLegacy = String.fromEnvironment(
     'REVENUECAT_IOS_KEY',
     defaultValue: '',
   );
+  static String get appleApiKey =>
+      _appleKey.isNotEmpty ? _appleKey : _iosKeyLegacy;
+
+  /// Clé SDK Google Play.
+  static const String androidApiKey = String.fromEnvironment(
+    'REVENUECAT_ANDROID_KEY',
+    defaultValue: '',
+  );
+
+  /// Identifiant d'entitlement RevenueCat qui débloque l'accès premium.
+  /// Doit matcher la valeur configurée dans le dashboard RevenueCat.
+  static const String premiumEntitlementId = 'premium';
 
   /// ID du produit mensuel
   static const String monthlyProductId = 'facteur_premium_monthly';
