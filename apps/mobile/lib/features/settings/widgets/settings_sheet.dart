@@ -331,12 +331,6 @@ class _ContentShortcuts extends StatelessWidget {
           ),
           const _Divider(),
           _ShortcutTile(
-            icon: PhosphorIcons.binoculars(PhosphorIconsStyle.regular),
-            label: 'Configurer ma veille',
-            onTap: () => context.pushNamed(RouteNames.veilleConfig),
-          ),
-          const _Divider(),
-          _ShortcutTile(
             icon: PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.regular),
             label: 'Sauvegardés',
             onTap: () => context.pushNamed(RouteNames.saved),

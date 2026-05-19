@@ -1,6 +1,10 @@
 import 'package:flutter/foundation.dart';
 
 /// DTOs miroir de `packages/api/app/schemas/veille.py` (réponses + bodies).
+///
+/// Story 23.1 PR-2 a retiré `frequency`/`day_of_week`/`delivery_hour`/`timezone`/
+/// `last_delivered_at`/`next_scheduled_at` (scheduler async drop) et ajouté
+/// `keywords[]` (angles libres saisis par l'utilisateur).
 
 @immutable
 class VeilleTopicDto {
@@ -97,24 +101,39 @@ class VeilleSourceDto {
 }
 
 @immutable
+class VeilleKeywordDto {
+  final String id;
+  final String keyword;
+  final int position;
+
+  const VeilleKeywordDto({
+    required this.id,
+    required this.keyword,
+    required this.position,
+  });
+
+  factory VeilleKeywordDto.fromJson(Map<String, dynamic> json) {
+    return VeilleKeywordDto(
+      id: json['id'] as String,
+      keyword: json['keyword'] as String,
+      position: (json['position'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+@immutable
 class VeilleConfigDto {
   final String id;
   final String userId;
   final String themeId;
   final String themeLabel;
-  final String frequency;
-  final int? dayOfWeek;
-  final int deliveryHour;
-  final String timezone;
   final String status;
-  final DateTime? lastDeliveredAt;
-  final DateTime? nextScheduledAt;
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<VeilleTopicDto> topics;
   final List<VeilleSourceDto> sources;
+  final List<VeilleKeywordDto> keywords;
   final String? purpose;
-  final String? purposeOther;
   final String? editorialBrief;
   final String? presetId;
 
@@ -123,19 +142,13 @@ class VeilleConfigDto {
     required this.userId,
     required this.themeId,
     required this.themeLabel,
-    required this.frequency,
-    required this.dayOfWeek,
-    required this.deliveryHour,
-    required this.timezone,
     required this.status,
-    required this.lastDeliveredAt,
-    required this.nextScheduledAt,
     required this.createdAt,
     required this.updatedAt,
     required this.topics,
     required this.sources,
+    required this.keywords,
     this.purpose,
-    this.purposeOther,
     this.editorialBrief,
     this.presetId,
   });
@@ -146,17 +159,7 @@ class VeilleConfigDto {
       userId: json['user_id'] as String,
       themeId: json['theme_id'] as String,
       themeLabel: json['theme_label'] as String,
-      frequency: json['frequency'] as String,
-      dayOfWeek: (json['day_of_week'] as num?)?.toInt(),
-      deliveryHour: (json['delivery_hour'] as num?)?.toInt() ?? 7,
-      timezone: (json['timezone'] as String?) ?? 'Europe/Paris',
       status: json['status'] as String,
-      lastDeliveredAt: json['last_delivered_at'] != null
-          ? DateTime.parse(json['last_delivered_at'] as String)
-          : null,
-      nextScheduledAt: json['next_scheduled_at'] != null
-          ? DateTime.parse(json['next_scheduled_at'] as String)
-          : null,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
       topics: ((json['topics'] as List?) ?? const [])
@@ -167,15 +170,18 @@ class VeilleConfigDto {
           .whereType<Map<String, dynamic>>()
           .map(VeilleSourceDto.fromJson)
           .toList(),
+      keywords: ((json['keywords'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(VeilleKeywordDto.fromJson)
+          .toList(),
       purpose: json['purpose'] as String?,
-      purposeOther: json['purpose_other'] as String?,
       editorialBrief: json['editorial_brief'] as String?,
       presetId: json['preset_id'] as String?,
     );
   }
 }
 
-// ─── Bodies (POST/PATCH) ──────────────────────────────────────────────────
+// ─── Bodies (POST) ────────────────────────────────────────────────────────
 
 @immutable
 class VeilleTopicSelectionRequest {
@@ -247,17 +253,29 @@ class VeilleSourceSelectionRequest {
 }
 
 @immutable
+class VeilleKeywordSelectionRequest {
+  final String keyword;
+  final int position;
+
+  const VeilleKeywordSelectionRequest({
+    required this.keyword,
+    this.position = 0,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'keyword': keyword,
+        'position': position,
+      };
+}
+
+@immutable
 class VeilleConfigUpsertRequest {
   final String themeId;
   final String themeLabel;
   final List<VeilleTopicSelectionRequest> topics;
   final List<VeilleSourceSelectionRequest> sourceSelections;
-  final String frequency;
-  final int? dayOfWeek;
-  final int deliveryHour;
-  final String timezone;
+  final List<VeilleKeywordSelectionRequest> keywords;
   final String? purpose;
-  final String? purposeOther;
   final String? editorialBrief;
   final String? presetId;
 
@@ -266,12 +284,8 @@ class VeilleConfigUpsertRequest {
     required this.themeLabel,
     required this.topics,
     required this.sourceSelections,
-    required this.frequency,
-    required this.dayOfWeek,
-    this.deliveryHour = 7,
-    this.timezone = 'Europe/Paris',
+    this.keywords = const [],
     this.purpose,
-    this.purposeOther,
     this.editorialBrief,
     this.presetId,
   });
@@ -281,39 +295,9 @@ class VeilleConfigUpsertRequest {
         'theme_label': themeLabel,
         'topics': topics.map((t) => t.toJson()).toList(),
         'source_selections': sourceSelections.map((s) => s.toJson()).toList(),
-        'frequency': frequency,
-        if (dayOfWeek != null) 'day_of_week': dayOfWeek,
-        'delivery_hour': deliveryHour,
-        'timezone': timezone,
-        // Toujours envoyés (même si null) : permet de clear côté serveur.
+        'keywords': keywords.map((k) => k.toJson()).toList(),
         'purpose': purpose,
-        'purpose_other': purposeOther,
         'editorial_brief': editorialBrief,
         'preset_id': presetId,
-      };
-}
-
-@immutable
-class VeilleConfigPatchRequest {
-  final String? frequency;
-  final int? dayOfWeek;
-  final int? deliveryHour;
-  final String? timezone;
-  final String? status;
-
-  const VeilleConfigPatchRequest({
-    this.frequency,
-    this.dayOfWeek,
-    this.deliveryHour,
-    this.timezone,
-    this.status,
-  });
-
-  Map<String, dynamic> toJson() => {
-        if (frequency != null) 'frequency': frequency,
-        if (dayOfWeek != null) 'day_of_week': dayOfWeek,
-        if (deliveryHour != null) 'delivery_hour': deliveryHour,
-        if (timezone != null) 'timezone': timezone,
-        if (status != null) 'status': status,
       };
 }

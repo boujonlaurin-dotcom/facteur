@@ -96,6 +96,11 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
           if (topic != null) {
             out.add(_FavoriteChipData.topic(topic: topic));
           }
+        case VeilleFavoriteRef():
+          // La veille n'apparaît pas dans le filter sheet feed (Story 22.1) —
+          // c'est un type de favori avec son propre flow d'édition/archive
+          // depuis Mes intérêts (Story 23.2 PR-4).
+          break;
       }
     }
     return out;

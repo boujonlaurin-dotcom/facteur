@@ -1,23 +1,17 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/services/push_notification_service.dart';
-import '../data/veille_mock_data.dart';
 import '../models/veille_config.dart';
 import '../models/veille_config_dto.dart';
-import '../models/veille_suggestion.dart';
 import '../repositories/veille_repository.dart';
 import 'veille_active_config_provider.dart';
 import 'veille_repository_provider.dart';
-import 'veille_suggestions_provider.dart';
 import 'veille_themes_provider.dart';
 
-/// Métadonnées attachées à une source dans le state du flow. Permet de
-/// distinguer les sources catalogue (UUID API) des sources mock-only ; au
-/// submit on filtre les mock-only et on envoie un `source_id` (UUID) ou un
+/// Métadonnées attachées à une source dans le state du flow.
+///
+/// Permet de distinguer les sources catalogue (UUID API) des sources mock-only ;
+/// au submit on filtre les mock-only et on envoie un `source_id` (UUID) ou un
 /// `niche_candidate{name, url}` selon ce qui est dispo.
 @immutable
 class VeilleSourceMeta {
@@ -38,48 +32,62 @@ class VeilleSourceMeta {
   });
 }
 
-/// État du flow de configuration de la veille (4 étapes).
+/// État du flow de configuration de la veille — Story 23.2 PR-4.
 ///
-/// `step` est de 1..4. Quand `loadingFrom` est non-null, on affiche l'écran
-/// de transition LLM entre `loadingFrom` et `loadingFrom + 1`.
+/// Flow : intro → step1 (thème) → step1.5 (preset, optionnel) → step2 (sujets,
+/// skippable) → step3 (sources). Plus de step4 frequency (drop scheduler).
 @immutable
 class VeilleConfigState {
+  /// Step courant (1..3). Pas de loadingFrom : la curation LLM async est
+  /// remplacée par un filtre temps-réel côté backend.
   final int step;
-  final int? loadingFrom;
 
-  /// Vrai après que l'utilisateur a passé l'écran d'introduction (« C'est
-  /// parti »). Tant que `false` et qu'il n'y a pas de config active, le
-  /// host rend `VeilleIntroScreen` au lieu de Step1.
+  /// Vrai après que l'utilisateur a passé l'écran d'introduction. Tant que
+  /// `false` et qu'il n'y a pas de config active, le host rend
+  /// `VeilleIntroScreen` au lieu de Step1.
   final bool introCompleted;
 
   /// Slug du pré-set en cours de prévisualisation (Step 1.5). Quand non-null,
   /// `veille_config_screen` rend `Step1_5PresetPreviewScreen` au lieu du
-  /// step courant. PR A : sentinel uniquement, persistance push en PR B.
+  /// step courant.
   final String? previewPresetId;
 
   final String? selectedTheme;
   final Set<String> selectedTopics;
   final Set<String> selectedSuggestions;
+
   /// Sources sélectionnées par le user pour cette veille (liste unique).
   /// `sourcesMeta[id].kind` distingue 'followed' / 'niche' pour le wire backend.
   final Set<String> selectedSourceIds;
-  final VeilleFrequency frequency;
-  final VeilleDay day;
 
-  /// Topics « custom » saisis par le user dans Step 1 (input libre).
-  /// Ils sont matérialisés en `VeilleTopic` côté front pour l'affichage,
-  /// puis envoyés au backend avec `kind='custom'` dans `selectedTopics`.
+  /// Topics « custom » saisis par le user (input libre). Matérialisés en
+  /// `VeilleTopic` côté front pour l'affichage, puis envoyés au backend avec
+  /// `kind='custom'` dans `selectedTopics`.
   final List<VeilleTopic> customTopics;
 
   /// Mapping slug → label pour topics (mock défauts + override API).
   final Map<String, String> topicLabels;
 
-  /// Mapping slug → metadata pour sources (mock défauts + override API).
+  /// Mapping slug → metadata pour sources.
   final Map<String, VeilleSourceMeta> sourcesMeta;
 
-  /// V1 personalization (PR A : capturés via applyPreset, push backend en PR B).
+  /// Angles libres / mots-clés saisis en mode advanced (step2). Normalisés
+  /// lowercase, max 60 chars, dédupliqués. Mappés sur `VeilleKeywordSelection`
+  /// backend.
+  final Set<String> keywords;
+
+  /// Toggle "Configuration avancée" sur step2/step3. Quand `true`, révèle les
+  /// champs free-text (keywords + brief éditorial step2, source URL step3).
+  final bool advancedMode;
+
+  /// Vrai si l'utilisateur a tapé "Passer cette étape" sur step2. Persiste
+  /// la décision pour la durée du flow (re-back en step2 ne re-déclenche pas
+  /// l'écran avec ses champs vides).
+  final bool skippedStep2;
+
+  /// V1 personalization. `purpose` = slug court ("apprendre"/"transmettre"/…)
+  /// hydraté depuis un preset.
   final String? purpose;
-  final String? purposeOther;
   final String? editorialBrief;
   final String? presetId;
 
@@ -91,52 +99,45 @@ class VeilleConfigState {
 
   const VeilleConfigState({
     required this.step,
-    required this.loadingFrom,
     required this.introCompleted,
     required this.previewPresetId,
     required this.selectedTheme,
     required this.selectedTopics,
     required this.selectedSuggestions,
     required this.selectedSourceIds,
-    required this.frequency,
-    required this.day,
     required this.customTopics,
     required this.topicLabels,
     required this.sourcesMeta,
+    required this.keywords,
+    required this.advancedMode,
+    required this.skippedStep2,
     required this.purpose,
-    required this.purposeOther,
     required this.editorialBrief,
     required this.presetId,
     required this.isSubmitting,
     required this.lastError,
   });
 
-  factory VeilleConfigState.initial() => VeilleConfigState(
+  factory VeilleConfigState.initial() => const VeilleConfigState(
         step: 1,
-        loadingFrom: null,
         introCompleted: false,
         previewPresetId: null,
         selectedTheme: null,
-        selectedTopics: const {},
-        selectedSuggestions: const {},
-        selectedSourceIds: {
-          ...VeilleMockData.defaultFollowedSources,
-          ...VeilleMockData.defaultNicheSources,
-        },
-        frequency: VeilleFrequency.weekly,
-        day: VeilleDay.mon,
-        customTopics: const [],
-        topicLabels: const {},
-        sourcesMeta: const {},
+        selectedTopics: <String>{},
+        selectedSuggestions: <String>{},
+        selectedSourceIds: <String>{},
+        customTopics: [],
+        topicLabels: {},
+        sourcesMeta: {},
+        keywords: <String>{},
+        advancedMode: false,
+        skippedStep2: false,
         purpose: null,
-        purposeOther: null,
         editorialBrief: null,
         presetId: null,
         isSubmitting: false,
         lastError: null,
       );
-
-  bool get isLoading => loadingFrom != null;
 
   int get totalSelectedAngles =>
       selectedTopics.length + selectedSuggestions.length;
@@ -145,26 +146,25 @@ class VeilleConfigState {
 
   /// Nombre de sources réellement persistables (avec `apiSourceId`).
   /// Une source mock sans `apiSourceId` est filtrée par `_buildUpsertRequest`,
-  /// donc elle ne compte pas pour autoriser le passage à Step 4.
+  /// donc elle ne compte pas pour autoriser le passage à step suivant.
   int get realSelectedSourceCount =>
       selectedSourceIds.where((id) => sourcesMeta[id]?.apiSourceId != null).length;
 
   VeilleConfigState copyWith({
     int? step,
-    Object? loadingFrom = _Sentinel.value,
     bool? introCompleted,
     Object? previewPresetId = _Sentinel.value,
     Object? selectedTheme = _Sentinel.value,
     Set<String>? selectedTopics,
     Set<String>? selectedSuggestions,
     Set<String>? selectedSourceIds,
-    VeilleFrequency? frequency,
-    VeilleDay? day,
     List<VeilleTopic>? customTopics,
     Map<String, String>? topicLabels,
     Map<String, VeilleSourceMeta>? sourcesMeta,
+    Set<String>? keywords,
+    bool? advancedMode,
+    bool? skippedStep2,
     Object? purpose = _Sentinel.value,
-    Object? purposeOther = _Sentinel.value,
     Object? editorialBrief = _Sentinel.value,
     Object? presetId = _Sentinel.value,
     bool? isSubmitting,
@@ -172,9 +172,6 @@ class VeilleConfigState {
   }) =>
       VeilleConfigState(
         step: step ?? this.step,
-        loadingFrom: loadingFrom == _Sentinel.value
-            ? this.loadingFrom
-            : loadingFrom as int?,
         introCompleted: introCompleted ?? this.introCompleted,
         previewPresetId: previewPresetId == _Sentinel.value
             ? this.previewPresetId
@@ -185,16 +182,14 @@ class VeilleConfigState {
         selectedTopics: selectedTopics ?? this.selectedTopics,
         selectedSuggestions: selectedSuggestions ?? this.selectedSuggestions,
         selectedSourceIds: selectedSourceIds ?? this.selectedSourceIds,
-        frequency: frequency ?? this.frequency,
-        day: day ?? this.day,
         customTopics: customTopics ?? this.customTopics,
         topicLabels: topicLabels ?? this.topicLabels,
         sourcesMeta: sourcesMeta ?? this.sourcesMeta,
+        keywords: keywords ?? this.keywords,
+        advancedMode: advancedMode ?? this.advancedMode,
+        skippedStep2: skippedStep2 ?? this.skippedStep2,
         purpose:
             purpose == _Sentinel.value ? this.purpose : purpose as String?,
-        purposeOther: purposeOther == _Sentinel.value
-            ? this.purposeOther
-            : purposeOther as String?,
         editorialBrief: editorialBrief == _Sentinel.value
             ? this.editorialBrief
             : editorialBrief as String?,
@@ -204,18 +199,6 @@ class VeilleConfigState {
         lastError:
             lastError == _Sentinel.value ? this.lastError : lastError as String?,
       );
-
-  static Map<String, String> _initialTopicLabels() {
-    final out = <String, String>{};
-    for (final t in VeilleMockData.presetTopics) {
-      out[t.id] = t.label;
-    }
-    for (final t in VeilleMockData.suggestedTopics) {
-      out[t.id] = t.label;
-    }
-    return out;
-  }
-
 }
 
 enum _Sentinel { value }
@@ -225,30 +208,8 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
   final Ref _ref;
 
-  /// Durée minimale d'affichage de l'animation halo (`FlowLoadingScreen`)
-  /// entre deux steps. En-dessous, la transition flashe et l'animation
-  /// halo + checklist n'a pas le temps de jouer.
-  static const Duration _loadingMinDuration = Duration(milliseconds: 1500);
-
-  /// Cap maximal d'attente du provider pré-fetché. Au-delà, on laisse
-  /// passer à l'étape suivante : Step2/Step3 affichera son skeleton
-  /// normal le temps que le LLM réponde.
-  ///
-  /// Step1 → Step2 (`from=1`) : pré-fetch topics rapide (~3-5 s observés),
-  /// 8 s suffisent.
-  ///
-  /// Step2 → Step3 (`from=2`) : la requête `/suggestions/sources` enchaîne
-  /// LLM Mistral (~16 s) + boucle d'ingestion HTTP parallèle (~3-8 s),
-  /// donc ~19-24 s typique. On porte le cap à 25 s pour que la transition
-  /// halo joue toute la durée du fetch (5 s de marge sous le `Dio.timeout`
-  /// de 30 s — `apps/mobile/lib/config/constants.dart:31`). Au-delà, le
-  /// `_awaitAsyncSettled` complète sur la branche error de Dio et la
-  /// transition se ferme proprement.
-  @visibleForTesting
-  static Duration loadingMaxDurationFor(int from) =>
-      from == 2 ? const Duration(seconds: 25) : const Duration(seconds: 8);
-
-  static const Duration _veilleNotificationLeadTime = Duration(minutes: 30);
+  /// Limite backend (`MAX_KEYWORDS_PER_CONFIG` dans `schemas/veille.py`).
+  static const int maxKeywords = 20;
 
   void selectTheme(String id) {
     // Changer de thème reset les topics pré-sélectionnés (les preset topics
@@ -339,24 +300,52 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
         selectedSourceIds: _toggle(state.selectedSourceIds, id),
       );
 
-  void setFrequency(VeilleFrequency f) => state = state.copyWith(frequency: f);
-  void setDay(VeilleDay d) => state = state.copyWith(day: d);
-
-  /// Quand on choisit un purpose autre que 'autre', on clear `purposeOther`
-  /// pour éviter qu'un free-text orphelin soit envoyé au LLM.
-  void setPurpose(String? slug) {
-    if (slug == state.purpose) return;
-    if (slug == 'autre') {
-      state = state.copyWith(purpose: slug);
-    } else {
-      state = state.copyWith(purpose: slug, purposeOther: null);
-    }
+  /// Ajoute un mot-clé / angle libre (step2 advanced). Normalise lowercase,
+  /// dédupe, respecte la cap backend (`maxKeywords`).
+  void addKeyword(String raw) {
+    final kw = raw.trim().toLowerCase();
+    if (kw.length < 2 || kw.length > 60) return;
+    if (state.keywords.contains(kw)) return;
+    if (state.keywords.length >= maxKeywords) return;
+    state = state.copyWith(keywords: {...state.keywords, kw});
   }
 
-  void setPurposeOther(String? value) {
-    final normalized = _emptyToNull(value);
-    if (normalized == state.purposeOther) return;
-    state = state.copyWith(purposeOther: normalized);
+  void removeKeyword(String kw) {
+    if (!state.keywords.contains(kw)) return;
+    final next = Set<String>.from(state.keywords)..remove(kw);
+    state = state.copyWith(keywords: next);
+  }
+
+  /// Toggle "Configuration avancée" sur step2/step3. Quand `false`, on
+  /// préserve les valeurs déjà saisies (keywords/brief) — l'utilisateur peut
+  /// les ré-afficher sans les perdre.
+  void setAdvancedMode(bool value) {
+    if (state.advancedMode == value) return;
+    state = state.copyWith(advancedMode: value);
+  }
+
+  /// L'utilisateur a tapé "Passer cette étape" sur step2. On clear les
+  /// sélections optionnelles (suggestions LLM dropped, donc déjà vide ;
+  /// keywords + brief restent vides pour ne pas envoyer un signal involontaire)
+  /// et on bascule en step3.
+  void skipStep2() {
+    if (state.step != 2) return;
+    state = state.copyWith(
+      step: 3,
+      skippedStep2: true,
+      selectedSuggestions: const {},
+      keywords: const {},
+      editorialBrief: null,
+    );
+  }
+
+  /// Quand on choisit un purpose autre que 'autre', on clear toute valeur
+  /// orpheline. `purpose_other` a été drop du backend en PR-2 — le slug
+  /// "autre" reste autorisé pour la rétrocompat user-side mais ne porte
+  /// plus de free-text.
+  void setPurpose(String? slug) {
+    if (slug == state.purpose) return;
+    state = state.copyWith(purpose: slug);
   }
 
   void setEditorialBrief(String? value) {
@@ -370,118 +359,21 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     return trimmed.isEmpty ? null : trimmed;
   }
 
-  /// Avance d'une étape, en passant par un loading screen IA (sauf si on est
-  /// déjà sur la dernière étape — auquel cas `submit()` doit être appelé).
-  ///
-  /// Durée adaptive : `min(_loadingMinDuration, attente du provider cible
-  /// jusqu'à `data|error`, cap `loadingMaxDurationFor(from)`)`. L'animation halo
-  /// joue toujours au moins 1.5 s pour la perception ; au-delà, on
-  /// attend que le pré-fetch (déclenché par `FlowLoadingScreen` via les
-  /// params) soit terminé pour arriver sur Step2/Step3 avec les
-  /// suggestions déjà chargées.
-  /// Subscriptions actives au provider pré-fetché pendant `_waitAndAdvance`.
-  /// On les garde sur le notifier pour pouvoir les `close()` proprement
-  /// si l'utilisateur quitte le flow (close, reset, dispose) pendant
-  /// l'animation halo — sinon le `Completer` sous-jacent ne complète
-  /// jamais et la subscription leak.
-  ProviderSubscription<Object?>? _pendingSub;
-  Completer<void>? _pendingCompleter;
-
+  /// Avance d'une étape. Cap à 3 (était 4 avant le drop step4 frequency).
   void goNext() {
-    if (state.isLoading || state.step >= 4) return;
-    final from = state.step;
-    state = state.copyWith(loadingFrom: from);
-    _waitAndAdvance(from);
+    if (state.step >= 3) return;
+    state = state.copyWith(step: state.step + 1);
   }
 
-  Future<void> _waitAndAdvance(int from) async {
-    final minDelay = Future<void>.delayed(_loadingMinDuration);
-    final providerReady = _waitProviderReady(from);
-
-    await minDelay;
-    if (providerReady != null) {
-      await providerReady.timeout(
-        loadingMaxDurationFor(from),
-        onTimeout: () {},
-      );
-    }
-
-    // Sortie de flow (close/reset/submit) ou state stale → on ferme la
-    // subscription tout de suite et on ne pousse pas la transition.
-    if (!mounted || state.loadingFrom != from) {
-      _disposePending();
-      return;
-    }
-    state = state.copyWith(step: from + 1, loadingFrom: null);
-
-    // Garde la subscription helper vivante jusqu'au frame suivant : sinon
-    // le provider `family.autoDispose` perd son seul subscriber entre la
-    // fermeture ici et le `ref.watch` du Step suivant, est disposé, puis
-    // recréé → l'utilisateur voit un skeleton au lieu des données
-    // pré-fetchées.
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      _disposePending();
-    });
+  /// Recul instantané.
+  void goBack() {
+    if (state.step <= 1) return;
+    state = state.copyWith(step: state.step - 1);
   }
 
-  /// Renvoie un Future qui complète quand le provider de suggestions
-  /// ciblé pour le prochain step a `data|error`. `null` si pas de
-  /// pré-fetch à attendre (entre Step3 et Step4).
-  Future<void>? _waitProviderReady(int from) {
-    if (from == 1) {
-      final params = topicsParamsFromState();
-      if (params == null) return null;
-      return _awaitAsyncSettled(veilleTopicSuggestionsProvider(params));
-    }
-    if (from == 2) {
-      final params = sourcesParamsFromState();
-      if (params == null) return null;
-      return _awaitAsyncSettled(veilleSourceSuggestionsProvider(params));
-    }
-    return null;
-  }
-
-  /// Attend que `provider` sorte du `loading` (`data` ou `error`). Court-circuite
-  /// si l'état est déjà settled. La subscription est stockée sur le notifier
-  /// pour permettre `_disposePending()` de l'annuler en cas de sortie de flow.
-  Future<void> _awaitAsyncSettled<T>(
-    ProviderListenable<AsyncValue<T>> provider,
-  ) {
-    final current = _ref.read(provider);
-    if (current.hasValue || current.hasError) return Future.value();
-
-    _disposePending();
-    final completer = Completer<void>();
-    _pendingCompleter = completer;
-    _pendingSub = _ref.listen<AsyncValue<T>>(
-      provider,
-      (_, next) {
-        if (!completer.isCompleted &&
-            (next.hasValue || next.hasError)) {
-          completer.complete();
-        }
-      },
-      fireImmediately: true,
-    );
-    return completer.future;
-  }
-
-  void _disposePending() {
-    _pendingSub?.close();
-    _pendingSub = null;
-    if (_pendingCompleter != null && !_pendingCompleter!.isCompleted) {
-      _pendingCompleter!.complete();
-    }
-    _pendingCompleter = null;
-  }
-
-  /// Construit les params topics depuis le state courant. Utilisé par
-  /// `goNext()` pour pré-fetcher pendant l'animation halo, ET par
-  /// `veille_config_screen` pour passer les mêmes params au
-  /// `FlowLoadingScreen` (sinon double instance via `family.autoDispose`).
-  ///
-  /// **Doit produire des params strictement identiques** à ceux instanciés
-  /// dans `step2_suggestions_screen.dart` (theme + topics triés).
+  /// Construit les params topics depuis le state courant. Conservé pour la
+  /// rétrocompat des callers existants (steps qui passent ces params pour
+  /// hydrater une preview LLM — désormais no-op côté backend).
   VeilleTopicsSuggestionParams? topicsParamsFromState() {
     final themeId = state.selectedTheme;
     if (themeId == null) return null;
@@ -490,15 +382,11 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       themeLabel: veilleThemeLabelForSlug(themeId),
       selectedTopicIds: state.selectedTopics.toList()..sort(),
       purpose: state.purpose,
-      purposeOther: state.purposeOther,
       editorialBrief: state.editorialBrief,
     );
   }
 
-  /// Construit les params sources depuis le state courant. **Doit produire
-  /// des params strictement identiques** à ceux instanciés dans
-  /// `step3_sources_screen.dart` (theme + topicLabels en ordre
-  /// d'insertion Set : selectedTopics puis selectedSuggestions).
+  /// Idem pour les sources.
   VeilleSourcesSuggestionParams? sourcesParamsFromState() {
     final themeId = state.selectedTheme;
     if (themeId == null) return null;
@@ -510,72 +398,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       themeId: themeId,
       topicLabels: topicLabels,
       purpose: state.purpose,
-      purposeOther: state.purposeOther,
       editorialBrief: state.editorialBrief,
-    );
-  }
-
-  /// Recul instantané (pas de loading).
-  void goBack() {
-    if (state.isLoading) return;
-    if (state.step <= 1) return;
-    state = state.copyWith(step: state.step - 1);
-  }
-
-  /// Hydrate l'état avec des suggestions topics venues de l'API (étape 2).
-  /// Le mapping slug → label est mis à jour ; les sélections existantes ne
-  /// sont pas touchées.
-  void applyTopicSuggestions(List<VeilleTopicSuggestion> apiTopics) {
-    if (apiTopics.isEmpty) return;
-    final next = Map<String, String>.from(state.topicLabels);
-    for (final t in apiTopics) {
-      next[t.topicId] = t.label;
-    }
-    state = state.copyWith(topicLabels: next);
-  }
-
-  /// Hydrate l'état avec des suggestions sources venues de l'API (étape 3).
-  ///
-  /// Les sources API alimentent toujours `sourcesMeta`. Pour les sélections
-  /// par défaut, on ne pré-coche que lors de la 1ère hydratation API (quand
-  /// aucune sélection user ne référence un UUID API). Une invalidation ulté-
-  /// rieure (« Proposer plus de sources ») ne doit pas wipe les choix user.
-  void applySourceSuggestions(VeilleSourceSuggestionsResponse apiSources) {
-    // Guard : si toutes les sources sont déjà dans `sourcesMeta` à l'identique,
-    // on évite une réallocation + notify (ref.listen de step3 fire à chaque
-    // emission AsyncValue.data même quand rien n'a changé).
-    final allAlreadyApplied = apiSources.sources.every((s) {
-      final existing = state.sourcesMeta[s.sourceId];
-      return existing != null &&
-          existing.name == s.name &&
-          existing.url == s.url &&
-          existing.why == s.why;
-    });
-    if (allAlreadyApplied) return;
-
-    final nextMeta = Map<String, VeilleSourceMeta>.from(state.sourcesMeta);
-    for (final s in apiSources.sources) {
-      nextMeta[s.sourceId] = VeilleSourceMeta(
-        slug: s.sourceId,
-        name: s.name,
-        kind: s.isAlreadyFollowed ? 'followed' : 'niche',
-        apiSourceId: s.sourceId,
-        url: s.url,
-        why: s.why,
-      );
-    }
-
-    final hasUserApiSelection = state.selectedSourceIds
-        .any((slug) => state.sourcesMeta[slug]?.apiSourceId != null);
-
-    if (hasUserApiSelection) {
-      state = state.copyWith(sourcesMeta: nextMeta);
-      return;
-    }
-
-    state = state.copyWith(
-      sourcesMeta: nextMeta,
-      selectedSourceIds: apiSources.sources.map((s) => s.sourceId).toSet(),
     );
   }
 
@@ -603,77 +426,6 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     );
   }
 
-  /// Sortie de la 4e étape — POST /api/veille/config + planification de la
-  /// notif locale à `next_scheduled_at + 30 min`.
-  ///
-  /// Les sources mock-only (sans `apiSourceId`) sont filtrées : seules les
-  /// sources catalogue (UUID API) sont envoyées, sinon le backend rejette.
-  Future<void> submit() async {
-    if (state.isSubmitting) return;
-    state = state.copyWith(isSubmitting: true, lastError: null);
-
-    try {
-      final body = _buildUpsertRequest(state);
-      final repo = _ref.read(veilleRepositoryProvider);
-      final cfg = await repo.upsertConfig(body);
-
-      // Best-effort — un échec de planification ne doit pas bloquer la
-      // soumission. La notif locale est rejouée à l'open.
-      try {
-        if (cfg.nextScheduledAt != null) {
-          final scheduledAt =
-              cfg.nextScheduledAt!.add(_veilleNotificationLeadTime);
-          await PushNotificationService()
-              .scheduleVeilleNotification(scheduledAt: scheduledAt);
-        }
-      } catch (e) {
-        debugPrint('VeilleConfigNotifier: schedule notif failed: $e');
-      }
-
-      _ref
-          .read(veilleActiveConfigProvider.notifier)
-          .hydrateFromServer(cfg);
-      state = state.copyWith(isSubmitting: false);
-    } on VeilleApiException catch (e) {
-      state = state.copyWith(
-        isSubmitting: false,
-        lastError: e.message,
-      );
-      rethrow;
-    } catch (e) {
-      state = state.copyWith(
-        isSubmitting: false,
-        lastError: e.toString(),
-      );
-      rethrow;
-    }
-  }
-
-  /// Soumet la config puis lance la génération immédiate du premier digest.
-  /// Renvoie le `delivery_id` à poll côté UI. Si une livraison existe déjà
-  /// (403 — anti-doublon backend), on récupère la dernière via
-  /// `listDeliveries` plutôt que de remonter une erreur.
-  Future<String?> submitAndGenerateFirst() async {
-    await submit();
-    final repo = _ref.read(veilleRepositoryProvider);
-    try {
-      final res = await repo.generateFirstDelivery();
-      return res.deliveryId;
-    } on VeilleApiException catch (e) {
-      if (e.statusCode == 403) {
-        final list = await repo.listDeliveries(limit: 1);
-        return list.isEmpty ? null : list.first.id;
-      }
-      rethrow;
-    }
-  }
-
-  /// Affiche/masque le loading screen `from=4` (post-submit, en attente de la
-  /// première livraison). `null` = sortir du loading.
-  void setLoadingFrom(int? from) {
-    state = state.copyWith(loadingFrom: from);
-  }
-
   /// L'utilisateur a tapé « C'est parti » sur l'écran d'introduction —
   /// l'intro disparaît, on bascule sur Step1.
   void completeIntro() {
@@ -696,9 +448,9 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
   /// Hydrate le state depuis un pré-set : thème, topics (matérialisés en
   /// custom topics + cochés), sources curées (followed + apiSourceId), purpose
-  /// + brief éditorial. Si `jumpToStep4` → bascule direct au rythme
-  /// (« Continuer avec ce pré-set »). Sinon retour Step 1 personnalisable.
-  void applyPreset(VeillePreset preset, {required bool jumpToStep4}) {
+  /// + brief éditorial. Le user retombe en Step 1 (était possible de jumper
+  /// à step4 dans l'ancien flow — drop avec step4).
+  void applyPreset(VeillePreset preset) {
     final topicSlugs = <String>{};
     final newCustomTopics = <VeilleTopic>[];
     final nextLabels = Map<String, String>.from(state.topicLabels);
@@ -727,7 +479,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     }
 
     state = state.copyWith(
-      step: jumpToStep4 ? 4 : 1,
+      step: 1,
       introCompleted: true,
       previewPresetId: null,
       selectedTheme: preset.themeId,
@@ -738,13 +490,42 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       selectedSourceIds: followed,
       sourcesMeta: nextMeta,
       purpose: preset.purposes.isNotEmpty ? preset.purposes.first : null,
-      purposeOther: null,
       editorialBrief: preset.editorialBrief.isEmpty ? null : preset.editorialBrief,
       presetId: preset.slug,
     );
   }
 
   void clearError() => state = state.copyWith(lastError: null);
+
+  /// POST /api/veille/config — succès → hydrate `veilleActiveConfigProvider`
+  /// pour que la home (Mes intérêts / Tournée) voie la veille immédiatement.
+  Future<void> submit() async {
+    if (state.isSubmitting) return;
+    state = state.copyWith(isSubmitting: true, lastError: null);
+
+    try {
+      final body = _buildUpsertRequest(state);
+      final repo = _ref.read(veilleRepositoryProvider);
+      final cfg = await repo.upsertConfig(body);
+
+      _ref
+          .read(veilleActiveConfigProvider.notifier)
+          .hydrateFromServer(cfg);
+      state = state.copyWith(isSubmitting: false);
+    } on VeilleApiException catch (e) {
+      state = state.copyWith(
+        isSubmitting: false,
+        lastError: e.message,
+      );
+      rethrow;
+    } catch (e) {
+      state = state.copyWith(
+        isSubmitting: false,
+        lastError: e.toString(),
+      );
+      rethrow;
+    }
+  }
 
   /// Hydrate l'état depuis une config existante (mode édition).
   ///
@@ -791,6 +572,8 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       selectedSourceIds.add(s.source.id);
     }
 
+    final keywords = cfg.keywords.map((k) => k.keyword).toSet();
+
     state = state.copyWith(
       step: 1,
       introCompleted: true,
@@ -801,42 +584,18 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       topicLabels: topicLabels,
       selectedSourceIds: selectedSourceIds,
       sourcesMeta: sourcesMeta,
-      frequency: _frequencyFromWire(cfg.frequency),
-      day: _dayFromWire(cfg.dayOfWeek),
+      keywords: keywords,
+      advancedMode: keywords.isNotEmpty || (cfg.editorialBrief?.isNotEmpty ?? false),
       purpose: cfg.purpose,
-      purposeOther: cfg.purposeOther,
       editorialBrief: cfg.editorialBrief,
       presetId: cfg.presetId,
     );
   }
 
-  static VeilleFrequency _frequencyFromWire(String wire) => switch (wire) {
-        'biweekly' => VeilleFrequency.biweekly,
-        'monthly' => VeilleFrequency.monthly,
-        _ => VeilleFrequency.weekly,
-      };
-
-  static VeilleDay _dayFromWire(int? day) => switch (day) {
-        1 => VeilleDay.tue,
-        2 => VeilleDay.wed,
-        3 => VeilleDay.thu,
-        4 => VeilleDay.fri,
-        5 => VeilleDay.sat,
-        6 => VeilleDay.sun,
-        _ => VeilleDay.mon,
-      };
-
   /// Réinitialise le flow (utilisé après suppression / pour repartir d'une
-  /// nouvelle config depuis le dashboard).
+  /// nouvelle config).
   void reset() {
-    _disposePending();
     state = VeilleConfigState.initial();
-  }
-
-  @override
-  void dispose() {
-    _disposePending();
-    super.dispose();
   }
 
   Set<String> _toggle(Set<String> set, String id) {
@@ -890,42 +649,106 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       );
     }
 
+    final keywords = <VeilleKeywordSelectionRequest>[];
+    var kpos = 0;
+    for (final kw in s.keywords) {
+      keywords.add(
+        VeilleKeywordSelectionRequest(keyword: kw, position: kpos++),
+      );
+    }
+
     return VeilleConfigUpsertRequest(
       themeId: themeId,
       themeLabel: themeLabel,
       topics: topics,
       sourceSelections: sourceSelections,
-      frequency: _frequencyToWire(s.frequency),
-      dayOfWeek: _dayToWire(s.day, s.frequency),
+      keywords: keywords,
       purpose: s.purpose,
-      purposeOther: s.purposeOther,
       editorialBrief: s.editorialBrief,
       presetId: s.presetId,
     );
   }
-
-  static String _frequencyToWire(VeilleFrequency f) => switch (f) {
-        VeilleFrequency.weekly => 'weekly',
-        VeilleFrequency.biweekly => 'biweekly',
-        VeilleFrequency.monthly => 'monthly',
-      };
-
-  static int? _dayToWire(VeilleDay d, VeilleFrequency f) {
-    if (f == VeilleFrequency.monthly) return null;
-    return switch (d) {
-      VeilleDay.mon => 0,
-      VeilleDay.tue => 1,
-      VeilleDay.wed => 2,
-      VeilleDay.thu => 3,
-      VeilleDay.fri => 4,
-      VeilleDay.sat => 5,
-      VeilleDay.sun => 6,
-    };
-  }
-
 }
 
 final veilleConfigProvider =
     StateNotifierProvider.autoDispose<VeilleConfigNotifier, VeilleConfigState>(
   (ref) => VeilleConfigNotifier(ref),
 );
+
+/// Params placeholders — conservés pour compat des steps qui les
+/// instanciaient pour pré-fetch LLM. Le pré-fetch est désormais un no-op
+/// (filtre temps-réel côté backend) mais les types restent pour ne pas
+/// casser les widgets de steps avant leur refonte complète (commit 3).
+@immutable
+class VeilleTopicsSuggestionParams {
+  final String themeId;
+  final String themeLabel;
+  final List<String> selectedTopicIds;
+  final String? purpose;
+  final String? editorialBrief;
+
+  const VeilleTopicsSuggestionParams({
+    required this.themeId,
+    required this.themeLabel,
+    required this.selectedTopicIds,
+    this.purpose,
+    this.editorialBrief,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is VeilleTopicsSuggestionParams &&
+      other.themeId == themeId &&
+      other.themeLabel == themeLabel &&
+      _listEquals(other.selectedTopicIds, selectedTopicIds) &&
+      other.purpose == purpose &&
+      other.editorialBrief == editorialBrief;
+
+  @override
+  int get hashCode => Object.hash(
+        themeId,
+        themeLabel,
+        Object.hashAll(selectedTopicIds),
+        purpose,
+        editorialBrief,
+      );
+}
+
+@immutable
+class VeilleSourcesSuggestionParams {
+  final String themeId;
+  final List<String> topicLabels;
+  final String? purpose;
+  final String? editorialBrief;
+
+  const VeilleSourcesSuggestionParams({
+    required this.themeId,
+    required this.topicLabels,
+    this.purpose,
+    this.editorialBrief,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is VeilleSourcesSuggestionParams &&
+      other.themeId == themeId &&
+      _listEquals(other.topicLabels, topicLabels) &&
+      other.purpose == purpose &&
+      other.editorialBrief == editorialBrief;
+
+  @override
+  int get hashCode => Object.hash(
+        themeId,
+        Object.hashAll(topicLabels),
+        purpose,
+        editorialBrief,
+      );
+}
+
+bool _listEquals(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}

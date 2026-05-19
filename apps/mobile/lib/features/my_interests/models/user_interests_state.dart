@@ -82,7 +82,11 @@ extension InterestStateVisuals on InterestState {
   }
 }
 
-/// Discrimine un favori : soit un Thème (slug fermé), soit un Sujet personnalisé (UUID).
+/// Discrimine un favori : Thème (slug fermé), Sujet personnalisé (UUID), ou Veille (UUID).
+///
+/// La veille (Story 23.2 PR-4) devient le 3ᵉ type de favori, traitée
+/// uniformément avec theme et custom_topic. Backend a ajouté
+/// `veille_config_id` à `user_favorite_interests` (Story 23.1 PR-3, migration vf02).
 sealed class FavoriteRef {
   const FavoriteRef();
 
@@ -95,6 +99,7 @@ sealed class FavoriteRef {
     return switch (kind) {
       'theme' => ThemeFavoriteRef(slug: targetId),
       'custom_topic' => CustomTopicFavoriteRef(id: targetId),
+      'veille' => VeilleFavoriteRef(id: targetId),
       _ => throw FormatException('Unknown favorite kind: $kind'),
     };
   }
@@ -128,6 +133,19 @@ class CustomTopicFavoriteRef extends FavoriteRef {
 
   @override
   String get kind => 'custom_topic';
+  @override
+  String get targetId => id;
+}
+
+/// Favori veille — référence à `VeilleConfig.id`. Le label visuel et
+/// l'accent (`sectionVeille1`) sont résolus à l'affichage via
+/// `veilleActiveConfigProvider` — un user n'a qu'une seule veille à V1.
+class VeilleFavoriteRef extends FavoriteRef {
+  final String id;
+  const VeilleFavoriteRef({required this.id});
+
+  @override
+  String get kind => 'veille';
   @override
   String get targetId => id;
 }
@@ -250,6 +268,8 @@ class UserInterestsState {
       );
 
   /// Etat courant pour une ref donnée — lit themes/customTopics selon le kind.
+  /// Une veille favorite est toujours considérée comme `favorite` (cf. PR-3) :
+  /// son existence dans `favorites` implique l'état favori.
   InterestState stateOf(FavoriteRef ref) {
     return switch (ref) {
       ThemeFavoriteRef(:final slug) => themes
@@ -262,6 +282,7 @@ class UserInterestsState {
               .map((t) => t.state)
               .firstOrNull ??
           InterestState.unfollowed,
+      VeilleFavoriteRef() => InterestState.favorite,
     };
   }
 

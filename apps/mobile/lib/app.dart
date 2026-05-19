@@ -13,6 +13,7 @@ import 'features/my_interests/services/interests_sync_service.dart';
 import 'features/onboarding/providers/onboarding_sync_provider.dart';
 import 'features/settings/providers/theme_provider.dart';
 
+import 'core/api/api_client.dart' show ApiGoneNotifier;
 import 'core/ui/notification_service.dart';
 
 /// Application principale Facteur
@@ -39,12 +40,35 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _flushFluxScrollMetricIfAny();
     });
+    // Story 23.2 PR-4 : si un endpoint retiré répond 410, afficher un
+    // snackbar global "Mise à jour requise". Le ApiClient intercepte tous
+    // les 410 et notifie via ApiGoneNotifier (singleton agnostique de
+    // BuildContext).
+    ApiGoneNotifier.instance.addListener(_onApiGoneEvent);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    ApiGoneNotifier.instance.removeListener(_onApiGoneEvent);
     super.dispose();
+  }
+
+  void _onApiGoneEvent() {
+    final messenger = NotificationService.messengerKey.currentState;
+    if (messenger == null) return;
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Cette fonctionnalité a évolué. Mets à jour Facteur pour continuer.',
+        ),
+        duration: Duration(seconds: 6),
+      ),
+    );
+    // Idempotent : on consomme l'event après affichage pour éviter le
+    // re-trigger sur rebuild.
+    ApiGoneNotifier.instance.clear();
   }
 
   @override

@@ -161,8 +161,7 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
                   title: 'Pour quoi faire ?',
                   enabled: hasTheme,
                   expanded: _openSection == 3 && hasTheme,
-                  subtitleWhenCollapsed:
-                      _purposeSubtitle(state.purpose, state.purposeOther),
+                  subtitleWhenCollapsed: _purposeSubtitle(state.purpose),
                   onToggle: () {
                     if (!hasTheme) return;
                     setState(() => _openSection = 3);
@@ -191,13 +190,9 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
                           }
                         },
                       ),
-                      if (state.purpose == 'autre') ...[
-                        const SizedBox(height: 12),
-                        VeillePurposeOtherField(
-                          value: state.purposeOther,
-                          onChanged: notifier.setPurposeOther,
-                        ),
-                      ],
+                      // Le champ free-text « purpose_other » a été retiré du
+                      // backend en PR-2 (Story 23.1) — le toggle "autre" reste
+                      // sélectionnable mais ne porte plus de free-text.
                     ],
                   ),
                 ),
@@ -258,17 +253,13 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
   }
 }
 
-String? _purposeSubtitle(String? purpose, String? purposeOther) {
+String? _purposeSubtitle(String? purpose) {
   if (purpose == null) return null;
   final option = kVeillePurposeOptions.firstWhere(
     (o) => o.slug == purpose,
     orElse: () => const VeillePurposeOption('', ''),
   );
   if (option.slug.isEmpty) return null;
-  if (option.slug == 'autre') {
-    final other = (purposeOther ?? '').trim();
-    return other.isEmpty ? 'AUTRE' : 'AUTRE — $other'.toUpperCase();
-  }
   return option.label.toUpperCase();
 }
 

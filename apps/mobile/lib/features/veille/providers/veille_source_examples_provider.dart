@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/veille_delivery.dart';
+import '../models/veille_source_example.dart';
 import 'veille_repository_provider.dart';
 
 /// Renvoie ≤2 exemples d'articles récents pour une source donnée — Step 3

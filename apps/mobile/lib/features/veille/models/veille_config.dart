@@ -141,30 +141,9 @@ class VeillePreset {
   }
 }
 
-enum VeilleFrequency {
-  weekly('weekly', 'Chaque semaine', recommended: true),
-  biweekly('biweek', 'Tous les 15 jours'),
-  monthly('month', 'Chaque mois');
-
-  final String id;
-  final String label;
-  final bool recommended;
-  const VeilleFrequency(this.id, this.label, {this.recommended = false});
-}
-
-enum VeilleDay {
-  mon('mon', 'Lun'),
-  tue('tue', 'Mar'),
-  wed('wed', 'Mer'),
-  thu('thu', 'Jeu'),
-  fri('fri', 'Ven'),
-  sat('sat', 'Sam'),
-  sun('sun', 'Dim');
-
-  final String id;
-  final String label;
-  const VeilleDay(this.id, this.label);
-}
+// VeilleFrequency / VeilleDay enums retirés en Story 23.2 PR-4
+// — step4 frequency dropé suite à la suppression du scheduler async
+// (Story 23.1 PR-1).
 
 /// Résolution Phosphor pour les icônes de thèmes du flow Veille.
 IconData phosphorThemeIcon(String key) {
