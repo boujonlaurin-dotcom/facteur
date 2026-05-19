@@ -11,14 +11,11 @@ import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../feed/models/content_model.dart';
-import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/personalization_repository.dart';
-import '../../../core/api/providers.dart';
+import '../../my_interests/widgets/interest_state_pill.dart';
 import '../models/topic_models.dart';
-import '../providers/algorithm_profile_provider.dart';
 import '../providers/custom_topics_provider.dart';
 import '../providers/personalization_provider.dart';
-import '../../../widgets/design/priority_slider.dart';
 import '../../sources/providers/sources_providers.dart';
 
 /// Terracotta accent color for custom topics.
@@ -453,64 +450,15 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
           ),
           const SizedBox(height: FacteurSpacing.space2),
 
-          // ── Priority rectangle (followed) or Follow button (not followed) ──
+          // ── State pill (followed) or Follow button (not followed) ──
           if (isFollowed && matchedTopic != null)
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: _terracotta.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(FacteurRadius.medium),
-                border: Border.all(color: _terracotta.withOpacity(0.2)),
+            _PulseHighlight(
+              active: shouldHighlight,
+              child: CustomTopicStatePill(
+                topicId: matchedTopic.id,
+                title: matchedTopic.name,
+                fillWidth: true,
               ),
-              child: Builder(builder: (context) {
-                final algoProfile =
-                    ref.watch(algorithmProfileProvider).valueOrNull;
-                final topicSlug = matchedTopic.slugParent;
-                final topicUsage = algoProfile != null &&
-                        algoProfile.subtopicWeights.containsKey(topicSlug)
-                    ? algoProfile.normalizeWeight(
-                        algoProfile.subtopicWeights[topicSlug]!)
-                    : null;
-                return _PulseHighlight(
-                  active: shouldHighlight,
-                  child: PrioritySlider(
-                    currentMultiplier: matchedTopic.priorityMultiplier,
-                    labels: const ['Moins', 'Normal', 'Plus'],
-                    fillWidth: true,
-                    onChanged: (multiplier) async {
-                      try {
-                        await ref
-                            .read(customTopicsProvider.notifier)
-                            .updatePriority(matchedTopic.id, multiplier);
-                      } on DioException catch (e) {
-                        if (context.mounted) {
-                          final detail = e.response?.data;
-                          final msg =
-                              (detail is Map && detail['detail'] is String)
-                                  ? detail['detail'] as String
-                                  : 'Erreur lors de la mise à jour';
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(msg),
-                              duration: const Duration(seconds: 3),
-                            ),
-                          );
-                        }
-                      }
-                    },
-                    usageWeight: topicUsage,
-                    onReset: topicUsage != null
-                        ? () async {
-                            final client = ref.read(apiClientProvider);
-                            await client
-                                .post('/users/subtopics/$topicSlug/reset');
-                            ref.invalidate(algorithmProfileProvider);
-                          }
-                        : null,
-                  ),
-                );
-              }),
             )
           else ...[
             _PulseHighlight(
@@ -655,7 +603,6 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
             .where((s) => s.id == widget.content.source.id)
             .firstOrNull,
       );
-      final currentMultiplier = sourceMatch?.priorityMultiplier ?? 1.0;
       final isTrustedAndActive =
           sourceMatch?.isTrusted == true && sourceMatch?.isMuted != true;
       final isSubscribed = sourceMatch?.hasSubscription ?? false;
@@ -859,33 +806,20 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Builder(builder: (context) {
-                  final algoProfile =
-                      ref.watch(algorithmProfileProvider).valueOrNull;
-                  final sourceId = widget.content.source.id;
-                  final sourceUsage = algoProfile?.sourceAffinities[sourceId];
-                  return _PulseHighlight(
-                    active: shouldHighlight,
-                    child: PrioritySlider(
-                      currentMultiplier: currentMultiplier,
-                      fillWidth: true,
-                      onChanged: (multiplier) {
-                        ref
-                            .read(userSourcesProvider.notifier)
-                            .updateWeight(widget.content.source.id, multiplier);
-                      },
-                      usageWeight: sourceUsage,
-                    ),
-                  );
-                }),
+                _PulseHighlight(
+                  active: shouldHighlight,
+                  child: SourceStatePill(
+                    sourceId: widget.content.source.id,
+                    title: widget.content.source.name,
+                    fillWidth: true,
+                  ),
+                ),
                 Divider(color: _terracotta.withOpacity(0.15), height: 1),
                 const SizedBox(height: 8),
                 Row(
                   children: [
                     Icon(
-                      isSubscribed
-                          ? PhosphorIcons.crown(PhosphorIconsStyle.fill)
-                          : PhosphorIcons.crown(PhosphorIconsStyle.regular),
+                      PhosphorIcons.link(PhosphorIconsStyle.regular),
                       size: 18,
                       color:
                           isSubscribed ? colorScheme.primary : colors.textSecondary,
@@ -893,7 +827,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        "J'ai un abonnement payant",
+                        'Associer mon abonnement',
                         style: textTheme.bodyMedium?.copyWith(
                           color: colors.textPrimary,
                           fontWeight: FontWeight.w500,

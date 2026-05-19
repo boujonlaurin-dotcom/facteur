@@ -442,69 +442,6 @@ class SourceService:
         await self.db.flush()
         return True
 
-    async def update_source_weight(
-        self, user_id: str, source_id: str, priority_multiplier: float
-    ) -> SourceResponse | None:
-        """Met à jour le priority_multiplier d'une source suivie."""
-        user_uuid = UUID(user_id)
-        source_uuid = UUID(source_id)
-
-        user_source = await self.db.scalar(
-            select(UserSource).where(
-                UserSource.user_id == user_uuid,
-                UserSource.source_id == source_uuid,
-            )
-        )
-        if not user_source:
-            return None
-
-        user_source.priority_multiplier = priority_multiplier
-        await self.db.flush()
-
-        source = await self.db.scalar(select(Source).where(Source.id == source_uuid))
-        if not source:
-            return None
-
-        # Load muted status
-        muted_source_ids = set()
-        personalization = await self.db.scalar(
-            select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
-        )
-        if personalization and personalization.muted_sources:
-            muted_source_ids = set(personalization.muted_sources)
-
-        logger.info(
-            "source_weight_updated",
-            user_id=user_id,
-            source_id=source_id,
-            multiplier=priority_multiplier,
-        )
-
-        return SourceResponse(
-            id=source.id,
-            name=source.name,
-            url=source.url,
-            type=source.type,
-            theme=source.theme,
-            description=source.description,
-            logo_url=source.logo_url,
-            is_curated=source.is_curated,
-            is_custom=user_source.is_custom,
-            is_trusted=True,
-            is_muted=source.id in muted_source_ids,
-            priority_multiplier=priority_multiplier,
-            has_subscription=user_source.has_subscription,
-            content_count=0,
-            bias_stance=getattr(source.bias_stance, "value", "unknown"),
-            reliability_score=getattr(source.reliability_score, "value", "unknown"),
-            bias_origin=getattr(source.bias_origin, "value", "unknown"),
-            score_independence=source.score_independence,
-            score_rigor=source.score_rigor,
-            score_ux=source.score_ux,
-            recommended_by=getattr(source, "recommended_by", None),
-            recommendation_reason=getattr(source, "recommendation_reason", None),
-        )
-
     async def update_source_subscription(
         self, user_id: str, source_id: str, has_subscription: bool
     ) -> SourceResponse | None:

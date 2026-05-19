@@ -101,7 +101,7 @@ void main() {
       );
     });
 
-    testWidgets('shows "Suivi" + slider when topic is followed',
+    testWidgets('shows "Suivi" header + state pill when topic is followed',
         (tester) async {
       await tester.pumpWidget(createWidget(
         followedTopics: [
@@ -115,8 +115,10 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      expect(find.text('Suivi'), findsOneWidget);
-      expect(find.text('Priorité :'), findsOneWidget);
+      // Header "Suivi" + pill "Suivi" (default state when no userInterests data)
+      expect(find.text('Suivi'), findsNWidgets(2));
+      // Old slider wording should be gone.
+      expect(find.text('Priorité :'), findsNothing);
     });
 
     testWidgets('follow button calls followTopic on provider',

@@ -153,38 +153,6 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
     }
   });
 
-  /// Update priority multiplier for a topic.
-  /// Optimistic: updates the value immediately, rolls back on error.
-  Future<void> updatePriority(String topicId, double newPriority) => _serialized(() async {
-    final repo = ref.read(topicRepositoryProvider);
-
-    final previousState = state;
-    if (state.hasValue) {
-      state = AsyncData([
-        for (final topic in state.value!)
-          if (topic.id == topicId)
-            topic.copyWith(priorityMultiplier: newPriority)
-          else
-            topic,
-      ]);
-    }
-
-    try {
-      final updated = await repo.updateTopicPriority(topicId, newPriority);
-
-      // Replace with server response (may have updated composite_score)
-      if (state.hasValue) {
-        state = AsyncData([
-          for (final topic in state.value!)
-            if (topic.id == topicId) updated else topic,
-        ]);
-      }
-    } catch (e) {
-      state = previousState;
-      rethrow;
-    }
-  });
-
   /// Toggle `excluded_from_serein` for a topic.
   /// Optimistic: updates state immediately, rolls back on error.
   Future<void> setExcludedFromSerein(String topicId, bool excluded) =>

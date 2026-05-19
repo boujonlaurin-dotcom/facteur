@@ -99,14 +99,12 @@ void main() {
     expect(find.text('Derniers articles'), findsNothing);
   });
 
-  testWidgets('shows priority slider with inline help text when trusted',
-      (tester) async {
+  testWidgets('shows state picker pill when trusted', (tester) async {
     final source = Source(
       id: 'test-id',
       name: 'Test Source',
       type: SourceType.article,
       isTrusted: true,
-      priorityMultiplier: 2.0,
     );
 
     await tester.pumpWidget(
@@ -117,16 +115,12 @@ void main() {
             child: SourceDetailModal(
               source: source,
               onToggleTrust: () {},
-              onPriorityChanged: (_) {},
             ),
           ),
         ),
       )),
     );
 
-    expect(find.text('Fréquence'), findsOneWidget);
-    expect(
-        find.text('Ajustez à quel point vous souhaitez voir cette source'),
-        findsOneWidget);
+    expect(find.text('Place cette source dans votre flux'), findsOneWidget);
   });
 }

@@ -1,99 +1,156 @@
-# QA Handoff — Feed staggered loading
+# QA Handoff — Cleanup UI legacy « PrioritySlider 3-crans » → picker 4-états
 
 > Rempli par l'agent dev pour input à `/validate-feature`.
 
 ## Feature développée
 
-Refonte du chargement initial du `FeedScreen` en 3 phases progressives (`critical` → `postFrame` → `idle`) pour :
-1. Réduire le burst de requêtes HTTP au mount (de ~8 simultanées à 2 critiques)
-2. Afficher prioritairement le digest et le shell du feed
-3. Conserver le loader éditorial (citations `loaderBlurbs`) qui apparaît à t=3 s quand le feed met du temps
+Retrait du widget legacy `PrioritySlider` (slider 3-crans 0.2/1.0/2.0) sur 8
+call-sites Flutter et de ses dépendances backend (endpoint
+`PUT /sources/{id}/weight` + champ `priority_multiplier` du
+`PUT /personalization/topics/{id}`). Tous les ajustements de sources et de
+sujets passent désormais par le **picker canonique 4-états**
+(`InterestStatePickerSheet` : Favori / Suivi / Neutre / Masqué). Deux CTA
+sur les filtres feed ont été reformulés (le wording « pousse leur priorité
+à 3/3 » devient « ajoute-les en favori »).
+
+> **Décision PO** : Option A allégée — la colonne DB `priority_multiplier`
+> est conservée (toujours 1.0 pour les nouveaux rows), pas de migration
+> Alembic, scoring inchangé.
 
 ## PR associée
 
-Sera créée vers `main` après QA — branche `claude/feed-staggered-loading`.
+À créer via `/go` vers `main` (branche : `boujonlaurin-dotcom/cleanup-legacy-priority-sliders`).
 
 ## Écrans impactés
 
-| Écran | Route | Modifié / Nouveau |
-|-------|-------|-------------------|
-| Feed principal | `/feed` | **Modifié** (staggered loading) |
+| Écran | Route / Trigger | Modifié |
+|-------|------------------|---------|
+| Topic Explorer | `/topics/:slug` | ✅ pill 4-états dans header |
+| Article Sheet (Topic) | Long-press sur un topic chip d'une carte feed | ✅ pill 4-états + section source |
+| Source Detail Modal | Tap sur une source dans Mes sources / Add source | ✅ pill 4-états section « Place cette source dans votre flux » |
+| Source Adjust Sheet | Swipe-gauche sur une carte feed | ✅ pill 4-états + bouton « Masquer » conservé |
+| Sources List | `/sources` | ✅ slider retiré, étoile + picker conservés |
+| Digest Personalization Sheet | Tap « Pourquoi cet article » dans le digest | ✅ pill 4-états remplace le slider |
+| Source Filter Sheet | Filtres sources sur le feed | ✅ CTA « Ajoute-les en favori » + favoris alignés sur `userSourcesStateProvider` |
+| Interest Filter Sheet | Filtres intérêts sur le feed | ✅ CTA « Ajoute-les en favori » |
 
 ## Scénarios de test
 
-### Scénario 1 : Cold start happy path
-
+### Scénario 1 : Picker depuis Source Detail Modal
 **Parcours** :
-1. Logout (si déjà connecté).
-2. Login.
-3. Atterrir sur `/feed`.
-4. Capturer des screenshots à : t=200 ms, t=1 s, t=3 s, t=5 s.
-5. Ouvrir DevTools Network pour compter les requêtes HTTP par tranche temporelle.
+1. Aller sur `/sources` (Mes sources)
+2. Tap sur une source suivie (`isTrusted`)
+3. Dans la modale détail, scroller jusqu'à « Place cette source dans votre flux »
+4. Tap sur le pill (affiche l'état courant, ex. « Suivi »)
+5. Picker s'ouvre → choisir « Favori »
 
 **Résultat attendu** :
-- **t=200 ms** : shell (logo + avatar) + `DigestEntryCard` (avec son shimmer interne) + `LoadingView` éditoriale (`FacteurLoader` visible) dans le sliver feed. Filter bar visible mais badges onglets vides.
-- **t=1 s** : digest rendu si l'API a répondu, filter bar peuplée (badges + sources). Feed encore en loading si réseau lent.
-- **t=3 s** : si feed pas encore arrivé, la citation `EditorialLoaderCard` apparaît (texte + attribution Camus/Beuve-Méry/etc.).
-- **t=5 s** : feed rendu intégralement.
-- **Réseau** : ≤ 2 requêtes HTTP à t=0 (digest/both + feed?page=1). ≤ 5 à t=300 ms (ajout tab-counts, user-sources, first-impression deps). Le reste (custom-topics, app/update, swipe-hint…) déclenché après t+800 ms ou après l'arrivée des données feed.
+- Pill se met à jour en « Favori » (étoile)
+- Source apparaît dans le top 3 des favoris dans `/sources`
+- Aucune requête `PUT /sources/{id}/weight` dans devtools réseau
+- `PATCH /api/user/sources` envoyée avec `state: favorite`
 
-### Scénario 2 : Pull-to-refresh
-
+### Scénario 2 : Swipe-gauche carte feed → Adjust Sheet
 **Parcours** :
-1. Sur `/feed`, tirer vers le bas pour déclencher le `RefreshIndicator`.
-2. Observer le comportement réseau et UI.
+1. Sur le feed, swipe-gauche sur une carte d'article
+2. Sheet s'ouvre — vérifier section « Place dans le flux »
+3. Tap sur le pill → picker → choisir « Masqué »
 
 **Résultat attendu** :
-- Le feed se recharge.
-- La phase reste `idle` (les widgets sont déjà montés), donc tous les providers se rafraîchissent en parallèle — c'est cohérent avec l'attente utilisateur d'un refresh global.
-- Aucun flash de placeholder (les badges, sources, etc. restent visibles pendant le refresh).
+- Pill devient « Masqué » (icône eye-slash)
+- Le sheet reste ouvert (le bouton « Masquer cette source » est aussi présent — c'est un shortcut)
+- Aucun slider 3-crans visible
+- Si la nudge « explainer » est active, son wording mentionne les 4 états
 
-### Scénario 3 : Toggle Serein
-
+### Scénario 3 : Topic Explorer — changer l'état d'un sujet suivi
 **Parcours** :
-1. Sur `/feed`, basculer le toggle Serein dans le `DigestEntryCard`.
-2. Observer.
+1. Tap sur un topic chip → Article Sheet
+2. (alternatif) Aller sur `/topics/:slug` directement
+3. Si le sujet est suivi, header montre « Suivi ✓ » + pill à droite
+4. Tap sur le pill → picker → choisir « Neutre »
 
 **Résultat attendu** :
-- Le toggle fonctionne comme avant (refresh feed avec `isSerein` updated).
-- Pas de régression sur l'affichage du `DigestEntryCard` (ordre des deux cartes change selon le toggle).
+- Pill devient « Neutre »
+- `PATCH /api/user/interests` envoyée avec `kind: custom_topic`, `state: unfollowed`
+- Au prochain refresh du digest, le poids du sujet décroît
 
-### Scénario 4 : SearchFilterSheet (trending topics)
-
+### Scénario 4 : Article Sheet — pill source (topic_chip)
 **Parcours** :
-1. Sur `/feed`, ouvrir la `SearchFilterSheet` (icône loupe dans filter bar).
-2. Observer les trending topics.
+1. Long-press sur le topic chip d'une carte → Article Sheet s'ouvre
+2. Scroller jusqu'à la section source
+3. Tap sur le pill source
 
 **Résultat attendu** :
-- Les trending topics se chargent à l'ouverture de la sheet (lazy), pas au mount du feed.
-- Aucune régression vs avant.
+- Picker s'ouvre avec le nom de la source en titre
+- Sélection persiste après refresh
 
-### Scénario 5 : Cas réseau lent (3G simulé)
-
+### Scénario 5 : « Pourquoi cet article » dans le digest
 **Parcours** :
-1. Chrome DevTools → Network → Throttling "Slow 3G".
-2. Hard reload sur `/feed`.
-3. Observer.
+1. Sur le digest (`/digest`), tap sur le bouton « Pourquoi cet article » d'un item
+2. Sheet s'ouvre avec le breakdown
+3. En bas, section source → pill 4-états visible (si source `isTrusted`)
+4. Tap → picker → choisir un état
 
 **Résultat attendu** :
-- Le shell + `LoadingView` apparaissent immédiatement.
-- La citation `EditorialLoaderCard` apparaît à t=3 s, rendant l'attente moins frustrante.
-- Le digest s'affiche dès que `/digest/both` répond (probablement avant le feed sur 3G car payload plus léger).
-- Aucune erreur console.
+- Pill se met à jour, le sheet reste ouvert
+- Aucun slider visible
+
+### Scénario 6 : CTA filtres feed (wording)
+**Parcours** :
+1. Ouvrir le sheet de filtre sources sur le feed
+2. Si l'utilisateur a < 3 favoris, le CTA « Définir mes sources favorites » apparaît
+
+**Résultat attendu** :
+- Sous-titre = « Ajoute-les en favori dans Mes sources (top 3 = Tournée du jour) » si 0 favoris
+- ou « N favori(s) — top 3 affiché dans la Tournée du jour » si 1+
+- Le wording legacy « Pousse leur priorité à 3/3 » est **absent**
+- Idem côté filtres intérêts (« Mes intérêts »)
+
+### Scénario 7 : Ajout d'une source du catalogue (`source_add_panel`)
+**Parcours** :
+1. Aller sur `/sources/add` (ou équivalent)
+2. Chercher une source du catalogue, tap pour l'ajouter
+3. Sheet détail s'ouvre après ajout
+
+**Résultat attendu** :
+- La source est automatiquement marquée comme **favorite** (via `PATCH /api/user/sources` avec `state: favorite`)
+- Plus aucun appel `PUT /sources/{id}/weight`
 
 ## Critères d'acceptation
 
-- [ ] Le shell du feed (header + DigestEntryCard placeholder + LoadingView) est visible en moins de 300 ms après navigation vers `/feed`.
-- [ ] Le digest s'affiche dès que `GET /api/digest/both` répond, sans attendre `/api/feed`.
-- [ ] La citation `EditorialLoaderCard` apparaît bien à t=3 s sur réseau lent.
-- [ ] Au plus 2 requêtes HTTP sortent à t=0 (digest + feed).
-- [ ] PostHog reçoit les events `feed_load_timing` avec les 2 milestones (`first_paint`, `digest_visible`) et un `duration_ms` plausible.
-- [ ] Aucune régression sur : pull-to-refresh, toggle Serein, filter bar, search sheet, navigation vers un article.
-- [ ] Aucune erreur console pendant tout le parcours.
+- [ ] **0 appel réseau** `PUT /sources/{id}/weight` dans toute l'app (devtools)
+- [ ] **0 payload** `priority_multiplier` dans les `PUT /personalization/topics/{id}` envoyés par le mobile
+- [ ] Aucun slider 3-crans visible nulle part dans l'app
+- [ ] Tous les pickers 4-états s'ouvrent au tap sur les pills/étoiles
+- [ ] Les états choisis persistent après refresh / reload
+- [ ] Le mute reste possible via le shortcut du `source_adjust_sheet`
+- [ ] CTAs filtres feed utilisent le nouveau wording « Ajoute-les en favori »
 
-## Notes pour l'agent QA
+## Zones de risque
 
-- Le `FeedScreen` est `apps/mobile/lib/features/feed/screens/feed_screen.dart`.
-- Le provider de phase : `apps/mobile/lib/features/feed/providers/feed_load_phase_provider.dart`.
-- Le tracking analytics : `AnalyticsService.trackFeedLoadTiming` (`milestone` + `durationMs`).
-- Pour observer les phases en runtime : Riverpod DevTools → `feedLoadPhaseProvider`.
+- **`source_add_panel`** : la promotion auto-favori d'une source ajoutée
+  depuis le catalogue est passée de `priority_multiplier=2.0` à
+  `setSourceState(favorite)`. Vérifier que la source est bien favori après
+  ajout (et apparaît dans le top 3 si la liste de favoris en compte < 3).
+- **`source_filter_sheet`** : le bloc « VOS FAVORIS » se lit désormais dans
+  `userSourcesStateProvider.favorites` (au lieu de l'ancienne détection
+  `priorityMultiplier >= 2.0 || hasSubscription`). Vérifier que tous les
+  favoris existants apparaissent correctement (post-migration Story 22.1).
+- **`source_adjust_sheet`** : l'explainer nudge est conservé sous l'ID
+  `prioritySliderExplainer` (texte mis à jour). Vérifier que le nudge
+  s'affiche bien la 1re fois.
+- **Backend** : `PUT /sources/{id}/weight` retourne désormais **404/405**.
+  Aucun client (mobile/web/admin) ne doit plus l'appeler.
+- **Backend** : le scoring ML lit toujours `priority_multiplier` en DB,
+  donc les anciens rows ≠ 1.0 continuent d'influencer le ranking. Pas de
+  régression de scoring attendue.
+
+## Dépendances
+
+- **Endpoints backend touchés** :
+  - `PUT /sources/{id}/weight` → **supprimé**
+  - `PUT /personalization/topics/{id}` → champ `priority_multiplier` retiré du request (autres champs intacts)
+  - `PATCH /api/user/sources` → seul endpoint d'écriture côté sources (existant, Story 22.1)
+  - `PATCH /api/user/interests` → seul endpoint d'écriture côté thèmes / sujets (existant, Story 22.1)
+- **Services backend** : pas de redémarrage spécifique, déploiement Railway standard.
+- **Migration Alembic** : aucune.
