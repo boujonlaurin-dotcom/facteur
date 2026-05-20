@@ -75,6 +75,28 @@ FeedResponse _feedResponseWith(int items) {
   );
 }
 
+FeedResponse _feedResponseWithIds(
+  List<String> ids, {
+  int page = 1,
+  bool hasNext = false,
+}) {
+  return FeedResponse(
+    items: ids
+        .map((id) => Content(
+              id: id,
+              title: 'title-$id',
+              url: 'https://x.test/$id',
+              contentType: ContentType.article,
+              publishedAt: DateTime(2026, 1, 1),
+              source: Source(id: 's', name: 'S', type: SourceType.article),
+            ))
+        .toList(),
+    pagination:
+        Pagination(page: page, perPage: 10, total: 0, hasNext: hasNext),
+    carousels: const [],
+  );
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -114,6 +136,7 @@ void main() {
           theme: any(named: 'theme'),
           topic: any(named: 'topic'),
           serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
         )).thenThrow(Exception('mock: no feed'));
   });
 
@@ -329,6 +352,7 @@ void main() {
             limit: any(named: 'limit'),
             theme: any(named: 'theme'),
             serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
           )).thenAnswer((_) async => _feedResponseWith(3));
 
       final container = makeContainer(); // 0 favorites in stub
@@ -342,6 +366,7 @@ void main() {
             limit: any(named: 'limit'),
             theme: captureAny(named: 'theme'),
             serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
           )).captured;
       expect(captured, containsAll(['tech', 'environment', 'science']));
     });
@@ -353,6 +378,7 @@ void main() {
             limit: any(named: 'limit'),
             theme: any(named: 'theme'),
             serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
           )).thenAnswer((_) async => _feedResponseWith(3));
 
       final container = makeContainer(
@@ -369,6 +395,7 @@ void main() {
             limit: any(named: 'limit'),
             theme: 'culture',
             serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
           )).called(1);
     });
 
@@ -379,6 +406,7 @@ void main() {
             limit: any(named: 'limit'),
             topic: any(named: 'topic'),
             serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
           )).thenAnswer((_) async => _feedResponseWith(3));
 
       const customId = 'aaaa-bbbb-cccc';
@@ -405,6 +433,7 @@ void main() {
             limit: any(named: 'limit'),
             topic: customId,
             serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
           )).called(1);
 
       final themeSections =
@@ -421,6 +450,7 @@ void main() {
             limit: any(named: 'limit'),
             theme: any(named: 'theme'),
             serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
           )).thenAnswer((_) async => _feedResponseWith(3));
 
       final container = makeContainer(
@@ -439,6 +469,177 @@ void main() {
           .map((s) => s.themeSlug)
           .toList();
       expect(slugs, ['tech', 'science', 'culture']);
+    });
+  });
+
+  group('FluxContinuNotifier — Tournée du jour curation (personalized)', () {
+    test('Theme favorite forwards personalized:true to getFeed', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      when(() => feedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          )).thenAnswer((_) async => _feedResponseWith(3));
+
+      final container = makeContainer(
+        interests: _interestsState(favorites: const [
+          ThemeFavoriteRef(slug: 'tech'),
+        ]),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(fluxContinuProvider.future);
+
+      // The Tournée du jour theme sections opt in to the backend curation
+      // (followed sources only + 24h window + user_subtopics boost).
+      verify(() => feedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            theme: 'tech',
+            serein: any(named: 'serein'),
+            personalized: true,
+          )).called(1);
+    });
+
+    test('Custom topic favorite forwards personalized:true to getFeed',
+        () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      when(() => feedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            topic: any(named: 'topic'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          )).thenAnswer((_) async => _feedResponseWith(3));
+
+      const customId = 'aaaa-bbbb-cccc';
+      final container = makeContainer(
+        interests: _interestsState(
+          favorites: const [CustomTopicFavoriteRef(id: customId)],
+          customTopics: const [
+            CustomTopicInterest(
+              id: customId,
+              topicName: 'IA & éducation',
+              slugParent: 'tech',
+              state: InterestState.favorite,
+              priorityMultiplier: 2.0,
+            ),
+          ],
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(fluxContinuProvider.future);
+
+      verify(() => feedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            topic: customId,
+            serein: any(named: 'serein'),
+            personalized: true,
+          )).called(1);
+    });
+  });
+
+  group('FluxContinuNotifier — loadMoreTheme pagination', () {
+    test('appends next page items, increments page, propagates hasMore',
+        () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      // Initial fetch (page 1) — 2 items, hasNext=true.
+      when(() => feedRepo.getFeed(
+            page: 1,
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          )).thenAnswer((_) async =>
+          _feedResponseWithIds(const ['a1', 'a2'], page: 1, hasNext: true));
+      // Load-more fetch (page 2) — 2 new items, hasNext=false.
+      when(() => feedRepo.getFeed(
+            page: 2,
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          )).thenAnswer((_) async =>
+          _feedResponseWithIds(const ['a3', 'a4'], page: 2, hasNext: false));
+
+      final container = makeContainer(
+        interests: _interestsState(favorites: const [
+          ThemeFavoriteRef(slug: 'tech'),
+        ]),
+      );
+      addTearDown(container.dispose);
+
+      final initial = await container.read(fluxContinuProvider.future);
+      final themeSection =
+          initial.sections.whereType<FeedThemeSection>().single;
+      expect(themeSection.items.map((c) => c.id), ['a1', 'a2']);
+      expect(themeSection.currentPage, 1);
+      expect(themeSection.hasMore, true);
+
+      await container
+          .read(fluxContinuProvider.notifier)
+          .loadMoreTheme(sectionKey(themeSection));
+
+      final after = container.read(fluxContinuProvider).requireValue;
+      final updated =
+          after.sections.whereType<FeedThemeSection>().single;
+      expect(updated.items.map((c) => c.id), ['a1', 'a2', 'a3', 'a4']);
+      expect(updated.currentPage, 2);
+      expect(updated.hasMore, false);
+      expect(updated.isLoadingMore, false);
+    });
+
+    test('does nothing when section is already at end (hasMore=false)',
+        () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      when(() => feedRepo.getFeed(
+            page: 1,
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          )).thenAnswer((_) async =>
+          _feedResponseWithIds(const ['a1', 'a2'], page: 1, hasNext: false));
+
+      final container = makeContainer(
+        interests: _interestsState(favorites: const [
+          ThemeFavoriteRef(slug: 'tech'),
+        ]),
+      );
+      addTearDown(container.dispose);
+
+      final initial = await container.read(fluxContinuProvider.future);
+      final themeSection =
+          initial.sections.whereType<FeedThemeSection>().single;
+      expect(themeSection.hasMore, false);
+
+      // Call loadMoreTheme — backend must NOT be hit a second time.
+      await container
+          .read(fluxContinuProvider.notifier)
+          .loadMoreTheme(sectionKey(themeSection));
+
+      // Theme=tech fetch happens exactly once (initial). The page=1
+      // continuation fetch in `_fetchAll` is not theme-scoped and matched
+      // separately by the default mock; we only assert on theme fetches.
+      verify(() => feedRepo.getFeed(
+            page: 1,
+            limit: any(named: 'limit'),
+            theme: 'tech',
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          )).called(1);
+      verifyNever(() => feedRepo.getFeed(
+            page: 2,
+            limit: any(named: 'limit'),
+            theme: 'tech',
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          ));
     });
   });
 }

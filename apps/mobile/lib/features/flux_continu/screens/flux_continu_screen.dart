@@ -795,6 +795,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             onTapFavorite: isFavorite
                 ? () => showMyInterestsBottomSheet(context)
                 : null,
+            onLoadMore: section is FeedThemeSection
+                ? () => notifier.loadMoreTheme(sectionKey(section))
+                : null,
           ),
         ),
       ));

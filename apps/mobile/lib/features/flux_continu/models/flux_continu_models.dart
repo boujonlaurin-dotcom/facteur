@@ -87,6 +87,18 @@ class FeedThemeSection extends FluxSection {
   final String? customTopicId;
   final List<Content> items;
 
+  /// Last page already fetched and appended into [items]. Starts at 1 (the
+  /// initial fetch). Bumped by the provider when "Voir +10" loads more.
+  final int currentPage;
+
+  /// Backend has more pages available. When false, the load-more button is
+  /// disabled (label becomes "Plus rien à voir").
+  final bool hasMore;
+
+  /// Set while a load-more request is in flight. Used by the button to show
+  /// the "Chargement…" label and ignore taps.
+  final bool isLoadingMore;
+
   const FeedThemeSection({
     required super.kind,
     required super.label,
@@ -95,12 +107,37 @@ class FeedThemeSection extends FluxSection {
     required this.items,
     this.themeSlug,
     this.customTopicId,
+    this.currentPage = 1,
+    this.hasMore = true,
+    this.isLoadingMore = false,
     super.blurb,
     super.illustrationAsset,
   });
 
   @override
   int get totalCount => items.length;
+
+  FeedThemeSection copyWith({
+    List<Content>? items,
+    int? currentPage,
+    bool? hasMore,
+    bool? isLoadingMore,
+  }) {
+    return FeedThemeSection(
+      kind: kind,
+      label: label,
+      accent: accent,
+      coreVisibleCount: coreVisibleCount,
+      items: items ?? this.items,
+      themeSlug: themeSlug,
+      customTopicId: customTopicId,
+      currentPage: currentPage ?? this.currentPage,
+      hasMore: hasMore ?? this.hasMore,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      blurb: blurb,
+      illustrationAsset: illustrationAsset,
+    );
+  }
 }
 
 /// Picks the lead article for a digest topic.

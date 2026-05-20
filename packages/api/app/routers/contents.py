@@ -757,20 +757,36 @@ async def _load_stored_perspectives_for_representative(
         for subject in items.get("subjects", []):
             actu = subject.get("actu_article")
             extras = subject.get("extra_actu_articles", []) or []
+            deep = subject.get("deep_article") or {}
             ids = {subject.get("representative_content_id")}
             if actu and actu.get("content_id"):
                 ids.add(actu["content_id"])
             for extra in extras:
                 if extra.get("content_id"):
                     ids.add(extra["content_id"])
+            # deep_article doit aussi matcher : sans ça, un tap sur la card
+            # "pas de recul" tombe en live path et le count diverge du badge.
+            # pepite / coup_de_coeur ne sont pas rattachés à un sujet aujourd'hui ;
+            # si un jour ils le sont, ajouter ici.
+            if deep.get("content_id"):
+                ids.add(deep["content_id"])
             if target_str in ids:
                 stored = subject.get("perspective_articles")
                 bias = subject.get("bias_distribution") or {}
                 if stored is not None:
                     return list(stored), dict(bias)
-                # Subject found but no stored snapshot (legacy digest pre-fix
-                # or pipeline bug) → caller falls back to live compute.
-                return None
+                # Subject trouvé dans un digest récent mais snapshot absent
+                # (legacy digest, ou bug pipeline). Pour préserver l'invariant
+                # "content_id du digest → toujours stored, jamais live",
+                # on retourne explicitement vide plutôt que de retomber en
+                # live path qui divergerait du badge preview.
+                logger.warning(
+                    "perspectives_stored_snapshot_missing",
+                    content_id=target_str,
+                    digest_id=str(digest.id),
+                    subject_topic_id=subject.get("topic_id"),
+                )
+                return [], dict(bias)
     return None
 
 
@@ -1035,7 +1051,10 @@ async def get_perspectives(
         logger.info(
             "perspectives_endpoint_stored_snapshot",
             content_id=cache_key,
+            path="stored_snapshot",
             count=count,
+            bias_groups=bias_groups,
+            bias_sum=sum(stored_bias.values()),
         )
         return response
 
@@ -1088,14 +1107,27 @@ async def get_perspectives(
         if not ref_url_key_live
         or _normalize_url_for_match(getattr(p, "url", None)) != ref_url_key_live
     ]
-    perspectives = [p for p in merged if p.bias_stance != "unknown"]
+    known_perspectives = [p for p in merged if p.bias_stance != "unknown"]
+
+    # Safety net (parity avec pipeline.py:494-510) : si aucune perspective
+    # n'a un bias connu, on retombe sur les sources du cluster pour ne pas
+    # sous-compter la couverture. La bias_distribution reste all-zero et
+    # la spectrum bar UI doit déjà gérer ce cas.
+    safety_net_triggered = False
+    if not known_perspectives and cluster_perspectives:
+        perspectives = cluster_perspectives
+        safety_net_triggered = True
+    else:
+        perspectives = known_perspectives
 
     logger.info(
         "perspectives_composition",
         content_id=cache_key,
-        cluster_sources=len(cluster_perspectives),
+        path="live",
+        cluster_sources_count=len(cluster_perspectives),
         gnews_added=len(new_gnews),
-        known_bias=len(perspectives),
+        known_bias=len(known_perspectives),
+        safety_net_triggered=safety_net_triggered,
     )
 
     # Calculate bias distribution (without "unknown")

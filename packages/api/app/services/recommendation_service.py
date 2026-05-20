@@ -201,6 +201,7 @@ class RecommendationService:
         keyword: str | None = None,
         serein: bool = False,
         include_unfollowed: bool = False,
+        personalized: bool = False,
     ) -> list[Content]:
         """
         Génère un feed personnalisé pour l'utilisateur.
@@ -454,6 +455,10 @@ class RecommendationService:
             # Trending chip fallback: expand search to all sources when keyword is set
             include_unfollowed=include_unfollowed,
             excluded_topics=_user_excluded_topics,
+            # Tournée du jour : restrict theme/topic candidates to followed
+            # sources + 24h window + boost user_subtopics.
+            personalized=personalized,
+            user_subtopics=user_subtopics,
         )
         self.total_candidates = len(candidates)
 
@@ -2279,6 +2284,8 @@ class RecommendationService:
         sensitive_themes: list[str] | None = None,
         include_unfollowed: bool = False,
         excluded_topics: list[Any] | None = None,
+        personalized: bool = False,
+        user_subtopics: set[str] | None = None,
     ) -> list[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import and_, or_
@@ -2302,10 +2309,19 @@ class RecommendationService:
         # Otherwise, exclude hidden + saved + seen + consumed (default feed).
         from sqlalchemy import exists
 
+        # Tournée du jour : sections curées par thème/topic restreintes aux
+        # sources suivies + fenêtre 24h + boost user_subtopics. Inerte sans
+        # personalized=true côté client (rétro-compat).
+        personalized_theme_mode = (
+            personalized
+            and (theme is not None or topic is not None)
+            and source_id is None
+        )
+
         explicit_filter = (
             source_id is not None
-            or theme is not None
-            or topic is not None
+            or (theme is not None and not personalized_theme_mode)
+            or (topic is not None and not personalized_theme_mode)
             or entity is not None
             or keyword is not None
         )
@@ -2371,9 +2387,17 @@ class RecommendationService:
         #   à l'affichage via la chip "Suivre +".
         # keyword + include_unfollowed: même politique d'élargissement.
         # followed_source_ids: followed sources only (no curated enrichment)
+        # personalized_theme_mode: theme/topic restreint aux followed → reuse
+        #   two-phase path (timeout + curated fallback hérités).
         _use_two_phase = False
         if source_id:
             query = query.where(Content.source_id == source_id)
+        elif personalized_theme_mode and followed_source_ids:
+            _use_two_phase = True
+        elif personalized_theme_mode:
+            # Edge: user follows zero sources → fallback curated pour ne pas
+            # rendre la section vide.
+            query = query.where(Source.is_curated, Source.source_tier != "deep")
         elif theme or topic or entity or (keyword and include_unfollowed):
             pass
         elif followed_source_ids:
@@ -2481,6 +2505,14 @@ class RecommendationService:
         if keyword and not source_id:
             query = apply_keyword_filter(query, keyword)
 
+        # Tournée du jour : fenêtre 24h sur les sections curées par thème/topic.
+        # Aligne le pool de candidats avec la notion de "fraîcheur du jour".
+        if personalized_theme_mode:
+            since_24h = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+                hours=24
+            )
+            query = query.where(Content.published_at >= since_24h)
+
         if _use_two_phase:
             # Followed sources only — no curated enrichment in default feed.
             # Curated enrichment is reserved for digest (digest_selector.py).
@@ -2494,9 +2526,19 @@ class RecommendationService:
                 )
             else:
                 user_query = query.where(Source.id.in_(list(followed_source_ids)))
-            user_query = user_query.order_by(Content.published_at.desc()).limit(
-                limit_candidates
-            )
+            if personalized_theme_mode and user_subtopics:
+                # Soft boost via ORDER BY : articles matchant un user_subtopic
+                # remontent en tête, mais pas de section vide si l'intersection
+                # est nulle (`overlap` retourne False, on dégrade vers le tri
+                # chronologique pur).
+                user_query = user_query.order_by(
+                    Content.topics.overlap(list(user_subtopics)).desc(),
+                    Content.published_at.desc(),
+                ).limit(limit_candidates)
+            else:
+                user_query = user_query.order_by(Content.published_at.desc()).limit(
+                    limit_candidates
+                )
             # The followed-only query on the default (unfiltered) view can
             # hang under a bad plan when the user has many followed sources —
             # other branches dodge it thanks to their `is_curated` narrowing.

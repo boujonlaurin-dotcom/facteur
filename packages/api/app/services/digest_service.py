@@ -561,6 +561,22 @@ class DigestService:
         self.selector = DigestSelector(session, session_maker=session_maker)
         self.streak_service = StreakService(session)
 
+    async def _compute_target_size(self, user_id: UUID) -> int:
+        """`weekly_goal` clampé dans la fenêtre [3, 10]. Fallback sur
+        ``DiversityConstraints.TARGET_DIGEST_SIZE`` quand pas de pref user."""
+        from app.models.user import UserProfile
+        from app.services.digest_selector import DiversityConstraints
+
+        profile = await self.session.scalar(
+            select(UserProfile).where(UserProfile.user_id == user_id)
+        )
+        raw_goal = (
+            profile.weekly_goal
+            if profile and profile.weekly_goal
+            else DiversityConstraints.TARGET_DIGEST_SIZE
+        )
+        return max(3, min(raw_goal, 10))
+
     async def get_or_create_digest(
         self,
         user_id: UUID,
@@ -2606,6 +2622,12 @@ class DigestService:
                     source=q.get("source"),
                 )
 
+        # Sans ce plafond, la barre de progression mobile exigerait
+        # l'épuisement des 10 sujets backend même quand la pref user en
+        # demande 3 ou 5.
+        target_size = await self._compute_target_size(user_id)
+        editorial_completion_threshold = min(target_size, len(response_topics))
+
         return DigestResponse(
             digest_id=digest.id,
             user_id=digest.user_id,
@@ -2616,7 +2638,7 @@ class DigestService:
             format_version="editorial_v1",
             items=flat_items,
             topics=response_topics,
-            completion_threshold=len(response_topics),
+            completion_threshold=editorial_completion_threshold,
             is_completed=completion is not None,
             completed_at=completion.completed_at if completion else None,
             header_text=items_data.get("header_text"),
