@@ -367,20 +367,17 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final nextPage = target.currentPage + 1;
     final theme = target.themeSlug;
     final topic = target.customTopicId;
-    FeedResponse? response;
-    try {
-      response = await _feedRepo.getFeed(
+    final response = await _safe<FeedResponse>(
+      () => _feedRepo.getFeed(
         page: nextPage,
         limit: 10,
         theme: theme,
         topic: topic,
         serein: isSerene,
         personalized: true,
-      );
-    } catch (e, st) {
-      // ignore: avoid_print
-      print('[ERR] flux_continu loadMoreTheme($key) failed: $e\n$st');
-    }
+      ),
+      'loadMoreTheme($key)',
+    );
 
     // Re-read state in case it shifted while the request was in flight.
     final afterCurrent = state.valueOrNull;

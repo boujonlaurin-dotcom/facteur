@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
@@ -90,21 +92,14 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
   bool get _usesTopics =>
       widget.topics != null && widget.topics!.isNotEmpty;
 
-  /// État du toggle "Voir plus" / "Réduire". Local au widget : reset à chaque
-  /// rebuild externe (changement pref user, rafraîchissement digest).
   bool _showAll = false;
 
-  /// Nombre effectif d'éléments à afficher en tenant compte de la limite
-  /// utilisateur et de l'état du toggle. Retourne `total` si pas de limite ou
-  /// si `_showAll` est activé.
   int _effectiveCount(int total) {
     final limit = widget.displayLimit;
-    if (limit == null || limit <= 0) return total;
-    if (_showAll) return total;
-    return total < limit ? total : limit;
+    if (limit == null || limit <= 0 || _showAll) return total;
+    return math.min(total, limit);
   }
 
-  /// Liste tronquée selon `_effectiveCount`.
   List<T> _sliced<T>(List<T> source) {
     final count = _effectiveCount(source.length);
     return source.length <= count ? source : source.sublist(0, count);

@@ -2,16 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../config/theme.dart';
 
-/// In-place pagination button for [FeedThemeSection]s of the Tournée du
-/// jour. Tapping appends the next 10 articles in the same section instead
-/// of expanding a folded list. Replaces the legacy `Plus de / Replier`
-/// toggle for theme/topic sections — the digest sections keep using
-/// [PlusDeButton] (a binary fold toggle).
-///
-/// Behavior:
-/// - `hasMore=true,  isLoadingMore=false` → "Voir +10 de [label]" (active)
-/// - `hasMore=true,  isLoadingMore=true`  → "Chargement…"        (disabled)
-/// - `hasMore=false`                      → "Plus rien à voir"   (disabled)
+/// In-place pagination button for [FeedThemeSection]s. Tapping appends
+/// the next 10 articles in the same section.
 class LoadMoreButton extends StatelessWidget {
   final String sectionLabel;
   final bool hasMore;

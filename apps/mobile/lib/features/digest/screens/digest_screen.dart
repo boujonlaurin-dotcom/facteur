@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -276,6 +277,10 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     final colors = context.facteurColors;
     final digestAsync = ref.watch(digestProvider);
     final sereinState = ref.watch(sereinToggleProvider);
+    final dailyArticleCount = ref.watch(
+          onboardingProvider.select((s) => s.answers.dailyArticleCount),
+        ) ??
+        5;
 
     // Initialiser le format depuis la réponse API
     ref.listen(digestProvider, (previous, next) {
@@ -440,29 +445,17 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                       ),
                     ),
 
-                    // Hero : pill + titre + meta + illustration facteur.
-                    // articleCount = ce que l'utilisateur va voir (clampé sur
-                    // sa pref weekly_goal), pas le total backend (jusqu'à 10).
+                    // Hero : articleCount clampé sur la pref user, pas sur le
+                    // total backend (jusqu'à 10).
                     SliverToBoxAdapter(
-                      child: Builder(
-                        builder: (context) {
-                          final digestItems =
-                              digestAsync.valueOrNull?.items.length ?? 5;
-                          final userPrefHero = ref
-                                  .watch(onboardingProvider)
-                                  .answers
-                                  .dailyArticleCount ??
-                              5;
-                          final displayed = digestItems < userPrefHero
-                              ? digestItems
-                              : userPrefHero;
-                          return DigestHero(
-                            articleCount: displayed,
-                            targetDate: digestAsync.valueOrNull?.targetDate ??
-                                DateTime.now(),
-                            isSerein: sereinState.enabled,
-                          );
-                        },
+                      child: DigestHero(
+                        articleCount: math.min(
+                          digestAsync.valueOrNull?.items.length ?? 5,
+                          dailyArticleCount,
+                        ),
+                        targetDate: digestAsync.valueOrNull?.targetDate ??
+                            DateTime.now(),
+                        isSerein: sereinState.enabled,
                       ),
                     ),
 
@@ -616,14 +609,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                             }
 
                             final notifier = ref.read(digestProvider.notifier);
-                            final total = notifier.totalCount;
-                            final userPref = ref
-                                    .watch(onboardingProvider)
-                                    .answers
-                                    .dailyArticleCount ??
-                                5;
                             final denominator =
-                                total < userPref ? total : userPref;
+                                math.min(notifier.totalCount, dailyArticleCount);
 
                             return DigestBriefingSection(
                               digest: digest,
@@ -631,9 +618,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                               topics: digest.usesTopics ? digest.topics : null,
                               processedCount: notifier.processedCount,
                               dailyGoal: denominator,
-                              // B.3 — n'afficher que `userPref` topics par
-                              // défaut, le reste est révélé par "Voir plus".
-                              displayLimit: userPref,
+                              displayLimit: dailyArticleCount,
                               onItemTap: _openArticle,
                               onLike: _handleLike,
                               onSave: _handleSave,

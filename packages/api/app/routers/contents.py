@@ -751,10 +751,6 @@ async def _load_stored_perspectives_for_representative(
     if not digests:
         return None
 
-    import structlog
-
-    log = structlog.get_logger(__name__)
-
     target_str = str(content_id)
     for digest in digests:
         items = digest.items if isinstance(digest.items, dict) else {}
@@ -784,7 +780,7 @@ async def _load_stored_perspectives_for_representative(
                 # "content_id du digest → toujours stored, jamais live",
                 # on retourne explicitement vide plutôt que de retomber en
                 # live path qui divergerait du badge preview.
-                log.warning(
+                logger.warning(
                     "perspectives_stored_snapshot_missing",
                     content_id=target_str,
                     digest_id=str(digest.id),

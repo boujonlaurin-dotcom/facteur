@@ -46,31 +46,28 @@ from app.services.perspective_service import Perspective, PerspectiveService
 
 logger = structlog.get_logger()
 
-# Curation oversample : on demande +N sujets de plus que la cible pour
-# absorber les échecs d'actu/deep matching et toujours servir target sujets.
-# Defaults : target=10, buffer=4 (cf. plan passage 5→10). Surcouchable via env
-# pour rollback safe (EDITORIAL_TARGET_SUBJECT_COUNT=5 ramène au comportement
-# antérieur).
+# Curation oversample : on demande +buffer sujets de plus que la cible pour
+# absorber les échecs d'actu/deep matching. EDITORIAL_TARGET_SUBJECT_COUNT=5
+# permet un rollback safe au comportement pré-passage 5→10.
 _DEFAULT_TARGET_SUBJECT_COUNT = 10
 _DEFAULT_SUBJECT_BUFFER = 4
 
 
-def _read_target_subject_count() -> int:
+def _read_int_env(name: str, default: int, *, floor: int = 0) -> int:
     try:
-        return max(1, int(os.environ.get("EDITORIAL_TARGET_SUBJECT_COUNT", "")))
+        return max(floor, int(os.environ.get(name, "")))
     except ValueError:
-        return _DEFAULT_TARGET_SUBJECT_COUNT
+        return default
+
+
+def _read_target_subject_count() -> int:
+    return _read_int_env(
+        "EDITORIAL_TARGET_SUBJECT_COUNT", _DEFAULT_TARGET_SUBJECT_COUNT, floor=1
+    )
 
 
 def _read_subject_buffer() -> int:
-    try:
-        return max(0, int(os.environ.get("EDITORIAL_SUBJECT_BUFFER", "")))
-    except ValueError:
-        return _DEFAULT_SUBJECT_BUFFER
-
-
-# Conservé pour compat ascendante (tests/imports externes).
-_SUBJECT_BUFFER = _DEFAULT_SUBJECT_BUFFER
+    return _read_int_env("EDITORIAL_SUBJECT_BUFFER", _DEFAULT_SUBJECT_BUFFER)
 
 
 class EditorialPipelineService:
@@ -248,10 +245,11 @@ class EditorialPipelineService:
         une_time = time.time() - step_start
 
         # ÉTAPE 2: LLM curation — select remaining topics + buffer.
-        # On oversample de `_SUBJECT_BUFFER` clusters supplémentaires : si
+        # On oversample de `subject_buffer` clusters supplémentaires : si
         # actu/deep matching échoue sur un sujet (cluster sans article éligible
         # < 24h, deep_match LLM négatif), on a une réserve pour garder le
-        # digest à 5 sujets sans replonger en LLM. Cf. bug-digest-pipeline-fallbacks.md.
+        # digest à target sujets sans replonger en LLM.
+        # Cf. bug-digest-pipeline-fallbacks.md.
         step_start = time.time()
         excluded_ids = {a_la_une_topic.topic_id} if a_la_une_topic else set()
         target_subject_count = _read_target_subject_count()
@@ -356,11 +354,11 @@ class EditorialPipelineService:
         )
 
         # ÉTAPE 3A-bis: trim au target_subject_count.
-        # On a oversamplé de _SUBJECT_BUFFER ; on exige qu'un sujet ait un
+        # On a oversamplé de subject_buffer ; on exige qu'un sujet ait un
         # `actu_article` (parution récente). Un sujet avec seulement un
         # `deep_article` (parfois plusieurs jours) ne mérite pas d'être
         # promu en article principal — sa place est sur le rail "Prendre
-        # du recul", pas dans les 5 sujets du jour. Cf. bug-essentiel-pipeline.md.
+        # du recul", pas dans les sujets du jour. Cf. bug-essentiel-pipeline.md.
         # Le buffer permet généralement de combler les drops ; si on retombe
         # quand même < target, on logge en error pour visibilité.
         empty_dropped: list[str] = []
