@@ -2313,7 +2313,9 @@ class RecommendationService:
         # sources suivies + fenêtre 24h + boost user_subtopics. Inerte sans
         # personalized=true côté client (rétro-compat).
         personalized_theme_mode = (
-            personalized and (theme is not None or topic is not None) and source_id is None
+            personalized
+            and (theme is not None or topic is not None)
+            and source_id is None
         )
 
         explicit_filter = (
