@@ -74,11 +74,14 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
     required FavoriteRef refTarget,
     required InterestState currentState,
   }) async {
+    final isPinnedTopic = refTarget is CustomTopicFavoriteRef;
     final selected = await InterestStatePickerSheet.show(
       context,
       title: title,
       currentState: currentState,
-      allowFavorite: refTarget is! CustomTopicFavoriteRef,
+      favoriteSemantics: isPinnedTopic
+          ? FavoriteSemantics.pinnedTopic
+          : FavoriteSemantics.theme,
     );
     if (selected == null || selected == currentState) return;
 
@@ -197,9 +200,11 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                   ref.read(sereinToggleProvider.notifier).toggle(),
             ),
           ),
-          if (!sereinMode)
+          if (!sereinMode) ...[
             FavoritesReorderableSection<FavoriteRef>(
-              items: interests.favorites,
+              items: interests.favorites
+                  .where((f) => f is! CustomTopicFavoriteRef)
+                  .toList(),
               keyOf: (ref) => ValueKey('${ref.kind}:${ref.targetId}'),
               itemBuilder: (context, refItem) => _FavoriteRow(
                 refItem: refItem,
@@ -227,6 +232,18 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                 }
               },
             ),
+            _PinnedTopicsSection(
+              pinned: interests.favorites
+                  .whereType<CustomTopicFavoriteRef>()
+                  .toList(),
+              interests: interests,
+              onTapTopic: (id, name) => _pickState(
+                title: name,
+                refTarget: CustomTopicFavoriteRef(id: id),
+                currentState: InterestState.favorite,
+              ),
+            ),
+          ],
           ...macroThemeOrder.map((macroLabel) {
             final themeSlug = macroThemeToApiSlug[macroLabel] ?? macroLabel;
             return _ThemeBlock(
@@ -762,6 +779,7 @@ class _TopicRow extends StatelessWidget {
           _StateChip(
             state: topic.state,
             onTap: onPickState,
+            isPinnedTopic: true,
           ),
         ],
       ),
@@ -839,18 +857,29 @@ class _SereinTopicRow extends ConsumerWidget {
 class _StateChip extends StatelessWidget {
   final InterestState state;
   final VoidCallback onTap;
+  final bool isPinnedTopic;
 
-  const _StateChip({required this.state, required this.onTap});
+  const _StateChip({
+    required this.state,
+    required this.onTap,
+    this.isPinnedTopic = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final (icon, color, label) = switch (state) {
-      InterestState.favorite => (
-          PhosphorIcons.star(PhosphorIconsStyle.fill),
-          colors.primary,
-          'Favori',
-        ),
+      InterestState.favorite => isPinnedTopic
+          ? (
+              PhosphorIcons.pushPin(PhosphorIconsStyle.fill),
+              colors.primary,
+              'Épinglé',
+            )
+          : (
+              PhosphorIcons.star(PhosphorIconsStyle.fill),
+              colors.primary,
+              'Favori',
+            ),
       InterestState.followed => (
           PhosphorIcons.check(PhosphorIconsStyle.bold),
           colors.success,
@@ -891,6 +920,122 @@ class _StateChip extends StatelessWidget {
                 fontSize: 12,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PinnedTopicsSection extends StatelessWidget {
+  final List<CustomTopicFavoriteRef> pinned;
+  final UserInterestsState interests;
+  final void Function(String id, String name) onTapTopic;
+
+  const _PinnedTopicsSection({
+    required this.pinned,
+    required this.interests,
+    required this.onTapTopic,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (pinned.isEmpty) return const SizedBox.shrink();
+
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: FacteurSpacing.space4,
+        vertical: FacteurSpacing.space2,
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(FacteurRadius.large),
+          border: Border.all(color: colors.surfaceElevated),
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: FacteurSpacing.space3,
+          vertical: FacteurSpacing.space3,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  PhosphorIcons.pushPin(PhosphorIconsStyle.fill),
+                  size: 16,
+                  color: colors.primary,
+                ),
+                const SizedBox(width: FacteurSpacing.space2),
+                Expanded(
+                  child: Text(
+                    'Sujets épinglés',
+                    style: textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colors.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Apparaissent comme onglets dans Explorer. '
+              'Ils ne remplacent pas vos thèmes favoris.',
+              style: textTheme.bodySmall?.copyWith(
+                color: colors.textTertiary,
+              ),
+            ),
+            const SizedBox(height: FacteurSpacing.space2),
+            ...pinned.map((ref) {
+              final topic = interests.customTopics
+                  .where((c) => c.id == ref.id)
+                  .firstOrNull;
+              final name = topic?.topicName ?? 'Sujet';
+              return InkWell(
+                onTap: () => onTapTopic(ref.id, name),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: FacteurSpacing.space2,
+                    vertical: FacteurSpacing.space2,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFE07A5F),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: FacteurSpacing.space2),
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            color: colors.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Icon(
+                        PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
+                        size: 14,
+                        color: colors.textTertiary,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
           ],
         ),
       ),

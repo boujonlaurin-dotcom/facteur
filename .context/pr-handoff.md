@@ -1,42 +1,51 @@
-# PR — fix: custom_topic→favori interdit + 3 régressions pipeline Essentiel
+# PR — fix: restaure les favoris custom_topic + Sujets épinglés
 
 ## Summary
 
-Deux corrections indépendantes regroupées :
+Annule partiellement la PR #636 (commit 8adc5d41) qui avait vidé la section **Explorer** en bloquant les favoris `custom_topic`. La PR ré-autorise l'état `favorite` côté backend, expose une section dédiée **« Sujets épinglés »** côté mobile (séparée du top 3 reorderable, label « Épinglé » au lieu de « Favori »), et restaure automatiquement les 62 favoris perdus pour 15 users via heuristique sur `priority_multiplier`.
 
-**1. Story 23.3 — custom_topic ne peut plus être épinglé favori**
+- **Backend** : `set_state(custom_topic, favorite)` accepté ; `priority_multiplier` synchronisé à 2.0 sur favori (1.0 sinon) pour alimenter `feed.py:get_tab_counts`. Le top 3 reorderable reste réservé aux thèmes et veilles (nouvelle exception `CustomTopicNotReorderable` → 422 `custom_topic_not_reorderable` sur `/reorder` uniquement).
+- **Migration `23a4_restore_ct_favorites`** : exploite la signature `state=followed + priority_multiplier=2.0` (la migration 23a3 a oublié de reset le multiplier) pour ré-hydrater les rows perdues sans PITR Supabase. Idempotente, downgrade fonctionnel.
+- **Mobile** : `InterestStatePickerSheet` accepte un nouveau paramètre `favoriteSemantics` (theme vs pinnedTopic) qui change icône (étoile → punaise) + label (« Favori » → « Épinglé ») + description. Nouvelle section `_PinnedTopicsSection` dans « Mes intérêts » avec micro-copy expliquant le lien avec Explorer. `_StateChip` rend « Épinglé » + punaise pour les custom_topic.
 
-Un sujet personnalisé (« Plongée », « Elon Musk »…) ne peut plus passer à l'état `favorite`. La pipeline Mistral classe les articles sur 51 slugs figés ; un custom_topic mappe toujours sur son `slug_parent` (ex. « Plongée » → `sport`), donc filtrer via favori custom_topic remontait tout le sport, pas la plongée. Décision PO : seuls les thèmes et les veilles peuvent être favoris.
+## Décisions PM actées (avant code)
 
-- **Backend** : nouvelle exception `CustomTopicFavoriteForbidden` levée dans `set_state()` et `reorder_favorites()` si `kind=="custom_topic"` + `state==FAVORITE`. Router mappe → 422 `{"error": "custom_topic_favorite_forbidden"}`.
-- **Mobile** : `InterestStatePickerSheet` accepte un flag `allowFavorite` (default `true`). Le `_pickState` passe `allowFavorite: refTarget is! CustomTopicFavoriteRef`. Un bouton inline `_AddTopicInlineButton` est réintroduit en bas de chaque `_ThemeBlock` (remplace le FAB global pour les thèmes déjà suivis).
-- **Migration** `23a3_downgrade_custom_topic_favorites` : downgrade silencieux — `user_topic_profiles.state` favorite→followed + DELETE des rows `user_favorite_interests` avec `custom_topic_id IS NOT NULL`.
-
-**2. Fix pipeline "Essentiel du jour" (3 régressions)**
-
-Cause racine commune : `_schedule_background_regen` n'avait aucune garde horaire et générait le digest à 00h Paris, avant les Unes du matin, puis bloquait le cron 07h30 via `digest_background_regen_skipped_good_format`.
-
-- **Fix 1 — garde horaire** : refuse de spawner pour `target_date == today` avant `DIGEST_CRON_HOUR_PARIS:DIGEST_CRON_MINUTE_PARIS` (07:30 Paris).
-- **Fix 1bis — clone yesterday ephemeral** : nouvel user inscrit la nuit → rendu éphémère du digest editorial_v1 de la veille d'un autre user (`is_stale_fallback=True`, jamais persisté).
-- **Fix 2 — drop subject sans `actu_article`** : `pipeline.py:343` passe de `actu is None AND deep is None` à `actu is None` — un sujet deep-only va sur le rail "Prendre du recul".
-- **Fix 3 — filtre multi-source avant LLM** : `curation.py:218-243` pré-filtre le pool à `source_count >= 2` avant LLM, fallback à `available` si pool < count.
+| # | Décision |
+|---|---|
+| Backend | `state=favorite` autorisé pour custom_topic. Sémantique technique identique aux thèmes/veilles (pas de schema split). |
+| UX | Label « Épinglé » + icône punaise pour les sujets, distinct du « Favori » + étoile des thèmes. |
+| Top 3 | Reste réservé aux thèmes et veilles (sujets non-draggable). |
+| Bug `slug_parent` | **Hors scope**, PR séparée (Plongée → tous les sports). |
+| Recovery | Best-effort via heuristique multiplier — exploite l'oubli de la migration 23a3 (pas de PITR nécessaire). |
+| Veille CTA | Hors scope (attente refonte veille en cours). |
 
 ## Test plan
 
-- [x] `pytest tests/routers/test_user_interests.py` (107 cases, 422 sur custom_topic+favorite)
-- [x] `pytest tests/test_digest_service.py` (23 passed)
-- [x] `pytest tests/test_digest_readonly_hotpath.py` (11 passed)
-- [x] `pytest tests/editorial/test_pipeline.py` (12 passed)
-- [x] `pytest tests/editorial/test_curation.py` (13 passed)
-- [x] `flutter test test/features/my_interests/` (11 passed, dont Story 23.3 `allowFavorite=false`)
-- [x] `flutter analyze` — 0 erreurs
-- [x] Alembic 1 head : `23a3_downgrade_custom_topic_favorites`
-- [ ] Post-deploy : `SELECT state, COUNT(*) FROM user_topic_profiles WHERE kind='custom_topic' AND state='favorite'` → 0 rows.
-- [ ] Post-deploy : `SELECT MIN(generated_at AT TIME ZONE 'Europe/Paris') FROM daily_digest WHERE target_date = CURRENT_DATE` → ≥ 07:30.
-- [ ] Post-deploy : `source_count` du rang 1 ≥ 3, aucun subject avec `actu_article = null`.
+- [x] Backend : `pytest tests/routers/test_user_interests.py -v` → 12/12 OK (nouveaux : `test_patch_allows_favorite_for_custom_topic`, `test_patch_unfavorite_custom_topic_resets_multiplier` ; mis à jour : `test_reorder_rejects_custom_topic` → nouvelle erreur).
+- [x] Backend : `pytest tests/alembic/test_23a4_restore_ct_favorites.py -v` → 5/5 OK (promotion, ignore multiplier=1, append après favoris existants, idempotence, ordre par created_at).
+- [x] Backend : suite complète `pytest -q` → 1141 passed, 2 échecs NER pré-existants non liés.
+- [x] Mobile : `flutter test test/features/my_interests/` → 12/12 OK (nouveau : `pinnedTopic semantics renders "Épinglé" label`).
+- [x] Mobile : `flutter analyze` → aucun nouvel error.
+- [x] Alembic : single head `23a4_restore_ct_favorites`.
+- [ ] **Post-deploy DB** : `SELECT COUNT(*) FROM user_favorite_interests WHERE custom_topic_id IS NOT NULL` → attendu 62 rows réparties sur 15 users (snapshot prod 2026-05-20).
+- [ ] **Post-deploy DB** : `SELECT COUNT(*) FROM user_topic_profiles WHERE state='favorite'` → attendu 62.
+- [ ] **Manuel mobile** : créer un sujet → l'épingler → vérifier qu'il apparaît dans « Sujets épinglés » ET comme onglet dans Explorer ; tenter de drag vers top 3 → impossible ; désépingler → onglet Explorer disparaît.
+
+## Hors scope (PR à venir)
+
+- Fix résolution `slug_parent` → keywords dans `feed.py:get_tab_counts` (Plongée → tous les sports).
+- CTA « Créer une Veille à partir de ce sujet » (attente refonte veille).
+- Refonte sémantique globale du mot « favori » dans le reste de l'app.
 
 ## Zones à risque
 
-- `user_interests_service.py` / `routers/user_interests.py` : mutation path favoris
-- `digest_service.py` : hotpath lecture digest (step 3b)
-- `alembic/versions/23a3_*` : migration one-shot destructive (pas de downgrade)
+- `services/user_interests_service.py` : mutation path favoris + sync `priority_multiplier`.
+- `alembic/versions/23a4_*` : migration data-only sur prod (62 rows à restaurer). Downgrade testé et fonctionnel.
+- `feed.py:get_tab_counts` continue de filtrer sur `priority_multiplier == 2.0` — le sync explicite dans `set_state` garantit que les onglets Explorer reflètent l'état déclaré en temps réel.
+
+## Références
+
+- Bug doc : `docs/bugs/bug-custom-topic-favori-regression.md`
+- Errata story : `docs/stories/core/23.3.read-only-custom-topics.md`
+- Migration source du problème : `packages/api/alembic/versions/23a3_custom_topic_fav_drop.py`
+- Snapshot recovery (2026-05-20) : 62 favoris perdus, 15 users, min 1, max 12 favoris par user, moyenne 4.13.

@@ -254,18 +254,21 @@ async def test_reorder_swaps_positions(auth_user_with_themes, db_session):
 
 
 @pytest.mark.asyncio
-async def test_patch_rejects_favorite_for_custom_topic(auth_user, db_session):
-    """Story 23.3 — promouvoir un custom_topic en favori → 422.
+async def test_patch_allows_favorite_for_custom_topic(auth_user, db_session):
+    """bug-custom-topic-favori-regression — un custom_topic peut être épinglé.
 
-    Le filtrage feed d'un custom_topic favori résout en slug_parent (taxonomie
-    Mistral 51 slugs) : « Plongée » remonterait tout le sport. Les sujets
-    précis doivent passer par la veille.
+    Sémantique côté backend identique à un thème favori (state=favorite + ligne
+    dans user_favorite_interests). Côté mobile, ces favoris sont affichés dans
+    la section « Sujets épinglés » séparée du top 3 reorderable. La
+    `priority_multiplier=2.0` synchronisée permet à `feed.py:get_tab_counts`
+    d'alimenter les onglets de la section Explorer.
     """
     topic = UserTopicProfile(
         user_id=auth_user,
         topic_name="Plongée",
         slug_parent="sport",
         state=InterestState.FOLLOWED,
+        priority_multiplier=1.0,
     )
     db_session.add(topic)
     await db_session.commit()
@@ -283,12 +286,58 @@ async def test_patch_rejects_favorite_for_custom_topic(auth_user, db_session):
                     "state": "favorite",
                 },
             )
-    assert resp.status_code == 422
-    assert resp.json()["detail"]["error"] == "custom_topic_favorite_forbidden"
+    assert resp.status_code == 200
+    body = resp.json()
+    assert any(
+        f["kind"] == "custom_topic" and f["target_id"] == str(topic.id)
+        for f in body["favorites"]
+    )
 
-    # state inchangé en DB
+    await db_session.refresh(topic)
+    assert topic.state == InterestState.FAVORITE
+    assert topic.priority_multiplier == 2.0
+
+
+@pytest.mark.asyncio
+async def test_patch_unfavorite_custom_topic_resets_multiplier(auth_user, db_session):
+    """Désépingler un sujet → state=followed + priority_multiplier=1.0.
+
+    Garantit que les onglets de la section Explorer disparaissent dès la
+    transition (feed.py:get_tab_counts filtre sur priority_multiplier==2.0).
+    """
+    topic = UserTopicProfile(
+        user_id=auth_user,
+        topic_name="Plongée",
+        slug_parent="sport",
+        state=InterestState.FAVORITE,
+        priority_multiplier=2.0,
+    )
+    db_session.add(topic)
+    await db_session.commit()
+
+    transport = ASGITransport(app=app)
+    with patch(
+        "app.routers.user_interests.get_posthog_client", return_value=MagicMock()
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.patch(
+                "/api/user/interests",
+                json={
+                    "kind": "custom_topic",
+                    "target_id": str(topic.id),
+                    "state": "followed",
+                },
+            )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert not any(
+        f["kind"] == "custom_topic" and f["target_id"] == str(topic.id)
+        for f in body["favorites"]
+    )
+
     await db_session.refresh(topic)
     assert topic.state == InterestState.FOLLOWED
+    assert topic.priority_multiplier == 1.0
 
 
 @pytest.mark.asyncio
@@ -323,12 +372,18 @@ async def test_patch_allows_followed_for_custom_topic(auth_user, db_session):
 
 @pytest.mark.asyncio
 async def test_reorder_rejects_custom_topic(auth_user_with_themes, db_session):
-    """Story 23.3 — un reorder qui inclut un custom_topic → 422."""
+    """Un reorder qui inclut un custom_topic → 422 custom_topic_not_reorderable.
+
+    Le top 3 reorderable de la « Tournée du jour » est réservé aux thèmes et
+    veilles. Les custom_topic favoris vivent dans la section « Sujets épinglés »
+    séparée et ne sont pas draggable dans le top 3.
+    """
     topic = UserTopicProfile(
         user_id=auth_user_with_themes,
         topic_name="Plongée",
         slug_parent="sport",
-        state=InterestState.FOLLOWED,
+        state=InterestState.FAVORITE,
+        priority_multiplier=2.0,
     )
     db_session.add(topic)
     await db_session.commit()
@@ -356,7 +411,7 @@ async def test_reorder_rejects_custom_topic(auth_user_with_themes, db_session):
                 },
             )
     assert resp.status_code == 422
-    assert resp.json()["detail"]["error"] == "custom_topic_favorite_forbidden"
+    assert resp.json()["detail"]["error"] == "custom_topic_not_reorderable"
 
 
 @pytest.mark.asyncio
