@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:facteur/core/api/api_client.dart';
@@ -21,6 +22,7 @@ class AnalyticsService {
   String? _deviceId;
   String? _sessionId;
   DateTime? _sessionStartTime;
+  String? _appVersion;
 
   AnalyticsService(ApiClient this._apiClient, {PostHogService? posthog})
       : _posthog = posthog;
@@ -39,6 +41,12 @@ class AnalyticsService {
       _deviceId = const Uuid().v4();
       await prefs.setString('analytics_device_id', _deviceId!);
     }
+    try {
+      final info = await PackageInfo.fromPlatform();
+      _appVersion = '${info.version}+${info.buildNumber}';
+    } catch (_) {
+      // Best-effort — version tracking degrades gracefully if unavailable
+    }
   }
 
   Future<void> startSession({bool isOrganic = true}) async {
@@ -49,6 +57,7 @@ class AnalyticsService {
       'session_id': _sessionId,
       'is_organic': isOrganic,
       'platform': defaultTargetPlatform.toString(),
+      if (_appVersion != null) 'app_version': _appVersion,
     });
     // Story 14.1 — PostHog uses `app_open` as the conventional event name
     // for DAU/retention computation. We mirror session_start to it.
@@ -56,6 +65,7 @@ class AnalyticsService {
       'session_id': _sessionId,
       'is_organic': isOrganic,
       'platform': defaultTargetPlatform.toString(),
+      if (_appVersion != null) 'app_version': _appVersion,
     });
   }
 
