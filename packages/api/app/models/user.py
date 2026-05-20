@@ -44,6 +44,13 @@ class UserProfile(Base):
     # SHA256 of the auth.users email captured at delete-time — kept post-purge
     # for support/legal traceability without storing PII.
     email_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Last app version seen for this user (e.g. "1.2.3+42"), updated on session_start.
+    app_version: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, index=True
+    )
+    app_version_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

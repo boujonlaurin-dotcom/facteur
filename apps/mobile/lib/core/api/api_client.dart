@@ -27,7 +27,13 @@ class ApiClient {
     String? baseUrl,
     this.onAuthError,
     this.onAuthRecovered,
+    String? appVersion,
   }) {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      if (appVersion != null) 'X-App-Version': appVersion,
+    };
     _dio = Dio(
       BaseOptions(
         baseUrl: baseUrl ?? ApiConstants.baseUrl,
@@ -35,10 +41,7 @@ class ApiClient {
         // Backend optimizations are in progress, this buys time for those to take effect
         connectTimeout: const Duration(seconds: 30),
         receiveTimeout: ApiConstants.timeout,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        headers: headers,
       ),
     );
 
