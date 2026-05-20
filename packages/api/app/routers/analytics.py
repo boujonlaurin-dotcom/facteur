@@ -1,6 +1,6 @@
 """Router pour les analytics."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header
@@ -36,7 +36,7 @@ async def _update_app_version(user_id: UUID, app_version: str) -> None:
                   AND app_version IS DISTINCT FROM :v
                 """
             ),
-            {"v": app_version, "ts": datetime.now(timezone.utc), "uid": str(user_id)},
+            {"v": app_version, "ts": datetime.now(UTC), "uid": str(user_id)},
         )
         await db.commit()
 
