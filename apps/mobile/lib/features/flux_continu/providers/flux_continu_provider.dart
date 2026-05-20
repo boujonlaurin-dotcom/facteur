@@ -340,6 +340,86 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     state = AsyncData(current.copyWith(moreOpen: next));
   }
 
+  /// In-place pagination for the Tournée du jour theme sections. Fetches the
+  /// next page from `/api/feed?theme=…&personalized=true` (or topic UUID for
+  /// custom topics) and appends it to the section's [FeedThemeSection.items]
+  /// — same backend curation as the initial load, so users only see articles
+  /// from sources they follow, within the last 24h.
+  ///
+  /// No-op when the section is not in [state.sections], is already loading,
+  /// or the backend reported no more pages.
+  Future<void> loadMoreTheme(String key) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final idx = current.sections.indexWhere(
+      (s) => s is FeedThemeSection && sectionKey(s) == key,
+    );
+    if (idx < 0) return;
+    final target = current.sections[idx] as FeedThemeSection;
+    if (target.isLoadingMore || !target.hasMore) return;
+
+    final loading = target.copyWith(isLoadingMore: true);
+    final loadingSections = List<FluxSection>.from(current.sections)
+      ..[idx] = loading;
+    state = AsyncData(current.copyWith(sections: loadingSections));
+
+    final isSerene = current.isSerene;
+    final nextPage = target.currentPage + 1;
+    final theme = target.themeSlug;
+    final topic = target.customTopicId;
+    FeedResponse? response;
+    try {
+      response = await _feedRepo.getFeed(
+        page: nextPage,
+        limit: 10,
+        theme: theme,
+        topic: topic,
+        serein: isSerene,
+        personalized: true,
+      );
+    } catch (e, st) {
+      // ignore: avoid_print
+      print('[ERR] flux_continu loadMoreTheme($key) failed: $e\n$st');
+    }
+
+    // Re-read state in case it shifted while the request was in flight.
+    final afterCurrent = state.valueOrNull;
+    if (afterCurrent == null) return;
+    final afterIdx = afterCurrent.sections.indexWhere(
+      (s) => s is FeedThemeSection && sectionKey(s) == key,
+    );
+    if (afterIdx < 0) return;
+    final afterTarget = afterCurrent.sections[afterIdx] as FeedThemeSection;
+
+    final FeedThemeSection updated;
+    if (response == null || response.items.isEmpty) {
+      // Treat empty/error response as "no more" so the button settles into
+      // the disabled "Plus rien à voir" state rather than spinning forever.
+      updated = afterTarget.copyWith(
+        isLoadingMore: false,
+        hasMore: false,
+      );
+    } else {
+      // Dedupe by content id — guards against a new article being published
+      // between page 1 and page 2 and shifting the chronological cursor.
+      final existingIds = {for (final item in afterTarget.items) item.id};
+      final appended = [
+        ...afterTarget.items,
+        for (final item in response.items)
+          if (!existingIds.contains(item.id)) item,
+      ];
+      updated = afterTarget.copyWith(
+        items: appended,
+        currentPage: nextPage,
+        hasMore: response.pagination.hasNext,
+        isLoadingMore: false,
+      );
+    }
+    final nextSections = List<FluxSection>.from(afterCurrent.sections)
+      ..[afterIdx] = updated;
+    state = AsyncData(afterCurrent.copyWith(sections: nextSections));
+  }
+
   /// Records that the user has scrolled past [section] in this session, **but
   /// does not collapse it on screen**. The section will appear as a
   /// [FoldedSectionCard] on the next cold launch. This avoids the visible
@@ -578,6 +658,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }) {
     final items = feed?.items ?? const <Content>[];
     if (items.length < 2) return null;
+    // Propagate the backend's pagination cursor so the "Voir +10" button
+    // settles into the disabled "Plus rien à voir" state immediately when
+    // page 1 already exhausted the pool.
+    final hasMore = feed?.pagination.hasNext ?? false;
     return FeedThemeSection(
       kind: SectionKind.theme,
       label: label,
@@ -588,6 +672,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       themeSlug: themeSlug,
       customTopicId: customTopicId,
       items: items,
+      hasMore: hasMore,
     );
   }
 
@@ -662,6 +747,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }
 
   Future<FeedResponse?> _fetchOneTheme(FavoriteRef favRef, bool isSerene) {
+    // `personalized: true` flips the backend to "followed sources only +
+    // 24h window + user_subtopics boost" for the Tournée du jour theme
+    // sections (vs. the unrestricted exploration mode used by feed chips).
     return switch (favRef) {
       ThemeFavoriteRef(:final slug) => _safe<FeedResponse>(
           () => _feedRepo.getFeed(
@@ -669,8 +757,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
             limit: 10,
             theme: slug,
             serein: isSerene,
+            personalized: true,
           ),
-          'getFeed?theme=$slug',
+          'getFeed?theme=$slug&personalized=true',
         ),
       // Backend `/api/feed` accepts a UUID stringified in the `topic` param
       // (story 22.1) — looked up against `user_topic_profiles` scoped on the
@@ -681,8 +770,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
             limit: 10,
             topic: id,
             serein: isSerene,
+            personalized: true,
           ),
-          'getFeed?topic=$id',
+          'getFeed?topic=$id&personalized=true',
         ),
     };
   }

@@ -9,6 +9,7 @@ Per-user phase (run_for_user): actu matching only, no LLM.
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -46,8 +47,30 @@ from app.services.perspective_service import Perspective, PerspectiveService
 logger = structlog.get_logger()
 
 # Curation oversample : on demande +N sujets de plus que la cible pour
-# absorber les échecs d'actu/deep matching et toujours servir 5 sujets.
-_SUBJECT_BUFFER = 2
+# absorber les échecs d'actu/deep matching et toujours servir target sujets.
+# Defaults : target=10, buffer=4 (cf. plan passage 5→10). Surcouchable via env
+# pour rollback safe (EDITORIAL_TARGET_SUBJECT_COUNT=5 ramène au comportement
+# antérieur).
+_DEFAULT_TARGET_SUBJECT_COUNT = 10
+_DEFAULT_SUBJECT_BUFFER = 4
+
+
+def _read_target_subject_count() -> int:
+    try:
+        return max(1, int(os.environ.get("EDITORIAL_TARGET_SUBJECT_COUNT", "")))
+    except ValueError:
+        return _DEFAULT_TARGET_SUBJECT_COUNT
+
+
+def _read_subject_buffer() -> int:
+    try:
+        return max(0, int(os.environ.get("EDITORIAL_SUBJECT_BUFFER", "")))
+    except ValueError:
+        return _DEFAULT_SUBJECT_BUFFER
+
+
+# Conservé pour compat ascendante (tests/imports externes).
+_SUBJECT_BUFFER = _DEFAULT_SUBJECT_BUFFER
 
 
 class EditorialPipelineService:
@@ -146,10 +169,10 @@ class EditorialPipelineService:
         # Cap low-priority clusters (sport + faits divers) — applies to both
         # modes. Clusters are sorted by size desc so the largest — typically
         # the most trending — is kept. Skip the cap if the remaining non-
-        # low-priority pool would be too small to pick 5 subjects.
+        # low-priority pool would be too small pour atteindre la cible sujets.
         sorted_by_size = sorted(clusters, key=lambda c: len(c.source_ids), reverse=True)
         capped = cap_low_priority_clusters(sorted_by_size)
-        if len(capped) >= 5:
+        if len(capped) >= _read_target_subject_count():
             dropped = len(sorted_by_size) - len(capped)
             clusters = capped
             logger.info(
@@ -231,11 +254,12 @@ class EditorialPipelineService:
         # digest à 5 sujets sans replonger en LLM. Cf. bug-digest-pipeline-fallbacks.md.
         step_start = time.time()
         excluded_ids = {a_la_une_topic.topic_id} if a_la_une_topic else set()
-        target_subject_count = 5
+        target_subject_count = _read_target_subject_count()
+        subject_buffer = _read_subject_buffer()
         remaining_count = (
             (target_subject_count - 1) if a_la_une_topic else target_subject_count
         )
-        oversample_count = remaining_count + _SUBJECT_BUFFER
+        oversample_count = remaining_count + subject_buffer
         selected_topics = await self.curation.select_topics(
             clusters,
             subjects_count=oversample_count,
@@ -547,8 +571,9 @@ class EditorialPipelineService:
             ]
 
             # Axe C — observability: log the composition so we can verify in
-            # prod that the cluster count, perspective count and LLM analysis
-            # describe the same media set.
+            # prod que cluster count, perspective count et LLM analysis
+            # décrivent le même media set. final_persisted_count = ce que
+            # le fast path retournera (doit toujours == perspective_count).
             logger.info(
                 "editorial_pipeline.perspectives_composition",
                 topic_id=subject.topic_id,
@@ -557,6 +582,8 @@ class EditorialPipelineService:
                 total_merged=len(merged_perspectives),
                 known_bias=len(known_perspectives),
                 unknown_bias=len(merged_perspectives) - len(known_perspectives),
+                final_persisted_count=len(subject.perspective_articles or []),
+                perspective_count=subject.perspective_count,
             )
 
             # Build perspective_sources — max 6, deduplicated by domain.

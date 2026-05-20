@@ -2606,6 +2606,24 @@ class DigestService:
                     source=q.get("source"),
                 )
 
+        # B.2 — completion_threshold = pref user clampée 3-10 (target_size),
+        # plafonnée par le nombre de topics réellement renvoyés. Permet à la
+        # barre de progression mobile (totalCount / goalCount) de coller à la
+        # pref user au lieu d'exiger l'épuisement des 10 sujets backend.
+        from app.models.user import UserProfile as _UP
+        from app.services.digest_selector import DiversityConstraints as _DC
+
+        _user_profile = await self.session.scalar(
+            select(_UP).where(_UP.user_id == user_id)
+        )
+        _raw_goal = (
+            _user_profile.weekly_goal
+            if _user_profile and _user_profile.weekly_goal
+            else _DC.TARGET_DIGEST_SIZE
+        )
+        _target_size = max(3, min(_raw_goal, 10))
+        editorial_completion_threshold = min(_target_size, len(response_topics))
+
         return DigestResponse(
             digest_id=digest.id,
             user_id=digest.user_id,
@@ -2616,7 +2634,7 @@ class DigestService:
             format_version="editorial_v1",
             items=flat_items,
             topics=response_topics,
-            completion_threshold=len(response_topics),
+            completion_threshold=editorial_completion_threshold,
             is_completed=completion is not None,
             completed_at=completion.completed_at if completion else None,
             header_text=items_data.get("header_text"),

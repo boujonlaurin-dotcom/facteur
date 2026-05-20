@@ -89,6 +89,7 @@ class FeedRepository {
     String? keyword,
     bool includeUnfollowed = false,
     bool serein = false,
+    bool personalized = false,
     bool forceFresh = false,
   }) async {
     final result = await getFeedWithRaw(
@@ -105,6 +106,7 @@ class FeedRepository {
       keyword: keyword,
       includeUnfollowed: includeUnfollowed,
       serein: serein,
+      personalized: personalized,
       forceFresh: forceFresh,
     );
     return result.feed;
@@ -132,14 +134,18 @@ class FeedRepository {
     String? keyword,
     bool includeUnfollowed = false,
     bool serein = false,
+    bool personalized = false,
     bool forceFresh = false,
   }) async {
     // R5.1 — single-flight + dedupe gate for the default view only.
+    // `personalized=true` opts out: theme/topic sections of the Tournée
+    // are a different shape and must not share the default-view cache.
     final bool isDefaultView = page == 1 &&
         limit == 20 &&
         !serein &&
         !savedOnly &&
         !hasNote &&
+        !personalized &&
         contentType == null &&
         mode == null &&
         theme == null &&
@@ -173,6 +179,7 @@ class FeedRepository {
         keyword: keyword,
         includeUnfollowed: includeUnfollowed,
         serein: serein,
+        personalized: personalized,
       );
       _defaultViewInflight = future;
       try {
@@ -203,6 +210,7 @@ class FeedRepository {
       keyword: keyword,
       includeUnfollowed: includeUnfollowed,
       serein: serein,
+      personalized: personalized,
     );
   }
 
@@ -220,6 +228,7 @@ class FeedRepository {
     String? keyword,
     bool includeUnfollowed = false,
     bool serein = false,
+    bool personalized = false,
   }) async {
     try {
       // Le backend renvoie directement une List<dynamic> pour le moment
@@ -273,6 +282,10 @@ class FeedRepository {
 
       if (serein) {
         queryParams['serein'] = true;
+      }
+
+      if (personalized) {
+        queryParams['personalized'] = true;
       }
 
       final sw = Stopwatch()..start();

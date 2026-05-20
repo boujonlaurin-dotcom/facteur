@@ -440,7 +440,17 @@ class TestSubjectTrimAndRenumber:
 
         clusters = [_make_cluster_mock(f"c{i}", f"Cluster {i}") for i in range(1, 7)]
 
-        with patch(
+        # Le test mesure la boucle drop+renumber sur la frontière "target".
+        # On épingle target=5/buffer=2 (config legacy) pour découpler la garantie
+        # du défaut courant (qui a évolué à 10/4 en mai 2026).
+        with patch.dict(
+            "os.environ",
+            {
+                "EDITORIAL_TARGET_SUBJECT_COUNT": "5",
+                "EDITORIAL_SUBJECT_BUFFER": "2",
+            },
+            clear=False,
+        ), patch(
             "app.services.editorial.pipeline.ImportanceDetector"
         ) as mock_detector_cls:
             mock_detector = MagicMock()

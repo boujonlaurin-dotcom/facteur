@@ -102,6 +102,7 @@ def _is_default_view(
     source_id: str | None,
     entity: str | None,
     keyword: str | None,
+    personalized: bool,
 ) -> bool:
     """Eligibility predicate for the page-1 cache.
 
@@ -123,6 +124,7 @@ def _is_default_view(
         and source_id is None
         and entity is None
         and keyword is None
+        and not personalized
     )
 
 
@@ -154,6 +156,14 @@ async def get_personalized_feed(
             "sources the user does not follow (used by trending chip taps)."
         ),
     ),
+    personalized: bool = Query(
+        False,
+        description=(
+            "Restrict theme/topic candidates to followed sources, narrow to a "
+            "24h window, and boost articles matching user_subtopics. Used by "
+            "the Tournée du jour theme sections."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -183,6 +193,7 @@ async def get_personalized_feed(
         source_id=source_id,
         entity=entity,
         keyword=keyword,
+        personalized=personalized,
     )
 
     if cache_eligible:
@@ -214,6 +225,7 @@ async def get_personalized_feed(
                 entity=entity,
                 keyword=keyword,
                 include_unfollowed=include_unfollowed,
+                personalized=personalized,
             )
             payload = json.dumps(response.model_dump(mode="json")).encode("utf-8")
             FEED_CACHE.put(user_uuid, payload)
@@ -235,6 +247,7 @@ async def get_personalized_feed(
         entity=entity,
         keyword=keyword,
         include_unfollowed=include_unfollowed,
+        personalized=personalized,
     )
     return response
 
@@ -256,6 +269,7 @@ async def _compute_feed(
     entity: str | None,
     keyword: str | None,
     include_unfollowed: bool = False,
+    personalized: bool = False,
 ) -> FeedResponse:
     """Run the full recommendation pipeline. Identical to the pre-Round-5
     body of `get_personalized_feed`, extracted for cache-miss reuse."""
@@ -284,6 +298,7 @@ async def _compute_feed(
         keyword=keyword,
         serein=serein,
         include_unfollowed=include_unfollowed,
+        personalized=personalized,
     )
 
     # Epic 11: Build clusters from custom topics (reuse from service, no duplicate query)
