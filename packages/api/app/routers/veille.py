@@ -27,6 +27,7 @@ from app.models.veille import (
     VeilleTopic,
 )
 from app.schemas.veille import (
+    VeilleAngleSuggestion,
     VeilleConfigResponse,
     VeilleConfigUpsert,
     VeilleFeedArticle,
@@ -36,12 +37,18 @@ from app.schemas.veille import (
     VeilleSourceExample,
     VeilleSourceLite,
     VeilleSourceResponse,
+    VeilleSourceSuggestion,
+    VeilleSuggestAnglesRequest,
+    VeilleSuggestAnglesResponse,
+    VeilleSuggestSourcesRequest,
+    VeilleSuggestSourcesResponse,
     VeilleTopicResponse,
 )
 from app.services.rss_parser import RSSParser
 from app.services.source_service import SourceService
 from app.services.user_interests_service import ensure_veille_favorite
 from app.services.veille.feed_filter import fetch_veille_feed
+from app.services.veille.llm import get_angle_suggester, get_source_suggester
 
 logger = structlog.get_logger()
 
@@ -156,6 +163,16 @@ async def _hydrate_response(
     )
 
 
+def _source_theme_for(veille_theme_id: str) -> str:
+    """Mappe le theme_id de la veille vers un theme valide pour la table `sources`.
+
+    La contrainte `ck_source_theme_valid` autorise un set fini ; le thème "other"
+    de la veille (Story 23.3, tuile "Autre" en mobile) est mappé vers "custom"
+    qui existe déjà dans la contrainte. Pas de migration nécessaire.
+    """
+    return "custom" if veille_theme_id == "other" else veille_theme_id
+
+
 async def _resolve_source_id(
     db: AsyncSession,
     selection,
@@ -193,7 +210,7 @@ async def _resolve_source_id(
         url=cand.url,
         feed_url=detected.feed_url,
         type=source_type,
-        theme=theme_id,
+        theme=_source_theme_for(theme_id),
         description=detected.description,
         logo_url=detected.logo_url,
         is_curated=False,
@@ -548,6 +565,70 @@ async def get_source_examples(
     """Renvoie un aperçu (≤2 articles) pour rassurer l'utilisateur au Step 3."""
     UUID(current_user_id)
     return await _fetch_source_examples(db, source_id)
+
+
+# ─── Suggesters LLM (Story 23.3) ─────────────────────────────────────────────
+
+
+@router.post("/suggest/angles", response_model=VeilleSuggestAnglesResponse)
+async def suggest_angles(
+    body: VeilleSuggestAnglesRequest,
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Renvoie 5-8 angles + mots-clés explicites pour un thème + brief.
+
+    Appel synchrone Mistral (~10-15s), cache TTL 24h sur (theme + brief).
+    Mobile affiche un HaloLoader pendant l'appel.
+    """
+    UUID(current_user_id)
+    suggester = get_angle_suggester()
+    angles = await suggester.suggest_angles(
+        theme_id=body.theme_id,
+        theme_label=body.theme_label,
+        brief=body.brief,
+    )
+    return VeilleSuggestAnglesResponse(
+        angles=[
+            VeilleAngleSuggestion(
+                title=a.title,
+                keywords=a.keywords,
+                reason=a.reason,
+            )
+            for a in angles
+        ]
+    )
+
+
+@router.post("/suggest/sources", response_model=VeilleSuggestSourcesResponse)
+async def suggest_sources(
+    body: VeilleSuggestSourcesRequest,
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Renvoie 5-10 sources rankées pour un thème + angles + mots-clés + brief.
+
+    Appel synchrone Mistral (~10-15s), cache TTL 24h. Si LLM KO, renvoie une
+    liste vide — mobile bascule sur le mode advanced URL.
+    """
+    UUID(current_user_id)
+    suggester = get_source_suggester()
+    sources = await suggester.suggest_sources(
+        theme_id=body.theme_id,
+        theme_label=body.theme_label,
+        brief=body.brief,
+        angles=body.angles,
+        keywords=body.keywords,
+    )
+    return VeilleSuggestSourcesResponse(
+        sources=[
+            VeilleSourceSuggestion(
+                name=s.name,
+                url=s.url,
+                why=s.why,
+                relevance_score=s.relevance_score,
+            )
+            for s in sources
+        ]
+    )
 
 
 # ─── Shim 410 Gone (clients mobile non mis à jour) ───────────────────────────

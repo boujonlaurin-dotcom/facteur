@@ -20,9 +20,15 @@ const List<({String slug, String label, String emoji})> kVeilleFacteurThemes = [
   (slug: 'sport', label: 'Sport', emoji: '⚽'),
 ];
 
-/// Borne de l'affichage Step 1 : on ne montre jamais plus de 9 cartes
-/// (les 9 thèmes Facteur), et les 2 premières (les plus pertinentes pour
-/// le user) sont marquées `hot` pour le badge visuel.
+/// Slug spécial pour la tuile "Autre" (Story 23.3) — débloque les cas
+/// hors-vocabulaire ("musées contemporains Barcelone"). Le user saisit son
+/// propre `theme_label`. Côté backend, `_source_theme_for("other")` mappe
+/// vers `"custom"` à l'ingestion source pour respecter `ck_source_theme_valid`.
+const String kVeilleOtherThemeSlug = 'other';
+
+/// Borne de l'affichage Step 1 : 9 thèmes Facteur + 1 tuile "Autre" = 10 max.
+/// Les 2 premières (les plus pertinentes pour le user) sont marquées `hot`
+/// pour le badge visuel.
 const int _maxThemes = 9;
 const int _hotThemesCount = 2;
 
@@ -111,5 +117,18 @@ final veilleThemesProvider = FutureProvider<List<VeilleTheme>>((ref) async {
       ),
     );
   }
+  // Story 23.3 : tuile "Autre" en dernier — débloque les cas hors-vocabulaire
+  // (ex : "Musées contemporains Barcelone"). Le user saisit son theme_label
+  // libre dans un input dédié quand cette tuile est sélectionnée.
+  result.add(
+    const VeilleTheme(
+      id: kVeilleOtherThemeSlug,
+      label: 'Autre',
+      emoji: '✨',
+      iconKey: kVeilleOtherThemeSlug,
+      meta: 'Sujet sur-mesure',
+      hot: false,
+    ),
+  );
   return result;
 });

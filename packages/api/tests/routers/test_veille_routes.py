@@ -374,6 +374,154 @@ class TestFeed:
         assert "keyword" in velo["matched_on"]
 
 
+class TestSuggestEndpoints:
+    """POST /api/veille/suggest/{angles,sources} (Story 23.3)."""
+
+    async def test_suggest_angles_returns_llm_response(self, auth_user, monkeypatch):
+        from app.services.veille.llm import angle_suggester as mod
+        from app.services.veille.llm.angle_suggester import AngleSuggestion
+
+        fake = AngleSuggestion(
+            title="Nouvelles expositions",
+            keywords=["expo", "vernissage"],
+            reason="Cible les annonces.",
+        )
+
+        async def _fake_suggest(self, theme_id, theme_label, brief=""):
+            return [fake]
+
+        monkeypatch.setattr(mod.AngleSuggester, "suggest_angles", _fake_suggest)
+        # Reset le singleton pour qu'il prenne le monkeypatch
+        monkeypatch.setattr(mod, "_angle_suggester", None)
+
+        async with _client() as c:
+            r = await c.post(
+                "/api/veille/suggest/angles",
+                json={
+                    "theme_id": "other",
+                    "theme_label": "Musées Barcelone",
+                    "brief": "Sorties expos",
+                },
+            )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert len(data["angles"]) == 1
+        assert data["angles"][0]["title"] == "Nouvelles expositions"
+        assert data["angles"][0]["keywords"] == ["expo", "vernissage"]
+
+    async def test_suggest_angles_validates_input(self, auth_user):
+        async with _client() as c:
+            r = await c.post(
+                "/api/veille/suggest/angles",
+                json={"theme_id": "", "theme_label": "x"},
+            )
+        assert r.status_code == 422
+
+    async def test_suggest_sources_returns_llm_response(self, auth_user, monkeypatch):
+        from app.services.veille.llm import source_suggester as mod
+        from app.services.veille.llm.source_suggester import SourceSuggestion
+
+        fake = SourceSuggestion(
+            name="MACBA",
+            url="https://www.macba.cat",
+            why="Musée officiel.",
+            relevance_score=1.0,
+        )
+
+        async def _fake_suggest(self, **kwargs):
+            return [fake]
+
+        monkeypatch.setattr(mod.SourceSuggester, "suggest_sources", _fake_suggest)
+        monkeypatch.setattr(mod, "_source_suggester", None)
+
+        async with _client() as c:
+            r = await c.post(
+                "/api/veille/suggest/sources",
+                json={
+                    "theme_id": "other",
+                    "theme_label": "Musées Barcelone",
+                    "brief": "Sorties expos",
+                    "angles": ["Expositions temporaires"],
+                    "keywords": ["expo", "macba"],
+                },
+            )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert len(data["sources"]) == 1
+        assert data["sources"][0]["name"] == "MACBA"
+        assert data["sources"][0]["relevance_score"] == 1.0
+
+    async def test_suggest_sources_empty_response_ok(self, auth_user, monkeypatch):
+        from app.services.veille.llm import source_suggester as mod
+
+        async def _fake_empty(self, **kwargs):
+            return []
+
+        monkeypatch.setattr(mod.SourceSuggester, "suggest_sources", _fake_empty)
+        monkeypatch.setattr(mod, "_source_suggester", None)
+
+        async with _client() as c:
+            r = await c.post(
+                "/api/veille/suggest/sources",
+                json={
+                    "theme_id": "other",
+                    "theme_label": "Niche super pointue",
+                    "brief": "",
+                    "angles": [],
+                    "keywords": [],
+                },
+            )
+        assert r.status_code == 200
+        assert r.json() == {"sources": []}
+
+
+class TestOtherThemeIngestion:
+    """theme_id='other' (tuile Autre) doit mapper vers theme='custom' à l'ingestion."""
+
+    async def test_other_theme_niche_source_ingestion(
+        self, auth_user, monkeypatch
+    ):
+        from unittest.mock import AsyncMock
+        from app.services import source_service
+
+        async def _fake_detect(self, url):
+            from types import SimpleNamespace
+
+            return SimpleNamespace(
+                name="MACBA",
+                feed_url=f"{url}/feed.xml",
+                detected_type="article",
+                description="Musée",
+                logo_url=None,
+            )
+
+        monkeypatch.setattr(source_service.SourceService, "detect_source", _fake_detect)
+
+        payload = {
+            "theme_id": "other",
+            "theme_label": "Musées Barcelone",
+            "topics": [],
+            "source_selections": [
+                {
+                    "kind": "niche",
+                    "niche_candidate": {
+                        "name": "MACBA",
+                        "url": "https://www.macba.cat",
+                        "why": None,
+                    },
+                }
+            ],
+            "keywords": [],
+        }
+        async with _client() as c:
+            r = await c.post("/api/veille/config", json=payload)
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["theme_id"] == "other"
+        # La source ingérée doit avoir theme='custom' (mappé depuis 'other')
+        assert data["sources"][0]["source"]["theme"] == "custom"
+
+
 class TestLegacyGoneShims:
     async def test_suggestions_topics_410(self, auth_user):
         async with _client() as c:

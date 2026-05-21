@@ -6,21 +6,18 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../config/theme.dart';
 import '../../../sources/models/smart_search_result.dart';
 import '../../models/veille_config.dart';
+import '../../models/veille_config_dto.dart';
 import '../../providers/veille_config_provider.dart';
 import '../../widgets/veille_add_source_sheet.dart';
 import '../../widgets/veille_source_card.dart';
 import '../../widgets/veille_widgets.dart';
 
-/// Step 3 — Sources. Désormais dernière étape du flow (step4 frequency
-/// dropé en Story 23.2 PR-4).
-///
-/// Sources curées affichées depuis `state.sourcesMeta` (hydratées par
-/// preset ou par défaut). Plus de curation LLM ranking — le filtre temps-réel
-/// backend trie les articles à l'exécution.
-///
-/// Toggle "Configuration avancée" : révèle le bouton "Ajouter par URL"
-/// (réutilise `VeilleAddSourceSheet`). Sans le toggle, l'utilisateur voit
-/// uniquement les sources curées + un CTA standard d'ajout.
+/// Step 3 — Story 23.3 refonte :
+///   - Liste principale = `state.suggestedSources` (LLM, hydratée par
+///     /suggest/sources lancé pendant la transition Step2→Step3).
+///   - Sources curées pre-applied (preset) affichées en complément si présentes.
+///   - Mode advanced URL (déjà OK).
+///   - canSubmit = au moins 1 source sélectionnée (LLM suggérée OU catalogue OU URL).
 class Step3SourcesScreen extends ConsumerWidget {
   final VoidCallback onClose;
   final Future<void> Function() onSubmit;
@@ -35,21 +32,25 @@ class Step3SourcesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(veilleConfigProvider);
     final notifier = ref.read(veilleConfigProvider.notifier);
-    final hasRealSource = state.realSelectedSourceCount > 0;
-    final canSubmit = hasRealSource && !state.isSubmitting;
 
+    final hasSelectedSuggested = state.selectedSuggestedSourceIndexes.isNotEmpty;
+    final hasRealCuratedSource = state.realSelectedSourceCount > 0;
+    final canSubmit = (hasSelectedSuggested || hasRealCuratedSource) && !state.isSubmitting;
+
+    // Sources catalogue déjà appliquées (preset / customSourceAdded). Affichées
+    // en complément des sources LLM.
     final curatedSources = <VeilleSource>[];
+    final seen = <String>{};
     for (final id in state.selectedSourceIds) {
       final meta = state.sourcesMeta[id];
       if (meta?.apiSourceId == null) continue;
+      if (!seen.add(id)) continue;
       curatedSources.add(_metaToUiSource(meta!));
     }
-    // Si l'utilisateur a désélectionné les sources du preset, on les ré-affiche
-    // quand même (en mode désélectionné) — sourceMeta contient toujours leur
-    // metadata. Sinon on n'aurait plus rien à proposer.
     for (final entry in state.sourcesMeta.entries) {
       if (state.selectedSourceIds.contains(entry.key)) continue;
       if (entry.value.apiSourceId == null) continue;
+      if (!seen.add(entry.key)) continue;
       curatedSources.add(_metaToUiSource(entry.value));
     }
 
@@ -66,13 +67,14 @@ class Step3SourcesScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const VeilleFlowH1(
-                  'Quelles sources veux-tu suivre ?',
-                ),
+                const VeilleFlowH1('Quelles sources veux-tu suivre ?'),
                 const SizedBox(height: 8),
                 Text(
-                  'On a déjà sélectionné des sources reconnues pour ton thème. '
-                  'Tu peux décocher celles qui ne t\'intéressent pas.',
+                  state.suggestedSources.isEmpty
+                      ? 'Le facteur n\'a pas trouvé de source à proposer. Tu peux '
+                          'ajouter manuellement par URL ci-dessous.'
+                      : 'Le facteur a sélectionné ces sources pour matcher tes '
+                          'angles. Décoche celles que tu ne veux pas suivre.',
                   style: GoogleFonts.dmSans(
                     fontSize: 13,
                     color: const Color(0xFF5D5B5A),
@@ -80,9 +82,22 @@ class Step3SourcesScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 22),
-                if (curatedSources.isEmpty)
-                  const _EmptyCuratedSources()
-                else
+                if (state.suggestedSources.isNotEmpty)
+                  _SuggestedSourcesList(state: state, notifier: notifier),
+                if (curatedSources.isNotEmpty) ...[
+                  if (state.suggestedSources.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    Text(
+                      'AUTRES SOURCES',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                        color: const Color(0xFF8B7E63),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   Column(
                     children: [
                       for (int i = 0; i < curatedSources.length; i++) ...[
@@ -98,6 +113,7 @@ class Step3SourcesScreen extends ConsumerWidget {
                       ],
                     ],
                   ),
+                ],
                 const SizedBox(height: 24),
                 _AdvancedToggle(
                   expanded: state.advancedMode,
@@ -119,7 +135,7 @@ class Step3SourcesScreen extends ConsumerWidget {
                     onTap: () => _openAddSheet(context, ref, notifier),
                   ),
                 ],
-                if (!hasRealSource) ...[
+                if (!canSubmit) ...[
                   const SizedBox(height: 12),
                   Text(
                     'Sélectionne au moins une source pour continuer.',
@@ -193,38 +209,142 @@ class Step3SourcesScreen extends ConsumerWidget {
   }
 }
 
-class _EmptyCuratedSources extends StatelessWidget {
-  const _EmptyCuratedSources();
+class _SuggestedSourcesList extends StatelessWidget {
+  final VeilleConfigState state;
+  final VeilleConfigNotifier notifier;
+  const _SuggestedSourcesList({required this.state, required this.notifier});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF8EA),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: FacteurColors.veilleLine),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Pas de source curée pour ce thème.',
-            style: GoogleFonts.dmSans(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFF2A2419),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Ajoute une source manuellement via "Configuration avancée".',
-            style: GoogleFonts.dmSans(
-              fontSize: 12,
-              color: const Color(0xFF8B7E63),
-            ),
-          ),
+    final cards = <Widget>[];
+    for (int i = 0; i < state.suggestedSources.length; i++) {
+      final src = state.suggestedSources[i];
+      final selected = state.selectedSuggestedSourceIndexes.contains(i);
+      cards.add(_SuggestedSourceCard(
+        source: src,
+        selected: selected,
+        onToggle: () => notifier.toggleSuggestedSource(i),
+      ));
+    }
+    return Column(
+      children: [
+        for (int i = 0; i < cards.length; i++) ...[
+          if (i > 0) const SizedBox(height: 6),
+          cards[i],
         ],
+      ],
+    );
+  }
+}
+
+class _SuggestedSourceCard extends StatelessWidget {
+  final VeilleSourceSuggestionDto source;
+  final bool selected;
+  final VoidCallback onToggle;
+  const _SuggestedSourceCard({
+    required this.source,
+    required this.selected,
+    required this.onToggle,
+  });
+
+  String get _domain {
+    final uri = Uri.tryParse(source.url);
+    return uri?.host ?? source.url;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? FacteurColors.veilleTint : const Color(0xFFFDFBF7),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onToggle,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? FacteurColors.veille : FacteurColors.veilleLineSoft,
+              width: 1.4,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  color: Colors.white,
+                  child: Image.network(
+                    'https://www.google.com/s2/favicons?sz=128&domain=$_domain',
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => Center(
+                      child: Text(
+                        source.name.isNotEmpty
+                            ? source.name[0].toUpperCase()
+                            : '?',
+                        style: GoogleFonts.fraunces(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: FacteurColors.veille,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      source.name,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF2C2A29),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _domain,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        color: const Color(0xFF8B7E63),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if ((source.why ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        source.why!,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 12,
+                          color: const Color(0xFF5D5B5A),
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                selected
+                    ? PhosphorIcons.checkSquare(PhosphorIconsStyle.fill)
+                    : PhosphorIcons.square(),
+                size: 22,
+                color:
+                    selected ? FacteurColors.veille : const Color(0xFF8B7E63),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
