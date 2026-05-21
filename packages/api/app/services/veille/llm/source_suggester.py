@@ -144,9 +144,7 @@ class SourceSuggester:
             self._cache[cache_key] = result
             return result
 
-        angles_block = (
-            "\n".join(f"  - {a}" for a in angles) if angles else "  (aucun)"
-        )
+        angles_block = "\n".join(f"  - {a}" for a in angles) if angles else "  (aucun)"
         keywords_str = ", ".join(keywords) if keywords else "(aucun)"
         user_message = (
             f"Thème : {theme_label} (slug: {theme_id})\n"
