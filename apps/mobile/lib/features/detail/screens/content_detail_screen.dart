@@ -17,7 +17,6 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import '../../../config/theme.dart';
-import '../../../config/topic_labels.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../feed/models/content_model.dart';
@@ -25,6 +24,8 @@ import '../../../core/providers/navigation_providers.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
+import '../../my_interests/models/user_interests_state.dart' show InterestState;
+import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
 import '../../../widgets/sunflower_icon.dart';
@@ -39,7 +40,6 @@ import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/widgets/nudge_inline_banner.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/widgets/editorial_badge.dart';
-import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
@@ -1649,73 +1649,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   );
                 },
               ),
-            // Floating "Lancer l'analyse Facteur" button — in-app articles only.
-            // Visible when the perspectives section is expanded and analysis
-            // hasn't been triggered yet.
-            if (useInAppReading && content.contentType == ContentType.article)
-              Builder(
-                builder: (context) {
-                  final show = _perspectivesExpanded &&
-                      _perspectivesAnalysisState ==
-                          PerspectivesAnalysisState.idle &&
-                      _perspectivesResponse != null &&
-                      _perspectivesResponse!.perspectives.isNotEmpty;
-                  return Positioned(
-                    right: 16,
-                    bottom: _kFooterContentHeight +
-                        MediaQuery.of(context).viewPadding.bottom +
-                        12,
-                    child: AnimatedScale(
-                      scale: show ? 1.0 : 0.9,
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeOut,
-                      child: AnimatedOpacity(
-                        opacity: show ? 1.0 : 0.0,
-                        duration: const Duration(milliseconds: 200),
-                        child: IgnorePointer(
-                          ignoring: !show,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              color: context.facteurColors.surfaceElevated
-                                  .withValues(alpha: 0.95),
-                              border: Border.all(
-                                color: context.facteurColors.border,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.08),
-                                  blurRadius: 16,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                HapticFeedback.lightImpact();
-                                _requestPerspectivesAnalysis();
-                              },
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: context.facteurColors.primary,
-                                side: BorderSide.none,
-                                backgroundColor: Colors.transparent,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              icon: Icon(
-                                PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
-                                size: 16,
-                              ),
-                              label: const Text('Lancer l\'analyse Facteur'),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
             // Footer — always rendered, mirrors header slide behavior.
             // Article: full layout. Video/audio: external CTA + bookmark + sunflower.
             Positioned(
@@ -1904,8 +1837,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               // boutons icônes à droite); fills width pour video/audio.
               // Article: dynamic "Article complet" / "Lire via Navigateur"
               // with permanent-orange logic. Video/audio: simple external CTA.
-              Flexible(
-                fit: FlexFit.loose,
+              Expanded(
                 child: SizedBox(
                   height: 53,
                   child: isArticle
@@ -1920,7 +1852,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                       final label = isWebViewMode
                           ? 'Lire via Navigateur'
-                          : 'Article complet';
+                          : 'Lire sur ${content.source.name}';
                       final showLogo = !isWebViewMode;
                       final iconData = isWebViewMode
                           ? PhosphorIcons.arrowUpRight(
@@ -2009,10 +1941,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       : _buildExternalCtaButton(context, content),
                 ),
               ),
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
+              const SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
               // Sauvegarder (long-press → collection picker)
               GestureDetector(
                 onLongPress: () {
@@ -2065,8 +1997,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   tooltip: 'Recommander',
                 ),
               ),
-                  ],
-                ),
+                ],
               ),
             ],
           ),
@@ -2141,6 +2072,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Widget _buildHeader(BuildContext context, Content content) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+
+    // Live follow state — relies on the unified 4-state interests provider
+    // so the chip reflects an optimistic toggle from anywhere in the app
+    // (and disappears the instant the user taps "+ Suivre" below).
+    final sourcesState = ref.watch(userSourcesStateProvider).valueOrNull;
+    final liveState = sourcesState?.stateOf(content.source.id);
+    final isFollowedLive = liveState == InterestState.followed ||
+        liveState == InterestState.favorite ||
+        // Fallback to the article payload before the provider has loaded —
+        // avoids a flash of the chip on cold open.
+        (liveState == null && content.isFollowedSource);
 
     // ColoredBox fills the status bar area; SafeArea pushes content below it
     final headerContent = ColoredBox(
@@ -2331,6 +2273,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           ),
                         ), // _SourceBadgeNudge
                       ),
+                      if (!isFollowedLive) ...[
+                        const SizedBox(width: 8),
+                        _FollowSourceChip(
+                          sourceId: content.source.id,
+                          colors: colors,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -2420,12 +2369,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final labelStyle = textTheme.labelSmall;
-    final topicsAsync = ref.watch(customTopicsProvider);
-    final followedNames = (topicsAsync.valueOrNull ?? [])
-        .where((t) => t.canonicalName != null)
-        .map((t) => t.canonicalName!.toLowerCase())
-        .toSet();
-
     // Build ordered chip list: (widget, estimatedWidth)
     final chips = <({Widget widget, double width})>[];
 
@@ -2450,108 +2393,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ));
     }
 
-    if (content.topics.isNotEmpty) {
-      final macroTheme = getTopicMacroTheme(content.topics.first);
-      if (macroTheme != null) {
-        final emoji = getMacroThemeEmoji(macroTheme);
-        final label = '${emoji.isNotEmpty ? '$emoji ' : ''}$macroTheme';
-        chips.add((
-          widget: GestureDetector(
-            onTap: () => TopicChip.showArticleSheet(context, content,
-                initialSection: ArticleSheetSection.topic),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: colors.textTertiary.withValues(alpha: 0.20),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                label,
-                style: labelStyle?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
-          width: _measureChipWidth(label, labelStyle),
-        ));
-      }
-      final topicLabel = getTopicLabel(content.topics.first);
-      // Skip topic chip when its label duplicates the macro-theme name.
-      if (topicLabel.toLowerCase() != macroTheme?.toLowerCase()) {
-        chips.add((
-          widget: GestureDetector(
-            onTap: () => TopicChip.showArticleSheet(context, content,
-                initialSection: ArticleSheetSection.topic),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: colors.textTertiary.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                topicLabel,
-                style: labelStyle?.copyWith(
-                  color: colors.textTertiary,
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
-          width: _measureChipWidth(topicLabel, labelStyle),
-        ));
-      }
-    }
-
-    for (final entity in content.entities) {
-      final isFollowed = followedNames.contains(entity.text.toLowerCase());
+    final subjectCount = content.topics.length + content.entities.length;
+    if (subjectCount > 0) {
+      final label = subjectCount == 1 ? '1 sujet' : '$subjectCount sujets';
       chips.add((
         widget: GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(context, content,
-              initialSection: ArticleSheetSection.entities),
+          onTap: () => TopicChip.showArticleSheet(context, content),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: isFollowed
-                  ? const Color(0xFFE07A5F).withValues(alpha: 0.15)
-                  : colors.textTertiary.withValues(alpha: 0.12),
+              color: colors.textTertiary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 100),
-                  child: Text(
-                    entity.text,
-                    style: labelStyle?.copyWith(
-                      color: isFollowed
-                          ? const Color(0xFFE07A5F)
-                          : colors.textTertiary,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (isFollowed) ...[
-                  const SizedBox(width: 3),
-                  Icon(
-                    PhosphorIcons.check(PhosphorIconsStyle.bold),
-                    size: 10,
-                    color: const Color(0xFFE07A5F),
-                  ),
-                ],
-              ],
+            child: Text(
+              label,
+              style: labelStyle?.copyWith(
+                color: colors.textTertiary,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ),
-        width: _measureChipWidth(entity.text, labelStyle, isEntity: true),
+        width: _measureChipWidth(label, labelStyle),
       ));
     }
 
@@ -2911,6 +2774,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               horizontal: FacteurSpacing.space4),
                           child: Divider(color: colors.textTertiary.withValues(alpha: 0.3), height: 1, thickness: 1),
                         ),
+                        const SizedBox(height: FacteurSpacing.space4),
                       ],
 
                       // ZONE 2: Article body — _articleKey scopes scroll-bridge
@@ -3605,6 +3469,95 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 }
 
 /// Subtle periodic nudge on the source badge to hint at long-press.
+/// Compact "+ Suivre" chip shown in the reader header when the article's
+/// source is not yet followed. Tap = optimistic follow via
+/// [userSourcesStateProvider]; the chip vanishes on the next rebuild because
+/// the live state flips to [InterestState.followed].
+class _FollowSourceChip extends ConsumerStatefulWidget {
+  final String sourceId;
+  final FacteurColors colors;
+
+  const _FollowSourceChip({required this.sourceId, required this.colors});
+
+  @override
+  ConsumerState<_FollowSourceChip> createState() => _FollowSourceChipState();
+}
+
+class _FollowSourceChipState extends ConsumerState<_FollowSourceChip> {
+  bool _busy = false;
+
+  Future<void> _onTap() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    HapticFeedback.lightImpact();
+    try {
+      await ref
+          .read(userSourcesStateProvider.notifier)
+          .setSourceState(widget.sourceId, InterestState.followed);
+      if (!mounted) return;
+      NotificationService.showSuccess(
+        'Source ajoutée à votre veille',
+        context: context,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      NotificationService.showError(
+        'Impossible de suivre la source',
+        context: context,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.colors;
+    return Material(
+      color: c.backgroundSecondary,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(
+          color: c.textTertiary.withValues(alpha: 0.3),
+          width: 1,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: _busy ? null : _onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_busy)
+                SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    valueColor: AlwaysStoppedAnimation(c.textSecondary),
+                  ),
+                )
+              else
+                Icon(Icons.add, size: 14, color: c.textSecondary),
+              const SizedBox(width: 4),
+              Text(
+                'Suivre',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: c.textSecondary,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.2,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SourceBadgeNudge extends StatefulWidget {
   final Widget child;
 

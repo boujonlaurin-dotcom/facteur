@@ -191,7 +191,8 @@ class TestLowPrioritySportCap:
         from app.services.editorial.pipeline import EditorialPipelineService
 
         # 3 sport clusters + enough non-sport clusters so the cap is applied
-        # (cap is skipped when it would leave < 5 clusters for curation).
+        # (cap is skipped when it would leave < target clusters for curation).
+        # On épingle target=5 pour découpler ce test de l'évolution du défaut.
         clusters = [
             _make_cluster("sport1", ["PSG OM"], theme="sport", source_count=5),
             _make_cluster("sport2", ["Tennis Roland-Garros"], theme="sport"),
@@ -215,7 +216,9 @@ class TestLowPrioritySportCap:
         mock_deps["curation"].select_topics.side_effect = _capture_select_topics
 
         svc = EditorialPipelineService(AsyncMock())
-        with patch(
+        with patch.dict(
+            "os.environ", {"EDITORIAL_TARGET_SUBJECT_COUNT": "5"}, clear=False
+        ), patch(
             "app.services.editorial.pipeline.ImportanceDetector"
         ) as mock_detector_cls:
             mock_detector = MagicMock()

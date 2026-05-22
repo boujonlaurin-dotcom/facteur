@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.content import Content, UserContentStatus
-from app.models.enums import ContentStatus, ContentType, FeedFilterMode
+from app.models.enums import ContentStatus, ContentType, FeedFilterMode, InterestState
 from app.models.source import Source, UserSource
 from app.models.user import UserProfile, UserSubtopic
 
@@ -105,6 +105,45 @@ async def _load_muted_entities_safe(session, user_id: UUID) -> set[str]:
 
 
 from app.schemas.content import RecommendationReason, ScoreContribution
+
+
+def is_personalized_theme_mode(
+    *,
+    personalized: bool,
+    theme: str | None,
+    topic: str | None,
+    source_uuid: UUID | str | None,
+) -> bool:
+    """Story 21.2 — Tournée du jour personalized-theme dispatch.
+
+    Returns True when the caller is asking for a favorite-theme section of
+    the Flux Continu (`personalized=True` + `theme|topic`, no source pinned).
+    These calls bypass the chronological short-circuit and fall through to
+    the PillarScoringEngine branch.
+    """
+    return (
+        personalized
+        and (theme is not None or topic is not None)
+        and source_uuid is None
+    )
+
+
+def stratify_followed_first(
+    items: list[tuple[Content, float]],
+    followed_source_ids: set[UUID],
+) -> list[tuple[Content, float]]:
+    """Lift items whose source is followed to the front, preserving order
+    within each group. Used after scoring/randomization in theme/topic feeds
+    so favorite sections lead with sources the user trusts, then complete
+    with the rest.
+    """
+    if not followed_source_ids:
+        return items
+    followed = [it for it in items if it[0].source_id in followed_source_ids]
+    others = [it for it in items if it[0].source_id not in followed_source_ids]
+    return followed + others
+
+
 from app.services.recommendation.filter_presets import (
     apply_entity_filter,
     apply_keyword_filter,
@@ -183,6 +222,7 @@ class RecommendationService:
         keyword: str | None = None,
         serein: bool = False,
         include_unfollowed: bool = False,
+        personalized: bool = False,
     ) -> list[Content]:
         """
         Génère un feed personnalisé pour l'utilisateur.
@@ -283,12 +323,15 @@ class RecommendationService:
 
         user_interests = set()
         user_interest_weights = {}
+        user_interest_states: dict[str, InterestState] = {}
         user_prefs = {}
 
         if user_profile:
             for i in user_profile.interests:
                 user_interests.add(i.interest_slug)
                 user_interest_weights[i.interest_slug] = i.weight
+                # Story 22.1: state déclaré par l'utilisateur (hidden / favorite, etc.)
+                user_interest_states[i.interest_slug] = i.state
 
             for p in user_profile.preferences:
                 user_prefs[p.preference_key] = p.preference_value
@@ -433,6 +476,10 @@ class RecommendationService:
             # Trending chip fallback: expand search to all sources when keyword is set
             include_unfollowed=include_unfollowed,
             excluded_topics=_user_excluded_topics,
+            # Tournée du jour : restrict theme/topic candidates to followed
+            # sources + 24h window + boost user_subtopics.
+            personalized=personalized,
+            user_subtopics=user_subtopics,
         )
         self.total_candidates = len(candidates)
 
@@ -491,9 +538,22 @@ class RecommendationService:
                     muted_count=len(muted_entities),
                 )
 
+        # Story 21.2 — Tournée du jour personalized theme sections fall through to
+        # the scoring branch (PillarScoringEngine) instead of pure recency. Aligns
+        # the favorite-theme sections of the Flux Continu with user preferences
+        # (weight_effective, source affinity, hierarchical freshness, quality).
+        personalized_theme_mode = is_personalized_theme_mode(
+            personalized=personalized,
+            theme=theme,
+            topic=topic,
+            source_uuid=source_uuid,
+        )
+
         # Explicit filter OR RECENT mode: skip scoring, return pure chronological order
         # Candidates are already sorted by published_at DESC from _get_candidates
-        if source_uuid or theme or topic or entity or mode == FeedFilterMode.RECENT:
+        if not personalized_theme_mode and (
+            source_uuid or theme or topic or entity or mode == FeedFilterMode.RECENT
+        ):
             paginated = candidates[offset : offset + limit]
             await self._hydrate_user_status(paginated, user_id, followed_source_ids)
             return paginated
@@ -706,6 +766,7 @@ class RecommendationService:
             user_custom_topics=user_custom_topics,
             source_priority_multipliers=source_priority_multipliers,
             subscribed_source_ids=subscribed_source_ids,
+            user_interest_states=user_interest_states,
         )
 
         use_pillars = ScoringWeights.SCORING_VERSION == "pillars_v1"
@@ -732,6 +793,7 @@ class RecommendationService:
             duration_ms=round((t5 - t4) * 1000),
             candidates=len(candidates),
             engine="pillars_v1" if use_pillars else "layers_v1",
+            mode="personalized_theme" if personalized_theme_mode else "default",
         )
 
         # 4. Sort by score DESC
@@ -758,7 +820,13 @@ class RecommendationService:
         final_list.sort(key=lambda x: x[1], reverse=True)
 
         # 4c. Randomization (v2 only — Gumbel noise for discovery)
-        if use_pillars and ScoringWeights.FEED_RANDOMIZATION_TEMPERATURE > 0:
+        # Story 21.2 — disabled on personalized_theme_mode so paginated "Plus de…"
+        # stays stable between fetches (no duplicates / order jumps).
+        if (
+            use_pillars
+            and ScoringWeights.FEED_RANDOMIZATION_TEMPERATURE > 0
+            and not personalized_theme_mode
+        ):
             from app.services.recommendation.randomization import randomized_sort
 
             final_list = randomized_sort(
@@ -766,6 +834,17 @@ class RecommendationService:
                 temperature=ScoringWeights.FEED_RANDOMIZATION_TEMPERATURE,
                 seed=None,  # Random per request for feed discovery
             )
+
+        # 4d. Followed-source stratification for theme/topic sections.
+        # When the caller filters by theme or topic AND the user follows at
+        # least one source, lift all followed-source items above the rest
+        # (each group keeps its current relative order from 4b/4c). This
+        # guarantees the thematic favorite sections of the Flux Continu lead
+        # with sources the user trusts, then complete with other sources.
+        # No-op for Explorer (followed_source_ids handled at query time) and
+        # for the default feed (no theme/topic filter).
+        if (theme or topic) and followed_source_ids:
+            final_list = stratify_followed_first(final_list, followed_source_ids)
 
         # 5. Paginate
         scored_candidates = final_list
@@ -788,7 +867,10 @@ class RecommendationService:
                 pr = pillar_results.get(content.id)
                 if pr:
                     content.recommendation_reason = build_recommendation_reason(pr)
-                    if ScoringWeights.FEED_RANDOMIZATION_TEMPERATURE > 0:
+                    if (
+                        ScoringWeights.FEED_RANDOMIZATION_TEMPERATURE > 0
+                        and not personalized_theme_mode
+                    ):
                         content.recommendation_reason.breakdown.append(
                             ScoreContribution(
                                 label="Hasard pour diversifier",
@@ -2246,6 +2328,8 @@ class RecommendationService:
         sensitive_themes: list[str] | None = None,
         include_unfollowed: bool = False,
         excluded_topics: list[Any] | None = None,
+        personalized: bool = False,
+        user_subtopics: set[str] | None = None,
     ) -> list[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import and_, or_
@@ -2269,10 +2353,19 @@ class RecommendationService:
         # Otherwise, exclude hidden + saved + seen + consumed (default feed).
         from sqlalchemy import exists
 
+        # Tournée du jour : sections curées par thème/topic restreintes aux
+        # sources suivies + fenêtre 24h + boost user_subtopics. Inerte sans
+        # personalized=true côté client (rétro-compat).
+        personalized_theme_mode = (
+            personalized
+            and (theme is not None or topic is not None)
+            and source_id is None
+        )
+
         explicit_filter = (
             source_id is not None
-            or theme is not None
-            or topic is not None
+            or (theme is not None and not personalized_theme_mode)
+            or (topic is not None and not personalized_theme_mode)
             or entity is not None
             or keyword is not None
         )
@@ -2338,9 +2431,17 @@ class RecommendationService:
         #   à l'affichage via la chip "Suivre +".
         # keyword + include_unfollowed: même politique d'élargissement.
         # followed_source_ids: followed sources only (no curated enrichment)
+        # personalized_theme_mode: theme/topic restreint aux followed → reuse
+        #   two-phase path (timeout + curated fallback hérités).
         _use_two_phase = False
         if source_id:
             query = query.where(Content.source_id == source_id)
+        elif personalized_theme_mode and followed_source_ids:
+            _use_two_phase = True
+        elif personalized_theme_mode:
+            # Edge: user follows zero sources → fallback curated pour ne pas
+            # rendre la section vide.
+            query = query.where(Source.is_curated, Source.source_tier != "deep")
         elif theme or topic or entity or (keyword and include_unfollowed):
             pass
         elif followed_source_ids:
@@ -2448,6 +2549,14 @@ class RecommendationService:
         if keyword and not source_id:
             query = apply_keyword_filter(query, keyword)
 
+        # Tournée du jour : fenêtre 24h sur les sections curées par thème/topic.
+        # Aligne le pool de candidats avec la notion de "fraîcheur du jour".
+        if personalized_theme_mode:
+            since_24h = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+                hours=24
+            )
+            query = query.where(Content.published_at >= since_24h)
+
         if _use_two_phase:
             # Followed sources only — no curated enrichment in default feed.
             # Curated enrichment is reserved for digest (digest_selector.py).
@@ -2461,9 +2570,19 @@ class RecommendationService:
                 )
             else:
                 user_query = query.where(Source.id.in_(list(followed_source_ids)))
-            user_query = user_query.order_by(Content.published_at.desc()).limit(
-                limit_candidates
-            )
+            if personalized_theme_mode and user_subtopics:
+                # Soft boost via ORDER BY : articles matchant un user_subtopic
+                # remontent en tête, mais pas de section vide si l'intersection
+                # est nulle (`overlap` retourne False, on dégrade vers le tri
+                # chronologique pur).
+                user_query = user_query.order_by(
+                    Content.topics.overlap(list(user_subtopics)).desc(),
+                    Content.published_at.desc(),
+                ).limit(limit_candidates)
+            else:
+                user_query = user_query.order_by(Content.published_at.desc()).limit(
+                    limit_candidates
+                )
             # The followed-only query on the default (unfiltered) view can
             # hang under a bad plan when the user has many followed sources —
             # other branches dodge it thanks to their `is_curated` narrowing.

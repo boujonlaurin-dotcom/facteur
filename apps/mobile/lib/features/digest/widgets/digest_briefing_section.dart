@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
@@ -48,6 +50,11 @@ class DigestBriefingSection extends StatefulWidget {
   final List<CommunityCarouselItem> communityCarousel;
   final void Function(CommunityCarouselItem)? onCommunityArticleTap;
 
+  /// Nombre max de topics affichés par défaut (selon pref user 3/5/7).
+  /// Au-delà, le reste est révélé par le bouton "Voir N autres articles".
+  /// `null` ou 0 = pas de limite (legacy behavior, on affiche tout).
+  final int? displayLimit;
+
   const DigestBriefingSection({
     super.key,
     required this.items,
@@ -74,6 +81,7 @@ class DigestBriefingSection extends StatefulWidget {
     this.dailyGoal = 5,
     this.communityCarousel = const [],
     this.onCommunityArticleTap,
+    this.displayLimit,
   });
 
   @override
@@ -83,6 +91,19 @@ class DigestBriefingSection extends StatefulWidget {
 class _DigestBriefingSectionState extends State<DigestBriefingSection> {
   bool get _usesTopics =>
       widget.topics != null && widget.topics!.isNotEmpty;
+
+  bool _showAll = false;
+
+  int _effectiveCount(int total) {
+    final limit = widget.displayLimit;
+    if (limit == null || limit <= 0 || _showAll) return total;
+    return math.min(total, limit);
+  }
+
+  List<T> _sliced<T>(List<T> source) {
+    final count = _effectiveCount(source.length);
+    return source.length <= count ? source : source.sublist(0, count);
+  }
 
   // --- Dismiss banner state ---
   String? _activeDismissalId;
@@ -218,45 +239,73 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     );
   }
 
+  /// Indique si le toggle "Voir plus / Réduire" doit être rendu pour une
+  /// liste de taille `total`. True quand displayLimit > 0 ET total > limit.
+  bool _shouldShowToggle(int total) {
+    final limit = widget.displayLimit ?? 0;
+    return limit > 0 && total > limit;
+  }
+
   /// Flat layout: existing list of ranked cards (flat_v1 / legacy)
   Widget _buildFlatLayout(BuildContext context) {
     final visibleItems =
         widget.items.where((item) => !item.isDismissed).toList();
-    return ListView.separated(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: visibleItems.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 2),
-      itemBuilder: (context, index) {
-        final item = visibleItems[index];
-        return _buildRankedCard(context, item, index + 1);
-      },
+    final displayed = _sliced(visibleItems);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: displayed.length,
+          separatorBuilder: (context, index) => const SizedBox(height: 2),
+          itemBuilder: (context, index) {
+            final item = displayed[index];
+            return _buildRankedCard(context, item, index + 1);
+          },
+        ),
+        if (_shouldShowToggle(visibleItems.length))
+          _buildShowMoreButton(visibleItems.length - displayed.length),
+      ],
     );
   }
 
   /// Topics layout: sections with horizontal article scroll (topics_v1)
   Widget _buildTopicsLayout() {
-    return ListView.separated(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: widget.topics!.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 14),
-      itemBuilder: (_, i) => TopicSection(
-        topic: widget.topics![i],
-        totalTopics: widget.topics!.length,
-        onArticleTap: widget.onItemTap,
-        onSave: widget.onSave,
-        onNotInterested: widget.onNotInterested,
-        onSourceTap: widget.onSourceTap,
-        onSwipeDismiss: widget.onSwipeDismiss != null
-            ? _handleLocalSwipeDismiss
-            : null,
-        activeDismissalId: _activeDismissalId,
-        onDismissUndo: _handleLocalUndo,
-        onDismissAutoResolve: _handleLocalAutoResolve,
-        onDismissMuteSource: _handleLocalMuteSource,
-        onDismissMuteTopic: _handleLocalMuteTopic,
-      ),
+    final allTopics = widget.topics!;
+    final displayed = _sliced(allTopics);
+    final effective = displayed.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: effective,
+          separatorBuilder: (_, __) => const SizedBox(height: 14),
+          itemBuilder: (_, i) => TopicSection(
+            topic: displayed[i],
+            // totalTopics drives indicator animations (TopicSection :243-247).
+            // On garde le total visible — pas le total backend — pour que le
+            // libellé "Sujet i/N" colle à ce qu'utilisateur voit à l'écran.
+            totalTopics: effective,
+            onArticleTap: widget.onItemTap,
+            onSave: widget.onSave,
+            onNotInterested: widget.onNotInterested,
+            onSourceTap: widget.onSourceTap,
+            onSwipeDismiss: widget.onSwipeDismiss != null
+                ? _handleLocalSwipeDismiss
+                : null,
+            activeDismissalId: _activeDismissalId,
+            onDismissUndo: _handleLocalUndo,
+            onDismissAutoResolve: _handleLocalAutoResolve,
+            onDismissMuteSource: _handleLocalMuteSource,
+            onDismissMuteTopic: _handleLocalMuteTopic,
+          ),
+        ),
+        if (_shouldShowToggle(allTopics.length))
+          _buildShowMoreButton(allTopics.length - effective),
+      ],
     );
   }
 
@@ -295,15 +344,19 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     // Quote + counter for serein mode are rendered above this widget (in
     // build()) so the spacing counter→first-topic matches Essentiel exactly.
 
-    // Topics with intro text, editorial DigestCards, and transition text
-    for (int i = 0; i < widget.topics!.length; i++) {
-      final topic = widget.topics![i];
+    // Topics with intro text, editorial DigestCards, and transition text.
+    // B.3 — on slice selon displayLimit / _showAll. À la Une (rank 1) reste
+    // visible car _sliced préserve l'ordre et displayLimit >= 3.
+    final allTopics = widget.topics!;
+    final displayedTopics = _sliced(allTopics);
+    for (int i = 0; i < displayedTopics.length; i++) {
+      final topic = displayedTopics[i];
 
       // Topic section with editorial cards (intro handled inside TopicSection)
       sections.add(
         TopicSection(
           topic: topic,
-          totalTopics: widget.topics!.length,
+          totalTopics: displayedTopics.length,
           editorialMode: true,
           isSerene: isSerene,
           onArticleTap: widget.onItemTap,
@@ -323,9 +376,18 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       );
 
       // Transition text between topics (not after last one)
-      if (topic.transitionText != null && i < widget.topics!.length - 1) {
+      if (topic.transitionText != null && i < displayedTopics.length - 1) {
         sections.add(TransitionText(text: topic.transitionText!));
       }
+    }
+
+    // Bouton "Voir N autres articles" / "Réduire" — inséré juste après la
+    // dernière card topic, avant les sections spéciales (pépite, etc.) pour
+    // garder le toggle proche du contenu qu'il révèle.
+    if (_shouldShowToggle(allTopics.length)) {
+      sections.add(
+        _buildShowMoreButton(allTopics.length - displayedTopics.length),
+      );
     }
 
     // Section divider before special picks
@@ -561,6 +623,42 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       default:
         return SourceType.article;
     }
+  }
+
+  /// Bouton toggle "Voir N autres articles" / "Réduire".
+  /// `hidden` = nombre de topics actuellement masqués (0 quand _showAll).
+  Widget _buildShowMoreButton(int hidden) {
+    final colors = context.facteurColors;
+    final label = _showAll
+        ? 'Réduire'
+        : (hidden == 1
+            ? 'Voir 1 autre article'
+            : 'Voir $hidden autres articles');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+      child: Align(
+        alignment: Alignment.center,
+        child: TextButton.icon(
+          key: const ValueKey('digest_show_more_toggle'),
+          onPressed: () => setState(() => _showAll = !_showAll),
+          icon: Icon(
+            _showAll
+                ? PhosphorIcons.caretUp(PhosphorIconsStyle.bold)
+                : PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
+            size: 16,
+            color: colors.primary,
+          ),
+          label: Text(
+            label,
+            style: TextStyle(
+              color: colors.primary,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Clean up reason strings for display.

@@ -55,18 +55,28 @@ class TitleAnnotationService:
     KEEP_POS = frozenset({"NOUN", "PROPN", "ADJ", "VERB"})
     MAX_HIGHLIGHTED_PER_TITLE = 4
     # Lower number = higher priority when capping at MAX_HIGHLIGHTED_PER_TITLE.
+    # Entities are demoted to last resort: cluster pivots (Trump, ChatGPT,
+    # Cannes…) used to consume the top-4 slots and crowd out the editorial
+    # wording the PO actually wants to see. Calibration PR+1 (2026-05-22)
+    # measured ΔF1_tok +0.062 / ΔF1_span +0.015 vs the entity-first ordering
+    # on the 49-perspective gold corpus. Entities still get highlighted when
+    # no editorial alternative exists in the divergent set.
     PRIORITY: dict[str, int] = {
-        _ENTITY_KEY: 0,
         "ADJ": 1,
-        "PROPN": 2,
-        "NOUN": 2,
-        "VERB": 3,
+        "VERB": 2,
+        "NOUN": 3,
+        "PROPN": 4,
+        _ENTITY_KEY: 99,
     }
 
     def __init__(self):
         self._nlp = get_ner_service().get_nlp()
         if self._nlp is None:
             logger.warning("title_annotation.nlp_unavailable")
+
+    @property
+    def is_nlp_available(self) -> bool:
+        return self._nlp is not None
 
     def _doc_to_tokens(self, doc) -> list[dict]:
         """Convert a spaCy Doc into our strong-token shape."""
@@ -141,10 +151,10 @@ class TitleAnnotationService:
     ) -> list[dict]:
         """Return spans of `alt_tokens` whose lemma is absent from `ref_tokens`.
 
-        Capped at `MAX_HIGHLIGHTED_PER_TITLE`, ordered by PRIORITY (entities
-        first, then ADJ, then NOUN/PROPN, then VERB). `alt_bias` is passed
-        through unchanged to each span as `bias` — the Dart side maps it to
-        a color via `getBiasColor`.
+        Capped at `MAX_HIGHLIGHTED_PER_TITLE`, ordered by PRIORITY (ADJ,
+        then VERB, then NOUN, then PROPN, with NER entities pushed to last
+        resort). `alt_bias` is passed through unchanged to each span as
+        `bias` — the Dart side maps it to a color via `getBiasColor`.
         """
         ref_lemmas = {t["lemma"] for t in ref_tokens}
         divergent = [t for t in alt_tokens if t["lemma"] not in ref_lemmas]

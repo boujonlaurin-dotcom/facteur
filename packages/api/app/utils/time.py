@@ -24,3 +24,15 @@ def today_paris() -> date:
 def now_paris() -> datetime:
     """Return current datetime in Europe/Paris (timezone-aware)."""
     return datetime.now(PARIS_TZ)
+
+
+def is_before_paris_time(now: datetime, hour: int, minute: int) -> bool:
+    """True if `now` (Paris-time) is strictly before `hour:minute` on its own day.
+
+    Centralizes the "skip if too early" guard used by the digest cron startup
+    catchup (`main.py`) and the on-request background regen scheduler
+    (`digest_service.py`). Both must refuse to generate today's digest before
+    the morning batch — otherwise the pool of articles is saturated by the
+    previous evening's edition and the morning's Unes aren't published yet.
+    """
+    return now.hour * 60 + now.minute < hour * 60 + minute

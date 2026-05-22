@@ -266,6 +266,18 @@ class SentryConstants {
   static bool get isEnabled => dsn.isNotEmpty;
 }
 
+/// Story 22.1 — système d'intérêts unifié 4-états.
+/// Cap dur du nombre de favoris (intérêts ET sources, séparément).
+/// DOIT rester synchronisé avec `packages/api/app/constants.py::FAVORITE_CAP`.
+class InterestConstants {
+  InterestConstants._();
+
+  static const int favoriteCap = 3;
+}
+
+/// Alias top-level expliciment demandé par le hand-off 22.1.2.
+const int kFavoriteCap = InterestConstants.favoriteCap;
+
 /// Liens externes
 class ExternalLinks {
   ExternalLinks._();

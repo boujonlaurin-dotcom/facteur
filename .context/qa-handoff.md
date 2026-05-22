@@ -1,129 +1,108 @@
-# QA Handoff — Refonte hi-fi Couverture médiatique (Story 7.4 Sprint 2 front)
+# QA Handoff — Story 21.2 — Ranking personnalisé sur sections thématiques de la Tournée
 
 ## Feature développée
 
-Refonte hi-fi du panneau « Couverture médiatique » sur l'écran article (front) :
-- Bandeau `cm-panel-inline` (hairlines, spectrum 5-segs, "N médias", caret)
-- Carte dépliée : bloc référence (wash verbe-pivot gris), 8 lignes variantes avec **diff lexical animé en cascade** (Mode 3 fidèle : shared en tertiary, key en wash bias)
-- CTA Analyse Facteur en card dashed déprioritée
-- Nouveau badge polarisation (3 niveaux) dans la meta-row des `FeedCard` des articles topicalisés du digest L'Essentiel
-
-L'animation cascade des surlignages se déclenche **1×** à l'ouverture de la carte dépliée. Feeling visé : « Facteur analyse en temps réel les divergences entre sources ».
+Sur les 2 sections "Thème personnel" du Flux Continu (V1.8, Story 21.1), les articles sont désormais triés via `PillarScoringEngine` (intérêts pondérés Story 22.1 + affinité source + fraîcheur hiérarchisée + qualité) au lieu d'un tri par récence pure. Le change est 100% backend (`recommendation_service.py`) — aucune modif mobile.
 
 ## PR associée
 
-À créer juste après ce handoff (`gh pr create --base main`).
+À créer via `/go` après cette validation.
 
 ## Écrans impactés
 
 | Écran | Route | Modifié / Nouveau |
-|---|---|---|
-| Détail article (bottom layout) | `/feed/:contentId` | Modifié — `PerspectivesInlineSection` refondu |
-| Détail article (top layout) | `/digest/:contentId` | Modifié — idem, 2 call-sites |
-| Digest L'Essentiel | `/digest` | Modifié — `FeedCard` accepte `divergenceLevel` ; câblé via `topic_section.dart` |
+|-------|-------|-------------------|
+| Flux Continu (home) | `/flux-continu` | Sections #3 et #4 (Thème perso #1 / #2) — ordre des articles dans le hero + carrousel |
+| Feed exploration thème (chip) | `/feed?theme=X` | **Doit rester inchangé** (test de non-régression) |
 
 ## Scénarios de test
 
-### Scénario 1 — Happy path : animation cascade Mode 3
+### Scénario 1 : Happy path — un favori avec subtopics priorisés
+
+**Pré-requis seed** : utilisateur connecté avec :
+- Favori thème : `tech` (state=favorite, weight ≥ 1.5)
+- Subtopic favori : `ai` (poids 3.0) et `startups` (poids 0.5) dans `user_subtopics`
+- Au moins 1 source `tech` suivie
 
 **Parcours** :
-1. Ouvrir un article du digest L'Essentiel couvert par ≥5 médias avec topic polarisé (idéalement actu politique récente)
-2. Vérifier le bandeau replié sous le titre : `Couverture médiatique` + spectrum 5 segments distincts + `N médias` + caret
-3. Tap sur le bandeau → carte se déplie
-
-**Résultats attendus** :
-- Bloc référence visible (border-left ocre, titre `Fraunces` 16.5/600). Si verbe-pivot retourné par le back, **wash gris apparaît** sur le verbe ~80 ms après l'ouverture, fade-in 300 ms.
-- 8 lignes variantes apparaissent (border-left 4 px couleur bias). Sur chaque ligne, les **tokens partagés deviennent gris** et les **tokens divergents reçoivent un wash de la couleur du bias** dans une cascade séquentielle ordonnée par position (gauche → droite), 25 ms entre tokens, 220 ms par token (`easeOutCubic`).
-- Toutes les lignes animent **en parallèle** — feeling « scan simultané ».
-- CTA `Analyse Facteur` dashed border en bas, déprioritée.
-
-### Scénario 2 — Tap variant ouvre navigateur externe
-
-**Parcours** :
-1. Sur la carte dépliée, tap n'importe quelle ligne variante.
-
-**Résultat attendu** : le navigateur in-app/externe s'ouvre sur l'URL du variant. Pas de crash. Le panel reste ouvert au retour.
-
-### Scénario 3 — Tap CTA Analyse Facteur
-
-**Parcours** :
-1. Tap sur "Lancer →" dans la card CTA dashed.
-
-**Résultat attendu** : le CTA disparaît, remplacé par `PerspectivesAnalysisZone` (skeleton 3 lignes → résultat Markdown). UI inchangée vs. avant la refonte (mêmes états loading/done/error).
-
-### Scénario 4 — Mode 2 dégradé (back pas encore déployé)
-
-**Parcours** :
-1. Si le back ne renvoie pas `shared_tokens` (ancien déploiement), ouvrir un article avec perspectives.
-
-**Résultat attendu** : la carte se déplie. Les variants rendent leur titre avec les `highlight_spans` en wash bias, et le reste en `text_tertiary` (mode 2 fallback automatique, pas de crash). Cascade animée toujours active.
-
-### Scénario 5 — Replier → re-ouvrir relance la cascade
-
-**Parcours** :
-1. Carte dépliée avec animation jouée.
-2. Tap bandeau → carte se replie.
-3. Tap bandeau → carte se déplie de nouveau.
-
-**Résultat attendu** : nouvelle cascade jouée intégralement (animation 1× par expand). Pas de "snap" instantané.
-
-### Scénario 6 — Article hors digest (live path) sans cluster
-
-**Parcours** :
-1. Ouvrir un article live (non-digest) qui n'a pas de cluster ou pour lequel le back ne peut pas calculer les annotations.
-
-**Résultats attendus** :
-- `highlightSpans` et `sharedTokens` vides sur les variants → DiffTitle rend le titre plein en `text_primary` (pas de wash).
-- `referencePivot` null → bloc référence rendu sans wash.
-- Aucune erreur console.
-
-> **Regression Bug Couverture (2026-05-18)** : avant fix, ce scénario rendait *tous* les titres en `text_tertiary` (gris pâle uniforme) au lieu de `text_primary`. Couvert par `diff_title_test.dart:122` qui asserte maintenant explicitement la couleur du chunk plain. Cf. `docs/bugs/bug-couverture-mediatique-surlignages.md`.
-
-### Scénario 8 — Bandeau cm-panel-inline en viewport étroit (390px)
-
-**Parcours** :
-1. Ouvrir un article avec perspectives en viewport iPhone (390×844).
-2. Vérifier le bandeau replié : titre + spectrum + count + caret tous visibles sans clipping ni warning console `RenderFlex overflowed`.
+1. Ouvrir la home → Flux Continu charge.
+2. Scroller jusqu'à la section "Thème perso #1" (label "Tech" ou équivalent).
+3. Observer l'ordre des articles (hero + cartes carrousel).
 
 **Résultat attendu** :
-- Aucun overflow Flutter dans la console.
-- `CoverageSpectrumBar` 5-segs visible entre le titre et le count.
-- Si le titre « Couverture médiatique » est trop long (ne devrait pas arriver, mais théoriquement), il s'ellipsis au lieu de pousser le spectrum hors écran.
+- Les articles dont `Content.topics` overlap avec `ai` ressortent en tête (premier hero + cartes suivantes).
+- Un article `ai` publié il y a 18h doit passer devant un article `startups` publié il y a 2h (à match de qualité source équivalent).
+- Les articles ont un `recommendation_reason` non-vide (visible si le composant `RecommendationReasonChip` est utilisé).
 
-> **Regression Bug Couverture (2026-05-18)** : avant fix, le `Row` du bandeau débordait de 131 px sur 390 px, repoussant le spectrum hors écran. Couvert par `perspectives_inline_overflow_test.dart` qui pump le bandeau en viewport contraint et vérifie l'absence d'exception. Cf. `docs/bugs/bug-couverture-mediatique-surlignages.md`.
-
-### Scénario 7 — Badge polarisation digest
+### Scénario 2 : Non-régression du path exploration ("tout voir" / chip)
 
 **Parcours** :
-1. Aller sur le digest L'Essentiel du jour.
-2. Vérifier la meta-row de chaque article topicalisé.
+1. Depuis le Flux Continu, taper sur la chip `Tech` dans la zone Explorer (bottom).
+2. Observer l'ordre des articles affichés (vue exploration thème, pas la section Tournée).
 
-**Résultats attendus** :
-- Sujets `divergenceLevel='high'` → badge `POLARISÉ` (glyphe 2 paires brique+marine, label noir bold)
-- Sujets `divergenceLevel='medium'` → badge `AVIS VARIÉS` (5 dots étalés gris, label tertiary)
-- Sujets `divergenceLevel='low'` → badge `CONSENSUS` (3 dots groupés gris, label tertiary)
-- Articles Pépite, Coup de cœur, actu_decalee → **aucun badge** (silence, conforme au hand-off)
+**Résultat attendu** :
+- Ordre strictement chronologique (article le plus récent en haut).
+- Pas de restriction sur sources suivies (articles de sources non-suivies présents).
+- Comportement IDENTIQUE à avant cette PR.
+
+### Scénario 3 : Pagination stable "Plus de…"
+
+**Parcours** :
+1. Sur la section "Thème perso #1", taper sur le CTA "Plus de…" (`PlusDeButton`).
+2. Comparer la liste étendue avec la liste initiale.
+
+**Résultat attendu** :
+- Aucun doublon entre la section initiale (top 10) et la pagination suivante.
+- L'ordre des articles reste déterministe entre 2 chargements successifs de la même session (`temperature=0` sur ce path).
+
+### Scénario 4 : User sans subtopic favori (signal faible)
+
+**Pré-requis** : utilisateur avec favori thème `tech` mais aucun `user_subtopic_weights`.
+
+**Parcours** :
+1. Ouvrir la home → section Tech.
+
+**Résultat attendu** :
+- La section n'est PAS vide.
+- Les articles sont triés par Pilier Source (followed/curated en tête) puis Fraîcheur.
+- Le rendu visuel reste cohérent (pas de fallback explicite à la chronologie pure attendu — le scoring tourne avec moins de discrimination).
+
+### Scénario 5 : User sans aucune source suivie sur ce thème
+
+**Pré-requis** : utilisateur avec favori thème `tech` mais aucune source `tech` suivie.
+
+**Parcours** :
+1. Ouvrir la home → section Tech.
+
+**Résultat attendu** :
+- La section n'est PAS vide (fallback curated activé dans `_get_candidates`).
+- Les articles affichés proviennent de sources curated `tech` (pas du tier `deep`).
 
 ## Critères d'acceptation
 
-- [ ] Bandeau hairlines + spectrum 5-segs distincts + count + caret rendus correctement (replié)
-- [ ] Bloc référence + 8 lignes variantes + CTA dashed (déplié)
-- [ ] Animation cascade des surlignages déclenchée 1× à l'expand, fade-in fluide
-- [ ] Tap variant → navigateur externe, pas de crash
-- [ ] Mode 2 dégradé fonctionne si back n'expose pas `shared_tokens`
-- [ ] Badge polarisation sur articles topicalisés du digest seulement
-- [ ] Zéro régression sur la suite Flutter (`flutter test` 619/619 ou plus selon parent)
+- [ ] Section Theme #1 reflète les préférences user (Scénario 1)
+- [ ] Section Theme #2 reflète les préférences user (idem)
+- [ ] Path exploration chip thème inchangé (Scénario 2)
+- [ ] Pagination stable, pas de doublons (Scénario 3)
+- [ ] Pas de section vide même avec signal faible (Scénarios 4-5)
+- [ ] Latence home ressentie acceptable (< +300ms par rapport à avant — les 2 calls theme étant parallèles)
+- [ ] Aucune erreur console mobile / network 5xx sur `/api/feed/?theme=X&personalized=true`
 
 ## Zones de risque
 
-1. **Timing animation** : la cascade utilise un `Future.delayed(80 ms)` avant de démarrer. Si la frame de l'expand prend > 80 ms (jank initial), l'animation peut paraître saccadée. Tester sur device réel iOS et Android.
-2. **Titres très longs** : `DiffTitle` est en `maxLines: 2 ellipsis`. Un titre avec beaucoup de spans après la troncature pourrait avoir des spans visuellement absents (le wash est attaché à un `WidgetSpan` qui peut wrapper différemment). Vérifier sur titres > 100 caractères.
-3. **GoogleFonts.fraunces / GoogleFonts.courierPrime** : chargement réseau au premier render. Vérifier qu'il n'y a pas de flash de fallback (fontStyle.italic Times New Roman) — sur Android cold start spécifiquement.
-4. **Spectrum bar** : avec une distribution totalement vide `{}` (back KO), tous les segments rendus avec floor=1. C'est lu visuellement comme « répartition uniforme » — confirmer que ce fallback est OK ou s'il faut masquer le spectrum (actuellement pas masqué).
-5. **Polarisé bicolore (brique+marine)** : vérifier le contraste WCAG du label noir bold sur fond carte ; la couleur des dots utilise `biasLeft`/`biasRight` qui peuvent être proches en thème sombre.
+- **Latence** : ajout du `PillarScoringEngine` + `_batch_scoring_context` introduit ~100-230ms sur chaque call theme. À mesurer p95 sur Sentry / Railway logs après merge (filtrer `feed_phase4_scoring` avec `mode="personalized_theme"`).
+- **Ordre perçu "étrange"** : un article de 22h en tête peut surprendre si la maquette n'explique pas la logique. À surveiller en feedback utilisateur. Le pilier Fraîcheur garde un bonus +25 sur <24h donc le décalage reste borné.
+- **Performance pool candidats** : la fenêtre 24h + followed-only borne le pool entre 30-150 articles ; pas de risque de scoring sur >500 candidats.
 
 ## Dépendances
 
-- **Back** : `GET /contents/{id}/perspectives` doit retourner `highlight_spans` (PR #616, déjà mergée) + `shared_tokens` + `reference_pivot` (PR #618, en review). Tant que PR #618 n'est pas mergée + déployée Railway, le front rend en Mode 2 dégradé (pas de Mode 3 fidèle).
-- **GoogleFonts** : `fraunces` et `courierPrime` (déjà utilisés ailleurs dans l'app, pas de nouvel asset à déclarer).
-- **Aucun changement de DB / migration**.
+- Endpoint backend : `GET /api/feed/?theme=<slug>&personalized=true&limit=10` (et `topic=<UUID>&personalized=true` pour custom topics favoris)
+- Service : `app.services.recommendation_service.RecommendationService.get_feed`
+- Helper testable : `app.services.recommendation_service.is_personalized_theme_mode`
+- Log structuré à monitorer : `feed_phase4_scoring` avec champ `mode="personalized_theme"`
+
+## Notes pour l'agent QA Chrome
+
+- Viewport 390x844 (mobile).
+- Le mode "Serein" toggle peut être ON ou OFF — les sections "Thème perso" existent dans les 2 cas (positions différentes selon `_compose(isSerene)`).
+- Pour seed rapide : utiliser un compte existant et patcher les favoris via `/api/user-interests/...` (Story 22.1) ou via l'UI "Mes intérêts".

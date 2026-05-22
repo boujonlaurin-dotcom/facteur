@@ -291,6 +291,31 @@ class TestDigestJobConfiguration:
                 f"scheduled_restart job should not be registered. Jobs: {job_ids}"
             )
 
+    def test_veille_generation_jobs_are_not_registered(self):
+        """Regression guard: la veille bascule vers un filtre temps-réel sur
+        le feed (story 23.1). Les jobs `veille_generation` (scan */30 min) et
+        `veille_stuck_cleanup` (sweeper FAILED) ne doivent plus être enregistrés.
+        """
+        with patch("app.workers.scheduler.AsyncIOScheduler") as mock_scheduler_class:
+            mock_scheduler = Mock()
+            mock_scheduler_class.return_value = mock_scheduler
+
+            job_ids = []
+
+            def capture_add_job(*args, **kwargs):
+                job_ids.append(kwargs.get("id"))
+
+            mock_scheduler.add_job = capture_add_job
+
+            start_scheduler()
+
+            assert "veille_generation" not in job_ids, (
+                f"veille_generation job should not be registered. Jobs: {job_ids}"
+            )
+            assert "veille_stuck_cleanup" not in job_ids, (
+                f"veille_stuck_cleanup job should not be registered. Jobs: {job_ids}"
+            )
+
 
 class TestDigestWatchdogCoverage:
     """Watchdog must count (user_id, is_serene) pairs, not distinct users.

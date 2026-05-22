@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,10 +10,8 @@ import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../widgets/topic_chip.dart';
 import '../../feed/widgets/feed_card.dart';
-import '../../../core/api/providers.dart';
-import '../providers/algorithm_profile_provider.dart';
+import '../../my_interests/widgets/interest_state_pill.dart';
 import '../providers/custom_topics_provider.dart';
-import '../widgets/topic_priority_slider.dart';
 
 /// Terracotta accent color for custom topics.
 const Color _terracotta = Color(0xFFE07A5F);
@@ -106,56 +103,10 @@ class TopicExplorerScreen extends ConsumerWidget {
                         ),
                       ),
                       const Spacer(),
-                      Text(
-                        'Priorité :',
-                        style: textTheme.labelSmall?.copyWith(
-                          color: colors.textSecondary,
-                        ),
+                      CustomTopicStatePill(
+                        topicId: matchedTopic.id,
+                        title: displayName,
                       ),
-                      const SizedBox(width: FacteurSpacing.space2),
-                      Builder(builder: (context) {
-                        final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
-                        final topicSlug = matchedTopic.slugParent;
-                        final topicUsage = algoProfile != null &&
-                                topicSlug != null &&
-                                algoProfile.subtopicWeights.containsKey(topicSlug)
-                            ? algoProfile.normalizeWeight(
-                                algoProfile.subtopicWeights[topicSlug]!)
-                            : null;
-                        return TopicPrioritySlider(
-                          currentMultiplier: matchedTopic.priorityMultiplier,
-                          onChanged: (multiplier) async {
-                            try {
-                              await ref
-                                  .read(customTopicsProvider.notifier)
-                                  .updatePriority(
-                                      matchedTopic.id, multiplier);
-                            } on DioException catch (e) {
-                              if (context.mounted) {
-                                final detail = e.response?.data;
-                                final msg = (detail is Map &&
-                                        detail['detail'] is String)
-                                    ? detail['detail'] as String
-                                    : 'Erreur lors de la mise à jour';
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(msg),
-                                    duration: const Duration(seconds: 3),
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                          usageWeight: topicUsage,
-                          onReset: topicUsage != null
-                              ? () async {
-                                  final client = ref.read(apiClientProvider);
-                                  await client.post('/users/subtopics/$topicSlug/reset');
-                                  ref.invalidate(algorithmProfileProvider);
-                                }
-                              : null,
-                        );
-                      }),
                     ],
                   )
                 : Column(

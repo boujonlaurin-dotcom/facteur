@@ -6,6 +6,8 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/ui/notification_service.dart';
+import '../../my_interests/models/user_interests_state.dart';
+import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
@@ -172,7 +174,9 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
       ref.invalidate(userSourcesProvider);
 
       if (hasCatalogId) {
-        await repository.updateSourceWeight(sourceId, 2.0);
+        await ref
+            .read(userSourcesStateProvider.notifier)
+            .setSourceState(sourceId, InterestState.favorite);
         if (!mounted) return;
 
         final source = Source(
@@ -184,7 +188,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
           logoUrl: result.faviconUrl,
           isCurated: result.isCurated,
           isTrusted: true,
-          priorityMultiplier: 2.0,
+          priorityMultiplier: 1.0,
         );
         await _showSourceModal(source, recentItems: result.recentItems);
         if (!mounted) return;
@@ -268,13 +272,6 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         source: source,
         recentItems: recentItems,
         onToggleTrust: () => _toggleTrustSource(source),
-        onPriorityChanged: source.id.isNotEmpty
-            ? (multiplier) {
-                ref
-                    .read(userSourcesProvider.notifier)
-                    .updateWeight(source.id, multiplier);
-              }
-            : null,
         onToggleSubscription: source.id.isNotEmpty
             ? () {
                 final current = ref

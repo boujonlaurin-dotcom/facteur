@@ -1,86 +1,61 @@
-"""Router /api/veille — CRUD config, suggestions LLM, livraisons.
-
-Pool DB : 1 session par requête via `Depends(get_db)`. Les /suggestions
-appellent le LLM mais restent bornées à la durée d'une requête utilisateur
-(vs le scanner background, cf. `veille_generation_job` qui doit libérer la
-session avant le LLM).
-"""
+"""Router /api/veille — CRUD config + feed temps-réel (Story 23.1)."""
 
 from __future__ import annotations
 
-import asyncio
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-import httpx
 import sentry_sdk
 import structlog
 from cachetools import TTLCache
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import delete, select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.data.veille_presets import get_presets
-from app.database import get_db, safe_async_session
+from app.database import get_db
 from app.dependencies import get_current_user_id
-from app.jobs.veille_generation_job import (
-    STUCK_DELIVERY_THRESHOLD,
-    run_veille_generation_for_config,
-)
 from app.models.content import Content
 from app.models.enums import SourceType
 from app.models.source import Source
+from app.models.user_favorites import UserFavoriteInterest
 from app.models.veille import (
     VeilleConfig,
-    VeilleDelivery,
-    VeilleGenerationState,
+    VeilleKeyword,
     VeilleSource,
     VeilleStatus,
     VeilleTopic,
 )
 from app.schemas.veille import (
-    VeilleConfigPatch,
+    VeilleAngleSuggestion,
     VeilleConfigResponse,
     VeilleConfigUpsert,
-    VeilleDeliveryListItem,
-    VeilleDeliveryResponse,
-    VeilleGenerateFirstResponse,
-    VeilleGenerateRequest,
+    VeilleFeedArticle,
+    VeilleFeedResponse,
+    VeilleKeywordResponse,
     VeillePresetResponse,
     VeilleSourceExample,
     VeilleSourceLite,
     VeilleSourceResponse,
     VeilleSourceSuggestion,
-    VeilleSourceSuggestionsResponse,
+    VeilleSuggestAnglesRequest,
+    VeilleSuggestAnglesResponse,
     VeilleSuggestSourcesRequest,
-    VeilleSuggestTopicsRequest,
+    VeilleSuggestSourcesResponse,
     VeilleTopicResponse,
-    VeilleTopicSuggestion,
 )
-from app.services.editorial.llm_client import EditorialLLMClient
 from app.services.rss_parser import RSSParser
 from app.services.source_service import SourceService
-from app.services.veille.digest_builder import VeilleDigestBuilder
-from app.services.veille.scheduling import compute_next_scheduled_at
-from app.services.veille.source_suggester import (
-    SourceSuggester,
-    get_source_suggester,
-)
-from app.services.veille.topic_suggester import (
-    TopicSuggester,
-    get_topic_suggester,
-)
-from app.utils.time import today_paris
+from app.services.user_interests_service import ensure_veille_favorite
+from app.services.veille.feed_filter import fetch_veille_feed
+from app.services.veille.llm import get_angle_suggester, get_source_suggester
 
 logger = structlog.get_logger()
 
 router = APIRouter()
 
 # Cache examples sources : in-process (suffit V1), à migrer Redis si scale
-# horizontal — cf. memory note. TTL 24 h aligné avec la fraîcheur attendue
-# d'un aperçu de feed.
+# horizontal — TTL 24 h aligné avec la fraîcheur attendue d'un aperçu.
 _SOURCE_EXAMPLES_CACHE: TTLCache = TTLCache(maxsize=512, ttl=86400)
 _SOURCE_EXAMPLES_LIMIT = 2
 _SOURCE_EXAMPLES_LOOKBACK_DAYS = 30
@@ -101,7 +76,7 @@ async def _get_active_config(db: AsyncSession, user_id: UUID) -> VeilleConfig | 
 async def _hydrate_response(
     db: AsyncSession, cfg: VeilleConfig
 ) -> VeilleConfigResponse:
-    """Charge topics + sources (avec hydratation Source) pour la réponse."""
+    """Charge topics + sources + keywords pour la réponse."""
     topics_rows = (
         (
             await db.execute(
@@ -126,6 +101,18 @@ async def _hydrate_response(
         .all()
     )
 
+    keywords_rows = (
+        (
+            await db.execute(
+                select(VeilleKeyword)
+                .where(VeilleKeyword.veille_config_id == cfg.id)
+                .order_by(VeilleKeyword.position, VeilleKeyword.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
     source_ids = [vs.source_id for vs in sources_rows]
     sources_by_id: dict[UUID, Source] = {}
     if source_ids:
@@ -141,17 +128,10 @@ async def _hydrate_response(
         user_id=cfg.user_id,
         theme_id=cfg.theme_id,
         theme_label=cfg.theme_label,
-        frequency=cfg.frequency,  # type: ignore[arg-type]
-        day_of_week=cfg.day_of_week,
-        delivery_hour=cfg.delivery_hour,
-        timezone=cfg.timezone,
         status=cfg.status,  # type: ignore[arg-type]
-        last_delivered_at=cfg.last_delivered_at,
-        next_scheduled_at=cfg.next_scheduled_at,
         created_at=cfg.created_at,
         updated_at=cfg.updated_at,
         purpose=cfg.purpose,
-        purpose_other=cfg.purpose_other,
         editorial_brief=cfg.editorial_brief,
         preset_id=cfg.preset_id,
         topics=[
@@ -176,7 +156,21 @@ async def _hydrate_response(
             for vs in sources_rows
             if vs.source_id in sources_by_id
         ],
+        keywords=[
+            VeilleKeywordResponse(id=kw.id, keyword=kw.keyword, position=kw.position)
+            for kw in keywords_rows
+        ],
     )
+
+
+def _source_theme_for(veille_theme_id: str) -> str:
+    """Mappe le theme_id de la veille vers un theme valide pour la table `sources`.
+
+    La contrainte `ck_source_theme_valid` autorise un set fini ; le thème "other"
+    de la veille (Story 23.3, tuile "Autre" en mobile) est mappé vers "custom"
+    qui existe déjà dans la contrainte. Pas de migration nécessaire.
+    """
+    return "custom" if veille_theme_id == "other" else veille_theme_id
 
 
 async def _resolve_source_id(
@@ -216,7 +210,7 @@ async def _resolve_source_id(
         url=cand.url,
         feed_url=detected.feed_url,
         type=source_type,
-        theme=theme_id,
+        theme=_source_theme_for(theme_id),
         description=detected.description,
         logo_url=detected.logo_url,
         is_curated=False,
@@ -258,7 +252,6 @@ async def upsert_config(
     user_uuid = UUID(current_user_id)
 
     cfg = await _get_active_config(db, user_uuid)
-    now = datetime.now(UTC)
 
     if cfg is None:
         cfg = VeilleConfig(
@@ -266,13 +259,8 @@ async def upsert_config(
             user_id=user_uuid,
             theme_id=body.theme_id,
             theme_label=body.theme_label,
-            frequency=body.frequency,
-            day_of_week=body.day_of_week,
-            delivery_hour=body.delivery_hour,
-            timezone=body.timezone,
             status=VeilleStatus.ACTIVE.value,
             purpose=body.purpose,
-            purpose_other=body.purpose_other,
             editorial_brief=body.editorial_brief,
             preset_id=body.preset_id,
         )
@@ -281,19 +269,17 @@ async def upsert_config(
     else:
         cfg.theme_id = body.theme_id
         cfg.theme_label = body.theme_label
-        cfg.frequency = body.frequency
-        cfg.day_of_week = body.day_of_week
-        cfg.delivery_hour = body.delivery_hour
-        cfg.timezone = body.timezone
         cfg.purpose = body.purpose
-        cfg.purpose_other = body.purpose_other
         cfg.editorial_brief = body.editorial_brief
         cfg.preset_id = body.preset_id
 
-    # Replace topics + sources atomically.
+    # Replace topics + sources + keywords atomically.
     await db.execute(delete(VeilleTopic).where(VeilleTopic.veille_config_id == cfg.id))
     await db.execute(
         delete(VeilleSource).where(VeilleSource.veille_config_id == cfg.id)
+    )
+    await db.execute(
+        delete(VeilleKeyword).where(VeilleKeyword.veille_config_id == cfg.id)
     )
 
     for idx, t in enumerate(body.topics):
@@ -324,30 +310,29 @@ async def upsert_config(
             )
         )
 
-    # Filet final : Pydantic `min_length=1` couvre le payload, ce check couvre
-    # le cas où toutes les selections collapsent au même source_id après dedup.
-    if not seen_source_ids:
+    for idx, kw in enumerate(body.keywords):
+        db.add(
+            VeilleKeyword(
+                veille_config_id=cfg.id,
+                keyword=kw.keyword,
+                position=idx,
+            )
+        )
+
+    if not (body.topics or seen_source_ids or body.keywords):
         await db.rollback()
         raise HTTPException(
             status_code=422,
-            detail="Sélectionne au moins une source pour ta veille.",
+            detail="Sélectionne au moins un thème, une source ou un mot-clé.",
         )
 
-    cfg.next_scheduled_at = compute_next_scheduled_at(
-        frequency=cfg.frequency,
-        day_of_week=cfg.day_of_week,
-        delivery_hour=cfg.delivery_hour,
-        timezone=cfg.timezone,
-        last_delivered_at=cfg.last_delivered_at,
-        now=now,
-    )
+    # La veille est un favori d'intérêt — on garantit sa présence dans
+    # user_favorite_interests à chaque upsert (idempotent).
+    await ensure_veille_favorite(db, user_uuid, cfg.id)
 
     await db.commit()
     await db.refresh(cfg)
 
-    # Métrique produit : on veut voir 0% de submits avec source_count=0 une
-    # fois A1 déployé. Si la métrique remonte > 0, c'est qu'un client envoie
-    # un payload qui contourne la validation Pydantic (ne devrait pas arriver).
     try:
         from app.services.posthog_client import get_posthog_client
 
@@ -357,7 +342,7 @@ async def upsert_config(
             properties={
                 "source_count": len(seen_source_ids),
                 "topic_count": len(body.topics),
-                "frequency": body.frequency,
+                "keyword_count": len(body.keywords),
                 "theme_id": body.theme_id,
                 "preset_id": body.preset_id,
             },
@@ -365,45 +350,6 @@ async def upsert_config(
     except Exception:  # noqa: BLE001 — métrique fire-and-forget
         logger.warning("veille.posthog_capture_failed", exc_info=True)
 
-    return await _hydrate_response(db, cfg)
-
-
-@router.patch("/config", response_model=VeilleConfigResponse)
-async def patch_config(
-    patch: VeilleConfigPatch,
-    db: AsyncSession = Depends(get_db),
-    current_user_id: str = Depends(get_current_user_id),
-):
-    user_uuid = UUID(current_user_id)
-    cfg = await _get_active_config(db, user_uuid)
-    if cfg is None:
-        raise HTTPException(
-            status_code=404, detail="Aucune veille active pour cet utilisateur."
-        )
-
-    updates = patch.model_dump(exclude_unset=True)
-    if not updates:
-        return await _hydrate_response(db, cfg)
-
-    schedule_dirty = bool(
-        {"frequency", "day_of_week", "delivery_hour", "timezone"} & updates.keys()
-    )
-
-    for field, value in updates.items():
-        setattr(cfg, field, value)
-
-    if schedule_dirty:
-        cfg.next_scheduled_at = compute_next_scheduled_at(
-            frequency=cfg.frequency,
-            day_of_week=cfg.day_of_week,
-            delivery_hour=cfg.delivery_hour,
-            timezone=cfg.timezone,
-            last_delivered_at=cfg.last_delivered_at,
-            now=datetime.now(UTC),
-        )
-
-    await db.commit()
-    await db.refresh(cfg)
     return await _hydrate_response(db, cfg)
 
 
@@ -415,23 +361,69 @@ async def delete_config(
     user_uuid = UUID(current_user_id)
     cfg = await _get_active_config(db, user_uuid)
     if cfg is None:
-        # Idempotent : pas d'erreur si déjà supprimé.
         return None
+    # Retire d'abord le favori, puis archive la config — même transaction,
+    # garantit qu'aucun favori orphelin ne survit à un crash entre les deux.
+    await db.execute(
+        delete(UserFavoriteInterest).where(
+            UserFavoriteInterest.user_id == user_uuid,
+            UserFavoriteInterest.veille_config_id == cfg.id,
+        )
+    )
     cfg.status = VeilleStatus.ARCHIVED.value
     await db.commit()
     return None
 
 
-# ─── Endpoints presets ───────────────────────────────────────────────────────
+# ─── Feed temps-réel ─────────────────────────────────────────────────────────
+
+
+@router.get("/feed", response_model=VeilleFeedResponse)
+async def get_feed(
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    serein: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Renvoie les articles matchant la veille active de l'utilisateur."""
+    user_uuid = UUID(current_user_id)
+    items_with_axes, has_more = await fetch_veille_feed(
+        db,
+        user_uuid,
+        limit=limit,
+        offset=offset,
+        serein=serein,
+    )
+    return VeilleFeedResponse(
+        items=[
+            VeilleFeedArticle(
+                id=content.id,
+                title=content.title,
+                url=content.url,
+                description=content.description,
+                published_at=content.published_at,
+                source=VeilleSourceLite.model_validate(content.source),
+                theme=content.theme,
+                topics=list(content.topics or []),
+                thumbnail_url=content.thumbnail_url,
+                matched_on=axes,  # type: ignore[arg-type]
+            )
+            for content, axes in items_with_axes
+        ],
+        total=len(items_with_axes),
+        limit=limit,
+        offset=offset,
+        has_more=has_more,
+    )
+
+
+# ─── Presets ─────────────────────────────────────────────────────────────────
 
 
 @router.get("/presets", response_model=list[VeillePresetResponse])
 async def list_presets(db: AsyncSession = Depends(get_db)):
-    """Liste les pré-sets V1 affichés en bas du Step 1 (« Inspirations »).
-
-    Pas d'auth : la liste est publique (utilisée pendant l'onboarding).
-    Les sources curées sont résolues au runtime depuis la table `sources`.
-    """
+    """Liste les pré-sets V1 affichés en bas du Step 1 (« Inspirations »)."""
     out: list[VeillePresetResponse] = []
     for preset in get_presets():
         srcs = (
@@ -466,416 +458,13 @@ async def list_presets(db: AsyncSession = Depends(get_db)):
     return out
 
 
-# ─── Endpoints suggestions ───────────────────────────────────────────────────
-
-
-@router.post(
-    "/suggestions/topics",
-    response_model=list[VeilleTopicSuggestion],
-)
-async def suggest_topics(
-    req: VeilleSuggestTopicsRequest,
-    suggester: TopicSuggester = Depends(get_topic_suggester),
-    current_user_id: str = Depends(get_current_user_id),
-):
-    UUID(current_user_id)  # validate JWT subject
-    items = await suggester.suggest_topics(
-        theme_id=req.theme_id,
-        theme_label=req.theme_label,
-        selected_topic_ids=req.selected_topic_ids,
-        excluded_topic_ids=req.exclude_topic_ids,
-        purpose=req.purpose,
-        purpose_other=req.purpose_other,
-        editorial_brief=req.editorial_brief,
-    )
-    return [
-        VeilleTopicSuggestion(topic_id=it.topic_id, label=it.label, reason=it.reason)
-        for it in items
-    ]
-
-
-@router.post(
-    "/suggestions/sources",
-    response_model=VeilleSourceSuggestionsResponse,
-)
-async def suggest_sources(
-    req: VeilleSuggestSourcesRequest,
-    db: AsyncSession = Depends(get_db),
-    suggester: SourceSuggester = Depends(get_source_suggester),
-    current_user_id: str = Depends(get_current_user_id),
-):
-    user_uuid = UUID(current_user_id)
-    try:
-        result = await suggester.suggest_sources(
-            session=db,
-            user_id=user_uuid,
-            theme_id=req.theme_id,
-            topic_labels=req.topic_labels,
-            excluded_source_ids=req.exclude_source_ids,
-            purpose=req.purpose,
-            purpose_other=req.purpose_other,
-            editorial_brief=req.editorial_brief,
-        )
-        await db.commit()  # persiste les éventuelles ingestions à la volée
-    except SQLAlchemyError as exc:
-        await db.rollback()
-        sentry_sdk.capture_exception(exc)
-        logger.error("veille.suggest_sources_db_error", error=str(exc))
-        raise HTTPException(
-            status_code=503,
-            detail="Service temporairement indisponible.",
-        ) from exc
-    except (httpx.TimeoutException, httpx.HTTPError) as exc:
-        sentry_sdk.capture_exception(exc)
-        logger.error("veille.suggest_sources_llm_error", error=str(exc))
-        raise HTTPException(
-            status_code=503,
-            detail="Suggestions LLM indisponibles.",
-        ) from exc
-
-    return VeilleSourceSuggestionsResponse(
-        sources=[
-            VeilleSourceSuggestion(
-                source_id=it.source_id,
-                name=it.name,
-                url=it.url,
-                feed_url=it.feed_url,
-                theme=it.theme,
-                why=it.why,
-                is_already_followed=it.is_already_followed,
-                relevance_score=it.relevance_score,
-            )
-            for it in result.sources
-        ],
-    )
-
-
-# ─── Endpoints deliveries ────────────────────────────────────────────────────
-
-
-@router.get("/deliveries", response_model=list[VeilleDeliveryListItem])
-async def list_deliveries(
-    limit: int = Query(20, ge=1, le=100),
-    before: datetime | None = None,
-    db: AsyncSession = Depends(get_db),
-    current_user_id: str = Depends(get_current_user_id),
-):
-    user_uuid = UUID(current_user_id)
-    cfg = await _get_active_config(db, user_uuid)
-    if cfg is None:
-        return []
-
-    stmt = (
-        select(VeilleDelivery)
-        .where(VeilleDelivery.veille_config_id == cfg.id)
-        .order_by(VeilleDelivery.target_date.desc())
-        .limit(limit)
-    )
-    if before is not None:
-        stmt = stmt.where(VeilleDelivery.created_at < before)
-
-    rows = (await db.execute(stmt)).scalars().all()
-    return [
-        VeilleDeliveryListItem(
-            id=r.id,
-            veille_config_id=r.veille_config_id,
-            target_date=r.target_date,
-            generation_state=r.generation_state,  # type: ignore[arg-type]
-            item_count=len(r.items or []),
-            generated_at=r.generated_at,
-            created_at=r.created_at,
-        )
-        for r in rows
-    ]
-
-
-@router.get("/deliveries/{delivery_id}", response_model=VeilleDeliveryResponse)
-async def get_delivery(
-    delivery_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user_id: str = Depends(get_current_user_id),
-):
-    user_uuid = UUID(current_user_id)
-    delivery = (
-        (
-            await db.execute(
-                select(VeilleDelivery).where(VeilleDelivery.id == delivery_id)
-            )
-        )
-        .scalars()
-        .first()
-    )
-    if delivery is None:
-        raise HTTPException(404, "Livraison introuvable.")
-
-    cfg = (
-        (
-            await db.execute(
-                select(VeilleConfig).where(VeilleConfig.id == delivery.veille_config_id)
-            )
-        )
-        .scalars()
-        .first()
-    )
-    if cfg is None or cfg.user_id != user_uuid:
-        raise HTTPException(404, "Livraison introuvable.")
-
-    return VeilleDeliveryResponse.model_validate(delivery)
-
-
-@router.post("/deliveries/generate", response_model=VeilleDeliveryResponse)
-async def force_generate(
-    req: VeilleGenerateRequest,
-    current_user_id: str = Depends(get_current_user_id),
-):
-    """Admin/debug : force la génération de la livraison du jour.
-
-    Désactivé en production sauf si la config explicite l'autorise.
-    """
-    settings = get_settings()
-    if settings.environment == "production":
-        raise HTTPException(
-            status_code=403,
-            detail="Endpoint debug désactivé en production.",
-        )
-
-    user_uuid = UUID(current_user_id)
-    # Pas de Depends(get_db) — sinon la session resterait checked-out
-    # pendant tout l'appel LLM (3-5 s), annulant le bénéfice Option C.
-    async with safe_async_session() as s:
-        cfg = await _get_active_config(s, user_uuid)
-    if cfg is None:
-        raise HTTPException(status_code=404, detail="Aucune veille active à générer.")
-
-    target = req.target_date or today_paris()
-
-    llm = EditorialLLMClient()
-    try:
-        builder = VeilleDigestBuilder(llm=llm, session_maker=safe_async_session)
-        delivery = await run_veille_generation_for_config(
-            cfg.id,
-            target_date=target,
-            session_maker=safe_async_session,
-            builder=builder,
-        )
-    finally:
-        await llm.close()
-
-    return VeilleDeliveryResponse.model_validate(delivery)
-
-
-# ─── First delivery (génération immédiate post-onboarding) ───────────────────
-
-
-_FIRST_DELIVERY_RETRY_DELAY_SECONDS = 60
-
-
-async def _mark_delivery_failed(
-    delivery_id: UUID,
-    exc: BaseException,
-    *,
-    log_event: str,
-    extra_log: dict,
-) -> None:
-    """UPDATE veille_deliveries → FAILED + sentry capture (idempotent best-effort).
-
-    Best-effort : si l'UPDATE lui-même échoue (pool dead, DB down) on log
-    sans re-raise pour ne pas masquer l'exception métier. Le cleanup script
-    périodique (hors scope, issue #cleanup-stuck-rows) servira de filet.
-    """
-    error_class = type(exc).__name__
-    error_msg = f"{error_class}: {str(exc)[:480]}"
-    try:
-        async with safe_async_session() as s:
-            delivery = (
-                await s.execute(
-                    select(VeilleDelivery).where(VeilleDelivery.id == delivery_id)
-                )
-            ).scalar_one_or_none()
-            if delivery is None:
-                logger.error(
-                    "veille.delivery_failed_row_missing",
-                    delivery_id=str(delivery_id),
-                    **extra_log,
-                )
-                return
-            delivery.generation_state = VeilleGenerationState.FAILED.value
-            delivery.last_error = error_msg
-            delivery.finished_at = datetime.now(UTC)
-            delivery.attempts = (delivery.attempts or 0) + 1
-            await s.commit()
-    except Exception as commit_exc:  # noqa: BLE001 — best-effort
-        logger.error(
-            "veille.delivery_failed_persist_error",
-            delivery_id=str(delivery_id),
-            error=str(commit_exc),
-            **extra_log,
-        )
-
-    sentry_sdk.capture_exception(exc)
-    logger.error(
-        log_event,
-        delivery_id=str(delivery_id),
-        error_class=error_class,
-        error_msg=str(exc)[:480],
-        **extra_log,
-    )
-
-
-async def _run_first_delivery_with_retry(
-    config_id: UUID,
-    target_date: date,
-    delivery_id: UUID,
-) -> None:
-    """BackgroundTask : retry 1× T+60s puis FAILED + sentry si 2e échec.
-
-    Appelé après le 202 du POST /generate-first. La row VeilleDelivery a déjà
-    été créée en PENDING par le handler ; `run_veille_generation_for_config`
-    fait son propre UPSERT et la passe à RUNNING puis SUCCEEDED.
-
-    Si la 1re tentative échoue (typiquement EDBHANDLEREXITED transitoire),
-    on attend 60 s et on retente une seule fois. La 2e ouverture de session
-    via `safe_async_session` repart sur une connexion saine.
-    """
-    llm = EditorialLLMClient()
-    try:
-        for attempt in (1, 2):
-            try:
-                builder = VeilleDigestBuilder(llm=llm, session_maker=safe_async_session)
-                await run_veille_generation_for_config(
-                    config_id,
-                    target_date=target_date,
-                    session_maker=safe_async_session,
-                    builder=builder,
-                )
-                return
-            except Exception as exc:  # noqa: BLE001 — terminal handler ci-dessous
-                if attempt == 1:
-                    logger.warning(
-                        "veille.first_delivery_failed_will_retry",
-                        config_id=str(config_id),
-                        delivery_id=str(delivery_id),
-                        error=str(exc),
-                    )
-                    await asyncio.sleep(_FIRST_DELIVERY_RETRY_DELAY_SECONDS)
-                    continue
-                await _mark_delivery_failed(
-                    delivery_id,
-                    exc,
-                    log_event="veille.first_delivery_failed_terminal",
-                    extra_log={
-                        "config_id": str(config_id),
-                        "attempts": attempt,
-                    },
-                )
-                return
-    finally:
-        await llm.close()
-
-
-@router.post(
-    "/deliveries/generate-first",
-    status_code=202,
-    response_model=VeilleGenerateFirstResponse,
-)
-async def generate_first_delivery(
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-    current_user_id: str = Depends(get_current_user_id),
-):
-    """Lance la génération immédiate du premier digest après l'onboarding.
-
-    Crée une row VeilleDelivery en PENDING tout de suite pour que le mobile
-    puisse poll GET /deliveries/{id} pendant que le BackgroundTask tourne.
-
-    Idempotent sur reprise d'erreur :
-    - Si la dernière livraison a réussi avec ≥1 item → 403 (anti-doublon réel).
-    - Si elle est `failed`, `succeeded` mais vide, ou `pending|running` depuis
-      >15 min → on DELETE l'ancienne row et on relance proprement.
-    - Si elle est `pending|running` depuis <15 min → 409 (en cours, le mobile
-      doit récupérer son `delivery_id` via GET /deliveries).
-    """
-    user_uuid = UUID(current_user_id)
-    cfg = await _get_active_config(db, user_uuid)
-    if cfg is None:
-        raise HTTPException(status_code=404, detail="Aucune veille active.")
-
-    # FOR UPDATE sérialise les concurrents (double-clic sur la CTA dashboard)
-    # sur la dernière row : sans ce lock, deux requêtes peuvent toutes deux
-    # voir « failed », DELETE puis INSERT, et lancer 2 background tasks.
-    last = (
-        await db.execute(
-            select(VeilleDelivery)
-            .where(VeilleDelivery.veille_config_id == cfg.id)
-            .order_by(VeilleDelivery.created_at.desc())
-            .limit(1)
-            .with_for_update()
-        )
-    ).scalar_one_or_none()
-
-    if last is not None:
-        state = last.generation_state
-        item_count = len(last.items or [])
-        succeeded = state == VeilleGenerationState.SUCCEEDED.value
-        if succeeded and item_count > 0:
-            raise HTTPException(
-                status_code=403, detail="Première livraison déjà générée."
-            )
-
-        in_flight = state in (
-            VeilleGenerationState.PENDING.value,
-            VeilleGenerationState.RUNNING.value,
-        )
-        created = last.created_at
-        if created.tzinfo is None:
-            created = created.replace(tzinfo=UTC)
-        age = datetime.now(UTC) - created
-        if in_flight and age < STUCK_DELIVERY_THRESHOLD:
-            raise HTTPException(
-                status_code=409,
-                detail="Génération déjà en cours, patiente quelques instants.",
-            )
-
-        await db.execute(delete(VeilleDelivery).where(VeilleDelivery.id == last.id))
-
-    target = today_paris()
-    delivery_id = uuid4()
-    db.add(
-        VeilleDelivery(
-            id=delivery_id,
-            veille_config_id=cfg.id,
-            target_date=target,
-            generation_state=VeilleGenerationState.PENDING.value,
-        )
-    )
-    await db.commit()
-
-    background_tasks.add_task(
-        _run_first_delivery_with_retry,
-        config_id=cfg.id,
-        target_date=target,
-        delivery_id=delivery_id,
-    )
-    return VeilleGenerateFirstResponse(
-        delivery_id=delivery_id,
-        estimated_seconds=60,
-    )
-
-
 # ─── Source examples (preview Step 3) ────────────────────────────────────────
 
 
 async def _fetch_source_examples(
     db: AsyncSession, source_id: UUID
 ) -> list[VeilleSourceExample]:
-    """Renvoie jusqu'à 2 exemples récents d'une source. Cache TTL 24 h.
-
-    1. Tente le catalogue local `contents` (filtré 30 j) — chemin nominal.
-    2. Si vide, fallback RSS via `RSSParser.parse(feed_url)` pour les sources
-       fraîchement ingérées (niche).
-    3. Cache la réponse 24 h en mémoire (cf. limites scaling : à migrer Redis
-       si N workers > 2).
-    """
+    """Renvoie jusqu'à 2 exemples récents d'une source. Cache TTL 24 h."""
     cache_key = str(source_id)
     if cache_key in _SOURCE_EXAMPLES_CACHE:
         return _SOURCE_EXAMPLES_CACHE[cache_key]
@@ -909,8 +498,6 @@ async def _fetch_source_examples(
         _SOURCE_EXAMPLES_CACHE[cache_key] = examples
         return examples
 
-    # Fallback RSS pour sources niche fraîchement ingérées (pas encore
-    # crawlées par le scanner).
     source = (
         (await db.execute(select(Source).where(Source.id == source_id)))
         .scalars()
@@ -935,8 +522,6 @@ async def _fetch_source_examples(
     finally:
         await parser.close()
 
-    # feedparser renvoie un FeedParserDict (attr-access) ; les tests mock un
-    # dict standard. On couvre les deux formes.
     entries = (
         getattr(feed, "entries", None)
         or (feed.get("entries") if isinstance(feed, dict) else None)
@@ -978,5 +563,116 @@ async def get_source_examples(
     current_user_id: str = Depends(get_current_user_id),
 ):
     """Renvoie un aperçu (≤2 articles) pour rassurer l'utilisateur au Step 3."""
-    UUID(current_user_id)  # validate JWT subject
+    UUID(current_user_id)
     return await _fetch_source_examples(db, source_id)
+
+
+# ─── Suggesters LLM (Story 23.3) ─────────────────────────────────────────────
+
+
+@router.post("/suggest/angles", response_model=VeilleSuggestAnglesResponse)
+async def suggest_angles(
+    body: VeilleSuggestAnglesRequest,
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Renvoie 5-8 angles + mots-clés explicites pour un thème + brief.
+
+    Appel synchrone Mistral (~10-15s), cache TTL 24h sur (theme + brief).
+    Mobile affiche un HaloLoader pendant l'appel.
+    """
+    UUID(current_user_id)
+    suggester = get_angle_suggester()
+    angles = await suggester.suggest_angles(
+        theme_id=body.theme_id,
+        theme_label=body.theme_label,
+        brief=body.brief,
+    )
+    return VeilleSuggestAnglesResponse(
+        angles=[
+            VeilleAngleSuggestion(
+                title=a.title,
+                keywords=a.keywords,
+                reason=a.reason,
+            )
+            for a in angles
+        ]
+    )
+
+
+@router.post("/suggest/sources", response_model=VeilleSuggestSourcesResponse)
+async def suggest_sources(
+    body: VeilleSuggestSourcesRequest,
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Renvoie 5-10 sources rankées pour un thème + angles + mots-clés + brief.
+
+    Appel synchrone Mistral (~10-15s), cache TTL 24h. Si LLM KO, renvoie une
+    liste vide — mobile bascule sur le mode advanced URL.
+    """
+    UUID(current_user_id)
+    suggester = get_source_suggester()
+    sources = await suggester.suggest_sources(
+        theme_id=body.theme_id,
+        theme_label=body.theme_label,
+        brief=body.brief,
+        angles=body.angles,
+        keywords=body.keywords,
+    )
+    return VeilleSuggestSourcesResponse(
+        sources=[
+            VeilleSourceSuggestion(
+                name=s.name,
+                url=s.url,
+                why=s.why,
+                relevance_score=s.relevance_score,
+            )
+            for s in sources
+        ]
+    )
+
+
+# ─── Shim 410 Gone (clients mobile non mis à jour) ───────────────────────────
+#
+# Les endpoints de suggestions LLM et de deliveries sont retirés (Story 23.1).
+# Les versions mobile pré-23.1 peuvent encore les appeler ; on renvoie 410 Gone
+# avec un message clair plutôt qu'un 404 silencieux. Drop définitif en PR-4
+# après bump de la version min mobile (cf. R5 story 23.1).
+
+
+def _gone(reason: str = "Endpoint retiré — mettez à jour l'application.") -> None:
+    sentry_sdk.capture_message(
+        "veille.legacy_endpoint_called",
+        level="info",
+        extras={"reason": reason},
+    )
+    raise HTTPException(status_code=410, detail=reason)
+
+
+@router.post("/suggestions/topics", status_code=410)
+async def suggest_topics_gone() -> None:
+    _gone("Les suggestions de topics LLM ont été retirées.")
+
+
+@router.post("/suggestions/sources", status_code=410)
+async def suggest_sources_gone() -> None:
+    _gone("Les suggestions de sources LLM ont été retirées.")
+
+
+@router.get("/deliveries", status_code=410)
+async def list_deliveries_gone() -> None:
+    _gone("Les livraisons asynchrones ont été remplacées par /api/veille/feed.")
+
+
+@router.get("/deliveries/{delivery_id}", status_code=410)
+async def get_delivery_gone(delivery_id: UUID) -> None:
+    _gone("Les livraisons asynchrones ont été remplacées par /api/veille/feed.")
+
+
+@router.post("/deliveries/generate", status_code=410)
+async def force_generate_gone() -> None:
+    _gone("La génération asynchrone a été retirée.")
+
+
+@router.post("/deliveries/generate-first", status_code=410)
+async def generate_first_delivery_gone() -> None:
+    _gone("La génération asynchrone a été retirée.")

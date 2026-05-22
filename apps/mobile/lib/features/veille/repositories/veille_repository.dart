@@ -2,8 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../../core/api/api_client.dart';
 import '../models/veille_config_dto.dart';
-import '../models/veille_delivery.dart';
-import '../models/veille_suggestion.dart';
+import '../models/veille_source_example.dart';
 
 /// Levée quand `GET /api/veille/config` renvoie 404 — pas de veille active
 /// pour cet utilisateur. Le caller distingue cet état du reste pour
@@ -61,19 +60,6 @@ class VeilleRepository {
     }
   }
 
-  Future<VeilleConfigDto> patchConfig(VeilleConfigPatchRequest body) async {
-    try {
-      final response =
-          await _dio.patch<dynamic>('veille/config', data: body.toJson());
-      return VeilleConfigDto.fromJson(response.data as Map<String, dynamic>);
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 404) {
-        throw const VeilleConfigNotFoundException();
-      }
-      throw _wrap(e);
-    }
-  }
-
   Future<void> deleteConfig() async {
     try {
       await _dio.delete<dynamic>('veille/config');
@@ -82,61 +68,19 @@ class VeilleRepository {
     }
   }
 
-  // ─── Suggestions ───────────────────────────────────────────────────────
+  // ─── Suggesters LLM (Story 23.3) ───────────────────────────────────────
 
-  Future<List<VeilleTopicSuggestion>> suggestTopics({
-    required String themeId,
-    required String themeLabel,
-    List<String> selectedTopicIds = const [],
-    List<String> excludeTopicIds = const [],
-    String? purpose,
-    String? purposeOther,
-    String? editorialBrief,
-  }) async {
+  /// `POST /api/veille/suggest/angles` — 5-8 angles + mots-clés explicites.
+  /// Appel synchrone Mistral (~10-15s), affiche HaloLoader pendant l'appel.
+  Future<VeilleSuggestAnglesResponse> suggestAngles(
+    VeilleSuggestAnglesRequest body,
+  ) async {
     try {
       final response = await _dio.post<dynamic>(
-        'veille/suggestions/topics',
-        data: {
-          'theme_id': themeId,
-          'theme_label': themeLabel,
-          'selected_topic_ids': selectedTopicIds,
-          'exclude_topic_ids': excludeTopicIds,
-          if (purpose != null) 'purpose': purpose,
-          if (purposeOther != null) 'purpose_other': purposeOther,
-          if (editorialBrief != null) 'editorial_brief': editorialBrief,
-        },
+        'veille/suggest/angles',
+        data: body.toJson(),
       );
-      final raw = response.data as List<dynamic>;
-      return raw
-          .whereType<Map<String, dynamic>>()
-          .map(VeilleTopicSuggestion.fromJson)
-          .toList();
-    } on DioException catch (e) {
-      throw _wrap(e);
-    }
-  }
-
-  Future<VeilleSourceSuggestionsResponse> suggestSources({
-    required String themeId,
-    List<String> topicLabels = const [],
-    List<String> excludeSourceIds = const [],
-    String? purpose,
-    String? purposeOther,
-    String? editorialBrief,
-  }) async {
-    try {
-      final response = await _dio.post<dynamic>(
-        'veille/suggestions/sources',
-        data: {
-          'theme_id': themeId,
-          'topic_labels': topicLabels,
-          'exclude_source_ids': excludeSourceIds,
-          if (purpose != null) 'purpose': purpose,
-          if (purposeOther != null) 'purpose_other': purposeOther,
-          if (editorialBrief != null) 'editorial_brief': editorialBrief,
-        },
-      );
-      return VeilleSourceSuggestionsResponse.fromJson(
+      return VeilleSuggestAnglesResponse.fromJson(
         response.data as Map<String, dynamic>,
       );
     } on DioException catch (e) {
@@ -144,49 +88,25 @@ class VeilleRepository {
     }
   }
 
-  // ─── Deliveries ────────────────────────────────────────────────────────
-
-  Future<List<VeilleDeliveryListItem>> listDeliveries({int limit = 20}) async {
-    try {
-      final response = await _dio.get<dynamic>(
-        'veille/deliveries',
-        queryParameters: {'limit': limit},
-      );
-      final raw = response.data as List<dynamic>;
-      return raw
-          .whereType<Map<String, dynamic>>()
-          .map(VeilleDeliveryListItem.fromJson)
-          .toList();
-    } on DioException catch (e) {
-      throw _wrap(e);
-    }
-  }
-
-  Future<VeilleDeliveryResponse> getDelivery(String id) async {
-    try {
-      final response = await _dio.get<dynamic>('veille/deliveries/$id');
-      return VeilleDeliveryResponse.fromJson(
-        response.data as Map<String, dynamic>,
-      );
-    } on DioException catch (e) {
-      throw _wrap(e);
-    }
-  }
-
-  /// Lance la génération immédiate du premier digest. 202 → on poll
-  /// `getDelivery(deliveryId)`. 403 si déjà générée → caller décide quoi faire.
-  Future<VeilleGenerateFirstResponse> generateFirstDelivery() async {
+  /// `POST /api/veille/suggest/sources` — 5-10 sources rankées (≥3 même niche).
+  /// Renvoie sources vides si LLM KO → mobile bascule sur le mode advanced URL.
+  Future<VeilleSuggestSourcesResponse> suggestSources(
+    VeilleSuggestSourcesRequest body,
+  ) async {
     try {
       final response = await _dio.post<dynamic>(
-        'veille/deliveries/generate-first',
+        'veille/suggest/sources',
+        data: body.toJson(),
       );
-      return VeilleGenerateFirstResponse.fromJson(
+      return VeilleSuggestSourcesResponse.fromJson(
         response.data as Map<String, dynamic>,
       );
     } on DioException catch (e) {
       throw _wrap(e);
     }
   }
+
+  // ─── Sources curées (preview Step 3) ───────────────────────────────────
 
   /// `GET /api/veille/sources/{id}/examples` — preview ≤2 articles récents
   /// (Step 3 du flow). Le backend cache déjà 24 h ; ici pas de cache local.

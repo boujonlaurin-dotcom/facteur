@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -211,6 +212,14 @@ Future<void> _bootstrap() async {
     final posthog = PostHogService();
     await posthog.init();
 
+    String? appVersion;
+    try {
+      final info = await PackageInfo.fromPlatform();
+      appVersion = '${info.version}+${info.buildNumber}';
+    } catch (_) {
+      // Best-effort — version tracking degrades gracefully
+    }
+
     // Émettre l'état des notifs locales collecté au boot (capture après init
     // PostHog : avant, capture() est un no-op silencieux).
     if (bootNotifDiag != null) {
@@ -228,7 +237,7 @@ Future<void> _bootstrap() async {
       if (user != null) {
         await posthog.identify(
           userId: user.id,
-          properties: _userIdentifyProperties(user),
+          properties: _userIdentifyProperties(user, appVersion: appVersion),
         );
       }
     }
@@ -241,7 +250,7 @@ Future<void> _bootstrap() async {
           if (user != null) {
             posthog.identify(
               userId: user.id,
-              properties: _userIdentifyProperties(user),
+              properties: _userIdentifyProperties(user, appVersion: appVersion),
             );
           }
           break;
@@ -269,7 +278,7 @@ Future<void> _bootstrap() async {
 /// User properties pushed à chaque `$identify` PostHog. Permet de filtrer
 /// dashboard et insights par email/provider sans devoir matcher manuellement
 /// les distinct_id Supabase.
-Map<String, Object> _userIdentifyProperties(User user) {
+Map<String, Object> _userIdentifyProperties(User user, {String? appVersion}) {
   final props = <String, Object>{};
   if (user.email != null && user.email!.isNotEmpty) {
     props['email'] = user.email!;
@@ -277,6 +286,9 @@ Map<String, Object> _userIdentifyProperties(User user) {
   final providers = user.appMetadata['providers'];
   if (providers is List) {
     props['auth_providers'] = providers.join(',');
+  }
+  if (appVersion != null) {
+    props['app_version'] = appVersion;
   }
   return props;
 }

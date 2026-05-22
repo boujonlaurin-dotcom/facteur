@@ -60,5 +60,9 @@ pytest-asyncio==0.23.5
 protobuf==5.26.1
 curl-cffi==0.7.4
 
+# NER pour le surlignage des titres de perspectives (Story 7.4)
+# Le modèle fr_core_news_md (~40 MB) est téléchargé dans le Dockerfile.
+spacy==3.8.11
+
 # Editorial Pipeline (Story 10.23)
 PyYAML>=6.0

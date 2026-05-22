@@ -25,7 +25,10 @@ from app.services.collection_service import CollectionService
 from app.services.content_extractor import ContentExtractor
 from app.services.content_service import ContentService
 from app.services.feed_cache import FEED_CACHE
-from app.services.title_annotation_service import get_title_annotation_service
+from app.services.title_annotation_service import (
+    ClusterAnnotations,
+    get_title_annotation_service,
+)
 
 logger = structlog.get_logger()
 
@@ -564,6 +567,49 @@ _analysis_cache: TTLCache = TTLCache(maxsize=256, ttl=7200)
 _perspectives_cache: TTLCache = TTLCache(maxsize=256, ttl=7200)
 
 
+def _normalize_url_for_match(raw: str | None) -> str:
+    """Normalize a URL for equality matching across sources.
+
+    Strips scheme, www. prefix, trailing slash, and lowercases the host. The
+    path is kept verbatim (after rstrip "/") so two URLs differing only in
+    scheme/www/trailing-slash collapse to the same key — sufficient to detect
+    the reference article inside a perspectives list without an exact match.
+    """
+    if not raw:
+        return ""
+    from urllib.parse import urlparse
+
+    try:
+        u = urlparse(raw.strip())
+        host = (u.netloc or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        path = (u.path or "").rstrip("/")
+        return f"{host}{path}"
+    except Exception:
+        return raw.strip().lower()
+
+
+def _recompute_bias_distribution(perspectives: list[dict]) -> dict[str, int]:
+    """Tally bias counts across a list of perspective dicts.
+
+    Mirrors the live-path computation in ``get_perspectives`` so a filtered
+    snapshot stays consistent with the (smaller) list returned to the front.
+    """
+    bias_distribution: dict[str, int] = {
+        "left": 0,
+        "center-left": 0,
+        "center": 0,
+        "center-right": 0,
+        "right": 0,
+    }
+    for p in perspectives:
+        stance = p.get("bias_stance") if isinstance(p, dict) else None
+        if stance in bias_distribution:
+            bias_distribution[stance] += 1
+    return bias_distribution
+
+
 async def _load_cluster_articles_for_representative(
     db: AsyncSession,
     content_id: UUID,
@@ -644,12 +690,17 @@ async def _load_cluster_articles_for_representative(
         return []
 
     try:
-        uuids = [UUID(i) for i in match_ids]
+        # Exclude the reference article itself — it must not show up as one
+        # of its own "alternative perspectives" in the bottom-sheet.
+        uuids = [UUID(i) for i in match_ids if i != target_str]
     except (ValueError, TypeError):
         logger.warning(
             "perspectives_cluster_invalid_uuid",
             content_id=str(content_id),
         )
+        return []
+
+    if not uuids:
         return []
 
     content_stmt = (
@@ -706,20 +757,36 @@ async def _load_stored_perspectives_for_representative(
         for subject in items.get("subjects", []):
             actu = subject.get("actu_article")
             extras = subject.get("extra_actu_articles", []) or []
+            deep = subject.get("deep_article") or {}
             ids = {subject.get("representative_content_id")}
             if actu and actu.get("content_id"):
                 ids.add(actu["content_id"])
             for extra in extras:
                 if extra.get("content_id"):
                     ids.add(extra["content_id"])
+            # deep_article doit aussi matcher : sans ça, un tap sur la card
+            # "pas de recul" tombe en live path et le count diverge du badge.
+            # pepite / coup_de_coeur ne sont pas rattachés à un sujet aujourd'hui ;
+            # si un jour ils le sont, ajouter ici.
+            if deep.get("content_id"):
+                ids.add(deep["content_id"])
             if target_str in ids:
                 stored = subject.get("perspective_articles")
                 bias = subject.get("bias_distribution") or {}
                 if stored is not None:
                     return list(stored), dict(bias)
-                # Subject found but no stored snapshot (legacy digest pre-fix
-                # or pipeline bug) → caller falls back to live compute.
-                return None
+                # Subject trouvé dans un digest récent mais snapshot absent
+                # (legacy digest, ou bug pipeline). Pour préserver l'invariant
+                # "content_id du digest → toujours stored, jamais live",
+                # on retourne explicitement vide plutôt que de retomber en
+                # live path qui divergerait du badge preview.
+                logger.warning(
+                    "perspectives_stored_snapshot_missing",
+                    content_id=target_str,
+                    digest_id=str(digest.id),
+                    subject_topic_id=subject.get("topic_id"),
+                )
+                return [], dict(bias)
     return None
 
 
@@ -746,10 +813,20 @@ async def _attach_highlight_spans(
             p["shared_tokens"] = []
         return None
 
+    Returns the reference title's pivot verb span `{start, end, text}` or
+    `None` — the caller bubbles it up to the response root so the front can
+    wash the pivot in the `cm-ref-inline` block.
+    """
     try:
         svc = get_title_annotation_service()
-        annotations = await svc.get_or_compute_cluster_annotations(
-            db, content.cluster_id
+        # Skip the cluster cache lookup when the content isn't clustered —
+        # otherwise `get_or_compute_cluster_annotations(None)` would scan
+        # every `Content` row with `cluster_id IS NULL`. The off-cluster
+        # batch below handles all perspectives in that case.
+        annotations = (
+            await svc.get_or_compute_cluster_annotations(db, content.cluster_id)
+            if content.cluster_id
+            else ClusterAnnotations()
         )
         ref_tokens = annotations.tokens_by_id.get(content.id) or (
             svc.compute_strong_tokens(content.title or "")
@@ -788,7 +865,7 @@ async def _attach_highlight_spans(
         logger.exception(
             "highlight_spans_failed",
             content_id=str(content.id),
-            cluster_id=str(content.cluster_id),
+            cluster_id=str(content.cluster_id) if content.cluster_id else None,
         )
         for p in perspectives_dicts:
             p.setdefault("highlight_spans", [])
@@ -913,6 +990,22 @@ async def get_perspectives(
 
     if stored is not None:
         stored_perspectives, stored_bias = stored
+        # Strip the reference article from the persisted snapshot — the
+        # pipeline doesn't pre-filter it, and the UI must not show the
+        # currently-open article as one of its alternative perspectives.
+        ref_url_key = _normalize_url_for_match(content.url)
+        if ref_url_key:
+            filtered = [
+                p
+                for p in stored_perspectives
+                if _normalize_url_for_match(
+                    p.get("url") if isinstance(p, dict) else None
+                )
+                != ref_url_key
+            ]
+            if len(filtered) != len(stored_perspectives):
+                stored_perspectives = filtered
+                stored_bias = _recompute_bias_distribution(stored_perspectives)
         bias_groups = len([v for v in stored_bias.values() if v > 0])
         count = len(stored_perspectives)
         has_entities = bool(
@@ -968,7 +1061,10 @@ async def get_perspectives(
         logger.info(
             "perspectives_endpoint_stored_snapshot",
             content_id=cache_key,
+            path="stored_snapshot",
             count=count,
+            bias_groups=bias_groups,
+            bias_sum=sum(stored_bias.values()),
         )
         return response
 
@@ -1011,15 +1107,37 @@ async def get_perspectives(
     ]
 
     # Single source of truth for the 3 UI counters — mirror pipeline.py.
-    merged = cluster_perspectives + new_gnews
-    perspectives = [p for p in merged if p.bias_stance != "unknown"]
+    # Safety filter: drop any perspective whose URL matches the reference
+    # article (cluster query already filters by id, this guards against
+    # Google News surfacing the same canonical URL).
+    ref_url_key_live = _normalize_url_for_match(content.url)
+    merged = [
+        p
+        for p in (cluster_perspectives + new_gnews)
+        if not ref_url_key_live
+        or _normalize_url_for_match(getattr(p, "url", None)) != ref_url_key_live
+    ]
+    known_perspectives = [p for p in merged if p.bias_stance != "unknown"]
+
+    # Safety net (parity avec pipeline.py:494-510) : si aucune perspective
+    # n'a un bias connu, on retombe sur les sources du cluster pour ne pas
+    # sous-compter la couverture. La bias_distribution reste all-zero et
+    # la spectrum bar UI doit déjà gérer ce cas.
+    safety_net_triggered = False
+    if not known_perspectives and cluster_perspectives:
+        perspectives = cluster_perspectives
+        safety_net_triggered = True
+    else:
+        perspectives = known_perspectives
 
     logger.info(
         "perspectives_composition",
         content_id=cache_key,
-        cluster_sources=len(cluster_perspectives),
+        path="live",
+        cluster_sources_count=len(cluster_perspectives),
         gnews_added=len(new_gnews),
-        known_bias=len(perspectives),
+        known_bias=len(known_perspectives),
+        safety_net_triggered=safety_net_triggered,
     )
 
     # Calculate bias distribution (without "unknown")

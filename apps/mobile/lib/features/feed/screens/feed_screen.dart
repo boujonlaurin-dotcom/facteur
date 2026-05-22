@@ -21,8 +21,10 @@ import '../../../core/nudges/nudge_counters.dart';
 import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/widgets/feed_nudge_anchors.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../../core/services/analytics_service.dart' show FeedLoadMilestone;
 import '../../../core/providers/navigation_providers.dart';
 import '../providers/feed_provider.dart';
+import '../providers/feed_load_phase_provider.dart';
 import '../widgets/welcome_banner.dart';
 import '../../../widgets/design/facteur_logo.dart';
 import '../models/content_model.dart';
@@ -69,6 +71,7 @@ import '../widgets/filter_collapsible_panel.dart';
 import '../widgets/follow_keyword_suggestion_card.dart';
 import '../widgets/interest_filter_sheet.dart';
 import '../providers/tab_counts_provider.dart';
+import '../../digest/providers/digest_provider.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../settings/providers/user_profile_provider.dart';
 import '../../sources/providers/sources_providers.dart';
@@ -161,6 +164,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   // Update modal: déclenchée une seule fois par session si une update est dispo.
   bool _hasCheckedUpdate = false;
 
+  // Staggered loading : Stopwatch pour analytics + timer fallback Phase 3.
+  final Stopwatch _mountStopwatch = Stopwatch();
+  Timer? _idlePhaseTimer;
+  bool _firstPaintTracked = false;
+  bool _digestVisibleTracked = false;
+
   Future<void> _withFeedLoading(Future<void> Function() action) async {
     if (mounted) setState(() => _isFeedRefreshing = true);
     try {
@@ -177,9 +186,21 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   @override
   void initState() {
     super.initState();
+    _mountStopwatch.start();
     _scrollController.addListener(_onScroll);
     _showChronoMigrationToast();
     _recordFeedOpenAndMaybeNudge();
+
+    // Staggered loading : on déclenche les vagues 2 et 3 après le mount pour
+    // soulager le burst de requêtes au démarrage (cf. feed_load_phase_provider).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      advanceFeedLoadPhase(ref, FeedLoadPhase.postFrame);
+    });
+    _idlePhaseTimer = Timer(const Duration(milliseconds: 800), () {
+      if (!mounted) return;
+      advanceFeedLoadPhase(ref, FeedLoadPhase.idle);
+    });
   }
 
   Future<void> _recordFeedOpenAndMaybeNudge() async {
@@ -340,6 +361,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
     _scrollController.dispose();
     _pullHintTimer?.cancel();
+    _idlePhaseTimer?.cancel();
+    _mountStopwatch.stop();
     super.dispose();
   }
 
@@ -529,7 +552,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
         ref.watch(feedProvider).valueOrNull?.items ?? const <Content>[];
     final globalItems = notifier.globalItems;
     final badgeItems = globalItems.isNotEmpty ? globalItems : feedItems;
-    final serverCounts = ref.watch(tabCountsProvider).valueOrNull;
+    // Phase 2 only : badges onglets non-bloquants, 0 par défaut au mount.
+    final loadPhase = ref.watch(feedLoadPhaseProvider);
+    final serverCounts = loadPhase.hasReachedPostFrame
+        ? ref.watch(tabCountsProvider).valueOrNull
+        : null;
     return FilterCollapsiblePanel(
       activeCount: _activeFilterCount(),
       chipsRow: _buildFilterChipsRow(context),
@@ -637,7 +664,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       _selectedIsTheme = false;
     }
 
-    final allSources = ref.watch(userSourcesProvider).valueOrNull ?? [];
+    // Phase 2 only : userSources non-bloquantes, liste vide au mount (filter
+    // chips affichent leur état "Toutes les sources" par défaut).
+    final loadPhase = ref.watch(feedLoadPhaseProvider);
+    final allSources = (loadPhase.hasReachedPostFrame
+            ? ref.watch(userSourcesProvider).valueOrNull
+            : null) ??
+        const [];
     final followedSources = allSources
         .where((s) => (s.isTrusted || s.isCustom) && !s.isMuted)
         .toList();
@@ -714,18 +747,32 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   Widget build(BuildContext context) {
     final feedAsync = ref.watch(feedProvider);
     final colors = context.facteurColors;
+    final loadPhase = ref.watch(feedLoadPhaseProvider);
 
-    // Orchestrateur "premier impact" — arbitre entre modal notif, re-nudge
-    // banner et well-informed prompt. Garantit max 1 modal + 1 nudge par
-    // session.
-    final impressionSlot = ref.watch(firstImpressionSlotProvider);
-    _maybeShowActivationModal(impressionSlot);
+    // Orchestrateur "premier impact" : différé à Phase 2 pour éviter de
+    // déclencher au mount toute la chaîne de providers en dépendance
+    // (notif settings, renudge, well-informed, ios-add-to-home). `slot` est
+    // également lu plus bas pour afficher le re-nudge banner / well-informed
+    // prompt — donc on garde le watch tant que la phase est active.
+    final FirstImpressionSlot impressionSlot = loadPhase.hasReachedPostFrame
+        ? ref.watch(firstImpressionSlotProvider)
+        : FirstImpressionSlot.none;
+    if (loadPhase.hasReachedPostFrame && !_activationModalShown) {
+      _maybeShowActivationModal(impressionSlot);
+    }
 
-    // Pre-warm topics provider (single watch for all TopicChips)
-    final followedTopics = ref.watch(customTopicsProvider).valueOrNull ?? [];
+    // Topics suivis : différé à Phase 3 (utilisé uniquement dans
+    // feedAsync.data pour décorer les TopicChip). Pas besoin de pre-warm.
+    final followedTopics = (loadPhase.hasReachedIdle
+            ? ref.watch(customTopicsProvider).valueOrNull
+            : null) ??
+        const [];
 
-    // Swipe-left hint: check if already seen
-    final hintSeen = ref.watch(swipeLeftHintSeenProvider).valueOrNull ?? false;
+    // Swipe-left hint : différé à Phase 3 (lecture SharedPrefs, faible coût
+    // mais on reste cohérent avec la stratégie staggered).
+    final hintSeen = loadPhase.hasReachedIdle
+        ? (ref.watch(swipeLeftHintSeenProvider).valueOrNull ?? false)
+        : false;
     if (hintSeen) _swipeHintSeen = true;
 
     // Listen to scroll to top trigger.
@@ -747,8 +794,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       }
     });
 
-    // Compteur d'échecs consécutifs (UX uniquement) : bascule entre
-    // FriendlyErrorView et LaurinFallbackView après 2 échecs.
+    // Compteur d'échecs consécutifs (UX uniquement) + analytics first paint
+    // + auto-advance phase à idle dès que le feed est chargé (libère la
+    // Phase 3 plus tôt que le fallback Timer 800ms).
     ref.listen(feedProvider, (previous, next) {
       if (next is AsyncError && previous is! AsyncError) {
         if (mounted) {
@@ -759,13 +807,48 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
           setState(() => _consecutiveErrorCount = 0);
         }
       }
+      if (next is AsyncData && !_firstPaintTracked) {
+        _firstPaintTracked = true;
+        final ms = _mountStopwatch.elapsedMilliseconds;
+        unawaited(
+          ref.read(analyticsServiceProvider).trackFeedLoadTiming(
+                milestone: FeedLoadMilestone.firstPaint,
+                durationMs: ms,
+              ),
+        );
+        advanceFeedLoadPhase(ref, FeedLoadPhase.idle);
+      }
     });
 
-    // Show update modal at launch when an update is available.
+    // Analytics : digest visible (DigestEntryCard a déjà rendu son contenu).
+    // Gardé après `_firstPaintTracked` pour garantir l'ordre temporel des
+    // milestones côté PostHog (digest peut résoudre depuis le cache local
+    // avant `feedProvider`, ce qui inverserait la séquence).
+    ref.listen(digestProvider, (previous, next) {
+      if (_firstPaintTracked &&
+          !_digestVisibleTracked &&
+          next is AsyncData) {
+        _digestVisibleTracked = true;
+        final ms = _mountStopwatch.elapsedMilliseconds;
+        unawaited(
+          ref.read(analyticsServiceProvider).trackFeedLoadTiming(
+                milestone: FeedLoadMilestone.digestVisible,
+                durationMs: ms,
+              ),
+        );
+      }
+    });
+
+    // Show update modal at launch — gaté à Phase 3 pour ne pas déclencher
+    // la requête HTTP `app/update` dans le burst initial. La condition est
+    // *dans* le callback (et non autour du `ref.listen`) — un `ref.listen`
+    // conditionnel n'est pas idiomatique Riverpod.
     ref.listen(appUpdateProvider, (previous, next) {
-      if (_hasCheckedUpdate) return;
+      if (!loadPhase.hasReachedIdle || _hasCheckedUpdate) return;
       next.whenData((info) {
-        if (info != null && info.updateAvailable && UpdateModal.shouldShow()) {
+        if (info != null &&
+            info.updateAvailable &&
+            UpdateModal.shouldShow()) {
           _hasCheckedUpdate = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
@@ -807,11 +890,14 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             Align(
                               alignment: Alignment.centerRight,
                               child: Consumer(builder: (context, ref, _) {
-                                final hasUpdate = ref
-                                        .watch(appUpdateProvider)
-                                        .valueOrNull
-                                        ?.updateAvailable ==
-                                    true;
+                                // Phase 3 only : pas d'appel `app/update` au mount.
+                                final phase = ref.watch(feedLoadPhaseProvider);
+                                final hasUpdate = phase.hasReachedIdle &&
+                                    ref
+                                            .watch(appUpdateProvider)
+                                            .valueOrNull
+                                            ?.updateAvailable ==
+                                        true;
                                 final settingsButton = ProfileAvatarButton(
                                   onTap: () =>
                                       context.push(RoutePaths.settings),

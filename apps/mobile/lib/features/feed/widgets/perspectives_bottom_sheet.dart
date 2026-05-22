@@ -608,18 +608,25 @@ class _PerspectiveCard extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: Text(
-                          perspective.title
+                        child: DiffTitle(
+                          title: perspective.title
                               .replaceAll(RegExp(r'\s+[-–|]\s+[^-–|]+$'), '')
                               .trim(),
-                          style: textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w500,
-                            color: colors.textPrimary,
-                            fontSize:
-                                (textTheme.bodyMedium?.fontSize ?? 14) + 1,
-                          ),
+                          highlightSpans: perspective.highlightSpans,
+                          sharedTokens: perspective.sharedTokens,
+                          biasColor: perspective.getBiasColor(colors),
+                          baseStyle: textTheme.bodyMedium?.copyWith(
+                                color: colors.textPrimary,
+                                fontSize:
+                                    (textTheme.bodyMedium?.fontSize ?? 14) + 1,
+                                height: 1.35,
+                              ) ??
+                              TextStyle(
+                                color: colors.textPrimary,
+                                fontSize: 15,
+                                height: 1.35,
+                              ),
                           maxLines: 4,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1344,7 +1351,7 @@ class _PerspectivesInlineSectionState
               children: [
                 Expanded(
                   child: Text(
-                    'Couverture médiatique',
+                    'Couverture médiatique (${widget.perspectives.length})',
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
                     style: GoogleFonts.dmSans(
@@ -1413,7 +1420,7 @@ class _PerspectivesInlineSectionState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (widget.referenceTitle.isNotEmpty)
+          if (widget.referenceTitle.isNotEmpty) ...[
             _RefBlock(
               key: ValueKey('ref_$_animationGeneration'),
               title: widget.referenceTitle,
@@ -1421,6 +1428,12 @@ class _PerspectivesInlineSectionState
               sourceBiasStance: widget.sourceBiasStance,
               sourceName: widget.sourceName,
             ),
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              height: 1,
+              color: colors.textSecondary.withValues(alpha: 0.18),
+            ),
+          ],
           for (var i = 0; i < variants.length; i++)
             _VariantRow(
               key: ValueKey('variant_${_animationGeneration}_$i'),
@@ -1536,7 +1549,7 @@ class _RefBlock extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'VOTRE ARTICLE',
+            'CET ARTICLE',
             style: GoogleFonts.dmSans(
               fontSize: 10,
               fontWeight: FontWeight.w700,
@@ -1730,7 +1743,7 @@ class _VariantRow extends ConsumerWidget {
             bottom: isLast
                 ? BorderSide.none
                 : BorderSide(
-                    color: Colors.black.withValues(alpha: 0.05), width: 1),
+                    color: Colors.black.withValues(alpha: 0.08), width: 1),
           ),
         ),
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),

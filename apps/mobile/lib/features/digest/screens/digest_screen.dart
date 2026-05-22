@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -276,6 +277,10 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     final colors = context.facteurColors;
     final digestAsync = ref.watch(digestProvider);
     final sereinState = ref.watch(sereinToggleProvider);
+    final dailyArticleCount = ref.watch(
+          onboardingProvider.select((s) => s.answers.dailyArticleCount),
+        ) ??
+        5;
 
     // Initialiser le format depuis la réponse API
     ref.listen(digestProvider, (previous, next) {
@@ -440,11 +445,14 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                       ),
                     ),
 
-                    // Hero : pill + titre + meta + illustration facteur
+                    // Hero : articleCount clampé sur la pref user, pas sur le
+                    // total backend (jusqu'à 10).
                     SliverToBoxAdapter(
                       child: DigestHero(
-                        articleCount:
-                            digestAsync.valueOrNull?.items.length ?? 5,
+                        articleCount: math.min(
+                          digestAsync.valueOrNull?.items.length ?? 5,
+                          dailyArticleCount,
+                        ),
                         targetDate: digestAsync.valueOrNull?.targetDate ??
                             DateTime.now(),
                         isSerein: sereinState.enabled,
@@ -601,14 +609,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                             }
 
                             final notifier = ref.read(digestProvider.notifier);
-                            final total = notifier.totalCount;
-                            final userPref = ref
-                                    .watch(onboardingProvider)
-                                    .answers
-                                    .dailyArticleCount ??
-                                5;
                             final denominator =
-                                total < userPref ? total : userPref;
+                                math.min(notifier.totalCount, dailyArticleCount);
 
                             return DigestBriefingSection(
                               digest: digest,
@@ -616,6 +618,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                               topics: digest.usesTopics ? digest.topics : null,
                               processedCount: notifier.processedCount,
                               dailyGoal: denominator,
+                              displayLimit: dailyArticleCount,
                               onItemTap: _openArticle,
                               onLike: _handleLike,
                               onSave: _handleSave,

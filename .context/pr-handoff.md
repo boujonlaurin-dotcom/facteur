@@ -1,54 +1,42 @@
-# PR — fix(veille): empêcher configs sans source + filets historique
+# PR — fix: custom_topic→favori interdit + 3 régressions pipeline Essentiel
 
 ## Summary
 
-Coupe à la racine le pipeline qui aboutissait à des digests vides : sans validation, le mobile soumettait des configs avec `source_selections=[]` (filtre interne sur les mocks sans `apiSourceId`), le backend acceptait, et le digest builder rendait `items=[]` instantanément. 4 des 7 livraisons des 14 derniers jours étaient dans cet état (cf. `bug-veille-config-without-sources.md`).
+Deux corrections indépendantes regroupées :
 
-- **A1 — Backend 422 si config sans source** : `VeilleConfigUpsert.source_selections` passe à `min_length=1` (`packages/api/app/schemas/veille.py`) + filet final post-dedup dans `upsert_config` qui rollback puis lève `HTTPException(422)` (`packages/api/app/routers/veille.py`).
-- **A2/A3 — Mobile Step 3** : `realSelectedSourceCount` (sources avec `apiSourceId`) gate le CTA « Continuer » + hint « Sélectionne au moins une source ». La liste mock cliquable du fallback est supprimée (piège UX : tous filtrés au submit) — remplacée par `_SuggestionsUnavailable` (texte sobre + bouton « Réessayer »). Le bouton « + Ajouter une source » reste disponible.
-- **A4 — Mobile 422 ciblé** : `veille_config_screen.dart` distingue `e.statusCode == 422` (message validation) du reste.
-- **B2 — Drop `lastError` UI** : `_DeliveryFailedView` n'affiche plus le texte technique brut (`watchdog_backfill: stuck running …` etc.) ; il reste dans Sentry/logs.
-- **C1 — Watchdog cleanup `*/5 min`** : `cleanup_stuck_running_deliveries` marque FAILED toute row RUNNING > 15 min (`packages/api/app/jobs/veille_generation_job.py`) + Sentry `capture_message` par row + job ajouté au scheduler (`packages/api/app/workers/scheduler.py`).
-- **C2 — PostHog `veille_config_submitted`** avec `source_count` pour mesurer 0% post-A1.
+**1. Story 23.3 — custom_topic ne peut plus être épinglé favori**
 
-## Tests
+Un sujet personnalisé (« Plongée », « Elon Musk »…) ne peut plus passer à l'état `favorite`. La pipeline Mistral classe les articles sur 51 slugs figés ; un custom_topic mappe toujours sur son `slug_parent` (ex. « Plongée » → `sport`), donc filtrer via favori custom_topic remontait tout le sport, pas la plongée. Décision PO : seuls les thèmes et les veilles peuvent être favoris.
 
-- Backend : `pytest tests/routers/test_veille_routes.py tests/test_veille_generation_job.py tests/test_veille_first_delivery_failure.py tests/test_veille_digest_builder.py` → 46/46 OK (2 nouveaux tests 422, 2 nouveaux tests cleanup stuck).
-- Mobile : `flutter test test/features/veille/screens/step3_sources_screen_test.dart` → 2/2 OK (fallback texte + CTA disabled state).
-- Lint : `ruff check` + `ruff format --check` OK sur les fichiers touchés ; `flutter analyze` OK sur les écrans veille touchés.
-- Alembic : 1 head, aucune migration ajoutée.
+- **Backend** : nouvelle exception `CustomTopicFavoriteForbidden` levée dans `set_state()` et `reorder_favorites()` si `kind=="custom_topic"` + `state==FAVORITE`. Router mappe → 422 `{"error": "custom_topic_favorite_forbidden"}`.
+- **Mobile** : `InterestStatePickerSheet` accepte un flag `allowFavorite` (default `true`). Le `_pickState` passe `allowFavorite: refTarget is! CustomTopicFavoriteRef`. Un bouton inline `_AddTopicInlineButton` est réintroduit en bas de chaque `_ThemeBlock` (remplace le FAB global pour les thèmes déjà suivis).
+- **Migration** `23a3_downgrade_custom_topic_favorites` : downgrade silencieux — `user_topic_profiles.state` favorite→followed + DELETE des rows `user_favorite_interests` avec `custom_topic_id IS NOT NULL`.
 
-## Action manuelle PO post-merge — cleanup historique (B1)
+**2. Fix pipeline "Essentiel du jour" (3 régressions)**
 
-MCP Supabase est en read-only ; à exécuter via Supabase SQL Editor :
+Cause racine commune : `_schedule_background_regen` n'avait aucune garde horaire et générait le digest à 00h Paris, avant les Unes du matin, puis bloquait le cron 07h30 via `digest_background_regen_skipped_good_format`.
 
-```sql
-DELETE FROM veille_deliveries WHERE id IN (
-  'e508b4cd-95f0-47a4-b5fc-5de09893c055',
-  '44a569dd-a72f-41de-970e-98c6d1cda27f',
-  '5902a90e-7126-47bc-9f4c-81ca595dbea9',
-  'f48e57dc-30b6-4ad5-81c0-3b6ae635bf01',
-  '06280b22-de15-4c1b-8219-f11b03106e95',
-  '90adb2e5-da1a-46f6-8fb1-38f6d54ad62c',
-  'ef6e0f7e-1a2d-4341-a698-16baebe238eb'
-);
-```
+- **Fix 1 — garde horaire** : refuse de spawner pour `target_date == today` avant `DIGEST_CRON_HOUR_PARIS:DIGEST_CRON_MINUTE_PARIS` (07:30 Paris).
+- **Fix 1bis — clone yesterday ephemeral** : nouvel user inscrit la nuit → rendu éphémère du digest editorial_v1 de la veille d'un autre user (`is_stale_fallback=True`, jamais persisté).
+- **Fix 2 — drop subject sans `actu_article`** : `pipeline.py:343` passe de `actu is None AND deep is None` à `actu is None` — un sujet deep-only va sur le rail "Prendre du recul".
+- **Fix 3 — filtre multi-source avant LLM** : `curation.py:218-243` pré-filtre le pool à `source_count >= 2` avant LLM, fallback à `available` si pool < count.
 
-Vérification SELECT pré-DELETE déjà faite : 6 succeeded `item_count=0` + 1 failed `watchdog_backfill`. Décision PO : DELETE pur, pas de donnée user de valeur.
+## Test plan
 
-Vérification post-fix :
+- [x] `pytest tests/routers/test_user_interests.py` (107 cases, 422 sur custom_topic+favorite)
+- [x] `pytest tests/test_digest_service.py` (23 passed)
+- [x] `pytest tests/test_digest_readonly_hotpath.py` (11 passed)
+- [x] `pytest tests/editorial/test_pipeline.py` (12 passed)
+- [x] `pytest tests/editorial/test_curation.py` (13 passed)
+- [x] `flutter test test/features/my_interests/` (11 passed, dont Story 23.3 `allowFavorite=false`)
+- [x] `flutter analyze` — 0 erreurs
+- [x] Alembic 1 head : `23a3_downgrade_custom_topic_favorites`
+- [ ] Post-deploy : `SELECT state, COUNT(*) FROM user_topic_profiles WHERE kind='custom_topic' AND state='favorite'` → 0 rows.
+- [ ] Post-deploy : `SELECT MIN(generated_at AT TIME ZONE 'Europe/Paris') FROM daily_digest WHERE target_date = CURRENT_DATE` → ≥ 07:30.
+- [ ] Post-deploy : `source_count` du rang 1 ≥ 3, aucun subject avec `actu_article = null`.
 
-```sql
--- Doit retourner 0 :
-SELECT COUNT(*) FROM veille_configs vc
-WHERE NOT EXISTS (SELECT 1 FROM veille_sources vs WHERE vs.veille_config_id = vc.id);
+## Zones à risque
 
--- Doit rester à 0 :
-SELECT COUNT(*) FROM veille_deliveries
-WHERE generation_state='running' AND started_at < NOW() - INTERVAL '15 minutes';
-```
-
-## Hors scope
-
-- Stabilisation `/api/veille/suggestions/sources` (cause racine `IdleInTransactionSessionTimeout`, à traiter dans un sprint dédié — A1+A3 protègent l'utilisateur indépendamment).
-- Mapping LLM-slug → taxonomie canonique (déjà tracé dans `bug-veille-empty-digests-and-no-wow.md`).
+- `user_interests_service.py` / `routers/user_interests.py` : mutation path favoris
+- `digest_service.py` : hotpath lecture digest (step 3b)
+- `alembic/versions/23a3_*` : migration one-shot destructive (pas de downgrade)

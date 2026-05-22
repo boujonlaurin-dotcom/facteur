@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:facteur/core/api/api_client.dart';
@@ -6,12 +7,22 @@ import 'package:facteur/core/api/notification_preferences_api_service.dart';
 import 'package:facteur/core/services/posthog_service.dart';
 import 'package:facteur/features/notifications/widgets/notification_activation_modal.dart';
 
+enum FeedLoadMilestone {
+  firstPaint('first_paint'),
+  digestVisible('digest_visible'),
+  fullyLoaded('fully_loaded');
+
+  const FeedLoadMilestone(this.eventValue);
+  final String eventValue;
+}
+
 class AnalyticsService {
   final ApiClient? _apiClient;
   final PostHogService? _posthog;
   String? _deviceId;
   String? _sessionId;
   DateTime? _sessionStartTime;
+  String? _appVersion;
 
   AnalyticsService(ApiClient this._apiClient, {PostHogService? posthog})
       : _posthog = posthog;
@@ -30,6 +41,12 @@ class AnalyticsService {
       _deviceId = const Uuid().v4();
       await prefs.setString('analytics_device_id', _deviceId!);
     }
+    try {
+      final info = await PackageInfo.fromPlatform();
+      _appVersion = '${info.version}+${info.buildNumber}';
+    } catch (_) {
+      // Best-effort — version tracking degrades gracefully if unavailable
+    }
   }
 
   Future<void> startSession({bool isOrganic = true}) async {
@@ -40,6 +57,7 @@ class AnalyticsService {
       'session_id': _sessionId,
       'is_organic': isOrganic,
       'platform': defaultTargetPlatform.toString(),
+      if (_appVersion != null) 'app_version': _appVersion,
     });
     // Story 14.1 — PostHog uses `app_open` as the conventional event name
     // for DAU/retention computation. We mirror session_start to it.
@@ -47,6 +65,7 @@ class AnalyticsService {
       'session_id': _sessionId,
       'is_organic': isOrganic,
       'platform': defaultTargetPlatform.toString(),
+      if (_appVersion != null) 'app_version': _appVersion,
     });
   }
 
@@ -207,6 +226,21 @@ class AnalyticsService {
   /// @deprecated Use [trackFeedSession] instead.
   Future<void> trackFeedComplete() async {
     await _logEvent('feed_complete', {'session_id': _sessionId});
+  }
+
+  /// Mesure la progression du chargement progressif du feed.
+  /// [durationMs] : ms depuis le mount du `FeedScreen`.
+  Future<void> trackFeedLoadTiming({
+    required FeedLoadMilestone milestone,
+    required int durationMs,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'milestone': milestone.eventValue,
+      'duration_ms': durationMs,
+    };
+    await _logEvent('feed_load_timing', props);
+    await _capturePostHog('feed_load_timing', props);
   }
 
   Future<void> trackSourceAdd(String sourceId) async {

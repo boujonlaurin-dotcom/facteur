@@ -10,6 +10,7 @@ import '../features/onboarding/screens/onboarding_screen.dart';
 import '../features/onboarding/screens/conclusion_animation_screen.dart';
 import '../features/feed/screens/feed_screen.dart';
 import '../features/feed/models/content_model.dart';
+import '../features/flux_continu/screens/flux_continu_screen.dart';
 import '../features/auth/screens/email_confirmation_screen.dart';
 import '../features/detail/screens/content_detail_screen.dart';
 
@@ -21,16 +22,13 @@ import '../features/settings/screens/account_screen.dart';
 import '../features/settings/screens/notifications_screen.dart';
 import '../features/settings/screens/about_screen.dart';
 import '../features/settings/widgets/settings_sheet.dart';
-import '../features/custom_topics/screens/my_interests_screen.dart';
+import '../features/my_interests/screens/my_interests_screen.dart';
 import '../features/custom_topics/screens/topic_explorer_screen.dart';
 import '../features/progress/screens/progressions_screen.dart';
 import '../features/progress/screens/quiz_screen.dart';
 import '../features/subscription/screens/paywall_screen.dart';
 import '../features/digest/screens/digest_screen.dart';
 import '../features/veille/screens/veille_config_screen.dart';
-import '../features/veille/screens/veille_dashboard_screen.dart';
-import '../features/veille/screens/veille_deliveries_screen.dart';
-import '../features/veille/screens/veille_delivery_detail_screen.dart';
 import '../features/lettres/screens/courrier_screen.dart';
 import '../features/lettres/screens/open_letter_screen.dart';
 import '../features/digest/screens/closure_screen.dart';
@@ -54,6 +52,7 @@ class RouteNames {
   static const String digest = 'digest';
   static const String digestClosure = 'digest-closure';
   static const String feed = 'feed';
+  static const String fluxContinu = 'flux-continu';
   static const String contentDetail = 'content-detail';
   static const String saved = 'saved';
   static const String savedAll = 'saved-all';
@@ -73,9 +72,6 @@ class RouteNames {
   static const String topicExplorer = 'topic-explorer';
   static const String themeSources = 'theme-sources';
   static const String veilleConfig = 'veille-config';
-  static const String veilleDashboard = 'veille-dashboard';
-  static const String veilleDeliveries = 'veille-deliveries';
-  static const String veilleDeliveryDetail = 'veille-delivery-detail';
   static const String lettres = 'lettres';
   static const String openLetter = 'open-letter';
 }
@@ -91,6 +87,7 @@ class RoutePaths {
   static const String digest = '/digest';
   static const String digestClosure = '/digest/closure';
   static const String feed = '/feed';
+  static const String fluxContinu = '/flux-continu';
   static const String contentDetail = '/content/:id';
   static const String saved = '/saved';
   static const String sources = '/settings/sources'; // Moved to settings
@@ -107,9 +104,6 @@ class RoutePaths {
   static const String paywall = '/paywall';
   static const String emailConfirmation = '/email-confirmation';
   static const String veilleConfig = '/veille/config';
-  static const String veilleDashboard = '/veille/dashboard';
-  static const String veilleDeliveries = '/veille/deliveries';
-  static const String veilleDeliveryDetail = '/veille/deliveries/:id';
   static const String lettres = '/lettres';
   static const String openLetter = '/lettres/:id';
 }
@@ -190,7 +184,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (isOnLoginPage || isOnEmailConfirmation || isOnSplash) {
         return authState.needsOnboarding
             ? RoutePaths.onboarding
-            : RoutePaths.feed;
+            : RoutePaths.fluxContinu;
       }
 
       // 4. Onboarding : forcer si nécessaire
@@ -200,9 +194,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         return RoutePaths.onboarding;
       }
 
-      // 5. Onboarding : empêcher d'y retourner si fini → atterrissage feed
+      // 5. Onboarding : empêcher d'y retourner si fini → atterrissage flux continu
       if (!authState.needsOnboarding && isOnOnboarding) {
-        return RoutePaths.feed;
+        return RoutePaths.fluxContinu;
       }
 
       return null;
@@ -250,7 +244,35 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ConclusionAnimationScreen(),
       ),
 
-      // Feed (route racine post-removal du Shell — la bottom nav est supprimée)
+      // Flux Continu V1.8 — nouvelle home post-auth (Story 21.1)
+      GoRoute(
+        path: RoutePaths.fluxContinu,
+        name: RouteNames.fluxContinu,
+        builder: (context, state) => const Stack(
+          children: [
+            FluxContinuScreen(),
+            NudgeHost(),
+          ],
+        ),
+        routes: [
+          GoRoute(
+            path: 'content/:id',
+            parentNavigatorKey: NotificationService.navigatorKey,
+            pageBuilder: (context, state) {
+              final contentId = state.pathParameters['id']!;
+              final content = state.extra as Content?;
+              return FullSwipeCupertinoPage(
+                child: ContentDetailScreen(
+                  contentId: contentId,
+                  content: content,
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+
+      // Feed (legacy — reste accessible via deep link et action manuelle)
       GoRoute(
         path: RoutePaths.feed,
         name: RouteNames.feed,
@@ -409,8 +431,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
 
-      // Veille Config — flow de configuration "Ma veille" (4 étapes).
+      // Veille Config — flow de configuration "Ma veille".
       // Hors ShellRoute pour cacher la bottom nav (full-screen modal).
+      // Entry point depuis Mes intérêts (CTA ou menu favori veille).
       GoRoute(
         path: RoutePaths.veilleConfig,
         name: RouteNames.veilleConfig,
@@ -420,35 +443,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             child: VeilleConfigScreen(editMode: isEdit),
           );
         },
-      ),
-
-      // Veille Dashboard — vue de la config existante (édit/pause/delete).
-      GoRoute(
-        path: RoutePaths.veilleDashboard,
-        name: RouteNames.veilleDashboard,
-        pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-          child: VeilleDashboardScreen(),
-        ),
-      ),
-
-      // Veille Deliveries — historique des livraisons.
-      GoRoute(
-        path: RoutePaths.veilleDeliveries,
-        name: RouteNames.veilleDeliveries,
-        pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-          child: VeilleDeliveriesScreen(),
-        ),
-      ),
-
-      // Veille Delivery Detail — clusters + articles.
-      GoRoute(
-        path: RoutePaths.veilleDeliveryDetail,
-        name: RouteNames.veilleDeliveryDetail,
-        pageBuilder: (context, state) => FullSwipeCupertinoPage(
-          child: VeilleDeliveryDetailScreen(
-            deliveryId: state.pathParameters['id']!,
-          ),
-        ),
       ),
 
       // Lettres du Facteur — onboarding doux (story 19.1).

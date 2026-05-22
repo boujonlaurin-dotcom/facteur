@@ -1153,6 +1153,20 @@ class DigestSelector:
                         )
                     )
 
+                    # Digest-only additive boost: ensures an article from a
+                    # followed source outranks a comparable curated article in
+                    # the top-7 selection. base_score already counted the
+                    # standard TRUSTED_SOURCE via CoreLayer; this stacks on it
+                    # exclusively for the digest pipeline.
+                    final_score += ScoringWeights.DIGEST_TRUSTED_SOURCE_BONUS
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label="Priorité source suivie (digest)",
+                            points=ScoringWeights.DIGEST_TRUSTED_SOURCE_BONUS,
+                            is_positive=True,
+                        )
+                    )
+
                     # Custom source bonus
                     if content.source_id in context.custom_source_ids:
                         breakdown.append(

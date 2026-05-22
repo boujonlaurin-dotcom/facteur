@@ -38,6 +38,40 @@ from app.services.recommendation_service import RecommendationService
 logger = structlog.get_logger()
 
 
+async def _resolve_topic_param(
+    topic: str | None, user_uuid: UUID, db: AsyncSession
+) -> str | None:
+    """Story 22.1 — `topic` accepte un slug ou un UUID stringified custom_topic.
+
+    Si `topic` parse en UUID, lookup `user_topic_profiles` scoped user_id
+    (sécurité : pas de cross-user leak). Si trouvé → utilise `slug_parent`
+    pour le filtre (matche `Content.topics` via `apply_topic_filter`). Si
+    UUID inconnu pour ce user → retourne le slug originel (le filtre vide
+    retournera 0 résultats côté pipeline). Si `topic` n'est pas un UUID
+    valide → comportement actuel (slug ML granulaire).
+    """
+    if topic is None:
+        return None
+    try:
+        topic_uuid = UUID(topic)
+    except ValueError:
+        return topic
+
+    from sqlalchemy import select as sa_select
+
+    from app.models.user_topic_profile import UserTopicProfile
+
+    slug_parent = (
+        await db.execute(
+            sa_select(UserTopicProfile.slug_parent).where(
+                UserTopicProfile.id == topic_uuid,
+                UserTopicProfile.user_id == user_uuid,
+            )
+        )
+    ).scalar_one_or_none()
+    return slug_parent if slug_parent else topic
+
+
 def _best_keyword(titles: list[str]) -> str:
     """Extrait le mot-clé le plus fréquent d'une liste de titres d'articles."""
     freq: dict[str, int] = {}
@@ -68,6 +102,7 @@ def _is_default_view(
     source_id: str | None,
     entity: str | None,
     keyword: str | None,
+    personalized: bool,
 ) -> bool:
     """Eligibility predicate for the page-1 cache.
 
@@ -89,6 +124,7 @@ def _is_default_view(
         and source_id is None
         and entity is None
         and keyword is None
+        and not personalized
     )
 
 
@@ -120,6 +156,14 @@ async def get_personalized_feed(
             "sources the user does not follow (used by trending chip taps)."
         ),
     ),
+    personalized: bool = Query(
+        False,
+        description=(
+            "Restrict theme/topic candidates to followed sources, narrow to a "
+            "24h window, and boost articles matching user_subtopics. Used by "
+            "the Tournée du jour theme sections."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -149,6 +193,7 @@ async def get_personalized_feed(
         source_id=source_id,
         entity=entity,
         keyword=keyword,
+        personalized=personalized,
     )
 
     if cache_eligible:
@@ -180,6 +225,7 @@ async def get_personalized_feed(
                 entity=entity,
                 keyword=keyword,
                 include_unfollowed=include_unfollowed,
+                personalized=personalized,
             )
             payload = json.dumps(response.model_dump(mode="json")).encode("utf-8")
             FEED_CACHE.put(user_uuid, payload)
@@ -201,6 +247,7 @@ async def get_personalized_feed(
         entity=entity,
         keyword=keyword,
         include_unfollowed=include_unfollowed,
+        personalized=personalized,
     )
     return response
 
@@ -222,6 +269,7 @@ async def _compute_feed(
     entity: str | None,
     keyword: str | None,
     include_unfollowed: bool = False,
+    personalized: bool = False,
 ) -> FeedResponse:
     """Run the full recommendation pipeline. Identical to the pre-Round-5
     body of `get_personalized_feed`, extracted for cache-miss reuse."""
@@ -230,6 +278,9 @@ async def _compute_feed(
     # serein=True overrides mode to use the serein filter (same as INSPIRATION)
     if serein and not mode:
         mode = FeedFilterMode.INSPIRATION
+
+    # Story 22.1 — `topic` accepte slug OU UUID stringified d'un custom_topic.
+    topic = await _resolve_topic_param(topic, user_uuid, db)
 
     # Get Feed Items only - briefing moved to dedicated digest endpoint
     feed_items = await service.get_feed(
@@ -247,6 +298,7 @@ async def _compute_feed(
         keyword=keyword,
         serein=serein,
         include_unfollowed=include_unfollowed,
+        personalized=personalized,
     )
 
     # Epic 11: Build clusters from custom topics (reuse from service, no duplicate query)

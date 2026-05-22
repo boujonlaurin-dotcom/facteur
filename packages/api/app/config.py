@@ -119,6 +119,10 @@ class Settings(BaseSettings):
     brave_monthly_cap: int = 1800
     mistral_monthly_cap: int = 2000
 
+    # Veille LLM suggesters — Story 23.3 (curation synchrone à l'instant du flow).
+    # Medium = bon compromis qualité/coût ; override pour switch large si besoin.
+    veille_llm_model: str = "mistral-medium-latest"
+
     # GitHub (app update feature)
     github_token: str = ""
     github_repo: str = "boujonlaurin-dotcom/facteur"
