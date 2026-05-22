@@ -18,6 +18,10 @@ pytestmark = pytest.mark.skipif(
     reason="spaCy or fr_core_news_md model not installed"
 )
 
+_NER_DRIFT_REASON = (
+    "fr_core_news_md model drift: entity tags unstable on this title."
+)
+
 
 @pytest.mark.asyncio
 class TestNERService:
@@ -40,11 +44,7 @@ class TestNERService:
             for e in entities
         ), f"Expected 'Emmanuel Macron' as PERSON, got: {[(e.text, e.label) for e in entities]}"
     
-    @pytest.mark.xfail(
-        reason="fr_core_news_md drift: 'Tesla' n'est plus tagué ORG sur ce titre. "
-        "Pré-existant sur main, indépendant de la calibration PR+1 (PRIORITY flip).",
-        strict=False,
-    )
+    @pytest.mark.xfail(reason=_NER_DRIFT_REASON, strict=False)
     async def test_extract_organization(self, ner_service):
         """Test extracting organization entities."""
         entities = await ner_service.extract_entities(
@@ -56,11 +56,7 @@ class TestNERService:
             for e in entities
         ), f"Expected 'Tesla' as ORG, got: {[(e.text, e.label) for e in entities]}"
 
-    @pytest.mark.xfail(
-        reason="fr_core_news_md drift: 'France'/'Allemagne' ne sont plus tagués LOCATION. "
-        "Pré-existant sur main, indépendant de la calibration PR+1 (PRIORITY flip).",
-        strict=False,
-    )
+    @pytest.mark.xfail(reason=_NER_DRIFT_REASON, strict=False)
     async def test_extract_gpe_location(self, ner_service):
         """Test extracting geopolitical entities (locations)."""
         entities = await ner_service.extract_entities(
