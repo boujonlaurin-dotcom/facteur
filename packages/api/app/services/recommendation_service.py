@@ -121,7 +121,11 @@ def is_personalized_theme_mode(
     These calls bypass the chronological short-circuit and fall through to
     the PillarScoringEngine branch.
     """
-    return personalized and (theme is not None or topic is not None) and source_uuid is None
+    return (
+        personalized
+        and (theme is not None or topic is not None)
+        and source_uuid is None
+    )
 
 
 def stratify_followed_first(
