@@ -18,6 +18,10 @@ pytestmark = pytest.mark.skipif(
     reason="spaCy or fr_core_news_md model not installed"
 )
 
+_NER_DRIFT_REASON = (
+    "fr_core_news_md model drift: entity tags unstable on this title."
+)
+
 
 @pytest.mark.asyncio
 class TestNERService:
