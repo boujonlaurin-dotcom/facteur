@@ -6,17 +6,20 @@ Persists results in `cluster_title_annotations` keyed by
 (cluster_id, content_id) so subsequent panel opens read from cache.
 
 Sprint 1 — phase déterministe uniquement (POS + lemmatisation, zéro LLM).
-Phase 2 (Mistral-small raffinement) will populate `semantic_equiv` later
-without touching existing rows (gated by `model_version`).
+Phase 4 LLM raffinement (PR 3 — persistance) ajoute lecture/écriture du
+slot `semantic_equiv` pour les annotations LLM, sans toucher le chemin
+spaCy existant. Le slot reste NULL pour les articles hors digest.
 """
 
 import asyncio
+import hashlib
 import unicodedata
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -289,6 +292,121 @@ class TitleAnnotationService:
             )
 
         return out
+
+
+    # ----------------------------------------------------------- LLM persistence
+
+    @staticmethod
+    def compute_cluster_signature(content_ids: list[UUID]) -> str:
+        """Hash déterministe de la composition d'un cluster.
+
+        Sert à invalider les annotations LLM quand un variant est ajouté
+        ou retiré du cluster — la signature stockée dans `semantic_equiv`
+        ne match plus, et l'appelant re-déclenche l'annotation au prochain
+        passage pipeline.
+        """
+        sorted_str = ",".join(str(cid) for cid in sorted(content_ids))
+        return hashlib.sha256(sorted_str.encode("utf-8")).hexdigest()[:16]
+
+    async def get_llm_annotations(
+        self,
+        db: AsyncSession,
+        cluster_id: UUID,
+        llm_version: str,
+        cluster_signature: str,
+    ) -> dict[UUID, dict]:
+        """Lit les annotations LLM cachées pour un cluster.
+
+        Filtre strictement par `llm_version` (gating multi-versions) ET
+        par `cluster_signature` (invalidation à composition changeante).
+        Tout `semantic_equiv` qui ne matche pas les deux est ignoré.
+
+        Retourne `{content_id: semantic_equiv_payload}`.
+        """
+        stmt = select(
+            ClusterTitleAnnotation.content_id,
+            ClusterTitleAnnotation.semantic_equiv,
+        ).where(
+            ClusterTitleAnnotation.cluster_id == cluster_id,
+            ClusterTitleAnnotation.semantic_equiv.isnot(None),
+        )
+        out: dict[UUID, dict] = {}
+        for row in (await db.execute(stmt)).all():
+            payload = row.semantic_equiv
+            if not isinstance(payload, dict):
+                continue
+            if payload.get("llm_version") != llm_version:
+                continue
+            if payload.get("cluster_signature") != cluster_signature:
+                continue
+            out[row.content_id] = payload
+        return out
+
+    async def write_llm_annotations(
+        self,
+        db: AsyncSession,
+        cluster_id: UUID,
+        llm_version: str,
+        cluster_signature: str,
+        annotations: dict[UUID, dict],
+    ) -> int:
+        """UPDATE `semantic_equiv` pour les rows existants du cluster.
+
+        Pré-condition : la pipeline spaCy doit avoir déjà créé les rows
+        (strong_tokens présents). Les rows manquantes sont loguées et
+        skippées — le pipeline orchestrateur (PR 4) garantit l'ordre.
+
+        Chaque `annotations[content_id]` est un dict produit par
+        `LLMBiasAnnotationService` ; on l'enrobe ici avec les métadonnées
+        de versioning + signature.
+
+        Retourne le nombre de rows effectivement mises à jour.
+        """
+        if not annotations:
+            return 0
+
+        now_iso = datetime.now(UTC).isoformat()
+        n_updated = 0
+        for content_id, ann in annotations.items():
+            payload = {
+                "target_spans": ann.get("target_spans") or [],
+                "exclude_spans": ann.get("exclude_spans") or [],
+                "notes": ann.get("notes", ""),
+                "confidence": ann.get("confidence"),
+                "llm_version": llm_version,
+                "annotated_at": now_iso,
+                "cluster_signature": cluster_signature,
+            }
+            stmt = (
+                update(ClusterTitleAnnotation)
+                .where(
+                    ClusterTitleAnnotation.cluster_id == cluster_id,
+                    ClusterTitleAnnotation.content_id == content_id,
+                )
+                .values(semantic_equiv=payload)
+            )
+            res = await db.execute(stmt)
+            if res.rowcount:
+                n_updated += 1
+            else:
+                logger.warning(
+                    "title_annotation.llm_write_no_row",
+                    cluster_id=str(cluster_id),
+                    content_id=str(content_id),
+                )
+
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logger.exception(
+                "title_annotation.llm_write_commit_failed",
+                cluster_id=str(cluster_id),
+                n_attempted=len(annotations),
+            )
+            return 0
+
+        return n_updated
 
 
 _title_annotation_service: TitleAnnotationService | None = None
