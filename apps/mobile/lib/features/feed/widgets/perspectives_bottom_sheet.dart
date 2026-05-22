@@ -1323,11 +1323,18 @@ class _PerspectivesInlineSectionState
     return sorted;
   }
 
+  List<Perspective> get _filteredPerspectives {
+    final sorted = _sortedPerspectives;
+    final selected = widget.externalSelectedSegments;
+    if (selected == null || selected.isEmpty) return sorted;
+    return sorted.where((p) => selected.contains(p.biasGroup)).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
-    final variants = _sortedPerspectives.take(8).toList();
+    final variants = _filteredPerspectives.take(8).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
