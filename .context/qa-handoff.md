@@ -1,113 +1,108 @@
-# QA Handoff — Veille mobile V2 + curation LLM synchrone (Story 23.3)
-
-> **Refonte majeure post-PR #633.** Le verdict PO sur PR #633 : Step 2 dupliquait Step 1, Step 3 vide sur cas niche, la curation LLM avait été tuée à tort en Story 23.1. Cette PR ramène la curation LLM **en synchrone** à l'instant du flow, et refait Step 1/2/3 + ajoute la tuile "Autre" + le HaloLoader narratif récupéré du git history.
+# QA Handoff — Story 21.2 — Ranking personnalisé sur sections thématiques de la Tournée
 
 ## Feature développée
 
-### Backend (Story 23.3)
-- `packages/api/app/services/veille/llm/` (nouveau) : `angle_suggester.py` + `source_suggester.py` — appels Mistral synchrones, cache TTL 24h, fallback déterministe.
-- `packages/api/app/services/editorial/llm_client.py` — réutilisé tel quel.
-- `packages/api/app/config.py` — nouveau setting `veille_llm_model` (default `mistral-medium-latest`, override via env).
-- `packages/api/app/schemas/veille.py` — 6 nouveaux schemas (`VeilleSuggest{Angles,Sources}{Request,Response}`, `VeilleAngleSuggestion`, `VeilleSourceSuggestion`).
-- `packages/api/app/routers/veille.py` — 2 nouveaux endpoints : `POST /api/veille/suggest/angles` et `POST /api/veille/suggest/sources`. Helper `_source_theme_for("other")` mappe vers `"custom"` à l'ingestion source (pas de migration nécessaire, `ck_source_theme_valid` autorise déjà "custom").
-- Tests : 14 unit (`tests/services/veille/test_angle_suggester.py` + `test_source_suggester.py`), 5 router (`tests/routers/test_veille_routes.py::TestSuggestEndpoints` + `TestOtherThemeIngestion`).
-
-### Mobile (Story 23.3)
-- **Récupéré du git** (`122e63d2~1`) : `widgets/halo_loader.dart` (3 anneaux pulsés + binoculars) + `screens/transitions/flow_loading_screen.dart` (labels narratifs "Le facteur écoute…"). Adapté pour brancher sur le nouveau provider.
-- **Tuile "Autre"** : `kVeilleOtherThemeSlug = 'other'` injecté en 10ᵉ tile dans `veille_themes_provider.dart`. Quand sélectionnée, un input `customThemeLabel` s'affiche pour saisie libre du sujet (ex : "Musées contemporains Barcelone").
-- **Step 1 refondu** : grid 10 thèmes + un seul champ "Précise ton angle" (fusion purpose + editorialBrief). Bouton "Continuer" → `startTransition(1)`.
-- **FlowLoadingScreen with bifurcation** : à la fin de `/suggest/angles`, affiche 2 CTAs : **"Affiner ma veille"** (primary, → Step 2) / **"Passer aux sources"** (secondary, skip Step 2 → Step 3 avec auto-trigger de `/suggest/sources`).
-- **Step 2 refondu** : affiche les angles LLM (`state.suggestedAngles`) avec checkboxes + chips keywords éditables (add/remove) + bouton "+ Ajouter un angle perso". Cap soft 8 keywords/angle.
-- **Step 3 mis à jour** : affiche `state.suggestedSources` (LLM) en liste principale + sources catalogue (preset) sous "AUTRES SOURCES" + mode advanced URL (déjà OK). Sources LLM envoyées au POST `/api/veille/config` comme `niche_candidate` (dédup feed_url côté backend).
-- **Provider extension** : nouveaux fields `customThemeLabel`, `suggestedAngles`, `selectedAngleIndexes`, `suggestedSources`, `selectedSuggestedSourceIndexes`, `loadingAngles`, `loadingSources`, `suggestionError`, `transitionFrom`. Actions : `setCustomThemeLabel`, `loadSuggestedAngles`, `loadSuggestedSources`, `toggleSuggestedAngle`, `updateAngleTitle`, `addKeywordToAngle`, `removeKeywordFromAngle`, `addCustomAngle`, `toggleSuggestedSource`, `startTransition`, `exitTransition`. `_buildUpsertRequest` flatten les keywords des angles cochés (cap 20) + push les sources LLM cochées comme niche_candidate.
-
-### Tests
-- **Backend** : 38/38 OK (`pytest tests/routers/test_veille_routes.py tests/services/veille/`).
-- **Mobile veille** : 17/17 OK (`flutter test test/features/veille/`).
-- **Mobile intégrations** : 61/61 OK (`flutter test test/features/my_interests/ test/features/flux_continu/`).
-
-### POC LLM (rapport au PO)
-- `.context/poc-veille-llm/POC_REPORT.md` + `results_mistral-{large,medium}.json`.
-- Verdict : `mistral-medium-latest` retenu (~6-15s/appel, qualité acceptable sur les 3 cas réels — Musées Barcelone, Biotech FR, IA générative). Cache TTL 24h pour éviter le re-coût en édition.
+Sur les 2 sections "Thème personnel" du Flux Continu (V1.8, Story 21.1), les articles sont désormais triés via `PillarScoringEngine` (intérêts pondérés Story 22.1 + affinité source + fraîcheur hiérarchisée + qualité) au lieu d'un tri par récence pure. Le change est 100% backend (`recommendation_service.py`) — aucune modif mobile.
 
 ## PR associée
 
-À créer via `/go` après ce handoff (cible `--base main`, jamais `staging`).
+À créer via `/go` après cette validation.
 
 ## Écrans impactés
 
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Step 1 thème | `/veille/config` | Refondu — 10 tiles (9 + Autre) + input customThemeLabel + 1 champ brief unifié |
-| Transition LLM | (interne, `transitionFrom != null`) | **Nouveau** — HaloLoader + labels narratifs + bifurcation pour `from=1` |
-| Step 2 angles | `/veille/config` step=2 | Refondu — affiche angles LLM éditables + chips keywords + ajout angle perso |
-| Step 3 sources | `/veille/config` step=3 | Refondu — sources LLM en liste principale + advanced URL |
+| Flux Continu (home) | `/flux-continu` | Sections #3 et #4 (Thème perso #1 / #2) — ordre des articles dans le hero + carrousel |
+| Feed exploration thème (chip) | `/feed?theme=X` | **Doit rester inchangé** (test de non-régression) |
 
-## Scénarios à valider via Chrome (viewport 390x844)
+## Scénarios de test
 
-### Scénario 1 — Happy path "Tech IA générative"
-1. Aller sur `/veille/config` (sans config existante).
-2. Step 1 : sélectionner tile "Technologie", taper brief « IA générative et débats sur la régulation » → Continuer.
-3. Vérifier `FlowLoadingScreen` (3 anneaux animés + labels "Le facteur écoute…", ~10-15s).
-4. Bifurcation affichée → cliquer "Affiner ma veille".
-5. Step 2 : vérifier 5-8 angles affichés avec leurs keywords. Décocher 1 angle. Retirer 1 keyword. Ajouter 1 keyword via "+ Ajouter". Ajouter 1 angle perso. → Continuer.
-6. `FlowLoadingScreen(from=2)` → ~10-15s → auto-navigue vers Step 3.
-7. Step 3 : vérifier 5-10 sources LLM affichées avec leurs URLs + scores. Décocher 1. Sélectionner advanced mode + ajouter 1 source par URL. → "Créer ma veille".
-8. Toast "Veille créée" + redirect `/flux-continu`. Vérifier slot "Ma veille — Technologie" présent + favori dans "Mes intérêts".
+### Scénario 1 : Happy path — un favori avec subtopics priorisés
 
-### Scénario 2 — Cas niche "Musées contemporains Barcelone" (theme="other")
-1. `/veille/config` → Step 1 → sélectionner tile **"Autre"** (10ᵉ).
-2. Vérifier l'input "Quel sujet ?" apparaît. Taper « Musées contemporains Barcelone ». Brief : « Suivre les expos temporaires des musées d'art contemporain ».
-3. Continuer → FlowLoadingScreen.
-4. Vérifier que les angles proposés sont spécifiques (vernissages, expositions temporaires, artistes émergents, etc.), pas génériques.
-5. "Passer aux sources" → vérifier que le 2ᵉ FlowLoadingScreen se lance directement → arrive sur Step 3.
-6. Vérifier que les sources incluent MACBA, CCCB, Fundació Tàpies, médias locaux Barcelone (Time Out, etc.) — **PAS de "Le Monde / Mediapart" génériques**.
-7. Créer → vérifier que le favori "Ma veille — Musées contemporains Barcelone" apparaît dans Mes intérêts.
+**Pré-requis seed** : utilisateur connecté avec :
+- Favori thème : `tech` (state=favorite, weight ≥ 1.5)
+- Subtopic favori : `ai` (poids 3.0) et `startups` (poids 0.5) dans `user_subtopics`
+- Au moins 1 source `tech` suivie
 
-### Scénario 3 — Édition existante
-1. Avoir une veille active (créée via scénario 1).
-2. Aller dans Mes intérêts → menu favori veille → "Modifier".
-3. Vérifier hydratation du Step 1 (thème + brief).
-4. Continuer → FlowLoadingScreen → vérifier que les angles arrivent (cache hit attendu, ~instantané).
-5. Modifier 1 angle → Continuer → Step 3 → Créer.
-6. Toast "Veille mise à jour".
+**Parcours** :
+1. Ouvrir la home → Flux Continu charge.
+2. Scroller jusqu'à la section "Thème perso #1" (label "Tech" ou équivalent).
+3. Observer l'ordre des articles (hero + cartes carrousel).
 
-### Scénario 4 — Fallback LLM
-1. Si possible : désactiver MISTRAL_API_KEY côté staging (via Railway env vars), redémarrer.
-2. `/veille/config` → Step 1 → Continuer.
-3. Vérifier que le HaloLoader laisse place à un message d'erreur gracieux + bouton "Continuer" qui amène à Step 2 vide.
-4. Step 2 vide → ajouter angle perso manuel → Continuer.
-5. Step 3 sans sources LLM → mode advanced URL forcé → ajouter source par URL → Créer.
+**Résultat attendu** :
+- Les articles dont `Content.topics` overlap avec `ai` ressortent en tête (premier hero + cartes suivantes).
+- Un article `ai` publié il y a 18h doit passer devant un article `startups` publié il y a 2h (à match de qualité source équivalent).
+- Les articles ont un `recommendation_reason` non-vide (visible si le composant `RecommendationReasonChip` est utilisé).
 
-### Scénario 5 — Bifurcation "Passer aux sources" sans entrer Step 2
-1. Scénario 1 jusqu'à la bifurcation.
-2. Cliquer "Passer aux sources".
-3. Vérifier que Step 2 n'est PAS affiché (skip direct).
-4. Le 2ᵉ FlowLoadingScreen démarre.
-5. Vérifier sur Step 3 que les sources sont quand même pertinentes (les angles ont été persisted en background).
-6. Créer → vérifier dans le POST `/api/veille/config` (Network) que les topics inclus = les angles LLM tous cochés + leurs keywords flattenés.
+### Scénario 2 : Non-régression du path exploration ("tout voir" / chip)
+
+**Parcours** :
+1. Depuis le Flux Continu, taper sur la chip `Tech` dans la zone Explorer (bottom).
+2. Observer l'ordre des articles affichés (vue exploration thème, pas la section Tournée).
+
+**Résultat attendu** :
+- Ordre strictement chronologique (article le plus récent en haut).
+- Pas de restriction sur sources suivies (articles de sources non-suivies présents).
+- Comportement IDENTIQUE à avant cette PR.
+
+### Scénario 3 : Pagination stable "Plus de…"
+
+**Parcours** :
+1. Sur la section "Thème perso #1", taper sur le CTA "Plus de…" (`PlusDeButton`).
+2. Comparer la liste étendue avec la liste initiale.
+
+**Résultat attendu** :
+- Aucun doublon entre la section initiale (top 10) et la pagination suivante.
+- L'ordre des articles reste déterministe entre 2 chargements successifs de la même session (`temperature=0` sur ce path).
+
+### Scénario 4 : User sans subtopic favori (signal faible)
+
+**Pré-requis** : utilisateur avec favori thème `tech` mais aucun `user_subtopic_weights`.
+
+**Parcours** :
+1. Ouvrir la home → section Tech.
+
+**Résultat attendu** :
+- La section n'est PAS vide.
+- Les articles sont triés par Pilier Source (followed/curated en tête) puis Fraîcheur.
+- Le rendu visuel reste cohérent (pas de fallback explicite à la chronologie pure attendu — le scoring tourne avec moins de discrimination).
+
+### Scénario 5 : User sans aucune source suivie sur ce thème
+
+**Pré-requis** : utilisateur avec favori thème `tech` mais aucune source `tech` suivie.
+
+**Parcours** :
+1. Ouvrir la home → section Tech.
+
+**Résultat attendu** :
+- La section n'est PAS vide (fallback curated activé dans `_get_candidates`).
+- Les articles affichés proviennent de sources curated `tech` (pas du tier `deep`).
 
 ## Critères d'acceptation
 
-- [ ] Bifurcation post-Step1 affiche 2 CTAs avec wording "Affiner ma veille" / "Passer aux sources".
-- [ ] Cas niche "Musées Barcelone" produit ≥ 5 angles spécifiques et ≥ 3 sources non-génériques.
-- [ ] Tile "Autre" + input theme_label custom fonctionnent end-to-end.
-- [ ] HaloLoader visible pendant 10-15s sans freeze de l'app.
-- [ ] Édition d'une veille existante hydrate le Step 1 (thème + brief) et bénéficie du cache LLM.
-- [ ] Aucun appel à `/api/veille/suggestions/*` (anciens endpoints 410 Gone) — c'est `/api/veille/suggest/*` (sans le "s" final).
-- [ ] Slot Tournée + favori "Mes intérêts" continuent de fonctionner (régression Story 23.2 non cassée).
+- [ ] Section Theme #1 reflète les préférences user (Scénario 1)
+- [ ] Section Theme #2 reflète les préférences user (idem)
+- [ ] Path exploration chip thème inchangé (Scénario 2)
+- [ ] Pagination stable, pas de doublons (Scénario 3)
+- [ ] Pas de section vide même avec signal faible (Scénarios 4-5)
+- [ ] Latence home ressentie acceptable (< +300ms par rapport à avant — les 2 calls theme étant parallèles)
+- [ ] Aucune erreur console mobile / network 5xx sur `/api/feed/?theme=X&personalized=true`
 
 ## Zones de risque
 
-- **R1 — Latence Mistral medium** : 6-15s par appel observé en POC. `HaloLoader` dimensionné pour absorber. Si > 20s sur staging, switcher `veille_llm_model=mistral-large-latest` via env.
-- **R2 — Theme "other" + boost** : `fetch_veille_feed` n'a pas de boost theme pour `theme_id='other'` (keyword-only). Acceptable V1 — vérifier que le feed n'est pas vide après création.
-- **R3 — Cache LLM in-process** : si le pod Railway redémarre, le cache est perdu. Pas bloquant V1 (cache 24h pas critique). À monitorer si bench prod montre des appels Mistral excessifs.
-- **R4 — Skip Step 2 → angles non visibles** : les angles LLM sont persistés en state mais l'user ne les a pas vus. Vérifier que le POST `/api/veille/config` les envoie bien dans `topics[]` + `keywords[]`.
+- **Latence** : ajout du `PillarScoringEngine` + `_batch_scoring_context` introduit ~100-230ms sur chaque call theme. À mesurer p95 sur Sentry / Railway logs après merge (filtrer `feed_phase4_scoring` avec `mode="personalized_theme"`).
+- **Ordre perçu "étrange"** : un article de 22h en tête peut surprendre si la maquette n'explique pas la logique. À surveiller en feedback utilisateur. Le pilier Fraîcheur garde un bonus +25 sur <24h donc le décalage reste borné.
+- **Performance pool candidats** : la fenêtre 24h + followed-only borne le pool entre 30-150 articles ; pas de risque de scoring sur >500 candidats.
 
-## Commande pour lancer la QA
+## Dépendances
 
-```
-/validate-feature
-```
+- Endpoint backend : `GET /api/feed/?theme=<slug>&personalized=true&limit=10` (et `topic=<UUID>&personalized=true` pour custom topics favoris)
+- Service : `app.services.recommendation_service.RecommendationService.get_feed`
+- Helper testable : `app.services.recommendation_service.is_personalized_theme_mode`
+- Log structuré à monitorer : `feed_phase4_scoring` avec champ `mode="personalized_theme"`
 
-(lit ce fichier et teste via Chrome viewport 390x844)
+## Notes pour l'agent QA Chrome
+
+- Viewport 390x844 (mobile).
+- Le mode "Serein" toggle peut être ON ou OFF — les sections "Thème perso" existent dans les 2 cas (positions différentes selon `_compose(isSerene)`).
+- Pour seed rapide : utiliser un compte existant et patcher les favoris via `/api/user-interests/...` (Story 22.1) ou via l'UI "Mes intérêts".

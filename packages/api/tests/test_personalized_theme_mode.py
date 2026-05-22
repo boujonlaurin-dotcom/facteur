@@ -19,7 +19,10 @@ from uuid import uuid4
 
 import pytest
 
-from app.services.recommendation_service import RecommendationService
+from app.services.recommendation_service import (
+    RecommendationService,
+    is_personalized_theme_mode,
+)
 
 
 def _stub_scalars(captured: list):
@@ -191,3 +194,63 @@ async def test_explicit_filter_unchanged_when_personalized_false():
         "exploration must not add a subtopic overlap ORDER BY. "
         f"Got:\n{captured[0]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Story 21.2 — Tournée du jour favorite-theme sections fall through to the
+# PillarScoringEngine branch instead of the chronological short-circuit.
+# ---------------------------------------------------------------------------
+
+
+class TestPersonalizedThemeModeDispatch:
+    """Verify the dispatch flag governing the scoring vs chrono branch."""
+
+    def test_personalized_with_theme_routes_to_scoring(self):
+        assert (
+            is_personalized_theme_mode(
+                personalized=True, theme="tech", topic=None, source_uuid=None
+            )
+            is True
+        )
+
+    def test_personalized_with_topic_routes_to_scoring(self):
+        # Story 22.1: custom-topic favorites send `topic=<UUID>` and must
+        # also benefit from preference-based ranking on the Tournée.
+        assert (
+            is_personalized_theme_mode(
+                personalized=True, theme=None, topic="some-uuid", source_uuid=None
+            )
+            is True
+        )
+
+    def test_explicit_chip_without_personalized_stays_chronological(self):
+        # The exploration / "tout voir" path keeps pure-recency ordering.
+        assert (
+            is_personalized_theme_mode(
+                personalized=False, theme="tech", topic=None, source_uuid=None
+            )
+            is False
+        )
+
+    def test_default_feed_without_theme_is_not_personalized_theme(self):
+        # The home /feed (no theme/topic) goes through the standard
+        # chronological-diversified or pour_vous scoring path — not this dispatch.
+        assert (
+            is_personalized_theme_mode(
+                personalized=True, theme=None, topic=None, source_uuid=None
+            )
+            is False
+        )
+
+    def test_source_pin_takes_precedence(self):
+        # When the caller pins a source (?source_id=…) we keep the existing
+        # source-scoped chronological behavior even with personalized=True.
+        assert (
+            is_personalized_theme_mode(
+                personalized=True,
+                theme="tech",
+                topic=None,
+                source_uuid="some-source-uuid",
+            )
+            is False
+        )
