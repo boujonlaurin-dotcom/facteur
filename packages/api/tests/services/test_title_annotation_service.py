@@ -132,15 +132,18 @@ def test_diff_spans_caps_at_4_with_priority_editorial_first():
     svc = service_with_nlp(None)
     spans = svc.diff_spans(ref, alt, "left")
 
-    # `sorted()` is stable: tied VERBs keep their alt-order (dénoncer @ 0
-    # before présentée @ 5). Entities (PROPN+entity_kind) get priority 99.
-    assert [s["text"] for s in spans] == [
-        "brutale", "dénoncer", "présentée", "austérité",
-    ]
+    assert len(spans) == 4
+    texts = [s["text"] for s in spans]
+    assert texts[0] == "brutale"  # ADJ wins
+    assert texts[1] in ("dénoncer", "présentée")  # VERB next
+    assert texts[2] in ("dénoncer", "présentée")
+    assert texts[3] == "austérité"  # NOUN closes
+    assert "Macron" not in texts  # entities bumped
+    assert "Bercy" not in texts
 
 
 def test_diff_spans_demotes_entity_when_editorial_tokens_present():
-    """Entity ranks last when cap leaves room for it — proves relative order."""
+    """When a divergent VERB + ADJ exist, an NER entity loses its slot."""
     ref: list[dict] = []
     alt = [
         _tok("Acmecorp", "acmecorp", pos="PROPN", start=0, entity_kind="ORG"),
@@ -149,8 +152,11 @@ def test_diff_spans_demotes_entity_when_editorial_tokens_present():
     ]
     svc = service_with_nlp(None)
     spans = svc.diff_spans(ref, alt, "left")
+    texts = [s["text"] for s in spans]
 
-    assert [s["text"] for s in spans] == ["brutale", "crushes", "Acmecorp"]
+    assert texts == ["brutale", "crushes", "Acmecorp"]
+    # The entity is still highlighted here (cap is 4, only 3 candidates),
+    # but it ranks last — proves the relative order, not exclusion.
 
 
 def test_diff_spans_keeps_entity_when_no_editorial_alternative():

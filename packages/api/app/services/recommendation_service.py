@@ -107,6 +107,27 @@ async def _load_muted_entities_safe(session, user_id: UUID) -> set[str]:
 from app.schemas.content import RecommendationReason, ScoreContribution
 
 
+def is_personalized_theme_mode(
+    *,
+    personalized: bool,
+    theme: str | None,
+    topic: str | None,
+    source_uuid: UUID | str | None,
+) -> bool:
+    """Story 21.2 — Tournée du jour personalized-theme dispatch.
+
+    Returns True when the caller is asking for a favorite-theme section of
+    the Flux Continu (`personalized=True` + `theme|topic`, no source pinned).
+    These calls bypass the chronological short-circuit and fall through to
+    the PillarScoringEngine branch.
+    """
+    return (
+        personalized
+        and (theme is not None or topic is not None)
+        and source_uuid is None
+    )
+
+
 def stratify_followed_first(
     items: list[tuple[Content, float]],
     followed_source_ids: set[UUID],
@@ -517,9 +538,22 @@ class RecommendationService:
                     muted_count=len(muted_entities),
                 )
 
+        # Story 21.2 — Tournée du jour personalized theme sections fall through to
+        # the scoring branch (PillarScoringEngine) instead of pure recency. Aligns
+        # the favorite-theme sections of the Flux Continu with user preferences
+        # (weight_effective, source affinity, hierarchical freshness, quality).
+        personalized_theme_mode = is_personalized_theme_mode(
+            personalized=personalized,
+            theme=theme,
+            topic=topic,
+            source_uuid=source_uuid,
+        )
+
         # Explicit filter OR RECENT mode: skip scoring, return pure chronological order
         # Candidates are already sorted by published_at DESC from _get_candidates
-        if source_uuid or theme or topic or entity or mode == FeedFilterMode.RECENT:
+        if not personalized_theme_mode and (
+            source_uuid or theme or topic or entity or mode == FeedFilterMode.RECENT
+        ):
             paginated = candidates[offset : offset + limit]
             await self._hydrate_user_status(paginated, user_id, followed_source_ids)
             return paginated
@@ -759,6 +793,7 @@ class RecommendationService:
             duration_ms=round((t5 - t4) * 1000),
             candidates=len(candidates),
             engine="pillars_v1" if use_pillars else "layers_v1",
+            mode="personalized_theme" if personalized_theme_mode else "default",
         )
 
         # 4. Sort by score DESC
@@ -785,7 +820,13 @@ class RecommendationService:
         final_list.sort(key=lambda x: x[1], reverse=True)
 
         # 4c. Randomization (v2 only — Gumbel noise for discovery)
-        if use_pillars and ScoringWeights.FEED_RANDOMIZATION_TEMPERATURE > 0:
+        # Story 21.2 — disabled on personalized_theme_mode so paginated "Plus de…"
+        # stays stable between fetches (no duplicates / order jumps).
+        if (
+            use_pillars
+            and ScoringWeights.FEED_RANDOMIZATION_TEMPERATURE > 0
+            and not personalized_theme_mode
+        ):
             from app.services.recommendation.randomization import randomized_sort
 
             final_list = randomized_sort(
@@ -826,7 +867,10 @@ class RecommendationService:
                 pr = pillar_results.get(content.id)
                 if pr:
                     content.recommendation_reason = build_recommendation_reason(pr)
-                    if ScoringWeights.FEED_RANDOMIZATION_TEMPERATURE > 0:
+                    if (
+                        ScoringWeights.FEED_RANDOMIZATION_TEMPERATURE > 0
+                        and not personalized_theme_mode
+                    ):
                         content.recommendation_reason.breakdown.append(
                             ScoreContribution(
                                 label="Hasard pour diversifier",

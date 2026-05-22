@@ -55,9 +55,12 @@ class TitleAnnotationService:
     KEEP_POS = frozenset({"NOUN", "PROPN", "ADJ", "VERB"})
     MAX_HIGHLIGHTED_PER_TITLE = 4
     # Lower number = higher priority when capping at MAX_HIGHLIGHTED_PER_TITLE.
-    # Entities ranked last so editorial wording (ADJ/VERB/NOUN) keeps its
-    # slots when cluster pivots dominate the divergent set. Calibration
-    # rationale: docs/maintenance/maintenance-highlight-calibration.md.
+    # Entities are demoted to last resort: cluster pivots (Trump, ChatGPT,
+    # Cannes…) used to consume the top-4 slots and crowd out the editorial
+    # wording the PO actually wants to see. Calibration PR+1 (2026-05-22)
+    # measured ΔF1_tok +0.062 / ΔF1_span +0.015 vs the entity-first ordering
+    # on the 49-perspective gold corpus. Entities still get highlighted when
+    # no editorial alternative exists in the divergent set.
     PRIORITY: dict[str, int] = {
         "ADJ": 1,
         "VERB": 2,

@@ -1613,7 +1613,7 @@ class _PivotedRefTitleState extends State<_PivotedRefTitle>
       duration: const Duration(milliseconds: 300),
     );
     if (widget.pivot != null) {
-      Future.delayed(const Duration(milliseconds: 80), () {
+      Future.delayed(DiffTitle.kStartDelay, () {
         if (mounted) _controller.forward();
       });
     } else {
