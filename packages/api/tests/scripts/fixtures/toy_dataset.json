@@ -1,0 +1,51 @@
+{
+  "generated_at": "2026-05-19T00:00:00+00:00",
+  "schema_version": 1,
+  "model_version": "v1-spacy-fr_md",
+  "stratification": {"politics": 1},
+  "clusters": [
+    {
+      "cluster_key": "macron",
+      "cluster_display": "Macron",
+      "theme": "politics",
+      "reference_article_id": "ref-1",
+      "articles": [
+        {
+          "id": "ref-1",
+          "title": "Macron rencontre Trump",
+          "url": "https://example.com/ref",
+          "published_at": "2026-05-19T08:00:00+00:00",
+          "source_name": "Le Monde",
+          "source_id": "src-1",
+          "bias_stance": "center",
+          "entities": ["{\"name\": \"Macron\", \"type\": \"PERSON\"}", "{\"name\": \"Trump\", \"type\": \"PERSON\"}"],
+          "annotations": {}
+        },
+        {
+          "id": "alt-1",
+          "title": "Donald Trump reçoit Macron à Paris",
+          "url": "https://example.com/alt1",
+          "published_at": "2026-05-19T10:00:00+00:00",
+          "source_name": "Libération",
+          "source_id": "src-2",
+          "bias_stance": "left",
+          "entities": ["{\"name\": \"Trump\", \"type\": \"PERSON\"}", "{\"name\": \"Macron\", \"type\": \"PERSON\"}", "{\"name\": \"Paris\", \"type\": \"LOC\"}"],
+          "annotations": {
+            "po_synchronous": {
+              "annotated_by": "po",
+              "annotated_at": "2026-05-19T12:00:00+00:00",
+              "target_spans": [
+                {"start": 29, "end": 34, "text": "Paris", "category": "fact"}
+              ],
+              "exclude_spans": [
+                {"start": 0, "end": 6, "text": "Donald", "category": "entity_alias"},
+                {"start": 13, "end": 19, "text": "reçoit", "category": "neutral_verb"}
+              ],
+              "notes": "Paris est le seul fait nouveau ; Donald = alias de Trump ; reçoit = verbe neutre."
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
