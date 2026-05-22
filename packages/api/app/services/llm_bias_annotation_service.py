@@ -153,9 +153,7 @@ def _validate_target(raw: object, title: str, index: int) -> dict | None:
     try:
         weight = float(raw.get("weight", 0))
     except (TypeError, ValueError):
-        logger.warning(
-            "llm_bias.target_drop", reason="bad_weight_type", index=index
-        )
+        logger.warning("llm_bias.target_drop", reason="bad_weight_type", index=index)
         return None
     if weight not in ALLOWED_WEIGHTS:
         logger.warning(
@@ -252,9 +250,7 @@ class LLMBiasAnnotationService:
     async def close(self) -> None:
         await self._client.close()
 
-    def build_system_prompt(
-        self, fewshot_examples: list[str] | None = None
-    ) -> str:
+    def build_system_prompt(self, fewshot_examples: list[str] | None = None) -> str:
         if not fewshot_examples:
             return SCHEMA_DESCRIPTION
         return (
@@ -284,9 +280,7 @@ class LLMBiasAnnotationService:
         )
 
     @staticmethod
-    def validate_response(
-        payload: object, title: str
-    ) -> dict | None:
+    def validate_response(payload: object, title: str) -> dict | None:
         """Valide la réponse LLM contre le schéma v2.
 
         - Retourne `None` si la racine est non-dict ou si target/exclude_spans
@@ -295,16 +289,12 @@ class LLMBiasAnnotationService:
           sont droppés + logués (graceful degradation).
         """
         if not isinstance(payload, dict):
-            logger.warning(
-                "llm_bias.invalid_root", got=type(payload).__name__
-            )
+            logger.warning("llm_bias.invalid_root", got=type(payload).__name__)
             return None
 
         targets_raw = payload.get("target_spans", [])
         excludes_raw = payload.get("exclude_spans", [])
-        if not isinstance(targets_raw, list) or not isinstance(
-            excludes_raw, list
-        ):
+        if not isinstance(targets_raw, list) or not isinstance(excludes_raw, list):
             logger.warning("llm_bias.invalid_spans_field")
             return None
 
@@ -323,9 +313,7 @@ class LLMBiasAnnotationService:
         confidence_raw = payload.get("confidence")
         confidence: float | None
         try:
-            confidence = (
-                float(confidence_raw) if confidence_raw is not None else None
-            )
+            confidence = float(confidence_raw) if confidence_raw is not None else None
         except (TypeError, ValueError):
             confidence = None
 
