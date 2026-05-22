@@ -28,9 +28,13 @@ class DiffTitle extends StatefulWidget {
   final bool animateIn;
   final int maxLines;
 
-  /// Délai avant que la cascade commence (laisse le panel se positionner
-  /// avant l'animation pour éviter le jank d'expand).
-  static const Duration kStartDelay = Duration(milliseconds: 80);
+  /// Délai avant que la cascade commence. Doit dépasser la durée du
+  /// `AnimatedSize` parent dans `PerspectivesInlineSection` (250 ms) pour
+  /// que la cascade soit visible — sinon les highlights atteignent leur
+  /// opacité finale pendant que le panel grandit encore en taille, et
+  /// l'utilisateur perçoit un état arrivé directement à l'ouverture
+  /// (bug signalé par le PO 2026-05-22).
+  static const Duration kStartDelay = Duration(milliseconds: 280);
   static const Duration kPerSpan = Duration(milliseconds: 220);
   static const Duration kSpanGap = Duration(milliseconds: 25);
 

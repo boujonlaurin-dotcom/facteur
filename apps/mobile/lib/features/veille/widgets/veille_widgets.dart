@@ -5,18 +5,22 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../models/veille_config.dart';
 
-/// ===== Step header (back/close + 4 pills) =====
+/// ===== Step header (back/close + 3 pills) =====
 class VeilleStepHeader extends StatelessWidget {
   final int step;
   final bool canGoBack;
   final VoidCallback? onBack;
   final VoidCallback onClose;
+  /// Action additionnelle insérée entre les pills et la croix close
+  /// (ex: bouton "Passer" sur step2). Story 23.2 PR-4.
+  final Widget? trailingAction;
   const VeilleStepHeader({
     super.key,
     required this.step,
     required this.onClose,
     this.canGoBack = true,
     this.onBack,
+    this.trailingAction,
   });
 
   @override
@@ -41,6 +45,10 @@ class VeilleStepHeader extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(child: _StepPills(step: step)),
           const SizedBox(width: 12),
+          if (trailingAction != null) ...[
+            trailingAction!,
+            const SizedBox(width: 8),
+          ],
           _IconBtn(
             icon: PhosphorIcons.x(),
             onTap: onClose,
@@ -77,12 +85,12 @@ class _StepPills extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      children: List.generate(4, (i) {
+      children: List.generate(3, (i) {
         final n = i + 1;
         final active = n <= step;
         return Expanded(
           child: Container(
-            margin: EdgeInsets.only(right: i == 3 ? 0 : 5),
+            margin: EdgeInsets.only(right: i == 2 ? 0 : 5),
             height: 4,
             decoration: BoxDecoration(
               color: active ? FacteurColors.veille : FacteurColors.veilleSkel,
@@ -510,348 +518,9 @@ class SuggestionRow extends StatelessWidget {
   }
 }
 
-/// ===== Frequency radio =====
-class FrequencyRow extends StatelessWidget {
-  final VeilleFrequency freq;
-  final bool selected;
-  final VoidCallback onTap;
-  const FrequencyRow({
-    super.key,
-    required this.freq,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? FacteurColors.veilleTint : Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected
-                  ? FacteurColors.veille
-                  : FacteurColors.veilleLineSoft,
-              width: 1.5,
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: selected
-                        ? FacteurColors.veille
-                        : const Color(0xFFD2C9BB),
-                    width: 1.5,
-                  ),
-                ),
-                child: selected
-                    ? Center(
-                        child: Container(
-                          width: 10,
-                          height: 10,
-                          decoration: const BoxDecoration(
-                            color: FacteurColors.veille,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 12),
-              Text(
-                freq.label,
-                style: GoogleFonts.dmSans(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF2C2A29),
-                ),
-              ),
-              if (freq.recommended) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: FacteurColors.veille,
-                    borderRadius: BorderRadius.circular(100),
-                  ),
-                  child: Text(
-                    'CONSEILLÉ',
-                    style: GoogleFonts.courierPrime(
-                      fontSize: 9,
-                      letterSpacing: 0.3,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// ===== Day pill =====
-class DayPill extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  const DayPill({
-    super.key,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? FacteurColors.veille : Colors.white,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: selected
-                  ? FacteurColors.veille
-                  : FacteurColors.veilleLineSoft,
-            ),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label.toUpperCase(),
-            style: GoogleFonts.courierPrime(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.3,
-              color: selected ? Colors.white : const Color(0xFF5D5B5A),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// ===== Final recap card (étape 4) =====
-class FinalRecapCard extends StatelessWidget {
-  final String title;
-  final String schedule;
-  final int angles;
-  final int sources;
-  final int topics;
-  const FinalRecapCard({
-    super.key,
-    required this.title,
-    required this.schedule,
-    required this.angles,
-    required this.sources,
-    required this.topics,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(top: 24),
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFDFBF7),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: FacteurColors.veilleLine, width: 1.5),
-      ),
-      child: Stack(
-        children: [
-          // Rail dotted vertical
-          Positioned(
-            top: 0,
-            bottom: 0,
-            left: 0,
-            child: CustomPaint(
-              size: const Size(3, double.infinity),
-              painter: _DottedRailPainter(),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _Stamp(),
-                const SizedBox(height: 8),
-                Text(
-                  title,
-                  style: GoogleFonts.fraunces(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.3,
-                    height: 1.2,
-                    color: const Color(0xFF2C2A29),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      PhosphorIcons.calendarBlank(),
-                      size: 14,
-                      color: FacteurColors.veille,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: RichText(
-                        text: TextSpan(
-                          style: GoogleFonts.dmSans(
-                            fontSize: 13,
-                            color: const Color(0xFF5D5B5A),
-                          ),
-                          children: [
-                            const TextSpan(text: 'Tous les '),
-                            TextSpan(
-                              text: schedule,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF2C2A29),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.only(top: 14),
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      top: BorderSide(
-                        color: FacteurColors.veilleLine,
-                        style: BorderStyle.solid,
-                        width: 1,
-                      ),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      _Stat(num: angles, lbl: 'angles\nsuivis'),
-                      _Stat(num: sources, lbl: 'sources\nactives'),
-                      _Stat(num: topics, lbl: 'sujets\nprécis'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Stamp extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: FacteurColors.veille.withValues(alpha: 0.5),
-          width: 1.5,
-        ),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            PhosphorIcons.binoculars(),
-            size: 11,
-            color: FacteurColors.veille,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            'MA VEILLE',
-            style: GoogleFonts.courierPrime(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.6,
-              color: FacteurColors.veille,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Stat extends StatelessWidget {
-  final int num;
-  final String lbl;
-  const _Stat({required this.num, required this.lbl});
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '$num',
-            style: GoogleFonts.fraunces(
-              fontSize: 26,
-              fontWeight: FontWeight.w700,
-              height: 1,
-              color: FacteurColors.veille,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            lbl.toUpperCase(),
-            style: GoogleFonts.courierPrime(
-              fontSize: 9,
-              letterSpacing: 0.4,
-              height: 1.3,
-              color: const Color(0xFF959392),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DottedRailPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = FacteurColors.veille;
-    const step = 6.0;
-    for (double y = 0; y < size.height; y += step) {
-      canvas.drawCircle(Offset(1.5, y + 1), 1.2, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DottedRailPainter oldDelegate) => false;
-}
+// FrequencyRow, DayPill, FinalRecapCard, _Stamp, _Stat, _DottedRailPainter :
+// retirés en Story 23.2 PR-4 — step4 frequency dropé suite à la suppression
+// du scheduler async (Story 23.1 PR-1).
 
 /// ===== Primary CTA =====
 class VeilleCtaButton extends StatelessWidget {
@@ -1394,30 +1063,8 @@ class VeilleEditorialBriefField extends StatelessWidget {
   }
 }
 
-/// TextField court (max 80 chars) utilisé pour `purposeOther` quand l'option
-/// `autre` est sélectionnée. Pas de label, juste un champ inline sous les chips.
-class VeillePurposeOtherField extends StatelessWidget {
-  final String? value;
-  final ValueChanged<String?> onChanged;
-
-  const VeillePurposeOtherField({
-    super.key,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return _VeilleStyledTextField(
-      value: value,
-      onChanged: onChanged,
-      maxLength: 80,
-      maxLines: 1,
-      minLines: 1,
-      hintText: 'Précise ton usage en quelques mots',
-    );
-  }
-}
+// VeillePurposeOtherField retiré en Story 23.2 PR-4 — le champ free-text
+// `purpose_other` a été drop côté backend (Story 23.1 PR-2).
 
 class _VeilleStyledTextField extends StatefulWidget {
   final String? value;

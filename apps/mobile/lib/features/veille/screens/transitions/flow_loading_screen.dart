@@ -4,25 +4,36 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
-import '../../providers/veille_suggestions_provider.dart';
+import '../../providers/veille_config_provider.dart';
 import '../../widgets/halo_loader.dart';
 import '../../widgets/veille_widgets.dart';
 
+/// Écran transition entre Steps avec HaloLoader + animation narrative
+/// (Story 23.3). Récupéré de `122e63d2~1` et adapté pour :
+///   - déclencher l'appel LLM via le nouveau `veilleConfigProvider`
+///     (drop du `veille_suggestions_provider` mort)
+///   - afficher la bifurcation 2 CTAs à la fin de `from=1`
+///   - auto-pop vers Step 3 à la fin de `from=2`
 class FlowLoadingScreen extends ConsumerStatefulWidget {
-  /// `from` = étape qu'on quitte (1, 2, 3) ou 4 = première livraison.
+  /// `from` = 1 (après Step1 → /suggest/angles) ou 2 (après Step2 → /suggest/sources).
   final int from;
 
-  /// Pré-loading actif de l'étape suivante : si fourni, déclenche un fetch
-  /// en arrière-plan dès l'affichage du loading pour que l'écran cible soit
-  /// prêt à la fin de l'animation.
-  final VeilleTopicsSuggestionParams? topicsParams;
-  final VeilleSourcesSuggestionParams? sourcesParams;
+  /// Callback fin de chargement quand `from=1` : l'user a choisi "Affiner ma veille".
+  final VoidCallback onChoosePrecisier;
+
+  /// Callback fin de chargement quand `from=1` : l'user a choisi "Passer aux sources".
+  /// Doit aussi déclencher l'appel /suggest/sources côté caller.
+  final VoidCallback onChooseSkipToSources;
+
+  /// Callback fin de chargement quand `from=2` : auto-navigate vers Step 3.
+  final VoidCallback onSourcesReady;
 
   const FlowLoadingScreen({
     super.key,
     required this.from,
-    this.topicsParams,
-    this.sourcesParams,
+    required this.onChoosePrecisier,
+    required this.onChooseSkipToSources,
+    required this.onSourcesReady,
   });
 
   @override
@@ -55,44 +66,22 @@ class _FlowLoadingScreenState extends ConsumerState<FlowLoadingScreen> {
         _Check.todo('Évaluation de la couverture'),
       ],
     ),
-    3: _LoadingLabels(
-      eyebrow: 'Le facteur calibre…',
-      h: 'Préparation de ta première veille',
-      s:
-          'Il assemble la première livraison à partir des articles de la semaine.',
-      checks: [
-        _Check.done('Sources interrogées (6)'),
-        _Check.done('Articles collectés (47)'),
-        _Check.running('Détection des angles…'),
-        _Check.todo('Justifications & biais'),
-      ],
-    ),
-    4: _LoadingLabels(
-      eyebrow: 'Le facteur prépare ta première livraison…',
-      h: 'Votre première veille se construit !',
-      s:
-          'Quelques secondes pour rassembler les articles, justifier les angles et préparer la livraison.',
-      checks: [
-        _Check.done('Sources interrogées'),
-        _Check.done('Articles collectés'),
-        _Check.running('Sélection éditoriale…'),
-        _Check.todo('Mise en forme finale'),
-      ],
-    ),
   };
+
+  bool _autoNavigatedAfterSources = false;
 
   @override
   void initState() {
     super.initState();
-    // Pré-loading actif : best-effort, on ignore silencieusement si
-    // les params ne sont pas fournis (ex : appelant qui n'utilise pas
-    // les suggestions ou qui veut juste l'animation cosmétique).
+    // Déclenche l'appel LLM dès le mount (best-effort). Le provider gère
+    // la déduplication (loadingX = true ignore les double-appels).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.topicsParams != null) {
-        ref.read(veilleTopicSuggestionsProvider(widget.topicsParams!));
-      }
-      if (widget.sourcesParams != null) {
-        ref.read(veilleSourceSuggestionsProvider(widget.sourcesParams!));
+      if (!mounted) return;
+      final notifier = ref.read(veilleConfigProvider.notifier);
+      if (widget.from == 1) {
+        notifier.loadSuggestedAngles();
+      } else if (widget.from == 2) {
+        notifier.loadSuggestedSources();
       }
     });
   }
@@ -100,10 +89,24 @@ class _FlowLoadingScreenState extends ConsumerState<FlowLoadingScreen> {
   @override
   Widget build(BuildContext context) {
     final cur = _labels[widget.from] ?? _labels[1]!;
+    final state = ref.watch(veilleConfigProvider);
+
+    final loading = widget.from == 1 ? state.loadingAngles : state.loadingSources;
+    final hasResult = widget.from == 1
+        ? state.suggestedAngles.isNotEmpty
+        : true; // pour from=2, on auto-pop même si liste vide (fallback advanced URL)
+    final hasError = state.suggestionError != null;
+
+    // Auto-pop après /suggest/sources : dès que loading=false, naviguer Step3
+    if (widget.from == 2 && !loading && !_autoNavigatedAfterSources) {
+      _autoNavigatedAfterSources = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onSourcesReady();
+      });
+    }
+
     return Column(
       children: [
-        // Header simplifié (pills uniquement, pas de back/close — le loading
-        // bloque la nav le temps de la transition).
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
           child: Row(
@@ -112,12 +115,12 @@ class _FlowLoadingScreenState extends ConsumerState<FlowLoadingScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: Row(
-                  children: List.generate(4, (i) {
+                  children: List.generate(3, (i) {
                     final n = i + 1;
                     final done = n <= widget.from;
                     return Expanded(
                       child: Container(
-                        margin: EdgeInsets.only(right: i == 3 ? 0 : 5),
+                        margin: EdgeInsets.only(right: i == 2 ? 0 : 5),
                         height: 4,
                         decoration: BoxDecoration(
                           color: done
@@ -171,10 +174,105 @@ class _FlowLoadingScreenState extends ConsumerState<FlowLoadingScreen> {
                 const SizedBox(height: 22),
                 _Checklist(items: cur.checks),
                 const SizedBox(height: 22),
-                _Tip(),
+                const _Tip(),
+                if (widget.from == 1 && !loading && hasResult && !hasError) ...[
+                  const SizedBox(height: 32),
+                  _BifurcationCTAs(
+                    onPrecisier: widget.onChoosePrecisier,
+                    onSkipToSources: widget.onChooseSkipToSources,
+                  ),
+                ],
+                if (hasError) ...[
+                  const SizedBox(height: 24),
+                  _ErrorFallback(
+                    message: state.suggestionError ?? '',
+                    onContinue: widget.from == 1
+                        ? widget.onChoosePrecisier
+                        : widget.onSourcesReady,
+                  ),
+                ],
               ],
             ),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BifurcationCTAs extends StatelessWidget {
+  final VoidCallback onPrecisier;
+  final VoidCallback onSkipToSources;
+  const _BifurcationCTAs({
+    required this.onPrecisier,
+    required this.onSkipToSources,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        VeilleCtaButton(
+          label: 'Affiner ma veille',
+          trailingIcon: PhosphorIcons.arrowRight(),
+          onPressed: onPrecisier,
+        ),
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: onSkipToSources,
+          style: TextButton.styleFrom(
+            foregroundColor: FacteurColors.veille,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          ),
+          child: Text(
+            'Passer aux sources',
+            style: GoogleFonts.dmSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ErrorFallback extends StatelessWidget {
+  final String message;
+  final VoidCallback onContinue;
+  const _ErrorFallback({required this.message, required this.onContinue});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          'Petit souci côté facteur.',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.dmSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFF8B7E63),
+          ),
+        ),
+        const SizedBox(height: 6),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 280),
+          child: Text(
+            'Tu peux continuer manuellement — on a gardé ton thème et ton brief.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.dmSans(
+              fontSize: 12.5,
+              color: const Color(0xFF8B7E63),
+              height: 1.4,
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        VeilleCtaButton(
+          label: 'Continuer',
+          trailingIcon: PhosphorIcons.arrowRight(),
+          onPressed: onContinue,
         ),
       ],
     );
@@ -284,6 +382,7 @@ class _Checklist extends StatelessWidget {
 }
 
 class _Tip extends StatelessWidget {
+  const _Tip();
   @override
   Widget build(BuildContext context) {
     return ConstrainedBox(

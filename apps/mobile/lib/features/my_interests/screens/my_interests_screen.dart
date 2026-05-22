@@ -22,6 +22,8 @@ import '../../custom_topics/providers/personalization_provider.dart';
 import '../../custom_topics/widgets/entity_add_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../feed/repositories/personalization_repository.dart';
+import '../../veille/providers/veille_active_config_provider.dart';
+import '../../veille/providers/veille_repository_provider.dart';
 import '../models/user_interests_state.dart';
 import '../providers/user_interests_provider.dart';
 import '../widgets/favorites_reorderable_section.dart';
@@ -96,6 +98,91 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
           content: const Text('Impossible de mettre à jour cet intérêt.'),
           duration: const Duration(seconds: 3),
         ),
+      );
+    }
+  }
+
+  /// Menu contextuel pour le favori veille — "Modifier" / "Archiver"
+  /// (Story 23.2 PR-4). Pas de InterestStatePickerSheet car les états
+  /// hidden/unfollowed/followed ne s'appliquent pas à la veille :
+  /// elle est soit favorite, soit archivée (DELETE backend).
+  Future<void> _showVeilleMenu(VeilleFavoriteRef refTarget) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(PhosphorIcons.pencilSimple()),
+              title: const Text('Modifier la veille'),
+              onTap: () => Navigator.of(sheetContext).pop('edit'),
+            ),
+            ListTile(
+              leading: Icon(
+                PhosphorIcons.archive(),
+                color: Colors.red.shade700,
+              ),
+              title: Text(
+                'Archiver',
+                style: TextStyle(color: Colors.red.shade700),
+              ),
+              onTap: () => Navigator.of(sheetContext).pop('archive'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'edit') {
+      context.pushNamed(
+        RouteNames.veilleConfig,
+        queryParameters: const {'mode': 'edit'},
+      );
+    } else if (choice == 'archive') {
+      await _confirmAndArchive();
+    }
+  }
+
+  Future<void> _confirmAndArchive() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Archiver la veille ?'),
+        content: const Text(
+          "Ta veille sera retirée de Mes intérêts et de ta Tournée. "
+          'Tu pourras en créer une nouvelle à tout moment.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
+            child: const Text('Archiver'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    try {
+      await ref.read(veilleRepositoryProvider).deleteConfig();
+      // Refresh : la config active devient null, le favori veille disparaît
+      // de la liste user_interests.
+      ref.invalidate(veilleActiveConfigProvider);
+      ref.invalidate(userInterestsProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Veille archivée')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Impossible d'archiver la veille.")),
       );
     }
   }
@@ -209,11 +296,17 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
               itemBuilder: (context, refItem) => _FavoriteRow(
                 refItem: refItem,
                 interests: interests,
-                onTap: () => _pickState(
-                  title: _labelFor(refItem, interests),
-                  refTarget: refItem,
-                  currentState: InterestState.favorite,
-                ),
+                onTap: () {
+                  if (refItem is VeilleFavoriteRef) {
+                    _showVeilleMenu(refItem);
+                  } else {
+                    _pickState(
+                      title: _labelFor(refItem, interests),
+                      refTarget: refItem,
+                      currentState: InterestState.favorite,
+                    );
+                  }
+                },
               ),
               onReorder: (reordered) async {
                 try {
@@ -324,6 +417,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
               .map((c) => c.topicName)
               .firstOrNull ??
           'Sujet',
+      VeilleFavoriteRef() => 'Ma veille',
     };
   }
 }
@@ -492,7 +586,10 @@ class _FavoriteRow extends StatelessWidget {
               'Sujet',
           '',
         ),
+      VeilleFavoriteRef() => ('Ma veille', ''),
     };
+
+    final isVeille = refItem is VeilleFavoriteRef;
 
     return InkWell(
       onTap: onTap,
@@ -505,8 +602,10 @@ class _FavoriteRow extends StatelessWidget {
         child: Row(
           children: [
             Icon(
-              PhosphorIcons.star(PhosphorIconsStyle.fill),
-              color: colors.primary,
+              isVeille
+                  ? PhosphorIcons.binoculars(PhosphorIconsStyle.fill)
+                  : PhosphorIcons.star(PhosphorIconsStyle.fill),
+              color: isVeille ? colors.sectionVeille1 : colors.primary,
               size: 16,
             ),
             const SizedBox(width: 8),
@@ -525,7 +624,106 @@ class _FavoriteRow extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            if (isVeille) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: colors.sectionVeille1.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'VEILLE',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                    color: colors.sectionVeille1,
+                  ),
+                ),
+              ),
+            ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// CTA "Crée ta veille" — visible quand l'utilisateur n'a pas encore de
+/// veille active dans ses favoris. Tap → flow de configuration (intro
+/// puis 3-steps). Story 23.2 PR-4.
+class _CreateVeilleCta extends StatelessWidget {
+  final VoidCallback onTap;
+  const _CreateVeilleCta({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        FacteurSpacing.space4,
+        FacteurSpacing.space2,
+        FacteurSpacing.space4,
+        FacteurSpacing.space3,
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+        child: Container(
+          padding: const EdgeInsets.all(FacteurSpacing.space3),
+          decoration: BoxDecoration(
+            color: colors.sectionVeille1.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(FacteurRadius.large),
+            border: Border.all(
+              color: colors.sectionVeille1.withValues(alpha: 0.3),
+              width: 1.2,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: colors.sectionVeille1.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  PhosphorIcons.binoculars(PhosphorIconsStyle.duotone),
+                  color: colors.sectionVeille1,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Crée ta veille',
+                      style: textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Un thème sur-mesure pour ta Tournée du jour',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colors.textTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
+                size: 14,
+                color: colors.sectionVeille1,
+              ),
+            ],
+          ),
         ),
       ),
     );

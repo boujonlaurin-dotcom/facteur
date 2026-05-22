@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:facteur/features/veille/models/veille_config.dart';
-import 'package:facteur/features/veille/models/veille_delivery.dart';
+import 'package:facteur/features/veille/models/veille_source_example.dart';
 import 'package:facteur/features/veille/providers/veille_repository_provider.dart';
 import 'package:facteur/features/veille/repositories/veille_repository.dart';
 import 'package:facteur/features/veille/widgets/veille_source_card.dart';

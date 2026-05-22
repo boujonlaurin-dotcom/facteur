@@ -15,6 +15,7 @@ import '../../feed/providers/feed_provider.dart' show feedRepositoryProvider;
 import '../../feed/repositories/feed_repository.dart';
 import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/providers/user_interests_provider.dart';
+import '../../veille/providers/veille_active_config_provider.dart';
 import '../models/flux_continu_models.dart';
 import '../repositories/flux_continu_repository.dart';
 import '../utils/theme_color_mapping.dart';
@@ -24,6 +25,11 @@ const Color _kEssentielAccent = Color(0xFFB0470A);
 
 /// Accent applied to the Bonnes Nouvelles section banner.
 const Color _kBonnesAccent = Color(0xFF2E7D32);
+
+/// Accent applied to the Veille section banner — Story 23.2 PR-4.
+/// Aligné sur `FacteurColors.sectionVeille1` (light mode). Le rendu dark
+/// reste assuré par les FacteurColors via Theme.of(context).
+const Color _kVeilleAccent = Color(0xFF2C3E50);
 
 /// Illustration asset associated with each editorial section.
 const String _kEssentielIllustration =
@@ -737,6 +743,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
             accent: _customTopicAccent(interestsState, id),
             customTopicId: id,
           ),
+        // Story 23.2 PR-4 : la veille devient une section Tournée dédiée
+        // avec son propre accent et label, calculée séparément des thèmes.
+        VeilleFavoriteRef() => _buildVeilleSection(feed),
       };
       if (section != null) sections.add(section);
     }
@@ -771,7 +780,39 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
           ),
           'getFeed?topic=$id&personalized=true',
         ),
+      // Story 23.2 PR-4 : la veille est résolue via `/api/veille/feed`,
+      // exposée par FluxContinuRepository.getVeilleFeedItems (normalise la
+      // réponse en FeedResponse Content-compatible).
+      VeilleFavoriteRef() => _safe<FeedResponse>(
+          () =>
+              ref.read(fluxContinuRepositoryProvider).getVeilleFeedItems(
+                    limit: 10,
+                    serein: isSerene,
+                  ),
+          'getVeilleFeedItems',
+        ),
     };
+  }
+
+  /// Construit la section veille — accent dédié `sectionVeille1` + label
+  /// dérivé du `theme_label` de la `VeilleConfig` active (résolu via
+  /// `veilleActiveConfigProvider`). Story 23.2 PR-4.
+  FeedThemeSection? _buildVeilleSection(FeedResponse? feed) {
+    final items = feed?.items ?? const <Content>[];
+    if (items.length < 2) return null;
+    final activeCfg = ref.read(veilleActiveConfigProvider).valueOrNull;
+    final label = activeCfg == null
+        ? 'Ma veille'
+        : 'Ma veille — ${activeCfg.themeLabel}';
+    return FeedThemeSection(
+      kind: SectionKind.veille,
+      label: label,
+      blurb: 'Les derniers articles de ta veille personnalisée.',
+      accent: _kVeilleAccent,
+      illustrationAsset: _kVeilleIllustration,
+      coreVisibleCount: 3,
+      items: items,
+    );
   }
 
   String _customTopicLabel(UserInterestsState? interests, String id) {

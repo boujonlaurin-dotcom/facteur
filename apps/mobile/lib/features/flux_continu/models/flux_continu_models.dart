@@ -9,21 +9,27 @@ import '../../feed/models/content_model.dart';
 /// value that can appear several times in the same flux (one per user
 /// favorite). Per-section state is keyed by [sectionKey] which combines
 /// `kind` with the underlying theme slug or custom topic id.
-enum SectionKind { essentiel, bonnes, theme }
+/// Story 23.2 PR-4 : `veille` ajouté comme 4ème kind. La veille (max 1 par
+/// user à V1) est rendue comme une section dédiée de la Tournée du jour avec
+/// l'accent visuel `sectionVeille1` et un badge "Ma veille".
+enum SectionKind { essentiel, bonnes, theme, veille }
 
 /// Stable identity for a section across rebuilds.
 ///
 /// Used as a key into the `moreOpen` / `folded` maps so per-section UI state
 /// survives provider refreshes. For theme sections, the slug or custom topic
 /// id discriminates between multiple `kind == theme` instances; system
-/// sections collapse to just their kind name.
+/// sections collapse to just their kind name. La section veille collapse à
+/// `'veille'` (un seul par user à V1).
 String sectionKey(FluxSection section) {
   return switch (section) {
     DigestTopicSection() => section.kind.name,
-    FeedThemeSection(:final themeSlug, :final customTopicId) =>
-      customTopicId != null
-          ? 'topic:$customTopicId'
-          : 'theme:${themeSlug ?? "unknown"}',
+    FeedThemeSection(:final kind, :final themeSlug, :final customTopicId) =>
+      kind == SectionKind.veille
+          ? 'veille'
+          : customTopicId != null
+              ? 'topic:$customTopicId'
+              : 'theme:${themeSlug ?? "unknown"}',
   };
 }
 

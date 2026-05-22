@@ -434,7 +434,7 @@ class PushNotificationService {
         iOS: iosDetails,
       ),
       androidScheduleMode: scheduleMode,
-      payload: 'route:/veille/dashboard',
+      payload: 'route:/flux-continu',
     );
 
     debugPrint(

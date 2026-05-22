@@ -9,7 +9,7 @@ import '../../../config/theme.dart';
 import '../../sources/widgets/source_detail_modal.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
 import '../models/veille_config.dart';
-import '../models/veille_delivery.dart';
+import '../models/veille_source_example.dart';
 import '../providers/veille_source_examples_provider.dart';
 
 /// Carte source pour le flow Veille — palette sépia, logo réel,

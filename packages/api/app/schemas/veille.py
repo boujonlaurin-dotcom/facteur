@@ -215,3 +215,49 @@ class VeilleFeedResponse(BaseModel):
     limit: int = 20
     offset: int = 0
     has_more: bool = False
+
+
+# ─── Suggesters LLM (Story 23.3) ─────────────────────────────────────────────
+
+
+class VeilleSuggestAnglesRequest(BaseModel):
+    """Input du POST /api/veille/suggest/angles."""
+
+    theme_id: str = Field(min_length=1, max_length=50)
+    theme_label: str = Field(min_length=1, max_length=120)
+    brief: str = Field(default="", max_length=500)
+
+
+class VeilleAngleSuggestion(BaseModel):
+    """Un angle proposé par le LLM avec ses mots-clés explicites."""
+
+    title: str = Field(min_length=1, max_length=120)
+    keywords: list[str] = Field(default_factory=list, max_length=10)
+    reason: str | None = Field(default=None, max_length=300)
+
+
+class VeilleSuggestAnglesResponse(BaseModel):
+    angles: list[VeilleAngleSuggestion] = Field(default_factory=list)
+
+
+class VeilleSuggestSourcesRequest(BaseModel):
+    """Input du POST /api/veille/suggest/sources."""
+
+    theme_id: str = Field(min_length=1, max_length=50)
+    theme_label: str = Field(min_length=1, max_length=120)
+    brief: str = Field(default="", max_length=500)
+    angles: list[str] = Field(default_factory=list, max_length=20)
+    keywords: list[str] = Field(default_factory=list, max_length=40)
+
+
+class VeilleSourceSuggestion(BaseModel):
+    """Une source proposée par le LLM — pas encore ingérée en DB."""
+
+    name: str = Field(min_length=1, max_length=200)
+    url: str = Field(min_length=4, max_length=2048)
+    why: str | None = Field(default=None, max_length=300)
+    relevance_score: float = Field(ge=0.0, le=1.0)
+
+
+class VeilleSuggestSourcesResponse(BaseModel):
+    sources: list[VeilleSourceSuggestion] = Field(default_factory=list)
