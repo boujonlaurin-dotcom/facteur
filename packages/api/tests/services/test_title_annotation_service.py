@@ -118,7 +118,8 @@ def test_diff_spans_identical_lemmas_returns_empty():
     assert svc.diff_spans(ref, alt, "left") == []
 
 
-def test_diff_spans_caps_at_4_with_priority_entity_first():
+def test_diff_spans_caps_at_4_with_priority_editorial_first():
+    """ADJ → VERB → NOUN → PROPN → entity. Entities are bumped last."""
     ref = [_tok("été", "été")]
     alt = [
         _tok("dénoncer", "dénoncer", pos="VERB", start=0),
@@ -133,10 +134,41 @@ def test_diff_spans_caps_at_4_with_priority_entity_first():
 
     assert len(spans) == 4
     texts = [s["text"] for s in spans]
-    assert texts[:2] == ["Macron", "Bercy"]  # entities first
-    assert "brutale" in texts  # ADJ kept
-    assert "austérité" in texts  # NOUN kept
-    assert "dénoncer" not in texts  # VERB bumped
+    assert texts[0] == "brutale"  # ADJ wins
+    assert texts[1] in ("dénoncer", "présentée")  # VERB next
+    assert texts[2] in ("dénoncer", "présentée")
+    assert texts[3] == "austérité"  # NOUN closes
+    assert "Macron" not in texts  # entities bumped
+    assert "Bercy" not in texts
+
+
+def test_diff_spans_demotes_entity_when_editorial_tokens_present():
+    """When a divergent VERB + ADJ exist, an NER entity loses its slot."""
+    ref: list[dict] = []
+    alt = [
+        _tok("Acmecorp", "acmecorp", pos="PROPN", start=0, entity_kind="ORG"),
+        _tok("crushes", "crusher", pos="VERB", start=10),
+        _tok("brutale", "brutal", pos="ADJ", start=20),
+    ]
+    svc = service_with_nlp(None)
+    spans = svc.diff_spans(ref, alt, "left")
+    texts = [s["text"] for s in spans]
+
+    assert texts == ["brutale", "crushes", "Acmecorp"]
+    # The entity is still highlighted here (cap is 4, only 3 candidates),
+    # but it ranks last — proves the relative order, not exclusion.
+
+
+def test_diff_spans_keeps_entity_when_no_editorial_alternative():
+    """Pure factual title: an entity is the only divergent token → kept."""
+    ref = [_tok("réforme", "réforme")]
+    alt = [
+        _tok("Examplestan", "examplestan", pos="PROPN", start=0, entity_kind="LOC"),
+    ]
+    svc = service_with_nlp(None)
+    spans = svc.diff_spans(ref, alt, "left")
+
+    assert [s["text"] for s in spans] == ["Examplestan"]
 
 
 def test_diff_spans_passes_bias_through_unchanged():
