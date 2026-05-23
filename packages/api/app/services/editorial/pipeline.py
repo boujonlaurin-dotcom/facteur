@@ -42,7 +42,12 @@ from app.services.editorial.schemas import (
     compute_divergence_level,
 )
 from app.services.editorial.writer import EditorialWriterService
+from app.services.llm_bias_annotation_service import LLMBiasAnnotationService
 from app.services.perspective_service import Perspective, PerspectiveService
+from app.services.title_annotation_service import (
+    TitleAnnotationService,
+    get_title_annotation_service,
+)
 
 logger = structlog.get_logger()
 
@@ -309,6 +314,44 @@ class EditorialPipelineService:
             hits=deep_hit_count,
             total=len(selected_topics),
             duration_ms=round(deep_time * 1000, 2),
+        )
+
+        # ÉTAPE 3B-bis: LLM bias annotation pour les clusters sélectionnés.
+        # Skip silencieux si MISTRAL_API_KEY absente (fallback spaCy hors-ligne
+        # géré ailleurs). Référence = cluster.label (best title du TopicSelector).
+        llm_bias_step_start = time.time()
+        llm_bias_service = LLMBiasAnnotationService()
+        title_service = get_title_annotation_service()
+        llm_bias_stats = {
+            "cluster_count": 0,
+            "variants_annotated": 0,
+            "variants_skipped": 0,
+            "cache_hits": 0,
+        }
+        if llm_bias_service.is_ready:
+            for topic in selected_topics:
+                cluster = cluster_map.get(topic.topic_id)
+                if not cluster or len(cluster.contents) < 2:
+                    continue
+                llm_bias_stats["cluster_count"] += 1
+                try:
+                    await _annotate_cluster_llm_bias(
+                        cluster=cluster,
+                        llm_service=llm_bias_service,
+                        title_service=title_service,
+                        short_session=self._short_session,
+                        stats=llm_bias_stats,
+                    )
+                except Exception:
+                    logger.exception(
+                        "editorial_pipeline.llm_bias_failed",
+                        cluster_id=str(cluster.cluster_id),
+                    )
+        logger.info(
+            "editorial_pipeline.llm_bias_done",
+            duration_ms=round((time.time() - llm_bias_step_start) * 1000, 2),
+            llm_version=LLMBiasAnnotationService.LLM_VERSION,
+            **llm_bias_stats,
         )
 
         # Build subjects with deep matches
@@ -912,3 +955,84 @@ class EditorialPipelineService:
     async def close(self) -> None:
         """Cleanup resources."""
         await self.llm.close()
+
+
+async def _annotate_cluster_llm_bias(
+    *,
+    cluster: TopicCluster,
+    llm_service: LLMBiasAnnotationService,
+    title_service: TitleAnnotationService,
+    short_session,
+    stats: dict[str, int],
+) -> None:
+    """Annote tous les variants d'un cluster avec le LLM bias service.
+
+    Pré-condition assurée ici : `get_or_compute_cluster_annotations` crée
+    les rows spaCy (UPDATE-only de `write_llm_annotations` exige des rows
+    existantes). Skip variant self-référent (`title == cluster.label`)
+    et utilise le cache si la signature est stable.
+    """
+    ref_title = cluster.label or ""
+    if not ref_title:
+        return
+
+    cluster_id_uuid = UUID(cluster.cluster_id)
+    signature = title_service.compute_cluster_signature(
+        [c.id for c in cluster.contents]
+    )
+    # Garde nécessaire : si tous les variants partagent le titre du best
+    # title (cluster artificiel à doublons), `expected == 0` et len(cached)
+    # est trivialement ≥ 0 — sans la garde on incrémenterait à tort.
+    expected = sum(1 for c in cluster.contents if c.title and c.title != ref_title)
+    if expected == 0:
+        return
+
+    async with short_session() as session:
+        cached = await title_service.get_llm_annotations(
+            session, cluster_id_uuid, LLMBiasAnnotationService.LLM_VERSION, signature
+        )
+        if len(cached) >= expected:
+            stats["cache_hits"] += 1
+            return
+
+        # `write_llm_annotations` est UPDATE-only — pré-condition PR 3 :
+        # les rows `cluster_title_annotations` doivent exister avec
+        # `strong_tokens` (spaCy). On les garantit ici juste avant l'écriture.
+        await title_service.get_or_compute_cluster_annotations(session, cluster_id_uuid)
+
+        annotations: dict[UUID, dict] = {}
+        for variant in cluster.contents:
+            if not variant.title or variant.title == ref_title:
+                continue
+            if variant.id in cached:
+                continue
+            peers = [
+                c.title for c in cluster.contents if c.id != variant.id and c.title
+            ][:3]
+            stance = getattr(variant.source, "bias_stance", None)
+            bias_stance = getattr(stance, "value", stance) or "unknown"
+            result = await llm_service.annotate_variant(
+                ref_title=ref_title,
+                variant_title=variant.title,
+                bias_stance=bias_stance,
+                peers=peers,
+            )
+            if result is None:
+                stats["variants_skipped"] += 1
+                logger.warning(
+                    "editorial_pipeline.llm_bias_variant_skipped",
+                    cluster_id=str(cluster.cluster_id),
+                    content_id=str(variant.id),
+                )
+                continue
+            annotations[variant.id] = result
+            stats["variants_annotated"] += 1
+
+        if annotations:
+            await title_service.write_llm_annotations(
+                session,
+                cluster_id_uuid,
+                LLMBiasAnnotationService.LLM_VERSION,
+                signature,
+                annotations,
+            )

@@ -377,6 +377,17 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     }
   }
 
+  /// Opens the dedicated full-page view for a [FeedThemeSection]. The
+  /// section's current snapshot is passed via `extra` so the page renders
+  /// the cached items immediately rather than waiting on the provider.
+  void _openThemeSection(BuildContext context, FeedThemeSection section) {
+    final key = Uri.encodeComponent(sectionKey(section));
+    context.push(
+      '${RoutePaths.fluxContinu}/theme/$key',
+      extra: section,
+    );
+  }
+
   /// Opens an article and, on return, promotes any sections the user
   /// scrolled past (or that sit above [fromSection]) to the live folded
   /// state. `fromSection == null` means the article was tapped from the
@@ -855,8 +866,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             onTapFavorite: isFavorite
                 ? () => showMyInterestsBottomSheet(context)
                 : null,
-            onLoadMore: section is FeedThemeSection
-                ? () => notifier.loadMoreTheme(sectionKey(section))
+            onSeeAll: section is FeedThemeSection
+                ? () => _openThemeSection(context, section)
                 : null,
           ),
         ),
