@@ -87,9 +87,7 @@ class Content(Base):
     theme: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # Langue détectée du titre ("fr", "en", autre — NULL = non détecté). Sert
     # au regroupement "Couverture étrangère" du panneau perspectives.
-    language: Mapped[str | None] = mapped_column(
-        String(8), nullable=True, index=True
-    )
+    language: Mapped[str | None] = mapped_column(String(8), nullable=True, index=True)
     # Story 4.2-US-4: Named Entity Recognition
     entities: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
     # Paywall detection: whether article is behind a paywall

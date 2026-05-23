@@ -950,8 +950,8 @@ async def get_perspectives(
     cached_response = _perspectives_cache.get(cache_key)
     if cached_response is not None:
         logger.info("perspectives_cache_hit", content_id=cache_key)
-        response.headers["X-Bias-Annotation-Source"] = (
-            _perspectives_source_cache.get(cache_key, "spacy")
+        response.headers["X-Bias-Annotation-Source"] = _perspectives_source_cache.get(
+            cache_key, "spacy"
         )
         return cached_response
 
