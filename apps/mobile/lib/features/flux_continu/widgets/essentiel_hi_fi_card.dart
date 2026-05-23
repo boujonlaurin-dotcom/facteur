@@ -116,13 +116,12 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<FacteurColors>()!;
     final now = DateTime.now();
-    final dateLabel = _formatDateStamp(now);
     final dayLabel = _formatDayName(now).toUpperCase();
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _DateStamp(label: dateLabel, accent: accent),
+        _DateStamp(day: now.day, month: _monthAbbrev(now.month), accent: accent),
         const SizedBox(width: FacteurSpacing.space3),
         Expanded(
           child: Column(
@@ -131,6 +130,8 @@ class _Header extends StatelessWidget {
               Text(
                 'ÉDITION DU $dayLabel · 5 ACTUS À SUIVRE',
                 style: FacteurTypography.stamp(colors.textTertiary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
               Text(
@@ -153,7 +154,9 @@ class _Header extends StatelessWidget {
     );
   }
 
-  static String _formatDateStamp(DateTime d) {
+  // Unused after the hotfix (the stamp now renders day/month on two lines),
+  // but kept for backwards reference. _formatDateStamp removed.
+  static String _monthAbbrev(int m) {
     const months = [
       'JAN',
       'FÉV',
@@ -168,8 +171,7 @@ class _Header extends StatelessWidget {
       'NOV',
       'DÉC',
     ];
-    final dd = d.day.toString().padLeft(2, '0');
-    return '$dd / ${months[d.month - 1]}';
+    return months[m - 1];
   }
 
   static String _formatDayName(DateTime d) {
@@ -187,34 +189,58 @@ class _Header extends StatelessWidget {
 }
 
 class _DateStamp extends StatelessWidget {
-  final String label;
+  final int day;
+  final String month;
   final Color accent;
 
-  const _DateStamp({required this.label, required this.accent});
+  const _DateStamp({
+    required this.day,
+    required this.month,
+    required this.accent,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // Hotfix Story 9.2 — cachet rond ocre :
+    //   - diamètre 64 px (vs 56 légèrement trop discret),
+    //   - jour sur la 1re ligne (grand),
+    //   - mois sur la 2e ligne (petit, letterspacing élargi),
+    //   - fond plus saturé (alpha 0.16) et bordure 1.6 px pour ressortir.
     return Transform.rotate(
       angle: -0.05,
       child: Container(
-        width: 56,
-        height: 56,
+        width: 64,
+        height: 64,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: accent.withValues(alpha: 0.12),
+          color: accent.withValues(alpha: 0.16),
           shape: BoxShape.circle,
-          border: Border.all(color: accent, width: 1.2),
+          border: Border.all(color: accent, width: 1.6),
         ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: GoogleFonts.courierPrime(
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            height: 1.15,
-            letterSpacing: 0.3,
-            color: accent,
-          ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              day.toString().padLeft(2, '0'),
+              style: GoogleFonts.courierPrime(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                height: 1.0,
+                color: accent,
+              ),
+            ),
+            const SizedBox(height: 1),
+            Text(
+              month,
+              style: GoogleFonts.courierPrime(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                height: 1.0,
+                letterSpacing: 1.2,
+                color: accent,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -282,7 +308,9 @@ class _LeadTile extends StatelessWidget {
             FacteurSpacing.space3,
           ),
           decoration: BoxDecoration(
-            color: themeAccent.withValues(alpha: 0.08),
+            // Hotfix Story 9.2 — fond teinté plus discret (0.06) pour que la
+            // couleur thématique suggère la section sans surligner.
+            color: themeAccent.withValues(alpha: 0.06),
             borderRadius: BorderRadius.circular(FacteurRadius.medium),
             border: Border(left: BorderSide(color: themeAccent, width: 3)),
           ),
@@ -291,7 +319,10 @@ class _LeadTile extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  _SectionChip(label: article.sectionLabel, accent: themeAccent),
+                  _SectionChip(
+                    label: _sectionLabelFor(article),
+                    accent: themeAccent,
+                  ),
                   const Spacer(),
                   if (article.perspectiveCount > 1)
                     Text(
@@ -345,7 +376,10 @@ class _MediumTile extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  _SectionChip(label: article.sectionLabel, accent: themeAccent),
+                  _SectionChip(
+                    label: _sectionLabelFor(article),
+                    accent: themeAccent,
+                  ),
                   const SizedBox(width: FacteurSpacing.space2),
                   Flexible(
                     child: Text(
@@ -407,7 +441,9 @@ class _LightTile extends StatelessWidget {
               ),
               const SizedBox(width: FacteurSpacing.space2),
               Text(
-                article.sectionLabel.toUpperCase(),
+                _sectionLabelFor(article).toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: FacteurTypography.labelSmall(themeAccent).copyWith(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w700,
@@ -511,7 +547,12 @@ class _Hairline extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<FacteurColors>()!;
-    return Container(height: 0.6, color: colors.border);
+    // Hotfix Story 9.2 — opacité réduite (0.35) pour que le filet
+    // suggère la séparation sans dominer visuellement la carte.
+    return Container(
+      height: 0.6,
+      color: colors.border.withValues(alpha: 0.35),
+    );
   }
 }
 
@@ -521,6 +562,7 @@ class _DottedDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<FacteurColors>()!;
+    final dotColor = colors.border.withValues(alpha: 0.35);
     return LayoutBuilder(
       builder: (context, constraints) {
         final dashCount = (constraints.maxWidth / 4).floor();
@@ -528,7 +570,7 @@ class _DottedDivider extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: List.generate(
             dashCount,
-            (_) => Container(width: 2, height: 1, color: colors.border),
+            (_) => Container(width: 2, height: 1, color: dotColor),
           ),
         );
       },
@@ -599,4 +641,22 @@ Color _accentFor(EssentielArticle article, Color fallback) {
     return themeMap[slug]!.accent;
   }
   return fallback;
+}
+
+/// Resolves the section label rendered next to each article in the hi-fi card.
+///
+/// The backend (`digest_selector.py:_build_topic_groups`) currently fills
+/// `topic.label` *after* the loop that assembles the EssentielArticle, so the
+/// payload often arrives with `section_label = ""`. Until the backend is fixed
+/// (tracked separately) we fall back to the theme name from [themeMap], or
+/// "Actus" if even the slug is unknown — strictly cosmetic, the article still
+/// opens correctly when tapped.
+String _sectionLabelFor(EssentielArticle article) {
+  final raw = article.sectionLabel.trim();
+  if (raw.isNotEmpty) return raw;
+  final slug = article.theme;
+  if (slug != null && themeMap.containsKey(slug)) {
+    return themeMap[slug]!.label;
+  }
+  return 'Actus';
 }

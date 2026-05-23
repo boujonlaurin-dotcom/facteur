@@ -89,6 +89,19 @@ void main() {
       expect(sectionKey(digestSection(kind: SectionKind.bonnes)), 'bonnes');
     });
 
+    test('disambiguates EssentielSection from legacy "Actus du jour"', () {
+      // Story 9.2 hotfix — the v3 hi-fi card (EssentielSection) coexists
+      // with the legacy DigestTopicSection now labelled "Actus du jour".
+      // Both originally collapsed to 'essentiel'; we now route the v3 card
+      // to its own key so per-section prefs survive without collision.
+      const essentielV3 = EssentielSection(articles: []);
+      expect(sectionKey(essentielV3), 'essentiel_v3');
+      expect(
+        sectionKey(digestSection(kind: SectionKind.essentiel)),
+        'essentiel',
+      );
+    });
+
     test('uses theme:<slug> for theme favorites', () {
       expect(sectionKey(themeSection(slug: 'tech')), 'theme:tech');
       expect(sectionKey(themeSection(slug: 'science')), 'theme:science');
