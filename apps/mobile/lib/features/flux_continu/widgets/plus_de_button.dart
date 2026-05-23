@@ -2,42 +2,37 @@ import 'package:flutter/material.dart';
 
 import '../../../config/theme.dart';
 
-/// In-place pagination button for [FeedThemeSection]s. Tapping appends
-/// the next 10 articles in the same section.
-class LoadMoreButton extends StatelessWidget {
+/// "Voir tout {thème}" — opens the dedicated theme page (slide-from-right)
+/// instead of paginating in-place. Visual cousin of [PlusDeButton] so the
+/// bottom-of-section CTA family stays consistent.
+class SeeAllSectionButton extends StatelessWidget {
   final String sectionLabel;
+  final int totalCount;
   final bool hasMore;
-  final bool isLoadingMore;
   final VoidCallback onTap;
 
-  const LoadMoreButton({
+  const SeeAllSectionButton({
     super.key,
     required this.sectionLabel,
+    required this.totalCount,
     required this.hasMore,
-    required this.isLoadingMore,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final String label;
-    if (isLoadingMore) {
-      label = 'Chargement…';
-    } else if (hasMore) {
-      label = 'Voir +10 de $sectionLabel';
-    } else {
-      label = 'Plus rien à voir';
-    }
-    final bool enabled = hasMore && !isLoadingMore;
+    final countSuffix = hasMore ? '+' : '';
+    final label = totalCount > 0
+        ? 'Voir tout $sectionLabel ($totalCount$countSuffix)'
+        : 'Voir tout $sectionLabel';
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Material(
-        color: colors.surfaceElevated
-            .withValues(alpha: enabled ? 0.5 : 0.25),
+        color: colors.surfaceElevated.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
-          onTap: enabled ? onTap : null,
+          onTap: onTap,
           borderRadius: BorderRadius.circular(12),
           child: Container(
             width: double.infinity,
@@ -45,27 +40,18 @@ class LoadMoreButton extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                if (isLoadingMore) ...[
-                  SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        colors.textSecondary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
                 Text(
                   label,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: enabled
-                            ? colors.textSecondary
-                            : colors.textSecondary.withValues(alpha: 0.5),
+                        color: colors.textSecondary,
                         fontWeight: FontWeight.w600,
                       ),
+                ),
+                const SizedBox(width: 6),
+                Icon(
+                  Icons.arrow_forward,
+                  color: colors.textSecondary,
+                  size: 16,
                 ),
               ],
             ),

@@ -27,10 +27,10 @@ class SectionBlock extends StatelessWidget {
   final void Function(Object article, FluxSection section) onTapArticle;
   final ValueChanged<String>? onDismissArticle;
 
-  /// Append the next page of articles to a [FeedThemeSection]. Wired by the
-  /// flux_continu screen to `provider.loadMoreTheme(sectionKey)`. Ignored
-  /// for [DigestTopicSection] which keeps its legacy fold/expand button.
-  final VoidCallback? onLoadMore;
+  /// Opens the dedicated full-page view for a [FeedThemeSection]. Wired by
+  /// the flux_continu screen to push `/flux-continu/theme/:key`. Ignored
+  /// for [DigestTopicSection] which keeps its in-place fold/expand button.
+  final VoidCallback? onSeeAll;
 
   /// IDs of articles currently in the inline-feedback pending state. When
   /// non-empty, the matching cards are swapped for a [FeedbackInline] at the
@@ -68,7 +68,7 @@ class SectionBlock extends StatelessWidget {
     this.enableSwipeHintOnFirstCard = false,
     this.onSwipeHintComplete,
     this.onTapFavorite,
-    this.onLoadMore,
+    this.onSeeAll,
   });
 
   @override
@@ -78,12 +78,7 @@ class SectionBlock extends StatelessWidget {
     // viewport visually doesn't move. An animated transition here would defeat
     // the compensation by leaving the height in flux when the post-frame
     // callback measures it.
-    //
-    // [FeedThemeSection] never folds: it uses the in-place "Voir +10"
-    // pagination, so the fold UX of digest sections would conflict with
-    // that affordance. Only digest sections (essentiel / bonnes) fold.
-    final bool canFold = section is DigestTopicSection;
-    return (isFolded && canFold) ? _buildFolded() : _buildExpanded();
+    return isFolded ? _buildFolded() : _buildExpanded();
   }
 
   Widget _buildFolded() {
@@ -106,16 +101,16 @@ class SectionBlock extends StatelessWidget {
           accent: section.accent,
           blurb: section.blurb,
           illustrationAsset: section.illustrationAsset,
-          onTapFold: section is DigestTopicSection ? onFold : null,
+          onTapFold: onFold,
           onTapFavorite: onTapFavorite,
         ),
         ...cards,
-        if (section is FeedThemeSection)
-          LoadMoreButton(
+        if (section is FeedThemeSection && onSeeAll != null)
+          SeeAllSectionButton(
             sectionLabel: section.label,
+            totalCount: section.items.length,
             hasMore: section.hasMore,
-            isLoadingMore: section.isLoadingMore,
-            onTap: onLoadMore ?? () {},
+            onTap: onSeeAll!,
           )
         else if (section.hasOverflow)
           PlusDeButton(
@@ -177,9 +172,6 @@ class SectionBlock extends StatelessWidget {
               ),
         ];
       case FeedThemeSection(:final items):
-        // FeedThemeSection always renders the full accumulated list; the
-        // in-place LoadMoreButton appends +10 items at a time instead of
-        // hiding behind a fold/expand toggle.
         final visible = items;
         return [
           for (var i = 0; i < visible.length; i++)

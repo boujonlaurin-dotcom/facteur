@@ -2,33 +2,50 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../config/theme.dart';
-import '../models/flux_continu_models.dart';
+import '../../feed/widgets/feed_filter_bar.dart';
 import 'sticky_backdrop.dart';
+
+/// Lightweight descriptor for a sticky tab. Used by [StickyTabBar] so the
+/// sticky overlay can mix real Flux sections with virtual entries (e.g.
+/// "Explorer") without leaking widget-only state into the section sealed
+/// hierarchy.
+class StickyTab {
+  final String label;
+  final Color accent;
+
+  const StickyTab({required this.label, required this.accent});
+}
 
 /// Sticky tab bar revealed once the user scrolls past the AppBar threshold.
 ///
 /// Layout per V6 maquette :
 /// - parchment-tinted backdrop with a 14px blur (saturate 140%),
-/// - "sticky-head" row : zone title ("Les Actus du jour" in the editorial
-///   zone, "Explorer" in the Explorer zone),
+/// - "sticky-head" row : zone title ("Les Actus du jour" or "Explorer"),
 /// - horizontal tabs with section dot, label, done strike-through, and
 ///   an underline tinted with the active section's accent,
 /// - 4-px progress track with a 4-stop gradient fill (essentiel → bonnes
-///   → veille1 → veille2) and a soft accent glow.
+///   → veille1 → veille2) and a soft accent glow,
+/// - when [showFilterBar] is true (Explorer mode), [FeedFilterBar] is
+///   inserted below the tabs so the filter chips morph in under the same
+///   parchment surface rather than swapping the whole sticky.
 class StickyTabBar extends StatelessWidget {
-  final List<FluxSection> sections;
+  final List<StickyTab> tabs;
   final int activeIndex;
   final double progress;
   final ValueChanged<int> onTapTab;
   final ScrollController? tabsController;
+  final String title;
+  final bool showFilterBar;
 
   const StickyTabBar({
     super.key,
-    required this.sections,
+    required this.tabs,
     required this.activeIndex,
     required this.progress,
     required this.onTapTab,
     this.tabsController,
+    this.title = 'Les Actus du jour',
+    this.showFilterBar = false,
   });
 
   @override
@@ -38,9 +55,9 @@ class StickyTabBar extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const StickyHead(),
+          StickyHead(title: title),
           _TabsRow(
-            sections: sections,
+            tabs: tabs,
             activeIndex: activeIndex,
             onTapTab: onTapTab,
             controller: tabsController,
@@ -62,6 +79,17 @@ class StickyTabBar extends StatelessWidget {
               child: const SizedBox.expand(),
             ),
           ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: showFilterBar
+                ? const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                    child: FeedFilterBar(),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
         ],
       ),
     );
@@ -69,10 +97,7 @@ class StickyTabBar extends StatelessWidget {
 }
 
 /// Top row of the sticky overlay — a single Fraunces label that names the
-/// current zone of the Flux Continu screen. Shared between the editorial
-/// sticky ([StickyTabBar]) and the Explorer sticky (`_ExplorerSticky` in
-/// `flux_continu_screen.dart`) so the two surfaces feel like the same bar
-/// changing its caption.
+/// current zone of the Flux Continu screen.
 class StickyHead extends StatelessWidget {
   final String title;
 
@@ -100,13 +125,13 @@ class StickyHead extends StatelessWidget {
 }
 
 class _TabsRow extends StatelessWidget {
-  final List<FluxSection> sections;
+  final List<StickyTab> tabs;
   final int activeIndex;
   final ValueChanged<int> onTapTab;
   final ScrollController? controller;
 
   const _TabsRow({
-    required this.sections,
+    required this.tabs,
     required this.activeIndex,
     required this.onTapTab,
     this.controller,
@@ -120,11 +145,11 @@ class _TabsRow extends StatelessWidget {
         controller: controller,
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
-        itemCount: sections.length,
+        itemCount: tabs.length,
         separatorBuilder: (_, __) => const SizedBox(width: 2),
         itemBuilder: (context, i) {
           return _Tab(
-            section: sections[i],
+            tab: tabs[i],
             isActive: i == activeIndex,
             isDone: i < activeIndex,
             onTap: () => onTapTab(i),
@@ -136,13 +161,13 @@ class _TabsRow extends StatelessWidget {
 }
 
 class _Tab extends StatelessWidget {
-  final FluxSection section;
+  final StickyTab tab;
   final bool isActive;
   final bool isDone;
   final VoidCallback onTap;
 
   const _Tab({
-    required this.section,
+    required this.tab,
     required this.isActive,
     required this.isDone,
     required this.onTap,
@@ -160,7 +185,7 @@ class _Tab extends StatelessWidget {
       labelColor = colors.textSecondary;
     }
     final dotColor = isActive
-        ? section.accent
+        ? tab.accent
         : (isDone ? colors.textTertiary : colors.textSecondary);
     return InkWell(
       onTap: onTap,
@@ -182,7 +207,7 @@ class _Tab extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  section.label,
+                  tab.label,
                   style: GoogleFonts.dmSans(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
@@ -204,7 +229,7 @@ class _Tab extends StatelessWidget {
               height: 2,
               child: Container(
                 decoration: BoxDecoration(
-                  color: section.accent,
+                  color: tab.accent,
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(2),
                   ),
