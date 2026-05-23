@@ -39,7 +39,7 @@ void main() {
   });
 
   group('EssentielHiFiCard', () {
-    testWidgets('renders title, kicker and the lead article', (tester) async {
+    testWidgets('renders title, subtitle and the lead article', (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
@@ -49,7 +49,15 @@ void main() {
       ));
 
       expect(find.textContaining('L’Essentiel du jour'), findsOneWidget);
-      expect(find.textContaining('5 ACTUS À SUIVRE'), findsOneWidget);
+      expect(
+        find.textContaining('Les 5 articles à ne pas manquer'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('ÉDITION DU'),
+        findsNothing,
+        reason: 'Vague 2 hotfix: gray "ÉDITION DU [day]" banner removed.',
+      );
       expect(find.text('Titre 1'), findsOneWidget);
     });
 
@@ -101,6 +109,39 @@ void main() {
       for (var i = 1; i <= 5; i++) {
         expect(find.text('Titre $i'), findsOneWidget);
       }
+    });
+
+    testWidgets('"Tout explorer" button fires onTapExploreAll when wired',
+        (tester) async {
+      var exploreTaps = 0;
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+          onTapSkip: () {},
+          onTapExploreAll: () => exploreTaps++,
+        ),
+      ));
+
+      expect(find.text('Tout explorer →'), findsOneWidget);
+      await tester.tap(find.text('Tout explorer →'));
+      await tester.pumpAndSettle();
+      expect(exploreTaps, 1);
+    });
+
+    testWidgets('"Tout explorer" button is omitted when onTapExploreAll is null',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+          onTapSkip: () {},
+        ),
+      ));
+
+      expect(find.text('Tout explorer →'), findsNothing);
     });
   });
 }
