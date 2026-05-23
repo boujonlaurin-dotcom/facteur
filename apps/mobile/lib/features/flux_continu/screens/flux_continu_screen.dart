@@ -32,7 +32,6 @@ import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../../../shared/widgets/loaders/loading_view.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
-import '../../feed/widgets/feed_filter_bar.dart';
 import '../widgets/closing_card_v18.dart';
 import '../widgets/flux_continu_article_card.dart';
 import '../widgets/my_interests_intro.dart';
@@ -40,7 +39,6 @@ import '../widgets/my_interests_sheet.dart';
 import '../widgets/section_banner.dart';
 import '../widgets/section_block.dart';
 import '../widgets/section_hairline.dart';
-import '../widgets/sticky_backdrop.dart';
 import '../widgets/sticky_tab_bar.dart';
 
 /// Scroll offset at which the AppBar is swapped with the sticky tab bar.
@@ -131,11 +129,18 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       _stickyVisible.value = showSticky;
     }
     final max = pos.maxScrollExtent;
-    _scrollProgress.value = max > 0 ? (currentScroll / max).clamp(0.0, 1.0) : 0;
+    final nextProgress =
+        max > 0 ? (currentScroll / max).clamp(0.0, 1.0).toDouble() : 0.0;
+    if (_scrollProgress.value != nextProgress) {
+      _scrollProgress.value = nextProgress;
+    }
+    // Explore-mode flag must be refreshed before the active-section pass: the
+    // sticky's "Explorer" virtual tab is selected from that flag, and we want
+    // the same frame the user crosses the banner to swap to it.
+    _updateExploreMode();
     _updateActiveSection();
     _maybeFoldSections();
     _maybeDismissClosingCard();
-    _updateExploreMode();
 
     if (currentScroll > _maxScrollDepthPx) {
       _maxScrollDepthPx = currentScroll;
@@ -242,6 +247,18 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   }
 
   void _updateActiveSection() {
+    // Explorer is rendered as the last virtual tab in the sticky overlay.
+    // Once the user crosses the Explorer banner, that tab takes precedence
+    // over the editorial active-section measurement so the sticky reflects
+    // the zone the user is actually browsing.
+    if (_isInExploreMode.value) {
+      final exploreIndex = _sectionKeys.length;
+      if (_activeIndex.value != exploreIndex) {
+        _activeIndex.value = exploreIndex;
+        _alignTabsToActive(exploreIndex);
+      }
+      return;
+    }
     if (_sectionKeys.isEmpty) return;
     int activeAt = 0;
     for (var i = 0; i < _sectionKeys.length; i++) {
@@ -275,8 +292,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   }
 
   Future<void> _scrollToSection(int index) async {
-    if (index < 0 || index >= _sectionKeys.length) return;
-    final ctx = _sectionKeys[index].currentContext;
+    if (index < 0) return;
+    // Last tab is the virtual "Explorer" entry — scrolls to its banner key.
+    final GlobalKey targetKey = index >= _sectionKeys.length
+        ? _explorerKey
+        : _sectionKeys[index];
+    final ctx = targetKey.currentContext;
     if (ctx == null) return;
     final box = ctx.findRenderObject();
     if (box is! RenderBox) return;
@@ -330,6 +351,17 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         curve: Curves.easeOutCubic,
       ));
     }
+  }
+
+  /// Opens the dedicated full-page view for a [FeedThemeSection]. The
+  /// section's current snapshot is passed via `extra` so the page renders
+  /// the cached items immediately rather than waiting on the provider.
+  void _openThemeSection(BuildContext context, FeedThemeSection section) {
+    final key = Uri.encodeComponent(sectionKey(section));
+    context.push(
+      '${RoutePaths.fluxContinu}/theme/$key',
+      extra: section,
+    );
   }
 
   /// Opens an article and, on return, promotes any sections the user
@@ -795,8 +827,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             onTapFavorite: isFavorite
                 ? () => showMyInterestsBottomSheet(context)
                 : null,
-            onLoadMore: section is FeedThemeSection
-                ? () => notifier.loadMoreTheme(sectionKey(section))
+            onSeeAll: section is FeedThemeSection
+                ? () => _openThemeSection(context, section)
                 : null,
           ),
         ),
@@ -887,11 +919,17 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   }
 }
 
-/// Sticky overlay that hosts either the editorial tab bar (top of the
-/// screen) or the feed filter bar (once the user crosses the Explorer
-/// banner). The header itself lives inside the scroll view, so it simply
-/// disappears upward as content moves up.
+/// Sticky overlay shown at the top of the screen once the user scrolls past
+/// the AppBar threshold. Always hosts the editorial tab bar — the "Explorer"
+/// virtual tab is appended at the end so the same bar covers the whole
+/// screen instead of swapping out when the user crosses the Explorer banner.
+/// When the user is in Explorer mode, [FeedFilterBar] morphs in under the
+/// tabs (within the same parchment surface) so filtering stays available.
+const String _kExplorerLabel = 'Explorer';
+const Color _kExplorerAccent = Color(0xFF5D4037);
+
 class _StickyHostOverlay extends ConsumerWidget {
+
   final ValueNotifier<bool> stickyVisible;
   final ValueNotifier<double> scrollProgress;
   final ValueNotifier<int> activeIndex;
@@ -924,66 +962,33 @@ class _StickyHostOverlay extends ConsumerWidget {
         valueListenable: stickyVisible,
         builder: (context, visible, _) {
           final showSticky = visible && sections.isNotEmpty;
-          return AnimatedSwitcher(
-            duration: const Duration(milliseconds: 150),
-            child: !showSticky
-                ? const SizedBox.shrink(key: ValueKey('hidden'))
-                : ValueListenableBuilder<bool>(
-                    key: const ValueKey('sticky'),
-                    valueListenable: isInExploreMode,
-                    builder: (context, explore, _) => AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 120),
-                      child: explore
-                          ? const _ExplorerSticky(key: ValueKey('explore'))
-                          : ValueListenableBuilder<int>(
-                              key: const ValueKey('editorial'),
-                              valueListenable: activeIndex,
-                              builder: (context, idx, _) =>
-                                  ValueListenableBuilder<double>(
-                                valueListenable: scrollProgress,
-                                builder: (context, progress, _) => StickyTabBar(
-                                  sections: sections,
-                                  activeIndex:
-                                      idx.clamp(0, sections.length - 1),
-                                  progress: progress,
-                                  onTapTab: onTapTab,
-                                  tabsController: tabsController,
-                                ),
-                              ),
-                            ),
-                    ),
-                  ),
+          if (!showSticky) {
+            return const SizedBox.shrink();
+          }
+          final tabs = <StickyTab>[
+            for (final s in sections)
+              StickyTab(label: s.label, accent: s.accent),
+            const StickyTab(label: _kExplorerLabel, accent: _kExplorerAccent),
+          ];
+          return ValueListenableBuilder<bool>(
+            valueListenable: isInExploreMode,
+            builder: (context, explore, _) => ValueListenableBuilder<int>(
+              valueListenable: activeIndex,
+              builder: (context, idx, _) => ValueListenableBuilder<double>(
+                valueListenable: scrollProgress,
+                builder: (context, progress, _) => StickyTabBar(
+                  tabs: tabs,
+                  activeIndex: idx.clamp(0, tabs.length - 1),
+                  progress: progress,
+                  onTapTab: onTapTab,
+                  tabsController: tabsController,
+                  title: explore ? _kExplorerLabel : 'Les Actus du jour',
+                  showFilterBar: explore,
+                ),
+              ),
+            ),
           );
         },
-      ),
-    );
-  }
-}
-
-/// Sticky wrapper around [FeedFilterBar] sharing [StickyBackdrop] with
-/// [StickyTabBar] so the cross-fade between the two stickies feels like a
-/// single surface morphing rather than two distinct bars.
-class _ExplorerSticky extends StatelessWidget {
-  const _ExplorerSticky({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const StickyBackdrop(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          StickyHead(title: 'Explorer'),
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              FacteurSpacing.space4,
-              0,
-              FacteurSpacing.space4,
-              FacteurSpacing.space2,
-            ),
-            child: FeedFilterBar(),
-          ),
-        ],
       ),
     );
   }
