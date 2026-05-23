@@ -998,9 +998,7 @@ async def _annotate_cluster_llm_bias(
         # `write_llm_annotations` est UPDATE-only — pré-condition PR 3 :
         # les rows `cluster_title_annotations` doivent exister avec
         # `strong_tokens` (spaCy). On les garantit ici juste avant l'écriture.
-        await title_service.get_or_compute_cluster_annotations(
-            session, cluster_id_uuid
-        )
+        await title_service.get_or_compute_cluster_annotations(session, cluster_id_uuid)
 
         annotations: dict[UUID, dict] = {}
         for variant in cluster.contents:
@@ -1009,9 +1007,7 @@ async def _annotate_cluster_llm_bias(
             if variant.id in cached:
                 continue
             peers = [
-                c.title
-                for c in cluster.contents
-                if c.id != variant.id and c.title
+                c.title for c in cluster.contents if c.id != variant.id and c.title
             ][:3]
             stance = getattr(variant.source, "bias_stance", None)
             bias_stance = getattr(stance, "value", stance) or "unknown"
