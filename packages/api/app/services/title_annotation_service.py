@@ -293,7 +293,6 @@ class TitleAnnotationService:
 
         return out
 
-
     # ----------------------------------------------------------- LLM persistence
 
     @staticmethod
