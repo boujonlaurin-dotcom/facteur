@@ -7,8 +7,6 @@ du titre pour la section "Couverture étrangère" du panneau perspectives
 remplis à l'ingestion (sync_service.py).
 """
 
-from collections.abc import Iterator
-
 import sqlalchemy as sa
 
 from alembic import op
@@ -20,28 +18,6 @@ branch_labels: str | None = None
 depends_on: str | None = None
 
 _BATCH_SIZE = 500
-
-
-def _iter_batches(bind, query: str) -> Iterator[list]:
-    """Batch par keyset pagination (id > :last_id) — pas de curseurs server-side.
-
-    stream_results=True avec psycopg3 async fuit l'état curseur vers les
-    instructions suivantes sur la même connexion (dont l'UPDATE alembic_version
-    interne d'Alembic), qui se retrouvent emballées dans un DECLARE CURSOR FOR
-    UPDATE → SyntaxError PostgreSQL.
-
-    La query doit inclure :last_id et :limit comme paramètres nommés, et se
-    terminer par ORDER BY c.id LIMIT :limit.
-    """
-    last_id = 0
-    while True:
-        rows = bind.execute(
-            sa.text(query), {"last_id": last_id, "limit": _BATCH_SIZE}
-        ).fetchall()
-        if not rows:
-            break
-        yield rows
-        last_id = rows[-1].id
 
 
 def upgrade() -> None:
@@ -57,22 +33,33 @@ def upgrade() -> None:
         return
 
     bind = op.get_bind()
-    query = (
-        "SELECT c.id, c.title, s.name AS source_name "
-        "FROM contents c LEFT JOIN sources s ON s.id = c.source_id "
-        "WHERE c.language IS NULL AND c.id > :last_id "
-        "ORDER BY c.id LIMIT :limit"
-    )
+
+    # Fetch all rows to backfill in one query, then slice in Python.
+    # Avoids server-side cursors (stream_results=True) which leak cursor state
+    # in psycopg3 async — causing Alembic's subsequent UPDATE alembic_version
+    # to be wrapped in DECLARE CURSOR FOR UPDATE → SyntaxError PostgreSQL.
+    # Keyset pagination (id > :last_id) is also unsuitable because c.id is UUID
+    # and the initial sentinel 0 (smallint) triggers "operator does not exist:
+    # uuid > smallint". A single fetchall() is simpler and safe for a one-time
+    # migration where the result set fits in memory.
+    rows = bind.execute(
+        sa.text(
+            "SELECT c.id, c.title, s.name AS source_name "
+            "FROM contents c LEFT JOIN sources s ON s.id = c.source_id "
+            "WHERE c.language IS NULL"
+        )
+    ).fetchall()
+
     update_stmt = sa.text(
         "UPDATE contents SET language = :language WHERE id = :id"
     )
-    for batch in _iter_batches(bind, query):
-        updates = []
-        for row in batch:
-            lang = detect_language(row.title, row.source_name)
-            if lang is None:
-                continue
-            updates.append({"id": row.id, "language": lang})
+    for i in range(0, len(rows), _BATCH_SIZE):
+        batch = rows[i : i + _BATCH_SIZE]
+        updates = [
+            {"id": row.id, "language": lang}
+            for row in batch
+            if (lang := detect_language(row.title, row.source_name)) is not None
+        ]
         if updates:
             bind.execute(update_stmt, updates)
 
