@@ -13,10 +13,13 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 
+from app.models.cluster_title_annotation import ClusterTitleAnnotation
 from app.models.content import Content
 from app.models.enums import ContentType, SourceType
 from app.models.source import Source
 from app.routers.contents import _attach_highlight_spans
+from app.services.llm_bias_annotation_service import LLM_VERSION as LLM_BIAS_VERSION
+from app.services.title_annotation_service import TitleAnnotationService
 from tests.fixtures.fake_spacy import (
     FakeDoc,
     FakeEnt,
@@ -145,7 +148,7 @@ async def test_attach_highlight_spans_computes_for_content_without_cluster(db_se
         "app.routers.contents.get_title_annotation_service",
         return_value=fake_svc,
     ):
-        pivot = await _attach_highlight_spans(db_session, standalone, perspectives)
+        pivot, _ = await _attach_highlight_spans(db_session, standalone, perspectives)
 
     texts = {s["text"] for s in perspectives[0]["highlight_spans"]}
     assert "morts" in texts  # diverges from ref (lemma not in {Tsahal, frapper, Gaza})
@@ -357,7 +360,7 @@ async def test_attach_highlight_spans_returns_empty_when_nlp_unavailable(
         "app.routers.contents.get_title_annotation_service",
         return_value=fake_svc,
     ):
-        pivot = await _attach_highlight_spans(
+        pivot, _ = await _attach_highlight_spans(
             db_session, cluster_setup["ref"], perspectives
         )
 
@@ -383,7 +386,7 @@ async def test_attach_highlight_spans_swallows_exceptions(
         "app.routers.contents.get_title_annotation_service",
         return_value=BrokenService(),
     ):
-        pivot = await _attach_highlight_spans(
+        pivot, _ = await _attach_highlight_spans(
             db_session, cluster_setup["ref"], perspectives
         )
 
@@ -427,7 +430,7 @@ async def test_attach_highlight_spans_returns_reference_pivot_and_shared_tokens(
         "app.routers.contents.get_title_annotation_service",
         return_value=fake_svc,
     ):
-        pivot = await _attach_highlight_spans(
+        pivot, _ = await _attach_highlight_spans(
             db_session, cluster_setup["ref"], perspectives
         )
 
@@ -494,3 +497,273 @@ async def test_attach_highlight_spans_without_cluster_skips_db_scan(db_session):
     assert cluster_calls == []  # no DB scan on cluster_id IS NULL
     assert perspectives[0]["highlight_spans"] == []
     assert perspectives[0]["shared_tokens"] == []
+
+
+# --- PR 5 : LLM enriched contract -------------------------------------------
+
+# Shared fixtures for the LLM/spaCy branch tests. The Tsahal/Gaza pair is the
+# canonical example used across the calibration corpus.
+_REF_TOKENS_GAZA: list[dict] = [
+    {"start": 0, "end": 6, "text": "Tsahal", "lemma": "tsahal", "pos": "PROPN"},
+    {"start": 7, "end": 13, "text": "frappe", "lemma": "frapper", "pos": "VERB"},
+    {"start": 14, "end": 18, "text": "Gaza", "lemma": "gaza", "pos": "PROPN"},
+]
+_ALT_TOKENS_GAZA: list[dict] = [
+    {"start": 0, "end": 5, "text": "Armée", "lemma": "armée", "pos": "NOUN"},
+    {"start": 18, "end": 26, "text": "bombarde", "lemma": "bombarder", "pos": "VERB"},
+    {"start": 27, "end": 31, "text": "Gaza", "lemma": "gaza", "pos": "PROPN"},
+]
+
+
+async def _seed_strong_tokens_cache(
+    db_session, cluster_setup, ref_tokens, alt_tokens
+):
+    """Pré-peuple `cluster_title_annotations.strong_tokens` pour ref + alt_a.
+
+    Imite la sortie du pipeline spaCy déterministe (PR cta01) avant que la
+    couche LLM (PR 4) écrive `semantic_equiv`. Sans ces rows, l'appel
+    `get_or_compute_cluster_annotations` tomberait dans la branche
+    "compute_strong_tokens_batch" qui dépend du spaCy réel.
+    """
+    db_session.add_all(
+        [
+            ClusterTitleAnnotation(
+                cluster_id=cluster_setup["cluster_id"],
+                content_id=cluster_setup["ref"].id,
+                strong_tokens=ref_tokens,
+                model_version=TitleAnnotationService.MODEL_VERSION,
+            ),
+            ClusterTitleAnnotation(
+                cluster_id=cluster_setup["cluster_id"],
+                content_id=cluster_setup["alt_a"].id,
+                strong_tokens=alt_tokens,
+                model_version=TitleAnnotationService.MODEL_VERSION,
+            ),
+            ClusterTitleAnnotation(
+                cluster_id=cluster_setup["cluster_id"],
+                content_id=cluster_setup["alt_b"].id,
+                strong_tokens=ref_tokens,
+                model_version=TitleAnnotationService.MODEL_VERSION,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+
+def _cluster_signature(cluster_setup) -> str:
+    """Recompute the deterministic signature for the cluster_setup fixture."""
+    return TitleAnnotationService.compute_cluster_signature(
+        [
+            cluster_setup["ref"].id,
+            cluster_setup["alt_a"].id,
+            cluster_setup["alt_b"].id,
+        ]
+    )
+
+
+def _llm_payload(target_spans: list[dict], signature: str) -> dict:
+    """Mirror what `write_llm_annotations` persists for one variant."""
+    return {
+        "target_spans": target_spans,
+        "exclude_spans": [],
+        "notes": "test",
+        "confidence": 0.9,
+        "llm_version": LLM_BIAS_VERSION,
+        "annotated_at": "2026-05-23T12:00:00+00:00",
+        "cluster_signature": signature,
+    }
+
+
+@pytest.mark.asyncio
+async def test_attach_highlight_spans_uses_llm_when_semantic_equiv_present(
+    db_session, cluster_setup
+):
+    """semantic_equiv populated → LLM target_spans surfaced verbatim
+    (weight/category/justification) with bias injected from the perspective."""
+    await _seed_strong_tokens_cache(
+        db_session, cluster_setup, _REF_TOKENS_GAZA, _ALT_TOKENS_GAZA
+    )
+
+    signature = _cluster_signature(cluster_setup)
+    llm_target_spans = [
+        {
+            "start": 18,
+            "end": 26,
+            "text": "bombarde",
+            "category": "editorial_angle",
+            "weight": 1.0,
+            "justification": "Verbe chargé qui dramatise l'action.",
+        }
+    ]
+    alt_row = await db_session.get(
+        ClusterTitleAnnotation,
+        (cluster_setup["cluster_id"], cluster_setup["alt_a"].id),
+    )
+    alt_row.semantic_equiv = _llm_payload(llm_target_spans, signature)
+    await db_session.commit()
+
+    fake_svc = service_with_nlp(FakeNlp({}))
+    perspectives = [
+        {
+            "title": "Armée israélienne bombarde Gaza",
+            "url": cluster_setup["alt_a"].url,
+            "bias_stance": "left",
+        }
+    ]
+    with patch(
+        "app.routers.contents.get_title_annotation_service",
+        return_value=fake_svc,
+    ):
+        pivot, source = await _attach_highlight_spans(
+            db_session, cluster_setup["ref"], perspectives
+        )
+
+    assert source == "llm"
+    spans = perspectives[0]["highlight_spans"]
+    assert len(spans) == 1
+    span = spans[0]
+    assert span["text"] == "bombarde"
+    assert span["category"] == "editorial_angle"
+    assert span["weight"] == 1.0
+    assert span["justification"] == "Verbe chargé qui dramatise l'action."
+    assert span["bias"] == "left"  # injected from p["bias_stance"] for compat
+    # Reference pivot still resolves via spaCy ref_tokens.
+    assert pivot == {"start": 7, "end": 13, "text": "frappe"}
+
+
+@pytest.mark.asyncio
+async def test_attach_highlight_spans_falls_back_to_spacy_when_no_semantic_equiv(
+    db_session, cluster_setup
+):
+    """Cluster row exists but semantic_equiv IS NULL → spaCy fallback,
+    spans keep the legacy {start, end, text, bias} shape."""
+    await _seed_strong_tokens_cache(
+        db_session, cluster_setup, _REF_TOKENS_GAZA, _ALT_TOKENS_GAZA
+    )
+
+    fake_svc = service_with_nlp(FakeNlp({}))
+    perspectives = [
+        {
+            "title": "Armée israélienne bombarde Gaza",
+            "url": cluster_setup["alt_a"].url,
+            "bias_stance": "left",
+        }
+    ]
+    with patch(
+        "app.routers.contents.get_title_annotation_service",
+        return_value=fake_svc,
+    ):
+        _, source = await _attach_highlight_spans(
+            db_session, cluster_setup["ref"], perspectives
+        )
+
+    assert source == "spacy"
+    spans = perspectives[0]["highlight_spans"]
+    assert spans, "spaCy fallback must still produce spans"
+    for span in spans:
+        # Legacy contract: no LLM fields leak in.
+        assert set(span.keys()) == {"start", "end", "text", "bias"}
+        assert span["bias"] == "left"
+
+
+@pytest.mark.asyncio
+async def test_attach_highlight_spans_invalidates_llm_on_cluster_signature_mismatch(
+    db_session, cluster_setup
+):
+    """semantic_equiv exists but cluster_signature is stale → cache ignored,
+    fallback to spaCy. End-to-end check of the versioning gate from PR 3."""
+    await _seed_strong_tokens_cache(
+        db_session, cluster_setup, _REF_TOKENS_GAZA, _ALT_TOKENS_GAZA
+    )
+
+    stale_payload = _llm_payload(
+        [
+            {
+                "start": 18,
+                "end": 26,
+                "text": "bombarde",
+                "category": "editorial_angle",
+                "weight": 1.0,
+                "justification": "stale",
+            }
+        ],
+        signature="deadbeefdeadbeef",  # not the real signature
+    )
+    alt_row = await db_session.get(
+        ClusterTitleAnnotation,
+        (cluster_setup["cluster_id"], cluster_setup["alt_a"].id),
+    )
+    alt_row.semantic_equiv = stale_payload
+    await db_session.commit()
+
+    fake_svc = service_with_nlp(FakeNlp({}))
+    perspectives = [
+        {
+            "title": "Armée israélienne bombarde Gaza",
+            "url": cluster_setup["alt_a"].url,
+            "bias_stance": "left",
+        }
+    ]
+    with patch(
+        "app.routers.contents.get_title_annotation_service",
+        return_value=fake_svc,
+    ):
+        _, source = await _attach_highlight_spans(
+            db_session, cluster_setup["ref"], perspectives
+        )
+
+    assert source == "spacy"
+    for span in perspectives[0]["highlight_spans"]:
+        assert "weight" not in span  # no LLM fields leaked through
+
+
+@pytest.mark.asyncio
+async def test_build_cluster_perspectives_propagates_content_language(db_session):
+    """`Perspective.language` mirrors `Content.language` so the endpoint
+    list-comp can expose it without an extra DB lookup."""
+    from app.services.perspective_service import PerspectiveService
+
+    source = Source(
+        id=uuid4(),
+        name="Reuters",  # not in is_french_source whitelist → simulate EN feed
+        url="https://reuters.com",
+        feed_url=f"https://reuters.com/feed-{uuid4()}.xml",
+        type=SourceType.ARTICLE,
+        theme="society",
+        is_active=True,
+        is_curated=False,
+    )
+    db_session.add(source)
+    await db_session.commit()
+    content_en = Content(
+        id=uuid4(),
+        source_id=source.id,
+        title="Israel strikes Gaza after attacks",
+        url="https://reuters.com/article-en",
+        published_at=datetime.now(UTC),
+        content_type=ContentType.ARTICLE,
+        guid="en",
+        language="en",
+    )
+    content_fr = Content(
+        id=uuid4(),
+        source_id=source.id,
+        title="Tsahal frappe Gaza",
+        url="https://reuters.com/article-fr",
+        published_at=datetime.now(UTC),
+        content_type=ContentType.ARTICLE,
+        guid="fr",
+        language="fr",
+    )
+    db_session.add_all([content_en, content_fr])
+    await db_session.commit()
+    # Reload so `content.source` relationship is populated.
+    await db_session.refresh(content_en, attribute_names=["source"])
+    await db_session.refresh(content_fr, attribute_names=["source"])
+
+    perspectives = await PerspectiveService(db_session).build_cluster_perspectives(
+        [content_en, content_fr]
+    )
+    # Single perspective per source_id — keep the one that landed first.
+    assert len(perspectives) == 1
+    assert perspectives[0].language == "en"

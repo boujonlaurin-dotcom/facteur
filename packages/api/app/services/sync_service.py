@@ -18,6 +18,7 @@ from app.models.content import Content
 from app.models.enums import ContentType, SourceType
 from app.models.source import Source, UserSource
 from app.services.content_extractor import ContentExtractor
+from app.services.ml.language_filter import detect_language
 from app.services.paywall_detector import detect_paywall
 
 logger = structlog.get_logger()
@@ -276,6 +277,7 @@ class SyncService:
             # Base content data
             content_data = {
                 "source_id": source.id,
+                "source_name": source.name,
                 "title": title,
                 "url": link,
                 "guid": guid,
@@ -646,6 +648,7 @@ class SyncService:
                 html_content=data.get("html_content"),
                 audio_url=data.get("audio_url"),
                 is_paid=data.get("is_paid", False),
+                language=detect_language(data["title"], data.get("source_name")),
                 created_at=datetime.datetime.utcnow(),
             )
 
