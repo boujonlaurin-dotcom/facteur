@@ -15,6 +15,7 @@ from app.models.cluster_title_annotation import ClusterTitleAnnotation
 from app.models.content import Content
 from app.models.enums import ContentType, SourceType
 from app.models.source import Source
+from app.services.title_annotation_service import TitleAnnotationService
 from tests.fixtures.fake_spacy import (
     FakeDoc,
     FakeEnt,
@@ -416,3 +417,233 @@ async def test_get_or_compute_does_not_raise_on_partial_cache(
         )
     ).scalars().all()
     assert len(rows) == 3
+
+# --- LLM persistence (PR 3 Phase 4) ------------------------------------------
+
+
+def test_compute_cluster_signature_is_deterministic_and_order_invariant():
+    a = uuid4()
+    b = uuid4()
+    c = uuid4()
+    sig_abc = TitleAnnotationService.compute_cluster_signature([a, b, c])
+    sig_cba = TitleAnnotationService.compute_cluster_signature([c, b, a])
+    assert sig_abc == sig_cba
+    assert len(sig_abc) == 16
+
+
+def test_compute_cluster_signature_changes_when_membership_changes():
+    a = uuid4()
+    b = uuid4()
+    c = uuid4()
+    sig_ab = TitleAnnotationService.compute_cluster_signature([a, b])
+    sig_abc = TitleAnnotationService.compute_cluster_signature([a, b, c])
+    assert sig_ab != sig_abc
+
+
+def test_compute_cluster_signature_empty():
+    sig = TitleAnnotationService.compute_cluster_signature([])
+    assert isinstance(sig, str) and len(sig) == 16
+
+
+@pytest_asyncio.fixture
+async def cluster_with_spacy_rows(db_session, cluster_fixture):
+    """Seed ClusterTitleAnnotation rows (spaCy-side) for the cluster."""
+    for c in cluster_fixture["contents"]:
+        db_session.add(
+            ClusterTitleAnnotation(
+                cluster_id=cluster_fixture["cluster_id"],
+                content_id=c.id,
+                strong_tokens=[],
+                model_version="v1-spacy-fr_md",
+            )
+        )
+    await db_session.commit()
+    return cluster_fixture
+
+
+@pytest.mark.asyncio
+async def test_get_llm_annotations_returns_empty_when_no_semantic_equiv(
+    db_session, cluster_with_spacy_rows
+):
+    svc = service_with_nlp(_trivial_nlp([]))
+    result = await svc.get_llm_annotations(
+        db_session,
+        cluster_with_spacy_rows["cluster_id"],
+        llm_version="mistral-medium-latest-v1",
+        cluster_signature="any",
+    )
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_write_then_read_llm_annotations_round_trip(
+    db_session, cluster_with_spacy_rows
+):
+    svc = service_with_nlp(_trivial_nlp([]))
+    cluster_id = cluster_with_spacy_rows["cluster_id"]
+    contents = cluster_with_spacy_rows["contents"]
+    sig = TitleAnnotationService.compute_cluster_signature([c.id for c in contents])
+
+    annotations = {
+        contents[0].id: {
+            "target_spans": [
+                {"start": 0, "end": 6, "text": "Macron",
+                 "category": "editorial_angle", "weight": 1.0,
+                 "justification": "test"}
+            ],
+            "exclude_spans": [],
+            "notes": "",
+            "confidence": 0.9,
+        },
+        contents[1].id: {
+            "target_spans": [],
+            "exclude_spans": [],
+            "notes": "empty",
+            "confidence": None,
+        },
+    }
+    n = await svc.write_llm_annotations(
+        db_session, cluster_id,
+        llm_version="mistral-medium-latest-v1",
+        cluster_signature=sig,
+        annotations=annotations,
+    )
+    assert n == 2
+
+    read = await svc.get_llm_annotations(
+        db_session, cluster_id,
+        llm_version="mistral-medium-latest-v1", cluster_signature=sig,
+    )
+    assert set(read.keys()) == {contents[0].id, contents[1].id}
+    assert read[contents[0].id]["target_spans"][0]["text"] == "Macron"
+    assert read[contents[0].id]["llm_version"] == "mistral-medium-latest-v1"
+    assert read[contents[0].id]["cluster_signature"] == sig
+    assert read[contents[1].id]["notes"] == "empty"
+
+
+@pytest.mark.asyncio
+async def test_get_llm_annotations_filters_by_llm_version(
+    db_session, cluster_with_spacy_rows
+):
+    svc = service_with_nlp(_trivial_nlp([]))
+    cluster_id = cluster_with_spacy_rows["cluster_id"]
+    contents = cluster_with_spacy_rows["contents"]
+    sig = TitleAnnotationService.compute_cluster_signature([c.id for c in contents])
+
+    await svc.write_llm_annotations(
+        db_session, cluster_id,
+        llm_version="mistral-medium-latest-v1", cluster_signature=sig,
+        annotations={contents[0].id: {"target_spans": [], "exclude_spans": []}},
+    )
+
+    # Querying a different version → empty
+    other = await svc.get_llm_annotations(
+        db_session, cluster_id,
+        llm_version="mistral-large-latest-v1", cluster_signature=sig,
+    )
+    assert other == {}
+
+    same = await svc.get_llm_annotations(
+        db_session, cluster_id,
+        llm_version="mistral-medium-latest-v1", cluster_signature=sig,
+    )
+    assert set(same.keys()) == {contents[0].id}
+
+
+@pytest.mark.asyncio
+async def test_get_llm_annotations_filters_by_cluster_signature(
+    db_session, cluster_with_spacy_rows
+):
+    svc = service_with_nlp(_trivial_nlp([]))
+    cluster_id = cluster_with_spacy_rows["cluster_id"]
+    contents = cluster_with_spacy_rows["contents"]
+    old_sig = TitleAnnotationService.compute_cluster_signature([c.id for c in contents])
+
+    await svc.write_llm_annotations(
+        db_session, cluster_id,
+        llm_version="mistral-medium-latest-v1", cluster_signature=old_sig,
+        annotations={contents[0].id: {"target_spans": [], "exclude_spans": []}},
+    )
+
+    # Cluster composition changed → signature change → cache invalidated
+    new_sig = TitleAnnotationService.compute_cluster_signature(
+        [c.id for c in contents] + [uuid4()]
+    )
+    assert new_sig != old_sig
+    invalidated = await svc.get_llm_annotations(
+        db_session, cluster_id,
+        llm_version="mistral-medium-latest-v1", cluster_signature=new_sig,
+    )
+    assert invalidated == {}
+
+
+@pytest.mark.asyncio
+async def test_write_llm_annotations_skips_missing_rows(
+    db_session, cluster_with_spacy_rows
+):
+    svc = service_with_nlp(_trivial_nlp([]))
+    cluster_id = cluster_with_spacy_rows["cluster_id"]
+    ghost = uuid4()  # content_id non présent
+    n = await svc.write_llm_annotations(
+        db_session, cluster_id,
+        llm_version="mistral-medium-latest-v1",
+        cluster_signature="sig",
+        annotations={ghost: {"target_spans": [], "exclude_spans": []}},
+    )
+    assert n == 0
+
+
+@pytest.mark.asyncio
+async def test_write_llm_annotations_empty_dict_is_noop(
+    db_session, cluster_with_spacy_rows
+):
+    svc = service_with_nlp(_trivial_nlp([]))
+    n = await svc.write_llm_annotations(
+        db_session,
+        cluster_with_spacy_rows["cluster_id"],
+        llm_version="mistral-medium-latest-v1",
+        cluster_signature="sig",
+        annotations={},
+    )
+    assert n == 0
+
+
+@pytest.mark.asyncio
+async def test_write_llm_annotations_overwrites_existing_semantic_equiv(
+    db_session, cluster_with_spacy_rows
+):
+    svc = service_with_nlp(_trivial_nlp([]))
+    cluster_id = cluster_with_spacy_rows["cluster_id"]
+    contents = cluster_with_spacy_rows["contents"]
+    sig = TitleAnnotationService.compute_cluster_signature([c.id for c in contents])
+
+    await svc.write_llm_annotations(
+        db_session, cluster_id,
+        llm_version="mistral-medium-latest-v1", cluster_signature=sig,
+        annotations={contents[0].id: {
+            "target_spans": [{"start": 0, "end": 1, "text": "M",
+                              "category": "editorial_angle", "weight": 0.5}],
+            "exclude_spans": [],
+        }},
+    )
+
+    # Second write with different content overrides the first
+    await svc.write_llm_annotations(
+        db_session, cluster_id,
+        llm_version="mistral-medium-latest-v1", cluster_signature=sig,
+        annotations={contents[0].id: {
+            "target_spans": [],
+            "exclude_spans": [{"start": 0, "end": 1, "text": "M",
+                              "category": "pivot_entity"}],
+            "notes": "override",
+        }},
+    )
+
+    read = await svc.get_llm_annotations(
+        db_session, cluster_id,
+        llm_version="mistral-medium-latest-v1", cluster_signature=sig,
+    )
+    assert read[contents[0].id]["target_spans"] == []
+    assert read[contents[0].id]["exclude_spans"][0]["category"] == "pivot_entity"
+    assert read[contents[0].id]["notes"] == "override"
+
