@@ -100,8 +100,7 @@ void main() {
     expect(returned, InterestState.favorite);
   });
 
-  testWidgets('Story 23.3 — allowFavorite=false hides the Favori option',
-      (tester) async {
+  testWidgets('allowFavorite=false hides the Favori option', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: FacteurTheme.lightTheme,
@@ -125,8 +124,50 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Favori'), findsNothing);
+    expect(find.text('Épinglé'), findsNothing);
     expect(find.text('Suivi'), findsOneWidget);
     expect(find.text('Neutre'), findsOneWidget);
     expect(find.text('Masqué'), findsOneWidget);
+  });
+
+  testWidgets(
+      'pinnedTopic semantics renders "Épinglé" label instead of "Favori"',
+      (tester) async {
+    InterestState? returned;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: FacteurTheme.lightTheme,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () async {
+                returned = await InterestStatePickerSheet.show(
+                  context,
+                  title: 'Plongée',
+                  currentState: InterestState.followed,
+                  favoriteSemantics: FavoriteSemantics.pinnedTopic,
+                );
+              },
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Épinglé'), findsOneWidget);
+    expect(find.text('Favori'), findsNothing);
+    expect(
+      find.textContaining('onglet dans la section Explorer'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Épinglé'));
+    await tester.pumpAndSettle();
+
+    expect(returned, InterestState.favorite);
   });
 }

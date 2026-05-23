@@ -52,18 +52,19 @@ class TargetNotFavorite(Exception):
     """Tentative de reorder qui inclut un target dont le state n'est pas favorite."""
 
 
-class CustomTopicFavoriteForbidden(Exception):
-    """Un custom_topic ne peut pas atteindre l'état favorite.
+class CustomTopicNotReorderable(Exception):
+    """Un custom_topic favori ne peut pas occuper une position du top 3 reorderable.
 
-    Le filtrage feed résout en `slug_parent` (un des 51 slugs Mistral) — un sujet
-    précis comme « Plongée » renverrait tout le sport. Passer par la veille
-    (filtrage strict multi-axes) pour les sujets précis.
+    Le top 3 « Tournée du jour » est réservé aux thèmes et veilles (cf. Story
+    23.x bug-custom-topic-favori-regression). Les custom_topic favoris sont
+    affichés dans une section séparée « Sujets épinglés » côté mobile, alimentent
+    les onglets de la section Explorer, mais ne sont pas draggable dans le top 3.
     """
 
     def __init__(self, target_id: str):
         self.target_id = target_id
         super().__init__(
-            f"custom_topic {target_id} cannot be promoted to favorite (use veille instead)"
+            f"custom_topic {target_id} cannot be placed in the top reorderable favorites"
         )
 
 
@@ -140,9 +141,6 @@ class UserInterestsService:
     ) -> InterestState | None:
         """Mute le state d'un Thème ou Sujet. Returns the previous state, or None
         if the target was created on the fly (theme without prior row)."""
-        if kind == "custom_topic" and state == InterestState.FAVORITE:
-            raise CustomTopicFavoriteForbidden(target_id)
-
         prev_state: InterestState | None = None
 
         if kind == "theme":
@@ -185,6 +183,12 @@ class UserInterestsService:
                 )
             prev_state = row.state
             row.state = state
+            # `feed.py:get_tab_counts` identifie les sujets épinglés via
+            # `priority_multiplier == 2.0` — sync requis pour que Explorer
+            # reflète l'état en temps réel.
+            target_multiplier = 2.0 if state == InterestState.FAVORITE else 1.0
+            if row.priority_multiplier != target_multiplier:
+                row.priority_multiplier = target_multiplier
         else:
             raise ValueError(f"unknown kind: {kind}")
 
@@ -282,7 +286,7 @@ class UserInterestsService:
         """
         for fav in favorites:
             if fav.kind == "custom_topic":
-                raise CustomTopicFavoriteForbidden(fav.target_id)
+                raise CustomTopicNotReorderable(fav.target_id)
             if fav.kind == "theme":
                 row = (
                     await self.db.execute(
