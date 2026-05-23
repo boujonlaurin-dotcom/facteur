@@ -1,51 +1,92 @@
-# PR — fix: restaure les favoris custom_topic + Sujets épinglés
+## Quoi
 
-## Summary
+PR 5 de la chaîne LLM bias annotation. Enrichit le contrat de
+`GET /contents/{id}/perspectives` pour exposer les annotations LLM
+(`weight` / `category` / `justification`) quand `semantic_equiv` est
+en base, sinon retourne le format spaCy actuel. Ajoute un header de
+debug `X-Bias-Annotation-Source: llm|spacy` et expose `language`
+sur chaque perspective.
 
-Annule partiellement la PR #636 (commit 8adc5d41) qui avait vidé la section **Explorer** en bloquant les favoris `custom_topic`. La PR ré-autorise l'état `favorite` côté backend, expose une section dédiée **« Sujets épinglés »** côté mobile (séparée du top 3 reorderable, label « Épinglé » au lieu de « Favori »), et restaure automatiquement les 62 favoris perdus pour 15 users via heuristique sur `priority_multiplier`.
+## Pourquoi
 
-- **Backend** : `set_state(custom_topic, favorite)` accepté ; `priority_multiplier` synchronisé à 2.0 sur favori (1.0 sinon) pour alimenter `feed.py:get_tab_counts`. Le top 3 reorderable reste réservé aux thèmes et veilles (nouvelle exception `CustomTopicNotReorderable` → 422 `custom_topic_not_reorderable` sur `/reorder` uniquement).
-- **Migration `23a4_restore_ct_favorites`** : exploite la signature `state=followed + priority_multiplier=2.0` (la migration 23a3 a oublié de reset le multiplier) pour ré-hydrater les rows perdues sans PITR Supabase. Idempotente, downgrade fonctionnel.
-- **Mobile** : `InterestStatePickerSheet` accepte un nouveau paramètre `favoriteSemantics` (theme vs pinnedTopic) qui change icône (étoile → punaise) + label (« Favori » → « Épinglé ») + description. Nouvelle section `_PinnedTopicsSection` dans « Mes intérêts » avec micro-copy expliquant le lien avec Explorer. `_StateChip` rend « Épinglé » + punaise pour les custom_topic.
+Les annotations LLM (`semantic_equiv.target_spans` pondérés + tooltips
+de justification) sont produites par le pipeline mergé en PR 4
+(#648), mais le contrat API actuel les ignore. Sans cette PR, le
+mobile (PR 6) ne peut pas afficher les poids ni les tooltips. Le
+champ `language` est requis par la future section « Couverture
+étrangère » pour regrouper les perspectives non-FR.
 
-## Décisions PM actées (avant code)
+## Changements
 
-| # | Décision |
-|---|---|
-| Backend | `state=favorite` autorisé pour custom_topic. Sémantique technique identique aux thèmes/veilles (pas de schema split). |
-| UX | Label « Épinglé » + icône punaise pour les sujets, distinct du « Favori » + étoile des thèmes. |
-| Top 3 | Reste réservé aux thèmes et veilles (sujets non-draggable). |
-| Bug `slug_parent` | **Hors scope**, PR séparée (Plongée → tous les sports). |
-| Recovery | Best-effort via heuristique multiplier — exploite l'oubli de la migration 23a3 (pas de PITR nécessaire). |
-| Veille CTA | Hors scope (attente refonte veille en cours). |
+- **`Content.language`** : colonne `String(8)` nullable + index +
+  migration Alembic `lg01_add_language_to_contents` avec backfill
+  heuristique (`detect_language` = `looks_english` puis
+  `is_french_source`). Les nouveaux contents sont remplis à
+  l'ingestion (`sync_service._save_content`).
+- **`Perspective.language`** ajouté au dataclass, propagé depuis
+  `Content.language` dans `build_cluster_perspectives`. Les
+  perspectives Google News restent `None` (pas de row `Content`).
+- **`_attach_highlight_spans`** refactoré pour retourner
+  `tuple[dict | None, Literal["llm", "spacy"]]`. Si `semantic_equiv`
+  est rempli pour le cluster (filtré par `llm_version` +
+  `cluster_signature`), les target_spans LLM sont sérialisés tels
+  quels, avec `bias` injecté depuis `bias_stance` pour rétrocompat.
+  Sinon → fallback spaCy inchangé.
+- **Header `X-Bias-Annotation-Source`** posé via `Response` injecté
+  dans la signature FastAPI. Cache hit ré-attache le header via un
+  `_perspectives_source_cache` parallèle (sinon le header
+  disparaissait silencieusement après la 1ère requête).
+- **`detect_language`** factorisé dans
+  `app/services/ml/language_filter.py` — single source of truth pour
+  l'ingestion ET la migration de backfill.
 
-## Test plan
+## Comment ça a été vérifié
 
-- [x] Backend : `pytest tests/routers/test_user_interests.py -v` → 12/12 OK (nouveaux : `test_patch_allows_favorite_for_custom_topic`, `test_patch_unfavorite_custom_topic_resets_multiplier` ; mis à jour : `test_reorder_rejects_custom_topic` → nouvelle erreur).
-- [x] Backend : `pytest tests/alembic/test_23a4_restore_ct_favorites.py -v` → 5/5 OK (promotion, ignore multiplier=1, append après favoris existants, idempotence, ordre par created_at).
-- [x] Backend : suite complète `pytest -q` → 1141 passed, 2 échecs NER pré-existants non liés.
-- [x] Mobile : `flutter test test/features/my_interests/` → 12/12 OK (nouveau : `pinnedTopic semantics renders "Épinglé" label`).
-- [x] Mobile : `flutter analyze` → aucun nouvel error.
-- [x] Alembic : single head `23a4_restore_ct_favorites`.
-- [ ] **Post-deploy DB** : `SELECT COUNT(*) FROM user_favorite_interests WHERE custom_topic_id IS NOT NULL` → attendu 62 rows réparties sur 15 users (snapshot prod 2026-05-20).
-- [ ] **Post-deploy DB** : `SELECT COUNT(*) FROM user_topic_profiles WHERE state='favorite'` → attendu 62.
-- [ ] **Manuel mobile** : créer un sujet → l'épingler → vérifier qu'il apparaît dans « Sujets épinglés » ET comme onglet dans Explorer ; tenter de drag vers top 3 → impossible ; désépingler → onglet Explorer disparaît.
+- [x] `pytest tests/routers/test_contents_perspectives_highlights.py`
+  — 13 OK (9 existants adaptés au tuple + 4 nouveaux : LLM enriched,
+  fallback spaCy, signature mismatch, language propagation).
+- [x] Suite complète backend : **1242 passed, 1 skipped, 2 xfailed**
+  (134 s).
+- [x] `alembic heads` → exactement 1 head
+  (`lg01_add_language_to_contents`).
+- [x] `alembic upgrade --sql` → DDL généré correctement
+  (`ALTER TABLE contents ADD COLUMN language VARCHAR(8)` +
+  `CREATE INDEX ix_contents_language`).
+- [x] `/simplify` passé : 5 fixes appliqués (factoriser
+  `detect_language`, bug header cache hit, dédupliquer `alt_tokens`,
+  hoister fixtures de tests, type `Literal`).
 
-## Hors scope (PR à venir)
-
-- Fix résolution `slug_parent` → keywords dans `feed.py:get_tab_counts` (Plongée → tous les sports).
-- CTA « Créer une Veille à partir de ce sujet » (attente refonte veille).
-- Refonte sémantique globale du mot « favori » dans le reste de l'app.
+⚠️ **Round-trip migration live non testable localement** : le
+container Postgres test du workspace est dans un état désync (« Can't
+locate revision identified by 'b3c4d5e6f7a8' ») hérité d'un autre
+workspace. La migration sera testée pour de vrai par le `alembic
+upgrade head` du `Dockerfile` Railway au prochain boot.
 
 ## Zones à risque
 
-- `services/user_interests_service.py` : mutation path favoris + sync `priority_multiplier`.
-- `alembic/versions/23a4_*` : migration data-only sur prod (62 rows à restaurer). Downgrade testé et fonctionnel.
-- `feed.py:get_tab_counts` continue de filtrer sur `priority_multiplier == 2.0` — le sync explicite dans `set_state` garantit que les onglets Explorer reflètent l'état déclaré en temps réel.
+- **Cache header** : nouveau dict `_perspectives_source_cache`
+  parallèle invalidé en même temps que `_perspectives_cache`
+  (`_perspectives_source_cache.pop` à côté de chaque
+  `_perspectives_cache.pop`). À surveiller : si une autre branche
+  oublie d'invalider l'un sans l'autre, le header pourrait diverger
+  du body.
+- **Backfill migration** : tourne dans une seule transaction
+  Alembic ; `env.py` désactive le `statement_timeout` via
+  `SET LOCAL statement_timeout = '0'`, donc pas de cap théorique.
+  Avec ~quelques 100k rows en prod, ça devrait passer en quelques
+  minutes. Idempotent (`WHERE language IS NULL`).
+- **Rétrocompat client** : confirmée par
+  `test_attach_highlight_spans_falls_back_to_spacy_when_no_semantic_equiv` —
+  les apps pre-PR-6 reçoivent le format spaCy historique.
+- **Stored snapshot path** : `language` est lu via
+  `getattr(p, "language", None)`, donc les snapshots déjà sérialisés
+  sans le champ tomberont à `null` (PR 6 traite `null` comme FR par
+  défaut).
 
-## Références
+## Dette pré-existante (hors scope)
 
-- Bug doc : `docs/bugs/bug-custom-topic-favori-regression.md`
-- Errata story : `docs/stories/core/23.3.read-only-custom-topics.md`
-- Migration source du problème : `packages/api/alembic/versions/23a3_custom_topic_fav_drop.py`
-- Snapshot recovery (2026-05-20) : 62 favoris perdus, 15 users, min 1, max 12 favoris par user, moyenne 4.13.
+`tests/services/test_llm_bias_annotation_service.py` ne collecte pas
+sur `main` à cause d'un import circulaire via
+`app.services.editorial.__init__` → `pipeline` →
+`llm_bias_annotation_service`. Vérifié : présent avant cette PR.
+À traiter dans une PR follow-up.
