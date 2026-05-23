@@ -23,15 +23,25 @@ _BATCH_SIZE = 500
 
 
 def _iter_batches(bind, query: str) -> Iterator[list]:
-    result = bind.execution_options(stream_results=True).execute(sa.text(query))
-    batch: list = []
-    for row in result:
-        batch.append(row)
-        if len(batch) >= _BATCH_SIZE:
-            yield batch
-            batch = []
-    if batch:
-        yield batch
+    """Batch par keyset pagination (id > :last_id) — pas de curseurs server-side.
+
+    stream_results=True avec psycopg3 async fuit l'état curseur vers les
+    instructions suivantes sur la même connexion (dont l'UPDATE alembic_version
+    interne d'Alembic), qui se retrouvent emballées dans un DECLARE CURSOR FOR
+    UPDATE → SyntaxError PostgreSQL.
+
+    La query doit inclure :last_id et :limit comme paramètres nommés, et se
+    terminer par ORDER BY c.id LIMIT :limit.
+    """
+    last_id = 0
+    while True:
+        rows = bind.execute(
+            sa.text(query), {"last_id": last_id, "limit": _BATCH_SIZE}
+        ).fetchall()
+        if not rows:
+            break
+        yield rows
+        last_id = rows[-1].id
 
 
 def upgrade() -> None:
@@ -50,7 +60,8 @@ def upgrade() -> None:
     query = (
         "SELECT c.id, c.title, s.name AS source_name "
         "FROM contents c LEFT JOIN sources s ON s.id = c.source_id "
-        "WHERE c.language IS NULL"
+        "WHERE c.language IS NULL AND c.id > :last_id "
+        "ORDER BY c.id LIMIT :limit"
     )
     update_stmt = sa.text(
         "UPDATE contents SET language = :language WHERE id = :id"
