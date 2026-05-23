@@ -51,8 +51,11 @@ void main() {
       expect(combined.contains('réforme'), isTrue);
     });
 
-    testWidgets('fallback Mode 2 : sans sharedTokens → hors-key en tertiary',
+    testWidgets('Mode 2 : sans sharedTokens → titre reconstruit, wash sur key',
         (tester) async {
+      // PR 6 : la couleur uniforme textPrimary est désormais appliquée à tous
+      // les chunks (plain / dimmedFallback / shared). Seul le surlignage de
+      // fond du key span différencie visuellement.
       await tester.pumpWidget(host(DiffTitle(
         title: 'Tsahal frappe Gaza',
         highlightSpans: const [
@@ -65,9 +68,7 @@ void main() {
       )));
       await tester.pumpAndSettle();
 
-      // Mode 2 : le titre est toujours reconstruit, et le hors-key (Tsahal,
-      // Gaza) doit être en text_tertiary. On vérifie au moins que le widget
-      // a bien un wash (Container) pour le key span.
+      // Wash (Container) sur le key span.
       expect(find.byType(Container), findsWidgets);
       final combined = _richTextStrings(tester).join();
       expect(combined.contains('Tsahal'), isTrue);

@@ -118,7 +118,9 @@ class _DiffTitleState extends State<DiffTitle>
     for (final s in widget.highlightSpans) {
       final start = s.start.clamp(0, titleLen);
       final end = s.end.clamp(start, titleLen);
-      if (end > start) spans.add(_RawSpan(start, end, _ChunkType.key));
+      if (end > start) {
+        spans.add(_RawSpan(start, end, _ChunkType.key, weight: s.weight));
+      }
     }
     if (useSharedAsTertiary) {
       for (final s in widget.sharedTokens) {
@@ -147,6 +149,7 @@ class _DiffTitleState extends State<DiffTitle>
         text: title.substring(span.start, span.end),
         type: span.type,
         animIndex: animIndex,
+        weight: span.weight,
       ));
       animIndex++;
       cursor = span.end;
@@ -214,21 +217,13 @@ class _DiffTitleState extends State<DiffTitle>
   InlineSpan _buildInlineSpan(_Chunk chunk, FacteurColors colors) {
     switch (chunk.type) {
       case _ChunkType.plain:
+      case _ChunkType.dimmedFallback:
+      case _ChunkType.shared:
+        // Tous les chunks non-key partagent la même couleur textPrimary —
+        // seul le surlignage de fond (key) différencie visuellement.
         return TextSpan(
           text: chunk.text,
           style: TextStyle(color: colors.textPrimary, fontWeight: FontWeight.w400),
-        );
-      case _ChunkType.dimmedFallback:
-        return TextSpan(
-          text: chunk.text,
-          style: TextStyle(color: colors.textTertiary, fontWeight: FontWeight.w400),
-        );
-      case _ChunkType.shared:
-        final t = _easedProgressFor(chunk.animIndex);
-        final color = Color.lerp(colors.textPrimary, colors.textTertiary, t)!;
-        return TextSpan(
-          text: chunk.text,
-          style: TextStyle(color: color, fontWeight: FontWeight.w400),
         );
       case _ChunkType.key:
         final t = _easedProgressFor(chunk.animIndex);
@@ -238,7 +233,8 @@ class _DiffTitleState extends State<DiffTitle>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
             decoration: BoxDecoration(
-              color: widget.biasColor.withValues(alpha: 0.22 * t),
+              color: widget.biasColor
+                  .withValues(alpha: 0.22 * t * (chunk.weight ?? 1.0)),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -260,12 +256,22 @@ class _Chunk {
   final String text;
   final _ChunkType type;
   final int animIndex;
-  const _Chunk({required this.text, required this.type, this.animIndex = -1});
+  /// LLM bias weight ∈ {0.25, 0.5, 1.0} ou null (fallback spaCy).
+  /// Module l'opacité du surlignage pour les chunks de type `key`.
+  /// null → traité comme 1.0 (comportement actuel).
+  final double? weight;
+  const _Chunk({
+    required this.text,
+    required this.type,
+    this.animIndex = -1,
+    this.weight,
+  });
 }
 
 class _RawSpan {
   final int start;
   final int end;
   final _ChunkType type;
-  const _RawSpan(this.start, this.end, this.type);
+  final double? weight;
+  const _RawSpan(this.start, this.end, this.type, {this.weight});
 }

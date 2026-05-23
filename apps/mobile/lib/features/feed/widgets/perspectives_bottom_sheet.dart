@@ -28,6 +28,9 @@ class Perspective {
   final List<HighlightSpan> highlightSpans;
   /// Tokens partagés avec la référence (rendus en text_tertiary par DiffTitle).
   final List<TokenSpan> sharedTokens;
+  /// Langue ISO du titre ("fr","en",...). Optionnel — exposé par PR 5.
+  /// Réservé au regroupement "Couverture étrangère" (PR 6.1).
+  final String? language;
 
   Perspective({
     required this.title,
@@ -38,6 +41,7 @@ class Perspective {
     this.publishedAt,
     this.highlightSpans = const [],
     this.sharedTokens = const [],
+    this.language,
   });
 
   factory Perspective.fromJson(Map<String, dynamic> json) {
@@ -60,6 +64,7 @@ class Perspective {
           : rawShared
               .map((e) => TokenSpan.fromJson(e as Map<String, dynamic>))
               .toList(),
+      language: json['language'] as String?,
     );
   }
 
@@ -618,12 +623,12 @@ class _PerspectiveCard extends ConsumerWidget {
                           baseStyle: textTheme.bodyMedium?.copyWith(
                                 color: colors.textPrimary,
                                 fontSize:
-                                    (textTheme.bodyMedium?.fontSize ?? 14) + 1,
+                                    (textTheme.bodyMedium?.fontSize ?? 14) + 2,
                                 height: 1.35,
                               ) ??
                               TextStyle(
                                 color: colors.textPrimary,
-                                fontSize: 15,
+                                fontSize: 16,
                                 height: 1.35,
                               ),
                           maxLines: 4,
@@ -1689,8 +1694,8 @@ class _PivotedRefTitleState extends State<_PivotedRefTitle>
   }
 }
 
-/// Ligne variante (cm-vrow) — border-left 4 px couleur bias + head row
-/// (favicon + nom + bias label + arrow) + DiffTitle animé. Tap → launchUrl
+/// Ligne variante (cm-vrow) — border-left 4 px couleur bias + DiffTitle animé
+/// suivi d'une foot row (favicon + nom + bias label + arrow). Tap → launchUrl
 /// externe.
 class _VariantRow extends ConsumerWidget {
   final Perspective perspective;
@@ -1748,6 +1753,19 @@ class _VariantRow extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            DiffTitle(
+              title: perspective.title,
+              highlightSpans: perspective.highlightSpans,
+              sharedTokens: perspective.sharedTokens,
+              biasColor: biasColor,
+              baseStyle: textTheme.bodyMedium?.copyWith(
+                    fontSize: 15.5,
+                    height: 1.35,
+                    color: colors.textPrimary,
+                  ) ??
+                  TextStyle(fontSize: 15.5, color: colors.textPrimary),
+            ),
+            const SizedBox(height: 6),
             Row(
               children: [
                 if (perspective.sourceDomain.isNotEmpty)
@@ -1794,19 +1812,6 @@ class _VariantRow extends ConsumerWidget {
                   color: colors.textTertiary,
                 ),
               ],
-            ),
-            const SizedBox(height: 6),
-            DiffTitle(
-              title: perspective.title,
-              highlightSpans: perspective.highlightSpans,
-              sharedTokens: perspective.sharedTokens,
-              biasColor: biasColor,
-              baseStyle: textTheme.bodyMedium?.copyWith(
-                    fontSize: 14.5,
-                    height: 1.35,
-                    color: colors.textPrimary,
-                  ) ??
-                  TextStyle(fontSize: 14.5, color: colors.textPrimary),
             ),
           ],
         ),
