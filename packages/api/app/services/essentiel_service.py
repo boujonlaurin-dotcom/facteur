@@ -45,11 +45,9 @@ def _pick_transversal_articles(
     seen_content_ids: set[UUID] = set()
     picked: list[tuple[DigestTopic, DigestTopicArticle]] = []
 
-    max_rounds = max((len(t.articles) for t in sorted_topics), default=0)
+    max_rounds = max(len(t.articles) for t in sorted_topics)
     for round_idx in range(max_rounds):
         for topic in sorted_topics:
-            if len(picked) >= ESSENTIEL_MAX_ARTICLES:
-                return picked
             if round_idx >= len(topic.articles):
                 continue
             article = topic.articles[round_idx]
@@ -57,8 +55,8 @@ def _pick_transversal_articles(
                 continue
             seen_content_ids.add(article.content_id)
             picked.append((topic, article))
-        if len(picked) >= ESSENTIEL_MAX_ARTICLES:
-            return picked
+            if len(picked) >= ESSENTIEL_MAX_ARTICLES:
+                return picked
     return picked
 
 
