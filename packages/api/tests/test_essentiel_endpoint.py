@@ -23,6 +23,7 @@ from app.schemas.content import SourceMini
 from app.schemas.digest import DigestResponse, DigestTopic, DigestTopicArticle
 from app.services.essentiel_service import (
     ESSENTIEL_MAX_ARTICLES,
+    EssentielUserContext,
     _source_letter,
     build_essentiel_response,
 )
@@ -39,16 +40,22 @@ def _make_source(name: str = "Le Monde") -> SourceMini:
 
 
 def _make_article(
-    *, rank: int, title: str = "Article", source_name: str = "Le Monde"
+    *,
+    rank: int,
+    title: str = "Article",
+    source_name: str = "Le Monde",
+    source: SourceMini | None = None,
+    is_followed_source: bool = False,
 ) -> DigestTopicArticle:
     return DigestTopicArticle(
         content_id=uuid4(),
         title=title,
         url=f"https://example.com/{title.lower().replace(' ', '-')}",
         published_at=datetime.now(UTC),
-        source=_make_source(source_name),
+        source=source or _make_source(source_name),
         rank=rank,
         reason="Test",
+        is_followed_source=is_followed_source,
     )
 
 
@@ -252,3 +259,267 @@ async def test_get_essentiel_propagates_stale_fallback(auth_override: UUID):
 
     assert resp.status_code == 200
     assert resp.json()["is_stale_fallback"] is True
+
+
+# ─── Tests user-aware re-ranking (bug-essentiel-user-prefs) ─────────────────
+
+
+def test_followed_source_promoted_above_unfollowed_competitor():
+    """L'article venant d'une source suivie doit sortir en rank=1."""
+    followed_source = _make_source("Mediapart")
+    other_source = _make_source("Le Monde")
+    # Deux topics distincts ; rank=1 dans chaque. Sans prefs, le rank
+    # `topic.rank` détermine l'ordre. Avec la source suivie, le topic 2
+    # (qui a l'article de la source suivie) doit passer en tête.
+    topics = [
+        DigestTopic(
+            topic_id="t1",
+            label="Politique",
+            rank=1,
+            reason="Test",
+            theme="politique",
+            perspective_count=2,
+            articles=[
+                _make_article(
+                    rank=1, title="P-1", source=other_source
+                ),
+            ],
+        ),
+        DigestTopic(
+            topic_id="t2",
+            label="Climat",
+            rank=2,
+            reason="Test",
+            theme="ecologie",
+            perspective_count=2,
+            articles=[
+                _make_article(
+                    rank=1, title="C-1", source=followed_source
+                ),
+            ],
+        ),
+    ]
+    digest = _make_digest(topics)
+    ctx = EssentielUserContext(
+        followed_source_ids=frozenset({followed_source.id}),
+        source_priority_multipliers={followed_source.id: 1.0},
+    )
+
+    response = build_essentiel_response(digest, user_context=ctx)
+
+    assert len(response.articles) == 2
+    # L'article de la source suivie passe devant.
+    assert response.articles[0].source.id == followed_source.id
+    assert response.articles[0].rank == 1
+    assert response.articles[1].source.id == other_source.id
+
+
+def test_user_topic_weight_promotes_lower_ranked_topic():
+    """Un topic dont le `theme` est lourdement pondéré doit remonter."""
+    topics = [
+        DigestTopic(
+            topic_id="t1",
+            label="Politique",
+            rank=1,
+            reason="Test",
+            theme="politique",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title="P-1")],
+        ),
+        DigestTopic(
+            topic_id="t2",
+            label="Sciences",
+            rank=2,
+            reason="Test",
+            theme="sciences",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title="S-1")],
+        ),
+        DigestTopic(
+            topic_id="t3",
+            label="Cuisine",
+            rank=3,
+            reason="Test",
+            theme="cuisine",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title="C-1")],
+        ),
+    ]
+    digest = _make_digest(topics)
+    # Le user suit fortement "sciences", très peu "politique".
+    ctx = EssentielUserContext(topic_weights={"sciences": 3.0})
+
+    response = build_essentiel_response(digest, user_context=ctx)
+
+    # "Sciences" doit passer devant "Politique" qui avait pourtant topic.rank=1.
+    assert response.articles[0].section_label == "Sciences"
+
+
+def test_no_prefs_falls_back_to_rank_order():
+    """Sans prefs, on retombe sur un ordre quasi-identique au legacy
+    (rank=1 de chaque topic, dans l'ordre des topics).
+    """
+    topics = [
+        _make_topic(rank=i + 1, label=f"T{i + 1}", n_articles=2) for i in range(5)
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest, user_context=EssentielUserContext())
+
+    assert len(response.articles) == 5
+    # Tous les topics ont le même `perspective_count` (3 par défaut), donc
+    # le tie-break est `topic.rank` (asc) → ordre T1..T5.
+    assert [a.section_label for a in response.articles] == [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+    ]
+
+
+def test_perspective_count_breaks_ties_when_no_prefs():
+    """Sans prefs, un topic avec plus de perspectives passe devant."""
+    topics = [
+        DigestTopic(
+            topic_id="t1",
+            label="Solo",
+            rank=1,
+            reason="Test",
+            theme="politique",
+            perspective_count=1,
+            articles=[_make_article(rank=1, title="Solo")],
+        ),
+        DigestTopic(
+            topic_id="t2",
+            label="Multi",
+            rank=2,
+            reason="Test",
+            theme="ecologie",
+            perspective_count=5,
+            articles=[_make_article(rank=1, title="Multi")],
+        ),
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest, user_context=EssentielUserContext())
+
+    # "Multi" a perspective_count=5 vs "Solo"=1 → +5*(5-1)=20 points
+    # (-rank*0.5 ne suffit pas à compenser), donc Multi passe devant.
+    assert response.articles[0].section_label == "Multi"
+    assert response.articles[1].section_label == "Solo"
+
+
+def test_diversity_constraint_one_article_per_topic_in_round_one():
+    """Round 1 : 1 article max par topic avant qu'un seul topic remplisse."""
+    # Un topic "Politique" très scoré (5 articles), un topic "Climat" plus
+    # discret. Sans contrainte de diversité, les 5 slots iraient au topic
+    # Politique. Avec la contrainte, on prend 1 article par topic au round 1
+    # puis on remplit.
+    topics = [
+        _make_topic(rank=1, label="Politique", n_articles=5),
+        _make_topic(rank=2, label="Climat", n_articles=1),
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    # On doit avoir au moins 1 article de chaque topic dans les 2 premiers.
+    first_two_labels = {a.section_label for a in response.articles[:2]}
+    assert first_two_labels == {"Politique", "Climat"}
+
+
+def test_followed_source_flag_fallback_when_db_set_empty():
+    """Si `followed_source_ids` est vide mais le digest a déjà flaggé
+    `is_followed_source`, on garde un bonus moindre."""
+    s_followed = _make_source("Mediapart")
+    s_other = _make_source("Le Monde")
+    topics = [
+        DigestTopic(
+            topic_id="t1",
+            label="Topic A",
+            rank=1,
+            reason="Test",
+            theme="t1",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title="A-1", source=s_other)],
+        ),
+        DigestTopic(
+            topic_id="t2",
+            label="Topic B",
+            rank=2,
+            reason="Test",
+            theme="t2",
+            perspective_count=2,
+            articles=[
+                _make_article(
+                    rank=1,
+                    title="B-1",
+                    source=s_followed,
+                    is_followed_source=True,
+                )
+            ],
+        ),
+    ]
+    digest = _make_digest(topics)
+    # Aucun follow chargé en DB (contexte vide), mais le flag du digest doit
+    # quand même promouvoir l'article B au-dessus de A (rank topic plus haut).
+    ctx = EssentielUserContext()
+    response = build_essentiel_response(digest, user_context=ctx)
+
+    assert response.articles[0].source.id == s_followed.id
+
+
+@pytest.mark.asyncio
+async def test_get_essentiel_uses_user_context_from_router(auth_override: UUID):
+    """Au niveau HTTP : si `fetch_user_essentiel_context` rapporte un follow,
+    l'article correspondant doit ressortir en rank=1.
+    """
+    followed_source = _make_source("Mediapart")
+    other_source = _make_source("Le Monde")
+    topics = [
+        DigestTopic(
+            topic_id="t1",
+            label="Politique",
+            rank=1,
+            reason="Test",
+            theme="politique",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title="P-1", source=other_source)],
+        ),
+        DigestTopic(
+            topic_id="t2",
+            label="Climat",
+            rank=2,
+            reason="Test",
+            theme="ecologie",
+            perspective_count=2,
+            articles=[
+                _make_article(rank=1, title="C-1", source=followed_source)
+            ],
+        ),
+    ]
+    digest = _make_digest(topics)
+
+    fake_ctx = EssentielUserContext(
+        followed_source_ids=frozenset({followed_source.id}),
+        source_priority_multipliers={followed_source.id: 1.0},
+    )
+
+    with (
+        patch(
+            "app.routers.essentiel.read_digest_or_fallback",
+            new=AsyncMock(return_value=digest),
+        ),
+        patch(
+            "app.routers.essentiel.fetch_user_essentiel_context",
+            new=AsyncMock(return_value=fake_ctx),
+        ),
+    ):
+        async with _client() as client:
+            resp = await client.get("/api/essentiel")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["articles"][0]["source"]["name"] == "Mediapart"
+    assert body["articles"][0]["rank"] == 1

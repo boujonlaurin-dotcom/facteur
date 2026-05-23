@@ -20,7 +20,10 @@ from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.schemas.essentiel import EssentielResponse
 from app.services.digest_service import read_digest_or_fallback
-from app.services.essentiel_service import build_essentiel_response
+from app.services.essentiel_service import (
+    build_essentiel_response,
+    fetch_user_essentiel_context,
+)
 from app.utils.time import today_paris
 
 logger = structlog.get_logger()
@@ -63,7 +66,11 @@ async def get_essentiel(
     if digest is None:
         return _preparing_response()
 
-    response = build_essentiel_response(digest)
+    # Re-rank user-aware : charge les sources suivies + topics suivis pour
+    # promouvoir les articles qui matchent les prefs de l'utilisateur.
+    # Pas de pipeline LLM, juste 2 SELECTs courts indexés sur `user_id`.
+    user_context = await fetch_user_essentiel_context(db, user_uuid)
+    response = build_essentiel_response(digest, user_context=user_context)
 
     logger.info(
         "essentiel_retrieved",
@@ -71,5 +78,7 @@ async def get_essentiel(
         elapsed_ms=round((time.monotonic() - start) * 1000, 1),
         articles_count=len(response.articles),
         is_stale_fallback=response.is_stale_fallback,
+        followed_sources_count=len(user_context.followed_source_ids),
+        topic_weights_count=len(user_context.topic_weights),
     )
     return response
