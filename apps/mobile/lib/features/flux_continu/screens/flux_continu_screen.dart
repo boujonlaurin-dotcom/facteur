@@ -323,6 +323,23 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     );
   }
 
+  /// "Tout explorer" action of the Essentiel hi-fi card: folds the card
+  /// (so it stops occupying the viewport) then scrolls to the section that
+  /// follows in the composed feed — by construction "Actus du jour" in
+  /// normal mode, cf. [FluxContinuNotifier._compose].
+  Future<void> _exploreAllEssentiel(
+    EssentielSection essentiel,
+    int essentielIndex,
+  ) async {
+    final notifier = ref.read(fluxContinuProvider.notifier);
+    notifier.foldLocally(essentiel);
+    final next = essentielIndex + 1;
+    if (next >= _sectionKeys.length) return;
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    if (!mounted) return;
+    await _scrollToSection(next);
+  }
+
   Future<void> _scrollToTop() async {
     if (!_scroll.hasClients) return;
     unawaited(HapticFeedback.lightImpact());
@@ -836,6 +853,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 : null,
             onSeeAll: section is FeedThemeSection
                 ? () => _openThemeSection(context, section)
+                : null,
+            onTapExploreAll: section is EssentielSection
+                ? () => _exploreAllEssentiel(section, i)
                 : null,
           ),
         ),
