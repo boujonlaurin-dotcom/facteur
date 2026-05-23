@@ -23,6 +23,7 @@ enum SectionKind { essentiel, bonnes, theme, veille }
 /// `'veille'` (un seul par user à V1).
 String sectionKey(FluxSection section) {
   return switch (section) {
+    EssentielSection() => section.kind.name,
     DigestTopicSection() => section.kind.name,
     FeedThemeSection(:final kind, :final themeSlug, :final customTopicId) =>
       kind == SectionKind.veille
@@ -62,6 +63,68 @@ sealed class FluxSection {
 
   /// Whether some cards are hidden behind the "Plus de…" expand button.
   bool get hasOverflow => totalCount > coreVisibleCount;
+}
+
+/// One article inside the v3 "L'Essentiel du jour" hi-fi card.
+///
+/// Backed by `GET /api/essentiel` (Story 9.1) — 5 transversal articles
+/// cross-topic, projected from today's digest. Slot is decided by the rank:
+/// `rank=1` is the lead, `2..3` are mediums, `4..5` are lights.
+class EssentielArticle {
+  final String contentId;
+  final String title;
+  final String url;
+  final String? thumbnailUrl;
+  final DateTime publishedAt;
+  final String sourceName;
+  final String sourceLetter;
+  final SectionKind kind;
+  final String? theme;
+  final String sectionLabel;
+  final int perspectiveCount;
+  final int rank;
+  final bool isRead;
+  final bool isSaved;
+  final bool isLiked;
+  final bool isDismissed;
+
+  const EssentielArticle({
+    required this.contentId,
+    required this.title,
+    required this.url,
+    required this.publishedAt,
+    required this.sourceName,
+    required this.sourceLetter,
+    required this.sectionLabel,
+    required this.rank,
+    this.thumbnailUrl,
+    this.kind = SectionKind.theme,
+    this.theme,
+    this.perspectiveCount = 0,
+    this.isRead = false,
+    this.isSaved = false,
+    this.isLiked = false,
+    this.isDismissed = false,
+  });
+}
+
+/// Section v3 "L'Essentiel du jour" — single hi-fi card with 5 cross-topic
+/// articles. Distinct from [DigestTopicSection] which renders one card per
+/// digest topic. The card itself is built by `EssentielHiFiCard`; the section
+/// shell only carries the data and shares the fold/sticky infrastructure.
+class EssentielSection extends FluxSection {
+  final List<EssentielArticle> articles;
+
+  const EssentielSection({
+    required this.articles,
+    super.label = 'L’Essentiel du jour',
+    super.accent = const Color(0xFFB0470A),
+    super.blurb,
+    super.illustrationAsset,
+  }) : super(kind: SectionKind.essentiel, coreVisibleCount: 5);
+
+  @override
+  int get totalCount => articles.length;
 }
 
 /// Section backed by `digest.topics` (Essentiel, Bonnes Nouvelles). One

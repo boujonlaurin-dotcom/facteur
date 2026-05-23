@@ -5,6 +5,7 @@ import 'package:facteur/features/feed/providers/feed_provider.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
+import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
 import 'package:facteur/features/flux_continu/repositories/flux_continu_repository.dart';
 import 'package:facteur/features/my_interests/models/user_interests_state.dart';
 import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
@@ -21,6 +22,11 @@ class _MockFeedRepository extends Mock implements FeedRepository {}
 
 class _MockFluxContinuRepository extends Mock
     implements FluxContinuRepository {}
+
+class _StubEssentielRepository implements EssentielRepository {
+  @override
+  Future<List<EssentielArticle>?> fetch() async => const [];
+}
 
 /// Stub notifier that returns a fixed [UserInterestsState] synchronously,
 /// so the fluxContinuProvider's `ref.read(userInterestsProvider)` resolves
@@ -112,6 +118,8 @@ void main() {
         digestRepositoryProvider.overrideWithValue(digestRepo),
         feedRepositoryProvider.overrideWithValue(feedRepo),
         fluxContinuRepositoryProvider.overrideWithValue(fluxRepo),
+        essentielRepositoryProvider
+            .overrideWithValue(_StubEssentielRepository()),
         userInterestsProvider.overrideWith(
           () => _StubUserInterestsNotifier(interests ?? _interestsState()),
         ),

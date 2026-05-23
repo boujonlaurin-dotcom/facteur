@@ -1,259 +1,253 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
-import '../models/flux_continu_models.dart';
 import 'sticky_backdrop.dart';
 
-/// Sticky tab bar revealed once the user scrolls past the AppBar threshold.
+/// Macro-bloc the user is currently traversing.
 ///
-/// Layout per V6 maquette :
-/// - parchment-tinted backdrop with a 14px blur (saturate 140%),
-/// - "sticky-head" row : zone title ("Les Actus du jour" in the editorial
-///   zone, "Explorer" in the Explorer zone),
-/// - horizontal tabs with section dot, label, done strike-through, and
-///   an underline tinted with the active section's accent,
-/// - 4-px progress track with a 4-stop gradient fill (essentiel → bonnes
-///   → veille1 → veille2) and a soft accent glow.
-class StickyTabBar extends StatelessWidget {
-  final List<FluxSection> sections;
-  final int activeIndex;
-  final double progress;
-  final ValueChanged<int> onTapTab;
-  final ScrollController? tabsController;
+/// Drives [StickyThreeStateBar] : each value swaps icon, accent and label.
+/// Story 9.2, composant 2.
+enum StickyMacroBloc { essentiel, parTheme, explorer }
 
-  const StickyTabBar({
+/// Sticky bar v3 — 3-state contextual reminder of the macro zone.
+///
+/// Layout (~64 px) :
+/// - Row 1 : 40×40 rounded square with `--k-tint` background + Phosphor icon,
+///   Fraunces 15px/w600 title, mono "~N min" hint pinned right.
+/// - Row 2 : N progress plots (lu = filled accent + check / current = ring /
+///   upcoming = grey disc) + "read/total" ratio.
+///
+/// Transition between blocs : container stays in place, only the inner
+/// content crossfades over 200 ms via [AnimatedSwitcher].
+class StickyThreeStateBar extends StatelessWidget {
+  final StickyMacroBloc bloc;
+  final int read;
+  final int total;
+  final int remainingMin;
+  final VoidCallback? onTap;
+
+  const StickyThreeStateBar({
     super.key,
-    required this.sections,
-    required this.activeIndex,
-    required this.progress,
-    required this.onTapTab,
-    this.tabsController,
+    required this.bloc,
+    required this.read,
+    required this.total,
+    required this.remainingMin,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return StickyBackdrop(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const StickyHead(),
-          _TabsRow(
-            sections: sections,
-            activeIndex: activeIndex,
-            onTapTab: onTapTab,
-            controller: tabsController,
-          ),
-          SizedBox(
-            height: 4,
-            child: CustomPaint(
-              painter: _ProgressPainter(
-                progress: progress.clamp(0.0, 1.0),
-                gradient: const [
-                  Color(0xFFD35400),
-                  Color(0xFFC2185B),
-                  Color(0xFF2C3E50),
-                  Color(0xFF6C3483),
-                ],
-                glow: const Color.fromRGBO(211, 84, 0, 0.35),
-                trackColor: const Color.fromRGBO(0, 0, 0, 0.06),
-              ),
-              child: const SizedBox.expand(),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: _StickyContent(
+              key: ValueKey(bloc),
+              bloc: bloc,
+              read: read,
+              total: total,
+              remainingMin: remainingMin,
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
-/// Top row of the sticky overlay — a single Fraunces label that names the
-/// current zone of the Flux Continu screen. Shared between the editorial
-/// sticky ([StickyTabBar]) and the Explorer sticky (`_ExplorerSticky` in
-/// `flux_continu_screen.dart`) so the two surfaces feel like the same bar
-/// changing its caption.
-class StickyHead extends StatelessWidget {
-  final String title;
+class _StickyContent extends StatelessWidget {
+  final StickyMacroBloc bloc;
+  final int read;
+  final int total;
+  final int remainingMin;
 
-  const StickyHead({super.key, this.title = 'Les Actus du jour'});
+  const _StickyContent({
+    super.key,
+    required this.bloc,
+    required this.read,
+    required this.total,
+    required this.remainingMin,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+    final accent = _accentFor(colors, bloc);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.fromLTRB(
+        FacteurSpacing.space4,
+        FacteurSpacing.space2,
+        FacteurSpacing.space4,
+        FacteurSpacing.space2,
+      ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(
-            title,
-            style: GoogleFonts.fraunces(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: colors.textPrimary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TabsRow extends StatelessWidget {
-  final List<FluxSection> sections;
-  final int activeIndex;
-  final ValueChanged<int> onTapTab;
-  final ScrollController? controller;
-
-  const _TabsRow({
-    required this.sections,
-    required this.activeIndex,
-    required this.onTapTab,
-    this.controller,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 44,
-      child: ListView.separated(
-        controller: controller,
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
-        itemCount: sections.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 2),
-        itemBuilder: (context, i) {
-          return _Tab(
-            section: sections[i],
-            isActive: i == activeIndex,
-            isDone: i < activeIndex,
-            onTap: () => onTapTab(i),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _Tab extends StatelessWidget {
-  final FluxSection section;
-  final bool isActive;
-  final bool isDone;
-  final VoidCallback onTap;
-
-  const _Tab({
-    required this.section,
-    required this.isActive,
-    required this.isDone,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final Color labelColor;
-    if (isActive) {
-      labelColor = colors.textPrimary;
-    } else if (isDone) {
-      labelColor = colors.textTertiary;
-    } else {
-      labelColor = colors.textSecondary;
-    }
-    final dotColor = isActive
-        ? section.accent
-        : (isDone ? colors.textTertiary : colors.textSecondary);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-      child: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 7, 12, 9),
-            child: Row(
+          _IconBadge(accent: accent, bloc: bloc),
+          const SizedBox(width: FacteurSpacing.space3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  margin: const EdgeInsets.only(right: 6),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: dotColor,
+                Text(
+                  _titleFor(bloc),
+                  style: GoogleFonts.fraunces(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
+                    color: colors.textPrimary,
                   ),
                 ),
-                Text(
-                  section.label,
-                  style: GoogleFonts.dmSans(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: labelColor,
-                    decoration: isDone
-                        ? TextDecoration.lineThrough
-                        : TextDecoration.none,
-                    decorationColor: labelColor,
-                  ),
+                const SizedBox(height: 2),
+                _ProgressPlots(
+                  accent: accent,
+                  read: read.clamp(0, total),
+                  total: total,
                 ),
               ],
             ),
           ),
-          if (isActive)
-            Positioned(
-              left: 8,
-              right: 8,
-              bottom: 0,
-              height: 2,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: section.accent,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(2),
-                  ),
-                ),
-              ),
+          const SizedBox(width: FacteurSpacing.space2),
+          Text(
+            '~$remainingMin min',
+            style: GoogleFonts.courierPrime(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: colors.textTertiary,
             ),
+          ),
         ],
       ),
     );
   }
+
+  static String _titleFor(StickyMacroBloc bloc) {
+    switch (bloc) {
+      case StickyMacroBloc.essentiel:
+        return 'L’Essentiel du jour';
+      case StickyMacroBloc.parTheme:
+        return 'L’Essentiel, par thème';
+      case StickyMacroBloc.explorer:
+        return 'Explorer';
+    }
+  }
+
+  static Color _accentFor(FacteurColors colors, StickyMacroBloc bloc) {
+    switch (bloc) {
+      case StickyMacroBloc.essentiel:
+        return colors.sectionEssentiel;
+      case StickyMacroBloc.parTheme:
+        return colors.sectionBonnes;
+      case StickyMacroBloc.explorer:
+        return colors.sectionVeille1;
+    }
+  }
 }
 
-class _ProgressPainter extends CustomPainter {
-  final double progress;
-  final List<Color> gradient;
-  final Color glow;
-  final Color trackColor;
+class _IconBadge extends StatelessWidget {
+  final Color accent;
+  final StickyMacroBloc bloc;
 
-  _ProgressPainter({
-    required this.progress,
-    required this.gradient,
-    required this.glow,
-    required this.trackColor,
+  const _IconBadge({required this.accent, required this.bloc});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(FacteurRadius.medium),
+      ),
+      child: Icon(_iconFor(bloc), color: accent, size: 20),
+    );
+  }
+
+  static IconData _iconFor(StickyMacroBloc bloc) {
+    switch (bloc) {
+      case StickyMacroBloc.essentiel:
+        return PhosphorIcons.envelopeSimple();
+      case StickyMacroBloc.parTheme:
+        return PhosphorIcons.stack();
+      case StickyMacroBloc.explorer:
+        return PhosphorIcons.compass();
+    }
+  }
+}
+
+class _ProgressPlots extends StatelessWidget {
+  final Color accent;
+  final int read;
+  final int total;
+
+  const _ProgressPlots({
+    required this.accent,
+    required this.read,
+    required this.total,
   });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final fullRect = Offset.zero & size;
-    final trackPaint = Paint()..color = trackColor;
-    canvas.drawRect(fullRect, trackPaint);
-
-    if (progress <= 0) return;
-    final clipped = Rect.fromLTWH(0, 0, size.width * progress, size.height);
-    final glowPaint = Paint()
-      ..color = glow
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
-    canvas.drawRect(clipped, glowPaint);
-    final fillPaint = Paint()
-      ..shader = LinearGradient(
-        colors: gradient,
-        stops: const [0.0, 0.4, 0.7, 1.0],
-      ).createShader(fullRect);
-    canvas.drawRect(clipped, fillPaint);
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    if (total <= 0) {
+      return const SizedBox(height: 12);
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        for (var i = 0; i < total; i++) ...[
+          if (i > 0) const SizedBox(width: 4),
+          _plotFor(i, accent, colors),
+        ],
+        const SizedBox(width: 8),
+        Text(
+          '$read/$total',
+          style: GoogleFonts.dmSans(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: colors.textTertiary,
+          ),
+        ),
+      ],
+    );
   }
 
-  @override
-  bool shouldRepaint(_ProgressPainter old) =>
-      old.progress != progress ||
-      old.gradient != gradient ||
-      old.glow != glow ||
-      old.trackColor != trackColor;
+  Widget _plotFor(int i, Color accent, FacteurColors colors) {
+    if (i < read) {
+      // Read
+      return Container(
+        width: 12,
+        height: 12,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+        child: const Icon(Icons.check, size: 9, color: Colors.white),
+      );
+    }
+    if (i == read) {
+      // Current
+      return Container(
+        width: 12,
+        height: 12,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: accent, width: 2),
+        ),
+      );
+    }
+    return Container(
+      width: 12,
+      height: 12,
+      decoration: BoxDecoration(
+        color: colors.textTertiary.withValues(alpha: 0.25),
+        shape: BoxShape.circle,
+      ),
+    );
+  }
 }

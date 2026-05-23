@@ -17,11 +17,9 @@ import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/providers/user_interests_provider.dart';
 import '../../veille/providers/veille_active_config_provider.dart';
 import '../models/flux_continu_models.dart';
+import '../repositories/essentiel_repository.dart';
 import '../repositories/flux_continu_repository.dart';
 import '../utils/theme_color_mapping.dart';
-
-/// Accent applied to the Essentiel section banner.
-const Color _kEssentielAccent = Color(0xFFB0470A);
 
 /// Accent applied to the Bonnes Nouvelles section banner.
 const Color _kBonnesAccent = Color(0xFF2E7D32);
@@ -79,6 +77,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   late DigestRepository _digestRepo;
   late FeedRepository _feedRepo;
   late FluxContinuRepository _fluxRepo;
+  late EssentielRepository _essentielRepo;
 
   FluxSection? _essentiel;
   FluxSection? _bonnes;
@@ -116,6 +115,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     _digestRepo = ref.read(digestRepositoryProvider);
     _feedRepo = ref.read(feedRepositoryProvider);
     _fluxRepo = ref.read(fluxContinuRepositoryProvider);
+    _essentielRepo = ref.read(essentielRepositoryProvider);
 
     ref.listen<SereinToggleState>(sereinToggleProvider, (prev, next) {
       if (prev?.enabled != next.enabled && state.hasValue) {
@@ -156,20 +156,24 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         () => _feedRepo.getFeed(page: 1, limit: 20, serein: isSerene),
         'getFeed (continuation)',
       ),
+      _safe<List<EssentielArticle>>(
+        () async => (await _essentielRepo.fetch()) ?? const [],
+        'fetchEssentiel',
+        fallback: const <EssentielArticle>[],
+      ),
     ]);
     final dual = results[0] as DualDigestResponse?;
     final topThemes = (results[1] as List<TopTheme>?) ?? const <TopTheme>[];
     final feed = results[2] as FeedResponse?;
+    final essentielArticles =
+        (results[3] as List<EssentielArticle>?) ?? const <EssentielArticle>[];
 
-    _essentiel = _buildDigestSection(
-      digest: dual?.normal,
-      kind: SectionKind.essentiel,
-      label: "L'Essentiel du jour",
-      blurb: _kEssentielBlurb,
-      accent: _kEssentielAccent,
-      illustration: _kEssentielIllustration,
-      coreVisibleCount: isSerene ? 2 : 4,
-    );
+    // PR2 — la section "Essentiel" du haut du feed est désormais alimentée
+    // par GET /api/essentiel (5 articles transversaux). Si l'endpoint n'a
+    // rien servi (preparing/erreur), on ne rend pas la section : le digest
+    // legacy (kind=essentiel, accédé via "Voir plus de…") reste accessible
+    // ailleurs, et Bonnes Nouvelles n'est pas affectée.
+    _essentiel = _buildEssentielSection(essentielArticles);
     _bonnes = _buildDigestSection(
       digest: dual?.serein,
       kind: SectionKind.bonnes,
@@ -296,6 +300,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     return [
       for (final s in sections)
         switch (s) {
+          EssentielSection(:final articles) => EssentielSection(
+              articles: articles
+                  .where((a) => !_dismissedIds.contains(a.contentId))
+                  .toList(growable: false),
+              blurb: s.blurb,
+              illustrationAsset: s.illustrationAsset,
+            ),
           DigestTopicSection(:final topics) => DigestTopicSection(
               kind: s.kind,
               label: s.label,
@@ -624,6 +635,19 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     ));
   }
 
+  /// Builds the v3 "L'Essentiel du jour" hi-fi section from the 5 articles
+  /// returned by `GET /api/essentiel`. Returns `null` when the endpoint hasn't
+  /// produced anything yet (202 preparing or transient failure) so the screen
+  /// degrades gracefully — Bonnes Nouvelles + thèmes restent visibles.
+  FluxSection? _buildEssentielSection(List<EssentielArticle> articles) {
+    if (articles.isEmpty) return null;
+    return EssentielSection(
+      articles: articles,
+      illustrationAsset: _kEssentielIllustration,
+      blurb: _kEssentielBlurb,
+    );
+  }
+
   FluxSection? _buildDigestSection({
     required DigestResponse? digest,
     required SectionKind kind,
@@ -868,6 +892,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final seen = <String>{};
     for (final section in sections) {
       switch (section) {
+        case EssentielSection(:final articles):
+          for (final article in articles) {
+            seen.add(article.contentId);
+          }
         case DigestTopicSection(:final topics):
           for (final topic in topics) {
             if (topic.articles.isEmpty) continue;
