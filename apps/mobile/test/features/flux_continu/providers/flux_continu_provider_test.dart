@@ -1,3 +1,5 @@
+import 'package:facteur/features/digest/models/digest_models.dart';
+import 'package:facteur/features/digest/models/dual_digest_response.dart';
 import 'package:facteur/features/digest/providers/digest_provider.dart';
 import 'package:facteur/features/digest/repositories/digest_repository.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
@@ -650,4 +652,97 @@ void main() {
           ));
     });
   });
+
+  group('FluxContinuNotifier — Story 9.2 hotfix (Actus du jour)', () {
+    /// Stub Essentiel repo returning a single EssentielArticle so the v3
+    /// hi-fi section is built. Distinct from `_StubEssentielRepository`
+    /// (which returns an empty list) to drive the coexistence assertion.
+    final hiFiArticle = EssentielArticle(
+      contentId: 'hifi-1',
+      title: 'Hi-fi article',
+      url: 'https://x.test/hifi-1',
+      publishedAt: DateTime(2026, 1, 1),
+      sourceName: 'Source',
+      sourceLetter: 'S',
+      sectionLabel: 'Tech',
+      rank: 1,
+    );
+
+    test('EssentielSection (hi-fi) and "Actus du jour" coexist in sections',
+        () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      // Digest "normal" with two non-empty topics → builds the legacy
+      // "Actus du jour" DigestTopicSection.
+      final digest = DigestResponse(
+        digestId: 'd1',
+        userId: 'u1',
+        targetDate: DateTime(2026, 5, 23),
+        generatedAt: DateTime(2026, 5, 23),
+        topics: [
+          DigestTopic(
+            topicId: 't1',
+            label: 'Topic A',
+            articles: const [DigestItem(contentId: 'a1', title: 'A')],
+          ),
+          DigestTopic(
+            topicId: 't2',
+            label: 'Topic B',
+            articles: const [DigestItem(contentId: 'b1', title: 'B')],
+          ),
+        ],
+      );
+      when(() => digestRepo.fetchBothDigests()).thenAnswer(
+        (_) async => DualDigestResponse(normal: digest, sereinEnabled: false),
+      );
+
+      final container = ProviderContainer(
+        overrides: [
+          digestRepositoryProvider.overrideWithValue(digestRepo),
+          feedRepositoryProvider.overrideWithValue(feedRepo),
+          fluxContinuRepositoryProvider.overrideWithValue(fluxRepo),
+          essentielRepositoryProvider.overrideWithValue(
+            _OneArticleEssentielRepository(hiFiArticle),
+          ),
+          userInterestsProvider.overrideWith(
+            () => _StubUserInterestsNotifier(_interestsState()),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final state = await container.read(fluxContinuProvider.future);
+
+      // Both must be present, with distinct sectionKeys.
+      final essentielV3 = state.sections.whereType<EssentielSection>().toList();
+      final actusDuJour = state.sections
+          .whereType<DigestTopicSection>()
+          .where((s) => s.kind == SectionKind.essentiel)
+          .toList();
+      expect(essentielV3, hasLength(1));
+      expect(actusDuJour, hasLength(1));
+      expect(actusDuJour.single.label, 'Actus du jour');
+      // Distinct keys — no collision in the folded/moreOpen maps.
+      expect(sectionKey(essentielV3.single), 'essentiel_v3');
+      expect(sectionKey(actusDuJour.single), 'essentiel');
+      // The dedup pass drops the lead article of "Actus du jour" if it ever
+      // overlaps with the hi-fi card — the legacy section must still
+      // survive composition though (it carries other topics).
+      expect(
+        state.sections.indexOf(essentielV3.single),
+        lessThan(state.sections.indexOf(actusDuJour.single)),
+        reason: 'Hi-fi card renders above the legacy "Actus du jour"',
+      );
+    });
+  });
+}
+
+/// Stub EssentielRepository returning exactly one [EssentielArticle] so the
+/// hi-fi section is built during the coexistence test.
+class _OneArticleEssentielRepository implements EssentielRepository {
+  _OneArticleEssentielRepository(this._article);
+  final EssentielArticle _article;
+
+  @override
+  Future<List<EssentielArticle>?> fetch() async => [_article];
 }

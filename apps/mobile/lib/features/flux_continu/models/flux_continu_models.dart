@@ -21,9 +21,17 @@ enum SectionKind { essentiel, bonnes, theme, veille }
 /// id discriminates between multiple `kind == theme` instances; system
 /// sections collapse to just their kind name. La section veille collapse à
 /// `'veille'` (un seul par user à V1).
+///
+/// **Disambiguation Story 9.2 hotfix** : depuis la PR #650, deux sections
+/// peuvent porter `kind = SectionKind.essentiel` :
+///   - la nouvelle [EssentielSection] (carte hi-fi "L'Essentiel du jour")
+///     → mappée sur `'essentiel_v3'` ;
+///   - la [DigestTopicSection] legacy renommée "Actus du jour"
+///     → garde la clé historique `'essentiel'` afin que les prefs
+///     `flux_continu_folded_*` déjà écrites côté PO restent valides.
 String sectionKey(FluxSection section) {
   return switch (section) {
-    EssentielSection() => section.kind.name,
+    EssentielSection() => 'essentiel_v3',
     DigestTopicSection() => section.kind.name,
     FeedThemeSection(:final kind, :final themeSlug, :final customTopicId) =>
       kind == SectionKind.veille

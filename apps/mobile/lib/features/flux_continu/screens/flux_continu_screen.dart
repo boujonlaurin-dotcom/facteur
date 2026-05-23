@@ -40,7 +40,6 @@ import '../widgets/section_banner.dart';
 import '../widgets/section_block.dart';
 import '../widgets/section_hairline.dart';
 import '../widgets/sticky_tab_bar.dart';
-import '../../feed/widgets/feed_filter_bar.dart';
 
 /// Scroll offset at which the AppBar is swapped with the sticky tab bar.
 const double _kStickyThreshold = 60.0;
@@ -74,11 +73,11 @@ class FluxContinuScreen extends ConsumerStatefulWidget {
 
 class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   final ScrollController _scroll = ScrollController();
+  final ScrollController _tabsScroll = ScrollController();
   final ValueNotifier<bool> _stickyVisible = ValueNotifier(false);
   final ValueNotifier<double> _scrollProgress = ValueNotifier(0);
   final ValueNotifier<int> _activeIndex = ValueNotifier(0);
-  final ValueNotifier<StickyMacroBloc> _currentMacroBloc =
-      ValueNotifier(StickyMacroBloc.essentiel);
+  final ValueNotifier<bool> _isInExploreMode = ValueNotifier(false);
   final GlobalKey _closingKey = GlobalKey();
   final GlobalKey _explorerKey = GlobalKey();
   final List<GlobalKey> _sectionKeys = [];
@@ -112,10 +111,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   void dispose() {
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
+    _tabsScroll.dispose();
     _stickyVisible.dispose();
     _scrollProgress.dispose();
     _activeIndex.dispose();
-    _currentMacroBloc.dispose();
+    _isInExploreMode.dispose();
     _pullHintTimer?.cancel();
     super.dispose();
   }
@@ -129,11 +129,18 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       _stickyVisible.value = showSticky;
     }
     final max = pos.maxScrollExtent;
-    _scrollProgress.value = max > 0 ? (currentScroll / max).clamp(0.0, 1.0) : 0;
+    final nextProgress =
+        max > 0 ? (currentScroll / max).clamp(0.0, 1.0).toDouble() : 0.0;
+    if (_scrollProgress.value != nextProgress) {
+      _scrollProgress.value = nextProgress;
+    }
+    // Explore-mode flag must be refreshed before the active-section pass: the
+    // sticky's "Explorer" virtual tab is selected from that flag, and we want
+    // the same frame the user crosses the banner to swap to it.
+    _updateExploreMode();
     _updateActiveSection();
     _maybeFoldSections();
     _maybeDismissClosingCard();
-    _updateMacroBloc();
 
     if (currentScroll > _maxScrollDepthPx) {
       _maxScrollDepthPx = currentScroll;
@@ -187,43 +194,17 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     }
   }
 
-  /// Decides which macro-bloc the user is currently traversing — drives the
-  /// 3-state sticky bar (Essentiel / Par thème / Explorer).
-  ///
-  /// Boundaries :
-  /// - `essentiel` : user is on or above the first non-essentiel section.
-  /// - `parTheme`  : between the second section header and the Explorer banner.
-  /// - `explorer`  : Explorer banner top crossed `_kStickyBarHeight`.
-  void _updateMacroBloc() {
-    StickyMacroBloc bloc = StickyMacroBloc.essentiel;
-    final value = ref.read(fluxContinuProvider).valueOrNull;
-    if (value != null && _sectionKeys.length == value.sections.length) {
-      // First non-Essentiel section delimits the "par thème" zone.
-      for (var i = 0; i < value.sections.length; i++) {
-        if (value.sections[i] is EssentielSection) continue;
-        final ctx = _sectionKeys[i].currentContext;
-        if (ctx == null) break;
-        final box = ctx.findRenderObject();
-        if (box is! RenderBox || !box.attached) break;
-        final topY = box.localToGlobal(Offset.zero).dy;
-        if (topY < _kStickyBarHeight) {
-          bloc = StickyMacroBloc.parTheme;
-        }
-        break;
-      }
-    }
-    final explorerCtx = _explorerKey.currentContext;
-    if (explorerCtx != null) {
-      final box = explorerCtx.findRenderObject();
-      if (box is RenderBox && box.attached) {
-        final topY = box.localToGlobal(Offset.zero).dy;
-        if (topY < _kStickyBarHeight) {
-          bloc = StickyMacroBloc.explorer;
-        }
-      }
-    }
-    if (_currentMacroBloc.value != bloc) {
-      _currentMacroBloc.value = bloc;
+  /// Flips the sticky overlay from the editorial tab bar to the feed filter
+  /// bar once the user crosses the Explorer banner.
+  void _updateExploreMode() {
+    final ctx = _explorerKey.currentContext;
+    if (ctx == null) return;
+    final box = ctx.findRenderObject();
+    if (box is! RenderBox || !box.attached) return;
+    final topY = box.localToGlobal(Offset.zero).dy;
+    final shouldExplore = topY < _kStickyBarHeight;
+    if (_isInExploreMode.value != shouldExplore) {
+      _isInExploreMode.value = shouldExplore;
     }
   }
 
@@ -266,6 +247,18 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   }
 
   void _updateActiveSection() {
+    // Explorer is rendered as the last virtual tab in the sticky overlay.
+    // Once the user crosses the Explorer banner, that tab takes precedence
+    // over the editorial active-section measurement so the sticky reflects
+    // the zone the user is actually browsing.
+    if (_isInExploreMode.value) {
+      final exploreIndex = _sectionKeys.length;
+      if (_activeIndex.value != exploreIndex) {
+        _activeIndex.value = exploreIndex;
+        _alignTabsToActive(exploreIndex);
+      }
+      return;
+    }
     if (_sectionKeys.isEmpty) return;
     int activeAt = 0;
     for (var i = 0; i < _sectionKeys.length; i++) {
@@ -280,48 +273,31 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     }
     if (_activeIndex.value != activeAt) {
       _activeIndex.value = activeAt;
+      _alignTabsToActive(activeAt);
     }
   }
 
-  /// Tap on the sticky bar — scrolls back to the top of the current macro
-  /// bloc so the user can quickly re-orient.
-  Future<void> _onTapStickyBar() async {
-    final bloc = _currentMacroBloc.value;
-    final value = ref.read(fluxContinuProvider).valueOrNull;
-    if (value == null) return;
-    int? targetIndex;
-    switch (bloc) {
-      case StickyMacroBloc.essentiel:
-        await _scrollToTop();
-        return;
-      case StickyMacroBloc.parTheme:
-        for (var i = 0; i < value.sections.length; i++) {
-          if (value.sections[i] is! EssentielSection) {
-            targetIndex = i;
-            break;
-          }
-        }
-      case StickyMacroBloc.explorer:
-        // No section index — scroll to the Explorer key directly.
-        final ctx = _explorerKey.currentContext;
-        if (ctx != null) {
-          await Scrollable.ensureVisible(
-            ctx,
-            duration: const Duration(milliseconds: 350),
-            curve: Curves.easeInOut,
-            alignment: 0,
-          );
-        }
-        return;
-    }
-    if (targetIndex != null) {
-      await _scrollToSection(targetIndex);
-    }
+  void _alignTabsToActive(int index) {
+    if (!_tabsScroll.hasClients) return;
+    const double estimatedTabWidth = 140.0;
+    const double leftPadding = 12.0;
+    final target =
+        (index * estimatedTabWidth - leftPadding)
+            .clamp(0.0, _tabsScroll.position.maxScrollExtent);
+    _tabsScroll.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Future<void> _scrollToSection(int index) async {
-    if (index < 0 || index >= _sectionKeys.length) return;
-    final ctx = _sectionKeys[index].currentContext;
+    if (index < 0) return;
+    // Last tab is the virtual "Explorer" entry — scrolls to its banner key.
+    final GlobalKey targetKey = index >= _sectionKeys.length
+        ? _explorerKey
+        : _sectionKeys[index];
+    final ctx = targetKey.currentContext;
     if (ctx == null) return;
     final box = ctx.findRenderObject();
     if (box is! RenderBox) return;
@@ -602,9 +578,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             ),
             _StickyHostOverlay(
               stickyVisible: _stickyVisible,
-              currentMacroBloc: _currentMacroBloc,
+              scrollProgress: _scrollProgress,
+              activeIndex: _activeIndex,
+              isInExploreMode: _isInExploreMode,
               stateProvider: fluxContinuProvider,
-              onTap: _onTapStickyBar,
+              onTapTab: _scrollToSection,
+              tabsController: _tabsScroll,
             ),
             // Floating "back to top" button — reveals on upward scroll above
             // the hide threshold, fades down on reverse / near top.
@@ -784,17 +763,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
               ),
             ),
           ),
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                FacteurSpacing.space4,
-                0,
-                FacteurSpacing.space4,
-                FacteurSpacing.space2,
-              ),
-              child: FeedFilterBar(),
-            ),
-          ),
           if (state.feedContinu.isNotEmpty) ...[
             _buildIntercalatedFeed(context, state),
             const SliverToBoxAdapter(child: SectionHairline()),
@@ -958,28 +926,40 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   }
 }
 
-/// Sticky overlay that hosts either the editorial tab bar (top of the
-/// screen) or the feed filter bar (once the user crosses the Explorer
-/// banner). The header itself lives inside the scroll view, so it simply
-/// disappears upward as content moves up.
+/// Sticky overlay shown at the top of the screen once the user scrolls past
+/// the AppBar threshold. Always hosts the editorial tab bar — the "Explorer"
+/// virtual tab is appended at the end so the same bar covers the whole
+/// screen instead of swapping out when the user crosses the Explorer banner.
+/// When the user is in Explorer mode, [FeedFilterBar] morphs in under the
+/// tabs (within the same parchment surface) so filtering stays available.
+const String _kExplorerLabel = 'Explorer';
+const Color _kExplorerAccent = Color(0xFF5D4037);
+
 class _StickyHostOverlay extends ConsumerWidget {
   final ValueNotifier<bool> stickyVisible;
-  final ValueNotifier<StickyMacroBloc> currentMacroBloc;
+  final ValueNotifier<double> scrollProgress;
+  final ValueNotifier<int> activeIndex;
+  final ValueNotifier<bool> isInExploreMode;
   final AsyncNotifierProvider<FluxContinuNotifier, FluxContinuState>
       stateProvider;
-  final VoidCallback onTap;
+  final ValueChanged<int> onTapTab;
+  final ScrollController tabsController;
 
   const _StickyHostOverlay({
     required this.stickyVisible,
-    required this.currentMacroBloc,
+    required this.scrollProgress,
+    required this.activeIndex,
+    required this.isInExploreMode,
     required this.stateProvider,
-    required this.onTap,
+    required this.onTapTab,
+    required this.tabsController,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(stateProvider).valueOrNull;
-    final sections = state?.sections ?? const <FluxSection>[];
+    final sections =
+        ref.watch(stateProvider).valueOrNull?.sections ??
+            const <FluxSection>[];
     return Positioned(
       top: 0,
       left: 0,
@@ -988,59 +968,35 @@ class _StickyHostOverlay extends ConsumerWidget {
         valueListenable: stickyVisible,
         builder: (context, visible, _) {
           final showSticky = visible && sections.isNotEmpty;
-          return AnimatedSwitcher(
-            duration: const Duration(milliseconds: 150),
-            child: !showSticky
-                ? const SizedBox.shrink(key: ValueKey('hidden'))
-                : ValueListenableBuilder<StickyMacroBloc>(
-                    key: const ValueKey('sticky'),
-                    valueListenable: currentMacroBloc,
-                    builder: (context, bloc, _) {
-                      final read = _readCountFor(bloc, state);
-                      final total = _totalFor(bloc, sections);
-                      return StickyThreeStateBar(
-                        bloc: bloc,
-                        read: read,
-                        total: total,
-                        remainingMin: ((total - read) * 2).clamp(0, 60),
-                        onTap: onTap,
-                      );
-                    },
-                  ),
+          if (!showSticky) {
+            return const SizedBox.shrink();
+          }
+          final tabs = <StickyTab>[
+            for (final s in sections)
+              StickyTab(label: s.label, accent: s.accent),
+            const StickyTab(label: _kExplorerLabel, accent: _kExplorerAccent),
+          ];
+          return ValueListenableBuilder<bool>(
+            valueListenable: isInExploreMode,
+            builder: (context, explore, _) => ValueListenableBuilder<int>(
+              valueListenable: activeIndex,
+              builder: (context, idx, _) => ValueListenableBuilder<double>(
+                valueListenable: scrollProgress,
+                builder: (context, progress, _) => StickyTabBar(
+                  tabs: tabs,
+                  activeIndex: idx.clamp(0, tabs.length - 1),
+                  progress: progress,
+                  onTapTab: onTapTab,
+                  tabsController: tabsController,
+                  title: explore ? _kExplorerLabel : 'Les Actus du jour',
+                  showFilterBar: explore,
+                ),
+              ),
+            ),
           );
         },
       ),
     );
-  }
-
-  static int _totalFor(StickyMacroBloc bloc, List<FluxSection> sections) {
-    switch (bloc) {
-      case StickyMacroBloc.essentiel:
-        return sections
-            .whereType<EssentielSection>()
-            .fold<int>(0, (sum, s) => sum + s.totalCount);
-      case StickyMacroBloc.parTheme:
-        return sections
-            .where((s) => s is! EssentielSection)
-            .fold<int>(0, (sum, s) => sum + s.totalCount);
-      case StickyMacroBloc.explorer:
-        return 0;
-    }
-  }
-
-  static int _readCountFor(StickyMacroBloc bloc, FluxContinuState? state) {
-    if (state == null) return 0;
-    switch (bloc) {
-      case StickyMacroBloc.essentiel:
-        return state.sections.whereType<EssentielSection>().fold<int>(
-              0,
-              (sum, s) =>
-                  sum + s.articles.where((a) => a.isRead).length,
-            );
-      case StickyMacroBloc.parTheme:
-      case StickyMacroBloc.explorer:
-        return 0;
-    }
   }
 }
 

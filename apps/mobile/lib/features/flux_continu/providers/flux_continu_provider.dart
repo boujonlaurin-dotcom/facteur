@@ -21,6 +21,12 @@ import '../repositories/essentiel_repository.dart';
 import '../repositories/flux_continu_repository.dart';
 import '../utils/theme_color_mapping.dart';
 
+/// Accent applied to the legacy "Actus du jour" digest topic section
+/// (DigestTopicSection avec kind=essentiel). Distinct de l'accent
+/// `colors.sectionEssentiel` exposé via le thème car ce dernier dépend du
+/// BuildContext. Aligné avec `EssentielSection.accent` (carte hi-fi).
+const Color _kEssentielAccent = Color(0xFFB0470A);
+
 /// Accent applied to the Bonnes Nouvelles section banner.
 const Color _kBonnesAccent = Color(0xFF2E7D32);
 
@@ -38,6 +44,8 @@ const String _kVeilleIllustration = 'assets/notifications/facteur_veille.png';
 /// Blurbs rendered under each section title.
 const String _kEssentielBlurb =
     "L'essentiel des actus les plus couvertes en France aujourd'hui, en privilégiant tes sources.";
+const String _kActusDuJourBlurb =
+    'Les actus les plus couvertes du jour, regroupées par sujet.';
 const String _kBonnesBlurb = 'Un peu d\'amour, dans ce monde de brutes ?';
 const String _kThemeBlurb =
     "Les derniers articles sur les sujets que tu suis le plus.";
@@ -80,6 +88,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   late EssentielRepository _essentielRepo;
 
   FluxSection? _essentiel;
+  // Section "Actus du jour" : DigestTopicSection legacy (kind=essentiel)
+  // restaurée après le hotfix Story 9.2 — la nouvelle EssentielSection
+  // (carte hi-fi v3) occupe désormais le nom "L'Essentiel du jour" et
+  // celle-ci reprend les topics du digest sous le nouveau nom.
+  FluxSection? _actusDuJour;
   FluxSection? _bonnes;
   // Up to [_kMaxFavoriteSections] theme/topic sections, ordered to mirror
   // `userInterestsProvider.favorites`. Empty when the user has no favorites
@@ -171,9 +184,22 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // PR2 — la section "Essentiel" du haut du feed est désormais alimentée
     // par GET /api/essentiel (5 articles transversaux). Si l'endpoint n'a
     // rien servi (preparing/erreur), on ne rend pas la section : le digest
-    // legacy (kind=essentiel, accédé via "Voir plus de…") reste accessible
-    // ailleurs, et Bonnes Nouvelles n'est pas affectée.
+    // legacy reste affiché juste en dessous sous le nom "Actus du jour",
+    // et Bonnes Nouvelles n'est pas affectée.
     _essentiel = _buildEssentielSection(essentielArticles);
+    // Hotfix Story 9.2 — "Actus du jour" : DigestTopicSection legacy,
+    // alimentée par `dual.normal` (digest classique), avec le label
+    // historique "Actus du jour" (anciennement "L'Essentiel du jour" avant
+    // que la carte hi-fi v3 ne reprenne ce nom).
+    _actusDuJour = _buildDigestSection(
+      digest: dual?.normal,
+      kind: SectionKind.essentiel,
+      label: 'Actus du jour',
+      blurb: _kActusDuJourBlurb,
+      accent: _kEssentielAccent,
+      illustration: _kEssentielIllustration,
+      coreVisibleCount: 3,
+    );
     _bonnes = _buildDigestSection(
       digest: dual?.serein,
       kind: SectionKind.bonnes,
@@ -203,11 +229,18 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   FluxContinuState _compose(bool isSerene) {
     final ordered = <FluxSection>[];
     if (isSerene) {
+      // Mode sérène — Bonnes Nouvelles d'abord, puis les thèmes,
+      // puis la carte hi-fi v3 et la section "Actus du jour" en fin de page.
       if (_bonnes != null) ordered.add(_bonnes!);
       ordered.addAll(_themes);
       if (_essentiel != null) ordered.add(_essentiel!);
+      if (_actusDuJour != null) ordered.add(_actusDuJour!);
     } else {
+      // Mode normal — carte hi-fi v3 ("L'Essentiel du jour"),
+      // puis "Actus du jour" (digest legacy regroupé par sujet),
+      // puis les thèmes favoris, puis Bonnes Nouvelles.
       if (_essentiel != null) ordered.add(_essentiel!);
+      if (_actusDuJour != null) ordered.add(_actusDuJour!);
       ordered.addAll(_themes);
       if (_bonnes != null) ordered.add(_bonnes!);
     }
