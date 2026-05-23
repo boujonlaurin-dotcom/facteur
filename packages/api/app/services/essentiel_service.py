@@ -204,9 +204,7 @@ def _pick_transversal_articles(
 
     # Round 1 : 1 article max par topic, dans l'ordre du meilleur score
     # de chaque topic (desc), tie-break `topic.rank` (asc).
-    topic_bests_sorted = sorted(
-        topic_bests, key=lambda tb: (-tb[2], tb[0].rank)
-    )
+    topic_bests_sorted = sorted(topic_bests, key=lambda tb: (-tb[2], tb[0].rank))
 
     picked: list[tuple[DigestTopic, DigestTopicArticle]] = []
     seen_content_ids: set[UUID] = set()
