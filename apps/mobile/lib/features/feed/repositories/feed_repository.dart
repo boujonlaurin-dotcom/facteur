@@ -1015,18 +1015,27 @@ class PerspectivesResponse {
 }
 
 /// Span de surlignage colorisé selon le bord de la source.
-/// Renvoyé par le back via `highlight_spans: [{start,end,text,bias}]`.
+/// Renvoyé par le back via `highlight_spans: [{start,end,text,bias,
+/// weight?,category?,justification?}]`. Les 3 derniers champs sont optionnels,
+/// présents uniquement quand l'annotation LLM (Phase 4) a couvert le span ;
+/// absents en mode fallback spaCy.
 class HighlightSpan {
   final int start;
   final int end;
   final String text;
   final String bias;
+  final double? weight;
+  final String? category;
+  final String? justification;
 
   const HighlightSpan({
     required this.start,
     required this.end,
     required this.text,
     required this.bias,
+    this.weight,
+    this.category,
+    this.justification,
   });
 
   factory HighlightSpan.fromJson(Map<String, dynamic> json) {
@@ -1035,6 +1044,9 @@ class HighlightSpan {
       end: (json['end'] as num?)?.toInt() ?? 0,
       text: (json['text'] as String?) ?? '',
       bias: (json['bias'] as String?) ?? 'unknown',
+      weight: (json['weight'] as num?)?.toDouble(),
+      category: json['category'] as String?,
+      justification: json['justification'] as String?,
     );
   }
 }
@@ -1080,6 +1092,10 @@ class PerspectiveData {
   /// Spans partagés avec la référence — rendus en `text_tertiary` côté front
   /// pour faire ressortir les divergences. Liste vide en mode dégradé Mode 2.
   final List<TokenSpan> sharedTokens;
+  /// Langue ISO du titre ("fr","en",...). Optionnel — exposé par PR 5
+  /// (API enriched contract). Sert au regroupement "Couverture étrangère"
+  /// (PR 6.1) côté front.
+  final String? language;
 
   PerspectiveData({
     required this.title,
@@ -1090,6 +1106,7 @@ class PerspectiveData {
     this.publishedAt,
     this.highlightSpans = const [],
     this.sharedTokens = const [],
+    this.language,
   });
 
   factory PerspectiveData.fromJson(Map<String, dynamic> json) {
@@ -1112,6 +1129,7 @@ class PerspectiveData {
           : rawShared
               .map((e) => TokenSpan.fromJson(e as Map<String, dynamic>))
               .toList(),
+      language: json['language'] as String?,
     );
   }
 }
