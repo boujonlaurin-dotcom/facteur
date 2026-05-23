@@ -80,6 +80,7 @@ from app.routers import (
     contents,
     custom_topics,
     digest,
+    essentiel,
     feed,
     images,
     internal,
@@ -446,6 +447,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(feed.router, prefix="/api/feed", tags=["Feed"])
 app.include_router(digest.router, prefix="/api/digest", tags=["Digest"])
+app.include_router(essentiel.router, prefix="/api/essentiel", tags=["Essentiel"])
 app.include_router(contents.router, prefix="/api/contents", tags=["Contents"])
 app.include_router(images.router, prefix="/api/images", tags=["Images"])
 app.include_router(sources.router, prefix="/api/sources", tags=["Sources"])
