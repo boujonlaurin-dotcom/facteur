@@ -125,6 +125,20 @@ def is_french_source(source_name: str | None) -> bool:
     return any(token in needle for token in _FRENCH_SOURCE_TOKENS)
 
 
+def detect_language(title: str | None, source_name: str | None) -> str | None:
+    """Heuristique : "en" si le titre semble anglais, sinon "fr" si la source
+    est francophone connue, sinon None. Single source of truth partagée entre
+    le backfill (migration `lg01_add_language_to_contents`) et l'ingestion
+    (`sync_service._save_content`) — si la règle évolue ("on ajoute es"), les
+    deux call sites restent cohérents.
+    """
+    if looks_english(title):
+        return "en"
+    if is_french_source(source_name):
+        return "fr"
+    return None
+
+
 def looks_english(title: str | None) -> bool:
     """Renvoie True si le titre semble être en anglais.
 
