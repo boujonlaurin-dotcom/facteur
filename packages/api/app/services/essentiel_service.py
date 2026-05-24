@@ -32,6 +32,10 @@ from app.models.source import UserSource
 from app.models.user import UserInterest, UserSubtopic
 from app.schemas.digest import DigestResponse, DigestTopic, DigestTopicArticle
 from app.schemas.essentiel import EssentielArticle, EssentielKind, EssentielResponse
+from app.services.language_user_filter import (
+    get_hide_non_fr_pref,
+    is_foreign_source,
+)
 
 ESSENTIEL_MAX_ARTICLES = 5
 
@@ -56,6 +60,9 @@ class EssentielUserContext:
     followed_source_ids: frozenset[UUID] = field(default_factory=frozenset)
     source_priority_multipliers: dict[UUID, float] = field(default_factory=dict)
     topic_weights: dict[str, float] = field(default_factory=dict)
+    # Préférence langue : si True, on masque les articles des sources
+    # non-FR (sauf si la source est explicitement suivie).
+    hide_non_fr_sources: bool = False
 
 
 async def fetch_user_essentiel_context(
@@ -110,10 +117,13 @@ async def fetch_user_essentiel_context(
                 topic_weights.get(row.topic_slug, 0.0), float(row.weight or 1.0)
             )
 
+    hide_non_fr_sources = await get_hide_non_fr_pref(db, user_id)
+
     return EssentielUserContext(
         followed_source_ids=followed_source_ids,
         source_priority_multipliers=source_priority_multipliers,
         topic_weights=topic_weights,
+        hide_non_fr_sources=hide_non_fr_sources,
     )
 
 
@@ -162,6 +172,32 @@ def _score_article(
     return score
 
 
+def _filter_articles_by_language(
+    topics: list[DigestTopic],
+    ctx: EssentielUserContext,
+) -> list[DigestTopic]:
+    """Retire les articles de sources non-FR non-suivies si le toggle est ON.
+
+    Recopie chaque topic via `model_copy` pour ne pas muter la
+    `DigestResponse` source (la même instance peut être servie sur
+    plusieurs requêtes en cas de cache amont).
+    """
+    if not ctx.hide_non_fr_sources:
+        return topics
+
+    filtered: list[DigestTopic] = []
+    for topic in topics:
+        kept = [
+            a
+            for a in topic.articles
+            if a.source.id in ctx.followed_source_ids
+            or not is_foreign_source(a.source.language)
+        ]
+        if kept:
+            filtered.append(topic.model_copy(update={"articles": kept}))
+    return filtered
+
+
 def _pick_transversal_articles(
     topics: list[DigestTopic],
     ctx: EssentielUserContext,
@@ -175,6 +211,7 @@ def _pick_transversal_articles(
     - Round 2 (remplissage) : si <5, on complète avec les articles restants
       triés par score décroissant, dédupe par `content_id`.
     """
+    topics = _filter_articles_by_language(topics, ctx)
     eligible_topics = [t for t in topics if t.articles]
     if not eligible_topics:
         return []

@@ -73,6 +73,8 @@ class DigestTopicArticle(BaseModel):
     is_saved: bool = False
     is_liked: bool = False
     is_dismissed: bool = False
+    # Langue détectée du titre (forward-compat — label éventuel mobile).
+    language: str | None = None
 
     @field_serializer("entities", when_used="always")
     def serialize_entities(self, value: list[str]) -> list[dict]:

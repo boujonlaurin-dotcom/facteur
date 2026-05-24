@@ -1,92 +1,98 @@
-## Quoi
+# PR 1 — Backend : Filtre par langue & `Source.language` (curation FR-first)
 
-PR 5 de la chaîne LLM bias annotation. Enrichit le contrat de
-`GET /contents/{id}/perspectives` pour exposer les annotations LLM
-(`weight` / `category` / `justification`) quand `semantic_equiv` est
-en base, sinon retourne le format spaCy actuel. Ajoute un header de
-debug `X-Bias-Annotation-Source: llm|spacy` et expose `language`
-sur chaque perspective.
+## Contexte
 
-## Pourquoi
+PR 1/2 du plan **language-aware curation**. Introduit la prise en compte
+de la langue de la source dans les pipelines Essentiel / feed / digest,
+contrôlée par une préférence user `hide_non_fr_sources` masquant les
+cartes des sources non-FR — sauf si la source est explicitement suivie.
 
-Les annotations LLM (`semantic_equiv.target_spans` pondérés + tooltips
-de justification) sont produites par le pipeline mergé en PR 4
-(#648), mais le contrat API actuel les ignore. Sans cette PR, le
-mobile (PR 6) ne peut pas afficher les poids ni les tooltips. Le
-champ `language` est requis par la future section « Couverture
-étrangère » pour regrouper les perspectives non-FR.
+La couche mobile + section "Couverture à l'étranger" (panel perspectives)
+arrivent en PR 2.
 
 ## Changements
 
-- **`Content.language`** : colonne `String(8)` nullable + index +
-  migration Alembic `lg01_add_language_to_contents` avec backfill
-  heuristique (`detect_language` = `looks_english` puis
-  `is_french_source`). Les nouveaux contents sont remplis à
-  l'ingestion (`sync_service._save_content`).
-- **`Perspective.language`** ajouté au dataclass, propagé depuis
-  `Content.language` dans `build_cluster_perspectives`. Les
-  perspectives Google News restent `None` (pas de row `Content`).
-- **`_attach_highlight_spans`** refactoré pour retourner
-  `tuple[dict | None, Literal["llm", "spacy"]]`. Si `semantic_equiv`
-  est rempli pour le cluster (filtré par `llm_version` +
-  `cluster_signature`), les target_spans LLM sont sérialisés tels
-  quels, avec `bias` injecté depuis `bias_stance` pour rétrocompat.
-  Sinon → fallback spaCy inchangé.
-- **Header `X-Bias-Annotation-Source`** posé via `Response` injecté
-  dans la signature FastAPI. Cache hit ré-attache le header via un
-  `_perspectives_source_cache` parallèle (sinon le header
-  disparaissait silencieusement après la 1ère requête).
-- **`detect_language`** factorisé dans
-  `app/services/ml/language_filter.py` — single source of truth pour
-  l'ingestion ET la migration de backfill.
+### Données
 
-## Comment ça a été vérifié
+- **Migration `lg02_source_language_user_pref`** (down_revision : `lg01`) :
+  - `sources.language String(8) NULL, indexed` ; backfill par langue
+    majoritaire (≥ 60 %) à partir de `Content.language`.
+  - `user_personalization.hide_non_fr_sources` (Boolean, default `true`).
+  - `user_personalization.language_filter_user_set` (Boolean, default
+    `false`) — flag "mode auto".
+  - Backfill `hide_non_fr_sources = false` pour les users qui suivent
+    déjà ≥ 1 source étrangère (respect du choix implicite).
 
-- [x] `pytest tests/routers/test_contents_perspectives_highlights.py`
-  — 13 OK (9 existants adaptés au tuple + 4 nouveaux : LLM enriched,
-  fallback spaCy, signature mismatch, language propagation).
-- [x] Suite complète backend : **1242 passed, 1 skipped, 2 xfailed**
-  (134 s).
-- [x] `alembic heads` → exactement 1 head
-  (`lg01_add_language_to_contents`).
-- [x] `alembic upgrade --sql` → DDL généré correctement
-  (`ALTER TABLE contents ADD COLUMN language VARCHAR(8)` +
-  `CREATE INDEX ix_contents_language`).
-- [x] `/simplify` passé : 5 fixes appliqués (factoriser
-  `detect_language`, bug header cache hit, dédupliquer `alt_tokens`,
-  hoister fixtures de tests, type `Literal`).
+### Services
 
-⚠️ **Round-trip migration live non testable localement** : le
-container Postgres test du workspace est dans un état désync (« Can't
-locate revision identified by 'b3c4d5e6f7a8' ») hérité d'un autre
-workspace. La migration sera testée pour de vrai par le `alembic
-upgrade head` du `Dockerfile` Railway au prochain boot.
+- `app/services/language_user_filter.py` (nouveau) :
+  - `is_foreign_source`, `get_hide_non_fr_pref`, `apply_language_filter`
+    (filtre Python), `language_filter_clause` (clause SQL partagée
+    digest_selector ↔ recommendation_service), `recompute_auto_pref`
+    (mode auto bascule sur follow/unfollow).
+- `essentiel_service` : `EssentielUserContext.hide_non_fr_sources` +
+  `_filter_articles_by_language` appliqué avant le scoring.
+- `recommendation_service._get_candidates` : filtre SQL équivalent
+  (followed sources jamais filtrées). Désactivé en mode "browse a
+  specific source" (exploration).
+- `digest_selector` : `DigestContext.hide_non_fr_sources` + filtre SQL
+  sur le pool curated (les articles des sources suivies passent par
+  `user_sources_query`, hors filtre par construction).
+- `source_service.{trust,untrust,create,delete}_source` : appellent
+  `recompute_auto_pref` après mutation.
 
-## Zones à risque
+### API
 
-- **Cache header** : nouveau dict `_perspectives_source_cache`
-  parallèle invalidé en même temps que `_perspectives_cache`
-  (`_perspectives_source_cache.pop` à côté de chaque
-  `_perspectives_cache.pop`). À surveiller : si une autre branche
-  oublie d'invalider l'un sans l'autre, le header pourrait diverger
-  du body.
-- **Backfill migration** : tourne dans une seule transaction
-  Alembic ; `env.py` désactive le `statement_timeout` via
-  `SET LOCAL statement_timeout = '0'`, donc pas de cap théorique.
-  Avec ~quelques 100k rows en prod, ça devrait passer en quelques
-  minutes. Idempotent (`WHERE language IS NULL`).
-- **Rétrocompat client** : confirmée par
-  `test_attach_highlight_spans_falls_back_to_spacy_when_no_semantic_equiv` —
-  les apps pre-PR-6 reçoivent le format spaCy historique.
-- **Stored snapshot path** : `language` est lu via
-  `getattr(p, "language", None)`, donc les snapshots déjà sérialisés
-  sans le champ tomberont à `null` (PR 6 traite `null` comme FR par
-  défaut).
+- `SourceMini.language: str | None` (forward-compat, propagé dans tous
+  les schemas qui l'embarquent).
+- `ContentResponse.language`, `DigestTopicArticle.language`,
+  `EssentielArticle.language` (forward-compat — utile au debug et label
+  éventuel côté mobile).
+- `GET /api/personalization` expose `hide_non_fr_sources` +
+  `language_filter_user_set`.
+- `POST /api/personalization/toggle-hide-non-fr-sources` : toute MAJ
+  flippe `language_filter_user_set = true` (gel du choix user).
 
-## Dette pré-existante (hors scope)
+### Background
 
-`tests/services/test_llm_bias_annotation_service.py` ne collecte pas
-sur `main` à cause d'un import circulaire via
-`app.services.editorial.__init__` → `pipeline` →
-`llm_bias_annotation_service`. Vérifié : présent avant cette PR.
-À traiter dans une PR follow-up.
+- `app/jobs/recompute_source_language.py` (nouveau) : recalcule
+  `sources.language` 1×/jour à partir de `Content.language` des 30
+  derniers jours (seuil majoritaire 60 %).
+- Scheduler : nouveau job `recompute_source_language` à 03h30 Paris.
+
+## Tests
+
+- `tests/services/test_language_user_filter.py` (nouveau) :
+  - 8 unit tests pure-Python.
+  - 6 tests DB pour `get_hide_non_fr_pref` + `recompute_auto_pref`
+    (mode auto / manuel, no-op sans personalization row).
+- Suite backend complète : **1285 passed, 1 skipped, 2 xfailed** sur DB
+  locale post-migration `lg02`.
+
+## Vérification
+
+```
+cd packages/api && python -m alembic heads          # → lg02_source_language_user_pref seule head
+cd packages/api && python -m alembic upgrade head   # DB vide → OK (jouée localement)
+cd packages/api && python -m pytest -q              # 1285 passed
+```
+
+## Points d'attention
+
+- **`Source.language=NULL` → traité comme FR** (rétro-compat avec le
+  client mobile et `editorial/writer.py:_looks_french`). Conséquence :
+  une source dont la langue n'est pas encore détectée ne sera pas
+  masquée.
+- **Filtre désactivé en exploration source** (`source_id` query param) :
+  on n'ampute pas le browse explicite.
+- **`recompute_auto_pref` flushe avant SELECT** : la nouvelle
+  UserSource doit être visible. Hooks placés après `db.flush()`.
+- **Mobile (PR 2)** reste à faire : toggle "Masquer sources non-FR" +
+  section "Couverture à l'étranger" dans le panel perspectives.
+
+## Follow-ups identifiés
+
+- La whitelist `is_french_source` peut mislabel certaines sources
+  (Story 7.7 — labellisation manuelle du catalogue). Acceptable pour PR 1.
+- Pas de migration côté Story 7.7 = on s'appuie sur le job daily pour
+  rattraper les nouvelles sources.

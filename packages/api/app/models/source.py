@@ -129,6 +129,14 @@ class Source(Base):
     # Values: "informative", "analytical", "humorous", "satirical", None
     tone: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
 
+    # Langue majoritaire dénormalisée (re-calculée par job périodique à
+    # partir de Content.language des 30 derniers jours). NULL = source dont
+    # la langue n'a pas pu être déterminée (échantillon trop faible) →
+    # traitée comme FR par défaut côté curation (rétro-compat).
+    language: Mapped[str | None] = mapped_column(
+        String(8), nullable=True, index=True
+    )
+
     # Auto-include in serein mode even if user doesn't follow this source
     serein_default: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"

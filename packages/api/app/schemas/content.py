@@ -63,6 +63,9 @@ class SourceMini(BaseModel):
     bias_stance: BiasStance = BiasStance.UNKNOWN
     reliability_score: ReliabilityScore = ReliabilityScore.UNKNOWN
     bias_origin: BiasOrigin = BiasOrigin.UNKNOWN
+    # Langue majoritaire dénormalisée. `None` = inconnu (traité comme FR
+    # par défaut côté client, rétro-compat — cf. language_user_filter.py).
+    language: str | None = None
 
     class Config:
         from_attributes = True
@@ -115,6 +118,8 @@ class ContentResponse(BaseModel):
     note_text: str | None = None
     note_updated_at: datetime | None = None
     is_followed_source: bool = False
+    # Langue détectée du titre (forward-compat — label éventuel côté mobile).
+    language: str | None = None
 
     @field_serializer("topics", when_used="always")
     def serialize_topics(self, value: list[str] | None) -> list[str]:
