@@ -95,6 +95,11 @@ class EssentielArticle {
   final bool isSaved;
   final bool isLiked;
   final bool isDismissed;
+  // Signaux user-aware servis par /api/essentiel pour rendre la personnalisation
+  // et l'Actu du jour visibles côté carte (pastille, badges, avatar accent).
+  final bool isFollowedSource;
+  final bool isFollowedTopic;
+  final bool isActuDuJour;
 
   const EssentielArticle({
     required this.contentId,
@@ -113,6 +118,9 @@ class EssentielArticle {
     this.isSaved = false,
     this.isLiked = false,
     this.isDismissed = false,
+    this.isFollowedSource = false,
+    this.isFollowedTopic = false,
+    this.isActuDuJour = false,
   });
 }
 

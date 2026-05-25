@@ -293,11 +293,16 @@ class _LeadTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (article.isActuDuJour) ...[
+                _ActuBadge(accent: chipAccent),
+                const SizedBox(height: FacteurSpacing.space2),
+              ],
               Row(
                 children: [
                   _SectionChip(
                     label: _sectionLabelFor(article),
                     accent: chipAccent,
+                    showFollowed: article.isFollowedTopic,
                   ),
                   const Spacer(),
                   if (article.perspectiveCount > 1)
@@ -309,19 +314,22 @@ class _LeadTile extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: FacteurSpacing.space2),
-              Text(
-                article.title,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.fraunces(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  height: 1.3,
-                  color: colors.textPrimary,
+              Opacity(
+                opacity: article.isRead ? 0.7 : 1.0,
+                child: Text(
+                  article.title,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.fraunces(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    height: 1.3,
+                    color: colors.textPrimary,
+                  ),
                 ),
               ),
               const SizedBox(height: FacteurSpacing.space2),
-              _SourceRow(article: article),
+              _SourceRow(article: article, accent: chipAccent),
             ],
           ),
         ),
@@ -355,6 +363,7 @@ class _MediumTile extends StatelessWidget {
                   _SectionChip(
                     label: _sectionLabelFor(article),
                     accent: themeAccent,
+                    showFollowed: article.isFollowedTopic,
                   ),
                   const SizedBox(width: FacteurSpacing.space2),
                   Flexible(
@@ -365,19 +374,34 @@ class _MediumTile extends StatelessWidget {
                       style: FacteurTypography.labelSmall(colors.textTertiary),
                     ),
                   ),
+                  if (article.perspectiveCount > 1) ...[
+                    const SizedBox(width: FacteurSpacing.space2),
+                    Text(
+                      '+${article.perspectiveCount}',
+                      style: FacteurTypography.labelSmall(colors.textTertiary),
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 4),
-              Text(
-                article.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.fraunces(
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w600,
-                  height: 1.3,
-                  color: colors.textPrimary,
+              Opacity(
+                opacity: article.isRead ? 0.7 : 1.0,
+                child: Text(
+                  article.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.fraunces(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                    color: colors.textPrimary,
+                  ),
                 ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                _relativeTime(article.publishedAt),
+                style: FacteurTypography.labelSmall(colors.textTertiary),
               ),
             ],
           ),
@@ -433,11 +457,14 @@ class _LightTile extends StatelessWidget {
               ),
               const SizedBox(width: FacteurSpacing.space2),
               Expanded(
-                child: Text(
-                  article.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: FacteurTypography.bodySmall(colors.textPrimary),
+                child: Opacity(
+                  opacity: article.isRead ? 0.7 : 1.0,
+                  child: Text(
+                    article.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: FacteurTypography.bodySmall(colors.textPrimary),
+                  ),
                 ),
               ),
             ],
@@ -451,8 +478,13 @@ class _LightTile extends StatelessWidget {
 class _SectionChip extends StatelessWidget {
   final String label;
   final Color accent;
+  final bool showFollowed;
 
-  const _SectionChip({required this.label, required this.accent});
+  const _SectionChip({
+    required this.label,
+    required this.accent,
+    this.showFollowed = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -462,14 +494,62 @@ class _SectionChip extends StatelessWidget {
         color: accent.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(FacteurRadius.pill),
       ),
-      child: Text(
-        label,
-        style: GoogleFonts.dmSans(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.2,
-          color: accent,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showFollowed) ...[
+            Icon(Icons.bookmark_rounded, size: 11, color: accent),
+            const SizedBox(width: 3),
+          ],
+          Text(
+            label,
+            style: GoogleFonts.dmSans(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
+              color: accent,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Pastille "Actu du jour" affichée au-dessus du lead quand l'article a été
+/// marqué Actu (topic trending/une ou badge="actu") par le pipeline du digest.
+class _ActuBadge extends StatelessWidget {
+  final Color accent;
+
+  const _ActuBadge({required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: accent,
+        borderRadius: BorderRadius.circular(FacteurRadius.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.bolt_rounded,
+            size: 12,
+            color: Colors.white,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            'Actu du jour',
+            style: GoogleFonts.dmSans(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+              color: Colors.white,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -477,12 +557,18 @@ class _SectionChip extends StatelessWidget {
 
 class _SourceRow extends StatelessWidget {
   final EssentielArticle article;
+  final Color accent;
 
-  const _SourceRow({required this.article});
+  const _SourceRow({required this.article, required this.accent});
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<FacteurColors>()!;
+    final isFollowed = article.isFollowedSource;
+    final avatarBg =
+        isFollowed ? accent.withValues(alpha: 0.18) : colors.backgroundSecondary;
+    final avatarBorder = isFollowed ? accent : colors.border;
+    final avatarTextColor = isFollowed ? accent : colors.textSecondary;
     return Row(
       children: [
         Container(
@@ -490,16 +576,16 @@ class _SourceRow extends StatelessWidget {
           height: 20,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: colors.backgroundSecondary,
+            color: avatarBg,
             shape: BoxShape.circle,
-            border: Border.all(color: colors.border, width: 0.6),
+            border: Border.all(color: avatarBorder, width: 0.8),
           ),
           child: Text(
             article.sourceLetter,
             style: GoogleFonts.dmSans(
               fontSize: 10,
               fontWeight: FontWeight.w700,
-              color: colors.textSecondary,
+              color: avatarTextColor,
             ),
           ),
         ),
@@ -511,6 +597,11 @@ class _SourceRow extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: FacteurTypography.labelSmall(colors.textTertiary),
           ),
+        ),
+        const SizedBox(width: FacteurSpacing.space2),
+        Text(
+          '·  ${_relativeTime(article.publishedAt)}',
+          style: FacteurTypography.labelSmall(colors.textTertiary),
         ),
       ],
     );
@@ -629,4 +720,16 @@ String _sectionLabelFor(EssentielArticle article) {
   final raw = article.sectionLabel.trim();
   if (raw.isNotEmpty) return raw;
   return 'Actus';
+}
+
+/// Horodatage relatif court pour la carte ("il y a 2h", "ce matin", "hier").
+/// Garde un format lisible et stable ; les valeurs sont des approximations
+/// (granularité heure pour <24h, jour au-delà).
+String _relativeTime(DateTime publishedAt) {
+  final delta = DateTime.now().difference(publishedAt);
+  if (delta.inMinutes < 1) return 'à l’instant';
+  if (delta.inMinutes < 60) return 'il y a ${delta.inMinutes} min';
+  if (delta.inHours < 24) return 'il y a ${delta.inHours}h';
+  if (delta.inDays < 2) return 'hier';
+  return 'il y a ${delta.inDays} j';
 }
