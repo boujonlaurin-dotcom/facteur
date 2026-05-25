@@ -48,25 +48,6 @@ class SourceService:
         subscriptions = {row.source_id: row.has_subscription for row in rows}
         return trusted_ids, multipliers, subscriptions
 
-    # Gardés pour rétro-compatibilité avec les appelants existants (trust_source,
-    # update_source_subscription, etc.) qui les utilisent dans des contextes isolés.
-    async def _load_user_source_multipliers(self, user_id: UUID) -> dict[UUID, float]:
-        """Load priority_multiplier for all user sources."""
-        result = await self.db.execute(
-            select(UserSource.source_id, UserSource.priority_multiplier).where(
-                UserSource.user_id == user_id
-            )
-        )
-        return {row.source_id: row.priority_multiplier for row in result.all()}
-
-    async def _load_user_source_subscriptions(self, user_id: UUID) -> dict[UUID, bool]:
-        """Load has_subscription for all user sources."""
-        result = await self.db.execute(
-            select(UserSource.source_id, UserSource.has_subscription).where(
-                UserSource.user_id == user_id
-            )
-        )
-        return {row.source_id: row.has_subscription for row in result.all()}
 
     def _build_source_response(
         self,
@@ -229,7 +210,7 @@ class SourceService:
     ) -> list[SourceResponse]:
         """Récupère les sources les plus populaires de la communauté."""
         count_col = func.count(UserSource.user_id).label("follower_count")
-        query = (
+        result = await self.db.execute(
             select(Source, count_col)
             .join(UserSource)
             .where(Source.is_active)
@@ -238,23 +219,14 @@ class SourceService:
             .order_by(count_col.desc())
             .limit(limit)
         )
-
-        result = await self.db.execute(query)
         rows = result.all()  # list of (Source, follower_count) tuples
 
-        # Check trusted & muted status for the current user
         user_uuid = UUID(user_id)
-
-        user_sources_query = select(UserSource.source_id).where(
-            UserSource.user_id == user_uuid
+        trusted_source_ids, multipliers, subscriptions = (
+            await self._load_user_source_context(user_uuid)
         )
-        user_sources_result = await self.db.execute(user_sources_query)
-        trusted_source_ids = set(user_sources_result.scalars().all())
 
-        multipliers = await self._load_user_source_multipliers(user_uuid)
-        subscriptions = await self._load_user_source_subscriptions(user_uuid)
-
-        muted_source_ids = set()
+        muted_source_ids: set[UUID] = set()
         personalization = await self.db.scalar(
             select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
         )
@@ -262,30 +234,15 @@ class SourceService:
             muted_source_ids = set(personalization.muted_sources)
 
         return [
-            SourceResponse(
-                id=s.id,
-                name=s.name,
-                url=s.url,
-                type=s.type,
-                theme=s.theme,
-                description=s.description,
-                logo_url=s.logo_url,
+            self._build_source_response(
+                s,
                 is_curated=s.is_curated,
                 is_custom=not s.is_curated,
                 is_trusted=s.id in trusted_source_ids,
-                is_muted=s.id in muted_source_ids,
-                priority_multiplier=multipliers.get(s.id, 1.0),
-                has_subscription=subscriptions.get(s.id, False),
-                content_count=0,
+                muted_source_ids=muted_source_ids,
+                multipliers=multipliers,
+                subscriptions=subscriptions,
                 follower_count=follower_count,
-                bias_stance=getattr(s.bias_stance, "value", "unknown"),
-                reliability_score=getattr(s.reliability_score, "value", "unknown"),
-                bias_origin=getattr(s.bias_origin, "value", "unknown"),
-                score_independence=s.score_independence,
-                score_rigor=s.score_rigor,
-                score_ux=s.score_ux,
-                recommended_by=getattr(s, "recommended_by", None),
-                recommendation_reason=getattr(s, "recommendation_reason", None),
             )
             for s, follower_count in rows
         ]
@@ -307,21 +264,15 @@ class SourceService:
         result = await self.db.execute(search_query)
         sources = result.scalars().all()
 
-        # Load user context for is_trusted / is_muted flags
-        trusted_source_ids = set()
-        muted_source_ids = set()
+        trusted_source_ids: set[UUID] = set()
+        muted_source_ids: set[UUID] = set()
         multipliers: dict[UUID, float] = {}
         subscriptions: dict[UUID, bool] = {}
         if user_id:
             user_uuid = UUID(user_id)
-            user_sources_result = await self.db.execute(
-                select(UserSource.source_id).where(UserSource.user_id == user_uuid)
+            trusted_source_ids, multipliers, subscriptions = (
+                await self._load_user_source_context(user_uuid)
             )
-            trusted_source_ids = set(user_sources_result.scalars().all())
-
-            multipliers = await self._load_user_source_multipliers(user_uuid)
-            subscriptions = await self._load_user_source_subscriptions(user_uuid)
-
             personalization = await self.db.scalar(
                 select(UserPersonalization).where(
                     UserPersonalization.user_id == user_uuid
@@ -331,29 +282,14 @@ class SourceService:
                 muted_source_ids = set(personalization.muted_sources)
 
         return [
-            SourceResponse(
-                id=s.id,
-                name=s.name,
-                url=s.url,
-                type=s.type,
-                theme=s.theme,
-                description=s.description,
-                logo_url=s.logo_url,
+            self._build_source_response(
+                s,
                 is_curated=s.is_curated,
                 is_custom=not s.is_curated,
                 is_trusted=s.id in trusted_source_ids,
-                is_muted=s.id in muted_source_ids,
-                priority_multiplier=multipliers.get(s.id, 1.0),
-                has_subscription=subscriptions.get(s.id, False),
-                content_count=0,
-                bias_stance=getattr(s.bias_stance, "value", "unknown"),
-                reliability_score=getattr(s.reliability_score, "value", "unknown"),
-                bias_origin=getattr(s.bias_origin, "value", "unknown"),
-                score_independence=s.score_independence,
-                score_rigor=s.score_rigor,
-                score_ux=s.score_ux,
-                recommended_by=getattr(s, "recommended_by", None),
-                recommendation_reason=getattr(s, "recommendation_reason", None),
+                muted_source_ids=muted_source_ids,
+                multipliers=multipliers,
+                subscriptions=subscriptions,
             )
             for s in sources
         ]
