@@ -157,9 +157,7 @@ def _is_followed_topic(topic: DigestTopic, ctx: EssentielUserContext) -> bool:
     return bool(topic.theme and topic.theme in ctx.topic_weights)
 
 
-def _is_followed_source(
-    article: DigestTopicArticle, ctx: EssentielUserContext
-) -> bool:
+def _is_followed_source(article: DigestTopicArticle, ctx: EssentielUserContext) -> bool:
     return article.source.id in ctx.followed_source_ids or article.is_followed_source
 
 
