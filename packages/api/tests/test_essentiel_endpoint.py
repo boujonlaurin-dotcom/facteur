@@ -9,7 +9,7 @@ chemin de fallback lui-même est déjà couvert par `test_digest_readonly_hotpat
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
@@ -46,12 +46,13 @@ def _make_article(
     source_name: str = "Le Monde",
     source: SourceMini | None = None,
     is_followed_source: bool = False,
+    published_at: datetime | None = None,
 ) -> DigestTopicArticle:
     return DigestTopicArticle(
         content_id=uuid4(),
         title=title,
         url=f"https://example.com/{title.lower().replace(' ', '-')}",
-        published_at=datetime.now(UTC),
+        published_at=published_at or datetime.now(UTC),
         source=source or _make_source(source_name),
         rank=rank,
         reason="Test",
@@ -265,12 +266,9 @@ async def test_get_essentiel_propagates_stale_fallback(auth_override: UUID):
 
 
 def test_followed_source_promoted_above_unfollowed_competitor():
-    """L'article venant d'une source suivie doit sortir en rank=1."""
+    """Cohérence Essentiel ⊆ Tournée : la source non-suivie est filtrée."""
     followed_source = _make_source("Mediapart")
     other_source = _make_source("Le Monde")
-    # Deux topics distincts ; rank=1 dans chaque. Sans prefs, le rank
-    # `topic.rank` détermine l'ordre. Avec la source suivie, le topic 2
-    # (qui a l'article de la source suivie) doit passer en tête.
     topics = [
         DigestTopic(
             topic_id="t1",
@@ -307,11 +305,9 @@ def test_followed_source_promoted_above_unfollowed_competitor():
 
     response = build_essentiel_response(digest, user_context=ctx)
 
-    assert len(response.articles) == 2
-    # L'article de la source suivie passe devant.
+    assert len(response.articles) == 1
     assert response.articles[0].source.id == followed_source.id
     assert response.articles[0].rank == 1
-    assert response.articles[1].source.id == other_source.id
 
 
 def test_user_topic_weight_promotes_lower_ranked_topic():
@@ -468,6 +464,156 @@ def test_followed_source_flag_fallback_when_db_set_empty():
     response = build_essentiel_response(digest, user_context=ctx)
 
     assert response.articles[0].source.id == s_followed.id
+
+
+# ─── Filtre Tournée pool (24h + followed sources) ──────────────────────────
+
+
+def test_tournee_pool_filter_drops_article_older_than_24h():
+    """Un topic dont tous les articles sont > 24h doit être retiré."""
+    followed = _make_source("Mediapart")
+    stale = datetime.now(UTC) - timedelta(hours=30)
+    topics = [
+        DigestTopic(
+            topic_id="t-stale",
+            label="Stale",
+            rank=1,
+            reason="Test",
+            theme="politique",
+            perspective_count=2,
+            articles=[
+                _make_article(
+                    rank=1, title="S-1", source=followed, published_at=stale
+                ),
+            ],
+        ),
+        DigestTopic(
+            topic_id="t-fresh",
+            label="Fresh",
+            rank=2,
+            reason="Test",
+            theme="sciences",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title="F-1", source=followed)],
+        ),
+    ]
+    digest = _make_digest(topics)
+    ctx = EssentielUserContext(followed_source_ids=frozenset({followed.id}))
+
+    response = build_essentiel_response(digest, user_context=ctx)
+
+    labels = [a.section_label for a in response.articles]
+    assert "Stale" not in labels
+    assert labels == ["Fresh"]
+
+
+def test_tournee_pool_filter_drops_unfollowed_source():
+    """Un article d'une source non-suivie est retiré du pool Essentiel."""
+    followed = _make_source("Mediapart")
+    curated = _make_source("Le Monde")
+    topics = [
+        DigestTopic(
+            topic_id="t-curated",
+            label="Curated",
+            rank=1,
+            reason="Test",
+            theme="politique",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title="C-1", source=curated)],
+        ),
+        DigestTopic(
+            topic_id="t-followed",
+            label="Followed",
+            rank=2,
+            reason="Test",
+            theme="sciences",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title="F-1", source=followed)],
+        ),
+    ]
+    digest = _make_digest(topics)
+    ctx = EssentielUserContext(followed_source_ids=frozenset({followed.id}))
+
+    response = build_essentiel_response(digest, user_context=ctx)
+
+    labels = [a.section_label for a in response.articles]
+    assert labels == ["Followed"]
+
+
+def test_tournee_pool_filter_keeps_mixed_topic_partially():
+    """Un topic avec 1 article OK + 1 article > 24h conserve l'article OK."""
+    followed = _make_source("Mediapart")
+    fresh_article = _make_article(rank=1, title="OK", source=followed)
+    stale_article = _make_article(
+        rank=2,
+        title="KO",
+        source=followed,
+        published_at=datetime.now(UTC) - timedelta(hours=48),
+    )
+    topics = [
+        DigestTopic(
+            topic_id="t-mixed",
+            label="Mixed",
+            rank=1,
+            reason="Test",
+            theme="politique",
+            perspective_count=2,
+            articles=[fresh_article, stale_article],
+        ),
+    ]
+    digest = _make_digest(topics)
+    ctx = EssentielUserContext(followed_source_ids=frozenset({followed.id}))
+
+    response = build_essentiel_response(digest, user_context=ctx)
+
+    assert len(response.articles) == 1
+    assert response.articles[0].title == "OK"
+
+
+def test_tournee_pool_filter_fallback_when_empties_pool(caplog):
+    """Si le filtre vide tout, on retombe sur le pool pré-filtre + warning."""
+    followed = _make_source("Mediapart")
+    curated = _make_source("Le Monde")
+    # Aucun article ne vient d'une source suivie → le filtre videra tout.
+    topics = [
+        DigestTopic(
+            topic_id="t1",
+            label="Only-Curated",
+            rank=1,
+            reason="Test",
+            theme="politique",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title="C-1", source=curated)],
+        ),
+    ]
+    digest = _make_digest(topics)
+    ctx = EssentielUserContext(followed_source_ids=frozenset({followed.id}))
+
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="app.services.essentiel_service"):
+        response = build_essentiel_response(digest, user_context=ctx)
+
+    # Fallback : l'article curated réapparaît plutôt que de servir une carte vide.
+    assert len(response.articles) == 1
+    assert response.articles[0].section_label == "Only-Curated"
+    assert any("tournee-pool filter emptied" in rec.message for rec in caplog.records)
+
+
+def test_tournee_pool_filter_noop_when_no_followed_sources():
+    """User sans aucune source suivie : on ne filtre pas (sinon Essentiel vide)."""
+    s = _make_source("Le Monde")
+    topics = [
+        _make_topic(rank=1, label="T1"),
+    ]
+    # Force toutes les sources à la même source non-suivie.
+    topics[0].articles[0] = _make_article(rank=1, title="T1-1", source=s)
+    digest = _make_digest(topics)
+    ctx = EssentielUserContext(followed_source_ids=frozenset())
+
+    response = build_essentiel_response(digest, user_context=ctx)
+
+    assert len(response.articles) == 1
 
 
 @pytest.mark.asyncio

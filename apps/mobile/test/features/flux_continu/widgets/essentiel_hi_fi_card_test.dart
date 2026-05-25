@@ -48,7 +48,7 @@ void main() {
         ),
       ));
 
-      expect(find.textContaining('L’Essentiel du jour'), findsOneWidget);
+      expect(find.textContaining('Ton Essentiel'), findsOneWidget);
       expect(
         find.textContaining('Les 5 articles à ne pas manquer'),
         findsOneWidget,
@@ -111,7 +111,7 @@ void main() {
       }
     });
 
-    testWidgets('"Tout explorer" button fires onTapExploreAll when wired',
+    testWidgets('"Tout l\'essentiel" button fires onTapExploreAll when wired',
         (tester) async {
       var exploreTaps = 0;
       await tester.pumpWidget(_wrap(
@@ -119,29 +119,60 @@ void main() {
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
           onTapPersonalize: () {},
-          onTapSkip: () {},
+          onTapSeeAllDown: () {},
           onTapExploreAll: () => exploreTaps++,
         ),
       ));
 
-      expect(find.text('Tout explorer →'), findsOneWidget);
-      await tester.tap(find.text('Tout explorer →'));
+      expect(find.text('Tout l’essentiel'), findsOneWidget);
+      await tester.tap(find.text('Tout l’essentiel'));
       await tester.pumpAndSettle();
       expect(exploreTaps, 1);
     });
 
-    testWidgets('"Tout explorer" button is omitted when onTapExploreAll is null',
+    testWidgets('"Tout l\'essentiel" button is omitted when onTapExploreAll is null',
         (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
           onTapPersonalize: () {},
-          onTapSkip: () {},
+          onTapSeeAllDown: () {},
         ),
       ));
 
-      expect(find.text('Tout explorer →'), findsNothing);
+      expect(find.text('Tout l’essentiel'), findsNothing);
+    });
+
+    testWidgets('"Je veux tout voir ⬇️" button fires onTapSeeAllDown when wired',
+        (tester) async {
+      var seeAllDownTaps = 0;
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+          onTapSeeAllDown: () => seeAllDownTaps++,
+          onTapExploreAll: () {},
+        ),
+      ));
+
+      expect(find.text('Je veux tout voir ⬇️'), findsOneWidget);
+      await tester.tap(find.text('Je veux tout voir ⬇️'));
+      await tester.pumpAndSettle();
+      expect(seeAllDownTaps, 1);
+    });
+
+    testWidgets('"Ton Essentiel" header is rendered', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+        ),
+      ));
+
+      expect(find.text('Ton Essentiel'), findsOneWidget);
     });
   });
 }

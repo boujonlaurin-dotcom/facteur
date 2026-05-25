@@ -22,7 +22,9 @@ Fallback sans préférences : le scorer dégénère en `+perspective_count - ran
 ce qui donne quasi le même résultat que l'ancien round-robin rank-driven.
 """
 
+import logging
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -37,7 +39,15 @@ from app.services.language_user_filter import (
     is_foreign_source,
 )
 
+logger = logging.getLogger(__name__)
+
 ESSENTIEL_MAX_ARTICLES = 5
+
+# Fenêtre de cohérence avec la Tournée du jour : un article de l'Essentiel
+# doit pouvoir apparaître aussi dans la Tournée (24h + sources suivies). Sans
+# ce filtre, le digest peut surfacer des articles > 24h ou de sources curated
+# non-suivies invisibles dans la Tournée → incohérence UI.
+ESSENTIEL_TOURNEE_WINDOW = timedelta(hours=24)
 
 # Poids du scoring composite — réglés pour que chaque levier puisse l'emporter
 # isolément sans qu'aucun ne phagocyte les autres. Toute modif → ajouter un
@@ -198,6 +208,35 @@ def _filter_articles_by_language(
     return filtered
 
 
+def _filter_articles_by_tournee_pool(
+    topics: list[DigestTopic],
+    ctx: EssentielUserContext,
+    *,
+    now: datetime | None = None,
+) -> list[DigestTopic]:
+    """Garantit Essentiel ⊆ Tournée du jour.
+
+    La Tournée requête live (24h + sources suivies) tandis qu'Essentiel lit
+    un digest pré-calculé (7j ∪ sources curated) — sans ce filtre l'UI peut
+    surfacer un article inaccessible ailleurs. No-op si l'utilisateur n'a
+    aucune source suivie (sinon le filtre viderait tout).
+    """
+    if not ctx.followed_source_ids:
+        return topics
+
+    cutoff = (now or datetime.now(UTC)) - ESSENTIEL_TOURNEE_WINDOW
+    filtered: list[DigestTopic] = []
+    for topic in topics:
+        kept = [
+            a
+            for a in topic.articles
+            if a.source.id in ctx.followed_source_ids and a.published_at >= cutoff
+        ]
+        if kept:
+            filtered.append(topic.model_copy(update={"articles": kept}))
+    return filtered
+
+
 def _pick_transversal_articles(
     topics: list[DigestTopic],
     ctx: EssentielUserContext,
@@ -212,6 +251,18 @@ def _pick_transversal_articles(
       triés par score décroissant, dédupe par `content_id`.
     """
     topics = _filter_articles_by_language(topics, ctx)
+    tournee_pool = _filter_articles_by_tournee_pool(topics, ctx)
+    if tournee_pool:
+        topics = tournee_pool
+    elif ctx.followed_source_ids:
+        # Filtre vide → pas d'article 24h+followed dans le digest. Fallback
+        # sur le pool langue uniquement pour éviter une Essentiel vide.
+        logger.warning(
+            "essentiel: tournee-pool filter emptied digest "
+            "(followed=%d, topics=%d) — falling back to language-only pool",
+            len(ctx.followed_source_ids),
+            len(topics),
+        )
     eligible_topics = [t for t in topics if t.articles]
     if not eligible_topics:
         return []
