@@ -39,14 +39,22 @@ class SupabaseConstants {
   SupabaseConstants._();
 
   /// URL Supabase (à configurer via env)
+  /// Fallback = URL du projet prod (publique, même valeur que .vscode/launch.json).
+  /// En CI ou build release, injecter via --dart-define=SUPABASE_URL=... pour
+  /// écraser ce fallback.
   static final String url = _validateAndCleanSupabaseUrl(
-    const String.fromEnvironment('SUPABASE_URL', defaultValue: ''),
+    const String.fromEnvironment(
+      'SUPABASE_URL',
+      defaultValue: 'https://ykuadtelnzavrqzbfdve.supabase.co',
+    ),
   );
 
   /// Clé anonyme Supabase (à configurer via env)
+  /// Fallback = clé anon publique (non-secrète, déjà présente dans launch.json).
+  /// En CI ou build release, injecter via --dart-define=SUPABASE_ANON_KEY=...
   static final String anonKey = _cleanEnvVar(const String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: '',
+    defaultValue: 'sb_publishable_0L_kPMbe0Pk9eBdzeEsIZg_0pogzm3k',
   ));
 
   static String _cleanEnvVar(String value) {

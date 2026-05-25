@@ -57,6 +57,8 @@ def _make_article(
         rank=rank,
         reason="Test",
         is_followed_source=is_followed_source,
+        badge=badge,
+        is_read=is_read,
     )
 
 
@@ -67,6 +69,8 @@ def _make_topic(
     theme: str | None = "technologie",
     perspective_count: int = 3,
     n_articles: int = 1,
+    is_trending: bool = False,
+    is_une: bool = False,
 ) -> DigestTopic:
     return DigestTopic(
         topic_id=f"topic-{rank}",
@@ -75,6 +79,8 @@ def _make_topic(
         reason="Test",
         theme=theme,
         perspective_count=perspective_count,
+        is_trending=is_trending,
+        is_une=is_une,
         articles=[
             _make_article(rank=i + 1, title=f"{label} {i + 1}")
             for i in range(n_articles)
@@ -205,9 +211,15 @@ async def test_get_essentiel_returns_5_articles(auth_override: UUID):
     ]
     digest = _make_digest(topics)
 
-    with patch(
-        "app.routers.essentiel.read_digest_or_fallback",
-        new=AsyncMock(return_value=digest),
+    with (
+        patch(
+            "app.routers.essentiel.read_digest_or_fallback",
+            new=AsyncMock(return_value=digest),
+        ),
+        patch(
+            "app.routers.essentiel.fetch_user_essentiel_context",
+            new=AsyncMock(return_value=EssentielUserContext()),
+        ),
     ):
         async with _client() as client:
             resp = await client.get("/api/essentiel")
@@ -251,9 +263,15 @@ async def test_get_essentiel_propagates_stale_fallback(auth_override: UUID):
     topics = [_make_topic(rank=1, label="Tech", n_articles=5)]
     digest = _make_digest(topics, is_stale=True)
 
-    with patch(
-        "app.routers.essentiel.read_digest_or_fallback",
-        new=AsyncMock(return_value=digest),
+    with (
+        patch(
+            "app.routers.essentiel.read_digest_or_fallback",
+            new=AsyncMock(return_value=digest),
+        ),
+        patch(
+            "app.routers.essentiel.fetch_user_essentiel_context",
+            new=AsyncMock(return_value=EssentielUserContext()),
+        ),
     ):
         async with _client() as client:
             resp = await client.get("/api/essentiel")

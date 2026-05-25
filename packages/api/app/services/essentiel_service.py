@@ -1,25 +1,32 @@
-"""Service `essentiel` — top 5 articles transversaux du jour (Story 9.1).
+"""Service `essentiel` — top 5 articles transversaux du jour.
 
 Strictement read-only : consomme la `DigestResponse` déjà calculée par la cron
 nocturne via `read_digest_or_fallback`, et la projette en 5 articles cross-topic
 pour la carte hi-fi "L'Essentiel du jour" du feed mobile.
 
-Algorithme user-aware (fix bug-essentiel-user-prefs) :
-1. Charge le contexte user en read-only : sources suivies + multiplicateurs
-   de priorité, topics suivis + poids (union UserInterest ∪ UserSubtopic).
-2. Score chaque article candidat avec un scorer composite simple :
+Architecture :
+- Le `PillarScoringEngine` (services/recommendation/scoring_engine.py) et le
+  `digest_selector` ont déjà scoré + sélectionné les meilleurs articles par
+  topic en amont. On *réutilise* leurs signaux (`topic.is_trending`,
+  `topic.is_une`, `article.badge == "actu"`, `article.is_followed_source`)
+  plutôt que de re-scorer from scratch.
+- Les boosts d'Actu du jour s'alignent sur ceux du `Top3Selector` du briefing
+  pour cohérence cross-feature (`BOOST_UNE=30`, `BOOST_TRENDING=40`).
+
+Pipeline :
+1. Charge le contexte user (sources/topics suivis + multiplicateurs/poids).
+2. Score chaque article :
+   - bonus Actu (trending/une/badge actu) — aligné top3_selector,
    - bonus source suivie (×priority_multiplier),
    - bonus topic suivi (×weight),
-   - petit bonus perspective_count (transversal),
+   - bonus perspective_count,
+   - pénalité forte si `is_read` (l'écarte sauf si rien d'autre),
    - tie-break par rank.
-3. Round "diversité" : 1 article max par topic (le mieux scoré), dans l'ordre
-   des `topic.rank`, jusqu'à 5.
-4. Round "remplissage" : complète par les articles restants triés par score
-   décroissant si on n'a pas atteint 5.
-5. Déduplication par `content_id`.
+3. **Slot lead Actu** : si un article est Actu du jour, il occupe le rank=1.
+4. **Diversité dure** : max 2 articles d'une même source dans les 5.
+5. Round "diversité" (1/topic) + round "remplissage", déduplication content_id.
 
-Fallback sans préférences : le scorer dégénère en `+perspective_count - rank`,
-ce qui donne quasi le même résultat que l'ancien round-robin rank-driven.
+Fallback sans préférences : le scorer dégénère en `actu_boost + perspective − rank`.
 """
 
 import logging
@@ -57,6 +64,7 @@ _W_FOLLOWED_SOURCE_FLAG = 50.0  # bonus moindre si on n'a que le flag du digest
 _W_TOPIC_WEIGHT = 50.0
 _W_PERSPECTIVE = 5.0
 _W_RANK_PENALTY = 0.5
+_W_READ_PENALTY = 1000.0  # Écarte les articles déjà lus sauf si rien d'autre.
 
 
 @dataclass(frozen=True)
@@ -83,7 +91,6 @@ async def fetch_user_essentiel_context(
     Aucune écriture, aucun pipeline LLM. 2 SELECTs courts, indexés sur
     `user_id`. Sans hit (utilisateur sans prefs) : retourne un contexte vide.
     """
-    # Sources suivies + multiplicateurs de priorité.
     src_rows = (
         await db.execute(
             select(UserSource.source_id, UserSource.priority_multiplier).where(
@@ -96,9 +103,6 @@ async def fetch_user_essentiel_context(
         row.source_id: float(row.priority_multiplier or 1.0) for row in src_rows
     }
 
-    # Topics suivis (slug → poids), union UserInterest ∪ UserSubtopic.
-    # En cas de doublon : on garde le max — c'est cohérent avec l'esprit
-    # "l'utilisateur a explicitement signalé son intérêt".
     topic_weights: dict[str, float] = {}
 
     interest_rows = (
@@ -145,6 +149,20 @@ def _source_letter(name: str) -> str:
     return "?"
 
 
+def _is_actu_du_jour(topic: DigestTopic, article: DigestTopicArticle) -> bool:
+    """Un article est "Actu du jour" si son topic est trending/une ou si
+    le digest l'a explicitement marqué d'un badge "actu"."""
+    return bool(topic.is_trending or topic.is_une or article.badge == _BADGE_ACTU)
+
+
+def _is_followed_topic(topic: DigestTopic, ctx: EssentielUserContext) -> bool:
+    return bool(topic.theme and topic.theme in ctx.topic_weights)
+
+
+def _is_followed_source(article: DigestTopicArticle, ctx: EssentielUserContext) -> bool:
+    return article.source.id in ctx.followed_source_ids or article.is_followed_source
+
+
 def _score_article(
     topic: DigestTopic,
     article: DigestTopicArticle,
@@ -152,16 +170,22 @@ def _score_article(
 ) -> float:
     """Score composite user-aware d'un article candidat de l'Essentiel.
 
-    Détails dans le module docstring. Toujours positif sauf au fallback
-    no-prefs où on peut tomber légèrement négatif via le rank — c'est
-    voulu (l'ordre relatif est ce qui compte).
+    Réutilise les signaux déjà calculés par le digest (trending/une/badge actu/
+    is_followed_source) et leur applique des coefficients alignés sur ceux du
+    briefing (`Top3Selector`).
     """
     score = 0.0
 
-    # Bonus source : on préfère la jointure DB-fraîche (followed_source_ids).
-    # Si elle est vide mais que le digest a déjà tagué `is_followed_source`
-    # (cas où le digest a été généré avec un état UserSource différent), on
-    # garde un bonus moindre pour rester cohérent côté UI.
+    # Boost Actu du jour (aligné Top3Selector).
+    if topic.is_trending:
+        score += _W_TRENDING
+    if topic.is_une:
+        score += _W_UNE
+    if article.badge == _BADGE_ACTU:
+        score += _W_BADGE_ACTU
+
+    # Bonus source suivie : préfère la jointure DB-fraîche (followed_source_ids).
+    # Fallback sur le flag pré-calculé du digest si le contexte user est vide.
     if article.source.id in ctx.followed_source_ids:
         multiplier = ctx.source_priority_multipliers.get(article.source.id, 1.0)
         score += _W_FOLLOWED_SOURCE * multiplier
@@ -172,9 +196,13 @@ def _score_article(
     if topic.theme and topic.theme in ctx.topic_weights:
         score += _W_TOPIC_WEIGHT * ctx.topic_weights[topic.theme]
 
-    # Bonus "transversal" : un sujet couvert par plusieurs sources est
-    # plus à sa place dans l'Essentiel qu'un scoop isolé.
+    # Bonus "transversal" : un sujet couvert par plusieurs sources est plus à
+    # sa place dans l'Essentiel qu'un scoop isolé.
     score += _W_PERSPECTIVE * float(topic.perspective_count or 0)
+
+    # Pénalité is_read : écarte les articles déjà lus sauf si rien d'autre.
+    if article.is_read:
+        score -= _W_READ_PENALTY
 
     # Tie-break : un article rank=1 reste préféré à rank=2 à signaux égaux.
     score -= _W_RANK_PENALTY * float(article.rank)
@@ -243,12 +271,14 @@ def _pick_transversal_articles(
 ) -> list[tuple[DigestTopic, DigestTopicArticle]]:
     """Pioche jusqu'à 5 articles cross-topic, user-aware.
 
-    - Round 1 (diversité) : pour chaque topic, on prend l'article au meilleur
-      score (1 article max par topic), topics ordonnés d'abord par le meilleur
-      score de leur meilleur candidat (desc), puis par `topic.rank` (asc)
-      pour stabilité.
-    - Round 2 (remplissage) : si <5, on complète avec les articles restants
-      triés par score décroissant, dédupe par `content_id`.
+    1. **Slot lead Actu** : si un article est Actu du jour (trending/une/badge),
+       il prend la position 1 — quel que soit son score user. Le meilleur des
+       Actu gagne.
+    2. **Round diversité** (1 article max par topic), topics ordonnés par leur
+       meilleur score (desc), tie-break `topic.rank` (asc).
+    3. **Round remplissage** par score décroissant.
+    4. **Diversité dure** : max `ESSENTIEL_MAX_PER_SOURCE` (=2) articles d'une
+       même source à toutes les étapes.
     """
     topics = _filter_articles_by_language(topics, ctx)
     tournee_pool = _filter_articles_by_tournee_pool(topics, ctx)
@@ -275,7 +305,42 @@ def _pick_transversal_articles(
                 topic, article, ctx
             )
 
-    # Pour chaque topic, le meilleur candidat et son score.
+    picked: list[tuple[DigestTopic, DigestTopicArticle]] = []
+    seen_content_ids: set[UUID] = set()
+    used_topics: set[str] = set()
+    source_count: dict[UUID, int] = {}
+
+    def _try_pick(topic: DigestTopic, article: DigestTopicArticle) -> bool:
+        """Tente d'ajouter un article en respectant dédup + diversité source.
+
+        Renvoie True si ajouté, False sinon. Marque les ensembles.
+        """
+        if article.content_id in seen_content_ids:
+            return False
+        if source_count.get(article.source.id, 0) >= ESSENTIEL_MAX_PER_SOURCE:
+            return False
+        picked.append((topic, article))
+        seen_content_ids.add(article.content_id)
+        used_topics.add(topic.topic_id)
+        source_count[article.source.id] = source_count.get(article.source.id, 0) + 1
+        return True
+
+    # ─── Slot lead Actu ──────────────────────────────────────────────────
+    # Cherche le meilleur article Actu du jour (trending/une/badge=="actu").
+    # S'il existe, on le pose en rank=1 avant tout le reste.
+    actu_candidates: list[tuple[DigestTopic, DigestTopicArticle, float]] = []
+    for topic in eligible_topics:
+        for article in topic.articles:
+            if _is_actu_du_jour(topic, article):
+                actu_candidates.append(
+                    (topic, article, scored[(topic.topic_id, article.content_id)])
+                )
+    if actu_candidates:
+        actu_candidates.sort(key=lambda x: (-x[2], x[1].rank))
+        lead_topic, lead_article, _ = actu_candidates[0]
+        _try_pick(lead_topic, lead_article)
+
+    # ─── Round 1 : diversité (1 article max par topic, hors lead) ────────
     def _best_for_topic(
         topic: DigestTopic,
     ) -> tuple[DigestTopicArticle, float]:
@@ -289,26 +354,16 @@ def _pick_transversal_articles(
         return best_article, scored[(topic.topic_id, best_article.content_id)]
 
     topic_bests = [(t, *_best_for_topic(t)) for t in eligible_topics]
-
-    # Round 1 : 1 article max par topic, dans l'ordre du meilleur score
-    # de chaque topic (desc), tie-break `topic.rank` (asc).
     topic_bests_sorted = sorted(topic_bests, key=lambda tb: (-tb[2], tb[0].rank))
 
-    picked: list[tuple[DigestTopic, DigestTopicArticle]] = []
-    seen_content_ids: set[UUID] = set()
-    used_topics: set[str] = set()
-
     for topic, article, _ in topic_bests_sorted:
-        if article.content_id in seen_content_ids:
+        if topic.topic_id in used_topics:
             continue
-        picked.append((topic, article))
-        seen_content_ids.add(article.content_id)
-        used_topics.add(topic.topic_id)
+        _try_pick(topic, article)
         if len(picked) >= ESSENTIEL_MAX_ARTICLES:
             return picked
 
-    # Round 2 : remplir avec les meilleurs articles restants (tous topics
-    # confondus), triés par score décroissant, tie-break `article.rank` (asc).
+    # ─── Round 2 : remplissage (meilleurs articles restants) ─────────────
     remaining: list[tuple[DigestTopic, DigestTopicArticle, float]] = []
     for topic in eligible_topics:
         for article in topic.articles:
@@ -321,10 +376,7 @@ def _pick_transversal_articles(
     remaining.sort(key=lambda x: (-x[2], x[1].rank))
 
     for topic, article, _ in remaining:
-        if article.content_id in seen_content_ids:
-            continue
-        picked.append((topic, article))
-        seen_content_ids.add(article.content_id)
+        _try_pick(topic, article)
         if len(picked) >= ESSENTIEL_MAX_ARTICLES:
             break
 
@@ -335,6 +387,7 @@ def _to_essentiel_article(
     topic: DigestTopic,
     article: DigestTopicArticle,
     rank: int,
+    ctx: EssentielUserContext,
 ) -> EssentielArticle:
     return EssentielArticle(
         content_id=article.content_id,
@@ -353,6 +406,9 @@ def _to_essentiel_article(
         is_saved=article.is_saved,
         is_liked=article.is_liked,
         is_dismissed=article.is_dismissed,
+        is_followed_source=_is_followed_source(article, ctx),
+        is_followed_topic=_is_followed_topic(topic, ctx),
+        is_actu_du_jour=_is_actu_du_jour(topic, article),
     )
 
 
@@ -363,13 +419,12 @@ def build_essentiel_response(
     """Projette une `DigestResponse` en `EssentielResponse` (5 articles max).
 
     Si `user_context` est None, on utilise un contexte vide → fallback
-    no-prefs (le scorer dégénère en perspective+rank, comportement proche
-    du round-robin historique rank-driven).
+    no-prefs (le scorer dégénère en actu_boost + perspective − rank).
     """
     ctx = user_context or EssentielUserContext()
     picks = _pick_transversal_articles(digest.topics, ctx)
     articles = [
-        _to_essentiel_article(topic, article, rank=i + 1)
+        _to_essentiel_article(topic, article, rank=i + 1, ctx=ctx)
         for i, (topic, article) in enumerate(picks)
     ]
     return EssentielResponse(

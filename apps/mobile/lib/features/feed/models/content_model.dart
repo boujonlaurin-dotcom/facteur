@@ -148,6 +148,11 @@ class Content {
   // Editorial badge from digest (actu, pas_de_recul, pepite, coup_de_coeur)
   final String? editorialBadge;
 
+  /// Langue ISO du contenu ("fr","en",...). `null` ⇒ traité comme `fr`
+  /// (convention back-end Phase 4). Forward-compat : non encore consommé
+  /// par l'UI.
+  final String? language;
+
   Content({
     required this.id,
     required this.title,
@@ -199,6 +204,7 @@ class Content {
     this.keywordOverflowSources = const [],
     this.keywordOverflowIsCustomTopic = false,
     this.editorialBadge,
+    this.language,
   });
 
   bool get isVideo => contentType == ContentType.youtube || contentType == ContentType.video;
@@ -286,6 +292,7 @@ class Content {
       keywordOverflowSources: keywordOverflowSources,
       keywordOverflowIsCustomTopic: keywordOverflowIsCustomTopic,
       editorialBadge: editorialBadge,
+      language: language,
     );
   }
 
@@ -338,6 +345,7 @@ class Content {
             ? DateTime.tryParse(json['note_updated_at'] as String)
             : null,
         isFollowedSource: (json['is_followed_source'] as bool?) ?? false,
+        language: json['language'] as String?,
       );
     } catch (e, stack) {
       // ignore: avoid_print
@@ -405,6 +413,7 @@ class Content {
     List<KeywordOverflowSource>? keywordOverflowSources,
     bool? keywordOverflowIsCustomTopic,
     String? editorialBadge,
+    String? language,
   }) {
     return Content(
       id: id ?? this.id,
@@ -471,6 +480,7 @@ class Content {
       keywordOverflowIsCustomTopic:
           keywordOverflowIsCustomTopic ?? this.keywordOverflowIsCustomTopic,
       editorialBadge: editorialBadge ?? this.editorialBadge,
+      language: language ?? this.language,
     );
   }
 

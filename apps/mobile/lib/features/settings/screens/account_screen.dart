@@ -8,6 +8,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/services/widget_service.dart';
+import '../providers/language_preference_provider.dart';
 import '../providers/user_profile_provider.dart';
 import 'package:facteur/core/ui/notification_service.dart';
 
@@ -164,6 +165,9 @@ class AccountScreen extends ConsumerWidget {
               ),
             ],
 
+            const SizedBox(height: FacteurSpacing.space6),
+            _LanguagePreferenceSection(),
+
             const Spacer(),
 
             // Bouton Déconnexion
@@ -280,6 +284,75 @@ class AccountScreen extends ConsumerWidget {
               Navigator.of(context).pop();
             },
             child: Text('Enregistrer', style: TextStyle(color: colors.primary)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Section "LANGUE & CONTENUS" — toggle masquage des sources non françaises.
+class _LanguagePreferenceSection extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.facteurColors;
+    final state = ref.watch(languagePreferenceProvider);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: FacteurSpacing.space4,
+        vertical: FacteurSpacing.space2,
+      ),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+        border: Border.all(color: colors.surfaceElevated),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: FacteurSpacing.space2),
+            child: Text(
+              'LANGUE & CONTENUS',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colors.textTertiary,
+                    letterSpacing: 1.5,
+                  ),
+            ),
+          ),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              'Masquer les sources non françaises',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w500),
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                'Les sources que tu suis restent toujours visibles.',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: colors.textSecondary),
+              ),
+            ),
+            value: state.hideNonFr,
+            activeColor: colors.primary,
+            onChanged: (v) async {
+              final ok = await ref
+                  .read(languagePreferenceProvider.notifier)
+                  .toggle(v);
+              if (!ok) {
+                NotificationService.showError(
+                  'Impossible de mettre à jour ce réglage. Réessaye dans un instant.',
+                );
+              }
+            },
           ),
         ],
       ),

@@ -64,6 +64,9 @@ class EssentielRepository {
       isSaved: (json['is_saved'] as bool?) ?? false,
       isLiked: (json['is_liked'] as bool?) ?? false,
       isDismissed: (json['is_dismissed'] as bool?) ?? false,
+      isFollowedSource: (json['is_followed_source'] as bool?) ?? false,
+      isFollowedTopic: (json['is_followed_topic'] as bool?) ?? false,
+      isActuDuJour: (json['is_actu_du_jour'] as bool?) ?? false,
     );
   }
 
