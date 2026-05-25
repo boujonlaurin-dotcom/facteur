@@ -20,6 +20,7 @@ class EssentielHiFiCard extends StatelessWidget {
   final void Function(EssentielArticle article) onTapArticle;
   final VoidCallback onTapPersonalize;
   final VoidCallback? onTapSkip;
+  final VoidCallback? onTapSeeAllDown;
   final VoidCallback? onTapExploreAll;
 
   const EssentielHiFiCard({
@@ -28,6 +29,7 @@ class EssentielHiFiCard extends StatelessWidget {
     required this.onTapArticle,
     required this.onTapPersonalize,
     this.onTapSkip,
+    this.onTapSeeAllDown,
     this.onTapExploreAll,
   });
 
@@ -96,7 +98,7 @@ class EssentielHiFiCard extends StatelessWidget {
             const SizedBox(height: FacteurSpacing.space4),
             _Footer(
               accent: accent,
-              onSkip: onTapSkip,
+              onSkip: onTapSeeAllDown ?? onTapSkip,
               onExploreAll: onTapExploreAll,
             ),
           ],
