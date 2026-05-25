@@ -7,11 +7,15 @@ class UserPersonalization {
   final Set<String> mutedThemes;
   final Set<String> mutedTopics;
   final Set<String> mutedContentTypes;
+  final bool hideNonFrSources;
+  final bool languageFilterUserSet;
 
   const UserPersonalization({
     this.mutedThemes = const {},
     this.mutedTopics = const {},
     this.mutedContentTypes = const {},
+    this.hideNonFrSources = true,
+    this.languageFilterUserSet = false,
   });
 
   factory UserPersonalization.fromJson(Map<String, dynamic> json) {
@@ -19,6 +23,9 @@ class UserPersonalization {
       mutedThemes: _toStringSet(json['muted_themes']),
       mutedTopics: _toStringSet(json['muted_topics']),
       mutedContentTypes: _toStringSet(json['muted_content_types']),
+      hideNonFrSources: (json['hide_non_fr_sources'] as bool?) ?? true,
+      languageFilterUserSet:
+          (json['language_filter_user_set'] as bool?) ?? false,
     );
   }
 

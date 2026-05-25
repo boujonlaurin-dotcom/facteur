@@ -34,6 +34,10 @@ class Source {
   final bool hasSubscription;
   final String? recommendedBy;
   final String? recommendationReason;
+  /// Langue ISO de la source ("fr","en",...). `null` ⇒ traité comme `fr`
+  /// (convention back-end Phase 4). Forward-compat : non encore consommé
+  /// par l'UI, prêt pour Story 7.7 (label EN sur cartes).
+  final String? language;
 
   Source({
     required this.id,
@@ -61,6 +65,7 @@ class Source {
     this.hasSubscription = false,
     this.recommendedBy,
     this.recommendationReason,
+    this.language,
   });
 
   Source copyWith({
@@ -89,6 +94,7 @@ class Source {
     bool? hasSubscription,
     String? recommendedBy,
     String? recommendationReason,
+    String? language,
   }) {
     return Source(
       id: id ?? this.id,
@@ -116,6 +122,7 @@ class Source {
       hasSubscription: hasSubscription ?? this.hasSubscription,
       recommendedBy: recommendedBy ?? this.recommendedBy,
       recommendationReason: recommendationReason ?? this.recommendationReason,
+      language: language ?? this.language,
     );
   }
 
@@ -158,6 +165,7 @@ class Source {
         hasSubscription: (json['has_subscription'] as bool?) ?? false,
         recommendedBy: json['recommended_by'] as String?,
         recommendationReason: json['recommendation_reason'] as String?,
+        language: json['language'] as String?,
       );
     } catch (e) {
       debugPrint('Source.fromJson: [ERROR] Failed to parse: $e');

@@ -11,6 +11,7 @@ import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_detail_modal.dart';
 import '../../digest/widgets/markdown_text.dart';
+import '../../digest/widgets/section_divider.dart';
 import '../providers/feed_provider.dart';
 import '../repositories/feed_repository.dart' show HighlightSpan, TokenSpan;
 import 'coverage_spectrum_bar.dart';
@@ -193,11 +194,15 @@ class _PerspectivesBottomSheetState
     final opened = _openedAt;
     final elapsed =
         opened != null ? DateTime.now().difference(opened).inSeconds : 0;
-    ref.read(analyticsServiceProvider).trackPerspectiveComparisonClosed(
-          contentId: widget.contentId,
-          viewedArticles: _viewedPerspectiveIds.length,
-          openedSeconds: elapsed,
-        );
+    // En tests / teardown rapide, le ProviderScope peut être disposé avant
+    // ce widget — on ne veut pas crasher pour un event analytics.
+    try {
+      ref.read(analyticsServiceProvider).trackPerspectiveComparisonClosed(
+            contentId: widget.contentId,
+            viewedArticles: _viewedPerspectiveIds.length,
+            openedSeconds: elapsed,
+          );
+    } catch (_) {}
     super.dispose();
   }
 
@@ -271,6 +276,39 @@ class _PerspectivesBottomSheetState
       if (!mounted) return;
       setState(() => _analysisState = PerspectivesAnalysisState.error);
     }
+  }
+
+  /// Sépare FR (langue null ou `fr`) des couvertures étrangères et insère
+  /// un `SectionDivider` "Couverture à l'étranger" entre les deux blocs.
+  List<Widget> _buildPerspectiveCards(List<Perspective> perspectives) {
+    final fr = <Perspective>[];
+    final foreign = <Perspective>[];
+    for (final p in perspectives) {
+      if (p.language == null || p.language == 'fr') {
+        fr.add(p);
+      } else {
+        foreign.add(p);
+      }
+    }
+
+    Widget card(Perspective p, {bool dim = false}) {
+      final w = Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: _PerspectiveCard(
+          perspective: p,
+          onView: _onPerspectiveViewed,
+        ),
+      );
+      return dim ? Opacity(opacity: 0.92, child: w) : w;
+    }
+
+    return [
+      for (final p in fr) card(p),
+      if (foreign.isNotEmpty) ...[
+        const SectionDivider(label: "Couverture à l'étranger"),
+        for (final p in foreign) card(p, dim: true),
+      ],
+    ];
   }
 
   @override
@@ -395,15 +433,10 @@ class _PerspectivesBottomSheetState
                         ],
                       ),
                     ),
-                    ...filtered.map(
-                      (p) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _PerspectiveCard(
-                          perspective: p,
-                          onView: _onPerspectiveViewed,
-                        ),
-                      ),
-                    ),
+                    // Split FR ("language" null ou "fr") des couvertures
+                    // étrangères. Le panel reste pluraliste : insensible au
+                    // toggle "Masquer les sources non françaises" (PO).
+                    ..._buildPerspectiveCards(filtered),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                       child: PerspectivesAnalysisZone(

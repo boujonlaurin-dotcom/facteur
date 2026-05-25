@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/api/api_client.dart';
 import '../../feed/repositories/personalization_repository.dart';
 import '../../lettres/providers/letters_provider.dart';
+import '../../settings/providers/language_preference_provider.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../models/theme_source_model.dart';
@@ -115,6 +116,11 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
 
       // ignore: avoid_print
       print('UserSourcesNotifier: Toggle success (persisted to DB)');
+      // Le backend peut basculer auto `hide_non_fr_sources` tant que
+      // `language_filter_user_set = false` — on resync sans bloquer l'UI.
+      unawaited(
+        ref.read(languagePreferenceProvider.notifier).refresh(),
+      );
       // No need to re-fetch entire list: optimistic update is sufficient and avoids race conditions
     } catch (e, stack) {
       // ignore: avoid_print
