@@ -217,6 +217,33 @@ class FeedThemeSection extends FluxSection {
   }
 }
 
+/// Collects every content id already rendered above the Explorer continuation
+/// — digest leads, Essentiel hi-fi articles, theme/topic items. The screen
+/// passes this set as a filter when building the Explorer list so an article
+/// already shown in the Tournée du jour never reappears below the closing
+/// card.
+Set<String> renderedContentIds(List<FluxSection> sections) {
+  final seen = <String>{};
+  for (final section in sections) {
+    switch (section) {
+      case EssentielSection(:final articles):
+        for (final article in articles) {
+          seen.add(article.contentId);
+        }
+      case DigestTopicSection(:final topics):
+        for (final topic in topics) {
+          if (topic.articles.isEmpty) continue;
+          seen.add(pickTopicLead(topic).contentId);
+        }
+      case FeedThemeSection(:final items):
+        for (final item in items) {
+          seen.add(item.id);
+        }
+    }
+  }
+  return seen;
+}
+
 /// Picks the lead article for a digest topic.
 ///
 /// Priority — followed-source first (user-affinity bonus), otherwise the
@@ -233,17 +260,13 @@ DigestItem pickTopicLead(DigestTopic topic) {
 /// Snapshot of the Flux Continu screen state.
 ///
 /// `sections` is the **ordered** list to render (already accounting for the
-/// serein swap and any missing sections). `feedContinu` is the paginated feed
-/// rendered below the closing card; the provider dedupes it against the
-/// articles already shown above. `feedCarousels` are the editorial carousels
-/// (Plus tard c'est maintenant, Autres angles, Pépites…) returned by the
-/// feed API, intercalated at their backend-provided position inside the
-/// feedContinu list.
+/// serein swap and any missing sections). The Explorer continuation below the
+/// closing card is sourced from `feedProvider` directly (and filtered locally
+/// against `dismissedIds` + the ids already rendered in `sections`), so the
+/// filter chips of the Explorer sticky bar actually drive the list.
 @immutable
 class FluxContinuState {
   final List<FluxSection> sections;
-  final List<Content> feedContinu;
-  final List<FeedCarouselData> feedCarousels;
   final bool isSerene;
   // Per-section UI state keyed by [sectionKey]. String keys (rather than
   // `SectionKind`) so multiple theme sections (one per favorite, 0..3) keep
@@ -266,8 +289,6 @@ class FluxContinuState {
 
   const FluxContinuState({
     this.sections = const [],
-    this.feedContinu = const [],
-    this.feedCarousels = const [],
     this.isSerene = false,
     this.moreOpen = const {},
     this.folded = const {},
@@ -279,8 +300,6 @@ class FluxContinuState {
 
   FluxContinuState copyWith({
     List<FluxSection>? sections,
-    List<Content>? feedContinu,
-    List<FeedCarouselData>? feedCarousels,
     bool? isSerene,
     Map<String, bool>? moreOpen,
     Map<String, bool>? folded,
@@ -292,8 +311,6 @@ class FluxContinuState {
   }) {
     return FluxContinuState(
       sections: sections ?? this.sections,
-      feedContinu: feedContinu ?? this.feedContinu,
-      feedCarousels: feedCarousels ?? this.feedCarousels,
       isSerene: isSerene ?? this.isSerene,
       moreOpen: moreOpen ?? this.moreOpen,
       folded: folded ?? this.folded,

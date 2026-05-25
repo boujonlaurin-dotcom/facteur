@@ -72,10 +72,12 @@ String _closingPrefsKey(DateTime day) =>
 
 /// Riverpod provider for the Flux Continu V1.8 home screen.
 ///
-/// Orchestrates three parallel API calls at mount, then up to three themed
-/// feed calls once the user's favorites have been resolved. Holds an ordered
-/// list of sections (already accounting for the serein swap) and a deduped
-/// feed continuation to render below the closing card.
+/// Orchestrates three parallel API calls at mount (digest, top-themes,
+/// essentiel) then up to three themed feed calls once the user's favorites
+/// have been resolved. Holds an ordered list of sections (already accounting
+/// for the serein swap). The Explorer continuation rendered below the closing
+/// card is sourced from `feedProvider` so the filter chips in the Explorer
+/// sticky bar actually shape the list.
 final fluxContinuProvider =
     AsyncNotifierProvider<FluxContinuNotifier, FluxContinuState>(
   FluxContinuNotifier.new,
@@ -96,12 +98,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   FluxSection? _bonnes;
   // Up to [_kMaxFavoriteSections] theme/topic sections, ordered to mirror
   // `userInterestsProvider.favorites`. Empty when the user has no favorites
-  // — the tournée then collapses to digest + feed continu only.
+  // — the tournée then collapses to digest only.
   List<FeedThemeSection> _themes = const [];
-  List<Content> _feedContinu = const [];
-  List<FeedCarouselData> _feedCarousels = const [];
-  bool _feedHasMore = false;
-  int _feedPage = 1;
   Map<String, bool> _moreOpen = const {};
   Map<String, bool> _folded = const {};
   bool _closingDismissed = false;
@@ -137,7 +135,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     });
 
     // React to favorite reorders / additions / removals without rebuilding
-    // the digest or feed continuation (those don't depend on favorites).
+    // the digest (the digest doesn't depend on favorites).
     ref.listen<AsyncValue<UserInterestsState>>(
       userInterestsProvider,
       (prev, next) {
@@ -165,10 +163,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         'getTopThemes',
         fallback: const <TopTheme>[],
       ),
-      _safe<FeedResponse>(
-        () => _feedRepo.getFeed(page: 1, limit: 20, serein: isSerene),
-        'getFeed (continuation)',
-      ),
       _safe<List<EssentielArticle>>(
         () async => (await _essentielRepo.fetch()) ?? const [],
         'fetchEssentiel',
@@ -177,9 +171,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     ]);
     final dual = results[0] as DualDigestResponse?;
     final topThemes = (results[1] as List<TopTheme>?) ?? const <TopTheme>[];
-    final feed = results[2] as FeedResponse?;
     final essentielArticles =
-        (results[3] as List<EssentielArticle>?) ?? const <EssentielArticle>[];
+        (results[2] as List<EssentielArticle>?) ?? const <EssentielArticle>[];
 
     // PR2 — la section "Essentiel" du haut du feed est désormais alimentée
     // par GET /api/essentiel (5 articles transversaux). Si l'endpoint n'a
@@ -214,10 +207,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     _lastFavorites = favorites;
     _themes = await _fetchThemeSections(favorites, isSerene);
 
-    _feedContinu = feed?.items ?? const [];
-    _feedCarousels = feed?.carousels ?? const [];
-    _feedHasMore = feed?.pagination.hasNext ?? false;
-    _feedPage = 1;
     _moreOpen = const {};
     _folded = await _loadFoldedForToday();
     _closingDismissed = await _loadClosingDismissedForToday();
@@ -266,8 +255,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
     return FluxContinuState(
       sections: _filterSections(ordered),
-      feedContinu: _filterFeed(_dedupFeed(_feedContinu, ordered)),
-      feedCarousels: _feedCarousels,
       isSerene: isSerene,
       moreOpen: _moreOpen,
       folded: _folded,
@@ -291,9 +278,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }
 
   /// Purges the article from the local state — adds the id to the dismissed
-  /// set and re-emits filtered sections + feed. No API call (the hide was
-  /// already fired via [markHiddenRemote] at swipe time). Called when the
-  /// user resolves the inline feedback (chip / close / viewport-exit).
+  /// set and re-emits filtered sections. No API call (the hide was already
+  /// fired via [markHiddenRemote] at swipe time). The Explorer continuation
+  /// reads its items from `feedProvider`, so the screen layer applies the
+  /// same `dismissedIds` filter there. Called when the user resolves the
+  /// inline feedback (chip / close / viewport-exit).
   void confirmDismiss(String contentId) {
     if (contentId.isEmpty) return;
     if (_dismissedIds.contains(contentId)) return;
@@ -302,7 +291,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (current == null) return;
     state = AsyncData(current.copyWith(
       sections: _filterSections(current.sections),
-      feedContinu: _filterFeed(current.feedContinu),
       dismissedIds: Set.unmodifiable(_dismissedIds),
     ));
   }
@@ -372,11 +360,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
             ),
         },
     ];
-  }
-
-  List<Content> _filterFeed(List<Content> feed) {
-    if (_dismissedIds.isEmpty) return feed;
-    return feed.where((c) => !_dismissedIds.contains(c.id)).toList();
   }
 
   /// Toggle the expand/collapse state of a section's "Plus de…" overflow.
@@ -646,28 +629,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     state = next;
   }
 
-  /// Append the next page of the feed continuation.
-  Future<void> loadMoreFeed() async {
-    if (!_feedHasMore) return;
-    final current = state.valueOrNull;
-    if (current == null) return;
-
-    final isSerene = ref.read(sereinToggleProvider).enabled;
-    final next = _feedPage + 1;
-    final page = await _safe<FeedResponse>(
-      () => _feedRepo.getFeed(page: next, limit: 20, serein: isSerene),
-      'getFeed page=$next',
-    );
-    if (page == null) return;
-
-    _feedPage = next;
-    _feedHasMore = page.pagination.hasNext;
-    _feedContinu = [..._feedContinu, ...page.items];
-    state = AsyncData(current.copyWith(
-      feedContinu: _dedupFeed(_feedContinu, current.sections),
-    ));
-  }
-
   /// Builds the v3 "L'Essentiel du jour" hi-fi section from the 5 articles
   /// returned by `GET /api/essentiel`. Returns `null` when the endpoint hasn't
   /// produced anything yet (202 preparing or transient failure) so the screen
@@ -886,8 +847,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }
 
   /// Replays only the theme-section fetches against the new favorite list.
-  /// Saves the cost of refetching the digest and feed continuation, which
-  /// don't depend on favorites.
+  /// Saves the cost of refetching the digest, which doesn't depend on
+  /// favorites.
   Future<void> _refetchThemesOnly(List<FavoriteRef> nextFavorites) async {
     final isSerene = ref.read(sereinToggleProvider).enabled;
     final capped =
@@ -917,30 +878,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (key.startsWith('theme:')) return true;
     if (key.startsWith('topic:')) return true;
     return false;
-  }
-
-  /// Builds the set of content_ids already rendered in the sections (digest
-  /// leads + feed-theme items) and filters them out of the continuation.
-  List<Content> _dedupFeed(List<Content> feed, List<FluxSection> sections) {
-    final seen = <String>{};
-    for (final section in sections) {
-      switch (section) {
-        case EssentielSection(:final articles):
-          for (final article in articles) {
-            seen.add(article.contentId);
-          }
-        case DigestTopicSection(:final topics):
-          for (final topic in topics) {
-            if (topic.articles.isEmpty) continue;
-            seen.add(pickTopicLead(topic).contentId);
-          }
-        case FeedThemeSection(:final items):
-          for (final item in items) {
-            seen.add(item.id);
-          }
-      }
-    }
-    return feed.where((c) => !seen.contains(c.id)).toList();
   }
 
   Future<T?> _safe<T>(
