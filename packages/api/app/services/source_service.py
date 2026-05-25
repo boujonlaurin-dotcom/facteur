@@ -48,7 +48,6 @@ class SourceService:
         subscriptions = {row.source_id: row.has_subscription for row in rows}
         return trusted_ids, multipliers, subscriptions
 
-
     def _build_source_response(
         self,
         s: Source,
@@ -107,9 +106,11 @@ class SourceService:
         user_uuid = UUID(user_id)
 
         # 1 query combinée : trusted_ids + multipliers + subscriptions
-        trusted_source_ids, multipliers, subscriptions = (
-            await self._load_user_source_context(user_uuid)
-        )
+        (
+            trusted_source_ids,
+            multipliers,
+            subscriptions,
+        ) = await self._load_user_source_context(user_uuid)
 
         # 1 query : muted sources via UserPersonalization
         muted_source_ids: set[UUID] = set()
@@ -181,9 +182,11 @@ class SourceService:
 
         if user_id:
             user_uuid = UUID(user_id)
-            trusted_source_ids, multipliers, subscriptions = (
-                await self._load_user_source_context(user_uuid)
-            )
+            (
+                trusted_source_ids,
+                multipliers,
+                subscriptions,
+            ) = await self._load_user_source_context(user_uuid)
             personalization = await self.db.scalar(
                 select(UserPersonalization).where(
                     UserPersonalization.user_id == user_uuid
@@ -222,9 +225,11 @@ class SourceService:
         rows = result.all()  # list of (Source, follower_count) tuples
 
         user_uuid = UUID(user_id)
-        trusted_source_ids, multipliers, subscriptions = (
-            await self._load_user_source_context(user_uuid)
-        )
+        (
+            trusted_source_ids,
+            multipliers,
+            subscriptions,
+        ) = await self._load_user_source_context(user_uuid)
 
         muted_source_ids: set[UUID] = set()
         personalization = await self.db.scalar(
@@ -270,9 +275,11 @@ class SourceService:
         subscriptions: dict[UUID, bool] = {}
         if user_id:
             user_uuid = UUID(user_id)
-            trusted_source_ids, multipliers, subscriptions = (
-                await self._load_user_source_context(user_uuid)
-            )
+            (
+                trusted_source_ids,
+                multipliers,
+                subscriptions,
+            ) = await self._load_user_source_context(user_uuid)
             personalization = await self.db.scalar(
                 select(UserPersonalization).where(
                     UserPersonalization.user_id == user_uuid
