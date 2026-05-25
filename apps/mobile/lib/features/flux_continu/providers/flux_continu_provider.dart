@@ -62,7 +62,24 @@ const int _kMaxFavoriteSections = 3;
 const String _kFoldedPrefsKeyPrefix = 'flux_continu_folded_';
 const String _kClosingPrefsKeyPrefix = 'flux_continu_closing_dismissed_';
 
-String _dayKey(DateTime day) => day.toIso8601String().substring(0, 10);
+/// Boundary hour (local time) at which the "tournée day" flips. Aligned with
+/// the API digest cron at 07:30 Paris (`DIGEST_CRON_HOUR_PARIS`). Before this
+/// hour, the digest still reflects yesterday so the fold state must too —
+/// otherwise opening the app at 02:00 would wipe fold state while the
+/// content is unchanged.
+const int _kTourneeDayBoundaryHour = 7;
+const int _kTourneeDayBoundaryMinute = 30;
+
+/// Returns the canonical ISO day (`YYYY-MM-DD`) for the tournée at [now],
+/// using a 07:30-local boundary instead of midnight.
+String _dayKey(DateTime now) {
+  final shifted = (now.hour < _kTourneeDayBoundaryHour ||
+          (now.hour == _kTourneeDayBoundaryHour &&
+              now.minute < _kTourneeDayBoundaryMinute))
+      ? now.subtract(const Duration(days: 1))
+      : now;
+  return shifted.toIso8601String().substring(0, 10);
+}
 
 String _foldedPrefsKey(DateTime day) =>
     '$_kFoldedPrefsKeyPrefix${_dayKey(day)}';
@@ -537,17 +554,32 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// about to resize, so it can compensate the scroll offset.
   Set<String> persistQueuedSnapshot() => Set.unmodifiable(_persistQueued);
 
-  /// Re-expands a folded section in the current session only (not persisted).
-  /// Lets the user re-read a section they previously scrolled past without
-  /// disabling the auto-fold for tomorrow's tournée.
+  /// Re-expands a folded section. Also purges the section from
+  /// [_persistQueued] and from the day-scoped SharedPreferences blob so a
+  /// cold launch in the same day does not re-fold the section.
+  ///
+  /// Without the prefs purge, [markScrolledPastForNextSession] would have
+  /// persisted the fold immediately and [_loadFoldedForToday] would restore
+  /// it on next mount — leaving sections like "Actus du jour" stuck folded
+  /// forever once the user has scrolled past them once.
   void unfoldLocally(FluxSection section) {
     final current = state.valueOrNull;
     if (current == null) return;
     final key = sectionKey(section);
-    if (current.folded[key] != true) return;
-    final next = Map<String, bool>.from(current.folded)..remove(key);
-    _folded = next;
-    state = AsyncData(current.copyWith(folded: next));
+    final wasFolded = current.folded[key] == true;
+    final wasQueued = _persistQueued.remove(key);
+    if (!wasFolded && !wasQueued) return;
+    if (wasFolded) {
+      final next = Map<String, bool>.from(current.folded)..remove(key);
+      _folded = next;
+      state = AsyncData(current.copyWith(folded: next));
+    }
+    // Rewrite the prefs blob with the new (live + still-queued) fold set so
+    // the unfold survives a cold launch in the same tournée day.
+    unawaited(_persistFolded({
+      ..._folded,
+      for (final k in _persistQueued) k: true,
+    }));
   }
 
   /// Manually folds a section in the current session only (not persisted).
@@ -728,7 +760,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       blurb: _kThemeBlurb,
       accent: accent,
       illustrationAsset: _kVeilleIllustration,
-      coreVisibleCount: 3,
+      coreVisibleCount: 2,
       themeSlug: themeSlug,
       customTopicId: customTopicId,
       items: items,
@@ -867,7 +899,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       blurb: 'Les derniers articles de ta veille personnalisée.',
       accent: _kVeilleAccent,
       illustrationAsset: _kVeilleIllustration,
-      coreVisibleCount: 3,
+      coreVisibleCount: 2,
       items: items,
     );
   }

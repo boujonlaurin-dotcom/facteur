@@ -34,10 +34,16 @@ class SectionBlock extends StatelessWidget {
   /// for [DigestTopicSection] which keeps its in-place fold/expand button.
   final VoidCallback? onSeeAll;
 
-  /// "Tout explorer" action of the [EssentielSection] hi-fi card. Wired by
-  /// the flux_continu screen to fold the Essentiel card AND scroll to the
+  /// "Tout l'essentiel" action of the [EssentielSection] hi-fi card. Wired
+  /// by the flux_continu screen to fold the Essentiel card AND scroll to the
   /// next section ("Actus du jour"). Ignored for other section types.
   final VoidCallback? onTapExploreAll;
+
+  /// "Je veux tout voir ⬇️" action of the [EssentielSection] hi-fi card.
+  /// Wired by the flux_continu screen to fold the Essentiel card AND scroll
+  /// all the way down to the "Explorer" banner. Ignored for other section
+  /// types.
+  final VoidCallback? onTapSeeAllDown;
 
   /// IDs of articles currently in the inline-feedback pending state. When
   /// non-empty, the matching cards are swapped for a [FeedbackInline] at the
@@ -77,6 +83,7 @@ class SectionBlock extends StatelessWidget {
     this.onTapFavorite,
     this.onSeeAll,
     this.onTapExploreAll,
+    this.onTapSeeAllDown,
   });
 
   @override
@@ -118,7 +125,7 @@ class SectionBlock extends StatelessWidget {
               articles: section.articles,
               onTapArticle: (a) => onTapArticle(a, section),
               onTapPersonalize: () => EssentielPersonalizeSheet.show(context),
-              onTapSkip: onFold,
+              onTapSeeAllDown: onTapSeeAllDown,
               onTapExploreAll: onTapExploreAll,
             ),
             const SizedBox(height: 16),
@@ -145,6 +152,15 @@ class SectionBlock extends StatelessWidget {
             sectionLabel: section.label,
             totalCount: section.items.length,
             hasMore: section.hasMore,
+            onTap: onSeeAll!,
+          )
+        else if (section is DigestTopicSection &&
+            onSeeAll != null &&
+            section.hasOverflow)
+          PlusDeButton(
+            sectionLabel: section.label,
+            isOpen: false,
+            hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
             onTap: onSeeAll!,
           )
         else if (section.hasOverflow)

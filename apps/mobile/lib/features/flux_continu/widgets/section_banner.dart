@@ -52,8 +52,8 @@ class SectionBanner extends StatelessWidget {
     const topRadius = BorderRadius.vertical(top: Radius.circular(10));
     final container = Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(0, 4, 0, 16),
-      constraints: const BoxConstraints(minHeight: 132),
+      margin: const EdgeInsets.fromLTRB(0, 4, 0, 12),
+      constraints: const BoxConstraints(minHeight: 108),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: topRadius,
@@ -75,8 +75,8 @@ class SectionBanner extends StatelessWidget {
             right: 0,
             child: IgnorePointer(
               child: Container(
-                width: 220,
-                height: 140,
+                width: 180,
+                height: 112,
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
                     center: Alignment.topRight,
@@ -107,7 +107,7 @@ class SectionBanner extends StatelessWidget {
               ),
             ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(22, 16, 22, 18),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -116,7 +116,7 @@ class SectionBanner extends StatelessWidget {
                   widthFactor: textWidthFactor,
                   alignment: AlignmentDirectional.centerStart,
                   child: Padding(
-                    padding: const EdgeInsets.only(top: 4, bottom: 6),
+                    padding: const EdgeInsets.only(top: 2, bottom: 4),
                     child: Text.rich(
                       TextSpan(
                         text: title,
@@ -133,10 +133,10 @@ class SectionBanner extends StatelessWidget {
                                 ),
                               ],
                         style: GoogleFonts.fraunces(
-                          fontSize: 25,
+                          fontSize: 21,
                           fontWeight: FontWeight.w700,
                           height: 1.06,
-                          letterSpacing: -0.5,
+                          letterSpacing: -0.4,
                           color: colors.textPrimary,
                         ),
                       ),
@@ -150,8 +150,8 @@ class SectionBanner extends StatelessWidget {
                     child: Text(
                       blurb!,
                       style: GoogleFonts.dmSans(
-                        fontSize: 13,
-                        height: 1.45,
+                        fontSize: 12,
+                        height: 1.35,
                         color: colors.textSecondary,
                       ),
                     ),
@@ -218,7 +218,7 @@ class _BannerIllustration extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Align(
-      alignment: const Alignment(1.15, 0.55),
+      alignment: const Alignment(0.98, 0.6),
       child: IgnorePointer(
         child: ShaderMask(
           blendMode: BlendMode.dstIn,
@@ -234,10 +234,10 @@ class _BannerIllustration extends StatelessWidget {
               opacity: 0.72,
               child: Image.asset(
                 asset,
-                height: 96,
+                height: 78,
                 // Source PNGs are 1024² — decode at 2× display height to
                 // keep texture memory bounded (saves ~10× per image).
-                cacheHeight: 192,
+                cacheHeight: 156,
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => const SizedBox.shrink(),
               ),

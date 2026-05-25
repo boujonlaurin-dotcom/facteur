@@ -38,6 +38,7 @@ import '../widgets/my_interests_intro.dart';
 import '../widgets/my_interests_sheet.dart';
 import '../widgets/section_banner.dart';
 import '../widgets/section_block.dart';
+import '../widgets/section_divider_dotted.dart';
 import '../widgets/section_hairline.dart';
 import '../widgets/sticky_tab_bar.dart';
 
@@ -323,7 +324,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     );
   }
 
-  /// "Tout explorer" action of the Essentiel hi-fi card: folds the card
+  /// "Tout l'essentiel" action of the Essentiel hi-fi card: folds the card
   /// (so it stops occupying the viewport) then scrolls to the section that
   /// follows in the composed feed — by construction "Actus du jour" in
   /// normal mode, cf. [FluxContinuNotifier._compose].
@@ -338,6 +339,18 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     await Future<void>.delayed(const Duration(milliseconds: 50));
     if (!mounted) return;
     await _scrollToSection(next);
+  }
+
+  /// "Je veux tout voir ⬇️" action of the Essentiel hi-fi card: folds the
+  /// card then scrolls all the way down to the "Explorer" banner. Reuses the
+  /// `index >= _sectionKeys.length` branch of [_scrollToSection], which
+  /// targets [_explorerKey] directly.
+  Future<void> _skipEssentielToExplorer(EssentielSection essentiel) async {
+    final notifier = ref.read(fluxContinuProvider.notifier);
+    notifier.foldLocally(essentiel);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    if (!mounted) return;
+    await _scrollToSection(_sectionKeys.length);
   }
 
   Future<void> _scrollToTop() async {
@@ -377,6 +390,16 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final key = Uri.encodeComponent(sectionKey(section));
     context.push(
       '${RoutePaths.fluxContinu}/theme/$key',
+      extra: section,
+    );
+  }
+
+  /// Opens the dedicated full-page view for a [DigestTopicSection]
+  /// (Actus du jour, Bonnes Nouvelles). Mirrors [_openThemeSection].
+  void _openDigestSection(BuildContext context, DigestTopicSection section) {
+    final key = Uri.encodeComponent(sectionKey(section));
+    context.push(
+      '${RoutePaths.fluxContinu}/section/$key',
       extra: section,
     );
   }
@@ -768,6 +791,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                     ),
                   ),
           ),
+          const SliverToBoxAdapter(
+            child: SectionDividerDotted(label: 'Tous tes articles'),
+          ),
           SliverToBoxAdapter(
             child: KeyedSubtree(
               key: _explorerKey,
@@ -853,9 +879,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 : null,
             onSeeAll: section is FeedThemeSection
                 ? () => _openThemeSection(context, section)
-                : null,
+                : section is DigestTopicSection
+                    ? () => _openDigestSection(context, section)
+                    : null,
             onTapExploreAll: section is EssentielSection
                 ? () => _exploreAllEssentiel(section, i)
+                : null,
+            onTapSeeAllDown: section is EssentielSection
+                ? () => _skipEssentielToExplorer(section)
                 : null,
           ),
         ),

@@ -10,6 +10,7 @@ import '../features/onboarding/screens/onboarding_screen.dart';
 import '../features/onboarding/screens/conclusion_animation_screen.dart';
 import '../features/feed/screens/feed_screen.dart';
 import '../features/feed/models/content_model.dart';
+import '../features/flux_continu/screens/digest_section_screen.dart';
 import '../features/flux_continu/screens/flux_continu_screen.dart';
 import '../features/flux_continu/screens/theme_section_screen.dart';
 import '../features/flux_continu/models/flux_continu_models.dart';
@@ -279,6 +280,20 @@ final routerProvider = Provider<GoRouter>((ref) {
               final section = state.extra as FeedThemeSection?;
               return FullSwipeCupertinoPage(
                 child: ThemeSectionScreen(
+                  sectionKeyValue: key,
+                  initialSection: section,
+                ),
+              );
+            },
+          ),
+          GoRoute(
+            path: 'section/:key',
+            parentNavigatorKey: NotificationService.navigatorKey,
+            pageBuilder: (context, state) {
+              final key = state.pathParameters['key']!;
+              final section = state.extra as DigestTopicSection?;
+              return FullSwipeCupertinoPage(
+                child: DigestSectionScreen(
                   sectionKeyValue: key,
                   initialSection: section,
                 ),

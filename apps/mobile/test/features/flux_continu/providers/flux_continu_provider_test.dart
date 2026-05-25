@@ -61,8 +61,16 @@ UserInterestsState _interestsState({
 }
 
 String _todayKey() {
-  final today = DateTime.now().toIso8601String().substring(0, 10);
-  return 'flux_continu_folded_$today';
+  // Mirror the provider's 07:30-local tournée-day boundary: before 07:30 the
+  // active prefs key still references yesterday so the fold survives across
+  // midnight (the digest hasn't regenerated yet).
+  final now = DateTime.now();
+  final shifted =
+      (now.hour < 7 || (now.hour == 7 && now.minute < 30))
+          ? now.subtract(const Duration(days: 1))
+          : now;
+  final day = shifted.toIso8601String().substring(0, 10);
+  return 'flux_continu_folded_$day';
 }
 
 FeedResponse _feedResponseWith(int items) {
@@ -349,6 +357,41 @@ void main() {
       expect(after!.folded, equals(initial.folded));
       // But the queue is preserved (so the cold-launch persist still applies).
       expect(notifier.persistQueuedSnapshot(), contains('essentiel'));
+    });
+
+    test('unfoldLocally purges _persistQueued and prefs so cold launch '
+        'does not re-fold the section', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+
+      await container.read(fluxContinuProvider.future);
+      final notifier = container.read(fluxContinuProvider.notifier);
+      const essentiel = DigestTopicSection(
+        kind: SectionKind.essentiel,
+        label: 'Actus du jour',
+        accent: Color(0xFFB0470A),
+        coreVisibleCount: 3,
+        topics: [],
+      );
+
+      // Queue the fold (simulates the user scrolling past the section).
+      await notifier.markScrolledPastForNextSession(essentiel);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList(_todayKey()), contains('essentiel'));
+      expect(notifier.persistQueuedSnapshot(), contains('essentiel'));
+
+      // User taps the folded card to re-expand. The fix must clear both the
+      // in-memory queue AND the prefs blob, otherwise the next cold launch
+      // would restore the fold and leave the section permanently folded.
+      notifier.unfoldLocally(essentiel);
+      // Give the unawaited _persistFolded a tick to flush.
+      await Future<void>.delayed(Duration.zero);
+
+      expect(notifier.persistQueuedSnapshot(), isEmpty);
+      expect(prefs.getStringList(_todayKey()) ?? const <String>[],
+          isNot(contains('essentiel')));
     });
   });
 
