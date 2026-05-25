@@ -103,6 +103,30 @@ lib/
 - **Titres** : Fraunces (serif)
 - **Corps** : DM Sans (sans-serif)
 
+## 🔦 Tester via Conductor Spotlight
+
+[Spotlight](https://www.conductor.build/docs/guides/spotlight-testing) synchronise les fichiers d'un workspace Conductor vers le repo root et déclenche le hot reload Flutter. Workflow en 3 étapes :
+
+**Prérequis :** `.env` au repo root renseigné (SUPABASE_ANON_KEY + API_BASE_URL) — déjà pré-rempli avec les valeurs par défaut.
+
+1. **Démarrer l'app depuis le repo root** (pas depuis le workspace) :
+   ```bash
+   # Depuis ~/Desktop/facteur (ou le chemin de ton repo root)
+   bash scripts/run-mobile-web.sh           # → prod Railway
+   bash scripts/run-mobile-web.sh --local   # → API locale uvicorn :8080
+   ```
+   Chrome s'ouvre sur `http://localhost:8081`.
+
+2. **Modifier du code** dans le workspace Conductor (ex. `mumbai`), puis cliquer **Spotlight** dans l'UI Conductor.
+
+3. Observer dans le terminal Flutter : `Reloaded N libraries` — la modif est visible dans Chrome sans rebuild complet.
+
+**Notes importantes :**
+- Le port `8081` est fixe : Spotlight peut taper la même URL d'une session à l'autre.
+- Changer une variable d'env (`.env`) nécessite un **restart** du script (compile-time, pas un hot reload).
+- Premier clic Spotlight = création du checkpoint git → peut prendre quelques secondes.
+- Si le hot reload ne se déclenche pas automatiquement, faire un **hot restart manuel** : taper `R` dans le terminal Flutter.
+
 ## 🧪 Tests
 
 ```bash

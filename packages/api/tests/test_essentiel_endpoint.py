@@ -46,6 +46,8 @@ def _make_article(
     source_name: str = "Le Monde",
     source: SourceMini | None = None,
     is_followed_source: bool = False,
+    badge: str | None = None,
+    is_read: bool = False,
 ) -> DigestTopicArticle:
     return DigestTopicArticle(
         content_id=uuid4(),
@@ -56,6 +58,8 @@ def _make_article(
         rank=rank,
         reason="Test",
         is_followed_source=is_followed_source,
+        badge=badge,
+        is_read=is_read,
     )
 
 
@@ -66,6 +70,8 @@ def _make_topic(
     theme: str | None = "technologie",
     perspective_count: int = 3,
     n_articles: int = 1,
+    is_trending: bool = False,
+    is_une: bool = False,
 ) -> DigestTopic:
     return DigestTopic(
         topic_id=f"topic-{rank}",
@@ -74,6 +80,8 @@ def _make_topic(
         reason="Test",
         theme=theme,
         perspective_count=perspective_count,
+        is_trending=is_trending,
+        is_une=is_une,
         articles=[
             _make_article(rank=i + 1, title=f"{label} {i + 1}")
             for i in range(n_articles)
@@ -204,9 +212,15 @@ async def test_get_essentiel_returns_5_articles(auth_override: UUID):
     ]
     digest = _make_digest(topics)
 
-    with patch(
-        "app.routers.essentiel.read_digest_or_fallback",
-        new=AsyncMock(return_value=digest),
+    with (
+        patch(
+            "app.routers.essentiel.read_digest_or_fallback",
+            new=AsyncMock(return_value=digest),
+        ),
+        patch(
+            "app.routers.essentiel.fetch_user_essentiel_context",
+            new=AsyncMock(return_value=EssentielUserContext()),
+        ),
     ):
         async with _client() as client:
             resp = await client.get("/api/essentiel")
@@ -250,9 +264,15 @@ async def test_get_essentiel_propagates_stale_fallback(auth_override: UUID):
     topics = [_make_topic(rank=1, label="Tech", n_articles=5)]
     digest = _make_digest(topics, is_stale=True)
 
-    with patch(
-        "app.routers.essentiel.read_digest_or_fallback",
-        new=AsyncMock(return_value=digest),
+    with (
+        patch(
+            "app.routers.essentiel.read_digest_or_fallback",
+            new=AsyncMock(return_value=digest),
+        ),
+        patch(
+            "app.routers.essentiel.fetch_user_essentiel_context",
+            new=AsyncMock(return_value=EssentielUserContext()),
+        ),
     ):
         async with _client() as client:
             resp = await client.get("/api/essentiel")
@@ -468,6 +488,176 @@ def test_followed_source_flag_fallback_when_db_set_empty():
     response = build_essentiel_response(digest, user_context=ctx)
 
     assert response.articles[0].source.id == s_followed.id
+
+
+# ─── Tests Actu du jour / diversité dure / is_read / flags JSON ──────────
+
+
+def test_actu_trending_takes_lead_slot_over_strong_user_signal():
+    """Un topic `is_trending=True` doit fournir le lead, même si un autre
+    topic match plus fortement le profil user."""
+    actu_topic = _make_topic(
+        rank=5,
+        label="Actu",
+        theme="international",
+        is_trending=True,
+        n_articles=1,
+    )
+    followed_topic = _make_topic(
+        rank=1,
+        label="Tech",
+        theme="technologie",
+        n_articles=1,
+    )
+    digest = _make_digest([followed_topic, actu_topic])
+    # User suit fortement "technologie" (poids 3.0) → +150 sur Tech.
+    # Mais l'Actu a +40 (trending) — moins que 150 mais on a forcé le slot lead.
+    ctx = EssentielUserContext(topic_weights={"technologie": 3.0})
+
+    response = build_essentiel_response(digest, user_context=ctx)
+
+    assert response.articles[0].section_label == "Actu"
+    assert response.articles[0].is_actu_du_jour is True
+    assert response.articles[0].rank == 1
+
+
+def test_actu_une_or_badge_also_takes_lead_slot():
+    """Le slot lead Actu se déclenche aussi sur `is_une` ou `badge='actu'`."""
+    une_topic = DigestTopic(
+        topic_id="t-une",
+        label="Une du jour",
+        rank=3,
+        reason="Test",
+        theme="politique",
+        is_une=True,
+        perspective_count=4,
+        articles=[_make_article(rank=1, title="Une")],
+    )
+    regular_topic = _make_topic(rank=1, label="Régulier", n_articles=1)
+    digest = _make_digest([regular_topic, une_topic])
+
+    response = build_essentiel_response(digest)
+
+    assert response.articles[0].section_label == "Une du jour"
+    assert response.articles[0].is_actu_du_jour is True
+
+
+def test_diversity_hard_cap_max_2_articles_per_source():
+    """Pas plus de 2 articles d'une même `source.id` dans les 5."""
+    shared_source = _make_source("Le Monde")
+    # 5 articles tous depuis la même source, répartis sur 5 topics distincts
+    # (sinon le round diversité limiterait déjà à 1/topic).
+    topics = [
+        DigestTopic(
+            topic_id=f"t{i}",
+            label=f"T{i}",
+            rank=i + 1,
+            reason="Test",
+            theme=f"theme-{i}",
+            perspective_count=3,
+            articles=[_make_article(rank=1, title=f"T{i}-1", source=shared_source)],
+        )
+        for i in range(5)
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    # On a 5 topics, mais la diversité dure limite à 2 articles de la même source.
+    assert len(response.articles) == 2
+    assert all(a.source.id == shared_source.id for a in response.articles)
+
+
+def test_is_read_articles_are_deprioritized():
+    """Un article déjà lu est écarté tant qu'il existe un candidat non-lu."""
+    # 2 topics : T1 a un article DÉJÀ LU avec rank topic=1 (devrait gagner sans
+    # la pénalité), T2 a un article frais avec rank topic=2.
+    topics = [
+        DigestTopic(
+            topic_id="t1",
+            label="Lu",
+            rank=1,
+            reason="Test",
+            theme="politique",
+            perspective_count=3,
+            articles=[_make_article(rank=1, title="Déjà lu", is_read=True)],
+        ),
+        DigestTopic(
+            topic_id="t2",
+            label="Frais",
+            rank=2,
+            reason="Test",
+            theme="ecologie",
+            perspective_count=3,
+            articles=[_make_article(rank=1, title="Frais")],
+        ),
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    # L'article frais doit passer en premier.
+    assert response.articles[0].section_label == "Frais"
+    assert response.articles[0].is_read is False
+    # L'article lu peut encore être présent (fallback si pas mieux) — vérifier
+    # qu'il est en position basse seulement.
+    read_positions = [
+        i for i, a in enumerate(response.articles) if a.is_read
+    ]
+    if read_positions:
+        assert min(read_positions) > 0
+
+
+def test_response_exposes_followed_and_actu_flags():
+    """La réponse JSON expose `is_followed_source`, `is_followed_topic`,
+    `is_actu_du_jour` calculés à la volée."""
+    followed_source = _make_source("Mediapart")
+    other_source = _make_source("Le Monde")
+    topics = [
+        DigestTopic(
+            topic_id="t-trend",
+            label="Trending",
+            rank=1,
+            reason="Test",
+            theme="politique",
+            is_trending=True,
+            perspective_count=4,
+            articles=[
+                _make_article(rank=1, title="Trend-1", source=followed_source)
+            ],
+        ),
+        DigestTopic(
+            topic_id="t-tech",
+            label="Tech",
+            rank=2,
+            reason="Test",
+            theme="technologie",
+            perspective_count=3,
+            articles=[
+                _make_article(rank=1, title="Tech-1", source=other_source)
+            ],
+        ),
+    ]
+    digest = _make_digest(topics)
+    ctx = EssentielUserContext(
+        followed_source_ids=frozenset({followed_source.id}),
+        source_priority_multipliers={followed_source.id: 1.0},
+        topic_weights={"technologie": 2.0},
+    )
+
+    response = build_essentiel_response(digest, user_context=ctx)
+
+    # Lead = Actu trending + source suivie.
+    lead = response.articles[0]
+    assert lead.is_actu_du_jour is True
+    assert lead.is_followed_source is True
+    assert lead.is_followed_topic is False  # theme="politique" pas dans topic_weights
+
+    # Article #2 = Tech, topic suivi mais pas source suivie ni actu.
+    tech = response.articles[1]
+    assert tech.is_actu_du_jour is False
+    assert tech.is_followed_source is False
+    assert tech.is_followed_topic is True
 
 
 @pytest.mark.asyncio
