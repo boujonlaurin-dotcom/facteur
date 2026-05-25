@@ -79,7 +79,7 @@ class EssentielPersonalizeSheet extends StatelessWidget {
               subtitle: 'Choisis les thèmes qui guident ton Essentiel.',
               onTap: () {
                 Navigator.of(context).pop();
-                context.goNamed(RouteNames.myInterests);
+                context.pushNamed(RouteNames.myInterests);
               },
             ),
             _ChoiceTile(
@@ -89,7 +89,7 @@ class EssentielPersonalizeSheet extends StatelessWidget {
               subtitle: 'Suis ou masque les médias qui te parlent.',
               onTap: () {
                 Navigator.of(context).pop();
-                context.goNamed(RouteNames.sources);
+                context.pushNamed(RouteNames.sources);
               },
             ),
             const SizedBox(height: 12),

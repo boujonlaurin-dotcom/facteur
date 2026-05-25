@@ -9,6 +9,7 @@ import 'core/services/deep_link_service.dart';
 import 'core/services/widget_service.dart';
 import 'features/feed/providers/feed_preload_provider.dart';
 import 'features/feed/providers/feed_provider.dart';
+import 'features/flux_continu/providers/flux_continu_preload_provider.dart';
 import 'features/my_interests/services/interests_sync_service.dart';
 import 'features/onboarding/providers/onboarding_sync_provider.dart';
 import 'features/settings/providers/theme_provider.dart';
@@ -116,6 +117,12 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     // watches auth state and kicks off `feedProvider.future` in the
     // background so the Feed tab renders instantly on first tap.
     ref.watch(feedPreloadProvider);
+
+    // Same pattern for the home screen (Flux Continu) — kicks off the 4
+    // endpoints in parallel as soon as auth is confirmed, in parallel with
+    // GoRouter's splash → /flux-continu redirect. Cuts ~1-2s off the cold
+    // open path.
+    ref.watch(fluxContinuPreloadProvider);
 
     // Active la re-sync automatique de l'onboarding quand la session devient
     // authentifiée (best-effort, silencieux) — voir onboarding_sync_provider.dart.

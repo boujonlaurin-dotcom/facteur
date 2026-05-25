@@ -40,6 +40,7 @@ from app.models.source import Source, UserSource
 from app.models.user import UserProfile, UserSubtopic
 from app.schemas.digest import DigestScoreBreakdown
 from app.services.briefing.importance_detector import ImportanceDetector
+from app.services.language_user_filter import language_filter_clause
 from app.services.recommendation.filter_presets import (
     apply_ad_filter,
     apply_good_news_filter,
@@ -126,6 +127,10 @@ class DigestContext:
     muted_topics: set[str]
     muted_content_types: set[str]
     hide_paid_content: bool = True
+    # Filtre langue : masque les cartes des sources non-FR (sauf sources
+    # suivies). Default False : sécurité pour les call sites historiques
+    # qui n'instancient pas la pref.
+    hide_non_fr_sources: bool = False
     user_bias_stance: BiasStance | None = None
     source_affinity_scores: dict[UUID, float] = field(default_factory=dict)
     source_priority_multipliers: dict[UUID, float] = field(default_factory=dict)
@@ -657,6 +662,11 @@ class DigestSelector:
         if personalization and personalization.hide_paid_content is not None:
             hide_paid_content = personalization.hide_paid_content
 
+        # Language filter preference (hide non-FR sources non-suivies).
+        hide_non_fr_sources = True
+        if personalization and personalization.hide_non_fr_sources is not None:
+            hide_non_fr_sources = personalization.hide_non_fr_sources
+
         user_bias_stance = None
 
         # Compute source affinity from past interactions
@@ -691,6 +701,7 @@ class DigestSelector:
             muted_topics=muted_topics,
             muted_content_types=muted_content_types,
             hide_paid_content=hide_paid_content,
+            hide_non_fr_sources=hide_non_fr_sources,
             user_bias_stance=user_bias_stance,
             source_affinity_scores=source_affinity_scores,
             source_priority_multipliers=source_priority_multipliers,
@@ -867,6 +878,12 @@ class DigestSelector:
                 )
             else:
                 curated_query = curated_query.where(Content.is_paid.is_not(True))
+
+        # Pool curated = sources non-suivies par construction, donc pas de
+        # bypass à passer. `user_sources_query` (suivi explicite) bypasse
+        # naturellement le filtre.
+        if context.hide_non_fr_sources:
+            curated_query = curated_query.where(language_filter_clause())
 
         curated_query = apply_ad_filter(curated_query)
 

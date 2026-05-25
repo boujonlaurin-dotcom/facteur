@@ -1,10 +1,11 @@
 import asyncio
 import uuid
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +28,7 @@ from app.services.content_service import ContentService
 from app.services.feed_cache import FEED_CACHE
 from app.services.title_annotation_service import (
     ClusterAnnotations,
+    TitleAnnotationService,
     get_title_annotation_service,
 )
 
@@ -565,6 +567,10 @@ _analysis_cache: TTLCache = TTLCache(maxsize=256, ttl=7200)
 
 # In-memory cache for perspectives responses (TTL 2h, max 256 entries)
 _perspectives_cache: TTLCache = TTLCache(maxsize=256, ttl=7200)
+# Parallel cache keyed by content_id holding the `X-Bias-Annotation-Source`
+# value ("llm"/"spacy") for the cached body — so cache hits re-emit the
+# debug header instead of dropping it silently.
+_perspectives_source_cache: TTLCache = TTLCache(maxsize=256, ttl=7200)
 
 
 def _normalize_url_for_match(raw: str | None) -> str:
@@ -794,18 +800,23 @@ async def _attach_highlight_spans(
     db: AsyncSession,
     content: Content,
     perspectives_dicts: list[dict],
-) -> dict | None:
+) -> tuple[dict | None, Literal["llm", "spacy"]]:
     """Mutate `perspectives_dicts` in-place adding `highlight_spans` + `shared_tokens`.
 
-    Looks up cached strong_tokens for the cluster (computing & persisting if
-    missing), then diffs the reference article's tokens against each
-    perspective's. Perspectives that aren't part of any DB cluster
-    (pure Google News results) get their tokens computed in one batched
-    spaCy call. Any failure → every perspective gets empty lists.
+    Two sources possible per perspective :
+    - **LLM enriched** when `cluster_title_annotations.semantic_equiv` is
+      populated for the cluster (PR 4 pipeline). Each span carries
+      `{start, end, text, category, weight, justification}` + `bias`
+      injected from the perspective's `bias_stance` for backward compat.
+    - **spaCy fallback** otherwise (token diff between reference and
+      perspective titles). Shape : `{start, end, text, bias}`.
 
-    Returns the reference title's pivot verb span `{start, end, text}` or
-    `None` — the caller bubbles it up to the response root so the front can
-    wash the pivot in the `cm-ref-inline` block.
+    Returns `(reference_pivot, source)` where :
+    - `reference_pivot` = pivot verb span of the reference title `{start, end,
+      text}` or `None`.
+    - `source` = `"llm"` if at least one perspective was enriched via
+      `semantic_equiv`, otherwise `"spacy"`. Bubbled up to the response
+      header `X-Bias-Annotation-Source` for debugging.
     """
     try:
         svc = get_title_annotation_service()
@@ -822,6 +833,30 @@ async def _attach_highlight_spans(
             svc.compute_strong_tokens(content.title or "")
         )
 
+        # Look up LLM annotations once for the whole cluster. Filtered by
+        # both `llm_version` and `cluster_signature` — a composition change
+        # invalidates the cache and we fall back to spaCy until the
+        # pipeline re-annotates.
+        # Lazy import : `llm_bias_annotation_service` pulls in
+        # `app.services.editorial.__init__` which itself imports
+        # `editorial.pipeline` → `llm_bias_annotation_service`. Top-level
+        # import here would create a circular import at module load time.
+        from app.services.llm_bias_annotation_service import (
+            LLM_VERSION as _LLM_BIAS_VERSION,
+        )
+
+        llm_cache: dict = {}
+        if content.cluster_id and annotations.tokens_by_id:
+            cluster_signature = TitleAnnotationService.compute_cluster_signature(
+                list(annotations.tokens_by_id.keys())
+            )
+            llm_cache = await svc.get_llm_annotations(
+                db,
+                content.cluster_id,
+                _LLM_BIAS_VERSION,
+                cluster_signature,
+            )
+
         # Collect off-cluster perspective titles once and run a single
         # batched spaCy call instead of N synchronous invocations on the
         # event loop.
@@ -836,6 +871,7 @@ async def _attach_highlight_spans(
             zip(off_cluster_indices, off_cluster_tokens, strict=True)
         )
 
+        llm_used = 0
         for i, p in enumerate(perspectives_dicts):
             alt_id = annotations.id_by_url.get(p.get("url") or "")
             alt_tokens = (
@@ -843,14 +879,25 @@ async def _attach_highlight_spans(
                 if alt_id is not None
                 else tokens_by_index.get(i, [])
             )
-            p["highlight_spans"] = svc.diff_spans(
-                ref_tokens,
-                alt_tokens,
-                p.get("bias_stance") or BiasStance.UNKNOWN.value,
-            )
+            bias = p.get("bias_stance") or BiasStance.UNKNOWN.value
+
+            llm_payload = llm_cache.get(alt_id) if alt_id is not None else None
+            if llm_payload is not None:
+                # Inject `bias` per span for clients pre-PR-6 that read it
+                # alongside the new `weight`/`category`/`justification`.
+                p["highlight_spans"] = [
+                    {**span, "bias": bias}
+                    for span in llm_payload.get("target_spans") or []
+                ]
+                llm_used += 1
+            else:
+                p["highlight_spans"] = svc.diff_spans(ref_tokens, alt_tokens, bias)
             p["shared_tokens"] = svc.compute_shared_tokens(ref_tokens, alt_tokens)
 
-        return svc.compute_reference_pivot(ref_tokens)
+        return (
+            svc.compute_reference_pivot(ref_tokens),
+            "llm" if llm_used > 0 else "spacy",
+        )
     except Exception:
         logger.exception(
             "highlight_spans_failed",
@@ -860,12 +907,13 @@ async def _attach_highlight_spans(
         for p in perspectives_dicts:
             p.setdefault("highlight_spans", [])
             p.setdefault("shared_tokens", [])
-        return None
+        return (None, "spacy")
 
 
 @router.get("/{content_id}/perspectives", status_code=status.HTTP_200_OK)
 async def get_perspectives(
     content_id: UUID,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -902,6 +950,9 @@ async def get_perspectives(
     cached_response = _perspectives_cache.get(cache_key)
     if cached_response is not None:
         logger.info("perspectives_cache_hit", content_id=cache_key)
+        response.headers["X-Bias-Annotation-Source"] = _perspectives_source_cache.get(
+            cache_key, "spacy"
+        )
         return cached_response
 
     logger.info(
@@ -1028,11 +1079,12 @@ async def get_perspectives(
         cached_row = analysis_result.scalars().first()
         cached_analysis = cached_row.analysis_text if cached_row else None
 
-        reference_pivot = await _attach_highlight_spans(
+        reference_pivot, bias_source = await _attach_highlight_spans(
             db, content, stored_perspectives
         )
+        response.headers["X-Bias-Annotation-Source"] = bias_source
 
-        response = {
+        response_body = {
             "content_id": cache_key,
             # Empty keywords: the snapshot was built without re-running the
             # Google News query path. Mobile uses keywords only as a hint
@@ -1047,7 +1099,8 @@ async def get_perspectives(
             "analysis_cached": cached_analysis is not None,
             "reference_pivot": reference_pivot,
         }
-        _perspectives_cache[cache_key] = response
+        _perspectives_cache[cache_key] = response_body
+        _perspectives_source_cache[cache_key] = bias_source
         logger.info(
             "perspectives_endpoint_stored_snapshot",
             content_id=cache_key,
@@ -1056,7 +1109,7 @@ async def get_perspectives(
             bias_groups=bias_groups,
             bias_sum=sum(stored_bias.values()),
         )
-        return response
+        return response_body
 
     # Live path (non-digest content_id, or stored snapshot missing).
     # Mirrors the editorial pipeline: include cluster's own sources so the
@@ -1195,12 +1248,16 @@ async def get_perspectives(
             "bias_stance": p.bias_stance,
             "published_at": p.published_at,
             "description": p.description,
+            "language": getattr(p, "language", None),
         }
         for p in perspectives
     ]
-    reference_pivot = await _attach_highlight_spans(db, content, perspectives_dicts)
+    reference_pivot, bias_source = await _attach_highlight_spans(
+        db, content, perspectives_dicts
+    )
+    response.headers["X-Bias-Annotation-Source"] = bias_source
 
-    response = {
+    response_body = {
         "content_id": cache_key,
         "keywords": keywords,
         "source_bias_stance": source_bias_stance,
@@ -1214,9 +1271,10 @@ async def get_perspectives(
     }
 
     # Store in cache (TTLCache handles expiration automatically)
-    _perspectives_cache[cache_key] = response
+    _perspectives_cache[cache_key] = response_body
+    _perspectives_source_cache[cache_key] = bias_source
 
-    return response
+    return response_body
 
 
 @router.post("/{content_id}/perspectives/analyze", status_code=status.HTTP_200_OK)
@@ -1328,5 +1386,6 @@ async def analyze_perspectives(
 
     # Invalidate perspectives cache so next get_perspectives includes the analysis
     _perspectives_cache.pop(cache_key, None)
+    _perspectives_source_cache.pop(cache_key, None)
 
     return response

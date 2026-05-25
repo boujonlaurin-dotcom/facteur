@@ -162,6 +162,11 @@ class Perspective:
     bias_stance: str  # left, center-left, center, center-right, right, unknown
     published_at: str | None = None
     description: str | None = None
+    # Langue détectée du titre ("fr", "en", autre — None = inconnu). Rempli
+    # côté cluster depuis `Content.language` ; les perspectives Google News
+    # restent None faute de row Content (le client traite null comme FR par
+    # défaut).
+    language: str | None = None
 
 
 STANCE_LABELS = {
@@ -761,6 +766,7 @@ class PerspectiveService:
                         else None
                     ),
                     description=getattr(content, "description", None),
+                    language=getattr(content, "language", None),
                 )
             )
         return result

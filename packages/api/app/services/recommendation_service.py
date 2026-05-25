@@ -144,6 +144,7 @@ def stratify_followed_first(
     return followed + others
 
 
+from app.services.language_user_filter import language_filter_clause
 from app.services.recommendation.filter_presets import (
     apply_entity_filter,
     apply_keyword_filter,
@@ -432,6 +433,14 @@ class RecommendationService:
         elif personalization and personalization.hide_paid_content is not None:
             hide_paid_content = personalization.hide_paid_content
 
+        # Language filter preference (hide non-FR sources non-suivies).
+        # Désactivé quand on browse explicitement une source (exploration).
+        hide_non_fr_sources = True
+        if source_id:
+            hide_non_fr_sources = False
+        elif personalization and personalization.hide_non_fr_sources is not None:
+            hide_non_fr_sources = personalization.hide_non_fr_sources
+
         # Convert source_id string to UUID if provided
         source_uuid = UUID(source_id) if source_id else None
 
@@ -466,6 +475,8 @@ class RecommendationService:
             keyword=keyword,
             # Paywall filter
             hide_paid_content=hide_paid_content,
+            # Language filter (hide non-FR sources non-suivies)
+            hide_non_fr_sources=hide_non_fr_sources,
             # Premium sources: allow paid content from subscribed sources
             subscribed_source_ids=subscribed_source_ids,
             # Source filter
@@ -2319,6 +2330,7 @@ class RecommendationService:
         digest_content_ids: list[UUID] = None,
         theme: str | None = None,
         hide_paid_content: bool = True,
+        hide_non_fr_sources: bool = False,
         subscribed_source_ids: set[UUID] = None,
         source_id: UUID | None = None,
         topic: str | None = None,
@@ -2490,6 +2502,9 @@ class RecommendationService:
                 )
             else:
                 query = query.where(Content.is_paid.is_not(True))
+
+        if hide_non_fr_sources:
+            query = query.where(language_filter_clause(followed_source_ids))
 
         # Apply serein content filter (orthogonal to mode — filters anxiety content)
         if serein and not source_id:

@@ -60,6 +60,8 @@ class EssentielArticle(BaseModel):
     is_followed_source: bool = False
     is_followed_topic: bool = False
     is_actu_du_jour: bool = False
+    # Langue détectée du titre (forward-compat).
+    language: str | None = None
 
     class Config:
         from_attributes = True

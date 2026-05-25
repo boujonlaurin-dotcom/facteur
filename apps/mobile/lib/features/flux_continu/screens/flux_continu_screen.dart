@@ -188,8 +188,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         !_loadingMore) {
       _loadingMore = true;
       ref
-          .read(fluxContinuProvider.notifier)
-          .loadMoreFeed()
+          .read(feedProvider.notifier)
+          .loadMore()
           .whenComplete(() => _loadingMore = false);
     }
   }
@@ -517,7 +517,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     FluxFeedbackChip chip,
   ) async {
     final state = ref.read(fluxContinuProvider).valueOrNull;
-    final article = state == null ? null : _lookupArticle(state, contentId);
+    final feedItems =
+        ref.read(feedProvider).valueOrNull?.items ?? const <Content>[];
+    final article =
+        state == null ? null : _lookupArticle(state, feedItems, contentId);
     switch (chip) {
       case FluxFeedbackChip.source:
         _trackFeedbackSubmit(contentId, 'less_source');
@@ -548,11 +551,16 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   }
 
   /// Finds an article in the current state by its content id, looking
-  /// across digest leads, theme items and the feed continuation. Returns
-  /// the raw [DigestItem] or [Content] so the caller can route it through
-  /// [articleToContent] for the article sheet.
-  Object? _lookupArticle(FluxContinuState state, String contentId) {
-    for (final c in state.feedContinu) {
+  /// across digest leads, theme items and the Explorer continuation
+  /// (sourced from `feedProvider`). Returns the raw [DigestItem] or
+  /// [Content] so the caller can route it through [articleToContent] for
+  /// the article sheet.
+  Object? _lookupArticle(
+    FluxContinuState state,
+    List<Content> exploreItems,
+    String contentId,
+  ) {
+    for (final c in exploreItems) {
       if (c.id == contentId) return c;
     }
     for (final s in state.sections) {
@@ -647,11 +655,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final notifier = ref.read(fluxContinuProvider.notifier);
     final colors = context.facteurColors;
     final impressionSlot = ref.watch(firstImpressionSlotProvider);
+    final feedState = ref.watch(feedProvider).valueOrNull;
     final keyword = ref.watch(feedProvider.notifier).selectedKeyword;
     final totalArticles = state.sections.fold<int>(
       0,
       (sum, s) => sum + s.totalCount,
     );
+    final exploreItems = _buildExploreItems(state, feedState);
+    final exploreCarousels = feedState?.carousels ?? const <FeedCarouselData>[];
 
     if (_sectionKeys.length != state.sections.length) {
       _sectionKeys
@@ -780,8 +791,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
               ),
             ),
           ),
-          if (state.feedContinu.isNotEmpty) ...[
-            _buildIntercalatedFeed(context, state),
+          if (exploreItems.isNotEmpty) ...[
+            _buildIntercalatedFeed(context, exploreItems, exploreCarousels),
             const SliverToBoxAdapter(child: SectionHairline()),
           ],
           const SliverToBoxAdapter(child: SizedBox(height: 60)),
@@ -864,11 +875,29 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     return slivers;
   }
 
+  /// Builds the Explorer feed list by reading from `feedProvider` and filtering
+  /// out (a) articles already rendered above and (b) ids swipe-dismissed
+  /// during this session. Keeps the Tournée / Explorer dedup invariant while
+  /// letting the filter chips drive the underlying list.
+  List<Content> _buildExploreItems(
+    FluxContinuState state,
+    FeedState? feedState,
+  ) {
+    final items = feedState?.items ?? const <Content>[];
+    if (items.isEmpty) return const [];
+    final rendered = renderedContentIds(state.sections);
+    final dismissed = state.dismissedIds;
+    if (rendered.isEmpty && dismissed.isEmpty) return items;
+    return items
+        .where((c) => !rendered.contains(c.id) && !dismissed.contains(c.id))
+        .toList(growable: false);
+  }
+
   Widget _buildIntercalatedFeed(
     BuildContext context,
-    FluxContinuState state,
+    List<Content> contents,
+    List<FeedCarouselData> carousels,
   ) {
-    final contents = state.feedContinu;
     final intercalations = <({int position, Widget Function() builder})>[];
 
     if (contents.length > 4) {
@@ -882,7 +911,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       ));
     }
 
-    for (final carousel in state.feedCarousels) {
+    for (final carousel in carousels) {
       if (carousel.items.isEmpty || carousel.position >= contents.length) {
         continue;
       }

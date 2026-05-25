@@ -375,6 +375,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           var dy = pendingDy;
           pendingDy = 0;
           if (Math.abs(dy) < 1) return;
+          // Cap per-frame delta to absorb rAF bursts caused by site CSS
+          // animations (e.g. Le Monde sticky-nav collapse). A real flick
+          // never exceeds ~150px in a single flush at 60fps.
+          if (dy >  150) dy =  150;
+          if (dy < -150) dy = -150;
           // Invert sign so positive = page-scroll-down-equivalent (hide chrome).
           ScrollBridge.postMessage('gesture_delta:' + (-dy));
         }
@@ -386,7 +391,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           pendingDy = 0;
           touchActive = true;
           ScrollBridge.postMessage('gesture_start');
-        }, { passive: true });
+        }, { passive: true, capture: true });
         document.addEventListener('touchmove', function(e) {
           if (!touchActive || e.touches.length > 1) return;
           var y = e.touches[0].clientY;
@@ -405,7 +410,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             rafScheduled = true;
             raf(flushGesture);
           }
-        }, { passive: true });
+        }, { passive: true, capture: true });
         document.addEventListener('touchend', function(e) {
           if (!touchActive) return;
           touchActive = false;
@@ -415,13 +420,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           // velocity is finger px/ms; invert sign (page-down equivalent) and
           // convert to px/s for the Dart snap heuristic.
           ScrollBridge.postMessage('gesture_end:' + (-velocity * 1000));
-        }, { passive: true });
+        }, { passive: true, capture: true });
         document.addEventListener('touchcancel', function(e) {
           if (!touchActive) return;
           touchActive = false;
           if (rafScheduled) flushGesture();
           ScrollBridge.postMessage('gesture_cancel');
-        }, { passive: true });
+        }, { passive: true, capture: true });
         // `window.scroll` is observed *only* for progress + scrollY mirroring.
         // It never drives the chrome offset.
         var lastProgress = 0;
@@ -2619,11 +2624,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       children: [
         // LAYER 0: WebView — fixed in viewport below the header, always rendered.
         // Painted first so it appears visually behind the scrollable content.
-        Positioned(
-          top: headerHeight,
-          left: 0,
-          right: 0,
-          bottom: 0,
+        // `top` follows _headerOffset so the WebView fills the gap as the
+        // header slides out (offset 0.0 → top=headerHeight, 1.0 → top=0).
+        // _buildWebViewLayer() is passed via `child` so the WebView controller
+        // is never rebuilt when the offset changes.
+        ValueListenableBuilder<double>(
+          valueListenable: _headerOffset,
+          builder: (_, offset, child) => Positioned(
+            top: headerHeight * (1.0 - offset),
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: child!,
+          ),
           child: _buildWebViewLayer(),
         ),
 

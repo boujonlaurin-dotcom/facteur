@@ -1,51 +1,98 @@
-# PR — fix: restaure les favoris custom_topic + Sujets épinglés
+# PR 1 — Backend : Filtre par langue & `Source.language` (curation FR-first)
 
-## Summary
+## Contexte
 
-Annule partiellement la PR #636 (commit 8adc5d41) qui avait vidé la section **Explorer** en bloquant les favoris `custom_topic`. La PR ré-autorise l'état `favorite` côté backend, expose une section dédiée **« Sujets épinglés »** côté mobile (séparée du top 3 reorderable, label « Épinglé » au lieu de « Favori »), et restaure automatiquement les 62 favoris perdus pour 15 users via heuristique sur `priority_multiplier`.
+PR 1/2 du plan **language-aware curation**. Introduit la prise en compte
+de la langue de la source dans les pipelines Essentiel / feed / digest,
+contrôlée par une préférence user `hide_non_fr_sources` masquant les
+cartes des sources non-FR — sauf si la source est explicitement suivie.
 
-- **Backend** : `set_state(custom_topic, favorite)` accepté ; `priority_multiplier` synchronisé à 2.0 sur favori (1.0 sinon) pour alimenter `feed.py:get_tab_counts`. Le top 3 reorderable reste réservé aux thèmes et veilles (nouvelle exception `CustomTopicNotReorderable` → 422 `custom_topic_not_reorderable` sur `/reorder` uniquement).
-- **Migration `23a4_restore_ct_favorites`** : exploite la signature `state=followed + priority_multiplier=2.0` (la migration 23a3 a oublié de reset le multiplier) pour ré-hydrater les rows perdues sans PITR Supabase. Idempotente, downgrade fonctionnel.
-- **Mobile** : `InterestStatePickerSheet` accepte un nouveau paramètre `favoriteSemantics` (theme vs pinnedTopic) qui change icône (étoile → punaise) + label (« Favori » → « Épinglé ») + description. Nouvelle section `_PinnedTopicsSection` dans « Mes intérêts » avec micro-copy expliquant le lien avec Explorer. `_StateChip` rend « Épinglé » + punaise pour les custom_topic.
+La couche mobile + section "Couverture à l'étranger" (panel perspectives)
+arrivent en PR 2.
 
-## Décisions PM actées (avant code)
+## Changements
 
-| # | Décision |
-|---|---|
-| Backend | `state=favorite` autorisé pour custom_topic. Sémantique technique identique aux thèmes/veilles (pas de schema split). |
-| UX | Label « Épinglé » + icône punaise pour les sujets, distinct du « Favori » + étoile des thèmes. |
-| Top 3 | Reste réservé aux thèmes et veilles (sujets non-draggable). |
-| Bug `slug_parent` | **Hors scope**, PR séparée (Plongée → tous les sports). |
-| Recovery | Best-effort via heuristique multiplier — exploite l'oubli de la migration 23a3 (pas de PITR nécessaire). |
-| Veille CTA | Hors scope (attente refonte veille en cours). |
+### Données
 
-## Test plan
+- **Migration `lg02_source_language_user_pref`** (down_revision : `lg01`) :
+  - `sources.language String(8) NULL, indexed` ; backfill par langue
+    majoritaire (≥ 60 %) à partir de `Content.language`.
+  - `user_personalization.hide_non_fr_sources` (Boolean, default `true`).
+  - `user_personalization.language_filter_user_set` (Boolean, default
+    `false`) — flag "mode auto".
+  - Backfill `hide_non_fr_sources = false` pour les users qui suivent
+    déjà ≥ 1 source étrangère (respect du choix implicite).
 
-- [x] Backend : `pytest tests/routers/test_user_interests.py -v` → 12/12 OK (nouveaux : `test_patch_allows_favorite_for_custom_topic`, `test_patch_unfavorite_custom_topic_resets_multiplier` ; mis à jour : `test_reorder_rejects_custom_topic` → nouvelle erreur).
-- [x] Backend : `pytest tests/alembic/test_23a4_restore_ct_favorites.py -v` → 5/5 OK (promotion, ignore multiplier=1, append après favoris existants, idempotence, ordre par created_at).
-- [x] Backend : suite complète `pytest -q` → 1141 passed, 2 échecs NER pré-existants non liés.
-- [x] Mobile : `flutter test test/features/my_interests/` → 12/12 OK (nouveau : `pinnedTopic semantics renders "Épinglé" label`).
-- [x] Mobile : `flutter analyze` → aucun nouvel error.
-- [x] Alembic : single head `23a4_restore_ct_favorites`.
-- [ ] **Post-deploy DB** : `SELECT COUNT(*) FROM user_favorite_interests WHERE custom_topic_id IS NOT NULL` → attendu 62 rows réparties sur 15 users (snapshot prod 2026-05-20).
-- [ ] **Post-deploy DB** : `SELECT COUNT(*) FROM user_topic_profiles WHERE state='favorite'` → attendu 62.
-- [ ] **Manuel mobile** : créer un sujet → l'épingler → vérifier qu'il apparaît dans « Sujets épinglés » ET comme onglet dans Explorer ; tenter de drag vers top 3 → impossible ; désépingler → onglet Explorer disparaît.
+### Services
 
-## Hors scope (PR à venir)
+- `app/services/language_user_filter.py` (nouveau) :
+  - `is_foreign_source`, `get_hide_non_fr_pref`, `apply_language_filter`
+    (filtre Python), `language_filter_clause` (clause SQL partagée
+    digest_selector ↔ recommendation_service), `recompute_auto_pref`
+    (mode auto bascule sur follow/unfollow).
+- `essentiel_service` : `EssentielUserContext.hide_non_fr_sources` +
+  `_filter_articles_by_language` appliqué avant le scoring.
+- `recommendation_service._get_candidates` : filtre SQL équivalent
+  (followed sources jamais filtrées). Désactivé en mode "browse a
+  specific source" (exploration).
+- `digest_selector` : `DigestContext.hide_non_fr_sources` + filtre SQL
+  sur le pool curated (les articles des sources suivies passent par
+  `user_sources_query`, hors filtre par construction).
+- `source_service.{trust,untrust,create,delete}_source` : appellent
+  `recompute_auto_pref` après mutation.
 
-- Fix résolution `slug_parent` → keywords dans `feed.py:get_tab_counts` (Plongée → tous les sports).
-- CTA « Créer une Veille à partir de ce sujet » (attente refonte veille).
-- Refonte sémantique globale du mot « favori » dans le reste de l'app.
+### API
 
-## Zones à risque
+- `SourceMini.language: str | None` (forward-compat, propagé dans tous
+  les schemas qui l'embarquent).
+- `ContentResponse.language`, `DigestTopicArticle.language`,
+  `EssentielArticle.language` (forward-compat — utile au debug et label
+  éventuel côté mobile).
+- `GET /api/personalization` expose `hide_non_fr_sources` +
+  `language_filter_user_set`.
+- `POST /api/personalization/toggle-hide-non-fr-sources` : toute MAJ
+  flippe `language_filter_user_set = true` (gel du choix user).
 
-- `services/user_interests_service.py` : mutation path favoris + sync `priority_multiplier`.
-- `alembic/versions/23a4_*` : migration data-only sur prod (62 rows à restaurer). Downgrade testé et fonctionnel.
-- `feed.py:get_tab_counts` continue de filtrer sur `priority_multiplier == 2.0` — le sync explicite dans `set_state` garantit que les onglets Explorer reflètent l'état déclaré en temps réel.
+### Background
 
-## Références
+- `app/jobs/recompute_source_language.py` (nouveau) : recalcule
+  `sources.language` 1×/jour à partir de `Content.language` des 30
+  derniers jours (seuil majoritaire 60 %).
+- Scheduler : nouveau job `recompute_source_language` à 03h30 Paris.
 
-- Bug doc : `docs/bugs/bug-custom-topic-favori-regression.md`
-- Errata story : `docs/stories/core/23.3.read-only-custom-topics.md`
-- Migration source du problème : `packages/api/alembic/versions/23a3_custom_topic_fav_drop.py`
-- Snapshot recovery (2026-05-20) : 62 favoris perdus, 15 users, min 1, max 12 favoris par user, moyenne 4.13.
+## Tests
+
+- `tests/services/test_language_user_filter.py` (nouveau) :
+  - 8 unit tests pure-Python.
+  - 6 tests DB pour `get_hide_non_fr_pref` + `recompute_auto_pref`
+    (mode auto / manuel, no-op sans personalization row).
+- Suite backend complète : **1285 passed, 1 skipped, 2 xfailed** sur DB
+  locale post-migration `lg02`.
+
+## Vérification
+
+```
+cd packages/api && python -m alembic heads          # → lg02_source_language_user_pref seule head
+cd packages/api && python -m alembic upgrade head   # DB vide → OK (jouée localement)
+cd packages/api && python -m pytest -q              # 1285 passed
+```
+
+## Points d'attention
+
+- **`Source.language=NULL` → traité comme FR** (rétro-compat avec le
+  client mobile et `editorial/writer.py:_looks_french`). Conséquence :
+  une source dont la langue n'est pas encore détectée ne sera pas
+  masquée.
+- **Filtre désactivé en exploration source** (`source_id` query param) :
+  on n'ampute pas le browse explicite.
+- **`recompute_auto_pref` flushe avant SELECT** : la nouvelle
+  UserSource doit être visible. Hooks placés après `db.flush()`.
+- **Mobile (PR 2)** reste à faire : toggle "Masquer sources non-FR" +
+  section "Couverture à l'étranger" dans le panel perspectives.
+
+## Follow-ups identifiés
+
+- La whitelist `is_french_source` peut mislabel certaines sources
+  (Story 7.7 — labellisation manuelle du catalogue). Acceptable pour PR 1.
+- Pas de migration côté Story 7.7 = on s'appuie sur le job daily pour
+  rattraper les nouvelles sources.

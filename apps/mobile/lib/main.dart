@@ -49,18 +49,11 @@ Future<void> main() async {
 }
 
 Future<void> _bootstrap() async {
+  final bootSw = Stopwatch()..start();
 
-  // Initialiser timeago
   timeago.setLocaleMessages('fr', fr_messages.FrMessages());
   timeago.setLocaleMessages('fr_short', FrCompactMessages());
 
-  // Orientation portrait uniquement
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
-
-  // Status bar style
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -69,24 +62,26 @@ Future<void> _bootstrap() async {
     ),
   );
 
-  // Initialiser Hive (storage local)
+  // Orientation : doit être résolu avant 1ère frame, sinon flash rotation
+  // sur devices qui lancent en landscape.
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+
   await Hive.initFlutter();
 
-  // Initialiser flutter_downloader (Android DownloadManager) pour la mise
-  // à jour APK : permet au téléchargement de continuer en arrière-plan.
-  try {
-    await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
-  } catch (e) {
-    debugPrint('Main: FlutterDownloader init failed (non-critical): $e');
-  }
-
-  // Pré-ouvrir les boxes et vérifier leur contenu
-  // Try-catch avec fallback : si un box est corrompu, on le recrée vide
-  debugPrint('Main: Opening Hive boxes...');
-  await _openBoxSafe<dynamic>('settings');
-  final authBox = await _openBoxSafe<dynamic>('auth_prefs');
-  final supabaseBox = await _openBoxSafe<String>('supabase_auth_persistence');
-  await _openBoxSafe<String>('feed_cache');
+  final boxesSw = Stopwatch()..start();
+  final boxes = await Future.wait<Box<dynamic>>([
+    _openBoxSafe<dynamic>('settings'),
+    _openBoxSafe<dynamic>('auth_prefs'),
+    _openBoxSafe<String>('supabase_auth_persistence'),
+    _openBoxSafe<String>('feed_cache'),
+  ]);
+  final authBox = boxes[1];
+  final supabaseBox = boxes[2];
+  debugPrint(
+      '[PERF] boot.hive_boxes_ms=${boxesSw.elapsedMilliseconds} (4 boxes parallel)');
 
   debugPrint('Main: Hive auth_prefs keys: ${authBox.keys.toList()}');
   debugPrint(
@@ -104,26 +99,164 @@ Future<void> _bootstrap() async {
     debugPrint('Main: Hive supabase_session NOT FOUND in box.');
   }
 
-  // Initialiser les notifications push locales (sans forcer la permission)
+  // Validation Supabase config (sans ça, on crash plus tard)
+  if (SupabaseConstants.url.isEmpty || SupabaseConstants.anonKey.isEmpty) {
+    debugPrint('ERROR: Supabase URL or Anon Key is missing.');
+    _runErrorApp(
+      'Configuration Supabase manquante. Vérifiez vos paramètres --dart-define.',
+    );
+    return;
+  }
+
+  // Bind navigator key AVANT runApp : ref statique consommée par le plugin
+  // notifications lors de son init différé.
+  PushNotificationService.setNavigatorKey(NotificationService.navigatorKey);
+
+  // PushNotificationService.init() est différé post-runApp : la codebase
+  // n'appelle jamais getNotificationAppLaunchDetails, donc le tap depuis
+  // cold-launch n'est pas géré aujourd'hui — déférer l'init ne régresse rien
+  // et économise ~100-400ms (timezone DB load + platform channel).
+  final initsSw = Stopwatch()..start();
+  final posthog = PostHogService();
+  String? appVersion;
+  try {
+    await Future.wait<void>([
+      Supabase.initialize(
+        url: SupabaseConstants.url,
+        anonKey: SupabaseConstants.anonKey,
+        authOptions: FlutterAuthClientOptions(
+          localStorage: SupabaseHiveStorage(),
+        ),
+        headers: {
+          'X-Client-Info': 'supabase-flutter/2.5.0',
+        },
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint(
+              'Main: Supabase.initialize TIMEOUT 10s — throwing to catch block');
+          throw TimeoutException(
+              'Supabase.initialize timeout after 10 seconds');
+        },
+      ),
+      _initPosthogSafe(posthog),
+      _initDownloaderSafe(),
+      PackageInfo.fromPlatform().then((info) {
+        appVersion = '${info.version}+${info.buildNumber}';
+      }).catchError((Object _) {
+        // Best-effort — version tracking degrades gracefully
+      }),
+    ]);
+  } catch (e) {
+    debugPrint('ERROR: Failed to initialize Supabase: $e');
+    _runErrorApp(
+      'Erreur d\'initialisation Supabase. Vérifiez la validité de vos clés.',
+    );
+    return;
+  }
+  debugPrint('[PERF] boot.critical_inits_ms=${initsSw.elapsedMilliseconds}');
+
+  final hasSession = Supabase.instance.client.auth.currentSession != null;
+  debugPrint('Main: Supabase Session restored immediately: $hasSession');
+
+  // PostHog identify initial (fire-and-forget pour ne pas bloquer runApp)
+  if (hasSession) {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user != null) {
+      unawaited(posthog.identify(
+        userId: user.id,
+        properties: _userIdentifyProperties(user, appVersion: appVersion),
+      ));
+    }
+  }
+  Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+    switch (data.event) {
+      case AuthChangeEvent.signedIn:
+      case AuthChangeEvent.tokenRefreshed:
+      case AuthChangeEvent.userUpdated:
+        final user = data.session?.user;
+        if (user != null) {
+          posthog.identify(
+            userId: user.id,
+            properties:
+                _userIdentifyProperties(user, appVersion: appVersion),
+          );
+        }
+        break;
+      case AuthChangeEvent.signedOut:
+        posthog.reset();
+        break;
+      default:
+        break;
+    }
+  });
+
+  debugPrint('[PERF] boot.pre_runapp_ms=${bootSw.elapsedMilliseconds}');
+
+  // Lancer l'app
+  runApp(const ProviderScope(child: FacteurApp()));
+
+  // Inits différés post-runApp : non bloquants pour la 1ère frame.
+  // - Notif scheduling (alarm, permissions, diagnostics)
+  // - Home Widget callback registration
+  unawaited(_initDeferredServices(posthog: posthog));
+}
+
+/// Init FlutterDownloader avec fallback silencieux (non-critique).
+Future<void> _initDownloaderSafe() async {
+  try {
+    await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
+  } catch (e) {
+    debugPrint('Main: FlutterDownloader init failed (non-critical): $e');
+  }
+}
+
+/// Init PostHog avec fallback silencieux : la télémétrie ne doit jamais
+/// crasher le boot.
+Future<void> _initPosthogSafe(PostHogService posthog) async {
+  try {
+    await posthog.init();
+  } catch (e) {
+    debugPrint('Main: PostHog init failed (non-critical): $e');
+  }
+}
+
+/// Services lancés après [runApp] : aucun n'est requis pour la 1ère frame.
+///
+/// Inclut la planification de la notification quotidienne (system call lente),
+/// la vérification d'exact alarm permission, le diagnostic notifs, et
+/// l'enregistrement du callback Home Widget. Tout est fire-and-forget côté
+/// boot — si un service échoue, le démarrage de l'app n'est pas affecté.
+Future<void> _initDeferredServices({required PostHogService posthog}) async {
+  final sw = Stopwatch()..start();
+
+  try {
+    unawaited(
+        HomeWidget.registerInteractivityCallback(homeWidgetBackgroundCallback));
+  } catch (e) {
+    debugPrint('Main: Home Widget init failed (non-critical): $e');
+  }
+
   Map<String, dynamic>? bootNotifDiag;
   bool? bootPushEnabledHive;
   try {
-    debugPrint('Main: Initializing push notifications...');
     final pushNotificationService = PushNotificationService();
-    PushNotificationService.setNavigatorKey(NotificationService.navigatorKey);
+    // L'init plugin (timezone DB + platform channel) coûte ~100-400ms ;
+    // déférée car aucun consommateur du tap-callback ne s'active dans la
+    // 1ère seconde post-runApp.
     await pushNotificationService.init();
 
-    // Planifier uniquement si l'utilisateur a déjà autorisé les notifications
     final settingsBox = Hive.box<dynamic>('settings');
     final pushEnabled = settingsBox.get('push_notifications_enabled',
         defaultValue: true) as bool;
     bootPushEnabledHive = pushEnabled;
-    if (pushEnabled) {
-      // S'assurer que la permission exact alarm est toujours valide
-      // (peut être révoquée par une mise à jour Android ou un changement système)
-      await pushNotificationService.ensureExactAlarmPermission();
 
-      // Ne planifier la notification statique que si aucune n'existe déjà.
+    // Diagnostic + scheduling sont indépendants : collecter le diagnostic
+    // pendant la planification (alarms + permission). `pushEnabled=false`
+    // → on collecte quand même le diagnostic (cf. bug-notifications-stalled).
+    final diagFuture = pushNotificationService.getDiagnostics();
+    if (pushEnabled) {
+      await pushNotificationService.ensureExactAlarmPermission();
       // Si une notification personnalisée (avec les sujets du digest) a été
       // planifiée par DigestNotifier._updateNotificationWithTopics(), on la
       // préserve — écraser avec le corps statique régresserait la feature.
@@ -135,7 +268,6 @@ Future<void> _bootstrap() async {
         if (!scheduled) {
           debugPrint(
               'Main: WARNING — digest notification scheduling failed, retrying...');
-          // Retry après re-demande explicite de permission
           await pushNotificationService.requestExactAlarmPermission();
           final retryOk =
               await pushNotificationService.scheduleDailyDigestNotification();
@@ -146,133 +278,23 @@ Future<void> _bootstrap() async {
             'Main: Digest notification already scheduled — skipping static placeholder.');
       }
     }
-
-    // Toujours collecter le diagnostic — y compris quand pushEnabled=false —
-    // pour mesurer le parc côté télémétrie (cf. bug-notifications-stalled).
-    bootNotifDiag = await pushNotificationService.getDiagnostics();
-    debugPrint('Main: Push diagnostics: $bootNotifDiag');
-    debugPrint('Main: Push notifications initialized (enabled: $pushEnabled)');
+    bootNotifDiag = await diagFuture;
   } catch (e, s) {
-    debugPrint('ERROR: Failed to initialize push notifications: $e\n$s');
+    debugPrint(
+        'ERROR: Deferred push notifications init failed: $e\n$s');
   }
 
-  // Initialize Home Widget for Android home screen widget
-  try {
-    HomeWidget.registerInteractivityCallback(homeWidgetBackgroundCallback);
-    debugPrint('Main: Home Widget initialized.');
-  } catch (e) {
-    debugPrint('Main: Home Widget init failed (non-critical): $e');
-  }
-
-  // Validation Supabase avant initialisation
-  if (SupabaseConstants.url.isEmpty || SupabaseConstants.anonKey.isEmpty) {
-    debugPrint('ERROR: Supabase URL or Anon Key is missing.');
-    _runErrorApp(
-      'Configuration Supabase manquante. Vérifiez vos paramètres --dart-define.',
-    );
-    return;
-  }
-
-  // Initialisation Analytics
-  // Note: On le fait tôt pour choper le launch
-  // Mais on a besoin de Dio qui est dans le container...
-  // On va le faire via le provider plus tard ou ici si on instancie manuellement
-  // Pour l'instant on laisse le provider s'en occuper au premier build de FacteurApp
-
-  try {
-    final url = SupabaseConstants.url;
-    final key = SupabaseConstants.anonKey;
-
-    // Initialiser Supabase avec timeout de sécurité
-    debugPrint('Main: Initializing Supabase...');
-    debugPrint('Main: Supabase URL: ${SupabaseConstants.url}');
-    await Supabase.initialize(
-      url: url,
-      anonKey: key,
-      authOptions: FlutterAuthClientOptions(
-        localStorage: SupabaseHiveStorage(),
-      ),
-      headers: {
-        'X-Client-Info': 'supabase-flutter/2.5.0',
-      },
-    ).timeout(
-      const Duration(seconds: 15),
-      onTimeout: () {
-        debugPrint(
-            'Main: Supabase.initialize TIMEOUT - throwing to catch block');
-        throw TimeoutException('Supabase.initialize timeout after 15 seconds');
-      },
-    );
-    debugPrint('Main: Supabase initialized correctly.');
-    final hasSession = Supabase.instance.client.auth.currentSession != null;
-    debugPrint('Main: Supabase Session restored immediately: $hasSession');
-
-    // Story 14.1 — init PostHog after Supabase so we can piggyback on the
-    // auth state stream to identify/reset the distinct_id automatically.
-    final posthog = PostHogService();
-    await posthog.init();
-
-    String? appVersion;
-    try {
-      final info = await PackageInfo.fromPlatform();
-      appVersion = '${info.version}+${info.buildNumber}';
-    } catch (_) {
-      // Best-effort — version tracking degrades gracefully
-    }
-
-    // Émettre l'état des notifs locales collecté au boot (capture après init
-    // PostHog : avant, capture() est un no-op silencieux).
-    if (bootNotifDiag != null) {
-      final diagProps = <String, Object>{
-        'push_enabled_hive': bootPushEnabledHive ?? false,
-      };
-      bootNotifDiag.forEach((k, v) {
-        if (v != null) diagProps[k] = v as Object;
-      });
-      unawaited(posthog.capture(event: 'notif_diag', properties: diagProps));
-    }
-
-    if (hasSession) {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user != null) {
-        await posthog.identify(
-          userId: user.id,
-          properties: _userIdentifyProperties(user, appVersion: appVersion),
-        );
-      }
-    }
-    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
-      switch (data.event) {
-        case AuthChangeEvent.signedIn:
-        case AuthChangeEvent.tokenRefreshed:
-        case AuthChangeEvent.userUpdated:
-          final user = data.session?.user;
-          if (user != null) {
-            posthog.identify(
-              userId: user.id,
-              properties: _userIdentifyProperties(user, appVersion: appVersion),
-            );
-          }
-          break;
-        case AuthChangeEvent.signedOut:
-          posthog.reset();
-          break;
-        default:
-          break;
-      }
+  if (bootNotifDiag != null) {
+    final diagProps = <String, Object>{
+      'push_enabled_hive': bootPushEnabledHive ?? false,
+    };
+    bootNotifDiag.forEach((k, v) {
+      if (v != null) diagProps[k] = v as Object;
     });
-  } catch (e) {
-    debugPrint('ERROR: Failed to initialize Supabase: $e');
-    _runErrorApp(
-      'Erreur d\'initialisation Supabase. Vérifiez la validité de vos clés.',
-    );
-    return;
+    unawaited(posthog.capture(event: 'notif_diag', properties: diagProps));
   }
 
-  // Lancer l'app
-  debugPrint('Main: Calling runApp...');
-  runApp(const ProviderScope(child: FacteurApp()));
-  debugPrint('Main: runApp called.');
+  debugPrint('[PERF] boot.deferred_inits_ms=${sw.elapsedMilliseconds}');
 }
 
 /// User properties pushed à chaque `$identify` PostHog. Permet de filtrer
