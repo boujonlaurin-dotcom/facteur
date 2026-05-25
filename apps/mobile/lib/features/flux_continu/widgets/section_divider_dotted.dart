@@ -24,7 +24,6 @@ class SectionDividerDotted extends StatelessWidget {
     return Padding(
       padding: margin,
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(child: _DottedLine(color: tint)),
           Padding(

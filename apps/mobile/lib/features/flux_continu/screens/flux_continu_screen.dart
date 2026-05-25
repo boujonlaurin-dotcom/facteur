@@ -397,9 +397,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// Opens the dedicated full-page view for a [DigestTopicSection]
   /// (Actus du jour, Bonnes Nouvelles). Mirrors [_openThemeSection].
   void _openDigestSection(BuildContext context, DigestTopicSection section) {
-    final key = Uri.encodeComponent(sectionKey(section));
     context.push(
-      '${RoutePaths.fluxContinu}/section/$key',
+      '${RoutePaths.fluxContinu}/section/${sectionKey(section)}',
       extra: section,
     );
   }
