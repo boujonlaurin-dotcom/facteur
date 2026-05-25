@@ -292,6 +292,10 @@ class FluxContinuState {
   // ids in this set are filtered out before render so the swipe-away feels
   // instant; the hide API call is fire-and-forget in the provider.
   final Set<String> dismissedIds;
+  // Section keys queued for fold at the next cold launch (via "Sujet
+  // suivant" or scroll-past detection). The section stays expanded on screen
+  // — only the in-session indicator on the "Sujet suivant" button flips.
+  final Set<String> markedForNextSession;
   final bool isLoading;
   final Object? error;
 
@@ -302,6 +306,7 @@ class FluxContinuState {
     this.folded = const {},
     this.closingDismissed = false,
     this.dismissedIds = const {},
+    this.markedForNextSession = const {},
     this.isLoading = true,
     this.error,
   });
@@ -313,6 +318,7 @@ class FluxContinuState {
     Map<String, bool>? folded,
     bool? closingDismissed,
     Set<String>? dismissedIds,
+    Set<String>? markedForNextSession,
     bool? isLoading,
     Object? error,
     bool clearError = false,
@@ -324,6 +330,8 @@ class FluxContinuState {
       folded: folded ?? this.folded,
       closingDismissed: closingDismissed ?? this.closingDismissed,
       dismissedIds: dismissedIds ?? this.dismissedIds,
+      markedForNextSession:
+          markedForNextSession ?? this.markedForNextSession,
       isLoading: isLoading ?? this.isLoading,
       error: clearError ? null : (error ?? this.error),
     );
@@ -334,6 +342,8 @@ class FluxContinuState {
   /// string-key encoding scheme.
   bool isOpen(FluxSection section) => moreOpen[sectionKey(section)] ?? false;
   bool isFolded(FluxSection section) => folded[sectionKey(section)] ?? false;
+  bool isMarkedForNextSession(FluxSection section) =>
+      markedForNextSession.contains(sectionKey(section));
 
   /// Slugs of the `FeedThemeSection`s that make up today's tournée — used by
   /// the Explorer filter bar to hide chips for themes the user has already

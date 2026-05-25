@@ -898,11 +898,28 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             onTapSeeAllDown: section is EssentielSection
                 ? () => _skipEssentielToExplorer(section)
                 : null,
+            isMarkedForNextSession: state.isMarkedForNextSession(section),
+            onNextSection: (section is EssentielSection ||
+                    i >= state.sections.length - 1)
+                ? null
+                : () => _advanceToNextSection(section, i),
           ),
         ),
       ));
     }
     return slivers;
+  }
+
+  /// "Sujet suivant" tap handler for in-Tournée progression. Marks the
+  /// current section as consumed for the next session (without folding it
+  /// visually) and smooth-scrolls to the next section banner.
+  Future<void> _advanceToNextSection(FluxSection section, int index) async {
+    unawaited(HapticFeedback.lightImpact());
+    unawaited(ref
+        .read(fluxContinuProvider.notifier)
+        .markScrolledPastForNextSession(section));
+    if (!mounted) return;
+    await _scrollToSection(index + 1);
   }
 
   /// Builds the Explorer feed list by reading from `feedProvider` and filtering
