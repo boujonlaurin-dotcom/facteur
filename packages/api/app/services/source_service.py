@@ -13,6 +13,7 @@ from app.schemas.source import (
     SourceDetectResponse,
     SourceResponse,
 )
+from app.services.language_user_filter import recompute_auto_pref
 from app.services.rss_parser import RSSParser
 
 logger = structlog.get_logger()
@@ -354,6 +355,7 @@ class SourceService:
             self.db.add(user_source)
 
         await self.db.flush()
+        await recompute_auto_pref(self.db, user_uuid)
 
         return SourceResponse(
             id=source.id,
@@ -392,6 +394,7 @@ class SourceService:
 
         await self.db.delete(user_source)
         await self.db.flush()
+        await recompute_auto_pref(self.db, UUID(user_id))
 
         return True
 
@@ -443,6 +446,9 @@ class SourceService:
             ]
 
         await self.db.flush()
+        # Mode auto du filtre langue : si l'utilisateur n'a pas figé son
+        # toggle, le suivi d'une nouvelle source peut basculer la pref.
+        await recompute_auto_pref(self.db, UUID(user_id))
         return True
 
     async def update_source_subscription(
@@ -522,6 +528,7 @@ class SourceService:
 
         await self.db.delete(user_source)
         await self.db.flush()
+        await recompute_auto_pref(self.db, UUID(user_id))
         return True
 
     async def detect_source(self, url: str) -> SourceDetectResponse:

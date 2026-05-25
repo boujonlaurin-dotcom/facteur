@@ -9,6 +9,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.config import get_settings
 from app.jobs.digest_generation_job import run_digest_generation
 from app.jobs.purge_deleted_users import purge_deleted_users
+from app.jobs.recompute_source_language import recompute_source_language
 from app.workers.rss_sync import sync_all_sources
 from app.workers.storage_cleanup import cleanup_old_articles
 from app.workers.top3_job import generate_daily_top3_job
@@ -240,6 +241,16 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
+    # Recalcul `sources.language` à partir des Content des 30 derniers jours
+    # (3h30 Paris, après storage_cleanup pour partir d'un pool nettoyé).
+    scheduler.add_job(
+        recompute_source_language,
+        trigger=CronTrigger(hour=3, minute=30, timezone=_PARIS_TZ),
+        id="recompute_source_language",
+        name="Recompute Source.language (majoritaire 30j)",
+        replace_existing=True,
+    )
+
     # Zombie session sweeper — kill Supavisor sessions stuck in
     # `idle in transaction` > 5 min (filet de sécurité par-dessus le
     # timeout Postgres + le rollback() en finally de safe_async_session).
@@ -261,6 +272,7 @@ def start_scheduler() -> None:
             "digest_watchdog",
             "storage_cleanup",
             "purge_deleted_users",
+            "recompute_source_language",
             "zombie_session_sweeper",
         ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,

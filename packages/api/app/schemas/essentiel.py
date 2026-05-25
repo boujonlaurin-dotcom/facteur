@@ -56,6 +56,8 @@ class EssentielArticle(BaseModel):
     is_saved: bool = False
     is_liked: bool = False
     is_dismissed: bool = False
+    # Langue détectée du titre (forward-compat).
+    language: str | None = None
 
     class Config:
         from_attributes = True
