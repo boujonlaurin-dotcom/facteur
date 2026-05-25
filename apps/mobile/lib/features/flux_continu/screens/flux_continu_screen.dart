@@ -661,10 +661,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       0,
       (sum, s) => sum + s.totalCount,
     );
-    // The Explorer continuation is filtered locally against (a) ids already
-    // rendered above (digest leads + Tournée items), and (b) the ids the user
-    // has swipe-dismissed during this session. The list itself is driven by
-    // `feedProvider` so the Explorer filter bar actually shapes what shows up.
     final exploreItems = _buildExploreItems(state, feedState);
     final exploreCarousels = feedState?.carousels ?? const <FeedCarouselData>[];
 
