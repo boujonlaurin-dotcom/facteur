@@ -106,7 +106,6 @@ def _check_search_endpoint_rate(user_id: str) -> bool:
 @router.get("", response_model=SourceCatalogResponse)
 async def get_sources(
     user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
 ) -> SourceCatalogResponse:
     """Récupérer toutes les sources (curées + custom).
 
@@ -114,6 +113,14 @@ async def get_sources(
     (PYTHON-4 / PYTHON-26 — pool pressure). Returns 503 ``sources_unavailable``
     on persistent failure so the mobile FriendlyErrorView can render the
     "Petit souci de serveur" copy instead of a raw DioException.
+
+    Fix PYTHON-4R / PYTHON-3C (IdleInTransactionSessionTimeout lors de
+    l'onboarding) : la session DB est ouverte APRÈS l'acquisition du lock
+    SOURCES_CACHE, pas avant. Auparavant, ``Depends(get_db)`` ouvrait
+    ``BEGIN; SET LOCAL idle_in_transaction_session_timeout=10s`` avant même
+    d'avoir le lock — si un request concurrent tenait le lock plus de 10 s
+    (ex. retry mobile), Postgres tuait la transaction idle et le request
+    retombait en 503 après 3 retries exhaustés.
     """
     user_uuid = UUID(user_id)
 
@@ -126,13 +133,17 @@ async def get_sources(
         if cached is not None:
             return cached
 
-        service = SourceService(db)
+        # Session ouverte ICI — après le lock, juste avant les queries.
+        # Le timer idle_in_transaction_session_timeout ne démarre qu'à ce
+        # moment, éliminant le risque de timeout pendant l'attente de lock.
         try:
-            sources = await retry_db_op(
-                lambda: service.get_all_sources(user_id),
-                session=db,
-                op_name="sources.get_all",
-            )
+            async with safe_async_session() as db:
+                service = SourceService(db)
+                sources = await retry_db_op(
+                    lambda: service.get_all_sources(user_id),
+                    session=db,
+                    op_name="sources.get_all",
+                )
         except (SQLAlchemyError, DBAPIError) as e:
             logger.error(
                 "sources_endpoint_db_error",
