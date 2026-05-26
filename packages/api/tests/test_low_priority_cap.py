@@ -18,6 +18,7 @@ from uuid import UUID, uuid4
 from app.services.recommendation.filter_presets import (
     cap_low_priority_clusters,
     is_faits_divers_cluster,
+    is_news_bulletin_title,
     is_sport_cluster,
     is_sport_content,
 )
@@ -194,3 +195,47 @@ class TestCapLowPriorityClusters:
         sport_b = _make(theme="sport", titles=["b"])
         kept = cap_low_priority_clusters([sport_a, sport_b], max_sport=2)
         assert len(kept) == 2
+
+
+class TestIsNewsBulletinTitle:
+    """Story 9.4 — exclusion des bulletins radio / chroniques régulières."""
+
+    def test_journal_de_8h_uppercase(self):
+        assert is_news_bulletin_title("JOURNAL DE 8H du lundi 25 mai 2026")
+
+    def test_journal_de_8h_lowercase(self):
+        assert is_news_bulletin_title("Journal de 8h du lundi 25 mai 2026")
+
+    def test_journal_de_13h(self):
+        assert is_news_bulletin_title("Journal de 13h - édition du 24/05")
+
+    def test_le_7_9_tranche(self):
+        assert is_news_bulletin_title("Le 7/9 du 25 mai : invités politiques")
+
+    def test_le_18_20(self):
+        assert is_news_bulletin_title("Le 18/20 — points clés")
+
+    def test_chronique_du_at_start(self):
+        assert is_news_bulletin_title("Avec Sciences, chronique du lundi 25 mai 2026")
+
+    def test_jt_de_20h(self):
+        assert is_news_bulletin_title("JT de 20h du 24 mai")
+
+    def test_revue_de_presse(self):
+        assert is_news_bulletin_title("Revue de presse internationale")
+
+    def test_chronique_in_middle_not_bulletin(self):
+        """Faux-positif à éviter : « chronique du conflit » en milieu de phrase
+        n'est PAS un bulletin (le pattern est ancré début/30 premiers chars)."""
+        assert not is_news_bulletin_title(
+            "Une chronique du conflit israélo-palestinien après deux ans de guerre"
+        )
+
+    def test_regular_article_not_bulletin(self):
+        assert not is_news_bulletin_title(
+            "Macron annonce une réforme des retraites lundi"
+        )
+
+    def test_empty_or_none(self):
+        assert not is_news_bulletin_title(None)
+        assert not is_news_bulletin_title("")

@@ -19,11 +19,13 @@ from httpx import ASGITransport, AsyncClient
 
 from app.dependencies import get_current_user_id
 from app.main import app
+from app.models.enums import ContentType
 from app.schemas.content import SourceMini
 from app.schemas.digest import DigestResponse, DigestTopic, DigestTopicArticle
 from app.services.essentiel_service import (
     ESSENTIEL_MAX_ARTICLES,
     EssentielUserContext,
+    _perspective_score,
     _source_letter,
     build_essentiel_response,
 )
@@ -713,3 +715,338 @@ async def test_get_essentiel_uses_user_context_from_router(auth_override: UUID):
     body = resp.json()
     assert body["articles"][0]["source"]["name"] == "Mediapart"
     assert body["articles"][0]["rank"] == 1
+
+
+# ─── Story 9.4 — Durcissement des filtres ────────────────────────────────
+
+
+def _src(
+    name: str = "Le Monde",
+    *,
+    type_: str = "article",
+    theme: str | None = None,
+) -> SourceMini:
+    return SourceMini(
+        id=uuid4(),
+        name=name,
+        logo_url=None,
+        type=type_,
+        theme=theme,
+    )
+
+
+def _art(
+    *,
+    title: str = "Article",
+    source: SourceMini | None = None,
+    content_type: ContentType = ContentType.ARTICLE,
+    topics: list[str] | None = None,
+    rank: int = 1,
+) -> DigestTopicArticle:
+    return DigestTopicArticle(
+        content_id=uuid4(),
+        title=title,
+        url=f"https://example.com/{title.lower().replace(' ', '-')[:30]}",
+        published_at=datetime.now(UTC),
+        source=source or _src(),
+        rank=rank,
+        reason="Test",
+        content_type=content_type,
+        topics=topics or [],
+    )
+
+
+def _topic(
+    label: str,
+    articles: list[DigestTopicArticle],
+    *,
+    theme: str | None = None,
+    is_trending: bool = False,
+    is_une: bool = False,
+    perspective_count: int = 2,
+    rank: int = 1,
+) -> DigestTopic:
+    return DigestTopic(
+        topic_id=f"t-{label.lower()}",
+        label=label,
+        rank=rank,
+        reason="Test",
+        theme=theme,
+        is_trending=is_trending,
+        is_une=is_une,
+        perspective_count=perspective_count,
+        articles=articles,
+    )
+
+
+def test_sport_relegated_to_slot_5_when_pool_has_4_non_sport():
+    """Sport doit aboutir en slot 5+ s'il y a 4 non-sport disponibles."""
+    sport_src = _src("Ouest-France", theme="sport")
+    sport_art = _art(
+        title="Trophées UNFP. Dembélé meilleur joueur de Ligue 1",
+        source=sport_src,
+        topics=["sport"],
+    )
+    topics = [
+        _topic("Sport", [sport_art], theme="sport", is_trending=True, perspective_count=4, rank=1),
+        _topic("Politique", [_art(title="P1")], theme="politique", rank=2),
+        _topic("Climat", [_art(title="C1")], theme="ecologie", rank=3),
+        _topic("Tech", [_art(title="T1")], theme="tech", rank=4),
+        _topic("Culture", [_art(title="Cul1")], theme="culture", rank=5),
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    assert len(response.articles) == 5
+    # Sport doit être en rank 5 (dernier).
+    assert response.articles[-1].section_label == "Sport"
+    # Aucun article sport en rank 1-4.
+    for art in response.articles[:4]:
+        assert art.section_label != "Sport"
+
+
+def test_sport_excluded_when_pool_under_4_non_sport():
+    """Si le pool non-sport < 4 articles, le sport est exclu (pas remonté en slot 4)."""
+    sport_src = _src("Ouest-France", theme="sport")
+    sport_art = _art(title="F1 GP Canada", source=sport_src, topics=["sport"])
+    topics = [
+        _topic("Sport", [sport_art], theme="sport", is_trending=True, perspective_count=5, rank=1),
+        _topic("Politique", [_art(title="P1")], theme="politique", rank=2),
+        _topic("Climat", [_art(title="C1")], theme="ecologie", rank=3),
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    # On a 2 non-sport (< 4 = min) → sport exclu, résultat = 2 articles.
+    assert len(response.articles) == 2
+    assert all(a.section_label != "Sport" for a in response.articles)
+
+
+def test_sport_detected_via_content_topic_even_if_source_theme_is_society():
+    """Régression TrashTalk : source.theme="society" mais topics=["sport"]."""
+    trashtalk = _src("TrashTalk", theme="society")
+    nba_art = _art(
+        title="Victor Wembanyama, 33 points et un impact majeur",
+        source=trashtalk,
+        topics=["sport"],  # ML a bien classifié "sport"
+    )
+    topics = [
+        _topic("NBA", [nba_art], theme="sport", is_trending=True, perspective_count=2, rank=1),
+        _topic("Politique", [_art(title="P1")], theme="politique", rank=2),
+        _topic("Climat", [_art(title="C1")], theme="ecologie", rank=3),
+        _topic("Tech", [_art(title="T1")], theme="tech", rank=4),
+        _topic("Culture", [_art(title="Cul1")], theme="culture", rank=5),
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    # NBA (TrashTalk) doit être en rank 5, pas en lead.
+    assert response.articles[-1].section_label == "NBA"
+
+
+def test_sport_detected_via_title_keyword_only():
+    """Sport détecté via keyword titre même sans theme/topics."""
+    src = _src("Europe 1", theme="society")
+    sport_art = _art(
+        title="Play-offs NBA : le Thunder répond aux Spurs de Wembanyama",
+        source=src,
+        topics=[],  # pas de ML
+    )
+    topics = [
+        _topic("Play-offs", [sport_art], theme="society", is_trending=True, perspective_count=2, rank=1),
+        _topic("Politique", [_art(title="P1")], theme="politique", rank=2),
+        _topic("Climat", [_art(title="C1")], theme="ecologie", rank=3),
+        _topic("Tech", [_art(title="T1")], theme="tech", rank=4),
+        _topic("Culture", [_art(title="Cul1")], theme="culture", rank=5),
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    assert response.articles[-1].section_label == "Play-offs"
+
+
+def test_news_bulletin_journal_de_8h_excluded():
+    """« JOURNAL DE 8H du lundi 25 mai 2026 » exclu même si trending."""
+    france_culture = _src("France Culture", theme="culture")
+    bulletin = _art(
+        title="JOURNAL DE 8H du lundi 25 mai 2026",
+        source=france_culture,
+    )
+    topics = [
+        _topic("Bulletin", [bulletin], theme="culture", is_trending=True, perspective_count=2, rank=1),
+        _topic("Politique", [_art(title="P1")], theme="politique", rank=2),
+        _topic("Climat", [_art(title="C1")], theme="ecologie", rank=3),
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    titles = [a.title for a in response.articles]
+    assert "JOURNAL DE 8H du lundi 25 mai 2026" not in titles
+    assert len(response.articles) == 2  # Politique + Climat seulement
+
+
+def test_news_bulletin_chronique_du_excluded():
+    """« Avec Sciences, chronique du lundi… » (podcast court) exclu."""
+    src = _src("La Science CQFD", type_="podcast", theme="science")
+    chronique = _art(
+        title="Avec Sciences, chronique du lundi 25 mai 2026",
+        source=src,
+        content_type=ContentType.PODCAST,  # doublement exclu
+    )
+    topics = [
+        _topic("Chronique", [chronique], theme="science", perspective_count=2, rank=1),
+        _topic("Politique", [_art(title="P1")], theme="politique", rank=2),
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    assert all(a.title != "Avec Sciences, chronique du lundi 25 mai 2026" for a in response.articles)
+
+
+def test_chronique_in_middle_of_title_not_excluded():
+    """Faux-positif à éviter : « chronique » en milieu de phrase reste éligible."""
+    src = _src("Mediapart")
+    art = _art(
+        title="Une chronique du conflit israélo-palestinien après deux ans",
+        source=src,
+    )
+    topics = [
+        _topic("MO", [art], theme="international", perspective_count=4, rank=1),
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    # L'article doit passer (pattern ancré début, "chronique du" en milieu OK).
+    assert len(response.articles) == 1
+    assert "chronique du conflit" in response.articles[0].title
+
+
+def test_podcast_content_type_excluded():
+    """Tous les podcasts (content_type=PODCAST) sont exclus de l'Essentiel."""
+    src = _src("France Culture")
+    podcast = _art(
+        title="Le Miocène Moyen, le passé pour raconter notre climat",
+        source=src,
+        content_type=ContentType.PODCAST,
+    )
+    topics = [
+        _topic("Podcast", [podcast], theme="science", perspective_count=1, rank=1),
+        _topic("Politique", [_art(title="P1")], theme="politique", rank=2),
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    assert all(a.content_id != podcast.content_id for a in response.articles)
+
+
+def test_youtube_content_type_excluded():
+    """Vidéos YouTube (content_type=YOUTUBE) exclues de l'Essentiel."""
+    src = _src("Hugo Décrypte", type_="youtube")
+    yt = _art(
+        title="Le récap du jour",
+        source=src,
+        content_type=ContentType.YOUTUBE,
+    )
+    topics = [
+        _topic("YouTube", [yt], theme="news", perspective_count=2, rank=1),
+        _topic("Politique", [_art(title="P1")], theme="politique", rank=2),
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    assert all(a.content_id != yt.content_id for a in response.articles)
+
+
+def test_reddit_source_excluded():
+    """Posts de sources Reddit (r/france) exclus de l'Essentiel."""
+    reddit = _src("r/france", type_="reddit")
+    post = _art(
+        title="Quatre policiers de la BAC condamnés",
+        source=reddit,
+    )
+    topics = [
+        _topic("Reddit", [post], theme="society", is_trending=True, perspective_count=3, rank=1),
+        _topic("Politique", [_art(title="P1")], theme="politique", rank=2),
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    assert all(a.source.name != "r/france" for a in response.articles)
+
+
+def test_perspective_score_log_curve():
+    """Vérifie la calibration log2 du score perspectives."""
+    assert _perspective_score(0) == 0.0
+    assert _perspective_score(1) == 0.0
+    # 12 * log2(2) = 12
+    assert _perspective_score(2) == pytest.approx(12.0)
+    # 12 * log2(4) = 24
+    assert _perspective_score(4) == pytest.approx(24.0)
+    # 12 * log2(6) ≈ 31 → capé à 30
+    assert _perspective_score(6) == pytest.approx(30.0)
+    assert _perspective_score(20) == pytest.approx(30.0)
+
+
+def test_six_perspectives_beats_one_perspective_scoop():
+    """Cas PO : sujet à 6 médias (sans signal éditorial) doit passer devant un
+    scoop isolé (1 perspective), sans aucune préférence user."""
+    pop_src = _src("Le Monde")
+    scoop_src = _src("Mediapart")
+    very_relayed = _art(
+        title="Hauts responsables iraniens à Doha pour discussions",
+        source=pop_src,
+    )
+    isolated = _art(
+        title="Le Miocène moyen : passé du climat à venir",
+        source=scoop_src,
+    )
+    topics = [
+        # Scoop isolé en rank topic 1 (avantage rank), 1 perspective.
+        _topic("Climat", [isolated], theme="science", perspective_count=1, rank=1),
+        # Sujet relayé en rank topic 2, 6 perspectives.
+        _topic("MO", [very_relayed], theme="international", perspective_count=6, rank=2),
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    # Sans signal user, 6 perspectives (+30) > 1 perspective (0) +
+    # rank_penalty (-0.5 vs -1.0) → MO passe devant.
+    assert response.articles[0].section_label == "MO"
+    assert response.articles[1].section_label == "Climat"
+
+
+def test_actu_lead_slot_skips_sport_trending():
+    """Un sport trending ne décroche pas le lead-slot Actu (Story 9.4)."""
+    sport_src = _src("Ouest-France", theme="sport")
+    sport_actu = _art(
+        title="Coupe du monde 2026, finale historique",
+        source=sport_src,
+        topics=["sport"],
+    )
+    regular = _art(title="Politique-1", source=_src("Le Monde"))
+    topics = [
+        _topic("Sport", [sport_actu], theme="sport", is_trending=True, perspective_count=5, rank=1),
+        _topic("Politique", [regular], theme="politique", perspective_count=3, rank=2),
+        _topic("Climat", [_art(title="C1")], theme="ecologie", rank=3),
+        _topic("Tech", [_art(title="T1")], theme="tech", rank=4),
+        _topic("Culture", [_art(title="Cul1")], theme="culture", rank=5),
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    # Lead-slot = pas sport.
+    assert response.articles[0].section_label != "Sport"
+    # Sport en queue.
+    assert response.articles[-1].section_label == "Sport"
