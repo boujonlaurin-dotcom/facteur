@@ -107,14 +107,7 @@ class SectionBlock extends StatelessWidget {
     // viewport visually doesn't move. An animated transition here would defeat
     // the compensation by leaving the height in flux when the post-frame
     // callback measures it.
-    //
-    // [FeedThemeSection] never folds: it opens a dedicated ThemeSectionScreen
-    // (full-page slide), so the fold UX of digest sections would conflict
-    // with that affordance. Only digest sections (bonnes, "Actus du jour")
-    // and the v3 EssentielSection fold.
-    final bool canFold =
-        section is DigestTopicSection || section is EssentielSection;
-    return (isFolded && canFold) ? _buildFolded() : _buildExpanded();
+    return isFolded ? _buildFolded() : _buildExpanded();
   }
 
   Widget _buildFolded() {
@@ -122,7 +115,6 @@ class SectionBlock extends StatelessWidget {
       title: section.label,
       articleCount: section.totalCount,
       onTap: onUnfold,
-      showCheck: section is EssentielSection,
     );
   }
 

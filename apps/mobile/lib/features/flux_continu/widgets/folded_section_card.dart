@@ -4,26 +4,20 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../config/theme.dart';
 
 /// Compact "menu-list" version of [SectionBanner] used when the user has
-/// already consumed a section. Identity reduces to: section title, article
-/// count, chevron — over the bare parchment, with a hairline separator.
-/// No accent fill, no illustration: the card recedes to pure navigation
-/// once the day's content has been read.
+/// already consumed a section. Identity reduces to: green "Lu" check,
+/// section title, article count, chevron — over the bare parchment, with a
+/// hairline separator. No accent fill, no illustration: the card recedes to
+/// pure navigation once the day's content has been read.
 class FoldedSectionCard extends StatelessWidget {
   final String title;
   final int? articleCount;
   final VoidCallback? onTap;
-
-  /// When true, prefix the title with a small green check, matching the v3
-  /// spec for the folded "L'Essentiel du jour" ruban. Kept opt-in so the
-  /// existing digest sections (essentiel legacy, bonnes) stay unchanged.
-  final bool showCheck;
 
   const FoldedSectionCard({
     super.key,
     required this.title,
     this.articleCount,
     this.onTap,
-    this.showCheck = false,
   });
 
   @override
@@ -47,10 +41,8 @@ class FoldedSectionCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              if (showCheck) ...[
-                Icon(Icons.check, size: 16, color: colors.success),
-                const SizedBox(width: 6),
-              ],
+              Icon(Icons.check, size: 16, color: colors.success),
+              const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   title,
