@@ -165,6 +165,17 @@ class _NextSectionButtonState extends State<NextSectionButton>
     super.dispose();
   }
 
+  void _handleTap() {
+    if (!_localMarked && !widget.isMarked) {
+      setState(() => _localMarked = true);
+      if (_ctrl.status != AnimationStatus.forward &&
+          _ctrl.status != AnimationStatus.completed) {
+        _ctrl.forward(from: 0);
+      }
+    }
+    widget.onTap?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
@@ -176,17 +187,7 @@ class _NextSectionButtonState extends State<NextSectionButton>
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
-        onTap: widget.onTap == null
-            ? null
-            : () {
-                if (!_localMarked && !widget.isMarked) {
-                  setState(() => _localMarked = true);
-                  if (_ctrl.status != AnimationStatus.forward) {
-                    _ctrl.forward(from: 0);
-                  }
-                }
-                widget.onTap?.call();
-              },
+        onTap: widget.onTap == null ? null : _handleTap,
         borderRadius: BorderRadius.circular(12),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 220),

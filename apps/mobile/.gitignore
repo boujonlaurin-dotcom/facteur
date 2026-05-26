@@ -59,4 +59,3 @@ app.*.map.json
 *.exe
 *.dmg
 .claude/scheduled_tasks.lock
-.claude/scheduled_tasks.lock
