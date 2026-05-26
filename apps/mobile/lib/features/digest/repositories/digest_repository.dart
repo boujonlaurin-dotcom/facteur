@@ -27,14 +27,15 @@ class DigestGenerationException implements Exception {
 /// Cf. docs/bugs/bug-infinite-load-requests.md.
 class DigestTimeoutException extends DigestGenerationException {
   DigestTimeoutException()
-      : super('Le serveur a mis trop de temps à générer le briefing.');
+    : super('Le serveur a mis trop de temps à générer le briefing.');
 }
 
 /// Exception thrown when digest is being prepared (202)
 class DigestPreparingException implements Exception {
   final String message;
-  DigestPreparingException(
-      [this.message = 'Votre briefing est en cours de préparation']);
+  DigestPreparingException([
+    this.message = 'Votre briefing est en cours de préparation',
+  ]);
   @override
   String toString() => message;
 }
@@ -55,7 +56,8 @@ class DigestRepository {
 
       // ignore: avoid_print
       print(
-          'DigestRepository: GET digest ${queryParams.isNotEmpty ? queryParams : ""}');
+        'DigestRepository: GET digest ${queryParams.isNotEmpty ? queryParams : ""}',
+      );
 
       final response = await _apiClient.dio.get<dynamic>(
         'digest', // Removed trailing slash to match FastAPI exactly
@@ -70,12 +72,16 @@ class DigestRepository {
         // ignore: avoid_print
         print('DigestRepository: Received data keys: ${data.keys}');
         // ignore: avoid_print
-        print('DigestRepository: format_version=${data['format_version']}, topics_count=${(data['topics'] as List?)?.length ?? 0}, items_count=${(data['items'] as List?)?.length ?? 0}');
+        print(
+          'DigestRepository: format_version=${data['format_version']}, topics_count=${(data['topics'] as List?)?.length ?? 0}, items_count=${(data['items'] as List?)?.length ?? 0}',
+        );
 
         try {
           final digest = DigestResponse.fromJson(data);
           // ignore: avoid_print
-          print('DigestRepository: Parsed → usesTopics=${digest.usesTopics}, topics=${digest.topics.length}, items=${digest.items.length}');
+          print(
+            'DigestRepository: Parsed → usesTopics=${digest.usesTopics}, topics=${digest.topics.length}, items=${digest.items.length}',
+          );
           return digest;
         } catch (e, stack) {
           // ignore: avoid_print
@@ -106,9 +112,7 @@ class DigestRepository {
   /// Get a digest by its ID
   Future<DigestResponse> getDigestById(String digestId) async {
     try {
-      final response = await _apiClient.dio.get<dynamic>(
-        'digest/$digestId',
-      );
+      final response = await _apiClient.dio.get<dynamic>('digest/$digestId');
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data as Map<String, dynamic>;
@@ -130,7 +134,7 @@ class DigestRepository {
     required String digestId,
     required String contentId,
     required String
-        action, // 'read', 'save', 'like', 'unlike', 'not_interested', 'undo', 'unsave'
+    action, // 'read', 'save', 'like', 'unlike', 'not_interested', 'undo', 'unsave'
   }) async {
     try {
       // Handle unsave as save with is_saved=false for API compatibility
@@ -156,11 +160,19 @@ class DigestRepository {
   }
 
   /// Complete a digest (mark as finished)
-  Future<void> completeDigest(String digestId) async {
+  Future<DigestCompletionResponse> completeDigest(String digestId) async {
     try {
-      await _apiClient.dio.post<dynamic>(
+      final response = await _apiClient.dio.post<dynamic>(
         'digest/$digestId/complete',
       );
+
+      if (response.statusCode == 200 && response.data != null) {
+        return DigestCompletionResponse.fromJson(
+          response.data as Map<String, dynamic>,
+        );
+      }
+
+      throw Exception('Failed to complete digest: ${response.statusCode}');
     } on DioException catch (e) {
       if (e.response?.data != null) {
         throw Exception('API Error: ${e.response?.data}');
@@ -174,9 +186,7 @@ class DigestRepository {
   /// Generate a new digest on-demand
   Future<DigestResponse> generateDigest() async {
     try {
-      final response = await _apiClient.dio.post<dynamic>(
-        'digest/generate',
-      );
+      final response = await _apiClient.dio.post<dynamic>('digest/generate');
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data as Map<String, dynamic>;
@@ -199,7 +209,9 @@ class DigestRepository {
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data as Map<String, dynamic>;
         // ignore: avoid_print
-        print('DigestRepository.forceRegenerate: format_version=${data['format_version']}, topics_count=${(data['topics'] as List?)?.length ?? 0}');
+        print(
+          'DigestRepository.forceRegenerate: format_version=${data['format_version']}, topics_count=${(data['topics'] as List?)?.length ?? 0}',
+        );
         return DigestResponse.fromJson(data);
       }
       throw Exception('Failed to regenerate digest: ${response.statusCode}');
@@ -209,14 +221,9 @@ class DigestRepository {
   }
 
   /// Regenerate digest with a specific mode
-  Future<DigestResponse> regenerateWithMode({
-    required String mode,
-  }) async {
+  Future<DigestResponse> regenerateWithMode({required String mode}) async {
     try {
-      final queryParams = <String, dynamic>{
-        'force': 'true',
-        'mode': mode,
-      };
+      final queryParams = <String, dynamic>{'force': 'true', 'mode': mode};
 
       final response = await _apiClient.dio.post<dynamic>(
         'digest/generate',
@@ -299,9 +306,7 @@ class DigestRepository {
 
   /// Report an article as not serene (misclassified)
   Future<void> reportNotSerene(String contentId) async {
-    await _apiClient.dio.post<dynamic>(
-      'contents/$contentId/report-not-serene',
-    );
+    await _apiClient.dio.post<dynamic>('contents/$contentId/report-not-serene');
   }
 
   /// Update a user preference (key-value)
@@ -320,10 +325,13 @@ class DigestRepository {
     final response = await _apiClient.dio.get<dynamic>('users/preferences');
     final data = response.data as List<dynamic>;
     return data
-        .map((item) => {
-              'preference_key': (item as Map<String, dynamic>)['preference_key'] as String,
-              'preference_value': item['preference_value'] as String,
-            })
+        .map(
+          (item) => {
+            'preference_key':
+                (item as Map<String, dynamic>)['preference_key'] as String,
+            'preference_value': item['preference_value'] as String,
+          },
+        )
         .toList();
   }
 }

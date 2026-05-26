@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -40,6 +42,7 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     // is fully built and analyticsServiceProvider is readable.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _flushFluxScrollMetricIfAny();
+      _startAnalyticsSessionIfNeeded();
     });
     // Story 23.2 PR-4 : si un endpoint retiré répond 410, afficher un
     // snackbar global "Mise à jour requise". Le ApiClient intercepte tous
@@ -77,8 +80,10 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     if (appState == AppLifecycleState.paused) {
       _wasBackgrounded = true;
       _backgroundedAt = DateTime.now();
+      _endAnalyticsSessionIfNeeded();
     } else if (appState == AppLifecycleState.resumed) {
       _flushFluxScrollMetricIfAny();
+      _startAnalyticsSessionIfNeeded();
       if (_wasBackgrounded) {
         _wasBackgrounded = false;
         final elapsed = _backgroundedAt != null
@@ -149,6 +154,11 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     // pre-auth waits for sign-in before navigating.
     ref.listen<AuthState>(authStateProvider, (prev, next) {
       DeepLinkService.instance.setAuthenticated(next.isAuthenticated);
+      if (next.isAuthenticated) {
+        _startAnalyticsSessionIfNeeded();
+      } else if (prev?.isAuthenticated == true) {
+        _endAnalyticsSessionIfNeeded();
+      }
     });
     // Initial sync (the listen above only fires on changes).
     DeepLinkService.instance.setAuthenticated(
@@ -168,5 +178,18 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
       // Router
       routerConfig: router,
     );
+  }
+
+  void _startAnalyticsSessionIfNeeded() {
+    if (!ref.read(authStateProvider).isAuthenticated) return;
+    final analytics = ref.read(analyticsServiceProvider);
+    if (analytics.hasActiveSession) return;
+    unawaited(analytics.startSession());
+  }
+
+  void _endAnalyticsSessionIfNeeded() {
+    final analytics = ref.read(analyticsServiceProvider);
+    if (!analytics.hasActiveSession) return;
+    unawaited(analytics.endSession());
   }
 }

@@ -52,11 +52,13 @@ class AnalyticsService {
   Future<void> startSession({bool isOrganic = true}) async {
     _sessionId = const Uuid().v4();
     _sessionStartTime = DateTime.now();
+    final localDate = _sessionStartTime!.toIso8601String().split('T').first;
 
     await _logEvent('session_start', {
       'session_id': _sessionId,
       'is_organic': isOrganic,
       'platform': defaultTargetPlatform.toString(),
+      'local_date': localDate,
       if (_appVersion != null) 'app_version': _appVersion,
     });
     // Story 14.1 — PostHog uses `app_open` as the conventional event name
@@ -65,6 +67,7 @@ class AnalyticsService {
       'session_id': _sessionId,
       'is_organic': isOrganic,
       'platform': defaultTargetPlatform.toString(),
+      'local_date': localDate,
       if (_appVersion != null) 'app_version': _appVersion,
     });
   }
@@ -72,16 +75,22 @@ class AnalyticsService {
   Future<void> endSession() async {
     if (_sessionStartTime == null) return;
 
-    final duration = DateTime.now().difference(_sessionStartTime!).inSeconds;
+    final sessionStartTime = _sessionStartTime!;
+    final sessionId = _sessionId;
+    final duration = DateTime.now().difference(sessionStartTime).inSeconds;
 
-    await _logEvent('session_end', {
-      'session_id': _sessionId,
-      'duration_seconds': duration,
-    });
-
+    // Clear the in-memory session before awaiting I/O so a quick
+    // pause→resume cycle can start a fresh session immediately.
     _sessionId = null;
     _sessionStartTime = null;
+
+    await _logEvent('session_end', {
+      'session_id': sessionId,
+      'duration_seconds': duration,
+    });
   }
+
+  bool get hasActiveSession => _sessionStartTime != null;
 
   // ──────────────────────────────────────────────────────────────
   // Unified content interaction methods (GAFAM-aligned)
@@ -409,7 +418,6 @@ class AnalyticsService {
     await _capturePostHog('preference_changed', props);
   }
 
-
   Future<void> trackAddSourceThemeTap(String themeSlug) async {
     await _logEvent('add_source_theme_tap', {'theme_slug': themeSlug});
   }
@@ -423,10 +431,9 @@ class AnalyticsService {
   }
 
   Future<void> trackAddSourceContentTypeFilter(String contentType) async {
-    await _logEvent(
-      'add_source_content_type_filter',
-      {'content_type': contentType},
-    );
+    await _logEvent('add_source_content_type_filter', {
+      'content_type': contentType,
+    });
   }
 
   Future<void> trackAddSourceExpand(String query) async {
@@ -441,20 +448,14 @@ class AnalyticsService {
   Future<void> trackWellInformedPromptShown({
     String context = 'digest_inline',
   }) async {
-    final props = {
-      'session_id': _sessionId,
-      'context': context,
-    };
+    final props = {'session_id': _sessionId, 'context': context};
     await _logEvent('well_informed_prompt_shown', props);
   }
 
   Future<void> trackWellInformedPromptSkipped({
     String context = 'digest_inline',
   }) async {
-    final props = {
-      'session_id': _sessionId,
-      'context': context,
-    };
+    final props = {'session_id': _sessionId, 'context': context};
     await _logEvent('well_informed_prompt_skipped', props);
     await _capturePostHog('well_informed_prompt_skipped', props);
   }
@@ -558,9 +559,8 @@ class AnalyticsService {
     required int totalCount,
     DateTime? at,
   }) async {
-    final scrollPct = totalCount > 0
-        ? ((maxPosition + 1) / totalCount).clamp(0.0, 1.0)
-        : 0.0;
+    final scrollPct =
+        totalCount > 0 ? ((maxPosition + 1) / totalCount).clamp(0.0, 1.0) : 0.0;
     final props = <String, dynamic>{
       'session_id': _sessionId,
       'max_position': maxPosition,
@@ -574,19 +574,25 @@ class AnalyticsService {
 
   // ── Notifications activation events (brief §7) ──────────────────────
 
-  Future<void> trackModalNotifShown({required ActivationTrigger trigger}) async {
+  Future<void> trackModalNotifShown({
+    required ActivationTrigger trigger,
+  }) async {
     final props = <String, dynamic>{'trigger': trigger.name};
     await _logEvent('modal_notif_shown', props);
     await _capturePostHog('modal_notif_shown', props);
   }
 
-  Future<void> trackModalNotifPresetChanged({required NotifPreset preset}) async {
+  Future<void> trackModalNotifPresetChanged({
+    required NotifPreset preset,
+  }) async {
     final props = <String, dynamic>{'preset': preset.wire};
     await _logEvent('modal_notif_preset_changed', props);
     await _capturePostHog('modal_notif_preset_changed', props);
   }
 
-  Future<void> trackModalNotifTimeChanged({required NotifTimeSlot timeSlot}) async {
+  Future<void> trackModalNotifTimeChanged({
+    required NotifTimeSlot timeSlot,
+  }) async {
     final props = <String, dynamic>{'time': timeSlot.wire};
     await _logEvent('modal_notif_time_changed', props);
     await _capturePostHog('modal_notif_time_changed', props);
@@ -701,7 +707,7 @@ class AnalyticsService {
     try {
       if (_deviceId == null) await init();
 
-      await client.dio.post(
+      await client.dio.post<dynamic>(
         'analytics/events',
         data: {
           'event_type': eventType,
