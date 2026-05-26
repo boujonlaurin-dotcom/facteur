@@ -270,6 +270,16 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       _moreOpen = moreOpenFiltered;
     }
 
+    // Filter persistQueued against present sections to avoid stale keys
+    // surviving a compose (e.g. a favorite was removed).
+    final persistFiltered =
+        _persistQueued.where(keysPresent.contains).toSet();
+    if (persistFiltered.length != _persistQueued.length) {
+      _persistQueued
+        ..clear()
+        ..addAll(persistFiltered);
+    }
+
     return FluxContinuState(
       sections: _filterSections(ordered),
       isSerene: isSerene,
@@ -277,6 +287,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       folded: _folded,
       closingDismissed: _closingDismissed,
       dismissedIds: Set.unmodifiable(_dismissedIds),
+      markedForNextSession: Set.unmodifiable(_persistQueued),
       isLoading: false,
     );
   }
@@ -477,6 +488,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (_persistQueued.contains(key)) return;
     if (_folded[key] == true) return;
     _persistQueued.add(key);
+    final current = state.valueOrNull;
+    if (current != null) {
+      state = AsyncData(current.copyWith(
+        markedForNextSession: Set.unmodifiable(_persistQueued),
+      ));
+    }
     final combined = <String, bool>{
       ..._folded,
       for (final k in _persistQueued) k: true,
@@ -529,7 +546,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       return;
     }
     _folded = next;
-    state = AsyncData(current.copyWith(folded: next));
+    _persistQueued.removeAll(toPromote);
+    state = AsyncData(current.copyWith(
+      folded: next,
+      markedForNextSession: Set.unmodifiable(_persistQueued),
+    ));
   }
 
   /// Read-only snapshot of the sections queued for fold at next apply.
@@ -555,7 +576,14 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (wasFolded) {
       final next = Map<String, bool>.from(current.folded)..remove(key);
       _folded = next;
-      state = AsyncData(current.copyWith(folded: next));
+      state = AsyncData(current.copyWith(
+        folded: next,
+        markedForNextSession: Set.unmodifiable(_persistQueued),
+      ));
+    } else if (wasQueued) {
+      state = AsyncData(current.copyWith(
+        markedForNextSession: Set.unmodifiable(_persistQueued),
+      ));
     }
     // Rewrite the prefs blob with the new (live + still-queued) fold set so
     // the unfold survives a cold launch in the same tournée day.
@@ -721,7 +749,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       blurb: _kThemeBlurb,
       accent: accent,
       illustrationAsset: _kVeilleIllustration,
-      coreVisibleCount: 2,
+      coreVisibleCount: 3,
       themeSlug: themeSlug,
       customTopicId: customTopicId,
       items: items,
@@ -860,7 +888,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       blurb: 'Les derniers articles de ta veille personnalisée.',
       accent: _kVeilleAccent,
       illustrationAsset: _kVeilleIllustration,
-      coreVisibleCount: 2,
+      coreVisibleCount: 3,
       items: items,
     );
   }
