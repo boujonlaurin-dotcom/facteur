@@ -57,6 +57,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      ref.invalidate(userInterestsProvider);
       if (widget.forceSereinOn && !ref.read(sereinToggleProvider).enabled) {
         ref.read(sereinToggleProvider.notifier).setEnabledLocal(true);
       }
