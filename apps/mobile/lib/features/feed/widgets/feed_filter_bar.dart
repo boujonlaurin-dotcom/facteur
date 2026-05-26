@@ -248,8 +248,8 @@ class _SearchTrigger extends StatelessWidget {
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
         child: Container(
-          height: 32,
-          padding: const EdgeInsets.only(left: 10, right: 4),
+          height: 48,
+          padding: const EdgeInsets.only(left: 14, right: 6),
           decoration: BoxDecoration(
             color: primary.withValues(alpha: 0.12),
             border: Border.all(color: primary),
@@ -260,16 +260,16 @@ class _SearchTrigger extends StatelessWidget {
             children: [
               Icon(
                 PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold),
-                size: 14,
+                size: 18,
                 color: primary,
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 6),
               ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 100),
+                constraints: const BoxConstraints(maxWidth: 140),
                 child: Text(
                   keyword ?? '',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: primary,
                   ),
@@ -282,10 +282,10 @@ class _SearchTrigger extends StatelessWidget {
                 onTap: onClear,
                 child: Padding(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                   child: Icon(
                     PhosphorIcons.x(PhosphorIconsStyle.bold),
-                    size: 12,
+                    size: 16,
                     color: primary,
                   ),
                 ),
@@ -299,11 +299,11 @@ class _SearchTrigger extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
-        height: 32,
-        width: 32,
+        height: 48,
+        width: 48,
         child: Icon(
           PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
-          size: 18,
+          size: 22,
           color: colors.textSecondary,
         ),
       ),

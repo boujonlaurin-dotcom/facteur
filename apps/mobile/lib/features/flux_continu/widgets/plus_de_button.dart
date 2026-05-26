@@ -7,23 +7,20 @@ import '../../../config/theme.dart';
 /// bottom-of-section CTA family stays consistent.
 class SeeAllSectionButton extends StatelessWidget {
   final int hiddenCount;
-  final bool hasMore;
   final VoidCallback onTap;
 
   const SeeAllSectionButton({
     super.key,
     required this.hiddenCount,
-    required this.hasMore,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final countSuffix = hasMore ? '+' : '';
     final label = hiddenCount > 0
-        ? 'Plus d\'articles (+$hiddenCount$countSuffix)'
-        : 'Plus d\'articles';
+        ? 'Lire plus (+$hiddenCount)'
+        : 'Lire plus';
     return _ButtonShell(
       onTap: onTap,
       child: Row(
@@ -180,8 +177,8 @@ class _NextSectionButtonState extends State<NextSectionButton>
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final marked = widget.isMarked || _localMarked;
-    final foreground = marked ? Colors.white : colors.textSecondary;
-    final label = marked ? 'Lu ✔' : 'Sujet suivant';
+    final foreground = marked ? Colors.white : colors.primary;
+    final label = marked ? 'Lu' : 'Section suivante';
     final icon = marked ? Icons.check : Icons.arrow_downward;
     return Material(
       color: Colors.transparent,
@@ -197,7 +194,7 @@ class _NextSectionButtonState extends State<NextSectionButton>
           decoration: BoxDecoration(
             color: marked
                 ? colors.success
-                : colors.surfaceElevated.withValues(alpha: 0.5),
+                : colors.primary.withValues(alpha: 0.09),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(

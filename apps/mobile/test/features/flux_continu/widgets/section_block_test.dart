@@ -101,7 +101,7 @@ void main() {
       ));
 
       // 7 items - 3 visible = +4 hidden.
-      expect(find.text('Plus d\'articles (+4)'), findsOneWidget);
+      expect(find.text('Lire plus (+4)'), findsOneWidget);
     });
 
     testWidgets(
@@ -134,8 +134,8 @@ void main() {
         ),
       ));
 
-      // hiddenCount = 0 → label falls back to "Plus d'articles" (no suffix).
-      expect(find.text('Plus d\'articles'), findsOneWidget);
+      // hiddenCount = 0 → label falls back to "Lire plus" (no suffix).
+      expect(find.text('Lire plus'), findsOneWidget);
     });
   });
 
@@ -173,7 +173,7 @@ void main() {
       ));
 
       expect(find.byType(NextSectionButton), findsOneWidget);
-      expect(find.text('Sujet suivant'), findsOneWidget);
+      expect(find.text('Section suivante'), findsOneWidget);
     });
 
     testWidgets('hides the button when onNextSection is null', (tester) async {
@@ -191,7 +191,7 @@ void main() {
       expect(find.byType(NextSectionButton), findsNothing);
     });
 
-    testWidgets('switches to "Lu ✔" non-interactive state when '
+    testWidgets('switches to "Lu" non-interactive state when '
         'isMarkedForNextSession is true', (tester) async {
       var taps = 0;
       await tester.pumpWidget(_wrap(
@@ -206,8 +206,8 @@ void main() {
         ),
       ));
 
-      expect(find.text('Lu ✔'), findsOneWidget);
-      expect(find.text('Sujet suivant'), findsNothing);
+      expect(find.text('Lu'), findsOneWidget);
+      expect(find.text('Section suivante'), findsNothing);
 
       // Tap should be a no-op (parent passes onTap=null when already marked).
       await tester.tap(find.byType(NextSectionButton));
@@ -241,7 +241,7 @@ void main() {
       );
     });
 
-    testWidgets('Lu ✔ state has success background', (tester) async {
+    testWidgets('Lu state has success background', (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
           section: _themeSection(),
@@ -265,7 +265,7 @@ void main() {
     });
 
     testWidgets(
-        'optimistic flip: tap shows "Lu ✔" + success background on the next '
+        'optimistic flip: tap shows "Lu" + success background on the next '
         'frame even when isMarkedForNextSession stays false', (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
@@ -278,12 +278,12 @@ void main() {
           onNextSection: () {},
         ),
       ));
-      expect(find.text('Sujet suivant'), findsOneWidget);
+      expect(find.text('Section suivante'), findsOneWidget);
 
       await tester.tap(find.byType(NextSectionButton));
       await tester.pump();
 
-      expect(find.text('Lu ✔'), findsOneWidget);
+      expect(find.text('Lu'), findsOneWidget);
       final container = tester.widget<AnimatedContainer>(
         find.descendant(
           of: find.byType(NextSectionButton),
@@ -298,7 +298,7 @@ void main() {
   });
 
   group('SectionBlock — Footer Row', () {
-    testWidgets('wraps Plus de… and Sujet suivant in the same Row',
+    testWidgets('wraps Lire plus and Section suivante in the same Row',
         (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
@@ -326,18 +326,24 @@ void main() {
       final sujetRowSet = tester.widgetList<Row>(sujetRows).toSet();
       final shared = voirPlusRowSet.intersection(sujetRowSet);
       expect(shared, isNotEmpty,
-          reason: 'Voir tout and Sujet suivant must share a Row ancestor.');
+          reason: 'Lire plus and Section suivante must share a Row ancestor.');
 
-      // Voir tout sits to the left of Sujet suivant.
+      // Lire plus sits to the left of Section suivante.
       final voirPlusLeft = tester.getTopLeft(voirPlus).dx;
       final sujetLeft = tester.getTopLeft(sujetSuivant).dx;
       expect(voirPlusLeft < sujetLeft, isTrue);
 
-      // 2:1 ratio — "Plus d'articles" must be visibly wider than "Sujet suivant".
+      // 1:1 ratio — both buttons must have roughly the same width
+      // (flex 1 / flex 1 in _SectionFooterRow). Allow a small delta to
+      // account for sub-pixel rounding on different DPRs.
+      final leftWidth = tester.getSize(voirPlus).width;
+      final rightWidth = tester.getSize(sujetSuivant).width;
       expect(
-        tester.getSize(voirPlus).width > tester.getSize(sujetSuivant).width,
+        (leftWidth - rightWidth).abs() < 2.0,
         isTrue,
-        reason: 'Plus d\'articles doit être ~2x plus large que Sujet suivant',
+        reason:
+            'Lire plus et Section suivante doivent avoir des largeurs égales '
+            '(flex 1/1). Got left=$leftWidth right=$rightWidth.',
       );
     });
 

@@ -50,6 +50,10 @@ const double _kStickyThreshold = 60.0;
 /// behind the bar.
 const double _kStickyBarHeight = 100.0;
 
+/// Lookahead added to the sticky-bar height when picking the active section,
+/// so the underline switches a hair before the next banner reaches the bar.
+const double _kActiveSectionLookahead = 200.0;
+
 /// Distance to the bottom (in px) before we trigger the next feed page.
 const double _kLoadMoreLeadingPx = 800.0;
 
@@ -129,9 +133,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (_stickyVisible.value != showSticky) {
       _stickyVisible.value = showSticky;
     }
-    final max = pos.maxScrollExtent;
-    final nextProgress =
-        max > 0 ? (currentScroll / max).clamp(0.0, 1.0).toDouble() : 0.0;
+    // Progress is bounded by the end of the "Tournée" zone (just before the
+    // Explorer banner), not by the full scroll extent — once the user reaches
+    // Explorer, the Tournée is conceptually complete, so the bar stays full.
+    final tourneEnd = _explorerScrollOffset();
+    final nextProgress = tourneEnd > 0
+        ? (currentScroll / tourneEnd).clamp(0.0, 1.0).toDouble()
+        : 0.0;
     if (_scrollProgress.value != nextProgress) {
       _scrollProgress.value = nextProgress;
     }
@@ -193,6 +201,23 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           .loadMore()
           .whenComplete(() => _loadingMore = false);
     }
+  }
+
+  /// Absolute scroll offset (in pixels) at which the Explorer banner reaches
+  /// the bottom of the sticky bar. Used to bound the "Tournée" progress so
+  /// the bar reads 100% the moment the user lands on Explorer (and stays
+  /// pinned at 100% while scrolling Explorer). Falls back to the full extent
+  /// before the banner has been laid out.
+  double _explorerScrollOffset() {
+    if (!_scroll.hasClients) return 1.0;
+    final maxExtent = _scroll.position.maxScrollExtent;
+    final ctx = _explorerKey.currentContext;
+    if (ctx == null) return maxExtent;
+    final box = ctx.findRenderObject();
+    if (box is! RenderBox || !box.attached) return maxExtent;
+    final globalDy = box.localToGlobal(Offset.zero).dy;
+    return (_scroll.position.pixels + globalDy - _kStickyBarHeight)
+        .clamp(1.0, maxExtent);
   }
 
   /// Flips the sticky overlay from the editorial tab bar to the feed filter
@@ -268,7 +293,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       final box = ctx.findRenderObject();
       if (box is! RenderBox) continue;
       final dy = box.localToGlobal(Offset.zero).dy;
-      if (dy < _kStickyBarHeight + 32) {
+      if (dy < _kStickyBarHeight + _kActiveSectionLookahead) {
         activeAt = i;
       }
     }
@@ -1094,7 +1119,7 @@ class _StickyHostOverlay extends ConsumerWidget {
                   progress: progress,
                   onTapTab: onTapTab,
                   tabsController: tabsController,
-                  title: explore ? _kExplorerLabel : 'Les Actus du jour',
+                  title: explore ? _kExplorerLabel : 'Tournée du jour',
                   showFilterBar: explore,
                 ),
               ),

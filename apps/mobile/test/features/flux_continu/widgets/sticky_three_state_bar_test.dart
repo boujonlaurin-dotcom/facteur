@@ -44,7 +44,7 @@ void main() {
           onTapTab: (_) {},
         ),
       ));
-      expect(find.text('Les Actus du jour'), findsOneWidget);
+      expect(find.text('Tournée du jour'), findsOneWidget);
       expect(find.text('Essentiel'), findsOneWidget);
       expect(find.text('Tech'), findsOneWidget);
       expect(find.text('Explorer'), findsOneWidget);

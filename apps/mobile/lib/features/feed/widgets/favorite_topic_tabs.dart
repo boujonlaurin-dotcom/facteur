@@ -134,7 +134,7 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
     _activeKey = null;
 
     return SizedBox(
-      height: 32,
+      height: 48,
       child: ShaderMask(
         shaderCallback: (rect) {
           return const LinearGradient(
@@ -401,15 +401,15 @@ class _FavoriteTabItem extends StatelessWidget {
                   Text(
                     showLabel,
                     style: TextStyle(
-                      fontSize: 14.5,
+                      fontSize: 18,
                       fontWeight: labelWeight,
                       color: labelColor,
                       height: 1.15,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Container(
-                    height: 1.5,
+                    height: 2.5,
                     decoration: BoxDecoration(
                       color: tab.active ? colors.primary : Colors.transparent,
                       borderRadius: BorderRadius.circular(2),
@@ -421,11 +421,11 @@ class _FavoriteTabItem extends StatelessWidget {
             if (showBadge) ...[
               const SizedBox(width: 6),
               Transform.translate(
-                offset: const Offset(0, -6),
+                offset: const Offset(0, -8),
                 child: tab.active
                     ? Container(
-                        width: 6,
-                        height: 6,
+                        width: 8,
+                        height: 8,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: colors.primary,
@@ -434,7 +434,7 @@ class _FavoriteTabItem extends StatelessWidget {
                     : Text(
                         tab.count > 10 ? '10+' : '${tab.count}',
                         style: TextStyle(
-                          fontSize: 10.5,
+                          fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: colors.textTertiary,
                           height: 1.0,
@@ -464,12 +464,12 @@ class _AddFavoritePill extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: SizedBox(
-        width: 28,
-        height: 32,
+        width: 42,
+        height: 48,
         child: Center(
           child: Icon(
             PhosphorIcons.plus(PhosphorIconsStyle.regular),
-            size: 16,
+            size: 22,
             color: colors.textSecondary,
           ),
         ),

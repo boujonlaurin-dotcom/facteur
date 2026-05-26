@@ -183,7 +183,6 @@ class SectionBlock extends StatelessWidget {
         (hiddenCount > 0 || section.hasMore)) {
       return SeeAllSectionButton(
         hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
-        hasMore: section.hasMore,
         onTap: onSeeAll!,
       );
     }
@@ -192,7 +191,6 @@ class SectionBlock extends StatelessWidget {
         section.hasOverflow) {
       return SeeAllSectionButton(
         hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
-        hasMore: false,
         onTap: onSeeAll!,
       );
     }
@@ -301,7 +299,7 @@ class _SectionFooterRow extends StatelessWidget {
       child: Row(
         children: [
           if (voirPlus != null)
-            Expanded(flex: 2, child: voirPlus!)
+            Expanded(flex: 1, child: voirPlus!)
           else
             const Spacer(),
           if (voirPlus != null && sujetSuivant != null)
