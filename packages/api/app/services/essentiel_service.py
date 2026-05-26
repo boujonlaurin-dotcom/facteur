@@ -29,7 +29,9 @@ Pipeline :
 Fallback sans préférences : le scorer dégénère en `actu_boost + perspective − rank`.
 """
 
+import logging
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -44,16 +46,23 @@ from app.services.language_user_filter import (
     is_foreign_source,
 )
 
+logger = logging.getLogger(__name__)
+
 ESSENTIEL_MAX_ARTICLES = 5
 ESSENTIEL_MAX_PER_SOURCE = 2  # Diversité dure : max 2 articles d'une même source.
 
+# Fenêtre de cohérence avec la Tournée du jour : un article de l'Essentiel
+# doit pouvoir apparaître aussi dans la Tournée (24h + sources suivies). Sans
+# ce filtre, le digest peut surfacer des articles > 24h ou de sources curated
+# non-suivies invisibles dans la Tournée → incohérence UI.
+ESSENTIEL_TOURNEE_WINDOW = timedelta(hours=24)
+
 # Valeur de `DigestTopicArticle.badge` qui marque l'article comme "Actu du jour".
-# Le digest peut aussi tagger "pas_de_recul"/"pepite"/"coup_de_coeur" (cf.
-# schemas/digest.py) — seul "actu" déclenche le lead-slot ici.
 _BADGE_ACTU = "actu"
 
-# Poids alignés sur `Top3Selector` (briefing/top3_selector.py) pour cohérence
-# cross-feature. Toute modif → ajouter un test dans `test_essentiel_endpoint.py`.
+# Poids du scoring composite — réglés pour que chaque levier puisse l'emporter
+# isolément sans qu'aucun ne phagocyte les autres. Toute modif → ajouter un
+# test dans `test_essentiel_endpoint.py`.
 _W_TRENDING = 40.0  # `Top3Selector.BOOST_TRENDING` — topic.is_trending
 _W_UNE = 30.0  # `Top3Selector.BOOST_UNE` — topic.is_une
 _W_BADGE_ACTU = 25.0  # article.badge == _BADGE_ACTU (signal explicite du digest)
@@ -234,6 +243,35 @@ def _filter_articles_by_language(
     return filtered
 
 
+def _filter_articles_by_tournee_pool(
+    topics: list[DigestTopic],
+    ctx: EssentielUserContext,
+    *,
+    now: datetime | None = None,
+) -> list[DigestTopic]:
+    """Garantit Essentiel ⊆ Tournée du jour.
+
+    La Tournée requête live (24h + sources suivies) tandis qu'Essentiel lit
+    un digest pré-calculé (7j ∪ sources curated) — sans ce filtre l'UI peut
+    surfacer un article inaccessible ailleurs. No-op si l'utilisateur n'a
+    aucune source suivie (sinon le filtre viderait tout).
+    """
+    if not ctx.followed_source_ids:
+        return topics
+
+    cutoff = (now or datetime.now(UTC)) - ESSENTIEL_TOURNEE_WINDOW
+    filtered: list[DigestTopic] = []
+    for topic in topics:
+        kept = [
+            a
+            for a in topic.articles
+            if a.source.id in ctx.followed_source_ids and a.published_at >= cutoff
+        ]
+        if kept:
+            filtered.append(topic.model_copy(update={"articles": kept}))
+    return filtered
+
+
 def _pick_transversal_articles(
     topics: list[DigestTopic],
     ctx: EssentielUserContext,
@@ -250,6 +288,18 @@ def _pick_transversal_articles(
        même source à toutes les étapes.
     """
     topics = _filter_articles_by_language(topics, ctx)
+    tournee_pool = _filter_articles_by_tournee_pool(topics, ctx)
+    if tournee_pool:
+        topics = tournee_pool
+    elif ctx.followed_source_ids:
+        # Filtre vide → pas d'article 24h+followed dans le digest. Fallback
+        # sur le pool langue uniquement pour éviter une Essentiel vide.
+        logger.warning(
+            "essentiel: tournee-pool filter emptied digest "
+            "(followed=%d, topics=%d) — falling back to language-only pool",
+            len(ctx.followed_source_ids),
+            len(topics),
+        )
     eligible_topics = [t for t in topics if t.articles]
     if not eligible_topics:
         return []

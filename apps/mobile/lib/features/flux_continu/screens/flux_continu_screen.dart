@@ -324,21 +324,28 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     );
   }
 
-  /// "Tout l'essentiel" action of the Essentiel hi-fi card: folds the card
-  /// (so it stops occupying the viewport) then scrolls to the section that
-  /// follows in the composed feed — by construction "Actus du jour" in
-  /// normal mode, cf. [FluxContinuNotifier._compose].
+  /// Folds the Essentiel card then scrolls to [targetIndex]. The 50ms delay
+  /// lets the fold settle so the scroll target's measured position is the
+  /// post-fold one. Used by both "Tout l'essentiel" (scroll to Actus du
+  /// jour) and "Je veux tout voir ⬇️" (scroll to Explorer banner via the
+  /// `targetIndex == _sectionKeys.length` branch of [_scrollToSection]).
+  Future<void> _foldEssentielAndScroll(
+    EssentielSection essentiel,
+    int targetIndex,
+  ) async {
+    ref.read(fluxContinuProvider.notifier).foldLocally(essentiel);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    if (!mounted) return;
+    await _scrollToSection(targetIndex);
+  }
+
   Future<void> _exploreAllEssentiel(
     EssentielSection essentiel,
     int essentielIndex,
   ) async {
-    final notifier = ref.read(fluxContinuProvider.notifier);
-    notifier.foldLocally(essentiel);
     final next = essentielIndex + 1;
     if (next >= _sectionKeys.length) return;
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    if (!mounted) return;
-    await _scrollToSection(next);
+    await _foldEssentielAndScroll(essentiel, next);
   }
 
   /// "Je veux tout voir ⬇️" action of the Essentiel hi-fi card: folds the

@@ -19,7 +19,6 @@ class EssentielHiFiCard extends StatelessWidget {
   final List<EssentielArticle> articles;
   final void Function(EssentielArticle article) onTapArticle;
   final VoidCallback onTapPersonalize;
-  final VoidCallback? onTapSkip;
   final VoidCallback? onTapSeeAllDown;
   final VoidCallback? onTapExploreAll;
 
@@ -28,7 +27,6 @@ class EssentielHiFiCard extends StatelessWidget {
     required this.articles,
     required this.onTapArticle,
     required this.onTapPersonalize,
-    this.onTapSkip,
     this.onTapSeeAllDown,
     this.onTapExploreAll,
   });
@@ -98,7 +96,7 @@ class EssentielHiFiCard extends StatelessWidget {
             const SizedBox(height: FacteurSpacing.space4),
             _Footer(
               accent: accent,
-              onSkip: onTapSeeAllDown ?? onTapSkip,
+              onSeeAllDown: onTapSeeAllDown,
               onExploreAll: onTapExploreAll,
             ),
           ],
@@ -129,7 +127,7 @@ class _Header extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'L’Essentiel du jour',
+                'Ton Essentiel',
                 style: GoogleFonts.fraunces(
                   fontSize: 22,
                   fontWeight: FontWeight.w700,
@@ -316,18 +314,15 @@ class _LeadTile extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: FacteurSpacing.space2),
-              Opacity(
-                opacity: article.isRead ? 0.7 : 1.0,
-                child: Text(
-                  article.title,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.fraunces(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    height: 1.3,
-                    color: colors.textPrimary,
-                  ),
+              Text(
+                article.title,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.fraunces(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  height: 1.3,
+                  color: colors.textPrimary,
                 ),
               ),
               const SizedBox(height: FacteurSpacing.space2),
@@ -386,18 +381,15 @@ class _MediumTile extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 4),
-              Opacity(
-                opacity: article.isRead ? 0.7 : 1.0,
-                child: Text(
-                  article.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.fraunces(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w600,
-                    height: 1.3,
-                    color: colors.textPrimary,
-                  ),
+              Text(
+                article.title,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.fraunces(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w600,
+                  height: 1.3,
+                  color: colors.textPrimary,
                 ),
               ),
               const SizedBox(height: 2),
@@ -459,14 +451,11 @@ class _LightTile extends StatelessWidget {
               ),
               const SizedBox(width: FacteurSpacing.space2),
               Expanded(
-                child: Opacity(
-                  opacity: article.isRead ? 0.7 : 1.0,
-                  child: Text(
-                    article.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: FacteurTypography.bodySmall(colors.textPrimary),
-                  ),
+                child: Text(
+                  article.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: FacteurTypography.bodySmall(colors.textPrimary),
                 ),
               ),
             ],
@@ -647,10 +636,10 @@ class _DottedDivider extends StatelessWidget {
 
 class _Footer extends StatelessWidget {
   final Color accent;
-  final VoidCallback? onSkip;
+  final VoidCallback? onSeeAllDown;
   final VoidCallback? onExploreAll;
 
-  const _Footer({required this.accent, this.onSkip, this.onExploreAll});
+  const _Footer({required this.accent, this.onSeeAllDown, this.onExploreAll});
 
   @override
   Widget build(BuildContext context) {
@@ -658,16 +647,16 @@ class _Footer extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        if (onSkip != null)
+        if (onSeeAllDown != null)
           TextButton(
-            onPressed: onSkip,
+            onPressed: onSeeAllDown,
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               minimumSize: const Size(0, 32),
               foregroundColor: colors.textTertiary,
             ),
             child: Text(
-              'Passer',
+              'Je veux tout voir ⬇️',
               style: FacteurTypography.labelLarge(colors.textTertiary),
             ),
           )
@@ -686,7 +675,7 @@ class _Footer extends StatelessWidget {
                   vertical: 8,
                 ),
                 child: Text(
-                  'Tout explorer →',
+                  'Tout l’essentiel',
                   style: GoogleFonts.dmSans(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
