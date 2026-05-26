@@ -45,7 +45,7 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
     final label = hasActive ? '${widget.activeCount}' : '';
 
     return SizedBox(
-      height: 48,
+      height: 38,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -93,8 +93,8 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
           if (widget.leadingContent != null && !_expanded)
             Container(
               width: 1,
-              height: 24,
-              margin: const EdgeInsets.symmetric(horizontal: 10),
+              height: 18,
+              margin: const EdgeInsets.symmetric(horizontal: 8),
               color: colors.border.withOpacity(0.6),
             ),
           if (widget.leadingTrigger != null) ...[
@@ -106,9 +106,9 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
             behavior: HitTestBehavior.opaque,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              height: 48,
+              height: 38,
               padding: EdgeInsets.symmetric(
-                horizontal: hasActive && !_expanded ? 18 : 12,
+                horizontal: hasActive && !_expanded ? 14 : 10,
               ),
               decoration: BoxDecoration(
                 color: (_expanded || hasActive)
@@ -126,17 +126,17 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
                     _expanded
                         ? PhosphorIcons.x(PhosphorIconsStyle.bold)
                         : PhosphorIcons.funnel(PhosphorIconsStyle.regular),
-                    size: 22,
+                    size: 18,
                     color: (_expanded || hasActive)
                         ? colors.primary
                         : colors.textSecondary,
                   ),
                   if (!_expanded && hasActive) ...[
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 5),
                     Text(
                       label,
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: 12.5,
                         fontWeight: FontWeight.w700,
                         color: colors.primary,
                       ),

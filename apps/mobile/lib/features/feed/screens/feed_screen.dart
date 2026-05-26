@@ -124,9 +124,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   // Dynamic progressions map: ContentID -> Topic
   final Map<String, String> _activeProgressions = {};
 
-  // Feed loading state: true while any filter change or serein toggle refreshes
-  bool _isFeedRefreshing = false;
-
   // Story 4.5b: Show the undo banner after a viewport-aware pull-to-refresh.
   bool _showUndoBanner = false;
 
@@ -169,15 +166,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   Timer? _idlePhaseTimer;
   bool _firstPaintTracked = false;
   bool _digestVisibleTracked = false;
-
-  Future<void> _withFeedLoading(Future<void> Function() action) async {
-    if (mounted) setState(() => _isFeedRefreshing = true);
-    try {
-      await action();
-    } finally {
-      if (mounted) setState(() => _isFeedRefreshing = false);
-    }
-  }
 
   // Interest filter: store selected name & type to avoid re-derivation bugs
   String? _selectedInterestName;
@@ -567,24 +555,25 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
         selectedThemeSlug: notifier.selectedTheme,
         selectedEntitySlug: notifier.selectedEntity,
         onTabTap: (kind, slug) {
-          _withFeedLoading(() async {
-            switch (kind) {
-              case FavoriteTabKind.tous:
-                await notifier.setTopic(null);
-                await notifier.setTheme(null);
-                await notifier.setEntity(null);
-                break;
-              case FavoriteTabKind.subjectTopic:
-                await notifier.setTopic(slug);
-                break;
-              case FavoriteTabKind.subjectEntity:
-                await notifier.setEntity(slug);
-                break;
-              case FavoriteTabKind.theme:
-                await notifier.setTheme(slug);
-                break;
-            }
-          });
+          // FeedNotifier.refresh() pilote feedRefreshingProvider — pas besoin
+          // de wrapper local : le LinearProgressIndicator partagé apparaît
+          // tout seul.
+          switch (kind) {
+            case FavoriteTabKind.tous:
+              notifier.setTopic(null);
+              notifier.setTheme(null);
+              notifier.setEntity(null);
+              break;
+            case FavoriteTabKind.subjectTopic:
+              notifier.setTopic(slug);
+              break;
+            case FavoriteTabKind.subjectEntity:
+              notifier.setEntity(slug);
+              break;
+            case FavoriteTabKind.theme:
+              notifier.setTheme(slug);
+              break;
+          }
           if (mounted) {
             setState(() {
               _selectedInterestName = null;
@@ -613,15 +602,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                 _selectedInterestName = name;
                 _selectedIsTheme = isTheme;
               });
-              _withFeedLoading(() async {
-                if (isTheme) {
-                  await notifier.setTheme(slug);
-                } else if (isEntity) {
-                  await notifier.setEntity(slug);
-                } else {
-                  await notifier.setTopic(slug);
-                }
-              });
+              if (isTheme) {
+                notifier.setTheme(slug);
+              } else if (isEntity) {
+                notifier.setEntity(slug);
+              } else {
+                notifier.setTopic(slug);
+              }
               _scrollToTop();
             },
           );
@@ -637,17 +624,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
             context,
             currentKeyword: notifier.selectedKeyword,
             onSearchSubmitted: (keyword, {bool fromTrending = false}) {
-              _withFeedLoading(() => notifier.setKeyword(
-                    keyword,
-                    includeUnfollowed: fromTrending,
-                  ));
+              notifier.setKeyword(
+                keyword,
+                includeUnfollowed: fromTrending,
+              );
               _scrollToTop();
             },
           );
         },
         onClear: () {
           HapticFeedback.mediumImpact();
-          _withFeedLoading(() => notifier.setKeyword(null));
+          notifier.setKeyword(null);
           _scrollToTop();
         },
       ),
@@ -698,11 +685,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
             selectedSourceLogoUrl: selectedSourceLogoUrl,
             discreet: true,
             onSourceChanged: (sourceId) {
-              if (sourceId != null) {
-                _withFeedLoading(() => notifier.setSource(sourceId));
-              } else {
-                notifier.setSource(null);
-              }
+              notifier.setSource(sourceId);
               _scrollToTop();
             },
           ),
@@ -722,19 +705,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                 _selectedInterestName = name;
                 _selectedIsTheme = isTheme;
               });
-              _withFeedLoading(() async {
-                if (slug == null) {
-                  await notifier.setTopic(null);
-                  await notifier.setTheme(null);
-                  await notifier.setEntity(null);
-                } else if (isTheme) {
-                  await notifier.setTheme(slug);
-                } else if (isEntity) {
-                  await notifier.setEntity(slug);
-                } else {
-                  await notifier.setTopic(slug);
-                }
-              });
+              if (slug == null) {
+                notifier.setTopic(null);
+                notifier.setTheme(null);
+                notifier.setEntity(null);
+              } else if (isTheme) {
+                notifier.setTheme(slug);
+              } else if (isEntity) {
+                notifier.setEntity(slug);
+              } else {
+                notifier.setTopic(slug);
+              }
               _scrollToTop();
             },
           ),
@@ -746,6 +727,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   @override
   Widget build(BuildContext context) {
     final feedAsync = ref.watch(feedProvider);
+    final isFeedRefreshing = ref.watch(feedRefreshingProvider);
     final colors = context.facteurColors;
     final loadPhase = ref.watch(feedLoadPhaseProvider);
 
@@ -787,10 +769,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       });
     });
 
-    // Serein toggle: loading indicator tied to actual feed refresh
+    // Serein toggle: feedRefreshingProvider est piloté par refresh() lui-même,
+    // donc le LinearProgressIndicator partagé apparaît automatiquement.
     ref.listen(sereinToggleProvider.select((s) => s.enabled), (prev, next) {
       if (prev != next && mounted) {
-        _withFeedLoading(() => ref.read(feedProvider.notifier).refresh());
+        ref.read(feedProvider.notifier).refresh();
       }
     });
 
@@ -977,7 +960,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     ),
                     const SliverToBoxAdapter(child: SizedBox(height: 16)),
                     // Brief loading indicator when serein toggle triggers feed refresh
-                    if (_isFeedRefreshing)
+                    if (isFeedRefreshing)
                       SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1167,7 +1150,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         return SliverPadding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           sliver: SliverAnimatedOpacity(
-                            opacity: _isFeedRefreshing ? 0.3 : 1.0,
+                            opacity: isFeedRefreshing ? 0.3 : 1.0,
                             duration: const Duration(milliseconds: 200),
                             sliver: SliverList(
                               delegate: SliverChildBuilderDelegate(
@@ -1634,7 +1617,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                               _selectedInterestName = name;
                                                               _selectedIsTheme = false;
                                                             });
-                                                            _withFeedLoading(() => notifier.setEntity(key));
+                                                            notifier.setEntity(key);
                                                             _scrollToTop();
                                                           },
                                                         )

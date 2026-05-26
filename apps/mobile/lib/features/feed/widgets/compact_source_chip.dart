@@ -92,8 +92,8 @@ class _InactiveChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 42,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 11),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(FacteurRadius.full),
           color: colors.surface,
@@ -102,18 +102,22 @@ class _InactiveChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'Mes sources',
-              style: TextStyle(
-                fontSize: 15,
-                color: colors.textPrimary,
-                fontWeight: FontWeight.w500,
+            Flexible(
+              child: Text(
+                'Mes sources',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: colors.textPrimary,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 5),
             Icon(
               PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
-              size: 14,
+              size: 11,
               color: colors.textSecondary,
             ),
           ],
@@ -152,8 +156,8 @@ class _ActiveChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 42,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 11),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(FacteurRadius.full),
           color: bg,
@@ -165,14 +169,14 @@ class _ActiveChip extends StatelessWidget {
             if (sourceLogoUrl != null && sourceLogoUrl!.isNotEmpty)
               _SourceAvatar(
                 logoUrl: sourceLogoUrl!,
-                size: 26,
+                size: 20,
               ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Flexible(
               child: Text(
                 sourceName,
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: labelColor,
                 ),
@@ -184,10 +188,10 @@ class _ActiveChip extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               onTap: onClear,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
+                padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
                 child: Icon(
                   PhosphorIcons.x(PhosphorIconsStyle.bold),
-                  size: 17,
+                  size: 14,
                   color: iconColor,
                 ),
               ),
