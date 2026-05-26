@@ -1050,6 +1050,8 @@ a:hover {
 .footer__links {
     display: flex;
     gap: var(--space-lg);
+    flex-wrap: wrap;
+    justify-content: center;
 }
 
 .footer__link {
@@ -1068,6 +1070,155 @@ a:hover {
     font-size: var(--font-size-xs);
     color: var(--color-dark-muted);
     opacity: 0.6;
+}
+
+/* ═══════════════════════════════════════════
+   Legal Page
+   ═══════════════════════════════════════════ */
+
+.legal-page__hero {
+    min-height: auto;
+    padding: 80px 0 40px;
+}
+
+.legal-page__hero-inner {
+    text-align: center;
+}
+
+.legal-page__title {
+    text-align: center;
+}
+
+.legal-page__subtitle {
+    text-align: center;
+    max-width: 680px;
+    margin: 0 auto;
+}
+
+.legal-page {
+    padding-top: 0;
+}
+
+.legal-page__container {
+    max-width: 880px;
+}
+
+.legal-page__back {
+    margin-bottom: var(--space-md);
+}
+
+.legal-page__back-link {
+    display: inline-flex;
+    align-items: center;
+    padding-left: 0;
+}
+
+.legal-document {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    padding: var(--space-xl);
+}
+
+.legal-document__header {
+    padding-bottom: var(--space-lg);
+    margin-bottom: var(--space-lg);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.legal-document__eyebrow {
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-accent);
+    margin-bottom: var(--space-xs);
+}
+
+.legal-document__title {
+    font-size: var(--font-size-xl);
+    line-height: 1.25;
+    margin-bottom: var(--space-sm);
+}
+
+.legal-document__note {
+    color: var(--color-text-muted);
+}
+
+.legal-document__content {
+    color: var(--color-text);
+}
+
+.legal-document__content > :first-child {
+    margin-top: 0;
+}
+
+.legal-document__content > :last-child {
+    margin-bottom: 0;
+}
+
+.legal-document__content h1,
+.legal-document__content h2,
+.legal-document__content h3,
+.legal-document__content h4,
+.legal-document__content h5,
+.legal-document__content h6 {
+    line-height: 1.25;
+    margin: 2rem 0 0.85rem;
+    color: var(--color-text);
+}
+
+.legal-document__content h1 {
+    font-size: var(--font-size-2xl);
+}
+
+.legal-document__content h2 {
+    font-size: 1.625rem;
+}
+
+.legal-document__content h3 {
+    font-size: 1.25rem;
+}
+
+.legal-document__content p,
+.legal-document__content ul,
+.legal-document__content ol,
+.legal-document__content table,
+.legal-document__content blockquote {
+    margin: 0 0 1rem;
+}
+
+.legal-document__content ul,
+.legal-document__content ol {
+    padding-left: 1.5rem;
+}
+
+.legal-document__content li + li {
+    margin-top: 0.5rem;
+}
+
+.legal-document__content strong {
+    color: var(--color-text);
+}
+
+.legal-document__content table {
+    width: 100%;
+    border-collapse: collapse;
+    display: block;
+    overflow-x: auto;
+}
+
+.legal-document__content th,
+.legal-document__content td {
+    padding: 0.75rem;
+    border: 1px solid var(--color-border);
+    text-align: left;
+    vertical-align: top;
+}
+
+.legal-document__content th {
+    background: var(--color-bg-alt);
 }
 
 /* ═══════════════════════════════════════════
@@ -1172,6 +1323,10 @@ a:hover {
 
     .waitlist-form__btn {
         width: 100%;
+    }
+
+    .legal-document {
+        padding: var(--space-lg);
     }
 }
 
