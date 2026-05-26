@@ -216,5 +216,3 @@ class FeedRefreshUndoRequest(BaseModel):
     """Requête pour annuler un refresh précédent et restaurer les `last_impressed_at`."""
 
     previous_impressions: list[PreviousImpression] = Field(..., max_length=200)
-
-
