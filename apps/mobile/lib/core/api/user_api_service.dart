@@ -76,6 +76,14 @@ class UserApiService {
     return UserProfile.fromJson(data);
   }
 
+  /// Soft delete du compte courant.
+  /// Le backend marque `users.deleted_at` et anonymise l'email ; un cron purge
+  /// définitivement après 30 jours (cf. PR backend B1, Apple Guideline 5.1.1(v)).
+  /// Retourne 204 No Content en cas de succès.
+  Future<void> deleteAccount() async {
+    await _apiClient.dio.delete<void>('users/me');
+  }
+
   /// Formate les réponses pour l'API (camelCase → snake_case).
   ///
   /// Défense en profondeur : applique des défauts neutres si l'état mobile

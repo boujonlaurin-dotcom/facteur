@@ -1,7 +1,13 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../config/constants.dart';
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../shared/widgets/buttons/primary_button.dart';
@@ -27,13 +33,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   bool _rememberMe = true;
 
+  late final TapGestureRecognizer _termsRecognizer = TapGestureRecognizer()
+    ..onTap = () => _openUrl(LegalLinks.terms);
+  late final TapGestureRecognizer _privacyRecognizer = TapGestureRecognizer()
+    ..onTap = () => _openUrl(LegalLinks.privacy);
+
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     _firstNameController.dispose();
     _lastNameController.dispose();
+    _termsRecognizer.dispose();
+    _privacyRecognizer.dispose();
     super.dispose();
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   void _toggleMode() {
@@ -496,6 +516,51 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ),
 
+                  // Bouton Sign in with Apple — requis par Apple Guideline 4.8
+                  // dès lors qu'un autre provider OAuth (Google) est offert.
+                  // Affiché sur iOS et web ; macOS/Android n'ont pas l'expérience
+                  // native attendue.
+                  if (kIsWeb || (!kIsWeb && Platform.isIOS)) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: OutlinedButton.icon(
+                        onPressed: authState.isLoading
+                            ? null
+                            : () {
+                                ref
+                                    .read(authStateProvider.notifier)
+                                    .signInWithApple();
+                              },
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: colors.border),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          backgroundColor: colors.surfacePaper,
+                        ),
+                        // TODO(apple-asset): remplacer par le logo officiel
+                        // Apple (cf. Apple HIG Sign in with Apple) avant
+                        // soumission App Store.
+                        icon: Icon(
+                          Icons.apple,
+                          size: 22,
+                          color: colors.textPrimary,
+                        ),
+                        label: Text(
+                          _isSignUp
+                              ? 'S\'inscrire avec Apple'
+                              : 'Se connecter avec Apple',
+                          style:
+                              Theme.of(context).textTheme.labelLarge?.copyWith(
+                                    color: colors.textPrimary,
+                                  ),
+                        ),
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: 16),
 
                   // Toggle inscription/connexion amélioré
@@ -569,12 +634,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                   const SizedBox(height: 24),
 
-                  // CGV
-                  Text(
-                    'En continuant, tu acceptes nos Conditions d\'utilisation et notre Politique de confidentialité.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.textTertiary,
+                  // CGV — liens cliquables vers les pages légales hébergées
+                  // par l'API (Apple 5.1.1 / Play Console).
+                  Text.rich(
+                    TextSpan(
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textTertiary,
+                          ),
+                      children: [
+                        const TextSpan(text: 'En continuant, tu acceptes nos '),
+                        TextSpan(
+                          text: 'Conditions d\'utilisation',
+                          style: TextStyle(
+                            color: colors.primary,
+                            decoration: TextDecoration.underline,
+                          ),
+                          recognizer: _termsRecognizer,
                         ),
+                        const TextSpan(text: ' et notre '),
+                        TextSpan(
+                          text: 'Politique de confidentialité',
+                          style: TextStyle(
+                            color: colors.primary,
+                            decoration: TextDecoration.underline,
+                          ),
+                          recognizer: _privacyRecognizer,
+                        ),
+                        const TextSpan(text: '.'),
+                      ],
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ],
