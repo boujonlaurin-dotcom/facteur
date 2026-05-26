@@ -26,37 +26,29 @@ class SeeAllSectionButton extends StatelessWidget {
     final label = hiddenCount > 0
         ? 'Voir tout $sectionLabel (+$hiddenCount$countSuffix)'
         : 'Voir tout $sectionLabel';
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: Material(
-        color: colors.surfaceElevated.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: colors.textSecondary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-                const SizedBox(width: 6),
-                Icon(
-                  Icons.arrow_forward,
-                  color: colors.textSecondary,
-                  size: 16,
-                ),
-              ],
+    return _ButtonShell(
+      onTap: onTap,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: colors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
             ),
           ),
-        ),
+          const SizedBox(width: 6),
+          Icon(
+            Icons.arrow_forward,
+            color: colors.textSecondary,
+            size: 16,
+          ),
+        ],
       ),
     );
   }
@@ -87,51 +79,40 @@ class PlusDeButton extends StatelessWidget {
     final label = isOpen
         ? 'Replier $sectionLabel'
         : 'Plus de $sectionLabel${hiddenCount > 0 ? " (+$hiddenCount)" : ""}';
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: Material(
-        color: colors.surfaceElevated.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  isOpen ? Icons.expand_less : Icons.expand_more,
-                  color: colors.textSecondary,
-                  size: 18,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: colors.textSecondary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-              ],
+    return _ButtonShell(
+      onTap: onTap,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            isOpen ? Icons.expand_less : Icons.expand_more,
+            color: colors.textSecondary,
+            size: 18,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: colors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
 }
 
-/// "Sujet suivant →" — bottom-of-section CTA that marks the section as
+/// "Sujet suivant ↓" — bottom-of-section CTA that marks the section as
 /// consumed for the next session and scrolls smoothly to the next section.
-/// When [isMarked] is true, the button switches to a non-interactive
-/// "Lu ✓" state showing the section has been validated in this session.
-///
-/// Visual variant: outlined/ghost (transparent fill with a 1px divider
-/// border) so it reads as a quieter cousin of [PlusDeButton] — the two
-/// can sit side by side without competing.
-class NextSectionButton extends StatelessWidget {
+/// When [isMarked] is true, the button flips to a full-green "Terminé ✓"
+/// state with a short scale-pop on the check icon (transition false→true
+/// only — restoring a marked session at cold start must not replay it).
+class NextSectionButton extends StatefulWidget {
   final bool isMarked;
   final VoidCallback? onTap;
 
@@ -142,45 +123,114 @@ class NextSectionButton extends StatelessWidget {
   });
 
   @override
+  State<NextSectionButton> createState() => _NextSectionButtonState();
+}
+
+class _NextSectionButtonState extends State<NextSectionButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0), weight: 50),
+    ]).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
+  }
+
+  @override
+  void didUpdateWidget(covariant NextSectionButton old) {
+    super.didUpdateWidget(old);
+    if (!old.isMarked && widget.isMarked) {
+      _ctrl.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final foreground =
-        isMarked ? colors.success : colors.textSecondary;
-    final label = isMarked ? 'Lu' : 'Sujet suivant';
-    final icon = isMarked ? Icons.check : Icons.arrow_forward;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: Material(
-        color: Colors.transparent,
+    final marked = widget.isMarked;
+    final foreground = marked ? Colors.white : colors.textSecondary;
+    final label = marked ? 'Terminé' : 'Sujet suivant';
+    final icon = marked ? Icons.check : Icons.arrow_downward;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: widget.onTap,
         borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: colors.border,
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: marked ? colors.success : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: marked
+                ? null
+                : Border.all(color: colors.border, width: 1),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
                   label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         color: foreground,
                         fontWeight: FontWeight.w600,
                       ),
                 ),
-                const SizedBox(width: 6),
-                Icon(icon, color: foreground, size: 16),
-              ],
-            ),
+              ),
+              const SizedBox(width: 6),
+              ScaleTransition(
+                scale: _scale,
+                child: Icon(icon, color: foreground, size: 16),
+              ),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shared shell for [SeeAllSectionButton] and [PlusDeButton]: same soft
+/// off-white Material + InkWell + full-width padded container.
+class _ButtonShell extends StatelessWidget {
+  final VoidCallback? onTap;
+  final Widget child;
+
+  const _ButtonShell({required this.onTap, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Material(
+      color: colors.surfaceElevated.withValues(alpha: 0.5),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: child,
         ),
       ),
     );

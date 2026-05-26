@@ -307,8 +307,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (scrollBox == null) {
       await Scrollable.ensureVisible(
         ctx,
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeInOut,
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeInOutCubic,
       );
       return;
     }
@@ -319,8 +319,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         .clamp(0.0, _scroll.position.maxScrollExtent);
     await _scroll.animateTo(
       target,
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeInOut,
+      duration: const Duration(milliseconds: 700),
+      curve: Curves.easeInOutCubic,
     );
   }
 
@@ -925,6 +925,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     unawaited(ref
         .read(fluxContinuProvider.notifier)
         .markScrolledPastForNextSession(section));
+    // Let the "Terminé" pop play before the scroll kicks in, so the user
+    // sees the green confirmation flash on its own frame.
+    await Future<void>.delayed(const Duration(milliseconds: 350));
     if (!mounted) return;
     await _scrollToSection(index + 1);
   }
