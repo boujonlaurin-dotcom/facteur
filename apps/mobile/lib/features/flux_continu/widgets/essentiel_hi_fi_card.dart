@@ -130,7 +130,7 @@ class _Header extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'Les 5 articles à ne pas manquer aujourd’hui, issus de tes préférences',
+                'Tes 5 articles du jour, basé sur tes préférences',
                 style: FacteurTypography.bodySmall(colors.textSecondary).copyWith(
                   height: 1.35,
                 ),
@@ -414,8 +414,15 @@ class _SectionChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (showFollowed) ...[
-            Icon(Icons.bookmark_rounded, size: 11, color: accent),
-            const SizedBox(width: 3),
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: accent,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 5),
           ],
           Text(
             label,

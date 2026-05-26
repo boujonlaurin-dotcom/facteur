@@ -1183,7 +1183,7 @@ class _PinnedTopicsSection extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Apparaissent comme onglets dans Explorer. '
+              'Apparaissent comme onglets dans Flâner. '
               'Ils ne remplacent pas vos thèmes favoris.',
               style: textTheme.bodySmall?.copyWith(
                 color: colors.textTertiary,

@@ -71,10 +71,15 @@ class SectionBlock extends StatelessWidget {
   /// before Explorer).
   final VoidCallback? onNextSection;
 
-  /// When true, the "Sujet suivant" button flips to the non-interactive
-  /// "Lu ✓" state — derived from the provider's queue of sections marked
+  /// When true, the "Section suivante" button flips to the non-interactive
+  /// "Passé ✓" state — derived from the provider's queue of sections marked
   /// for fold at the next cold launch.
   final bool isMarkedForNextSession;
+
+  /// Hero accent of the section the "Section suivante" button will land on.
+  /// Used to tint the CTA so it preflights the upcoming section visually.
+  /// Null on the last Tournée section (the button is hidden anyway).
+  final Color? nextSectionAccent;
 
   const SectionBlock({
     super.key,
@@ -98,6 +103,7 @@ class SectionBlock extends StatelessWidget {
     this.onTapSeeAllDown,
     this.onNextSection,
     this.isMarkedForNextSession = false,
+    this.nextSectionAccent,
   });
 
   @override
@@ -158,6 +164,7 @@ class SectionBlock extends StatelessWidget {
           sujetSuivant: onNextSection != null
               ? NextSectionButton(
                   isMarked: isMarkedForNextSession,
+                  nextAccent: nextSectionAccent,
                   onTap: isMarkedForNextSession ? null : onNextSection,
                 )
               : null,

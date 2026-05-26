@@ -50,10 +50,6 @@ const double _kStickyThreshold = 60.0;
 /// behind the bar.
 const double _kStickyBarHeight = 100.0;
 
-/// Lookahead added to the sticky-bar height when picking the active section,
-/// so the underline switches a hair before the next banner reaches the bar.
-const double _kActiveSectionLookahead = 200.0;
-
 /// Distance to the bottom (in px) before we trigger the next feed page.
 const double _kLoadMoreLeadingPx = 800.0;
 
@@ -286,14 +282,29 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       return;
     }
     if (_sectionKeys.isEmpty) return;
+    // Active = section that occupies the most visible area below the sticky
+    // bar. The previous heuristic ("last section whose top has crossed
+    // stickyBar + 200px lookahead") switched late on long sections because it
+    // ignored how much of the upcoming section was already on screen. Viewport
+    // dominance flips the active tab as soon as the next section becomes
+    // majority-visible, which matches what the user is actually reading.
+    const viewportTop = _kStickyBarHeight;
+    final viewportBottom = viewportTop +
+        (_scroll.hasClients ? _scroll.position.viewportDimension : 0.0);
     int activeAt = 0;
+    double bestVisible = -1;
     for (var i = 0; i < _sectionKeys.length; i++) {
       final ctx = _sectionKeys[i].currentContext;
       if (ctx == null) continue;
       final box = ctx.findRenderObject();
       if (box is! RenderBox) continue;
-      final dy = box.localToGlobal(Offset.zero).dy;
-      if (dy < _kStickyBarHeight + _kActiveSectionLookahead) {
+      final top = box.localToGlobal(Offset.zero).dy;
+      final bottom = top + box.size.height;
+      final clampedTop = top.clamp(viewportTop, viewportBottom);
+      final clampedBottom = bottom.clamp(viewportTop, viewportBottom);
+      final visible = clampedBottom - clampedTop;
+      if (visible > bestVisible) {
+        bestVisible = visible;
         activeAt = i;
       }
     }
@@ -305,11 +316,19 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
   void _alignTabsToActive(int index) {
     if (!_tabsScroll.hasClients) return;
-    const double estimatedTabWidth = 140.0;
-    const double leftPadding = 12.0;
-    final target =
-        (index * estimatedTabWidth - leftPadding)
-            .clamp(0.0, _tabsScroll.position.maxScrollExtent);
+    final maxExtent = _tabsScroll.position.maxScrollExtent;
+    // Explorer is the virtual tab appended after every real section; pin it
+    // to the right edge so the sticky bar visibly bottoms out instead of
+    // leaving trailing whitespace when the user reaches the last zone.
+    final bool isLastTab = index >= _sectionKeys.length;
+    final double target;
+    if (isLastTab) {
+      target = maxExtent;
+    } else {
+      const double estimatedTabWidth = 140.0;
+      const double leftPadding = 12.0;
+      target = (index * estimatedTabWidth - leftPadding).clamp(0.0, maxExtent);
+    }
     _tabsScroll.animateTo(
       target,
       duration: const Duration(milliseconds: 220),
@@ -840,9 +859,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             child: KeyedSubtree(
               key: _explorerKey,
               child: const SectionBanner(
-                title: 'Explorer',
+                title: 'Flâner',
                 blurb:
-                    'Tout ce qui est sorti aujourd\'hui sur tes sources et tes sujets — à toi de fouiller, à ton rythme.',
+                    'Tous les articles de tes sources triés par récence, à consulter à ton rythme',
                 accent: Color(0xFF5D4037),
                 illustrationAsset: 'assets/notifications/facteur_bike.png',
               ),
@@ -931,6 +950,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 ? () => _skipEssentielToExplorer(section)
                 : null,
             isMarkedForNextSession: state.isMarkedForNextSession(section),
+            nextSectionAccent: i + 1 < state.sections.length
+                ? state.sections[i + 1].accent
+                : null,
             onNextSection: (section is EssentielSection ||
                     i >= state.sections.length - 1)
                 ? null
@@ -1063,7 +1085,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 /// screen instead of swapping out when the user crosses the Explorer banner.
 /// When the user is in Explorer mode, [FeedFilterBar] morphs in under the
 /// tabs (within the same parchment surface) so filtering stays available.
-const String _kExplorerLabel = 'Explorer';
+const String _kExplorerLabel = 'Flâner';
 const Color _kExplorerAccent = Color(0xFF5D4037);
 
 class _StickyHostOverlay extends ConsumerWidget {

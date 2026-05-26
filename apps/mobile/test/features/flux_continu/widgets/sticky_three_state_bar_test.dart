@@ -29,7 +29,7 @@ Widget _wrap(Widget child) {
 const _tabs = [
   StickyTab(label: 'Essentiel', accent: Color(0xFFB0470A)),
   StickyTab(label: 'Tech', accent: Color(0xFF2C3E50)),
-  StickyTab(label: 'Explorer', accent: Color(0xFF5D4037)),
+  StickyTab(label: 'Flâner', accent: Color(0xFF5D4037)),
 ];
 
 void main() {
@@ -50,7 +50,7 @@ void main() {
       expect(find.text('Tournée du jour'), findsOneWidget);
       expect(find.text('Essentiel'), findsOneWidget);
       expect(find.text('Tech'), findsOneWidget);
-      expect(find.text('Explorer'), findsOneWidget);
+      expect(find.text('Flâner'), findsOneWidget);
     });
 
     testWidgets('shows a check icon next to done tabs (no strike-through)',
@@ -87,7 +87,7 @@ void main() {
       expect(lastTapped, 1);
     });
 
-    testWidgets('switches head title to "Explorer" in Explorer mode',
+    testWidgets('switches head title to "Flâner" in Explorer mode',
         (tester) async {
       // `showFilterBar: false` here — we only assert on the head title
       // swap. The full filter-bar variant pulls in Riverpod-backed feed
@@ -98,11 +98,11 @@ void main() {
           activeIndex: 2,
           progress: 1.0,
           onTapTab: (_) {},
-          title: 'Explorer',
+          title: 'Flâner',
         ),
       ));
-      // Head title becomes Explorer and the last tab keeps the same label.
-      expect(find.text('Explorer'), findsNWidgets(2));
+      // Head title becomes Flâner and the last tab keeps the same label.
+      expect(find.text('Flâner'), findsNWidgets(2));
     });
   });
 }

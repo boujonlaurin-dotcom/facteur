@@ -130,7 +130,7 @@ class _StateOption extends StatelessWidget {
       _isPinnedTopic ? 'Épinglé' : state.label;
 
   String get _description => _isPinnedTopic
-      ? 'Apparaît comme onglet dans la section Explorer.'
+      ? 'Apparaît comme onglet dans la section Flâner.'
       : state.description;
 
   IconData get _icon =>

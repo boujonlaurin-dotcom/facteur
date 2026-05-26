@@ -161,7 +161,7 @@ void main() {
     expect(find.text('Épinglé'), findsOneWidget);
     expect(find.text('Favori'), findsNothing);
     expect(
-      find.textContaining('onglet dans la section Explorer'),
+      find.textContaining('onglet dans la section Flâner'),
       findsOneWidget,
     );
 

@@ -2128,7 +2128,7 @@ class _RefreshConfirmSheet extends StatelessWidget {
                 child: Text(
                   isCompulsive
                       ? 'Prends un moment'
-                      : 'Rafraîchir l\'Explorer ?',
+                      : 'Rafraîchir Flâner ?',
                   style: TextStyle(
                     color: colors.textPrimary,
                     fontSize: 18,

@@ -47,10 +47,8 @@ const String _kVeilleIllustration = 'assets/notifications/facteur_veille.png';
 const String _kEssentielBlurb =
     "L'essentiel des actus les plus couvertes en France aujourd'hui, en privilégiant tes sources.";
 const String _kActusDuJourBlurb =
-    'Les actus les plus couvertes du jour, regroupées par sujet.';
-const String _kBonnesBlurb = 'Un peu d\'amour, dans ce monde de brutes ?';
-const String _kThemeBlurb =
-    "Les derniers articles sur les sujets que tu suis le plus.";
+    'Les actus les plus couvertes du jour en France, regroupées par sujet.';
+const String _kBonnesBlurb = 'Un peu de douceur...';
 
 /// Hard cap on the number of favorite theme sections rendered in the tournée.
 /// Mirrors `kFavoriteCap = 3` in the my_interests provider — the value is
@@ -759,7 +757,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     return FeedThemeSection(
       kind: SectionKind.theme,
       label: label,
-      blurb: _kThemeBlurb,
       accent: accent,
       illustrationAsset: _kVeilleIllustration,
       coreVisibleCount: 3,

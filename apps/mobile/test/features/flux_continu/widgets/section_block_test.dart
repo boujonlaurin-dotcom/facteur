@@ -191,7 +191,7 @@ void main() {
       expect(find.byType(NextSectionButton), findsNothing);
     });
 
-    testWidgets('switches to "Lu" non-interactive state when '
+    testWidgets('switches to "Passé" non-interactive state when '
         'isMarkedForNextSession is true', (tester) async {
       var taps = 0;
       await tester.pumpWidget(_wrap(
@@ -206,7 +206,7 @@ void main() {
         ),
       ));
 
-      expect(find.text('Lu'), findsOneWidget);
+      expect(find.text('Passé'), findsOneWidget);
       expect(find.text('Section suivante'), findsNothing);
 
       // Tap should be a no-op (parent passes onTap=null when already marked).
@@ -241,7 +241,8 @@ void main() {
       );
     });
 
-    testWidgets('Lu state has success background', (tester) async {
+    testWidgets('Passé state has neutral grey background + green check_circle',
+        (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
           section: _themeSection(),
@@ -261,12 +262,23 @@ void main() {
         ),
       );
       final decoration = container.decoration as BoxDecoration;
-      expect(decoration.color, FacteurPalettes.light.success);
+      expect(
+        decoration.color,
+        FacteurPalettes.light.textPrimary.withValues(alpha: 0.05),
+      );
+      expect(
+        find.descendant(
+          of: find.byType(NextSectionButton),
+          matching: find.byIcon(Icons.check_circle),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets(
-        'optimistic flip: tap shows "Lu" + success background on the next '
-        'frame even when isMarkedForNextSession stays false', (tester) async {
+        'optimistic flip: tap shows "Passé" + neutral grey background on the '
+        'next frame even when isMarkedForNextSession stays false',
+        (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
           section: _themeSection(),
@@ -283,7 +295,7 @@ void main() {
       await tester.tap(find.byType(NextSectionButton));
       await tester.pump();
 
-      expect(find.text('Lu'), findsOneWidget);
+      expect(find.text('Passé'), findsOneWidget);
       final container = tester.widget<AnimatedContainer>(
         find.descendant(
           of: find.byType(NextSectionButton),
@@ -292,7 +304,7 @@ void main() {
       );
       expect(
         (container.decoration as BoxDecoration).color,
-        FacteurPalettes.light.success,
+        FacteurPalettes.light.textPrimary.withValues(alpha: 0.05),
       );
     });
   });

@@ -52,7 +52,7 @@ void main() {
 
       expect(find.textContaining('Ton Essentiel'), findsOneWidget);
       expect(
-        find.textContaining('Les 5 articles à ne pas manquer'),
+        find.textContaining('Tes 5 articles du jour'),
         findsOneWidget,
       );
       expect(

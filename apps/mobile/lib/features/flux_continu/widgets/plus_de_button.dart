@@ -102,21 +102,27 @@ class PlusDeButton extends StatelessWidget {
   }
 }
 
-/// "Sujet suivant ↓" — bottom-of-section CTA that marks the section as
+/// "Section suivante ↓" — bottom-of-section CTA that marks the section as
 /// consumed for the next session and scrolls smoothly to the next section.
-/// When [isMarked] is true, the button flips to a full-green "Lu ✔"
-/// state with a short scale-pop on the check icon (transition false→true
-/// only — restoring a marked session at cold start must not replay it).
-/// The flip is also applied optimistically the moment the user taps,
-/// before the provider propagates [isMarked].
+/// When [isMarked] is true, the button flips to a discreet "Passé" state
+/// with a coloured circular check and a short scale-pop on the icon
+/// (transition false→true only — restoring a marked session at cold start
+/// must not replay it). The flip is also applied optimistically the moment
+/// the user taps, before the provider propagates [isMarked].
+///
+/// The non-marked state tints the pill with the next section's hero accent
+/// so the CTA preflighs the section the tap will land on. Falls back to
+/// the Facteur primary when no next accent is provided (last section).
 class NextSectionButton extends StatefulWidget {
   final bool isMarked;
+  final Color? nextAccent;
   final VoidCallback? onTap;
 
   const NextSectionButton({
     super.key,
     required this.isMarked,
     required this.onTap,
+    this.nextAccent,
   });
 
   @override
@@ -177,9 +183,13 @@ class _NextSectionButtonState extends State<NextSectionButton>
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final marked = widget.isMarked || _localMarked;
-    final foreground = marked ? Colors.white : colors.primary;
-    final label = marked ? 'Lu' : 'Section suivante';
-    final icon = marked ? Icons.check : Icons.arrow_downward;
+    final accent = widget.nextAccent ?? colors.primary;
+    final label = marked ? 'Passé' : 'Section suivante';
+    final foreground =
+        marked ? colors.textSecondary : accent;
+    final background = marked
+        ? colors.textPrimary.withValues(alpha: 0.05)
+        : accent.withValues(alpha: 0.08);
     return Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(12),
@@ -192,9 +202,7 @@ class _NextSectionButtonState extends State<NextSectionButton>
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           decoration: BoxDecoration(
-            color: marked
-                ? colors.success
-                : colors.primary.withValues(alpha: 0.09),
+            color: background,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
@@ -214,7 +222,11 @@ class _NextSectionButtonState extends State<NextSectionButton>
               const SizedBox(width: 6),
               ScaleTransition(
                 scale: _scale,
-                child: Icon(icon, color: foreground, size: 16),
+                child: Icon(
+                  marked ? Icons.check_circle : Icons.arrow_downward,
+                  color: marked ? colors.success : foreground,
+                  size: 16,
+                ),
               ),
             ],
           ),
