@@ -210,9 +210,7 @@ def _is_allowed_for_essentiel(article: DigestTopicArticle) -> bool:
         return False
     if (article.source.type or "").lower() in _EXCLUDED_SOURCE_TYPES:
         return False
-    if is_news_bulletin_title(article.title):
-        return False
-    return True
+    return not is_news_bulletin_title(article.title)
 
 
 def _filter_articles_allowed(topics: list[DigestTopic]) -> list[DigestTopic]:
