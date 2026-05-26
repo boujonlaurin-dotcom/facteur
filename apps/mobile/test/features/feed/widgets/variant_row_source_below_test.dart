@@ -65,13 +65,13 @@ void main() {
     expect(diffTitles, findsWidgets,
         reason: 'Au moins un DiffTitle doit être présent dans les variants.');
 
-    // L'icône arrowUpRight ne se trouve que dans la head row du _VariantRow.
+    // L'icône arrowRight ne se trouve que dans la head row du _VariantRow.
     final arrowIcons = find.byWidgetPredicate((w) =>
         w is Icon &&
-        w.icon == PhosphorIcons.arrowUpRight(PhosphorIconsStyle.regular));
+        w.icon == PhosphorIcons.arrowRight(PhosphorIconsStyle.regular));
     expect(arrowIcons, findsWidgets,
         reason:
-            'L\'icône arrow-up-right est l\'ancre de la head row dans _VariantRow.');
+            'L\'icône arrow-right est l\'ancre de la head row dans _VariantRow.');
 
     // Compare la position verticale du premier DiffTitle vs le premier arrow :
     // après PR 6, le DiffTitle doit être au-dessus (dy plus petit).
