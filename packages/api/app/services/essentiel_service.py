@@ -29,6 +29,7 @@ Pipeline :
 Fallback sans préférences : le scorer dégénère en `actu_boost + perspective − rank`.
 """
 
+import logging
 import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
