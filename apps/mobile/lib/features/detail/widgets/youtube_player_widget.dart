@@ -7,8 +7,10 @@ import '../../../config/theme.dart';
 
 /// YouTube video player widget (Story 5.2)
 ///
-/// Uses flutter_inappwebview with a CORS proxy (corsproxy.io) to bypass
-/// YouTube's server-side WebView detection (Error 153 on Android).
+/// Uses flutter_inappwebview with a custom Chrome User-Agent to bypass
+/// YouTube's server-side WebView detection (Error 153 on Android — blocks
+/// User-Agents containing the "wv" marker). Embeds via youtube-nocookie.com
+/// for better embed permissiveness.
 /// JS bridge for progress tracking and long-press 2x speed boost.
 ///
 /// Falls back to "open in YouTube" if playback still fails.
@@ -167,17 +169,22 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
       );
     }
 
-    final rawEmbedUrl =
-        'https://www.youtube.com/embed/$_videoId'
-        '?playsinline=1&rel=0&modestbranding=1&autoplay=0&controls=1&fs=1';
     final embedUrl =
-        'https://corsproxy.io/?url=${Uri.encodeComponent(rawEmbedUrl)}';
+        'https://www.youtube-nocookie.com/embed/$_videoId'
+        '?playsinline=1&rel=0&modestbranding=1&autoplay=0&controls=1&fs=1';
 
     final settings = InAppWebViewSettings(
       javaScriptEnabled: true,
       mediaPlaybackRequiresUserGesture: false,
       allowsInlineMediaPlayback: true,
       transparentBackground: true,
+      // Bypasses YouTube WebView detection: Android WebView UA contains "wv"
+      // which YouTube uses to block in-app playback (Error 152-4 / 153).
+      // A standard Chrome mobile UA (no "wv") is indistinguishable from a
+      // real browser — no external proxy needed.
+      userAgent:
+          'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 '
+          '(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
     );
 
     final playerWidget = InAppWebView(
@@ -245,8 +252,7 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
             host.endsWith('ytimg.com') ||
             host.endsWith('googlevideo.com') ||
             host.endsWith('google.com') ||
-            host.endsWith('gstatic.com') ||
-            host.endsWith('corsproxy.io')) {
+            host.endsWith('gstatic.com')) {
           return NavigationActionPolicy.ALLOW;
         }
         return NavigationActionPolicy.CANCEL;
