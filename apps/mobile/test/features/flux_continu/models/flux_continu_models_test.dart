@@ -141,7 +141,7 @@ void main() {
     });
 
     test('isFolded reads from folded map keyed by sectionKey', () {
-      final state = FluxContinuState(folded: {'essentiel': true});
+      const state = FluxContinuState(folded: {'essentiel': true});
       expect(state.isFolded(digestSection(kind: SectionKind.essentiel)), isTrue);
       expect(state.isFolded(digestSection(kind: SectionKind.bonnes)), isFalse);
     });
@@ -262,6 +262,34 @@ void main() {
       const state = FluxContinuState(dismissedIds: {'x'});
       final updated = state.copyWith(isSerene: true);
       expect(updated.dismissedIds, {'x'});
+    });
+  });
+
+  group('nextSectionAfter', () {
+    test('returns the next section after the current one', () {
+      final a = themeSection(slug: 'tech');
+      final b = themeSection(slug: 'climat');
+      final result = nextSectionAfter([a, b], sectionKey(a));
+      expect(result, same(b));
+    });
+
+    test('skips EssentielSection between two theme sections', () {
+      final a = themeSection(slug: 'tech');
+      const essentiel = EssentielSection(articles: []);
+      final b = themeSection(slug: 'climat');
+      final result = nextSectionAfter([a, essentiel, b], sectionKey(a));
+      expect(result, same(b));
+    });
+
+    test('returns null when current section is the last one', () {
+      final a = themeSection(slug: 'tech');
+      final b = themeSection(slug: 'climat');
+      expect(nextSectionAfter([a, b], sectionKey(b)), isNull);
+    });
+
+    test('returns null for an unknown current key', () {
+      final a = themeSection(slug: 'tech');
+      expect(nextSectionAfter([a], 'theme:nope'), isNull);
     });
   });
 }

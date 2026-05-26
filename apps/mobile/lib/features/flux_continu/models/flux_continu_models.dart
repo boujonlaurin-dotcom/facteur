@@ -252,6 +252,22 @@ Set<String> renderedContentIds(List<FluxSection> sections) {
   return seen;
 }
 
+/// Returns the section that follows [currentKey] in [sections] (the ordered
+/// Tournée du jour list), ignoring `EssentielSection` (no "Voir + de") and the
+/// current section itself. Returns `null` when the current section is the
+/// last one — used by the theme/digest detail screens to decide whether to
+/// show the "Sujet suivant" CTA or fall back to "Retour à la Tournée".
+FluxSection? nextSectionAfter(List<FluxSection> sections, String currentKey) {
+  final ordered = sections.whereType<FluxSection>().where((s) {
+    if (s is EssentielSection) return false;
+    return true;
+  }).toList(growable: false);
+  final currentIndex = ordered.indexWhere((s) => sectionKey(s) == currentKey);
+  if (currentIndex == -1) return null;
+  if (currentIndex + 1 >= ordered.length) return null;
+  return ordered[currentIndex + 1];
+}
+
 /// Picks the lead article for a digest topic.
 ///
 /// Priority — followed-source first (user-affinity bonus), otherwise the

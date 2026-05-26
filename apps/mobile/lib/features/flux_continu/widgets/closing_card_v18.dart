@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../config/theme.dart';
+import 'tournee_cta_buttons.dart';
 
 /// Closing card displayed after the four Flux Continu sections.
 ///
@@ -107,7 +108,7 @@ class ClosingCardV18 extends StatelessWidget {
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
-              child: _PrimaryButton(
+              child: TourneePrimaryButton(
                 label: 'Continuer le feed',
                 onTap: onContinue,
               ),
@@ -116,7 +117,7 @@ class ClosingCardV18 extends StatelessWidget {
               const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
-                child: _GhostButton(
+                child: TourneeGhostButton(
                   label: "Refermer pour aujourd'hui",
                   onTap: onClose,
                 ),
@@ -135,74 +136,3 @@ class ClosingCardV18 extends StatelessWidget {
   }
 }
 
-class _PrimaryButton extends StatelessWidget {
-  final String label;
-  final VoidCallback? onTap;
-
-  const _PrimaryButton({required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFFD35400),
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Center(
-            child: Text(
-              label,
-              style: GoogleFonts.dmSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _GhostButton extends StatelessWidget {
-  final String label;
-  final VoidCallback? onTap;
-
-  const _GhostButton({required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: Colors.black.withValues(alpha: 0.1),
-              width: 1.5,
-            ),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: GoogleFonts.dmSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: colors.textPrimary,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
