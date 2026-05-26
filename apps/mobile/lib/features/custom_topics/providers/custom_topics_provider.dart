@@ -6,6 +6,7 @@ import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../lettres/providers/letters_provider.dart';
+import '../../my_interests/providers/user_interests_provider.dart';
 import '../models/topic_models.dart';
 import '../repositories/topic_repository.dart';
 
@@ -111,6 +112,7 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
           ));
       // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
       unawaited(ref.read(lettersProvider.notifier).silentRefresh());
+      ref.invalidate(userInterestsProvider);
       return created;
     } catch (e) {
       // Rollback
@@ -147,6 +149,7 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
               origin: 'custom_topics',
             ));
       }
+      ref.invalidate(userInterestsProvider);
     } catch (e) {
       state = previousState;
       rethrow;
@@ -249,6 +252,7 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
       }
       // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
       unawaited(ref.read(lettersProvider.notifier).silentRefresh());
+      ref.invalidate(userInterestsProvider);
       return created;
     } catch (e) {
       state = previousState;
