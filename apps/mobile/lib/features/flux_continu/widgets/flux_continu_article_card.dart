@@ -81,7 +81,7 @@ class FluxArticleVM {
 ///
 /// Layout per maquette V6 :
 /// - 12px padding inside a 12-radius surface card, soft shadow.
-/// - Head row : title (4-line ellipsis, DM Sans 15 w600) + 72×72 thumb on
+/// - Head row : title (4-line ellipsis, DM Sans 18 w600) + 72×72 thumb on
 ///   the right (radius 10).
 /// - Footer row (single-line) : source dot + name · theme pill · clock·time
 ///   · optional press-review trailing (Essentiel sections only).
@@ -165,13 +165,13 @@ class _FluxContinuArticleCardState extends State<FluxContinuArticleCard> {
                           child: Text(
                             vm.title,
                             style: GoogleFonts.dmSans(
-                              fontSize: 17.5,
+                              fontSize: 18.0,
                               fontWeight: FontWeight.w600,
                               height: 1.3,
                               letterSpacing: -0.15,
                               color: colors.textPrimary,
                             ),
-                            maxLines: 5,
+                            maxLines: 4,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),

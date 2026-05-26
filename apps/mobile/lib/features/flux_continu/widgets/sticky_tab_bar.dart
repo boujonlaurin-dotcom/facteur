@@ -20,7 +20,7 @@ class StickyTab {
 ///
 /// Layout per V6 maquette :
 /// - parchment-tinted backdrop with a 14px blur (saturate 140%),
-/// - "sticky-head" row : zone title ("Les Actus du jour" or "Explorer"),
+/// - "sticky-head" row : zone title ("Tournée du jour" or "Explorer"),
 /// - horizontal tabs with section dot, label, a check icon when the tab is
 ///   done (replaces the legacy strike-through, per PO feedback hotfix
 ///   2026-05-23 — "lu = checked, pas barré"), and an underline tinted with
@@ -46,7 +46,7 @@ class StickyTabBar extends StatelessWidget {
     required this.progress,
     required this.onTapTab,
     this.tabsController,
-    this.title = 'Les Actus du jour',
+    this.title = 'Tournée du jour',
     this.showFilterBar = false,
   });
 
@@ -87,7 +87,7 @@ class StickyTabBar extends StatelessWidget {
             alignment: Alignment.topCenter,
             child: showFilterBar
                 ? const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                    padding: EdgeInsets.fromLTRB(16, 12, 16, 12),
                     child: FeedFilterBar(),
                   )
                 : const SizedBox(width: double.infinity),
@@ -103,7 +103,7 @@ class StickyTabBar extends StatelessWidget {
 class StickyHead extends StatelessWidget {
   final String title;
 
-  const StickyHead({super.key, this.title = 'Les Actus du jour'});
+  const StickyHead({super.key, this.title = 'Tournée du jour'});
 
   @override
   Widget build(BuildContext context) {

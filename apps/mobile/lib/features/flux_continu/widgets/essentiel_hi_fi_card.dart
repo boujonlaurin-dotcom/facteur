@@ -191,7 +191,7 @@ class _DateStamp extends StatelessWidget {
           Text(
             day.toString().padLeft(2, '0'),
             style: GoogleFonts.courierPrime(
-              fontSize: 15,
+              fontSize: 18,
               fontWeight: FontWeight.w700,
               height: 1.0,
               color: accent,
@@ -200,7 +200,7 @@ class _DateStamp extends StatelessWidget {
           Text(
             month,
             style: GoogleFonts.courierPrime(
-              fontSize: 8.5,
+              fontSize: 10,
               fontWeight: FontWeight.w700,
               height: 1.0,
               letterSpacing: 0.8,
@@ -545,9 +545,9 @@ class _Footer extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<FacteurColors>()!;
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        if (onSeeAllDown != null)
+        if (onSeeAllDown != null) ...[
           TextButton(
             onPressed: onSeeAllDown,
             style: TextButton.styleFrom(
@@ -559,9 +559,9 @@ class _Footer extends StatelessWidget {
               'Tous mes articles ↓',
               style: FacteurTypography.labelLarge(colors.textTertiary),
             ),
-          )
-        else
-          const SizedBox.shrink(),
+          ),
+          const SizedBox(width: FacteurSpacing.space2),
+        ],
         if (onExploreAll != null)
           Material(
             color: accent,

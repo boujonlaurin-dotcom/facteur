@@ -92,8 +92,8 @@ class _InactiveChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
+        height: 42,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(FacteurRadius.full),
           color: colors.surface,
@@ -105,15 +105,15 @@ class _InactiveChip extends StatelessWidget {
             Text(
               'Mes sources',
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 15,
                 color: colors.textPrimary,
                 fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 6),
             Icon(
               PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
-              size: 10,
+              size: 14,
               color: colors.textSecondary,
             ),
           ],
@@ -152,8 +152,8 @@ class _ActiveChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
+        height: 42,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(FacteurRadius.full),
           color: bg,
@@ -165,14 +165,14 @@ class _ActiveChip extends StatelessWidget {
             if (sourceLogoUrl != null && sourceLogoUrl!.isNotEmpty)
               _SourceAvatar(
                 logoUrl: sourceLogoUrl!,
-                size: 18,
+                size: 26,
               ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             Flexible(
               child: Text(
                 sourceName,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: labelColor,
                 ),
@@ -184,10 +184,10 @@ class _ActiveChip extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               onTap: onClear,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
+                padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
                 child: Icon(
                   PhosphorIcons.x(PhosphorIconsStyle.bold),
-                  size: 13,
+                  size: 17,
                   color: iconColor,
                 ),
               ),
