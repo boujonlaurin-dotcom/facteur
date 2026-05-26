@@ -108,7 +108,13 @@ async def revenuecat_webhook(
                 await service.handle_uncancellation(app_user_id, event_data)
             case "PRODUCT_CHANGE":
                 await service.handle_product_change(app_user_id, event_data)
-            case "NON_RENEWING_PURCHASE" | "BILLING_ISSUE" | "SUBSCRIBER_ALIAS" | "TRANSFER" | "TEST":
+            case (
+                "NON_RENEWING_PURCHASE"
+                | "BILLING_ISSUE"
+                | "SUBSCRIBER_ALIAS"
+                | "TRANSFER"
+                | "TEST"
+            ):
                 logger.info("revenuecat.webhook_noop", event_type=event_type)
             case _:
                 logger.info("revenuecat.webhook_unhandled", event_type=event_type)

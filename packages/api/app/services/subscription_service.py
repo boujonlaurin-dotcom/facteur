@@ -106,9 +106,7 @@ class SubscriptionService:
             return True
         return False
 
-    def _mark_event(
-        self, subscription: UserSubscription, event_id: str | None
-    ) -> None:
+    def _mark_event(self, subscription: UserSubscription, event_id: str | None) -> None:
         if event_id is not None:
             subscription.last_event_id = event_id
 
@@ -116,9 +114,7 @@ class SubscriptionService:
         """Émet un event PostHog côté serveur (fire-and-forget)."""
         self._posthog.capture(user_id, event, props or {})
 
-    async def handle_initial_purchase(
-        self, app_user_id: str, event_data: dict
-    ) -> None:
+    async def handle_initial_purchase(self, app_user_id: str, event_data: dict) -> None:
         """Gère un premier achat (essai 7j ou direct).
 
         RevenueCat envoie INITIAL_PURCHASE pour le premier paiement.
@@ -190,9 +186,7 @@ class SubscriptionService:
         self._mark_event(subscription, event_id)
         await self.db.flush()
 
-    async def handle_cancellation(
-        self, app_user_id: str, event_data: dict
-    ) -> None:
+    async def handle_cancellation(self, app_user_id: str, event_data: dict) -> None:
         """Gère une annulation (l'accès reste actif jusqu'à expiration)."""
         subscription = await self._get_or_create_subscription(app_user_id)
         event_id = event_data.get("id")
@@ -224,9 +218,7 @@ class SubscriptionService:
         self._mark_event(subscription, event_id)
         await self.db.flush()
 
-    async def handle_uncancellation(
-        self, app_user_id: str, event_data: dict
-    ) -> None:
+    async def handle_uncancellation(self, app_user_id: str, event_data: dict) -> None:
         """Gère une réactivation après annulation (user revient avant expiration)."""
         subscription = await self._get_or_create_subscription(app_user_id)
         event_id = event_data.get("id")
@@ -242,9 +234,7 @@ class SubscriptionService:
         self._mark_event(subscription, event_id)
         await self.db.flush()
 
-    async def handle_product_change(
-        self, app_user_id: str, event_data: dict
-    ) -> None:
+    async def handle_product_change(self, app_user_id: str, event_data: dict) -> None:
         """Gère un changement de produit (ex: monthly → annual)."""
         subscription = await self._get_or_create_subscription(app_user_id)
         event_id = event_data.get("id")
@@ -254,9 +244,10 @@ class SubscriptionService:
         new_product = event_data.get("new_product_id") or event_data.get("product_id")
         if new_product:
             subscription.product_id = new_product
-        subscription.current_period_end = self._parse_ms(
-            event_data.get("expiration_at_ms")
-        ) or subscription.current_period_end
+        subscription.current_period_end = (
+            self._parse_ms(event_data.get("expiration_at_ms"))
+            or subscription.current_period_end
+        )
 
         self._mark_event(subscription, event_id)
         await self.db.flush()
