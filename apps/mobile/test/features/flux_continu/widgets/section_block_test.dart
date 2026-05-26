@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/features/digest/models/digest_models.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/widgets/flux_continu_article_card.dart';
@@ -25,6 +26,26 @@ Content _content(String id) {
     contentType: ContentType.article,
     publishedAt: DateTime(2026, 1, 1),
     source: Source(id: 's', name: 'S', type: SourceType.article),
+  );
+}
+
+DigestTopicSection _digestTopicSection({
+  int topics = 5,
+  int coreVisibleCount = 3,
+}) {
+  return DigestTopicSection(
+    kind: SectionKind.bonnes,
+    label: 'Actus du jour',
+    accent: const Color(0xFFD35400),
+    coreVisibleCount: coreVisibleCount,
+    topics: List.generate(
+      topics,
+      (i) => DigestTopic(
+        topicId: 't$i',
+        label: 'Topic $i',
+        articles: [DigestItem(contentId: 'c$i', title: 'A$i')],
+      ),
+    ),
   );
 }
 
@@ -80,7 +101,7 @@ void main() {
       ));
 
       // 7 items - 3 visible = +4 hidden.
-      expect(find.text('Voir tout Tech (+4)'), findsOneWidget);
+      expect(find.text('Plus d\'articles (+4)'), findsOneWidget);
     });
 
     testWidgets(
@@ -113,8 +134,27 @@ void main() {
         ),
       ));
 
-      // hiddenCount = 0 → label falls back to "Voir tout Tech" (no suffix).
-      expect(find.text('Voir tout Tech'), findsOneWidget);
+      // hiddenCount = 0 → label falls back to "Plus d'articles" (no suffix).
+      expect(find.text('Plus d\'articles'), findsOneWidget);
+    });
+  });
+
+  group('SectionBlock — DigestTopicSection CTA', () {
+    testWidgets(
+        'DigestTopicSection with onSeeAll uses SeeAllSectionButton (→) instead '
+        'of PlusDeButton (↓)', (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _digestTopicSection(topics: 5, coreVisibleCount: 3),
+          isOpen: false,
+          onToggleMore: () {},
+          onTapArticle: (_, __) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      expect(find.byType(SeeAllSectionButton), findsOneWidget);
+      expect(find.byType(PlusDeButton), findsNothing);
     });
   });
 
@@ -151,7 +191,7 @@ void main() {
       expect(find.byType(NextSectionButton), findsNothing);
     });
 
-    testWidgets('switches to "Terminé" non-interactive state when '
+    testWidgets('switches to "Lu ✔" non-interactive state when '
         'isMarkedForNextSession is true', (tester) async {
       var taps = 0;
       await tester.pumpWidget(_wrap(
@@ -166,11 +206,10 @@ void main() {
         ),
       ));
 
-      expect(find.text('Terminé'), findsOneWidget);
+      expect(find.text('Lu ✔'), findsOneWidget);
       expect(find.text('Sujet suivant'), findsNothing);
-      expect(find.text('Lu'), findsNothing);
 
-      // Tap should be a no-op.
+      // Tap should be a no-op (parent passes onTap=null when already marked).
       await tester.tap(find.byType(NextSectionButton));
       await tester.pump();
       expect(taps, 0);
@@ -202,7 +241,7 @@ void main() {
       );
     });
 
-    testWidgets('Terminé state has success background', (tester) async {
+    testWidgets('Lu ✔ state has success background', (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
           section: _themeSection(),
@@ -223,6 +262,38 @@ void main() {
       );
       final decoration = container.decoration as BoxDecoration;
       expect(decoration.color, FacteurPalettes.light.success);
+    });
+
+    testWidgets(
+        'optimistic flip: tap shows "Lu ✔" + success background on the next '
+        'frame even when isMarkedForNextSession stays false', (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(),
+          isOpen: false,
+          onToggleMore: () {},
+          onTapArticle: (_, __) {},
+          onSeeAll: () {},
+          isMarkedForNextSession: false,
+          onNextSection: () {},
+        ),
+      ));
+      expect(find.text('Sujet suivant'), findsOneWidget);
+
+      await tester.tap(find.byType(NextSectionButton));
+      await tester.pump();
+
+      expect(find.text('Lu ✔'), findsOneWidget);
+      final container = tester.widget<AnimatedContainer>(
+        find.descendant(
+          of: find.byType(NextSectionButton),
+          matching: find.byType(AnimatedContainer),
+        ),
+      );
+      expect(
+        (container.decoration as BoxDecoration).color,
+        FacteurPalettes.light.success,
+      );
     });
   });
 
@@ -261,6 +332,13 @@ void main() {
       final voirPlusLeft = tester.getTopLeft(voirPlus).dx;
       final sujetLeft = tester.getTopLeft(sujetSuivant).dx;
       expect(voirPlusLeft < sujetLeft, isTrue);
+
+      // 2:1 ratio — "Plus d'articles" must be visibly wider than "Sujet suivant".
+      expect(
+        tester.getSize(voirPlus).width > tester.getSize(sujetSuivant).width,
+        isTrue,
+        reason: 'Plus d\'articles doit être ~2x plus large que Sujet suivant',
+      );
     });
 
     testWidgets('tap fires onNextSection exactly once when not marked',
