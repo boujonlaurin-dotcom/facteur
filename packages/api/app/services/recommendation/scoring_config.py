@@ -137,9 +137,28 @@ class ScoringWeights:
     # --- DIGEST LOW-PRIORITY (Sport) ---
 
     # Pénalité appliquée aux articles Sport dans le scoring du digest (2 modes).
-    # Alignée sur MUTED_THEME_MALUS (-40) : un Sport fort (source suivie + topic
-    # ciblé + très récent) peut encore dépasser le seuil — pas d'exclusion dure.
-    DIGEST_SPORT_PENALTY = -40.0
+    # Renforcée de -40 → -80 (Story 9.4) : la pénalité d'origine était trop
+    # faible — un sport avec source suivie (+100) ou trending (+45) la battait
+    # systématiquement, d'où plusieurs cas observés en rank 1-3 (UNFP Dembélé,
+    # Wembanyama, F1, Ligue des champions). À -80 le sport ne passe en tête
+    # que s'il est éditorialement majeur ET suivi par l'user.
+    DIGEST_SPORT_PENALTY = -80.0
+
+    # --- ESSENTIEL (top 5 transversal — Story 9.4) ---
+
+    # Slot minimum autorisé pour un article sport dans l'Essentiel (1-indexed).
+    # Sport en rank < 5 = exclu via post-processing positionnel.
+    ESSENTIEL_SPORT_MIN_SLOT = 5
+
+    # Nombre maximum d'articles sport par Essentiel (5 articles total).
+    ESSENTIEL_MAX_SPORT_PER_DIGEST = 1
+
+    # Score perspectives non-linéaire (log2) : `min(CAP, BASE * log2(n))`.
+    # 1→0  2→+12  3→+19  4→+24  5→+28  6→+30 (cap)  8+→+30
+    # Permet à un sujet relayé par 3+ médias de rivaliser avec un BOOST_BADGE_ACTU
+    # (+25) et d'égaler un BOOST_UNE (+30). Un scoop isolé n'a aucun bonus.
+    ESSENTIEL_PERSPECTIVE_BASE = 12.0
+    ESSENTIEL_PERSPECTIVE_CAP = 30.0
 
     # --- DIGEST TRENDING/IMPORTANCE (Pour vous hybride) ---
 

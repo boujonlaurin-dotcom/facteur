@@ -433,9 +433,58 @@ LOW_PRIORITY_SPORT_KEYWORDS = [
     " asm ",
     "mbappé",
     "mbappe",
+    # NBA / basket élargi (Story 9.4 — preuves DB : Wembanyama / TrashTalk / Thunder)
+    "nba",
+    "wembanyama",
+    "play-offs",
+    "playoffs",
 ]
 
 LOW_PRIORITY_SPORT_THEMES = {"sport", "sports"}
+
+
+# --- Constantes "bulletins / chroniques" ---
+#
+# Patterns regex matchant les titres de bulletins radio (« JOURNAL DE 8H… »),
+# tranches horaires (« Le 7/9 »), chroniques régulières (« Avec Sciences,
+# chronique du lundi 25 mai 2026 »), revues de presse. Ces contenus ne
+# constituent pas une actualité chaude éditoriale et doivent être exclus de
+# l'Essentiel — ils saturent les top slots avec du contenu daté/répétitif.
+#
+# Ancrage début de chaîne ou borné aux 30 premiers caractères pour éviter de
+# matcher un article analytique contenant « chronique » en milieu de phrase
+# (« Une chronique du conflit… »).
+NEWS_BULLETIN_PATTERNS = [
+    r"^\s*journal de \d{1,2}\s?h",  # JOURNAL DE 8H, Journal de 13h
+    r"^\s*le \d{1,2}\s?/\s?\d{1,2}\b",  # Le 7/9, Le 13/14, Le 18/20
+    # « Avec Sciences, chronique du… » → précédé de virgule/colon, ou en début
+    # de titre (« Chronique du soir »). Le « Une chronique du conflit » est
+    # exclu par construction (mot précédent = « Une », pas une ponctuation).
+    r"(^\s*|[,:]\s+)chronique du\b",
+    r"^\s*jt (de |du )",  # JT de 20h, JT du soir
+    r"^\s*les titres\b",  # Les titres de l'actualité
+    r"^\s*info (matin|soir)\b",
+    r"^\s*bulletin (info|météo|meteo)\b",
+    r"^\s*revue de presse\b",
+    r"^\s*flash (info|actu)\b",
+    r"^\s*le journal\b",  # Le journal de France Inter, Le Journal du week-end
+]
+
+_BULLETIN_RE = re.compile("|".join(NEWS_BULLETIN_PATTERNS), re.IGNORECASE)
+
+
+def is_news_bulletin_title(title: str | None) -> bool:
+    """True si le titre matche un pattern de bulletin radio / chronique régulière.
+
+    Utilisé pour exclure de l'Essentiel les contenus daté/répétitifs
+    (« JOURNAL DE 8H du lundi 25 mai 2026 », « Avec Sciences, chronique du… »)
+    qui passent à travers les autres filtres parce qu'ils sont publiés en
+    flux article (content_type=ARTICLE) sur certaines sources comme France
+    Culture.
+    """
+    if not title:
+        return False
+    return bool(_BULLETIN_RE.search(title))
 
 
 def _match_ratio(cluster: TopicCluster, keywords: list[str]) -> float:

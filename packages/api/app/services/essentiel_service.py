@@ -29,7 +29,7 @@ Pipeline :
 Fallback sans préférences : le scorer dégénère en `actu_boost + perspective − rank`.
 """
 
-import logging
+import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -37,6 +37,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.enums import ContentType, SourceType
 from app.models.source import UserSource
 from app.models.user import UserInterest, UserSubtopic
 from app.schemas.digest import DigestResponse, DigestTopic, DigestTopicArticle
@@ -45,6 +46,12 @@ from app.services.language_user_filter import (
     get_hide_non_fr_pref,
     is_foreign_source,
 )
+from app.services.recommendation.filter_presets import (
+    LOW_PRIORITY_SPORT_KEYWORDS,
+    LOW_PRIORITY_SPORT_THEMES,
+    is_news_bulletin_title,
+)
+from app.services.recommendation.scoring_config import ScoringWeights
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +76,12 @@ _W_BADGE_ACTU = 25.0  # article.badge == _BADGE_ACTU (signal explicite du digest
 _W_FOLLOWED_SOURCE = 100.0
 _W_FOLLOWED_SOURCE_FLAG = 50.0  # bonus moindre si on n'a que le flag du digest
 _W_TOPIC_WEIGHT = 50.0
-_W_PERSPECTIVE = 5.0
 _W_RANK_PENALTY = 0.5
 _W_READ_PENALTY = 1000.0  # Écarte les articles déjà lus sauf si rien d'autre.
+
+# Source types exclus du pool Essentiel — Reddit est un agrégateur, pas une
+# rédaction d'info.
+_EXCLUDED_SOURCE_TYPES: frozenset[SourceType] = frozenset({SourceType.REDDIT})
 
 
 @dataclass(frozen=True)
@@ -162,6 +172,78 @@ def _is_actu_du_jour(topic: DigestTopic, article: DigestTopicArticle) -> bool:
     return bool(topic.is_trending or topic.is_une or article.badge == _BADGE_ACTU)
 
 
+def _is_sport_pick(topic: DigestTopic, article: DigestTopicArticle) -> bool:
+    """Détecte un article sport (union de signaux).
+
+    Couvre le cas TrashTalk : `source.theme="society"` mais `content.theme="sport"`.
+    Cherche dans :
+    - `topic.theme` (signal éditorial du digest)
+    - `article.source.theme` (catégorisation source)
+    - `article.topics[]` (classification ML Mistral)
+    - keywords titre (NBA, Ligue des champions, F1, etc.)
+    """
+    candidates = {
+        (topic.theme or "").lower(),
+        (article.source.theme or "").lower(),
+    }
+    if candidates & LOW_PRIORITY_SPORT_THEMES:
+        return True
+    if article.topics and any(
+        isinstance(t, str) and t.lower() == "sport" for t in article.topics
+    ):
+        return True
+    text = (article.title or "").lower()
+    return any(kw in text for kw in LOW_PRIORITY_SPORT_KEYWORDS)
+
+
+def _is_allowed_for_essentiel(article: DigestTopicArticle) -> bool:
+    """Pré-filtre : un article passe-t-il les critères de l'Essentiel ?
+
+    Exclut (Story 9.4) :
+    - Podcasts et vidéos YouTube (content_type ∈ {PODCAST, YOUTUBE}).
+    - Sources Reddit (agrégateurs, pas une rédaction d'info).
+    - Bulletins radio + chroniques régulières par pattern de titre
+      (« JOURNAL DE 8H », « Avec Sciences, chronique du… »).
+    """
+    if article.content_type != ContentType.ARTICLE:
+        return False
+    if (article.source.type or "").lower() in _EXCLUDED_SOURCE_TYPES:
+        return False
+    if is_news_bulletin_title(article.title):
+        return False
+    return True
+
+
+def _filter_articles_allowed(topics: list[DigestTopic]) -> list[DigestTopic]:
+    """Recopie les topics en ne gardant que les articles autorisés.
+
+    Topics dont tous les articles sont exclus disparaissent. `model_copy`
+    évite de muter la `DigestResponse` source (potentiellement cachée).
+    """
+    filtered: list[DigestTopic] = []
+    for topic in topics:
+        kept = [a for a in topic.articles if _is_allowed_for_essentiel(a)]
+        if kept:
+            filtered.append(topic.model_copy(update={"articles": kept}))
+    return filtered
+
+
+def _perspective_score(perspective_count: int) -> float:
+    """Score non-linéaire des perspectives (Story 9.4).
+
+    `min(CAP, BASE * log2(n))` — 1→0, 2→+12, 3→+19, 4→+24, 5→+28, 6→+30 (cap).
+    Permet à un sujet à 6+ relais de rivaliser avec un BOOST_BADGE_ACTU (+25)
+    et d'égaler un BOOST_UNE (+30). Le linéaire `+5/perspective` d'origine
+    laissait passer des scoops isolés devant des sujets très relayés.
+    """
+    if perspective_count <= 1:
+        return 0.0
+    return min(
+        ScoringWeights.ESSENTIEL_PERSPECTIVE_CAP,
+        ScoringWeights.ESSENTIEL_PERSPECTIVE_BASE * math.log2(perspective_count),
+    )
+
+
 def _is_followed_topic(topic: DigestTopic, ctx: EssentielUserContext) -> bool:
     return bool(topic.theme and topic.theme in ctx.topic_weights)
 
@@ -203,9 +285,9 @@ def _score_article(
     if topic.theme and topic.theme in ctx.topic_weights:
         score += _W_TOPIC_WEIGHT * ctx.topic_weights[topic.theme]
 
-    # Bonus "transversal" : un sujet couvert par plusieurs sources est plus à
-    # sa place dans l'Essentiel qu'un scoop isolé.
-    score += _W_PERSPECTIVE * float(topic.perspective_count or 0)
+    # Bonus "transversal" log-calibré : un sujet à 6+ médias bat un signal
+    # trending faible, un scoop isolé n'a aucun bonus.
+    score += _perspective_score(int(topic.perspective_count or 0))
 
     # Pénalité is_read : écarte les articles déjà lus sauf si rien d'autre.
     if article.is_read:
@@ -288,18 +370,9 @@ def _pick_transversal_articles(
        même source à toutes les étapes.
     """
     topics = _filter_articles_by_language(topics, ctx)
-    tournee_pool = _filter_articles_by_tournee_pool(topics, ctx)
-    if tournee_pool:
-        topics = tournee_pool
-    elif ctx.followed_source_ids:
-        # Filtre vide → pas d'article 24h+followed dans le digest. Fallback
-        # sur le pool langue uniquement pour éviter une Essentiel vide.
-        logger.warning(
-            "essentiel: tournee-pool filter emptied digest "
-            "(followed=%d, topics=%d) — falling back to language-only pool",
-            len(ctx.followed_source_ids),
-            len(topics),
-        )
+    # Story 9.4 : exclure podcasts/youtube/reddit/bulletins en tête de pipeline
+    # — ces contenus ne reflètent pas l'actualité chaude traitée par la presse.
+    topics = _filter_articles_allowed(topics)
     eligible_topics = [t for t in topics if t.articles]
     if not eligible_topics:
         return []
@@ -334,11 +407,12 @@ def _pick_transversal_articles(
 
     # ─── Slot lead Actu ──────────────────────────────────────────────────
     # Cherche le meilleur article Actu du jour (trending/une/badge=="actu").
-    # S'il existe, on le pose en rank=1 avant tout le reste.
+    # S'il existe, on le pose en rank=1 avant tout le reste. Le sport est
+    # exclu du lead-slot par construction (Story 9.4 : sport jamais < slot 5).
     actu_candidates: list[tuple[DigestTopic, DigestTopicArticle, float]] = []
     for topic in eligible_topics:
         for article in topic.articles:
-            if _is_actu_du_jour(topic, article):
+            if _is_actu_du_jour(topic, article) and not _is_sport_pick(topic, article):
                 actu_candidates.append(
                     (topic, article, scored[(topic.topic_id, article.content_id)])
                 )
@@ -368,7 +442,7 @@ def _pick_transversal_articles(
             continue
         _try_pick(topic, article)
         if len(picked) >= ESSENTIEL_MAX_ARTICLES:
-            return picked
+            return _enforce_sport_slot_constraint(picked)
 
     # ─── Round 2 : remplissage (meilleurs articles restants) ─────────────
     remaining: list[tuple[DigestTopic, DigestTopicArticle, float]] = []
@@ -387,7 +461,34 @@ def _pick_transversal_articles(
         if len(picked) >= ESSENTIEL_MAX_ARTICLES:
             break
 
-    return picked
+    return _enforce_sport_slot_constraint(picked)
+
+
+def _enforce_sport_slot_constraint(
+    picked: list[tuple[DigestTopic, DigestTopicArticle]],
+) -> list[tuple[DigestTopic, DigestTopicArticle]]:
+    """Force le sport à occuper le slot ≥ 5 (Story 9.4), avec au plus 1 sport.
+
+    Stratégie :
+    - Partitionne en non-sport et sport (max ESSENTIEL_MAX_SPORT_PER_DIGEST).
+    - Si on a ≥ (ESSENTIEL_SPORT_MIN_SLOT - 1) non-sport, on place le sport
+      après — il aboutit en slot 5 ou plus.
+    - Sinon le pool non-sport est trop petit pour placer le sport en slot 5+ :
+      on l'exclut plutôt que de le remonter en slot < 5.
+    """
+    non_sport: list[tuple[DigestTopic, DigestTopicArticle]] = []
+    sport: list[tuple[DigestTopic, DigestTopicArticle]] = []
+    for topic, article in picked:
+        if _is_sport_pick(topic, article):
+            sport.append((topic, article))
+        else:
+            non_sport.append((topic, article))
+
+    sport = sport[: ScoringWeights.ESSENTIEL_MAX_SPORT_PER_DIGEST]
+    min_non_sport = ScoringWeights.ESSENTIEL_SPORT_MIN_SLOT - 1
+    if len(non_sport) >= min_non_sport:
+        return (non_sport + sport)[:ESSENTIEL_MAX_ARTICLES]
+    return non_sport[:ESSENTIEL_MAX_ARTICLES]
 
 
 def _to_essentiel_article(
