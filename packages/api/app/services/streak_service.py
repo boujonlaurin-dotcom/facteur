@@ -96,7 +96,9 @@ class StreakService:
         await self.db.flush()
         return streak
 
-    async def get_activity(self, user_id: str, days: int = 14) -> StreakActivityResponse:
+    async def get_activity(
+        self, user_id: str, days: int = 14
+    ) -> StreakActivityResponse:
         """Construit l'activité d'ouverture d'app sur les N derniers jours."""
         streak = await self._get_or_create_streak(user_id)
         user_uuid = UUID(user_id)
@@ -137,7 +139,9 @@ class StreakService:
             # Reading implies the app was opened, even for historical days
             # recorded before `session_start` became the streak source.
             opened_dates.add(event_date)
-            articles_read_by_day[event_date] = articles_read_by_day.get(event_date, 0) + 1
+            articles_read_by_day[event_date] = (
+                articles_read_by_day.get(event_date, 0) + 1
+            )
 
         activity_days = [
             StreakActivityDayResponse(
@@ -149,9 +153,7 @@ class StreakService:
                     else None
                 ),
             )
-            for day in (
-                start_date + timedelta(days=offset) for offset in range(days)
-            )
+            for day in (start_date + timedelta(days=offset) for offset in range(days))
         ]
 
         return StreakActivityResponse(
