@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
 import '../../../core/providers/analytics_provider.dart';
@@ -14,8 +13,22 @@ import '../../digest/widgets/markdown_text.dart';
 import '../../digest/widgets/section_divider.dart';
 import '../providers/feed_provider.dart';
 import '../repositories/feed_repository.dart' show HighlightSpan, TokenSpan;
+import '../screens/perspective_webview_screen.dart';
 import 'coverage_spectrum_bar.dart';
 import 'diff_title.dart';
+
+/// Pushed via the root navigator so the in-app webview stacks above the
+/// bottom sheet without dismissing it.
+void _openPerspectiveWebView(BuildContext context, Perspective p) {
+  Navigator.of(context, rootNavigator: true).push(
+    MaterialPageRoute<void>(
+      builder: (_) => PerspectiveWebViewScreen(
+        url: p.url,
+        sourceName: p.sourceName,
+      ),
+    ),
+  );
+}
 
 /// Model for a perspective from an external source
 class Perspective {
@@ -626,13 +639,12 @@ class _PerspectiveCard extends ConsumerWidget {
       child: FacteurCard(
         padding: EdgeInsets.zero,
         borderRadius: FacteurRadius.small,
-        onTap: () async {
+        onTap: () {
           final perspectiveId = perspective.sourceDomain.isNotEmpty
               ? perspective.sourceDomain
               : perspective.url;
           onView?.call(perspectiveId);
-          final uri = Uri.parse(perspective.url);
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
+          _openPerspectiveWebView(context, perspective);
         },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -669,8 +681,7 @@ class _PerspectiveCard extends ConsumerWidget {
                       ),
                       const SizedBox(width: 8),
                       Icon(
-                        PhosphorIcons.arrowSquareOut(
-                            PhosphorIconsStyle.regular),
+                        PhosphorIcons.arrowRight(PhosphorIconsStyle.regular),
                         size: 16,
                         color: colors.textTertiary,
                       ),
@@ -1728,8 +1739,7 @@ class _PivotedRefTitleState extends State<_PivotedRefTitle>
 }
 
 /// Ligne variante (cm-vrow) — border-left 4 px couleur bias + DiffTitle animé
-/// suivi d'une foot row (favicon + nom + bias label + arrow). Tap → launchUrl
-/// externe.
+/// suivi d'une foot row (favicon + nom + bias label + arrow).
 class _VariantRow extends ConsumerWidget {
   final Perspective perspective;
   final bool isLast;
@@ -1766,12 +1776,7 @@ class _VariantRow extends ConsumerWidget {
     final biasColor = perspective.getBiasColor(colors);
     return InkWell(
       key: firstCardKey,
-      onTap: () async {
-        final uri = Uri.tryParse(perspective.url);
-        if (uri != null) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
-      },
+      onTap: () => _openPerspectiveWebView(context, perspective),
       child: Container(
         decoration: BoxDecoration(
           border: Border(
@@ -1840,7 +1845,7 @@ class _VariantRow extends ConsumerWidget {
                 ),
                 const Spacer(),
                 Icon(
-                  PhosphorIcons.arrowUpRight(PhosphorIconsStyle.regular),
+                  PhosphorIcons.arrowRight(PhosphorIconsStyle.regular),
                   size: 14,
                   color: colors.textTertiary,
                 ),
