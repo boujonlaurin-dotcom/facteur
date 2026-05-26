@@ -161,39 +161,52 @@ class SectionBlock extends StatelessWidget {
           onTapFavorite: onTapFavorite,
         ),
         ...cards,
-        if (section is FeedThemeSection &&
-            onSeeAll != null &&
-            (hiddenCount > 0 || section.hasMore))
-          SeeAllSectionButton(
-            sectionLabel: section.label,
-            hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
-            hasMore: section.hasMore,
-            onTap: onSeeAll!,
-          )
-        else if (section is DigestTopicSection &&
-            onSeeAll != null &&
-            section.hasOverflow)
-          PlusDeButton(
-            sectionLabel: section.label,
-            isOpen: false,
-            hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
-            onTap: onSeeAll!,
-          )
-        else if (section.hasOverflow)
-          PlusDeButton(
-            sectionLabel: section.label,
-            isOpen: isOpen,
-            hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
-            onTap: onToggleMore,
-          ),
-        if (onNextSection != null)
-          NextSectionButton(
-            isMarked: isMarkedForNextSession,
-            onTap: isMarkedForNextSession ? null : onNextSection,
-          ),
+        _SectionFooterRow(
+          voirPlus: _buildVoirPlusButton(section, hiddenCount),
+          sujetSuivant: onNextSection != null
+              ? NextSectionButton(
+                  isMarked: isMarkedForNextSession,
+                  onTap: isMarkedForNextSession ? null : onNextSection,
+                )
+              : null,
+        ),
         const SizedBox(height: 16),
       ],
     );
+  }
+
+  /// Returns the "Voir tout" / "Plus de…" button for this section, or null
+  /// when no overflow CTA applies.
+  Widget? _buildVoirPlusButton(FluxSection section, int hiddenCount) {
+    if (section is FeedThemeSection &&
+        onSeeAll != null &&
+        (hiddenCount > 0 || section.hasMore)) {
+      return SeeAllSectionButton(
+        sectionLabel: section.label,
+        hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
+        hasMore: section.hasMore,
+        onTap: onSeeAll!,
+      );
+    }
+    if (section is DigestTopicSection &&
+        onSeeAll != null &&
+        section.hasOverflow) {
+      return PlusDeButton(
+        sectionLabel: section.label,
+        isOpen: false,
+        hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
+        onTap: onSeeAll!,
+      );
+    }
+    if (section.hasOverflow) {
+      return PlusDeButton(
+        sectionLabel: section.label,
+        isOpen: isOpen,
+        hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
+        onTap: onToggleMore,
+      );
+    }
+    return null;
   }
 
   Widget _feedbackInlineFor(String contentId) {
@@ -268,5 +281,33 @@ class SectionBlock extends StatelessWidget {
               ),
         ];
     }
+  }
+}
+
+/// Two-column footer for a [SectionBlock]: "Voir tout" / "Plus de…" on the
+/// left, "Sujet suivant" on the right. Owns the bottom padding so both
+/// children stay flush regardless of which combination is rendered.
+class _SectionFooterRow extends StatelessWidget {
+  final Widget? voirPlus;
+  final Widget? sujetSuivant;
+
+  const _SectionFooterRow({this.voirPlus, this.sujetSuivant});
+
+  @override
+  Widget build(BuildContext context) {
+    if (voirPlus == null && sujetSuivant == null) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Row(
+        children: [
+          if (voirPlus != null) Flexible(child: voirPlus!) else const Spacer(),
+          if (voirPlus != null && sujetSuivant != null)
+            const SizedBox(width: 8),
+          if (sujetSuivant != null) Flexible(child: sujetSuivant!),
+        ],
+      ),
+    );
   }
 }

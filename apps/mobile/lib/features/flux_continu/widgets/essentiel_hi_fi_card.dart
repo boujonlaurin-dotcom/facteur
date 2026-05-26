@@ -37,11 +37,8 @@ class EssentielHiFiCard extends StatelessWidget {
     final accent = colors.sectionEssentiel;
 
     final lead = articles.isNotEmpty ? articles.first : null;
-    final mediums = articles.length > 1
-        ? articles.sublist(1, articles.length > 3 ? 3 : articles.length)
-        : const <EssentielArticle>[];
-    final lights = articles.length > 3
-        ? articles.sublist(3, articles.length > 5 ? 5 : articles.length)
+    final remaining = articles.length > 1
+        ? articles.sublist(1, articles.length > 5 ? 5 : articles.length)
         : const <EssentielArticle>[];
 
     return Container(
@@ -81,17 +78,11 @@ class EssentielHiFiCard extends StatelessWidget {
                 accent: accent,
                 onTap: () => onTapArticle(lead),
               ),
-            for (final m in mediums) ...[
+            for (final a in remaining) ...[
               const SizedBox(height: FacteurSpacing.space3),
               const _Hairline(),
               const SizedBox(height: FacteurSpacing.space3),
-              _MediumTile(article: m, onTap: () => onTapArticle(m)),
-            ],
-            for (final l in lights) ...[
-              const SizedBox(height: FacteurSpacing.space2),
-              const _DottedDivider(),
-              const SizedBox(height: FacteurSpacing.space2),
-              _LightTile(article: l, onTap: () => onTapArticle(l)),
+              _MediumTile(article: a, onTap: () => onTapArticle(a)),
             ],
             const SizedBox(height: FacteurSpacing.space4),
             _Footer(
@@ -188,13 +179,13 @@ class _DateStamp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 64,
-      height: 64,
+      width: 52,
+      height: 52,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: accent.withValues(alpha: 0.16),
         shape: BoxShape.circle,
-        border: Border.all(color: accent, width: 1.6),
+        border: Border.all(color: accent, width: 1.2),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -202,20 +193,19 @@ class _DateStamp extends StatelessWidget {
           Text(
             day.toString().padLeft(2, '0'),
             style: GoogleFonts.courierPrime(
-              fontSize: 20,
+              fontSize: 15,
               fontWeight: FontWeight.w700,
               height: 1.0,
               color: accent,
             ),
           ),
-          const SizedBox(height: 1),
           Text(
             month,
             style: GoogleFonts.courierPrime(
-              fontSize: 10,
+              fontSize: 8.5,
               fontWeight: FontWeight.w700,
               height: 1.0,
-              letterSpacing: 1.2,
+              letterSpacing: 0.8,
               color: accent,
             ),
           ),
@@ -293,18 +283,21 @@ class _LeadTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (article.isActuDuJour) ...[
-                _ActuBadge(accent: chipAccent),
-                const SizedBox(height: FacteurSpacing.space2),
-              ],
-              Row(
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
+                  if (article.isActuDuJour)
+                    _ActuBadge(
+                      accent: chipAccent,
+                      overrideBackground: colors.sectionEssentiel,
+                    ),
                   _SectionChip(
                     label: _sectionLabelFor(article),
                     accent: chipAccent,
                     showFollowed: article.isFollowedTopic,
                   ),
-                  const Spacer(),
                   if (article.perspectiveCount > 1)
                     Text(
                       '+ ${article.perspectiveCount} sources',
@@ -405,67 +398,6 @@ class _MediumTile extends StatelessWidget {
   }
 }
 
-class _LightTile extends StatelessWidget {
-  final EssentielArticle article;
-  final VoidCallback onTap;
-
-  const _LightTile({required this.article, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).extension<FacteurColors>()!;
-    final themeAccent = _accentFor(article, colors.sectionEssentiel);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(FacteurRadius.small),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: themeAccent,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: FacteurSpacing.space2),
-              Text(
-                _sectionLabelFor(article).toUpperCase(),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: FacteurTypography.labelSmall(themeAccent).copyWith(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.6,
-                ),
-              ),
-              const SizedBox(width: FacteurSpacing.space2),
-              Text(
-                '·',
-                style: FacteurTypography.labelSmall(colors.textTertiary),
-              ),
-              const SizedBox(width: FacteurSpacing.space2),
-              Expanded(
-                child: Text(
-                  article.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: FacteurTypography.bodySmall(colors.textPrimary),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _SectionChip extends StatelessWidget {
   final String label;
   final Color accent;
@@ -507,19 +439,21 @@ class _SectionChip extends StatelessWidget {
   }
 }
 
-/// Pastille "Actu du jour" affichée au-dessus du lead quand l'article a été
-/// marqué Actu (topic trending/une ou badge="actu") par le pipeline du digest.
+/// Pastille "Actu du jour" affichée à côté du chip section dans le lead.
+/// [overrideBackground] permet de forcer la couleur orange Essentiel quel
+/// que soit le thème de l'article (sinon `accent` est utilisé).
 class _ActuBadge extends StatelessWidget {
   final Color accent;
+  final Color? overrideBackground;
 
-  const _ActuBadge({required this.accent});
+  const _ActuBadge({required this.accent, this.overrideBackground});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: accent,
+        color: overrideBackground ?? accent,
         borderRadius: BorderRadius.circular(FacteurRadius.pill),
       ),
       child: Row(
@@ -612,28 +546,6 @@ class _Hairline extends StatelessWidget {
   }
 }
 
-class _DottedDivider extends StatelessWidget {
-  const _DottedDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).extension<FacteurColors>()!;
-    final dotColor = colors.border.withValues(alpha: 0.20);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final dashCount = (constraints.maxWidth / 4).floor();
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: List.generate(
-            dashCount,
-            (_) => Container(width: 2, height: 1, color: dotColor),
-          ),
-        );
-      },
-    );
-  }
-}
-
 class _Footer extends StatelessWidget {
   final Color accent;
   final VoidCallback? onSeeAllDown;
@@ -690,23 +602,26 @@ class _Footer extends StatelessWidget {
   }
 }
 
-/// Picks an accent color: theme slug first, then card-level kind fallback.
-Color _accentFor(EssentielArticle article, Color fallback) {
-  final slug = article.theme;
+/// Looks up an entry in [themeMap] by article theme slug and extracts [selector].
+/// Returns null when the slug is absent or not in the map.
+T? _themeMapLookup<T>(String? slug, T Function(ThemeVisual) selector) {
   if (slug != null && themeMap.containsKey(slug)) {
-    return themeMap[slug]!.accent;
+    return selector(themeMap[slug]!);
   }
-  return fallback;
+  return null;
 }
+
+/// Picks an accent color: theme slug first, then card-level kind fallback.
+Color _accentFor(EssentielArticle article, Color fallback) =>
+    _themeMapLookup(article.theme, (e) => e.accent) ?? fallback;
 
 /// Resolves the section label rendered next to each article in the hi-fi card.
 ///
 /// Prefers the stable client-side [themeMap] over the backend `section_label`,
 /// which is often empty or non-canonical (e.g. carries the source name).
 String _sectionLabelFor(EssentielArticle article) {
-  final slug = article.theme;
-  if (slug != null && themeMap.containsKey(slug)) {
-    return themeMap[slug]!.label;
+  if (_themeMapLookup(article.theme, (e) => e.label) case final label?) {
+    return label;
   }
   final raw = article.sectionLabel.trim();
   if (raw.isNotEmpty) return raw;

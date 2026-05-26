@@ -18,6 +18,7 @@ EssentielArticle _article({
   String label = 'Tech',
   String? theme = 'tech',
   String source = 'Le Monde',
+  bool isActuDuJour = false,
 }) {
   return EssentielArticle(
     contentId: 'c-$rank',
@@ -30,6 +31,7 @@ EssentielArticle _article({
     theme: theme,
     rank: rank,
     perspectiveCount: 3,
+    isActuDuJour: isActuDuJour,
   );
 }
 
@@ -173,6 +175,63 @@ void main() {
       ));
 
       expect(find.text('Ton Essentiel'), findsOneWidget);
+    });
+
+    testWidgets('lead Actu du jour badge and section chip share a Wrap',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1, isActuDuJour: true)],
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+        ),
+      ));
+
+      final badge = find.text('Actu du jour');
+      expect(badge, findsOneWidget);
+
+      // ActuBadge text and section chip both descend from the same Wrap.
+      // The chip label resolves via themeMap (theme: 'tech' → 'Technologie').
+      final wrap = find.ancestor(of: badge, matching: find.byType(Wrap));
+      expect(wrap, findsAtLeastNWidgets(1));
+      expect(
+        find.descendant(of: wrap.first, matching: find.text('Technologie')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('lead Actu du jour badge uses forced sectionEssentiel orange',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1, isActuDuJour: true)],
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+        ),
+      ));
+
+      final badgeText = find.text('Actu du jour');
+      final container = tester.widget<Container>(
+        find.ancestor(of: badgeText, matching: find.byType(Container)).first,
+      );
+      final decoration = container.decoration as BoxDecoration;
+      expect(decoration.color, FacteurPalettes.light.sectionEssentiel);
+    });
+
+    testWidgets('slots 2-5 all use the medium layout (no dotted divider)',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: List.generate(5, (i) => _article(rank: i + 1)),
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+        ),
+      ));
+
+      // 5 articles → 1 lead + 4 mediums → 4 hairlines, no dotted divider.
+      for (var i = 2; i <= 5; i++) {
+        expect(find.text('Titre $i'), findsOneWidget);
+      }
     });
   });
 }

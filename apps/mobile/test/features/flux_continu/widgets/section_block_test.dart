@@ -151,7 +151,7 @@ void main() {
       expect(find.byType(NextSectionButton), findsNothing);
     });
 
-    testWidgets('switches to "Lu" non-interactive state when '
+    testWidgets('switches to "Terminé" non-interactive state when '
         'isMarkedForNextSession is true', (tester) async {
       var taps = 0;
       await tester.pumpWidget(_wrap(
@@ -166,13 +166,101 @@ void main() {
         ),
       ));
 
-      expect(find.text('Lu'), findsOneWidget);
+      expect(find.text('Terminé'), findsOneWidget);
       expect(find.text('Sujet suivant'), findsNothing);
+      expect(find.text('Lu'), findsNothing);
 
       // Tap should be a no-op.
       await tester.tap(find.byType(NextSectionButton));
       await tester.pump();
       expect(taps, 0);
+    });
+
+    testWidgets('uses arrow_downward when not marked', (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(),
+          isOpen: false,
+          onToggleMore: () {},
+          onTapArticle: (_, __) {},
+          onSeeAll: () {},
+          onNextSection: () {},
+        ),
+      ));
+
+      final iconInNext = find.descendant(
+        of: find.byType(NextSectionButton),
+        matching: find.byIcon(Icons.arrow_downward),
+      );
+      expect(iconInNext, findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(NextSectionButton),
+          matching: find.byIcon(Icons.arrow_forward),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('Terminé state has success background', (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(),
+          isOpen: false,
+          onToggleMore: () {},
+          onTapArticle: (_, __) {},
+          onSeeAll: () {},
+          isMarkedForNextSession: true,
+          onNextSection: () {},
+        ),
+      ));
+
+      final container = tester.widget<AnimatedContainer>(
+        find.descendant(
+          of: find.byType(NextSectionButton),
+          matching: find.byType(AnimatedContainer),
+        ),
+      );
+      final decoration = container.decoration as BoxDecoration;
+      expect(decoration.color, FacteurPalettes.light.success);
+    });
+  });
+
+  group('SectionBlock — Footer Row', () {
+    testWidgets('wraps Plus de… and Sujet suivant in the same Row',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 7, coreVisibleCount: 3),
+          isOpen: false,
+          onToggleMore: () {},
+          onTapArticle: (_, __) {},
+          onSeeAll: () {},
+          onNextSection: () {},
+        ),
+      ));
+
+      final voirPlus = find.byType(SeeAllSectionButton);
+      final sujetSuivant = find.byType(NextSectionButton);
+      expect(voirPlus, findsOneWidget);
+      expect(sujetSuivant, findsOneWidget);
+
+      // Both buttons must share a Row ancestor (the footer row).
+      final voirPlusRows =
+          find.ancestor(of: voirPlus, matching: find.byType(Row));
+      final sujetRows =
+          find.ancestor(of: sujetSuivant, matching: find.byType(Row));
+      final voirPlusRowSet =
+          tester.widgetList<Row>(voirPlusRows).toSet();
+      final sujetRowSet = tester.widgetList<Row>(sujetRows).toSet();
+      final shared = voirPlusRowSet.intersection(sujetRowSet);
+      expect(shared, isNotEmpty,
+          reason: 'Voir tout and Sujet suivant must share a Row ancestor.');
+
+      // Voir tout sits to the left of Sujet suivant.
+      final voirPlusLeft = tester.getTopLeft(voirPlus).dx;
+      final sujetLeft = tester.getTopLeft(sujetSuivant).dx;
+      expect(voirPlusLeft < sujetLeft, isTrue);
     });
 
     testWidgets('tap fires onNextSection exactly once when not marked',

@@ -39,10 +39,6 @@ class SectionBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final hasIllustration = illustrationAsset != null;
-    // Reserve the right half for the illustration when present, so the
-    // title and blurb never bleed under the asset (QA Laurin 2026-05-14 — V1.8 final).
-    final textWidthFactor = hasIllustration ? 0.70 : 0.92;
     // `width: double.infinity` is required because the parent SectionBlock
     // Column uses `CrossAxisAlignment.start`, which would otherwise size
     // this Container to its intrinsic width and leave parchment showing
@@ -53,7 +49,7 @@ class SectionBanner extends StatelessWidget {
     final container = Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(0, 4, 0, 12),
-      constraints: const BoxConstraints(minHeight: 108),
+      constraints: const BoxConstraints(minHeight: 96),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: topRadius,
@@ -90,10 +86,6 @@ class SectionBanner extends StatelessWidget {
               ),
             ),
           ),
-          if (illustrationAsset != null)
-            Positioned.fill(
-              child: _BannerIllustration(asset: illustrationAsset!),
-            ),
           if (onTapFold != null)
             Positioned(
               top: 12,
@@ -107,55 +99,85 @@ class SectionBanner extends StatelessWidget {
               ),
             ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+            padding: const EdgeInsets.fromLTRB(20, 12, 14, 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                FractionallySizedBox(
-                  widthFactor: textWidthFactor,
-                  alignment: AlignmentDirectional.centerStart,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 2, bottom: 4),
-                    child: Text.rich(
-                      TextSpan(
-                        text: title,
-                        children: onTapFavorite == null
-                            ? null
-                            : <InlineSpan>[
-                                const TextSpan(text: '  '),
-                                WidgetSpan(
-                                  alignment: PlaceholderAlignment.middle,
-                                  child: _FavoriteStar(
-                                    color: colors.primary,
-                                    onTap: onTapFavorite!,
-                                  ),
-                                ),
-                              ],
-                        style: GoogleFonts.fraunces(
-                          fontSize: 21,
-                          fontWeight: FontWeight.w700,
-                          height: 1.06,
-                          letterSpacing: -0.4,
-                          color: colors.textPrimary,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2, bottom: 4),
+                        child: Text.rich(
+                          TextSpan(
+                            text: title,
+                            children: onTapFavorite == null
+                                ? null
+                                : <InlineSpan>[
+                                    const TextSpan(text: '  '),
+                                    WidgetSpan(
+                                      alignment: PlaceholderAlignment.middle,
+                                      child: _FavoriteStar(
+                                        color: colors.primary,
+                                        onTap: onTapFavorite!,
+                                      ),
+                                    ),
+                                  ],
+                            style: GoogleFonts.fraunces(
+                              fontSize: 21,
+                              fontWeight: FontWeight.w700,
+                              height: 1.06,
+                              letterSpacing: -0.4,
+                              color: colors.textPrimary,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (blurb != null && blurb!.trim().isNotEmpty)
+                        Text(
+                          blurb!,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 12,
+                            height: 1.35,
+                            color: colors.textSecondary,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                if (illustrationAsset != null) ...[
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 78,
+                    height: 78,
+                    child: IgnorePointer(
+                      child: ShaderMask(
+                        blendMode: BlendMode.dstIn,
+                        shaderCallback: (rect) => const LinearGradient(
+                          begin: Alignment.centerRight,
+                          end: Alignment.centerLeft,
+                          colors: [Colors.black, Colors.transparent],
+                          stops: [0.50, 1.0],
+                        ).createShader(rect),
+                        child: Opacity(
+                          opacity: 0.72,
+                          child: Image.asset(
+                            illustrationAsset!,
+                            height: 78,
+                            // Source PNGs are 1024² — decode at 2× display
+                            // height to keep texture memory bounded.
+                            cacheHeight: 156,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) =>
+                                const SizedBox.shrink(),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                if (blurb != null && blurb!.trim().isNotEmpty)
-                  FractionallySizedBox(
-                    widthFactor: textWidthFactor,
-                    alignment: AlignmentDirectional.centerStart,
-                    child: Text(
-                      blurb!,
-                      style: GoogleFonts.dmSans(
-                        fontSize: 12,
-                        height: 1.35,
-                        color: colors.textSecondary,
-                      ),
-                    ),
-                  ),
+                ],
               ],
             ),
           ),
@@ -200,48 +222,6 @@ class _FavoriteStar extends StatelessWidget {
             PhosphorIcons.star(PhosphorIconsStyle.fill),
             size: 14,
             color: color,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Right-anchored illustration, baseline-aligned, faded on the left so it
-/// stays as background to the title. Falls back silently if the asset is
-/// missing.
-class _BannerIllustration extends StatelessWidget {
-  final String asset;
-
-  const _BannerIllustration({required this.asset});
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: const Alignment(0.98, 0.6),
-      child: IgnorePointer(
-        child: ShaderMask(
-          blendMode: BlendMode.dstIn,
-          shaderCallback: (rect) => const LinearGradient(
-            begin: Alignment.centerRight,
-            end: Alignment.centerLeft,
-            colors: [Colors.black, Colors.transparent],
-            stops: [0.50, 1.0],
-          ).createShader(rect),
-          child: Padding(
-            padding: const EdgeInsets.only(right: 0, bottom: 2),
-            child: Opacity(
-              opacity: 0.72,
-              child: Image.asset(
-                asset,
-                height: 78,
-                // Source PNGs are 1024² — decode at 2× display height to
-                // keep texture memory bounded (saves ~10× per image).
-                cacheHeight: 156,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-              ),
-            ),
           ),
         ),
       ),
