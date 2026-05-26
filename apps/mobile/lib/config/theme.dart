@@ -540,4 +540,6 @@ extension FacteurThemeContext on BuildContext {
     }
     return colors;
   }
+
+  bool get isDarkMode => Theme.of(this).brightness == Brightness.dark;
 }

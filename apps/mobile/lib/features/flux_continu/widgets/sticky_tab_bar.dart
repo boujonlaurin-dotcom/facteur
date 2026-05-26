@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../config/theme.dart';
+import '../../feed/providers/feed_provider.dart';
 import '../../feed/widgets/feed_filter_bar.dart';
 import 'sticky_backdrop.dart';
 
@@ -52,6 +54,10 @@ class StickyTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final trackColor = context.isDarkMode
+        ? const Color.fromRGBO(255, 255, 255, 0.08)
+        : const Color.fromRGBO(0, 0, 0, 0.06);
+
     return StickyBackdrop(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -76,7 +82,7 @@ class StickyTabBar extends StatelessWidget {
                   Color(0xFF6C3483),
                 ],
                 glow: const Color.fromRGBO(211, 84, 0, 0.35),
-                trackColor: const Color.fromRGBO(0, 0, 0, 0.06),
+                trackColor: trackColor,
               ),
               child: const SizedBox.expand(),
             ),
@@ -87,13 +93,37 @@ class StickyTabBar extends StatelessWidget {
             alignment: Alignment.topCenter,
             child: showFilterBar
                 ? const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 12, 16, 12),
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
                     child: FeedFilterBar(),
                   )
                 : const SizedBox(width: double.infinity),
           ),
+          const _FeedRefreshIndicatorStrip(),
         ],
       ),
+    );
+  }
+}
+
+/// 2 px progress strip wired to [feedRefreshingProvider]. Sits flush at the
+/// bottom of the sticky bar so the user gets immediate feedback that a
+/// filter / search change triggered a fetch in flight.
+class _FeedRefreshIndicatorStrip extends ConsumerWidget {
+  const _FeedRefreshIndicatorStrip();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final refreshing = ref.watch(feedRefreshingProvider);
+    final colors = context.facteurColors;
+    return SizedBox(
+      height: 2,
+      child: refreshing
+          ? LinearProgressIndicator(
+              minHeight: 2,
+              backgroundColor: Colors.transparent,
+              color: colors.primary,
+            )
+          : const SizedBox.shrink(),
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -9,16 +10,18 @@ import 'package:facteur/features/flux_continu/widgets/sticky_tab_bar.dart';
 /// (PR follow-up to #650). The file name kept its historical name so the
 /// existing CI globs don't need an update.
 Widget _wrap(Widget child) {
-  return MaterialApp(
-    theme: ThemeData(extensions: [FacteurPalettes.light]),
-    home: Scaffold(
-      // Sticky overlay is rendered at the very top of the screen in
-      // production via `Positioned(top:0, left:0, right:0)` — its inner
-      // Column sizes vertically to its children (mainAxisSize.min). Wrapping
-      // the test fixture in a top-aligned Align keeps the layout faithful
-      // and lets the FeedFilterBar variant compute its natural height
-      // without being stretched to fill the Scaffold body.
-      body: Align(alignment: Alignment.topCenter, child: child),
+  return ProviderScope(
+    child: MaterialApp(
+      theme: ThemeData(extensions: [FacteurPalettes.light]),
+      home: Scaffold(
+        // Sticky overlay is rendered at the very top of the screen in
+        // production via `Positioned(top:0, left:0, right:0)` — its inner
+        // Column sizes vertically to its children (mainAxisSize.min).
+        // Wrapping the test fixture in a top-aligned Align keeps the layout
+        // faithful and lets the FeedFilterBar variant compute its natural
+        // height without being stretched to fill the Scaffold body.
+        body: Align(alignment: Alignment.topCenter, child: child),
+      ),
     ),
   );
 }
