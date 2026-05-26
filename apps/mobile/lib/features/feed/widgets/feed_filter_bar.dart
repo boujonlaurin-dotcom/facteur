@@ -35,25 +35,18 @@ class FeedFilterBar extends ConsumerStatefulWidget {
 }
 
 class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
-  String? _selectedInterestName;
-  bool _selectedIsTheme = false;
-
-  int _activeFilterCount() {
-    final notifier = ref.read(feedProvider.notifier);
-    var count = 0;
-    if (notifier.selectedSourceId != null) count++;
-    if (notifier.selectedKeyword != null &&
-        notifier.selectedKeyword!.isNotEmpty) {
-      count++;
-    }
-    return count;
-  }
+  /// Label affiché par la chip "thème/sujet" — défini quand la sélection vient
+  /// du sheet (`InterestFilterSheet`) qui connaît le `name`. Quand la
+  /// sélection vient d'un onglet [FavoriteTopicTabs], on ne le surcharge pas :
+  /// la chip retombe sur 'Thème' / 'Sujet' par défaut.
+  String? _selectedInterestNameOverride;
 
   @override
   Widget build(BuildContext context) {
     final notifier = ref.read(feedProvider.notifier);
-    final hasSearch = notifier.selectedKeyword != null &&
-        notifier.selectedKeyword!.isNotEmpty;
+    final selection = ref.watch(feedFilterSelectionProvider);
+    final hasSearch =
+        selection.keyword != null && selection.keyword!.isNotEmpty;
     final feedItems =
         ref.watch(feedProvider).valueOrNull?.items ?? const <dynamic>[];
     final serverCounts = ref.watch(tabCountsProvider).valueOrNull;
@@ -63,16 +56,21 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
             ?.tourneeThemeSlugs ??
         const <String>[];
     return FilterCollapsiblePanel(
-      activeCount: _activeFilterCount(),
-      chipsRow: _buildChipsRow(context),
+      activeCount: selection.activeCount,
+      chipsRow: _buildChipsRow(context, selection),
       leadingContent: FavoriteTopicTabs(
         items: feedItems.cast(),
         serverCounts: serverCounts,
-        selectedTopicSlug: notifier.selectedTopic,
-        selectedThemeSlug: notifier.selectedTheme,
-        selectedEntitySlug: notifier.selectedEntity,
+        selectedTopicSlug: selection.topic,
+        selectedThemeSlug: selection.theme,
+        selectedEntitySlug: selection.entity,
         excludedThemeSlugs: tourneeSlugs,
         onTabTap: (kind, slug) async {
+          // Sheet owns this override ; clear it so the chip label rebuilds
+          // from the tapped tab's name on next layout.
+          if (mounted) {
+            setState(() => _selectedInterestNameOverride = null);
+          }
           switch (kind) {
             case FavoriteTabKind.tous:
               await notifier.setTopic(null);
@@ -89,12 +87,6 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
               await notifier.setTheme(slug);
               break;
           }
-          if (mounted) {
-            setState(() {
-              _selectedInterestName = null;
-              _selectedIsTheme = kind == FavoriteTabKind.theme;
-            });
-          }
           widget.onAfterChange?.call();
         },
         onTapActiveTab: () => widget.onAfterChange?.call(),
@@ -106,15 +98,13 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
           HapticFeedback.mediumImpact();
           InterestFilterSheet.show(
             context,
-            currentTopicSlug: notifier.selectedTopic ??
-                notifier.selectedTheme ??
-                notifier.selectedEntity,
-            currentIsTheme: notifier.selectedTheme != null,
+            currentTopicSlug:
+                selection.topic ?? selection.theme ?? selection.entity,
+            currentIsTheme: selection.theme != null,
             onInterestSelected:
                 (slug, name, {bool isTheme = false, bool isEntity = false}) async {
               setState(() {
-                _selectedInterestName = name;
-                _selectedIsTheme = isTheme;
+                _selectedInterestNameOverride = name;
               });
               if (isTheme) {
                 await notifier.setTheme(slug);
@@ -130,12 +120,12 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
       ),
       leadingTrigger: _SearchTrigger(
         active: hasSearch,
-        keyword: notifier.selectedKeyword,
+        keyword: selection.keyword,
         onTap: () {
           HapticFeedback.mediumImpact();
           SearchFilterSheet.show(
             context,
-            currentKeyword: notifier.selectedKeyword,
+            currentKeyword: selection.keyword,
             onSearchSubmitted: (keyword, {bool fromTrending = false}) async {
               await notifier.setKeyword(
                 keyword,
@@ -154,24 +144,27 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
     );
   }
 
-  Widget _buildChipsRow(BuildContext context) {
+  Widget _buildChipsRow(BuildContext context, FeedFilterSelection selection) {
     final notifier = ref.read(feedProvider.notifier);
 
-    if (notifier.selectedTheme == null &&
-        notifier.selectedTopic == null &&
-        notifier.selectedEntity == null) {
-      _selectedInterestName = null;
-      _selectedIsTheme = false;
+    if (selection.theme == null &&
+        selection.topic == null &&
+        selection.entity == null) {
+      _selectedInterestNameOverride = null;
     }
 
     final allSources = ref.watch(userSourcesProvider).valueOrNull ?? [];
     final followedSources = allSources
         .where((s) => (s.isTrusted || s.isCustom) && !s.isMuted)
         .toList();
-    final selectedSourceId = notifier.selectedSourceId;
+    final selectedSourceId = selection.sourceId;
     final selectedSource = selectedSourceId != null
         ? followedSources.where((s) => s.id == selectedSourceId).firstOrNull
         : null;
+
+    final selectedInterestSlug =
+        selection.topic ?? selection.theme ?? selection.entity;
+    final selectedIsTheme = selection.theme != null;
 
     return Row(
       children: [
@@ -191,17 +184,14 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
         const SizedBox(width: 8),
         Flexible(
           child: CompactThemeChip(
-            selectedSlug: notifier.selectedTopic ??
-                notifier.selectedTheme ??
-                notifier.selectedEntity,
-            selectedName: _selectedInterestName,
-            selectedIsTheme: _selectedIsTheme,
+            selectedSlug: selectedInterestSlug,
+            selectedName: _selectedInterestNameOverride,
+            selectedIsTheme: selectedIsTheme,
             discreet: true,
             onInterestChanged: (slug, name,
                 {bool isTheme = false, bool isEntity = false}) async {
               setState(() {
-                _selectedInterestName = name;
-                _selectedIsTheme = isTheme;
+                _selectedInterestNameOverride = name;
               });
               if (slug == null) {
                 await notifier.setTopic(null);
@@ -248,8 +238,8 @@ class _SearchTrigger extends StatelessWidget {
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
         child: Container(
-          height: 48,
-          padding: const EdgeInsets.only(left: 14, right: 6),
+          height: 38,
+          padding: const EdgeInsets.only(left: 12, right: 4),
           decoration: BoxDecoration(
             color: primary.withValues(alpha: 0.12),
             border: Border.all(color: primary),
@@ -260,16 +250,16 @@ class _SearchTrigger extends StatelessWidget {
             children: [
               Icon(
                 PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold),
-                size: 18,
+                size: 15,
                 color: primary,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 5),
               ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 140),
+                constraints: const BoxConstraints(maxWidth: 112),
                 child: Text(
                   keyword ?? '',
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w600,
                     color: primary,
                   ),
@@ -282,10 +272,10 @@ class _SearchTrigger extends StatelessWidget {
                 onTap: onClear,
                 child: Padding(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
                   child: Icon(
                     PhosphorIcons.x(PhosphorIconsStyle.bold),
-                    size: 16,
+                    size: 13,
                     color: primary,
                   ),
                 ),
@@ -299,11 +289,11 @@ class _SearchTrigger extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
-        height: 48,
-        width: 48,
+        height: 38,
+        width: 38,
         child: Icon(
           PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
-          size: 22,
+          size: 18,
           color: colors.textSecondary,
         ),
       ),

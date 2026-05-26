@@ -69,6 +69,57 @@ class FeedSnapshot {
 /// `null` quand aucun undo n'est possible (pas de refresh récent ou undo déjà joué).
 final feedUndoSnapshotProvider = StateProvider<FeedSnapshot?>((ref) => null);
 
+/// Sélection de filtres en cours, exposée séparément du `feedProvider` pour que
+/// l'UI (chips, tabs, badge du funnel) puisse réagir **dès le tap** sans
+/// attendre la fin du refresh réseau. Les setters du [FeedNotifier] poussent
+/// ici avant `await refresh()`.
+class FeedFilterSelection {
+  final String? sourceId;
+  final String? topic;
+  final String? theme;
+  final String? entity;
+  final String? keyword;
+
+  const FeedFilterSelection({
+    this.sourceId,
+    this.topic,
+    this.theme,
+    this.entity,
+    this.keyword,
+  });
+
+  static const empty = FeedFilterSelection();
+
+  int get activeCount {
+    var c = 0;
+    if (sourceId != null) c++;
+    if (keyword != null && keyword!.isNotEmpty) c++;
+    return c;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FeedFilterSelection &&
+          sourceId == other.sourceId &&
+          topic == other.topic &&
+          theme == other.theme &&
+          entity == other.entity &&
+          keyword == other.keyword;
+
+  @override
+  int get hashCode =>
+      Object.hash(sourceId, topic, theme, entity, keyword);
+}
+
+final feedFilterSelectionProvider =
+    StateProvider<FeedFilterSelection>((ref) => FeedFilterSelection.empty);
+
+/// `true` tant qu'un refresh feed est en vol (filter change, serein toggle,
+/// pull-to-refresh). Permet d'afficher un loader partagé sur les deux écrans
+/// qui consomment `feedProvider` (FeedScreen + Explorer du FluxContinu).
+final feedRefreshingProvider = StateProvider<bool>((ref) => false);
+
 // Provider des données du feed (Infinite Scroll + Briefing)
 final feedProvider = AsyncNotifierProvider<FeedNotifier, FeedState>(() {
   return FeedNotifier();
@@ -158,6 +209,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedSourceId = null;
     _selectedEntity = null;
     _selectedKeyword = null;
+    // Riverpod interdit de muter un autre provider pendant le build : on
+    // diffère donc le reset au prochain microtick.
+    scheduleMicrotask(_syncSelectionProvider);
 
     // NB: serein toggle is observed in feed_screen.dart (which wraps the
     // refresh in a loading indicator). Listening here as well would cause
@@ -366,6 +420,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedEntity = null;
     _selectedKeyword = null;
     _includeUnfollowed = false;
+    _syncSelectionProvider();
     await refresh();
   }
 
@@ -378,6 +433,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedEntity = null;
     _selectedKeyword = null;
     _includeUnfollowed = false;
+    _syncSelectionProvider();
     await refresh();
   }
 
@@ -390,6 +446,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedEntity = null;
     _selectedKeyword = null;
     _includeUnfollowed = false;
+    _syncSelectionProvider();
     await refresh();
   }
 
@@ -402,6 +459,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedSourceId = null;
     _selectedKeyword = null;
     _includeUnfollowed = false;
+    _syncSelectionProvider();
     await refresh();
   }
 
@@ -416,6 +474,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedTopic = null;
     _selectedSourceId = null;
     _selectedEntity = null;
+    _syncSelectionProvider();
     await refresh();
   }
 
@@ -428,7 +487,21 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedEntity = null;
     _selectedKeyword = null;
     _includeUnfollowed = false;
+    _syncSelectionProvider();
     await refresh();
+  }
+
+  /// Pushes the current filter selection into [feedFilterSelectionProvider]
+  /// so listeners (chips, tabs, funnel badge) rebuild **immediately** on tap,
+  /// without waiting for the refresh round-trip.
+  void _syncSelectionProvider() {
+    ref.read(feedFilterSelectionProvider.notifier).state = FeedFilterSelection(
+      sourceId: _selectedSourceId,
+      topic: _selectedTopic,
+      theme: _selectedTheme,
+      entity: _selectedEntity,
+      keyword: _selectedKeyword,
+    );
   }
 
   Future<FeedResponse> _fetchPage({
@@ -560,6 +633,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
 
     // Ne pas émettre AsyncLoading — ça détruit le SliverList dans le screen
     // et reset la position de scroll. Le RefreshIndicator gère déjà le feedback visuel.
+    // À la place : feedRefreshingProvider signale qu'un fetch est en vol →
+    // sticky filter bar + écran legacy partagent le même LinearProgressIndicator.
+    ref.read(feedRefreshingProvider.notifier).state = true;
 
     try {
       // R5.1 — pull-to-refresh / explicit refresh always bypasses the
@@ -600,6 +676,8 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         print('FeedNotifier: refresh failed with no previous state: $e');
         state = AsyncError(e, stack);
       }
+    } finally {
+      ref.read(feedRefreshingProvider.notifier).state = false;
     }
   }
 
