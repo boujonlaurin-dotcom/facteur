@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/data/latest.dart' as tz_data;
+import 'package:timezone/timezone.dart' as tz;
 
 import '../../digest/models/digest_models.dart';
 import '../../digest/models/dual_digest_response.dart';
@@ -62,22 +64,33 @@ const int _kMaxFavoriteSections = 3;
 const String _kFoldedPrefsKeyPrefix = 'flux_continu_folded_';
 const String _kClosingPrefsKeyPrefix = 'flux_continu_closing_dismissed_';
 
-/// Boundary hour (local time) at which the "tournée day" flips. Aligned with
-/// the API digest cron at 07:30 Paris (`DIGEST_CRON_HOUR_PARIS`). Before this
-/// hour, the digest still reflects yesterday so the fold state must too —
-/// otherwise opening the app at 02:00 would wipe fold state while the
-/// content is unchanged.
+/// Boundary hour (Paris time) at which the "tournée day" flips. Aligned with
+/// the API digest cron at 07:30 Paris (`DIGEST_CRON_HOUR_PARIS`,
+/// `packages/api/app/workers/scheduler.py`). The boundary is computed against
+/// Europe/Paris — not the device's local timezone — so a user in Tokyo
+/// (UTC+9) at 02:00 local doesn't roll over to a fresh tournée hours before
+/// the backend has even generated tomorrow's digest.
 const int _kTourneeDayBoundaryHour = 7;
 const int _kTourneeDayBoundaryMinute = 30;
+const String _kTourneeDayBoundaryTz = 'Europe/Paris';
+
+tz.Location? _parisLocation;
+
+tz.Location _parisTz() {
+  if (_parisLocation != null) return _parisLocation!;
+  tz_data.initializeTimeZones();
+  return _parisLocation = tz.getLocation(_kTourneeDayBoundaryTz);
+}
 
 /// Returns the canonical ISO day (`YYYY-MM-DD`) for the tournée at [now],
-/// using a 07:30-local boundary instead of midnight.
+/// using a 07:30 Europe/Paris boundary instead of midnight.
 String _dayKey(DateTime now) {
-  final shifted = (now.hour < _kTourneeDayBoundaryHour ||
-          (now.hour == _kTourneeDayBoundaryHour &&
-              now.minute < _kTourneeDayBoundaryMinute))
-      ? now.subtract(const Duration(days: 1))
-      : now;
+  final paris = tz.TZDateTime.from(now, _parisTz());
+  final shifted = (paris.hour < _kTourneeDayBoundaryHour ||
+          (paris.hour == _kTourneeDayBoundaryHour &&
+              paris.minute < _kTourneeDayBoundaryMinute))
+      ? paris.subtract(const Duration(days: 1))
+      : paris;
   return shifted.toIso8601String().substring(0, 10);
 }
 
