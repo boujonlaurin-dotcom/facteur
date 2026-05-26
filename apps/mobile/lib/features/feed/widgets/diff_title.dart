@@ -234,19 +234,32 @@ class _DiffTitleState extends State<DiffTitle>
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
             decoration: BoxDecoration(
               color: widget.biasColor
-                  .withValues(alpha: 0.22 * t * (chunk.weight ?? 1.0)),
+                  .withValues(alpha: _washAlpha(t, chunk.weight)),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
               chunk.text,
               style: widget.baseStyle.copyWith(
                 color: colors.textPrimary,
-                fontWeight: FontWeight.w400,
+                fontWeight: (chunk.weight ?? 0) >= 1.0
+                    ? FontWeight.w700
+                    : FontWeight.w400,
               ),
             ),
           ),
         );
     }
+  }
+
+  // weight=null (fallback spaCy hors digest) reste à 0.22 pour rétrocompat.
+  static double _washAlpha(double t, double? weight) {
+    if (weight == null) return 0.22 * t;
+    final base = switch (weight) {
+      >= 0.75 => 0.30,
+      >= 0.40 => 0.20,
+      _ => 0.12,
+    };
+    return base * t;
   }
 }
 
