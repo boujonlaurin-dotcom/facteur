@@ -26,6 +26,8 @@ import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../my_interests/models/user_interests_state.dart' show InterestState;
 import '../../my_interests/providers/user_sources_state_provider.dart';
+import '../../my_interests/repositories/user_interests_repository.dart'
+    show FavoriteCapReachedException;
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
 import '../../../widgets/sunflower_icon.dart';
@@ -136,12 +138,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _showSunflowerNudge = false;
   Timer? _inactivityTimer;
   double _webScrollY = 0.0;
-  late AnimationController _headerAutoController;
-  double _headerAutoStart = 0.0;
-  double _headerAutoTarget = 0.0;
-
-  /// Header slide offset as a fraction: 0.0 = fully visible, 1.0 = fully hidden.
-  final ValueNotifier<double> _headerOffset = ValueNotifier<double>(0.0);
   bool _isConsumed = false;
   bool _hasOpenedNote = false;
   static const int _consumptionThreshold = 30; // seconds
@@ -159,7 +155,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final GlobalKey _scrollViewKey = GlobalKey();
   double? _articleContentExtent;
 
-  // Footer slide offset: 0.0 = fully visible, 1.0 = fully hidden (mirrors _headerOffset)
+  // Footer slide offset: 0.0 = fully visible, 1.0 = fully hidden.
   final ValueNotifier<double> _footerOffset = ValueNotifier<double>(0.0);
   double _footerAutoStart = 0.0;
   double _footerAutoTarget = 0.0;
@@ -244,15 +240,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-
-    _headerAutoController = AnimationController(
-      duration: const Duration(milliseconds: 200),
-      vsync: this,
-    );
-    _headerAutoController.addListener(() {
-      _headerOffset.value = _headerAutoStart +
-          (_headerAutoTarget - _headerAutoStart) * _headerAutoController.value;
-    });
 
     _footerAutoController = AnimationController(
       duration: const Duration(milliseconds: 200),
@@ -569,7 +556,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (_isWebViewActive) return;
     if (_readingProgress.value >= 0.98) {
       _inactivityTimer?.cancel();
-      if (_headerOffset.value > 0.0) _animateHeaderTo(0.0);
       if (_footerOffset.value > 0.0) _animateFooterTo(0.0);
     }
   }
@@ -739,24 +725,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       // réapparaît au scroll vers le haut (via _onScrollDelta).
       _scrollStopTimer?.cancel();
       _inactivityTimer?.cancel();
-      _animateHeaderTo(0.0);
       _animateFooterTo(1.0);
     }
   }
 
   void _onVideoPlayStateChanged(bool isPlaying) {
     if (!isPlaying) {
-      _headerOffset.value = 0.0;
       _scrollStopTimer?.cancel();
     }
-  }
-
-  /// Smoothly animate the header to [target] offset (0.0 = visible, 1.0 = hidden).
-  void _animateHeaderTo(double target) {
-    _headerAutoController.stop();
-    _headerAutoStart = _headerOffset.value;
-    _headerAutoTarget = target;
-    _headerAutoController.forward(from: 0);
   }
 
   /// Smoothly animate the footer to [target] offset (0.0 = visible, 1.0 = hidden).
@@ -768,24 +744,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// Apply a page-scroll-equivalent [delta] (positive = page going down)
-  /// directly to the chrome offsets. Shared by the in-app scroll path and
-  /// the WebView gesture path.
+  /// to the footer offset. The header is pinned and never reacts to scroll.
   void _applyChromeOffsetDelta(double delta) {
-    final headerHeight =
-        MediaQuery.of(context).padding.top + _kHeaderContentHeight;
-    _headerOffset.value =
-        (_headerOffset.value + delta / headerHeight).clamp(0.0, 1.0);
-
-    if (!_footerPermanent.value) {
-      final footerHeight = _kFooterContentHeight +
-          MediaQuery.of(context).viewPadding.bottom;
-      _footerOffset.value =
-          (_footerOffset.value + delta / footerHeight).clamp(0.0, 1.0);
-    }
+    if (_footerPermanent.value) return;
+    final footerHeight =
+        _kFooterContentHeight + MediaQuery.of(context).viewPadding.bottom;
+    _footerOffset.value =
+        (_footerOffset.value + delta / footerHeight).clamp(0.0, 1.0);
   }
 
-  /// Update header/footer offsets based on a native scroll delta (in-app
-  /// reader only). Positive delta = scrolling down, negative = scrolling up.
+  /// Update footer offset based on a native scroll delta (in-app reader only).
+  /// Header is pinned, only the footer reacts. Positive delta = scrolling down.
   void _onScrollDelta(double delta) {
     if (delta == 0) return;
     if (_isWebViewActive) return;
@@ -800,26 +769,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _scrollStopTimer = Timer(const Duration(milliseconds: 2000), () {
       if (mounted) _animateFooterTo(0.0);
     });
-    _inactivityTimer?.cancel();
-    if (!isVideo && !_isShortArticle) {
-      _inactivityTimer = Timer(const Duration(seconds: 3), () {
-        if (mounted && _headerOffset.value < 1.0) {
-          _animateHeaderTo(1.0);
-        }
-      });
-    }
   }
 
-  /// Stop any in-flight reveal/hide tween so the live gesture pilots the
-  /// chrome without fighting a residual animation.
+  /// Stop any in-flight footer tween so the live gesture pilots the chrome
+  /// without fighting a residual animation.
   void _onGestureStart() {
-    _headerAutoController.stop();
     _footerAutoController.stop();
   }
 
-  /// Map a gesture-derived page-scroll-equivalent delta directly onto the
-  /// chrome offsets. The signal is the user's finger, not `window.scrollY`,
-  /// so no direction filter or hysteresis is needed.
+  /// Map a gesture-derived page-scroll-equivalent delta onto the footer offset.
+  /// Header is pinned, so it ignores the gesture entirely.
   void _onGestureDelta(double pageDelta) {
     if (pageDelta == 0) return;
     if (_showSunflowerNudge) {
@@ -827,40 +786,31 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
     if (_content?.isVideo ?? false) return;
     _applyChromeOffsetDelta(pageDelta);
-    _inactivityTimer?.cancel();
-    _inactivityTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted && _webScrollY > 0 && _headerOffset.value < 1.0) {
-        _animateHeaderTo(1.0);
-      }
-    });
   }
 
-  /// At touchend, commit the chrome to a clean state.
+  /// At touchend, commit the footer to a clean state.
   /// - High-velocity flick → snap to that direction's endpoint.
-  /// - Slow lift-off → leave the chrome at its current partial offset.
+  /// - Slow lift-off → leave the footer at its current partial offset.
   /// - At the top of the page → force visible (overscroll guard).
   void _onGestureEnd(double velocityPxPerSec) {
     if (_content?.isVideo ?? false) return;
-    // Forced overscroll-at-top behaviour: snap the chrome back to visible.
     if (_webScrollY <= 0) {
-      if (_headerOffset.value != 0) _animateHeaderTo(0);
       if (!_footerPermanent.value && _footerOffset.value != 0) {
         _animateFooterTo(0);
       }
       return;
     }
     const double kVelocitySnapThreshold = 600.0; // px/s
-    double? targetH;
+    double? target;
     if (velocityPxPerSec > kVelocitySnapThreshold) {
-      targetH = 1.0; // strong page-down flick → hide
+      target = 1.0;
     } else if (velocityPxPerSec < -kVelocitySnapThreshold) {
-      targetH = 0.0; // strong page-up flick → show
+      target = 0.0;
     }
-    if (targetH != null) {
-      if (_headerOffset.value != targetH) _animateHeaderTo(targetH);
-      if (!_footerPermanent.value && _footerOffset.value != targetH) {
-        _animateFooterTo(targetH);
-      }
+    if (target != null &&
+        !_footerPermanent.value &&
+        _footerOffset.value != target) {
+      _animateFooterTo(target);
     }
   }
 
@@ -1249,12 +1199,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _likeBounceController.dispose();
     _perspectivesPulseController?.dispose();
     _exitAnimController.dispose();
-    _headerAutoController.dispose();
     _footerAutoController.dispose();
     _ctaPulseController.dispose();
     _footerPermanent.removeListener(_onFooterPermanentChanged);
     WidgetsBinding.instance.removeObserver(this);
-    _headerOffset.dispose();
     _footerOffset.dispose();
     _footerPermanent.dispose();
     _readingProgress.removeListener(_onReadingProgressNudge);
@@ -1546,7 +1494,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   final delta = notification.scrollDelta ?? 0.0;
                   final metrics = notification.metrics;
                   if (metrics.pixels <= 0 && !_isWebViewActive) {
-                    _headerOffset.value = 0.0;
                     _footerOffset.value = 0.0;
                   }
 
@@ -1592,52 +1539,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             : _buildWebViewFallback(content),
               ),
             ),
-            // Header — follows scroll: slides up on scroll-down, back on scroll-up
-            // For short articles the header stays pinned (offset is never updated).
+            // Header — pinned at the top of the screen; no scroll-driven
+            // translation. Earlier iterations slid the header up/down on
+            // scroll but the result felt unstable in the WebView, so the
+            // header is now permanently visible.
             Positioned(
               top: 0,
               left: 0,
               right: 0,
-              child: ValueListenableBuilder<double>(
-                valueListenable: _headerOffset,
-                builder: (context, offset, child) {
-                  final headerHeight = MediaQuery.of(context).padding.top +
-                      _kHeaderContentHeight;
-                  return Transform.translate(
-                    offset: Offset(0, -offset * headerHeight),
-                    child: child!,
-                  );
-                },
-                // RepaintBoundary isolates the header's render layer so the
-                // per-pixel Transform.translate driven by _headerOffset only
-                // recomposites this layer — the article body underneath is
-                // not invalidated.
-                child: RepaintBoundary(child: _buildHeader(context, content)),
-              ),
+              child: RepaintBoundary(child: _buildHeader(context, content)),
             ),
-            // Reading progress bar — follows header position continuously
+            // Reading progress bar — pinned right below the header.
             if (content.hasInAppContent ||
                 _isWebViewActive ||
                 isVideoContent ||
                 (!useScrollToSite && !useInAppReading))
-              ValueListenableBuilder<double>(
-                valueListenable: _headerOffset,
-                builder: (context, offset, _) {
-                  final statusBarHeight = MediaQuery.of(context).padding.top;
-                  final topWhenHeaderVisible =
-                      statusBarHeight + _kHeaderVisualBottom;
-                  final topWhenHeaderHidden = statusBarHeight;
-                  final top = topWhenHeaderVisible -
-                      offset * (topWhenHeaderVisible - topWhenHeaderHidden);
-                  return Positioned(
-                    top: top,
-                    left: 0,
-                    right: 0,
-                    child: RepaintBoundary(
-                      child: _buildReadingProgressBar(colors),
-                    ),
-                  );
-                },
+              Positioned(
+                top: MediaQuery.of(context).padding.top + _kHeaderVisualBottom,
+                left: 0,
+                right: 0,
+                child: RepaintBoundary(
+                  child: _buildReadingProgressBar(colors),
+                ),
               ),
             // Exit animation overlay — fade-to-white + scale-down
             if (_isExitAnimating)
@@ -2078,16 +2001,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
-    // Live follow state — relies on the unified 4-state interests provider
-    // so the chip reflects an optimistic toggle from anywhere in the app
-    // (and disappears the instant the user taps "+ Suivre" below).
+    // Live follow state — relies on the unified 4-state interests provider so
+    // the action reflects an optimistic toggle from anywhere in the app.
     final sourcesState = ref.watch(userSourcesStateProvider).valueOrNull;
     final liveState = sourcesState?.stateOf(content.source.id);
-    final isFollowedLive = liveState == InterestState.followed ||
-        liveState == InterestState.favorite ||
-        // Fallback to the article payload before the provider has loaded —
-        // avoids a flash of the chip on cold open.
-        (liveState == null && content.isFollowedSource);
+    // Fallback to the article payload before the provider has loaded — avoids
+    // a flash of the "Suivre +" chip on cold open when the source is already
+    // followed server-side.
+    final InterestState effectiveState = liveState ??
+        (content.isFollowedSource
+            ? InterestState.followed
+            : InterestState.unfollowed);
 
     // ColoredBox fills the status bar area; SafeArea pushes content below it
     final headerContent = ColoredBox(
@@ -2278,13 +2202,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           ),
                         ), // _SourceBadgeNudge
                       ),
-                      if (!isFollowedLive) ...[
-                        const SizedBox(width: 8),
-                        _FollowSourceChip(
-                          sourceId: content.source.id,
-                          colors: colors,
-                        ),
-                      ],
+                      const SizedBox(width: 8),
+                      _SourceFollowAction(
+                        sourceId: content.source.id,
+                        state: effectiveState,
+                        colors: colors,
+                      ),
                     ],
                   ),
                 ),
@@ -2622,21 +2545,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     return Stack(
       children: [
-        // LAYER 0: WebView — fixed in viewport below the header, always rendered.
-        // Painted first so it appears visually behind the scrollable content.
-        // `top` follows _headerOffset so the WebView fills the gap as the
-        // header slides out (offset 0.0 → top=headerHeight, 1.0 → top=0).
-        // _buildWebViewLayer() is passed via `child` so the WebView controller
-        // is never rebuilt when the offset changes.
-        ValueListenableBuilder<double>(
-          valueListenable: _headerOffset,
-          builder: (_, offset, child) => Positioned(
-            top: headerHeight * (1.0 - offset),
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: child!,
-          ),
+        // LAYER 0: WebView — pinned below the (now-fixed) header, always
+        // rendered. Painted first so it appears visually behind the
+        // scrollable content.
+        Positioned(
+          top: headerHeight,
+          left: 0,
+          right: 0,
+          bottom: 0,
           child: _buildWebViewLayer(),
         ),
 
@@ -2881,13 +2797,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
         return Column(
           children: [
-            // Spacer for header overlay — collapses as header slides off so
-            // the player fills the viewport up to the status bar.
-            ValueListenableBuilder<double>(
-              valueListenable: _headerOffset,
-              builder: (_, offset, __) =>
-                  SizedBox(height: headerHeight * (1.0 - offset)),
-            ),
+            // Spacer for the pinned header overlay.
+            SizedBox(height: headerHeight),
 
             // Centered player — bounded height, narrower than screen width
             SizedBox(
@@ -3044,12 +2955,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
       return Column(
         children: [
-          // Push below the header overlay — collapses with header slide.
-          ValueListenableBuilder<double>(
-            valueListenable: _headerOffset,
-            builder: (_, offset, __) =>
-                SizedBox(height: headerHeight * (1.0 - offset)),
-          ),
+          // Push below the pinned header overlay.
+          SizedBox(height: headerHeight),
 
           // Sticky player container
           SizedBox(
@@ -3391,11 +3298,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             _kFooterContentHeight + MediaQuery.of(context).viewPadding.bottom;
         return Column(
           children: [
-            ValueListenableBuilder<double>(
-              valueListenable: _headerOffset,
-              builder: (_, offset, __) =>
-                  SizedBox(height: headerHeight * (1.0 - offset)),
-            ),
+            SizedBox(height: headerHeight),
             Expanded(
               child: Padding(
                 padding: EdgeInsets.only(bottom: audioBottomInset),
@@ -3417,11 +3320,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             _kFooterContentHeight + MediaQuery.of(context).viewPadding.bottom;
         return Column(
           children: [
-            ValueListenableBuilder<double>(
-              valueListenable: _headerOffset,
-              builder: (_, offset, __) =>
-                  SizedBox(height: headerHeight * (1.0 - offset)),
-            ),
+            SizedBox(height: headerHeight),
             Expanded(
               child: Padding(
                 padding: EdgeInsets.only(bottom: videoBottomInset),
@@ -3462,11 +3361,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final headerHeight = topInset + _kHeaderContentHeight;
     return Column(
       children: [
-        ValueListenableBuilder<double>(
-          valueListenable: _headerOffset,
-          builder: (_, offset, __) =>
-              SizedBox(height: headerHeight * (1.0 - offset)),
-        ),
+        SizedBox(height: headerHeight),
         // Extra breathing room so tag chips aren't clipped by the header overlay
         const SizedBox(height: FacteurSpacing.space2),
         if (content.entities.isNotEmpty || content.topics.isNotEmpty)
@@ -3481,43 +3376,51 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 }
 
-/// Subtle periodic nudge on the source badge to hint at long-press.
-/// Compact "+ Suivre" chip shown in the reader header when the article's
-/// source is not yet followed. Tap = optimistic follow via
-/// [userSourcesStateProvider]; the chip vanishes on the next rebuild because
-/// the live state flips to [InterestState.followed].
-class _FollowSourceChip extends ConsumerStatefulWidget {
+/// Action de suivi/favori affichée dans le header du reader.
+///
+/// 3 états visuels dispatchés sur l'[InterestState] live de la source :
+/// - `unfollowed` / `hidden` → chip "Suivre +" (tap = passer en `followed`).
+/// - `followed` → étoile creuse (tap = passer en `favorite`).
+/// - `favorite` → étoile pleine (tap = redescendre en `followed`).
+class _SourceFollowAction extends ConsumerStatefulWidget {
   final String sourceId;
+  final InterestState state;
   final FacteurColors colors;
 
-  const _FollowSourceChip({required this.sourceId, required this.colors});
+  const _SourceFollowAction({
+    required this.sourceId,
+    required this.state,
+    required this.colors,
+  });
 
   @override
-  ConsumerState<_FollowSourceChip> createState() => _FollowSourceChipState();
+  ConsumerState<_SourceFollowAction> createState() =>
+      _SourceFollowActionState();
 }
 
-class _FollowSourceChipState extends ConsumerState<_FollowSourceChip> {
+class _SourceFollowActionState extends ConsumerState<_SourceFollowAction> {
   bool _busy = false;
 
-  Future<void> _onTap() async {
+  Future<void> _apply(InterestState next, {required String successMessage,
+      required String errorMessage}) async {
     if (_busy) return;
     setState(() => _busy = true);
     HapticFeedback.lightImpact();
     try {
       await ref
           .read(userSourcesStateProvider.notifier)
-          .setSourceState(widget.sourceId, InterestState.followed);
+          .setSourceState(widget.sourceId, next);
       if (!mounted) return;
-      NotificationService.showSuccess(
-        'Source ajoutée à votre veille',
-        context: context,
-      );
-    } catch (e) {
+      NotificationService.showSuccess(successMessage, context: context);
+    } on FavoriteCapReachedException catch (e) {
       if (!mounted) return;
       NotificationService.showError(
-        'Impossible de suivre la source',
+        'Maximum ${e.cap} favoris atteints',
         context: context,
       );
+    } catch (_) {
+      if (!mounted) return;
+      NotificationService.showError(errorMessage, context: context);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -3525,46 +3428,146 @@ class _FollowSourceChipState extends ConsumerState<_FollowSourceChip> {
 
   @override
   Widget build(BuildContext context) {
-    final c = widget.colors;
+    switch (widget.state) {
+      case InterestState.followed:
+        return _StarToggle(
+          colors: widget.colors,
+          filled: false,
+          busy: _busy,
+          onTap: () => _apply(
+            InterestState.favorite,
+            successMessage: 'Source ajoutée à vos favoris',
+            errorMessage: 'Impossible d\'ajouter aux favoris',
+          ),
+        );
+      case InterestState.favorite:
+        return _StarToggle(
+          colors: widget.colors,
+          filled: true,
+          busy: _busy,
+          onTap: () => _apply(
+            InterestState.followed,
+            successMessage: 'Source retirée de vos favoris',
+            errorMessage: 'Impossible de retirer des favoris',
+          ),
+        );
+      case InterestState.unfollowed:
+      case InterestState.hidden:
+        return _FollowChip(
+          colors: widget.colors,
+          busy: _busy,
+          onTap: () => _apply(
+            InterestState.followed,
+            successMessage: 'Source ajoutée à votre veille',
+            errorMessage: 'Impossible de suivre la source',
+          ),
+        );
+    }
+  }
+}
+
+/// Chip "Suivre +" — apparence inchangée par rapport à la première version.
+class _FollowChip extends StatelessWidget {
+  final FacteurColors colors;
+  final bool busy;
+  final VoidCallback onTap;
+
+  const _FollowChip({
+    required this.colors,
+    required this.busy,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Material(
-      color: c.backgroundSecondary,
+      color: colors.backgroundSecondary,
       shape: RoundedRectangleBorder(
         side: BorderSide(
-          color: c.textTertiary.withValues(alpha: 0.3),
+          color: colors.textTertiary.withValues(alpha: 0.3),
           width: 1,
         ),
         borderRadius: BorderRadius.circular(12),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: _busy ? null : _onTap,
+        onTap: busy ? null : onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (_busy)
+              if (busy)
                 SizedBox(
                   width: 12,
                   height: 12,
                   child: CircularProgressIndicator(
                     strokeWidth: 1.5,
-                    valueColor: AlwaysStoppedAnimation(c.textSecondary),
+                    valueColor: AlwaysStoppedAnimation(colors.textSecondary),
                   ),
                 )
               else
-                Icon(Icons.add, size: 14, color: c.textSecondary),
+                Icon(Icons.add, size: 14, color: colors.textSecondary),
               const SizedBox(width: 4),
               Text(
                 'Suivre',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: c.textSecondary,
+                      color: colors.textSecondary,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.2,
                     ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Bouton étoile (creuse → favori, pleine → favori actif) du design system.
+class _StarToggle extends StatelessWidget {
+  final FacteurColors colors;
+  final bool filled;
+  final bool busy;
+  final VoidCallback onTap;
+
+  const _StarToggle({
+    required this.colors,
+    required this.filled,
+    required this.busy,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
+    final iconColor = filled ? c.primary : c.textSecondary;
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: busy ? null : onTap,
+        customBorder: const CircleBorder(),
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: busy
+              ? SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    valueColor: AlwaysStoppedAnimation(iconColor),
+                  ),
+                )
+              : Icon(
+                  filled
+                      ? PhosphorIcons.star(PhosphorIconsStyle.fill)
+                      : PhosphorIcons.star(PhosphorIconsStyle.regular),
+                  size: 18,
+                  color: iconColor,
+                ),
         ),
       ),
     );

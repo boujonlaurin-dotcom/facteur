@@ -431,9 +431,20 @@ class UserSourcesStateService:
             )
         ).scalar_one_or_none()
         if row is None:
-            raise TargetNotFound(f"source {source_id} not followed by user {user_id}")
-        prev_state = row.state
-        row.state = state
+            # Upsert : un utilisateur peut basculer une source en
+            # followed/favorite directement depuis le reader sans avoir de row
+            # préexistante. On crée alors l'association avec le state demandé.
+            row = UserSource(
+                user_id=user_id,
+                source_id=source_id,
+                state=state,
+            )
+            self.db.add(row)
+            await self.db.flush()  # mirror UserInterest upsert (line ~163)
+            prev_state = None
+        else:
+            prev_state = row.state
+            row.state = state
 
         await self._sync_favorite_source(
             user_id=user_id, source_id=source_id, state=state, position=position

@@ -70,7 +70,13 @@ def create_tables():
 
     async def _setup():
         async with test_engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
+            # Use DROP SCHEMA CASCADE to cleanly wipe all tables (including
+            # Alembic-only tables like article_feedback that are not in
+            # Base.metadata), then recreate the schema. Without CASCADE,
+            # Base.metadata.drop_all fails when unregistered tables have FK
+            # constraints pointing to registered ones.
+            await conn.execute(text("DROP SCHEMA public CASCADE"))
+            await conn.execute(text("CREATE SCHEMA public"))
             await conn.execute(
                 text(
                     "DO $$ BEGIN "
