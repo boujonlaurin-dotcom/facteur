@@ -401,6 +401,16 @@ class _PerspectivesBottomSheetState
                           if (widget.comparisonQuality == 'low')
                             PerspectivesWarningBadge(
                                 colors: colors, textTheme: textTheme),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Le surlignage met en évidence les termes qui '
+                            'marquent l\'angle éditorial : plus le surlignage '
+                            'est intense, plus le choix de mot est éditorialisé.',
+                            style: textTheme.bodySmall?.copyWith(
+                              color: colors.textSecondary,
+                              height: 1.4,
+                            ),
+                          ),
                           const SizedBox(height: 16),
                           PerspectivesBiasBar(
                             colors: colors,
