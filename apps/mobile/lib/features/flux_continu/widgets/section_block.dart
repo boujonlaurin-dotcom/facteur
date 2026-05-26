@@ -64,6 +64,18 @@ class SectionBlock extends StatelessWidget {
   /// null on system sections (`essentiel` / `bonnes`).
   final VoidCallback? onTapFavorite;
 
+  /// "Sujet suivant →" action shown in the section footer. Marks the section
+  /// as consumed for the next session and scrolls smoothly to the next
+  /// section. When null, the button is hidden (used for [EssentielSection]
+  /// which has its own progression CTAs, and for the last Tournée section
+  /// before Explorer).
+  final VoidCallback? onNextSection;
+
+  /// When true, the "Sujet suivant" button flips to the non-interactive
+  /// "Lu ✓" state — derived from the provider's queue of sections marked
+  /// for fold at the next cold launch.
+  final bool isMarkedForNextSession;
+
   const SectionBlock({
     super.key,
     required this.section,
@@ -84,6 +96,8 @@ class SectionBlock extends StatelessWidget {
     this.onSeeAll,
     this.onTapExploreAll,
     this.onTapSeeAllDown,
+    this.onNextSection,
+    this.isMarkedForNextSession = false,
   });
 
   @override
@@ -147,10 +161,12 @@ class SectionBlock extends StatelessWidget {
           onTapFavorite: onTapFavorite,
         ),
         ...cards,
-        if (section is FeedThemeSection && onSeeAll != null)
+        if (section is FeedThemeSection &&
+            onSeeAll != null &&
+            (hiddenCount > 0 || section.hasMore))
           SeeAllSectionButton(
             sectionLabel: section.label,
-            totalCount: section.items.length,
+            hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
             hasMore: section.hasMore,
             onTap: onSeeAll!,
           )
@@ -169,6 +185,11 @@ class SectionBlock extends StatelessWidget {
             isOpen: isOpen,
             hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
             onTap: onToggleMore,
+          ),
+        if (onNextSection != null)
+          NextSectionButton(
+            isMarked: isMarkedForNextSession,
+            onTap: isMarkedForNextSession ? null : onNextSection,
           ),
         const SizedBox(height: 16),
       ],
@@ -226,8 +247,8 @@ class SectionBlock extends StatelessWidget {
                         : null,
               ),
         ];
-      case FeedThemeSection(:final items):
-        final visible = items;
+      case FeedThemeSection(:final items, :final coreVisibleCount):
+        final visible = items.take(coreVisibleCount).toList();
         return [
           for (var i = 0; i < visible.length; i++)
             if (pendingFeedbackIds.contains(visible[i].id))

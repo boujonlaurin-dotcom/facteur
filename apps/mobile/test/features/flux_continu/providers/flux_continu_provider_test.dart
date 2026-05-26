@@ -393,6 +393,99 @@ void main() {
       expect(prefs.getStringList(_todayKey()) ?? const <String>[],
           isNot(contains('essentiel')));
     });
+
+    test('markScrolledPastForNextSession exposes the key in state', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+
+      await container.read(fluxContinuProvider.future);
+      final notifier = container.read(fluxContinuProvider.notifier);
+      const tech = FeedThemeSection(
+        kind: SectionKind.theme,
+        label: 'Tech',
+        accent: Color(0xFF2C3E50),
+        coreVisibleCount: 3,
+        themeSlug: 'tech',
+        items: [],
+      );
+
+      await notifier.markScrolledPastForNextSession(tech);
+      final state = container.read(fluxContinuProvider).valueOrNull;
+
+      expect(state, isNotNull);
+      expect(state!.markedForNextSession, contains('theme:tech'));
+      expect(state.isMarkedForNextSession(tech), isTrue);
+    });
+
+    test('unfoldLocally removes the key from state.markedForNextSession',
+        () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+
+      await container.read(fluxContinuProvider.future);
+      final notifier = container.read(fluxContinuProvider.notifier);
+      const essentiel = DigestTopicSection(
+        kind: SectionKind.essentiel,
+        label: 'Actus du jour',
+        accent: Color(0xFFB0470A),
+        coreVisibleCount: 3,
+        topics: [],
+      );
+
+      await notifier.markScrolledPastForNextSession(essentiel);
+      expect(
+        container.read(fluxContinuProvider).valueOrNull?.markedForNextSession,
+        contains('essentiel'),
+      );
+
+      notifier.unfoldLocally(essentiel);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        container.read(fluxContinuProvider).valueOrNull?.markedForNextSession,
+        isNot(contains('essentiel')),
+      );
+    });
+
+    test(
+        'applyPendingFoldsToState drops promoted keys from '
+        'markedForNextSession (but keeps excluded ones)', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+
+      await container.read(fluxContinuProvider.future);
+      final notifier = container.read(fluxContinuProvider.notifier);
+      const essentiel = DigestTopicSection(
+        kind: SectionKind.essentiel,
+        label: 'Essentiel',
+        accent: Color(0xFFB0470A),
+        coreVisibleCount: 3,
+        topics: [],
+      );
+      const tech = FeedThemeSection(
+        kind: SectionKind.theme,
+        label: 'Tech',
+        accent: Color(0xFF2C3E50),
+        coreVisibleCount: 3,
+        themeSlug: 'tech',
+        items: [],
+      );
+      await notifier.markScrolledPastForNextSession(essentiel);
+      await notifier.markScrolledPastForNextSession(tech);
+
+      notifier.applyPendingFoldsToState(exceptKeys: {'theme:tech'});
+      final state = container.read(fluxContinuProvider).valueOrNull;
+
+      expect(state, isNotNull);
+      expect(state!.markedForNextSession, isNot(contains('essentiel')));
+      expect(state.markedForNextSession, contains('theme:tech'));
+    });
   });
 
   group('FluxContinuNotifier — favorites-driven theme sections', () {

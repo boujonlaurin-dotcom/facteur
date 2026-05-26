@@ -9,7 +9,7 @@ chemin de fallback lui-même est déjà couvert par `test_digest_readonly_hotpat
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
@@ -50,12 +50,13 @@ def _make_article(
     is_followed_source: bool = False,
     badge: str | None = None,
     is_read: bool = False,
+    published_at: datetime | None = None,
 ) -> DigestTopicArticle:
     return DigestTopicArticle(
         content_id=uuid4(),
         title=title,
         url=f"https://example.com/{title.lower().replace(' ', '-')}",
-        published_at=datetime.now(UTC),
+        published_at=published_at or datetime.now(UTC),
         source=source or _make_source(source_name),
         rank=rank,
         reason="Test",
@@ -287,12 +288,9 @@ async def test_get_essentiel_propagates_stale_fallback(auth_override: UUID):
 
 
 def test_followed_source_promoted_above_unfollowed_competitor():
-    """L'article venant d'une source suivie doit sortir en rank=1."""
+    """Cohérence Essentiel ⊆ Tournée : la source non-suivie est filtrée."""
     followed_source = _make_source("Mediapart")
     other_source = _make_source("Le Monde")
-    # Deux topics distincts ; rank=1 dans chaque. Sans prefs, le rank
-    # `topic.rank` détermine l'ordre. Avec la source suivie, le topic 2
-    # (qui a l'article de la source suivie) doit passer en tête.
     topics = [
         DigestTopic(
             topic_id="t1",
@@ -329,11 +327,9 @@ def test_followed_source_promoted_above_unfollowed_competitor():
 
     response = build_essentiel_response(digest, user_context=ctx)
 
-    assert len(response.articles) == 2
-    # L'article de la source suivie passe devant.
+    assert len(response.articles) == 1
     assert response.articles[0].source.id == followed_source.id
     assert response.articles[0].rank == 1
-    assert response.articles[1].source.id == other_source.id
 
 
 def test_user_topic_weight_promotes_lower_ranked_topic():
@@ -492,174 +488,154 @@ def test_followed_source_flag_fallback_when_db_set_empty():
     assert response.articles[0].source.id == s_followed.id
 
 
-# ─── Tests Actu du jour / diversité dure / is_read / flags JSON ──────────
+# ─── Filtre Tournée pool (24h + followed sources) ──────────────────────────
 
 
-def test_actu_trending_takes_lead_slot_over_strong_user_signal():
-    """Un topic `is_trending=True` doit fournir le lead, même si un autre
-    topic match plus fortement le profil user."""
-    actu_topic = _make_topic(
-        rank=5,
-        label="Actu",
-        theme="international",
-        is_trending=True,
-        n_articles=1,
-    )
-    followed_topic = _make_topic(
-        rank=1,
-        label="Tech",
-        theme="technologie",
-        n_articles=1,
-    )
-    digest = _make_digest([followed_topic, actu_topic])
-    # User suit fortement "technologie" (poids 3.0) → +150 sur Tech.
-    # Mais l'Actu a +40 (trending) — moins que 150 mais on a forcé le slot lead.
-    ctx = EssentielUserContext(topic_weights={"technologie": 3.0})
+def test_tournee_pool_filter_drops_article_older_than_24h():
+    """Un topic dont tous les articles sont > 24h doit être retiré."""
+    followed = _make_source("Mediapart")
+    stale = datetime.now(UTC) - timedelta(hours=30)
+    topics = [
+        DigestTopic(
+            topic_id="t-stale",
+            label="Stale",
+            rank=1,
+            reason="Test",
+            theme="politique",
+            perspective_count=2,
+            articles=[
+                _make_article(
+                    rank=1, title="S-1", source=followed, published_at=stale
+                ),
+            ],
+        ),
+        DigestTopic(
+            topic_id="t-fresh",
+            label="Fresh",
+            rank=2,
+            reason="Test",
+            theme="sciences",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title="F-1", source=followed)],
+        ),
+    ]
+    digest = _make_digest(topics)
+    ctx = EssentielUserContext(followed_source_ids=frozenset({followed.id}))
 
     response = build_essentiel_response(digest, user_context=ctx)
 
-    assert response.articles[0].section_label == "Actu"
-    assert response.articles[0].is_actu_du_jour is True
-    assert response.articles[0].rank == 1
+    labels = [a.section_label for a in response.articles]
+    assert "Stale" not in labels
+    assert labels == ["Fresh"]
 
 
-def test_actu_une_or_badge_also_takes_lead_slot():
-    """Le slot lead Actu se déclenche aussi sur `is_une` ou `badge='actu'`."""
-    une_topic = DigestTopic(
-        topic_id="t-une",
-        label="Une du jour",
-        rank=3,
-        reason="Test",
-        theme="politique",
-        is_une=True,
-        perspective_count=4,
-        articles=[_make_article(rank=1, title="Une")],
-    )
-    regular_topic = _make_topic(rank=1, label="Régulier", n_articles=1)
-    digest = _make_digest([regular_topic, une_topic])
-
-    response = build_essentiel_response(digest)
-
-    assert response.articles[0].section_label == "Une du jour"
-    assert response.articles[0].is_actu_du_jour is True
-
-
-def test_diversity_hard_cap_max_2_articles_per_source():
-    """Pas plus de 2 articles d'une même `source.id` dans les 5."""
-    shared_source = _make_source("Le Monde")
-    # 5 articles tous depuis la même source, répartis sur 5 topics distincts
-    # (sinon le round diversité limiterait déjà à 1/topic).
+def test_tournee_pool_filter_drops_unfollowed_source():
+    """Un article d'une source non-suivie est retiré du pool Essentiel."""
+    followed = _make_source("Mediapart")
+    curated = _make_source("Le Monde")
     topics = [
         DigestTopic(
-            topic_id=f"t{i}",
-            label=f"T{i}",
-            rank=i + 1,
+            topic_id="t-curated",
+            label="Curated",
+            rank=1,
             reason="Test",
-            theme=f"theme-{i}",
-            perspective_count=3,
-            articles=[_make_article(rank=1, title=f"T{i}-1", source=shared_source)],
-        )
-        for i in range(5)
+            theme="politique",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title="C-1", source=curated)],
+        ),
+        DigestTopic(
+            topic_id="t-followed",
+            label="Followed",
+            rank=2,
+            reason="Test",
+            theme="sciences",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title="F-1", source=followed)],
+        ),
     ]
     digest = _make_digest(topics)
+    ctx = EssentielUserContext(followed_source_ids=frozenset({followed.id}))
 
-    response = build_essentiel_response(digest)
+    response = build_essentiel_response(digest, user_context=ctx)
 
-    # On a 5 topics, mais la diversité dure limite à 2 articles de la même source.
-    assert len(response.articles) == 2
-    assert all(a.source.id == shared_source.id for a in response.articles)
+    labels = [a.section_label for a in response.articles]
+    assert labels == ["Followed"]
 
 
-def test_is_read_articles_are_deprioritized():
-    """Un article déjà lu est écarté tant qu'il existe un candidat non-lu."""
-    # 2 topics : T1 a un article DÉJÀ LU avec rank topic=1 (devrait gagner sans
-    # la pénalité), T2 a un article frais avec rank topic=2.
+def test_tournee_pool_filter_keeps_mixed_topic_partially():
+    """Un topic avec 1 article OK + 1 article > 24h conserve l'article OK."""
+    followed = _make_source("Mediapart")
+    fresh_article = _make_article(rank=1, title="OK", source=followed)
+    stale_article = _make_article(
+        rank=2,
+        title="KO",
+        source=followed,
+        published_at=datetime.now(UTC) - timedelta(hours=48),
+    )
+    topics = [
+        DigestTopic(
+            topic_id="t-mixed",
+            label="Mixed",
+            rank=1,
+            reason="Test",
+            theme="politique",
+            perspective_count=2,
+            articles=[fresh_article, stale_article],
+        ),
+    ]
+    digest = _make_digest(topics)
+    ctx = EssentielUserContext(followed_source_ids=frozenset({followed.id}))
+
+    response = build_essentiel_response(digest, user_context=ctx)
+
+    assert len(response.articles) == 1
+    assert response.articles[0].title == "OK"
+
+
+def test_tournee_pool_filter_fallback_when_empties_pool(caplog):
+    """Si le filtre vide tout, on retombe sur le pool pré-filtre + warning."""
+    followed = _make_source("Mediapart")
+    curated = _make_source("Le Monde")
+    # Aucun article ne vient d'une source suivie → le filtre videra tout.
     topics = [
         DigestTopic(
             topic_id="t1",
-            label="Lu",
+            label="Only-Curated",
             rank=1,
             reason="Test",
             theme="politique",
-            perspective_count=3,
-            articles=[_make_article(rank=1, title="Déjà lu", is_read=True)],
-        ),
-        DigestTopic(
-            topic_id="t2",
-            label="Frais",
-            rank=2,
-            reason="Test",
-            theme="ecologie",
-            perspective_count=3,
-            articles=[_make_article(rank=1, title="Frais")],
+            perspective_count=2,
+            articles=[_make_article(rank=1, title="C-1", source=curated)],
         ),
     ]
     digest = _make_digest(topics)
+    ctx = EssentielUserContext(followed_source_ids=frozenset({followed.id}))
 
-    response = build_essentiel_response(digest)
+    import logging
 
-    # L'article frais doit passer en premier.
-    assert response.articles[0].section_label == "Frais"
-    assert response.articles[0].is_read is False
-    # L'article lu peut encore être présent (fallback si pas mieux) — vérifier
-    # qu'il est en position basse seulement.
-    read_positions = [
-        i for i, a in enumerate(response.articles) if a.is_read
-    ]
-    if read_positions:
-        assert min(read_positions) > 0
+    with caplog.at_level(logging.WARNING, logger="app.services.essentiel_service"):
+        response = build_essentiel_response(digest, user_context=ctx)
+
+    # Fallback : l'article curated réapparaît plutôt que de servir une carte vide.
+    assert len(response.articles) == 1
+    assert response.articles[0].section_label == "Only-Curated"
+    assert any("tournee-pool filter emptied" in rec.message for rec in caplog.records)
 
 
-def test_response_exposes_followed_and_actu_flags():
-    """La réponse JSON expose `is_followed_source`, `is_followed_topic`,
-    `is_actu_du_jour` calculés à la volée."""
-    followed_source = _make_source("Mediapart")
-    other_source = _make_source("Le Monde")
+def test_tournee_pool_filter_noop_when_no_followed_sources():
+    """User sans aucune source suivie : on ne filtre pas (sinon Essentiel vide)."""
+    s = _make_source("Le Monde")
     topics = [
-        DigestTopic(
-            topic_id="t-trend",
-            label="Trending",
-            rank=1,
-            reason="Test",
-            theme="politique",
-            is_trending=True,
-            perspective_count=4,
-            articles=[
-                _make_article(rank=1, title="Trend-1", source=followed_source)
-            ],
-        ),
-        DigestTopic(
-            topic_id="t-tech",
-            label="Tech",
-            rank=2,
-            reason="Test",
-            theme="technologie",
-            perspective_count=3,
-            articles=[
-                _make_article(rank=1, title="Tech-1", source=other_source)
-            ],
-        ),
+        _make_topic(rank=1, label="T1"),
     ]
+    # Force toutes les sources à la même source non-suivie.
+    topics[0].articles[0] = _make_article(rank=1, title="T1-1", source=s)
     digest = _make_digest(topics)
-    ctx = EssentielUserContext(
-        followed_source_ids=frozenset({followed_source.id}),
-        source_priority_multipliers={followed_source.id: 1.0},
-        topic_weights={"technologie": 2.0},
-    )
+    ctx = EssentielUserContext(followed_source_ids=frozenset())
 
     response = build_essentiel_response(digest, user_context=ctx)
 
-    # Lead = Actu trending + source suivie.
-    lead = response.articles[0]
-    assert lead.is_actu_du_jour is True
-    assert lead.is_followed_source is True
-    assert lead.is_followed_topic is False  # theme="politique" pas dans topic_weights
-
-    # Article #2 = Tech, topic suivi mais pas source suivie ni actu.
-    tech = response.articles[1]
-    assert tech.is_actu_du_jour is False
-    assert tech.is_followed_source is False
-    assert tech.is_followed_topic is True
+    assert len(response.articles) == 1
 
 
 @pytest.mark.asyncio
