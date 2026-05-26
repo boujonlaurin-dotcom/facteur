@@ -3,12 +3,12 @@
 import time
 
 import structlog
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
-from app.schemas.streak import StreakResponse
+from app.schemas.streak import StreakActivityResponse, StreakResponse
 from app.services.streak_service import StreakService
 
 router = APIRouter()
@@ -31,3 +31,14 @@ async def get_streak(
     )
 
     return streak
+
+
+@router.get("/activity", response_model=StreakActivityResponse)
+async def get_streak_activity(
+    days: int = Query(14, ge=1, le=31),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> StreakActivityResponse:
+    """Récupérer l'activité récente d'ouverture d'app pour le streak."""
+    service = StreakService(db)
+    return await service.get_activity(user_id, days=days)

@@ -17,3 +17,20 @@ class StreakResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class StreakActivityDayResponse(BaseModel):
+    """État d'ouverture d'app pour un jour donné."""
+
+    date: date
+    opened: bool
+    articles_read: int | None = None
+
+
+class StreakActivityResponse(BaseModel):
+    """Réponse d'activité streak pour le calendrier d'ouverture."""
+
+    current_streak: int
+    longest_streak: int
+    last_activity_date: date | None
+    days: list[StreakActivityDayResponse]

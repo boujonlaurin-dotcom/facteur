@@ -20,10 +20,7 @@ import '../../saved/providers/saved_summary_provider.dart';
 class ClosureScreen extends ConsumerStatefulWidget {
   final String digestId;
 
-  const ClosureScreen({
-    super.key,
-    required this.digestId,
-  });
+  const ClosureScreen({super.key, required this.digestId});
 
   @override
   ConsumerState<ClosureScreen> createState() => _ClosureScreenState();
@@ -76,10 +73,8 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
     _headlineOpacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _headlineController, curve: Curves.easeOut),
     );
-    _headlineSlideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.2),
-      end: Offset.zero,
-    ).animate(
+    _headlineSlideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero).animate(
       CurvedAnimation(parent: _headlineController, curve: Curves.easeOut),
     );
 
@@ -87,10 +82,8 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
     _summaryOpacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _summaryController, curve: Curves.easeOut),
     );
-    _summarySlideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.2),
-      end: Offset.zero,
-    ).animate(
+    _summarySlideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero).animate(
       CurvedAnimation(parent: _summaryController, curve: Curves.easeOut),
     );
 
@@ -98,10 +91,8 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
     _buttonsOpacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _buttonsController, curve: Curves.easeOut),
     );
-    _buttonsSlideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.2),
-      end: Offset.zero,
-    ).animate(
+    _buttonsSlideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero).animate(
       CurvedAnimation(parent: _buttonsController, curve: Curves.easeOut),
     );
   }
@@ -123,35 +114,18 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
 
   Future<void> _loadCompletionData() async {
     // Get completion data from provider or API
-    // For now, we'll calculate it from the digest state
-    final digest = ref.read(digestProvider).value;
-    if (digest != null) {
-      // Complete the digest to get the response
+    final initialDigest = ref.read(digestProvider).value;
+    if (initialDigest != null) {
+      DigestCompletionResponse? completionData;
       try {
-        await ref.read(digestProvider.notifier).completeDigest();
-      } catch (e) {
-        // Ignore errors - completion may have already happened
+        completionData =
+            await ref.read(digestProvider.notifier).completeDigest();
+      } catch (_) {
+        // Best-effort: we still show the closure summary from local state.
       }
 
-      // Calculate stats from items
-      final items = digest.items;
-      final readCount = items.where((item) => item.isRead).length;
-      final savedCount = items.where((item) => item.isSaved).length;
-      final dismissedCount = items.where((item) => item.isDismissed).length;
-
-      // Get streak info from provider or use defaults
-      // In a real implementation, this would come from the API response
-      final completionData = DigestCompletionResponse(
-        success: true,
-        digestId: widget.digestId,
-        completedAt: DateTime.now(),
-        articlesRead: readCount,
-        articlesSaved: savedCount,
-        articlesDismissed: dismissedCount,
-        closureTimeSeconds: null, // Would come from API
-        closureStreak: 1, // Would come from streak provider
-        streakMessage: null, // Would come from API
-      );
+      final digest = ref.read(digestProvider).value ?? initialDigest;
+      completionData ??= _buildFallbackCompletionData(digest);
 
       setState(() {
         _completionData = completionData;
@@ -165,6 +139,25 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
         _isLoadingCompletion = false;
       });
     }
+  }
+
+  DigestCompletionResponse _buildFallbackCompletionData(DigestResponse digest) {
+    final items = digest.items;
+    final readCount = items.where((item) => item.isRead).length;
+    final savedCount = items.where((item) => item.isSaved).length;
+    final dismissedCount = items.where((item) => item.isDismissed).length;
+
+    return DigestCompletionResponse(
+      success: true,
+      digestId: widget.digestId,
+      completedAt: DateTime.now(),
+      articlesRead: readCount,
+      articlesSaved: savedCount,
+      articlesDismissed: dismissedCount,
+      closureTimeSeconds: null,
+      closureStreak: 1,
+      streakMessage: null,
+    );
   }
 
   /// Fire a digest_session analytics event once per closure.
@@ -297,18 +290,17 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
                 onTap: () async {
                   final uri = Uri.parse(ExternalLinks.feedbackFormUrl);
                   if (await canLaunchUrl(uri)) {
-                    await launchUrl(
-                      uri,
-                      mode: LaunchMode.externalApplication,
-                    );
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
                   }
                 },
                 child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 32),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
-                    color: colors.textSecondary.withOpacity(0.10),
+                    color: colors.textSecondary.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -317,7 +309,8 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
                     children: [
                       Icon(
                         PhosphorIcons.chatCircleDots(
-                            PhosphorIconsStyle.regular),
+                          PhosphorIconsStyle.regular,
+                        ),
                         size: 16,
                         color: colors.textSecondary,
                       ),
@@ -336,59 +329,65 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
             ),
 
             // Saved articles nudge
-            Builder(builder: (context) {
-              final savedSummary = ref.watch(savedSummaryProvider).valueOrNull;
-              if (savedSummary == null || savedSummary.recentCount7d < 3) {
-                return const SizedBox.shrink();
-              }
-              final count = savedSummary.recentCount7d;
-              return Padding(
-                padding: const EdgeInsets.only(top: FacteurSpacing.space3),
-                child: GestureDetector(
-                  onTap: () => _goAndDismiss(RoutePaths.saved),
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 32),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: colors.primary.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          PhosphorIcons.bookmarkSimple(
-                              PhosphorIconsStyle.regular),
-                          size: 16,
-                          color: colors.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            '$count article${count > 1 ? 's' : ''} sauvegardé${count > 1 ? 's' : ''} cette semaine',
+            Builder(
+              builder: (context) {
+                final savedSummary =
+                    ref.watch(savedSummaryProvider).valueOrNull;
+                if (savedSummary == null || savedSummary.recentCount7d < 3) {
+                  return const SizedBox.shrink();
+                }
+                final count = savedSummary.recentCount7d;
+                return Padding(
+                  padding: const EdgeInsets.only(top: FacteurSpacing.space3),
+                  child: GestureDetector(
+                    onTap: () => _goAndDismiss(RoutePaths.saved),
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 32),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            PhosphorIcons.bookmarkSimple(
+                              PhosphorIconsStyle.regular,
+                            ),
+                            size: 16,
+                            color: colors.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              '$count article${count > 1 ? 's' : ''} sauvegardé${count > 1 ? 's' : ''} cette semaine',
+                              style: textTheme.bodySmall?.copyWith(
+                                color: colors.primary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Voir',
                             style: textTheme.bodySmall?.copyWith(
                               color: colors.primary,
-                              fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.w600,
                             ),
-                            textAlign: TextAlign.center,
                           ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Voir',
-                          style: textTheme.bodySmall?.copyWith(
-                            color: colors.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              );
-            }),
+                );
+              },
+            ),
 
             // Note nudge (always visible)
             Padding(
@@ -397,10 +396,12 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
                 onTap: () => context.go(RoutePaths.saved),
                 child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 32),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
-                    color: colors.primary.withOpacity(0.08),
+                    color: colors.primary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -458,8 +459,9 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(FacteurRadius.medium),
+                              borderRadius: BorderRadius.circular(
+                                FacteurRadius.medium,
+                              ),
                             ),
                           ),
                         ),

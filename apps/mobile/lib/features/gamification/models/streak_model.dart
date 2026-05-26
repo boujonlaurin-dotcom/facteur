@@ -6,7 +6,7 @@ class StreakModel {
   final int weeklyGoal;
   final double weeklyProgress;
 
-  StreakModel({
+  const StreakModel({
     required this.currentStreak,
     required this.longestStreak,
     this.lastActivityDate,

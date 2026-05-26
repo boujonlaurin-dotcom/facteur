@@ -1,6 +1,6 @@
 """Router pour les analytics."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header
@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
 from app.services.analytics_service import AnalyticsService
+from app.services.streak_service import StreakService
 
 router = APIRouter(tags=["Analytics"])
 
@@ -57,6 +58,21 @@ async def log_event(
         event_data=event.event_data,
         device_id=event.device_id,
     )
+
+    if event.event_type == "session_start":
+        local_date: date | None = None
+        raw_local_date = event.event_data.get("local_date")
+        if isinstance(raw_local_date, str):
+            try:
+                local_date = date.fromisoformat(raw_local_date)
+            except ValueError:
+                local_date = None
+
+        await StreakService(db).record_session_start(
+            str(user_id),
+            local_date=local_date,
+        )
+        await db.commit()
 
     # Update per-user version tracking on session_start or when header is present.
     # Priority: explicit header > event_data field.
