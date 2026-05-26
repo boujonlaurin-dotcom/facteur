@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -140,6 +143,7 @@ Future<void> _bootstrap() async {
         },
       ),
       _initPosthogSafe(posthog),
+      _initRevenueCatSafe(),
       _initDownloaderSafe(),
       PackageInfo.fromPlatform().then((info) {
         appVersion = '${info.version}+${info.buildNumber}';
@@ -159,7 +163,6 @@ Future<void> _bootstrap() async {
   final hasSession = Supabase.instance.client.auth.currentSession != null;
   debugPrint('Main: Supabase Session restored immediately: $hasSession');
 
-  // PostHog identify initial (fire-and-forget pour ne pas bloquer runApp)
   if (hasSession) {
     final user = Supabase.instance.client.auth.currentUser;
     if (user != null) {
@@ -167,6 +170,7 @@ Future<void> _bootstrap() async {
         userId: user.id,
         properties: _userIdentifyProperties(user, appVersion: appVersion),
       ));
+      unawaited(_loginRevenueCatSafe(user.id));
     }
   }
   Supabase.instance.client.auth.onAuthStateChange.listen((data) {
@@ -181,10 +185,12 @@ Future<void> _bootstrap() async {
             properties:
                 _userIdentifyProperties(user, appVersion: appVersion),
           );
+          unawaited(_loginRevenueCatSafe(user.id));
         }
         break;
       case AuthChangeEvent.signedOut:
         posthog.reset();
+        unawaited(_logoutRevenueCatSafe());
         break;
       default:
         break;
@@ -218,6 +224,50 @@ Future<void> _initPosthogSafe(PostHogService posthog) async {
     await posthog.init();
   } catch (e) {
     debugPrint('Main: PostHog init failed (non-critical): $e');
+  }
+}
+
+/// Init RevenueCat — paywall MVP V1, source de vérité de l'entitlement
+/// `premium`. Skip silencieux si pas de clé API configurée (dev sans paywall
+/// ou plateforme web).
+Future<void> _initRevenueCatSafe() async {
+  if (kIsWeb) return;
+  final bool isIOS = Platform.isIOS;
+  if (!RevenueCatConstants.isConfigured(isIOS: isIOS)) {
+    debugPrint('Main: RevenueCat skipped (no API key for current platform)');
+    return;
+  }
+  try {
+    await Purchases.setLogLevel(LogLevel.warn);
+    final apiKey = isIOS
+        ? RevenueCatConstants.iosApiKey
+        : RevenueCatConstants.androidApiKey;
+    await Purchases.configure(PurchasesConfiguration(apiKey));
+  } catch (e) {
+    debugPrint('Main: RevenueCat init failed (non-critical): $e');
+  }
+}
+
+/// Identifie l'utilisateur courant côté RevenueCat (post-login Supabase).
+/// Permet à un achat Web Billing fait depuis la landing — où l'`app_user_id`
+/// est déjà le user_id Supabase — de suivre le bon compte dans l'app.
+Future<void> _loginRevenueCatSafe(String userId) async {
+  if (kIsWeb) return;
+  try {
+    await Purchases.logIn(userId);
+  } catch (e) {
+    debugPrint('Main: Purchases.logIn failed (non-critical): $e');
+  }
+}
+
+/// Délie l'identité RevenueCat au logout : évite que l'utilisateur suivant
+/// hérite par erreur des entitlements du précédent sur un device partagé.
+Future<void> _logoutRevenueCatSafe() async {
+  if (kIsWeb) return;
+  try {
+    await Purchases.logOut();
+  } catch (e) {
+    debugPrint('Main: Purchases.logOut failed (non-critical): $e');
   }
 }
 

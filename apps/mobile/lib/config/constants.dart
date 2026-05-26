@@ -116,11 +116,27 @@ class RevenueCatConstants {
     defaultValue: '',
   );
 
+  /// Clé API Android
+  static const String androidApiKey = String.fromEnvironment(
+    'REVENUECAT_ANDROID_KEY',
+    defaultValue: '',
+  );
+
+  /// Identifiant de l'entitlement Premium côté RevenueCat.
+  static const String entitlementId = 'premium';
+
   /// ID du produit mensuel
   static const String monthlyProductId = 'facteur_premium_monthly';
 
   /// ID du produit annuel
-  static const String yearlyProductId = 'facteur_premium_yearly';
+  static const String annualProductId = 'facteur_premium_annual';
+
+  /// ID du produit Founder (tarif fondateur·rice 2,99 €).
+  static const String founderProductId = 'facteur_premium_founder';
+
+  /// Vrai si on a une clé API pour la plateforme courante.
+  static bool isConfigured({required bool isIOS}) =>
+      isIOS ? iosApiKey.isNotEmpty : androidApiKey.isNotEmpty;
 }
 
 /// Seuils de consommation

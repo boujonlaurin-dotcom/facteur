@@ -75,6 +75,7 @@ from app.routers import (
     analytics,
     app_update,
     auth,
+    checkout,
     collections,
     community,
     contents,
@@ -456,6 +457,7 @@ app.include_router(
 )
 app.include_router(streaks.router, prefix="/api/streaks", tags=["Streaks"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
+app.include_router(checkout.router, prefix="/api/checkout", tags=["Checkout"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
 app.include_router(progress.router, prefix="/api/progress", tags=["Progress"])

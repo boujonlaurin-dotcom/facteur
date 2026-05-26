@@ -21,7 +21,17 @@ def verify_revenuecat_signature(
     signature: str,
     secret: str,
 ) -> bool:
-    """Vérifie la signature du webhook RevenueCat."""
+    """Vérifie la signature HMAC SHA-256 du webhook RevenueCat.
+
+    RevenueCat envoie soit un header `Authorization: Bearer <secret>` (mode
+    secret partagé), soit un HMAC. On supporte les deux : si la signature
+    fournie est `Bearer <secret>`, on compare en clair ; sinon on calcule
+    le HMAC.
+    """
+    if signature.startswith("Bearer "):
+        token = signature.removeprefix("Bearer ").strip()
+        return hmac.compare_digest(token, secret)
+
     expected = hmac.new(
         secret.encode(),
         payload,
@@ -35,23 +45,21 @@ def verify_revenuecat_signature(
 async def revenuecat_webhook(
     request: Request,
     x_revenuecat_signature: str = Header(None, alias="X-RevenueCat-Signature"),
+    authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    """
-    Webhook RevenueCat pour les événements d'abonnement.
+    """Webhook RevenueCat pour les événements d'abonnement.
 
-    Événements gérés:
-    - INITIAL_PURCHASE
-    - RENEWAL
-    - CANCELLATION
-    - EXPIRATION
-    - PRODUCT_CHANGE
+    Événements gérés : INITIAL_PURCHASE, RENEWAL, CANCELLATION, EXPIRATION,
+    UNCANCELLATION, PRODUCT_CHANGE. Idempotent via `event.id` (rejeu sans effet).
+    Retourne 200 systématiquement (sauf signature invalide) pour éviter les
+    retries RevenueCat sur des events ignorés/inconnus.
     """
-    # Vérifier la signature en production
     if settings.is_production and settings.revenuecat_webhook_secret:
         payload = await request.body()
+        signature = x_revenuecat_signature or authorization
 
-        if not x_revenuecat_signature:
+        if not signature:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Missing signature",
@@ -59,7 +67,7 @@ async def revenuecat_webhook(
 
         if not verify_revenuecat_signature(
             payload,
-            x_revenuecat_signature,
+            signature,
             settings.revenuecat_webhook_secret,
         ):
             raise HTTPException(
@@ -67,24 +75,24 @@ async def revenuecat_webhook(
                 detail="Invalid signature",
             )
 
-    # Parser l'événement
     try:
         body = await request.json()
         event_data = body.get("event", {})
         event_type = event_data.get("type")
+        event_id = event_data.get("id")
         app_user_id = event_data.get("app_user_id")
 
         logger.info(
-            "RevenueCat webhook received",
+            "revenuecat.webhook_received",
             event_type=event_type,
+            event_id=event_id,
             app_user_id=app_user_id,
         )
 
         if not app_user_id:
-            logger.warning("Webhook without app_user_id")
+            logger.warning("revenuecat.webhook_missing_app_user_id")
             return {"status": "ignored"}
 
-        # Traiter l'événement
         service = SubscriptionService(db)
 
         match event_type:
@@ -96,13 +104,21 @@ async def revenuecat_webhook(
                 await service.handle_cancellation(app_user_id, event_data)
             case "EXPIRATION":
                 await service.handle_expiration(app_user_id, event_data)
+            case "UNCANCELLATION":
+                await service.handle_uncancellation(app_user_id, event_data)
+            case "PRODUCT_CHANGE":
+                await service.handle_product_change(app_user_id, event_data)
+            case "NON_RENEWING_PURCHASE" | "BILLING_ISSUE" | "SUBSCRIBER_ALIAS" | "TRANSFER" | "TEST":
+                logger.info("revenuecat.webhook_noop", event_type=event_type)
             case _:
-                logger.info("Unhandled event type", event_type=event_type)
+                logger.info("revenuecat.webhook_unhandled", event_type=event_type)
 
         return {"status": "processed"}
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("Webhook processing error", error=str(e))
+        logger.error("revenuecat.webhook_error", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Webhook processing failed",
