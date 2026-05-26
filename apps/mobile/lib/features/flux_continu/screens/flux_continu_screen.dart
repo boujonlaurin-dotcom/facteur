@@ -48,7 +48,7 @@ const double _kStickyThreshold = 60.0;
 /// Vertical offset the sticky bar consumes — used as a landing buffer
 /// when scrolling a section into view so its banner doesn't disappear
 /// behind the bar.
-const double _kStickyBarHeight = 86.0;
+const double _kStickyBarHeight = 100.0;
 
 /// Distance to the bottom (in px) before we trigger the next feed page.
 const double _kLoadMoreLeadingPx = 800.0;
@@ -327,7 +327,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// Folds the Essentiel card then scrolls to [targetIndex]. The 50ms delay
   /// lets the fold settle so the scroll target's measured position is the
   /// post-fold one. Used by both "Tout l'essentiel" (scroll to Actus du
-  /// jour) and "Je veux tout voir ⬇️" (scroll to Explorer banner via the
+  /// jour) and "Tous mes articles ↓" (scroll to Explorer banner via the
   /// `targetIndex == _sectionKeys.length` branch of [_scrollToSection]).
   Future<void> _foldEssentielAndScroll(
     EssentielSection essentiel,
@@ -348,7 +348,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     await _foldEssentielAndScroll(essentiel, next);
   }
 
-  /// "Je veux tout voir ⬇️" action of the Essentiel hi-fi card: folds the
+  /// "Tous mes articles ↓" action of the Essentiel hi-fi card: folds the
   /// card then scrolls all the way down to the "Explorer" banner. Reuses the
   /// `index >= _sectionKeys.length` branch of [_scrollToSection], which
   /// targets [_explorerKey] directly.

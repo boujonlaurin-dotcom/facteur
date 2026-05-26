@@ -2,18 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../../../config/theme.dart';
 
-/// "Voir tout {thème}" — opens the dedicated theme page (slide-from-right)
+/// "Plus d'articles" — opens the dedicated theme page (slide-from-right)
 /// instead of paginating in-place. Visual cousin of [PlusDeButton] so the
 /// bottom-of-section CTA family stays consistent.
 class SeeAllSectionButton extends StatelessWidget {
-  final String sectionLabel;
   final int hiddenCount;
   final bool hasMore;
   final VoidCallback onTap;
 
   const SeeAllSectionButton({
     super.key,
-    required this.sectionLabel,
     required this.hiddenCount,
     required this.hasMore,
     required this.onTap,
@@ -24,8 +22,8 @@ class SeeAllSectionButton extends StatelessWidget {
     final colors = context.facteurColors;
     final countSuffix = hasMore ? '+' : '';
     final label = hiddenCount > 0
-        ? 'Voir tout $sectionLabel (+$hiddenCount$countSuffix)'
-        : 'Voir tout $sectionLabel';
+        ? 'Plus d\'articles (+$hiddenCount$countSuffix)'
+        : 'Plus d\'articles';
     return _ButtonShell(
       onTap: onTap,
       child: Row(
@@ -109,9 +107,11 @@ class PlusDeButton extends StatelessWidget {
 
 /// "Sujet suivant ↓" — bottom-of-section CTA that marks the section as
 /// consumed for the next session and scrolls smoothly to the next section.
-/// When [isMarked] is true, the button flips to a full-green "Terminé ✓"
+/// When [isMarked] is true, the button flips to a full-green "Lu ✔"
 /// state with a short scale-pop on the check icon (transition false→true
 /// only — restoring a marked session at cold start must not replay it).
+/// The flip is also applied optimistically the moment the user taps,
+/// before the provider propagates [isMarked].
 class NextSectionButton extends StatefulWidget {
   final bool isMarked;
   final VoidCallback? onTap;
@@ -130,6 +130,9 @@ class _NextSectionButtonState extends State<NextSectionButton>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   late final Animation<double> _scale;
+  // Optimistic flip: tapping the button must show the "Lu ✔" state on the
+  // very next frame even if the provider takes a tick to propagate isMarked.
+  bool _localMarked = false;
 
   @override
   void initState() {
@@ -148,7 +151,11 @@ class _NextSectionButtonState extends State<NextSectionButton>
   void didUpdateWidget(covariant NextSectionButton old) {
     super.didUpdateWidget(old);
     if (!old.isMarked && widget.isMarked) {
-      _ctrl.forward(from: 0);
+      if (!_localMarked &&
+          _ctrl.status != AnimationStatus.forward &&
+          _ctrl.status != AnimationStatus.completed) {
+        _ctrl.forward(from: 0);
+      }
     }
   }
 
@@ -158,18 +165,29 @@ class _NextSectionButtonState extends State<NextSectionButton>
     super.dispose();
   }
 
+  void _handleTap() {
+    if (!_localMarked && !widget.isMarked) {
+      setState(() => _localMarked = true);
+      if (_ctrl.status != AnimationStatus.forward &&
+          _ctrl.status != AnimationStatus.completed) {
+        _ctrl.forward(from: 0);
+      }
+    }
+    widget.onTap?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final marked = widget.isMarked;
+    final marked = widget.isMarked || _localMarked;
     final foreground = marked ? Colors.white : colors.textSecondary;
-    final label = marked ? 'Terminé' : 'Sujet suivant';
+    final label = marked ? 'Lu ✔' : 'Sujet suivant';
     final icon = marked ? Icons.check : Icons.arrow_downward;
     return Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
-        onTap: widget.onTap,
+        onTap: widget.onTap == null ? null : _handleTap,
         borderRadius: BorderRadius.circular(12),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 220),
@@ -177,11 +195,10 @@ class _NextSectionButtonState extends State<NextSectionButton>
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           decoration: BoxDecoration(
-            color: marked ? colors.success : Colors.transparent,
+            color: marked
+                ? colors.success
+                : colors.surfaceElevated.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(12),
-            border: marked
-                ? null
-                : Border.all(color: colors.border, width: 1),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,

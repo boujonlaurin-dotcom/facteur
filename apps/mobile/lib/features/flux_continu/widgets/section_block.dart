@@ -39,7 +39,7 @@ class SectionBlock extends StatelessWidget {
   /// next section ("Actus du jour"). Ignored for other section types.
   final VoidCallback? onTapExploreAll;
 
-  /// "Je veux tout voir ⬇️" action of the [EssentielSection] hi-fi card.
+  /// "Tous mes articles ↓" action of the [EssentielSection] hi-fi card.
   /// Wired by the flux_continu screen to fold the Essentiel card AND scroll
   /// all the way down to the "Explorer" banner. Ignored for other section
   /// types.
@@ -182,7 +182,6 @@ class SectionBlock extends StatelessWidget {
         onSeeAll != null &&
         (hiddenCount > 0 || section.hasMore)) {
       return SeeAllSectionButton(
-        sectionLabel: section.label,
         hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
         hasMore: section.hasMore,
         onTap: onSeeAll!,
@@ -191,10 +190,9 @@ class SectionBlock extends StatelessWidget {
     if (section is DigestTopicSection &&
         onSeeAll != null &&
         section.hasOverflow) {
-      return PlusDeButton(
-        sectionLabel: section.label,
-        isOpen: false,
+      return SeeAllSectionButton(
         hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
+        hasMore: false,
         onTap: onSeeAll!,
       );
     }
@@ -302,10 +300,13 @@ class _SectionFooterRow extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Row(
         children: [
-          if (voirPlus != null) Flexible(child: voirPlus!) else const Spacer(),
+          if (voirPlus != null)
+            Expanded(flex: 2, child: voirPlus!)
+          else
+            const Spacer(),
           if (voirPlus != null && sujetSuivant != null)
             const SizedBox(width: 8),
-          if (sujetSuivant != null) Flexible(child: sujetSuivant!),
+          if (sujetSuivant != null) Expanded(flex: 1, child: sujetSuivant!),
         ],
       ),
     );
