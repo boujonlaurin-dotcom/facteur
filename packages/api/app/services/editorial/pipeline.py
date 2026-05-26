@@ -1,9 +1,14 @@
 """Editorial digest pipeline orchestrator — Stories 10.23 + 10.24.
 
-Orchestrates: clustering → LLM curation → deep matching → writing → pépite → coup de coeur.
+Orchestrates: clustering → LLM curation → actu matching → perspective analysis.
 
 Global phase (compute_global_context): 1x per batch, shared across users.
 Per-user phase (run_for_user): actu matching only, no LLM.
+
+Note: writing/pépite/coup_de_coeur/actu_decalee stages and the "Pas de recul"
+deep_matcher integration were removed/disabled during the post-unification
+cleanup. Deep matching is preserved in `deep_matcher.py` for the next
+"Pas de recul" iteration (see TODO blocks below).
 """
 
 from __future__ import annotations
@@ -26,22 +31,16 @@ from app.services.briefing.importance_detector import ImportanceDetector, TopicC
 from app.services.editorial.actu_matcher import ActuMatcher
 from app.services.editorial.config import load_editorial_config
 from app.services.editorial.curation import CurationService, _cluster_to_une_topic
-from app.services.editorial.deep_matcher import DeepMatcher
 from app.services.editorial.llm_client import EditorialLLMClient
 from app.services.editorial.schemas import (
-    ActuDecaleeArticle,
-    CoupDeCoeurArticle,
     EditorialGlobalContext,
     EditorialPipelineResult,
     EditorialSubject,
-    PepiteArticle,
     PerspectiveSourceMini,
-    WritingOutput,
     compute_bias_distribution,
     compute_bias_highlights,
     compute_divergence_level,
 )
-from app.services.editorial.writer import EditorialWriterService
 from app.services.llm_bias_annotation_service import LLMBiasAnnotationService
 from app.services.perspective_service import Perspective, PerspectiveService
 from app.services.title_annotation_service import (
@@ -95,9 +94,6 @@ class EditorialPipelineService:
         self.actu_matcher = ActuMatcher(
             actu_max_age_hours=self.config.pipeline.actu_max_age_hours
         )
-        self.deep_matcher = DeepMatcher(
-            session, self.llm, self.config, session_maker=session_maker
-        )
 
     @asynccontextmanager
     async def _short_session(self):
@@ -119,12 +115,13 @@ class EditorialPipelineService:
     ) -> EditorialGlobalContext | None:
         """Compute global editorial context (1x per batch).
 
-        This performs all LLM calls (curation + deep matching + writing + pépite)
-        and 1 DB query (coup de coeur). Result is reused for all users.
+        Performs the LLM curation + actu matching + perspective analysis steps.
+        Result is reused for all users.
 
         Args:
             contents: Recent articles for clustering (typically < 48h).
-            mode: "pour_vous" or "serein" — affects writing prompt.
+            mode: "pour_vous" or "serein" — affects À la Une selection (bonne
+                nouvelle vs trending) and cluster filtering.
 
         Returns:
             EditorialGlobalContext or None if pipeline fails.
@@ -286,35 +283,7 @@ class EditorialPipelineService:
             duration_ms=round(curation_time * 1000, 2),
         )
 
-        # ÉTAPE 3B: Deep matching (global — same deep articles for all users)
-        # Extract entities from clusters to boost deep matching accuracy
         cluster_map = {c.cluster_id: c for c in clusters}
-        cluster_entities: dict[str, set[str]] = {}
-        for topic in selected_topics:
-            cluster = cluster_map.get(topic.topic_id)
-            if cluster:
-                entities: set[str] = set()
-                for content in cluster.contents:
-                    if content.entities:
-                        for e in content.entities:
-                            if e and ":" in e:
-                                entities.add(e.split(":")[0].lower().strip())
-                if entities:
-                    cluster_entities[topic.topic_id] = entities
-
-        step_start = time.time()
-        deep_matches = await self.deep_matcher.match_for_topics(
-            selected_topics, cluster_entities=cluster_entities
-        )
-        deep_time = time.time() - step_start
-
-        deep_hit_count = sum(1 for v in deep_matches.values() if v is not None)
-        logger.info(
-            "editorial_pipeline.deep_matching_done",
-            hits=deep_hit_count,
-            total=len(selected_topics),
-            duration_ms=round(deep_time * 1000, 2),
-        )
 
         # ÉTAPE 3B-bis: LLM bias annotation pour les clusters sélectionnés.
         # Skip silencieux si MISTRAL_API_KEY absente (fallback spaCy hors-ligne
@@ -354,7 +323,6 @@ class EditorialPipelineService:
             **llm_bias_stats,
         )
 
-        # Build subjects with deep matches
         cluster_map_counts = {c.cluster_id: len(c.source_ids) for c in clusters}
         subjects = [
             EditorialSubject(
@@ -363,7 +331,7 @@ class EditorialPipelineService:
                 label=topic.label,
                 selection_reason=topic.selection_reason,
                 deep_angle=topic.deep_angle,
-                deep_article=deep_matches.get(topic.topic_id),
+                deep_article=None,
                 source_count=topic.source_count
                 or cluster_map_counts.get(topic.topic_id, 0),
                 theme=topic.theme,
@@ -373,19 +341,12 @@ class EditorialPipelineService:
         ]
 
         # ÉTAPE 3A: Actu matching GLOBAL (not per-user — MVP V2)
-        # Collect deep source_ids AND content_ids to prevent actu/deep overlap
-        deep_source_ids = {
-            s.deep_article.source_id for s in subjects if s.deep_article is not None
-        }
-        deep_content_ids = {
-            s.deep_article.content_id for s in subjects if s.deep_article is not None
-        }
         step_start = time.time()
         subjects = self.actu_matcher.match_global(
             subjects=subjects,
             clusters=clusters,
-            excluded_source_ids=deep_source_ids,
-            excluded_content_ids=deep_content_ids,
+            excluded_source_ids=set(),
+            excluded_content_ids=set(),
         )
         actu_time = time.time() - step_start
         actu_hit_count = sum(1 for s in subjects if s.actu_article is not None)
@@ -796,98 +757,10 @@ class EditorialPipelineService:
             for c in clusters
         ]
 
-        # ÉTAPES 4+5+6: Writing + Pépite + Coup de coeur (parallel)
-        step_start = time.time()
-        writer = EditorialWriterService(
-            self.session, self.llm, self.config, session_maker=self.session_maker
-        )
-
-        selected_topic_ids = {s.topic_id for s in subjects}
-        selected_content_ids: set[UUID] = set()
-        for s in subjects:
-            if s.deep_article:
-                selected_content_ids.add(s.deep_article.content_id)
-
-        # Build parallel tasks: writing + pepite + coup de coeur + (actu_decalee if serein)
-        parallel_tasks = [
-            writer.write_editorial(subjects, mode=mode),
-            writer.select_pepite(contents, selected_topic_ids, cluster_data),
-            writer.get_coup_de_coeur(selected_content_ids),
-        ]
-        if mode == "serein":
-            parallel_tasks.append(writer.select_actu_decalee(selected_content_ids))
-
-        gather_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
-
-        writing_raw = gather_results[0]
-        pepite_raw = gather_results[1]
-        coup_de_coeur_raw = gather_results[2]
-        actu_decalee_raw = gather_results[3] if mode == "serein" else None
-
-        # Handle writing result — inject texts into subjects
-        writing_result: WritingOutput | None = None
-        if isinstance(writing_raw, WritingOutput):
-            writing_result = writing_raw
-            topic_map = {sw.topic_id: sw for sw in writing_result.subjects}
-            for i, s in enumerate(subjects):
-                sw = topic_map.get(s.topic_id)
-                if not sw and i < len(writing_result.subjects):
-                    # Positional fallback: LLM may have modified the UUID
-                    sw = writing_result.subjects[i]
-                    logger.warning(
-                        "editorial_pipeline.topic_id_mismatch_positional_fallback",
-                        expected=s.topic_id,
-                        got=writing_result.subjects[i].topic_id,
-                    )
-                if sw:
-                    s.intro_text = sw.intro_text
-                    s.transition_text = sw.transition_text
-        elif isinstance(writing_raw, Exception):
-            logger.error("editorial_pipeline.writing_exception", error=str(writing_raw))
-
-        # Handle pépite
-        pepite: PepiteArticle | None = None
-        if isinstance(pepite_raw, PepiteArticle):
-            pepite = pepite_raw
-        elif isinstance(pepite_raw, Exception):
-            logger.error("editorial_pipeline.pepite_exception", error=str(pepite_raw))
-
-        # Handle coup de coeur
-        coup_de_coeur: CoupDeCoeurArticle | None = None
-        if isinstance(coup_de_coeur_raw, CoupDeCoeurArticle):
-            coup_de_coeur = coup_de_coeur_raw
-        elif isinstance(coup_de_coeur_raw, Exception):
-            logger.error(
-                "editorial_pipeline.coup_de_coeur_exception",
-                error=str(coup_de_coeur_raw),
-            )
-
-        # Handle actu décalée (serein mode only)
-        actu_decalee: ActuDecaleeArticle | None = None
-        if isinstance(actu_decalee_raw, ActuDecaleeArticle):
-            actu_decalee = actu_decalee_raw
-        elif isinstance(actu_decalee_raw, Exception):
-            logger.error(
-                "editorial_pipeline.actu_decalee_exception",
-                error=str(actu_decalee_raw),
-            )
-
-        writing_time = time.time() - step_start
-        logger.info(
-            "editorial_pipeline.writing_done",
-            has_writing=writing_result is not None,
-            has_pepite=pepite is not None,
-            has_coup_de_coeur=coup_de_coeur is not None,
-            has_actu_decalee=actu_decalee is not None,
-            duration_ms=round(writing_time * 1000, 2),
-        )
-
         total_time = time.time() - start
         logger.info(
             "editorial_pipeline.global_context_ready",
             subjects=len(subjects),
-            deep_hits=deep_hit_count,
-            has_editorial_text=writing_result is not None,
             total_ms=round(total_time * 1000, 2),
         )
 
@@ -895,12 +768,6 @@ class EditorialPipelineService:
             subjects=subjects,
             cluster_data=cluster_data,
             generated_at=datetime.now(UTC),
-            header_text=writing_result.header_text if writing_result else None,
-            closure_text=writing_result.closure_text if writing_result else None,
-            cta_text=writing_result.cta_text if writing_result else None,
-            pepite=pepite,
-            coup_de_coeur=coup_de_coeur,
-            actu_decalee=actu_decalee,
         )
 
     def run_for_user(
@@ -944,12 +811,6 @@ class EditorialPipelineService:
                 "total_subjects": len(subjects),
                 "matching_ms": round(total_time * 1000, 2),
             },
-            header_text=global_ctx.header_text,
-            closure_text=global_ctx.closure_text,
-            cta_text=global_ctx.cta_text,
-            pepite=global_ctx.pepite,
-            coup_de_coeur=global_ctx.coup_de_coeur,
-            actu_decalee=global_ctx.actu_decalee,
         )
 
     async def close(self) -> None:

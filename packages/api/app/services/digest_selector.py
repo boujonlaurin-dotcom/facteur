@@ -386,11 +386,6 @@ class DigestSelector:
                                     "total_subjects": len(global_ctx.subjects),
                                     "matching_ms": 0,
                                 },
-                                header_text=global_ctx.header_text,
-                                closure_text=global_ctx.closure_text,
-                                cta_text=global_ctx.cta_text,
-                                pepite=global_ctx.pepite,
-                                coup_de_coeur=global_ctx.coup_de_coeur,
                             )
                             editorial_time = time.time() - step_start
                             total_time = time.time() - start_time

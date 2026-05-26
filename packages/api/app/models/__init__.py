@@ -7,7 +7,6 @@ from app.models.collection import Collection, CollectionItem
 from app.models.content import Content, UserContentStatus
 from app.models.curation import CurationAnnotation
 from app.models.daily_digest import DailyDigest
-from app.models.daily_top3 import DailyTop3
 from app.models.digest_completion import DigestCompletion
 from app.models.digest_generation_state import DigestGenerationState
 from app.models.editorial_highlights_history import EditorialHighlightsHistory
@@ -65,8 +64,6 @@ __all__ = [
     # Progress (Epic 8)
     "UserTopicProgress",
     "TopicQuiz",
-    # Daily Briefing (Story 4.4)
-    "DailyTop3",
     # Digest Central (Epic 10)
     "DailyDigest",
     "DigestCompletion",

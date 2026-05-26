@@ -223,30 +223,6 @@ async def profile_feed_endpoint(user_id: str, limit: int = 20):
         async with profiler.measure("8. Pydantic Serialization", f"{len(result)} items"):
             serialized = [ContentResponse.model_validate(c).model_dump() for c in result]
         
-        # ─────────────────────────────────────────────────────────────────
-        # 6. BRIEFING QUERY (if applicable)
-        # ─────────────────────────────────────────────────────────────────
-        from app.models.daily_top3 import DailyTop3
-        from app.models.content import Content
-        
-        today_start = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        async with profiler.measure("9. Briefing Query", "Today's Top3"):
-            stmt = (
-                select(DailyTop3)
-                .options(
-                    selectinload(DailyTop3.content)
-                    .selectinload(Content.source)
-                )
-                .where(
-                    DailyTop3.user_id == user_uuid,
-                    DailyTop3.generated_at >= today_start
-                )
-                .order_by(DailyTop3.rank)
-            )
-            briefing_result = await session.execute(stmt)
-            briefing_rows = briefing_result.scalars().all()
-        
     finally:
         await session.close()
     

@@ -664,13 +664,6 @@ class FeedRepository {
     );
   }
 
-  /// @deprecated Briefing has moved to the dedicated Digest tab.
-  /// Use digest repository's applyAction with read status instead.
-  @Deprecated('Briefing moved to Digest tab. Use digest repository instead.')
-  Future<void> markBriefingAsRead(String contentId) async {
-    await _apiClient.dio.post('feed/briefing/$contentId/read');
-  }
-
   Future<Content?> getContent(String contentId) async {
     try {
       final response = await _apiClient.dio.get<Map<String, dynamic>>(

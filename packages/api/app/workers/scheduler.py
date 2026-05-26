@@ -12,7 +12,6 @@ from app.jobs.purge_deleted_users import purge_deleted_users
 from app.jobs.recompute_source_language import recompute_source_language
 from app.workers.rss_sync import sync_all_sources
 from app.workers.storage_cleanup import cleanup_old_articles
-from app.workers.top3_job import generate_daily_top3_job
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -182,15 +181,6 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
-    # Job Top 3 Briefing Quotidien (8h00 Paris)
-    scheduler.add_job(
-        generate_daily_top3_job,
-        trigger=CronTrigger(hour=8, minute=0, timezone=_PARIS_TZ),
-        id="daily_top3",
-        name="Daily Top 3 Briefing",
-        replace_existing=True,
-    )
-
     # Job Digest Quotidien (07h30 Paris — voir DIGEST_CRON_HOUR_PARIS pour le
     # rationale : à 06h les Unes du matin ne sont pas encore publiées).
     # misfire_grace_time=14400 (4h): couvre les redémarrages Railway longs.
@@ -267,7 +257,6 @@ def start_scheduler() -> None:
         "Scheduler started",
         jobs=[
             "rss_sync",
-            "daily_top3",
             "daily_digest",
             "digest_watchdog",
             "storage_cleanup",
@@ -278,7 +267,6 @@ def start_scheduler() -> None:
         rss_interval_minutes=settings.rss_sync_interval_minutes,
         digest_cron="07:30 Europe/Paris",
         watchdog_cron="08:15 Europe/Paris",
-        top3_cron="08:00 Europe/Paris",
         cleanup_cron="03:00 Europe/Paris",
     )
 

@@ -68,12 +68,12 @@ class EditorialSubject(BaseModel):
     source_count: int = 0  # number of unique sources covering this topic
     theme: str | None = None
     is_a_la_une: bool = False  # headline subject (rank 1, most covered)
-    # Editorial text fields — populated by WriterService (ÉTAPE 4)
-    intro_text: str | None = None
-    transition_text: str | None = None
     # Matched articles
     actu_article: MatchedActuArticle | None = None
     extra_actu_articles: list[MatchedActuArticle] = []
+    # `deep_article` (Pas de recul) is disabled in the post-unification cleanup;
+    # the field is kept None-only so persisted EditorialSubject snapshots remain
+    # readable. TODO: réactiver pour la prochaine itération Pas de recul.
     deep_article: MatchedDeepArticle | None = None
     # Perspective analysis — populated by PerspectiveService (ÉTAPE 3C)
     perspective_count: int = 0
@@ -96,54 +96,11 @@ class EditorialSubject(BaseModel):
     representative_content_id: UUID | None = None
 
 
-# --- Story 10.24: LLM writing output schemas ---
-
-
-class SubjectWriting(BaseModel):
-    """Per-subject writing from LLM (ÉTAPE 4)."""
-
-    topic_id: str
-    intro_text: str
-    transition_text: str | None = None  # null for last subject
-
-
-class WritingOutput(BaseModel):
-    """Full LLM writing output (ÉTAPE 4)."""
-
-    header_text: str
-    subjects: list[SubjectWriting]
-    closure_text: str
-    cta_text: str | None = None
-
-
-class PepiteArticle(BaseModel):
-    """LLM pépite selection (ÉTAPE 5)."""
-
-    content_id: UUID
-    mini_editorial: str
-
-
-class ActuDecaleeArticle(BaseModel):
-    """LLM actu décalée selection for serein mode."""
-
-    content_id: UUID
-    mini_editorial: str
-
-
-class CoupDeCoeurArticle(BaseModel):
-    """Most-saved article by community (ÉTAPE 6). No LLM."""
-
-    content_id: UUID
-    title: str
-    source_name: str
-    save_count: int
-
-
 class EditorialGlobalContext(BaseModel):
     """Global context computed once per batch (shared across all users).
 
-    Contains the 5 selected topics with deep matches,
-    plus editorial texts, pépite, and coup de coeur (Story 10.24).
+    Contains the selected topics with their perspective analysis, plus the
+    serialized cluster data for per-user actu matching.
     """
 
     subjects: list[EditorialSubject]
@@ -151,13 +108,6 @@ class EditorialGlobalContext(BaseModel):
     # Stored as list of dicts since TopicCluster is a dataclass, not Pydantic
     cluster_data: list[dict]
     generated_at: datetime
-    # Story 10.24: editorial writing output
-    header_text: str | None = None
-    closure_text: str | None = None
-    cta_text: str | None = None
-    pepite: PepiteArticle | None = None
-    coup_de_coeur: CoupDeCoeurArticle | None = None
-    actu_decalee: ActuDecaleeArticle | None = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -168,13 +118,6 @@ class EditorialPipelineResult(BaseModel):
 
     subjects: list[EditorialSubject]
     metadata: dict  # timing, fallback_used, deep_hit_rate
-    # Story 10.24: editorial writing output (propagated from global context)
-    header_text: str | None = None
-    closure_text: str | None = None
-    cta_text: str | None = None
-    pepite: PepiteArticle | None = None
-    coup_de_coeur: CoupDeCoeurArticle | None = None
-    actu_decalee: ActuDecaleeArticle | None = None
 
 
 # --- Perspective helpers ---

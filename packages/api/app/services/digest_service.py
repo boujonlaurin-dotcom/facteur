@@ -37,7 +37,6 @@ from app.models.enums import ContentStatus
 from app.models.user import UserStreak
 from app.models.user_personalization import UserPersonalization
 from app.schemas.digest import (
-    CoupDeCoeurResponse,
     DigestAction,
     DigestItem,
     DigestRecommendationReason,
@@ -45,7 +44,6 @@ from app.schemas.digest import (
     DigestScoreBreakdown,
     DigestTopic,
     DigestTopicArticle,
-    PepiteResponse,
     QuoteResponse,
 )
 from app.services.digest_selector import DigestSelector
@@ -880,8 +878,6 @@ class DigestService:
             logger.warning(
                 "digest_editorial_empty_subjects_fallback",
                 user_id=str(user_id),
-                has_header=bool(digest_items.header_text),
-                has_closure=bool(digest_items.closure_text),
             )
             digest_items = []
             is_editorial_format = False
@@ -1873,7 +1869,6 @@ class DigestService:
 
         items_json = {
             "format_version": "editorial_v1",
-            "header_text": result.header_text,
             "mode": mode or "pour_vous",
             "subjects": [
                 {
@@ -1885,8 +1880,6 @@ class DigestService:
                     "source_count": s.source_count,
                     "theme": s.theme,
                     "is_a_la_une": s.is_a_la_une,
-                    "intro_text": s.intro_text,
-                    "transition_text": s.transition_text,
                     "perspective_count": s.perspective_count,
                     "bias_distribution": s.bias_distribution,
                     "bias_highlights": s.bias_highlights,
@@ -1922,45 +1915,9 @@ class DigestService:
                         }
                         for a in s.extra_actu_articles
                     ],
-                    "deep_article": {
-                        "content_id": str(s.deep_article.content_id),
-                        "title": s.deep_article.title,
-                        "source_name": s.deep_article.source_name,
-                        "source_id": str(s.deep_article.source_id),
-                        "badge": "pas_de_recul",
-                        "match_reason": s.deep_article.match_reason,
-                        "published_at": s.deep_article.published_at.isoformat(),
-                    }
-                    if s.deep_article
-                    else None,
                 }
                 for s in result.subjects
             ],
-            "pepite": {
-                "content_id": str(result.pepite.content_id),
-                "mini_editorial": result.pepite.mini_editorial,
-                "badge": "pepite",
-            }
-            if result.pepite
-            else None,
-            "coup_de_coeur": {
-                "content_id": str(result.coup_de_coeur.content_id),
-                "title": result.coup_de_coeur.title,
-                "source_name": result.coup_de_coeur.source_name,
-                "save_count": result.coup_de_coeur.save_count,
-                "badge": "coup_de_coeur",
-            }
-            if result.coup_de_coeur
-            else None,
-            "actu_decalee": {
-                "content_id": str(result.actu_decalee.content_id),
-                "mini_editorial": result.actu_decalee.mini_editorial,
-                "badge": "actu_decalee",
-            }
-            if result.actu_decalee
-            else None,
-            "closure_text": result.closure_text,
-            "cta_text": result.cta_text,
             "generated_at": datetime.utcnow().isoformat(),
             "metadata": result.metadata,
         }
@@ -2222,7 +2179,8 @@ class DigestService:
         )
         followed_source_ids: set[UUID] = set(followed_result.scalars().all())
 
-        # Collect all content_ids (actu + deep + pepite + coup_de_coeur)
+        # Collect all content_ids (actu + deep — old digests may still carry
+        # a `deep_article` snapshot from before the Pas de recul cleanup).
         all_content_ids: list[UUID] = []
         for subject in subjects_data:
             if subject.get("actu_article"):
@@ -2231,16 +2189,6 @@ class DigestService:
                 all_content_ids.append(UUID(extra["content_id"]))
             if subject.get("deep_article"):
                 all_content_ids.append(UUID(subject["deep_article"]["content_id"]))
-
-        pepite_data = items_data.get("pepite")
-        coup_de_coeur_data = items_data.get("coup_de_coeur")
-        actu_decalee_data = items_data.get("actu_decalee")
-        if pepite_data and pepite_data.get("content_id"):
-            all_content_ids.append(UUID(pepite_data["content_id"]))
-        if coup_de_coeur_data and coup_de_coeur_data.get("content_id"):
-            all_content_ids.append(UUID(coup_de_coeur_data["content_id"]))
-        if actu_decalee_data and actu_decalee_data.get("content_id"):
-            all_content_ids.append(UUID(actu_decalee_data["content_id"]))
 
         # Batch queries
         completion = await self.session.scalar(
@@ -2406,8 +2354,6 @@ class DigestService:
                             [subject["deep_angle"]] if subject.get("deep_angle") else []
                         ),
                         articles=topic_articles,
-                        intro_text=subject.get("intro_text"),
-                        transition_text=subject.get("transition_text"),
                         perspective_count=subject.get("perspective_count", 0),
                         bias_distribution=subject.get("bias_distribution"),
                         bias_highlights=subject.get("bias_highlights"),
@@ -2424,191 +2370,6 @@ class DigestService:
                     "editorial_topic_no_articles_skipped",
                     topic_id=subject.get("topic_id", ""),
                     label=subject.get("label", ""),
-                )
-
-        # Build pepite response
-        default_action = {
-            "is_read": False,
-            "is_saved": False,
-            "is_liked": False,
-            "is_dismissed": False,
-        }
-        pepite_response = None
-        if pepite_data and pepite_data.get("content_id"):
-            pepite_cid = UUID(pepite_data["content_id"])
-            pepite_content = content_map.get(pepite_cid)
-            if not pepite_content:
-                logger.warning(
-                    "editorial_pepite_not_found",
-                    content_id=str(pepite_cid),
-                )
-            elif not pepite_content.source:
-                logger.warning(
-                    "editorial_pepite_missing_source",
-                    content_id=str(pepite_cid),
-                )
-            if pepite_content and pepite_content.source:
-                pepite_action = action_states_map.get(pepite_cid, default_action)
-                pepite_response = PepiteResponse(
-                    content_id=pepite_cid,
-                    mini_editorial=pepite_data.get("mini_editorial", ""),
-                    title=pepite_content.title,
-                    url=pepite_content.url,
-                    thumbnail_url=pepite_content.thumbnail_url,
-                    published_at=pepite_content.published_at,
-                    source=pepite_content.source,
-                    is_read=pepite_action["is_read"],
-                    is_saved=pepite_action["is_saved"],
-                    is_liked=pepite_action["is_liked"],
-                    is_dismissed=pepite_action["is_dismissed"],
-                )
-                # Also add to flat items for backward compat
-                global_rank += 1
-                flat_items.append(
-                    DigestItem(
-                        content_id=pepite_cid,
-                        title=pepite_content.title,
-                        url=pepite_content.url,
-                        thumbnail_url=pepite_content.thumbnail_url,
-                        description=pepite_content.description or None,
-                        html_content=pepite_content.html_content,
-                        topics=pepite_content.topics or [],
-                        content_type=pepite_content.content_type,
-                        duration_seconds=pepite_content.duration_seconds,
-                        published_at=pepite_content.published_at,
-                        is_paid=pepite_content.is_paid
-                        if hasattr(pepite_content, "is_paid")
-                        else False,
-                        source=pepite_content.source,
-                        rank=global_rank,
-                        reason=pepite_data.get("mini_editorial", "Pépite du jour"),
-                        badge="pepite",
-                        is_read=pepite_action["is_read"],
-                        is_saved=pepite_action["is_saved"],
-                        is_liked=pepite_action["is_liked"],
-                        is_dismissed=pepite_action["is_dismissed"],
-                    )
-                )
-
-        # Build coup de coeur response
-        coup_de_coeur_response = None
-        if coup_de_coeur_data and coup_de_coeur_data.get("content_id"):
-            cdc_cid = UUID(coup_de_coeur_data["content_id"])
-            cdc_content = content_map.get(cdc_cid)
-            if not cdc_content:
-                logger.warning(
-                    "editorial_coup_de_coeur_not_found",
-                    content_id=str(cdc_cid),
-                )
-            elif not cdc_content.source:
-                logger.warning(
-                    "editorial_coup_de_coeur_missing_source",
-                    content_id=str(cdc_cid),
-                )
-            if cdc_content and cdc_content.source:
-                cdc_action = action_states_map.get(cdc_cid, default_action)
-                coup_de_coeur_response = CoupDeCoeurResponse(
-                    content_id=cdc_cid,
-                    title=cdc_content.title,
-                    source_name=coup_de_coeur_data.get(
-                        "source_name", cdc_content.source.name
-                    ),
-                    save_count=coup_de_coeur_data.get("save_count", 0),
-                    url=cdc_content.url,
-                    thumbnail_url=cdc_content.thumbnail_url,
-                    published_at=cdc_content.published_at,
-                    source=cdc_content.source,
-                    is_read=cdc_action["is_read"],
-                    is_saved=cdc_action["is_saved"],
-                    is_liked=cdc_action["is_liked"],
-                    is_dismissed=cdc_action["is_dismissed"],
-                )
-                # Also add to flat items for backward compat
-                global_rank += 1
-                flat_items.append(
-                    DigestItem(
-                        content_id=cdc_cid,
-                        title=cdc_content.title,
-                        url=cdc_content.url,
-                        thumbnail_url=cdc_content.thumbnail_url,
-                        description=cdc_content.description or None,
-                        html_content=cdc_content.html_content,
-                        topics=cdc_content.topics or [],
-                        content_type=cdc_content.content_type,
-                        duration_seconds=cdc_content.duration_seconds,
-                        published_at=cdc_content.published_at,
-                        is_paid=cdc_content.is_paid
-                        if hasattr(cdc_content, "is_paid")
-                        else False,
-                        source=cdc_content.source,
-                        rank=global_rank,
-                        reason="Coup de cœur de la communauté",
-                        badge="coup_de_coeur",
-                        is_read=cdc_action["is_read"],
-                        is_saved=cdc_action["is_saved"],
-                        is_liked=cdc_action["is_liked"],
-                        is_dismissed=cdc_action["is_dismissed"],
-                    )
-                )
-
-        # Build actu décalée response (serein mode only)
-        actu_decalee_response = None
-        if actu_decalee_data and actu_decalee_data.get("content_id"):
-            ad_cid = UUID(actu_decalee_data["content_id"])
-            ad_content = content_map.get(ad_cid)
-            if not ad_content:
-                logger.warning(
-                    "editorial_actu_decalee_not_found",
-                    content_id=str(ad_cid),
-                )
-            elif not ad_content.source:
-                logger.warning(
-                    "editorial_actu_decalee_missing_source",
-                    content_id=str(ad_cid),
-                )
-            if ad_content and ad_content.source:
-                ad_action = action_states_map.get(ad_cid, default_action)
-                actu_decalee_response = PepiteResponse(
-                    content_id=ad_cid,
-                    mini_editorial=actu_decalee_data.get("mini_editorial", ""),
-                    badge="actu_decalee",
-                    title=ad_content.title,
-                    url=ad_content.url,
-                    thumbnail_url=ad_content.thumbnail_url,
-                    published_at=ad_content.published_at,
-                    source=ad_content.source,
-                    is_read=ad_action["is_read"],
-                    is_saved=ad_action["is_saved"],
-                    is_liked=ad_action["is_liked"],
-                    is_dismissed=ad_action["is_dismissed"],
-                )
-                global_rank += 1
-                flat_items.append(
-                    DigestItem(
-                        content_id=ad_cid,
-                        title=ad_content.title,
-                        url=ad_content.url,
-                        thumbnail_url=ad_content.thumbnail_url,
-                        description=ad_content.description or None,
-                        html_content=ad_content.html_content,
-                        topics=ad_content.topics or [],
-                        content_type=ad_content.content_type,
-                        duration_seconds=ad_content.duration_seconds,
-                        published_at=ad_content.published_at,
-                        is_paid=ad_content.is_paid
-                        if hasattr(ad_content, "is_paid")
-                        else False,
-                        source=ad_content.source,
-                        rank=global_rank,
-                        reason=actu_decalee_data.get(
-                            "mini_editorial", "L'actu décalée"
-                        ),
-                        badge="actu_decalee",
-                        is_read=ad_action["is_read"],
-                        is_saved=ad_action["is_saved"],
-                        is_liked=ad_action["is_liked"],
-                        is_dismissed=ad_action["is_dismissed"],
-                    )
                 )
 
         # Quote for serein digest only
@@ -2641,12 +2402,6 @@ class DigestService:
             completion_threshold=editorial_completion_threshold,
             is_completed=completion is not None,
             completed_at=completion.completed_at if completion else None,
-            header_text=items_data.get("header_text"),
-            closure_text=items_data.get("closure_text"),
-            cta_text=items_data.get("cta_text"),
-            pepite=pepite_response,
-            coup_de_coeur=coup_de_coeur_response,
-            actu_decalee=actu_decalee_response,
             quote=quote_response,
         )
 

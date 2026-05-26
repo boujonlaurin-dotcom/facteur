@@ -61,12 +61,16 @@ def _make_subject(rank=1, topic_id="c1", deep_article=None, actu_article=None):
 
 @pytest.fixture
 def mock_dependencies():
-    """Patch all external dependencies of EditorialPipelineService."""
+    """Patch all external dependencies of EditorialPipelineService.
+
+    Note: DeepMatcher is disabled in the post-unification cleanup. The
+    pipeline hardcodes ``deep_matches = {topic_id: None}`` so no patch is
+    required for it.
+    """
     with (
         patch("app.services.editorial.pipeline.load_editorial_config") as mock_config,
         patch("app.services.editorial.pipeline.EditorialLLMClient") as mock_llm_cls,
         patch("app.services.editorial.pipeline.CurationService") as mock_curation_cls,
-        patch("app.services.editorial.pipeline.DeepMatcher") as mock_deep_cls,
         patch("app.services.editorial.pipeline.ActuMatcher") as mock_actu_cls,
         patch(
             "app.services.editorial.pipeline.PerspectiveService"
@@ -92,11 +96,6 @@ def mock_dependencies():
         mock_curation.select_a_la_une = AsyncMock(return_value=None)
         mock_curation_cls.return_value = mock_curation
 
-        # Deep matcher
-        mock_deep = MagicMock()
-        mock_deep.match_for_topics = AsyncMock()
-        mock_deep_cls.return_value = mock_deep
-
         # Actu matcher
         mock_actu = MagicMock()
         mock_actu_cls.return_value = mock_actu
@@ -112,7 +111,6 @@ def mock_dependencies():
             "config": config,
             "llm": mock_llm,
             "curation": mock_curation,
-            "deep": mock_deep,
             "actu": mock_actu,
             "perspective": mock_perspective,
         }
@@ -171,21 +169,6 @@ class TestComputeGlobalContext:
             ]
             mock_dependencies["curation"].select_topics.return_value = remaining_topics
 
-            # Mock deep matching
-            deep_1 = MagicMock(spec=MatchedDeepArticle)
-            deep_1.content_id = UUID("00000000-0000-0000-0000-000000000001")
-            deep_1.source_id = UUID("00000000-0000-0000-0000-aaaaaaaaaaaa")
-            deep_3 = MagicMock(spec=MatchedDeepArticle)
-            deep_3.content_id = UUID("00000000-0000-0000-0000-000000000003")
-            deep_3.source_id = UUID("00000000-0000-0000-0000-bbbbbbbbbbbb")
-            mock_dependencies["deep"].match_for_topics.return_value = {
-                "c1": deep_1,
-                "c2": None,
-                "c3": deep_3,
-                "c4": None,
-                "c5": None,
-            }
-
             # match_global populate un actu_article pour chaque sujet (cas
             # nominal). Sans ça, le trim post-matching de la pipeline drop
             # les sujets sans actu ni deep — comportement attendu.
@@ -242,8 +225,6 @@ class TestComputeGlobalContext:
                     deep_angle=None,
                 )
             ]
-            mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
-
             # Sans actu ni deep, le sujet serait droppé par le trim de la
             # pipeline ; on simule la présence d'une actu pour que le trim
             # le conserve et qu'on puisse asserter `deep_angle is None`.
@@ -352,11 +333,6 @@ class TestALaUneFallback:
                     topic_id="c3", label="C3", selection_reason="r", deep_angle="D"
                 ),
             ]
-            mock_dependencies["deep"].match_for_topics.return_value = {
-                "c1": None,
-                "c2": None,
-                "c3": None,
-            }
 
             def _populate(
                 subjects, clusters, excluded_source_ids=None, excluded_content_ids=None
@@ -406,7 +382,6 @@ class TestALaUneFallback:
                     topic_id="c1", label="C1", selection_reason="r", deep_angle="D"
                 ),
             ]
-            mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
 
             def _populate(
                 subjects, clusters, excluded_source_ids=None, excluded_content_ids=None
@@ -475,9 +450,6 @@ class TestSubjectTrimAndRenumber:
                 )
                 for i in range(2, 8)  # c2..c7
             ]
-            mock_dependencies["deep"].match_for_topics.return_value = {
-                f"c{i}": None for i in range(1, 8)
-            }
 
             # match_global donne actu pour c1, c2, c3, c4 mais PAS c5 (pour
             # tester le drop+remplacement par le buffer c6).
@@ -509,80 +481,6 @@ class TestSubjectTrimAndRenumber:
         # is_a_la_une reste sur le rang 1 uniquement.
         assert result.subjects[0].is_a_la_une is True
         assert all(s.is_a_la_une is False for s in result.subjects[1:])
-
-
-    @pytest.mark.asyncio
-    async def test_drops_subject_with_only_deep_article(self, mock_dependencies):
-        """Régression bug-essentiel-pipeline.md : un sujet avec deep mais sans
-        actu fraîche ne doit PAS être promu en article principal du digest.
-        Le deep ancien (parfois plusieurs jours) finissait sinon en rang 1
-        quand actu_article était null."""
-        from app.services.editorial.pipeline import EditorialPipelineService
-
-        session = AsyncMock()
-        svc = EditorialPipelineService(session)
-
-        clusters = [_make_cluster_mock(f"c{i}", f"Cluster {i}") for i in range(1, 7)]
-
-        with patch(
-            "app.services.editorial.pipeline.ImportanceDetector"
-        ) as mock_detector_cls:
-            mock_detector = MagicMock()
-            mock_detector.build_topic_clusters.return_value = clusters
-            mock_detector_cls.return_value = mock_detector
-
-            mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
-                topic_id="c1",
-                label="A la une",
-                selection_reason="r",
-                deep_angle="D",
-                source_count=3,
-            )
-            mock_dependencies["curation"].select_topics.return_value = [
-                SelectedTopic(
-                    topic_id=f"c{i}",
-                    label=f"C{i}",
-                    selection_reason="r",
-                    deep_angle="D",
-                )
-                for i in range(2, 8)
-            ]
-            # c5 reçoit un deep mais aucun actu — doit être droppé.
-            deep_for_c5 = MagicMock(spec=MatchedDeepArticle)
-            deep_for_c5.content_id = uuid4()
-            deep_for_c5.source_id = uuid4()
-            mock_dependencies["deep"].match_for_topics.return_value = {
-                f"c{i}": None for i in range(1, 8)
-            } | {"c5": deep_for_c5}
-
-            def _populate_all_actus_except_c5(
-                subjects, clusters, excluded_source_ids=None, excluded_content_ids=None
-            ):
-                out = []
-                for s in subjects:
-                    if s.topic_id == "c5":
-                        # deep already attached by match_for_topics; pas d'actu.
-                        out.append(s)
-                        continue
-                    actu = MagicMock(spec=MatchedActuArticle)
-                    actu.content_id = uuid4()
-                    actu.source_id = uuid4()
-                    out.append(s.model_copy(update={"actu_article": actu}))
-                return out
-
-            mock_dependencies[
-                "actu"
-            ].match_global.side_effect = _populate_all_actus_except_c5
-
-            result = await svc.compute_global_context([_make_content_mock()])
-
-        assert result is not None
-        topic_ids = [s.topic_id for s in result.subjects]
-        assert "c5" not in topic_ids, (
-            f"c5 a un deep mais pas d'actu — il doit être droppé, got {topic_ids}"
-        )
-        # Tous les sujets gardés ont une actu fraîche.
-        assert all(s.actu_article is not None for s in result.subjects)
 
 
 class TestRunForUser:
@@ -771,7 +669,6 @@ class TestPerspectiveCountAlignment:
                 source_count=1,
             )
             mock_dependencies["curation"].select_topics.return_value = []
-            mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
 
             # Le trim post-matching de la pipeline drop les sujets sans
             # actu ni deep ; on populate des actus pour préserver les sujets.
@@ -882,7 +779,6 @@ class TestPerspectiveCountAlignment:
                 source_count=2,
             )
             mock_dependencies["curation"].select_topics.return_value = []
-            mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
 
             # Le trim post-matching de la pipeline drop les sujets sans
             # actu ni deep ; on populate des actus pour préserver les sujets.
@@ -1011,7 +907,6 @@ class TestLLMBiasAnnotationStep:
                     deep_angle="D",
                 )
             ]
-            mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
 
             def _populate_actu(subjects, clusters, **_):
                 out = []
@@ -1069,7 +964,6 @@ class TestLLMBiasAnnotationStep:
                     deep_angle="D",
                 )
             ]
-            mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
 
             def _populate_actu(subjects, clusters, **_):
                 out = []
@@ -1132,7 +1026,6 @@ class TestLLMBiasAnnotationStep:
                     deep_angle="D",
                 )
             ]
-            mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
 
             def _populate_actu(subjects, clusters, **_):
                 out = []

@@ -8,7 +8,6 @@ import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/splash_screen.dart';
 import '../features/onboarding/screens/onboarding_screen.dart';
 import '../features/onboarding/screens/conclusion_animation_screen.dart';
-import '../features/feed/screens/feed_screen.dart';
 import '../features/feed/models/content_model.dart';
 import '../features/flux_continu/screens/digest_section_screen.dart';
 import '../features/flux_continu/screens/flux_continu_screen.dart';
@@ -27,14 +26,10 @@ import '../features/settings/screens/about_screen.dart';
 import '../features/settings/widgets/settings_sheet.dart';
 import '../features/my_interests/screens/my_interests_screen.dart';
 import '../features/custom_topics/screens/topic_explorer_screen.dart';
-import '../features/progress/screens/progressions_screen.dart';
-import '../features/progress/screens/quiz_screen.dart';
 import '../features/subscription/screens/paywall_screen.dart';
-import '../features/digest/screens/digest_screen.dart';
 import '../features/veille/screens/veille_config_screen.dart';
 import '../features/lettres/screens/courrier_screen.dart';
 import '../features/lettres/screens/open_letter_screen.dart';
-import '../features/digest/screens/closure_screen.dart';
 import '../features/saved/screens/saved_screen.dart';
 import '../features/saved/screens/saved_all_screen.dart';
 import '../features/saved/screens/collection_detail_screen.dart';
@@ -53,7 +48,6 @@ class RouteNames {
   static const String onboarding = 'onboarding';
   static const String onboardingConclusion = 'onboarding-conclusion';
   static const String digest = 'digest';
-  static const String digestClosure = 'digest-closure';
   static const String feed = 'feed';
   static const String fluxContinu = 'flux-continu';
   static const String contentDetail = 'content-detail';
@@ -88,7 +82,6 @@ class RoutePaths {
   static const String onboarding = '/onboarding';
   static const String onboardingConclusion = '/onboarding/conclusion';
   static const String digest = '/digest';
-  static const String digestClosure = '/digest/closure';
   static const String feed = '/feed';
   static const String fluxContinu = '/flux-continu';
   static const String contentDetail = '/content/:id';
@@ -135,7 +128,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       // both ultimately call router.go on the same in-app path.
       if (state.uri.scheme == 'io.supabase.facteur') {
         final action = DeepLinkService.parse(state.uri);
-        return action.route ?? RoutePaths.feed;
+        return action.route ?? RoutePaths.fluxContinu;
       }
 
       final authState = ref.read(authStateProvider);
@@ -260,6 +253,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: 'content/:id',
+            // Nom historique conservé pour que `context.pushNamed(contentDetail)`
+            // continue de fonctionner après la suppression de la route /feed.
+            name: RouteNames.contentDetail,
             parentNavigatorKey: NotificationService.navigatorKey,
             pageBuilder: (context, state) {
               final contentId = state.pathParameters['id']!;
@@ -303,35 +299,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
 
-      // Feed (legacy — reste accessible via deep link et action manuelle)
+      // Feed (legacy) — redirige vers FluxContinu pour préserver les deep
+      // links sortants en circulation (push notifs, partages, anciennes
+      // versions de l'app). Voir cleanup post-unification du flux.
       GoRoute(
         path: RoutePaths.feed,
         name: RouteNames.feed,
-        builder: (context, state) => const Stack(
-          children: [
-            FeedScreen(),
-            NudgeHost(),
-          ],
-        ),
-        routes: [
-          // Détail contenu (nested)
-          GoRoute(
-            path: 'content/:id',
-            name: RouteNames.contentDetail,
-            parentNavigatorKey: NotificationService.navigatorKey,
-            pageBuilder: (context, state) {
-              final contentId = state.pathParameters['id']!;
-              // Story 5.2: Pass Content via extra for in-app reading
-              final content = state.extra as Content?;
-              return FullSwipeCupertinoPage(
-                child: ContentDetailScreen(
-                  contentId: contentId,
-                  content: content,
-                ),
-              );
-            },
-          ),
-        ],
+        redirect: (context, state) => RoutePaths.fluxContinu,
       ),
 
       // Saved (Sauvegardés)
@@ -359,26 +333,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
 
-      // MVP: Progressions routes temporarily disabled
+      // Progress / Quiz (legacy) — redirige vers FluxContinu.
       GoRoute(
         path: RoutePaths.progress,
         name: RouteNames.progress,
-        redirect: (context, state) {
-          return RoutePaths.feed;
-        },
-        builder: (context, state) => const ProgressionsScreen(),
+        redirect: (context, state) => RoutePaths.fluxContinu,
         routes: [
           GoRoute(
             path: 'quiz',
             name: RouteNames.quiz,
-            parentNavigatorKey: NotificationService.navigatorKey,
-            redirect: (context, state) {
-              return RoutePaths.feed;
-            },
-            builder: (context, state) {
-              final topic = state.extra as String;
-              return QuizScreen(topic: topic);
-            },
+            redirect: (context, state) => RoutePaths.fluxContinu,
           ),
         ],
       ),
@@ -494,19 +458,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
 
-      // Digest (Essentiel) - opened from the feed card or widget. Lives
-      // outside the ShellRoute so the bottom nav is hidden, with full-screen
-      // swipe-back to the feed.
+      // Digest (legacy) — redirige vers FluxContinu (le digest a fusionné
+      // dans la Tournée du jour lors de l'unification du flux).
       GoRoute(
         path: RoutePaths.digest,
         name: RouteNames.digest,
-        pageBuilder: (context, state) {
-          final serein = state.uri.queryParameters['serein'] == '1';
-          return FullSwipeCupertinoPage(
-            transitionDurationOverride: const Duration(milliseconds: 480),
-            child: DigestScreen(initialSerein: serein),
-          );
-        },
+        redirect: (context, state) => RoutePaths.fluxContinu,
       ),
 
       // Topic Explorer (outside ShellRoute to hide bottom nav)
@@ -522,16 +479,6 @@ final routerProvider = Provider<GoRouter>((ref) {
               initialArticles: extra['articles'] as List<Content>?,
             ),
           );
-        },
-      ),
-
-      // Digest Closure (outside ShellRoute to hide bottom nav)
-      GoRoute(
-        path: RoutePaths.digestClosure,
-        name: RouteNames.digestClosure,
-        builder: (context, state) {
-          final digestId = state.extra as String?;
-          return ClosureScreen(digestId: digestId ?? '');
         },
       ),
 
