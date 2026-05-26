@@ -46,6 +46,8 @@ def _make_article(
     source_name: str = "Le Monde",
     source: SourceMini | None = None,
     is_followed_source: bool = False,
+    badge: str | None = None,
+    is_read: bool = False,
     published_at: datetime | None = None,
 ) -> DigestTopicArticle:
     return DigestTopicArticle(

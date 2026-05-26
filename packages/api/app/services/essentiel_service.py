@@ -49,6 +49,7 @@ from app.services.language_user_filter import (
 logger = logging.getLogger(__name__)
 
 ESSENTIEL_MAX_ARTICLES = 5
+ESSENTIEL_MAX_PER_SOURCE = 2  # Diversité dure : max 2 articles d'une même source.
 
 # Fenêtre de cohérence avec la Tournée du jour : un article de l'Essentiel
 # doit pouvoir apparaître aussi dans la Tournée (24h + sources suivies). Sans
@@ -56,9 +57,15 @@ ESSENTIEL_MAX_ARTICLES = 5
 # non-suivies invisibles dans la Tournée → incohérence UI.
 ESSENTIEL_TOURNEE_WINDOW = timedelta(hours=24)
 
+# Valeur de `DigestTopicArticle.badge` qui marque l'article comme "Actu du jour".
+_BADGE_ACTU = "actu"
+
 # Poids du scoring composite — réglés pour que chaque levier puisse l'emporter
 # isolément sans qu'aucun ne phagocyte les autres. Toute modif → ajouter un
 # test dans `test_essentiel_endpoint.py`.
+_W_TRENDING = 40.0  # `Top3Selector.BOOST_TRENDING` — topic.is_trending
+_W_UNE = 30.0  # `Top3Selector.BOOST_UNE` — topic.is_une
+_W_BADGE_ACTU = 25.0  # article.badge == _BADGE_ACTU (signal explicite du digest)
 _W_FOLLOWED_SOURCE = 100.0
 _W_FOLLOWED_SOURCE_FLAG = 50.0  # bonus moindre si on n'a que le flag du digest
 _W_TOPIC_WEIGHT = 50.0
