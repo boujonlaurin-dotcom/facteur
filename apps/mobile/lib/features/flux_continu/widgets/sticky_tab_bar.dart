@@ -65,7 +65,7 @@ class StickyTabBar extends StatelessWidget {
             controller: tabsController,
           ),
           SizedBox(
-            height: 4,
+            height: 6,
             child: CustomPaint(
               painter: _ProgressPainter(
                 progress: progress.clamp(0.0, 1.0),
@@ -109,13 +109,13 @@ class StickyHead extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
       child: Row(
         children: [
           Text(
             title,
             style: GoogleFonts.fraunces(
-              fontSize: 14,
+              fontSize: 21,
               fontWeight: FontWeight.w700,
               color: colors.textPrimary,
             ),
@@ -142,11 +142,11 @@ class _TabsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 44,
+      height: 56,
       child: ListView.separated(
         controller: controller,
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
         itemCount: tabs.length,
         separatorBuilder: (_, __) => const SizedBox(width: 2),
         itemBuilder: (context, i) {
@@ -200,9 +200,9 @@ class _Tab extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 6,
-                  height: 6,
-                  margin: const EdgeInsets.only(right: 6),
+                  width: 9,
+                  height: 9,
+                  margin: const EdgeInsets.only(right: 8),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: dotColor,
@@ -211,7 +211,7 @@ class _Tab extends StatelessWidget {
                 Text(
                   tab.label,
                   style: GoogleFonts.dmSans(
-                    fontSize: 12.5,
+                    fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: labelColor,
                   ),
@@ -220,7 +220,7 @@ class _Tab extends StatelessWidget {
                   const SizedBox(width: 4),
                   Icon(
                     Icons.check_rounded,
-                    size: 13,
+                    size: 18,
                     color: labelColor,
                     semanticLabel: 'lu',
                   ),
@@ -230,10 +230,10 @@ class _Tab extends StatelessWidget {
           ),
           if (isActive)
             Positioned(
-              left: 8,
-              right: 8,
+              left: 10,
+              right: 10,
               bottom: 0,
-              height: 2,
+              height: 3,
               child: Container(
                 decoration: BoxDecoration(
                   color: tab.accent,
@@ -272,7 +272,7 @@ class _ProgressPainter extends CustomPainter {
     final clipped = Rect.fromLTWH(0, 0, size.width * progress, size.height);
     final glowPaint = Paint()
       ..color = glow
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
     canvas.drawRect(clipped, glowPaint);
     final fillPaint = Paint()
       ..shader = LinearGradient(

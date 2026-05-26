@@ -146,7 +146,7 @@ void main() {
       expect(find.text('Tout l’essentiel'), findsNothing);
     });
 
-    testWidgets('"Je veux tout voir ⬇️" button fires onTapSeeAllDown when wired',
+    testWidgets('"Tous mes articles ↓" button fires onTapSeeAllDown when wired',
         (tester) async {
       var seeAllDownTaps = 0;
       await tester.pumpWidget(_wrap(
@@ -159,8 +159,8 @@ void main() {
         ),
       ));
 
-      expect(find.text('Je veux tout voir ⬇️'), findsOneWidget);
-      await tester.tap(find.text('Je veux tout voir ⬇️'));
+      expect(find.text('Tous mes articles ↓'), findsOneWidget);
+      await tester.tap(find.text('Tous mes articles ↓'));
       await tester.pumpAndSettle();
       expect(seeAllDownTaps, 1);
     });

@@ -58,3 +58,5 @@ app.*.map.json
 *.AppImage
 *.exe
 *.dmg
+.claude/scheduled_tasks.lock
+.claude/scheduled_tasks.lock

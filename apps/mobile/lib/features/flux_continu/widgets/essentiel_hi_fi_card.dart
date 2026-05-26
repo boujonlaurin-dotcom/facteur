@@ -79,9 +79,9 @@ class EssentielHiFiCard extends StatelessWidget {
                 onTap: () => onTapArticle(lead),
               ),
             for (final a in remaining) ...[
-              const SizedBox(height: FacteurSpacing.space3),
+              const SizedBox(height: FacteurSpacing.space2),
               const _Hairline(),
-              const SizedBox(height: FacteurSpacing.space3),
+              const SizedBox(height: FacteurSpacing.space2),
               _MediumTile(article: a, onTap: () => onTapArticle(a)),
             ],
             const SizedBox(height: FacteurSpacing.space4),
@@ -134,8 +134,6 @@ class _Header extends StatelessWidget {
                 style: FacteurTypography.bodySmall(colors.textSecondary).copyWith(
                   height: 1.35,
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -344,7 +342,7 @@ class _MediumTile extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.small),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(vertical: 2),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -384,11 +382,6 @@ class _MediumTile extends StatelessWidget {
                   height: 1.3,
                   color: colors.textPrimary,
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                _relativeTime(article.publishedAt),
-                style: FacteurTypography.labelSmall(colors.textTertiary),
               ),
             ],
           ),
@@ -523,11 +516,6 @@ class _SourceRow extends StatelessWidget {
             style: FacteurTypography.labelSmall(colors.textTertiary),
           ),
         ),
-        const SizedBox(width: FacteurSpacing.space2),
-        Text(
-          '·  ${_relativeTime(article.publishedAt)}',
-          style: FacteurTypography.labelSmall(colors.textTertiary),
-        ),
       ],
     );
   }
@@ -568,7 +556,7 @@ class _Footer extends StatelessWidget {
               foregroundColor: colors.textTertiary,
             ),
             child: Text(
-              'Je veux tout voir ⬇️',
+              'Tous mes articles ↓',
               style: FacteurTypography.labelLarge(colors.textTertiary),
             ),
           )
@@ -628,14 +616,3 @@ String _sectionLabelFor(EssentielArticle article) {
   return 'Actus';
 }
 
-/// Horodatage relatif court pour la carte ("il y a 2h", "ce matin", "hier").
-/// Garde un format lisible et stable ; les valeurs sont des approximations
-/// (granularité heure pour <24h, jour au-delà).
-String _relativeTime(DateTime publishedAt) {
-  final delta = DateTime.now().difference(publishedAt);
-  if (delta.inMinutes < 1) return 'à l’instant';
-  if (delta.inMinutes < 60) return 'il y a ${delta.inMinutes} min';
-  if (delta.inHours < 24) return 'il y a ${delta.inHours}h';
-  if (delta.inDays < 2) return 'hier';
-  return 'il y a ${delta.inDays} j';
-}
