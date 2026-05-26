@@ -45,7 +45,6 @@ def mock_deps():
         patch("app.services.editorial.pipeline.load_editorial_config") as mock_config,
         patch("app.services.editorial.pipeline.EditorialLLMClient") as mock_llm_cls,
         patch("app.services.editorial.pipeline.CurationService") as mock_curation_cls,
-        patch("app.services.editorial.pipeline.DeepMatcher") as mock_deep_cls,
         patch("app.services.editorial.pipeline.ActuMatcher") as mock_actu_cls,
         patch(
             "app.services.editorial.pipeline.PerspectiveService"
@@ -66,10 +65,6 @@ def mock_deps():
         mock_curation.select_bonne_nouvelle = AsyncMock(return_value=None)
         mock_curation_cls.return_value = mock_curation
 
-        mock_deep = MagicMock()
-        mock_deep.match_for_topics = AsyncMock(return_value={})
-        mock_deep_cls.return_value = mock_deep
-
         mock_actu = MagicMock()
         mock_actu.match_global.side_effect = (
             lambda subjects, clusters, excluded_source_ids=None, excluded_content_ids=None: subjects
@@ -85,7 +80,6 @@ def mock_deps():
         yield {
             "llm": mock_llm,
             "curation": mock_curation,
-            "deep": mock_deep,
             "actu": mock_actu,
             "perspective": mock_perspective,
         }

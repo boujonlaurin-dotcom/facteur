@@ -542,7 +542,7 @@ class PushNotificationService {
   }
 
   static String _routeFromPayload(String? payload) {
-    if (payload == null || !payload.startsWith('route:')) return '/digest';
+    if (payload == null || !payload.startsWith('route:')) return '/flux-continu';
     return payload.substring('route:'.length);
   }
 }

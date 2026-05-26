@@ -1,34 +1,27 @@
 """Editorial digest pipeline — Stories 10.23 + 10.24.
 
-Curation LLM + matching actu/deep + rédaction éditoriale + pépite + coup de coeur.
+Curation LLM + actu matching + perspective analysis.
+
+Note: writing/pépite/coup_de_coeur/actu_decalee stages and the "Pas de recul"
+deep_matcher integration were removed/disabled in the post-unification cleanup.
 """
 
 from app.services.editorial.pipeline import EditorialPipelineService
 from app.services.editorial.schemas import (
-    CoupDeCoeurArticle,
     EditorialGlobalContext,
     EditorialPipelineResult,
     EditorialSubject,
     MatchedActuArticle,
     MatchedDeepArticle,
-    PepiteArticle,
     SelectedTopic,
-    SubjectWriting,
-    WritingOutput,
 )
-from app.services.editorial.writer import EditorialWriterService
 
 __all__ = [
-    "CoupDeCoeurArticle",
     "EditorialGlobalContext",
     "EditorialPipelineService",
     "EditorialPipelineResult",
     "EditorialSubject",
-    "EditorialWriterService",
     "MatchedActuArticle",
     "MatchedDeepArticle",
-    "PepiteArticle",
     "SelectedTopic",
-    "SubjectWriting",
-    "WritingOutput",
 ]

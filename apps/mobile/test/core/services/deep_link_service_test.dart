@@ -8,7 +8,7 @@ void main() {
         Uri.parse('io.supabase.facteur://digest'),
       );
       expect(action.target, WidgetDeepLinkTarget.digest);
-      expect(action.route, '/digest');
+      expect(action.route, '/flux-continu');
       expect(action.articleId, isNull);
     });
 
@@ -17,7 +17,7 @@ void main() {
         Uri.parse('io.supabase.facteur://digest/'),
       );
       expect(action.target, WidgetDeepLinkTarget.digest);
-      expect(action.route, '/digest');
+      expect(action.route, '/flux-continu');
     });
 
     test('digest host with article id → article reader route', () {
@@ -27,7 +27,7 @@ void main() {
         ),
       );
       expect(action.target, WidgetDeepLinkTarget.article);
-      expect(action.route, '/feed/content/abc-123');
+      expect(action.route, '/flux-continu/content/abc-123');
       expect(action.articleId, 'abc-123');
       expect(action.position, 2);
       expect(action.topicId, 'international');
@@ -49,12 +49,12 @@ void main() {
       expect(action.route, '/flux-continu');
     });
 
-    test('feed host → feed target', () {
+    test('feed host → flux continu (FeedScreen supprimé)', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://feed'),
       );
       expect(action.target, WidgetDeepLinkTarget.feed);
-      expect(action.route, '/feed');
+      expect(action.route, '/flux-continu');
     });
 
     test('feed/content/<id> → article reader (Flux deep link)', () {
@@ -64,7 +64,7 @@ void main() {
         ),
       );
       expect(action.target, WidgetDeepLinkTarget.article);
-      expect(action.route, '/feed/content/abc-123');
+      expect(action.route, '/flux-continu/content/abc-123');
       expect(action.articleId, 'abc-123');
       expect(action.position, 4);
       expect(action.topicId, 'tech');
@@ -77,17 +77,17 @@ void main() {
         Uri.parse('io.supabase.facteur:///feed/content/abc-123?pos=7'),
       );
       expect(action.target, WidgetDeepLinkTarget.article);
-      expect(action.route, '/feed/content/abc-123');
+      expect(action.route, '/flux-continu/content/abc-123');
       expect(action.articleId, 'abc-123');
       expect(action.position, 7);
     });
 
-    test('feed/content/ (id missing) falls back to feed target', () {
+    test('feed/content/ (id missing) falls back to flux continu', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://feed/content/'),
       );
       expect(action.target, WidgetDeepLinkTarget.feed);
-      expect(action.route, '/feed');
+      expect(action.route, '/flux-continu');
     });
 
     test('login-callback URI is ignored (handled by Supabase SDK)', () {

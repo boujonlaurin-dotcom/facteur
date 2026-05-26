@@ -183,18 +183,6 @@ class ContentStatusUpdate(BaseModel):
     reading_progress: int | None = Field(None, ge=0, le=100)
 
 
-class DailyTop3Response(BaseModel):
-    """Item du Daily Briefing (Top 3)."""
-
-    rank: int
-    reason: str  # "À la Une", "Sujet tendance", "Source suivie"
-    consumed: bool
-    content: ContentResponse
-
-    class Config:
-        from_attributes = True
-
-
 class ArticleFeedbackRequest(BaseModel):
     """Requête de feedback utilisateur sur un article (pouce haut/bas)."""
 
@@ -230,10 +218,3 @@ class FeedRefreshUndoRequest(BaseModel):
     previous_impressions: list[PreviousImpression] = Field(..., max_length=200)
 
 
-class FeedResponse(BaseModel):
-    """Réponse globale du feed."""
-
-    briefing: list[
-        DailyTop3Response
-    ] = []  # Le Top 3 du jour (vide si on n'est pas "today" ou déjà vu?)
-    items: list[ContentResponse]  # Le flux infini

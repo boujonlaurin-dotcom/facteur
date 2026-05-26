@@ -138,7 +138,7 @@ async def cleanup_old_articles() -> dict:
                 }
 
             # Delete - réutilise les mêmes conditions que le count. FK CASCADE
-            # gère user_content_status, daily_top3, classification_queue.
+            # gère user_content_status, classification_queue.
             result = await session.execute(delete(Content).where(*common_conditions))
             deleted_count = result.rowcount
 
