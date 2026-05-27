@@ -168,8 +168,12 @@ async def fetch_user_essentiel_context(
         )
     ).first()
     muted_themes = frozenset(perso_row.muted_themes or ()) if perso_row else frozenset()
-    muted_topic_slugs = frozenset(perso_row.muted_topics or ()) if perso_row else frozenset()
-    muted_source_ids = frozenset(perso_row.muted_sources or ()) if perso_row else frozenset()
+    muted_topic_slugs = (
+        frozenset(perso_row.muted_topics or ()) if perso_row else frozenset()
+    )
+    muted_source_ids = (
+        frozenset(perso_row.muted_sources or ()) if perso_row else frozenset()
+    )
 
     return EssentielUserContext(
         followed_source_ids=followed_source_ids,
