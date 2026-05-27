@@ -893,7 +893,7 @@ async def _attach_highlight_spans(
                 p["highlight_spans"] = [
                     {**span, "bias": bias}
                     for span in (llm_payload.get("target_spans") or [])
-                    if 0 <= span.get("start", 0)
+                    if span.get("start", 0) >= 0
                     and span.get("end", 0) <= title_len
                     and span.get("start", 0) < span.get("end", 0)
                 ]
