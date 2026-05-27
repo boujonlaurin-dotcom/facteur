@@ -340,6 +340,13 @@ class DigestGenerationJob:
 
             stmt = stmt.join(Source, Content.source_id == Source.id)
             stmt = apply_good_news_filter(stmt)
+        else:
+            # Mode pour_vous : apply_good_news_filter inclut déjà apply_ad_filter,
+            # mais pour_vous n'y passe pas — sans ce filtre, les pubs Frandroid
+            # (is_ad=True) remontent dans le clustering éditorial.
+            from app.services.recommendation.filter_presets import apply_ad_filter
+
+            stmt = apply_ad_filter(stmt)
         stmt = (
             stmt.where(Content.published_at >= cutoff)
             .order_by(Content.published_at.desc())

@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 
 from app.services.recommendation.filter_presets import (
     cap_low_priority_clusters,
+    is_denylisted_editorial_source,
     is_faits_divers_cluster,
     is_news_bulletin_title,
     is_sport_cluster,
@@ -239,3 +240,90 @@ class TestIsNewsBulletinTitle:
     def test_empty_or_none(self):
         assert not is_news_bulletin_title(None)
         assert not is_news_bulletin_title("")
+
+    # --- Patterns ajoutés pour bug-pipeline-non-editorial-articles ---
+
+    def test_journal_rtl_without_le(self):
+        assert is_news_bulletin_title("Journal RTL du 25 mai 2026")
+
+    def test_journal_rfi(self):
+        assert is_news_bulletin_title("Journal RFI - édition de 12h")
+
+    def test_journal_bfm(self):
+        assert is_news_bulletin_title("Journal BFM : les titres du jour")
+
+    def test_l_emission_apostrophe(self):
+        assert is_news_bulletin_title("L'émission politique de France 2")
+
+    def test_l_emission_typographic_apostrophe(self):
+        assert is_news_bulletin_title("L’Émission du soir")
+
+    def test_ma_chronique(self):
+        assert is_news_bulletin_title("Ma chronique du lundi")
+
+    def test_la_chronique_de(self):
+        assert is_news_bulletin_title("La chronique de Nicolas Demorand")
+
+    def test_notre_chronique(self):
+        assert is_news_bulletin_title("Notre chronique éco du matin")
+
+    def test_chronique_colon(self):
+        assert is_news_bulletin_title("Chronique: l'économie de la semaine")
+
+    def test_chronique_em_dash(self):
+        assert is_news_bulletin_title("Chronique – bilan de semaine")
+
+    def test_une_chronique_du_conflit_not_matched(self):
+        """« Une » n'est pas un possessif → ne doit pas matcher le pattern."""
+        assert not is_news_bulletin_title(
+            "Une chronique du conflit israélo-palestinien après deux ans de guerre"
+        )
+
+    def test_emission_in_middle_not_matched(self):
+        """« émission » en milieu de phrase n'est pas un bulletin."""
+        assert not is_news_bulletin_title(
+            "Une nouvelle émission de Radio France pour les jeunes"
+        )
+
+
+class TestIsDenylistedEditorialSource:
+    """Sources bloquées du top 10 éditorial."""
+
+    @dataclass
+    class _FakeSource:
+        name: str | None = None
+
+    @dataclass
+    class _FakeContentWithSource:
+        title: str | None = None
+        source: object | None = None
+
+    def test_frandroid_source_denylisted(self):
+        content = self._FakeContentWithSource(
+            title="Bouygues fête ses 30 ans",
+            source=self._FakeSource(name="Frandroid"),
+        )
+        assert is_denylisted_editorial_source(content)
+
+    def test_frandroid_casing_variations(self):
+        for name in ("FRANDROID", "frandroid", "Frandroid.com"):
+            content = self._FakeContentWithSource(
+                title="x", source=self._FakeSource(name=name)
+            )
+            assert is_denylisted_editorial_source(content), f"failed for {name}"
+
+    def test_le_monde_not_denylisted(self):
+        content = self._FakeContentWithSource(
+            title="x", source=self._FakeSource(name="Le Monde")
+        )
+        assert not is_denylisted_editorial_source(content)
+
+    def test_no_source_returns_false(self):
+        content = self._FakeContentWithSource(title="x", source=None)
+        assert not is_denylisted_editorial_source(content)
+
+    def test_source_with_none_name(self):
+        content = self._FakeContentWithSource(
+            title="x", source=self._FakeSource(name=None)
+        )
+        assert not is_denylisted_editorial_source(content)
