@@ -10,10 +10,10 @@ import '../../providers/veille_presets_provider.dart';
 import '../../providers/veille_themes_provider.dart';
 import '../../widgets/veille_widgets.dart';
 
-/// Step 1 — Story 23.3 refonte simplifiée :
+/// Step 1 :
 ///   1) Grid 10 thèmes (9 Facteur + "Autre" custom)
 ///   2) Champ libre "Précise ton angle" (fusion ancien purpose+editorialBrief)
-/// Au tap "Continuer" → startTransition(1) qui déclenche /suggest/angles.
+/// Au tap "Continuer" → goNext() (passage à Step 2).
 class Step1ThemeScreen extends ConsumerStatefulWidget {
   final VoidCallback onClose;
   const Step1ThemeScreen({super.key, required this.onClose});
@@ -162,7 +162,7 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
             opacity: canContinue ? 1 : 0,
             child: IgnorePointer(
               ignoring: !canContinue,
-              child: _Footer(onTap: () => notifier.startTransition(1)),
+              child: _Footer(onTap: notifier.goNext),
             ),
           ),
         ),

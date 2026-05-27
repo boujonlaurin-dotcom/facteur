@@ -12,7 +12,7 @@ class VeilleStepHeader extends StatelessWidget {
   final VoidCallback? onBack;
   final VoidCallback onClose;
   /// Action additionnelle insérée entre les pills et la croix close
-  /// (ex: bouton "Passer" sur step2). Story 23.2 PR-4.
+  /// (ex: bouton "Passer" sur step2).
   final Widget? trailingAction;
   const VeilleStepHeader({
     super.key,
@@ -155,63 +155,6 @@ class VeilleFlowH1 extends StatelessWidget {
   }
 }
 
-/// ===== Block label =====
-class VeilleBlockLabel extends StatelessWidget {
-  final String text;
-  const VeilleBlockLabel(this.text, {super.key});
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        text,
-        style: GoogleFonts.dmSans(
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-          color: const Color(0xFF2C2A29),
-        ),
-      ),
-    );
-  }
-}
-
-class VeilleHelpHint extends StatelessWidget {
-  final List<InlineSpan> spans;
-  const VeilleHelpHint({super.key, required this.spans});
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 1),
-            child: Icon(
-              PhosphorIcons.sparkle(),
-              size: 13,
-              color: FacteurColors.veille,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: RichText(
-              text: TextSpan(
-                style: GoogleFonts.dmSans(
-                  fontSize: 12,
-                  height: 1.45,
-                  color: const Color(0xFF5D5B5A),
-                ),
-                children: spans,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// ===== Theme card (grid 2 col) =====
 class ThemeCard extends StatelessWidget {
   final VeilleTheme theme;
@@ -336,191 +279,6 @@ class _RadioDot extends StatelessWidget {
     );
   }
 }
-
-/// ===== Check row (label + reason + checkbox carré) =====
-class CheckRow extends StatelessWidget {
-  final String label;
-  final String reason;
-  final bool selected;
-  final VoidCallback onTap;
-  const CheckRow({
-    super.key,
-    required this.label,
-    required this.reason,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? FacteurColors.veilleTint : Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected
-                  ? FacteurColors.veille
-                  : FacteurColors.veilleLineSoft,
-              width: 1.5,
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 18,
-                height: 18,
-                margin: const EdgeInsets.only(top: 1),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(5),
-                  color: selected ? FacteurColors.veille : Colors.white,
-                  border: Border.all(
-                    color: selected
-                        ? FacteurColors.veille
-                        : const Color(0xFFD2C9BB),
-                    width: 1.5,
-                  ),
-                ),
-                child: selected
-                    ? const Icon(Icons.check, size: 11, color: Colors.white)
-                    : null,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: GoogleFonts.dmSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        height: 1.3,
-                        color: const Color(0xFF2C2A29),
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      reason,
-                      style: GoogleFonts.dmSans(
-                        fontSize: 11.5,
-                        height: 1.4,
-                        color: const Color(0xFF959392),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// ===== Suggestion row (plus-circle / check-circle) =====
-class SuggestionRow extends StatelessWidget {
-  final String label;
-  final String reason;
-  final bool selected;
-  final VoidCallback onTap;
-  const SuggestionRow({
-    super.key,
-    required this.label,
-    required this.reason,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? FacteurColors.veilleTint : Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected
-                  ? FacteurColors.veille
-                  : FacteurColors.veilleLineSoft,
-              width: 1.5,
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                selected
-                    ? PhosphorIcons.checkCircle(PhosphorIconsStyle.fill)
-                    : PhosphorIcons.plusCircle(),
-                size: 18,
-                color: selected
-                    ? FacteurColors.veille
-                    : const Color(0xFF959392),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: GoogleFonts.dmSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        height: 1.3,
-                        color: const Color(0xFF2C2A29),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          PhosphorIcons.sparkle(),
-                          size: 10,
-                          color: FacteurColors.veille,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            reason,
-                            style: GoogleFonts.dmSans(
-                              fontSize: 11.5,
-                              fontStyle: FontStyle.italic,
-                              height: 1.4,
-                              color: FacteurColors.veille,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// FrequencyRow, DayPill, FinalRecapCard, _Stamp, _Stat, _DottedRailPainter :
-// retirés en Story 23.2 PR-4 — step4 frequency dropé suite à la suppression
-// du scheduler async (Story 23.1 PR-1).
 
 /// ===== Primary CTA =====
 class VeilleCtaButton extends StatelessWidget {
@@ -722,92 +480,7 @@ class _SectionIndexBadge extends StatelessWidget {
   }
 }
 
-/// ===== Add topic card (même look que CheckRow, avec un + à la place du checkbox) =====
-class AddTopicCard extends StatelessWidget {
-  final String label;
-  final String reason;
-  final VoidCallback onTap;
-  const AddTopicCard({
-    super.key,
-    required this.label,
-    required this.reason,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: FacteurColors.veille.withValues(alpha: 0.55),
-              width: 1.5,
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 18,
-                height: 18,
-                margin: const EdgeInsets.only(top: 1),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(5),
-                  color: Colors.white,
-                  border: Border.all(
-                    color: FacteurColors.veille,
-                    width: 1.5,
-                  ),
-                ),
-                alignment: Alignment.center,
-                child: Icon(
-                  PhosphorIcons.plus(),
-                  size: 11,
-                  color: FacteurColors.veille,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: GoogleFonts.dmSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        height: 1.3,
-                        color: const Color(0xFF2C2A29),
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      reason,
-                      style: GoogleFonts.dmSans(
-                        fontSize: 11.5,
-                        height: 1.4,
-                        color: const Color(0xFF959392),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// ===== Ghost link (Step 2 "Proposer d'autres angles") =====
+/// ===== Ghost link (pour CTA secondaires) =====
 class GhostLink extends StatelessWidget {
   final String label;
   final IconData icon;
@@ -945,99 +618,8 @@ class PresetCard extends StatelessWidget {
   }
 }
 
-// ─── Purpose & brief — Step 1 sections 3 & 4 ──────────────────────────────
-
-/// Options « Pour quoi faire ? » du Step 1. Slugs alignés avec
-/// `packages/api/app/services/veille/topic_suggester.py:PURPOSE_LABELS`.
-class VeillePurposeOption {
-  final String slug;
-  final String label;
-  const VeillePurposeOption(this.slug, this.label);
-}
-
-const List<VeillePurposeOption> kVeillePurposeOptions = [
-  VeillePurposeOption('me_tenir_au_courant', "Me tenir à jour de l'actu"),
-  VeillePurposeOption('progresser_au_travail', "M'améliorer dans mon travail"),
-  VeillePurposeOption('culture_generale', 'Développer ma culture générale'),
-  VeillePurposeOption('preparer_projet', 'Préparer un projet / une décision'),
-  VeillePurposeOption('approfondir_passion', 'Approfondir un sujet de passion'),
-  VeillePurposeOption('autre', 'Autre…'),
-];
-
-/// Single-select chips pour la section « Pour quoi faire ? ». Quand l'option
-/// `autre` est sélectionnée, le caller affiche un TextField pour le
-/// `purposeOther` libre.
-class VeillePurposeSelector extends StatelessWidget {
-  final String? selected;
-  final ValueChanged<String?> onSelect;
-
-  const VeillePurposeSelector({
-    super.key,
-    required this.selected,
-    required this.onSelect,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final opt in kVeillePurposeOptions)
-          _PurposeChip(
-            label: opt.label,
-            selected: selected == opt.slug,
-            // Re-tap = désélection (le champ est optionnel).
-            onTap: () => onSelect(selected == opt.slug ? null : opt.slug),
-          ),
-      ],
-    );
-  }
-}
-
-class _PurposeChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _PurposeChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? FacteurColors.veilleTint : Colors.white,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected
-                ? FacteurColors.veille
-                : FacteurColors.veilleLineSoft,
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.dmSans(
-            fontSize: 13,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-            color: selected ? FacteurColors.veille : const Color(0xFF2C2A29),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// TextField multiline pour la section « Décris ta veille idéale »
-/// (max 280 chars). Optionnel, contrôlé par le caller via `value` + `onChanged`.
+/// TextField multiline pour le brief éditorial (max 280 chars). Optionnel,
+/// contrôlé par le caller via `value` + `onChanged`.
 class VeilleEditorialBriefField extends StatelessWidget {
   final String? value;
   final ValueChanged<String?> onChanged;
@@ -1062,9 +644,6 @@ class VeilleEditorialBriefField extends StatelessWidget {
     );
   }
 }
-
-// VeillePurposeOtherField retiré en Story 23.2 PR-4 — le champ free-text
-// `purpose_other` a été drop côté backend (Story 23.1 PR-2).
 
 class _VeilleStyledTextField extends StatefulWidget {
   final String? value;
@@ -1141,7 +720,7 @@ class _VeilleStyledTextFieldState extends State<_VeilleStyledTextField> {
         enabledBorder: border,
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: FacteurColors.veille, width: 1.5),
+          borderSide: const BorderSide(color: FacteurColors.veille, width: 1.5),
         ),
       ),
     );
