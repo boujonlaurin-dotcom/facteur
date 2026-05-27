@@ -118,11 +118,17 @@ class NextSectionButton extends StatefulWidget {
   final Color? nextAccent;
   final VoidCallback? onTap;
 
+  /// Nom de la section suivante, ex : « Technologie » ou « Bonnes Nouvelles ».
+  /// Quand fourni, le bouton affiche « {nextSectionLabel} ↓ » au lieu du
+  /// générique « Section suivante ».
+  final String? nextSectionLabel;
+
   const NextSectionButton({
     super.key,
     required this.isMarked,
     required this.onTap,
     this.nextAccent,
+    this.nextSectionLabel,
   });
 
   @override
@@ -184,7 +190,11 @@ class _NextSectionButtonState extends State<NextSectionButton>
     final colors = context.facteurColors;
     final marked = widget.isMarked || _localMarked;
     final accent = widget.nextAccent ?? colors.primary;
-    final label = marked ? 'Passé' : 'Section suivante';
+    final label = marked
+        ? 'Passé'
+        : (widget.nextSectionLabel != null
+            ? widget.nextSectionLabel!
+            : 'Section suivante');
     final foreground =
         marked ? colors.textSecondary : accent;
     final background = marked

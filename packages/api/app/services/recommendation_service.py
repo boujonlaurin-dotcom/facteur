@@ -2376,8 +2376,8 @@ class RecommendationService:
 
         explicit_filter = (
             source_id is not None
-            or (theme is not None and not personalized_theme_mode)
-            or (topic is not None and not personalized_theme_mode)
+            or theme is not None  # inclut personalized_theme_mode
+            or topic is not None  # inclut personalized_theme_mode
             or entity is not None
             or keyword is not None
         )

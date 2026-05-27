@@ -178,6 +178,13 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
     final scrollExhausted = !section.hasMore;
     final themeSlug = section.themeSlug;
 
+    // Pré-calcul des carrousels : permet de passer `hasThemeCarousels` à
+    // _buildDiscoverySection pour qu'elle décide si la carte "Vous êtes à
+    // jour" doit s'afficher (aucun carrousel ET aucun article de découverte).
+    final themeCarousels = (scrollExhausted && themeSlug != null)
+        ? _buildThemeCarousels(section, themeSlug)
+        : const <Widget>[];
+
     return CustomScrollView(
       controller: _scroll,
       physics: const AlwaysScrollableScrollPhysics(),
@@ -206,10 +213,13 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
           SliverToBoxAdapter(
             child: _LoadingMoreIndicator(visible: section.isLoadingMore),
           ),
+        ...themeCarousels,
         if (scrollExhausted && themeSlug != null)
-          ..._buildThemeCarousels(section, themeSlug),
-        if (scrollExhausted && themeSlug != null)
-          ..._buildDiscoverySection(section, themeSlug),
+          ..._buildDiscoverySection(
+            section,
+            themeSlug,
+            hasThemeCarousels: themeCarousels.isNotEmpty,
+          ),
         if (scrollExhausted) _buildFooterSliver(section),
         const SliverToBoxAdapter(child: SizedBox(height: 40)),
       ],
@@ -250,8 +260,9 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
 
   List<Widget> _buildDiscoverySection(
     FeedThemeSection section,
-    String themeSlug,
-  ) {
+    String themeSlug, {
+    bool hasThemeCarousels = false,
+  }) {
     final async = ref.watch(themeDiscoveryProvider(themeSlug));
     return async.when(
       data: (items) {
@@ -261,24 +272,38 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
                 !c.isFollowedSource && !alreadyShownIds.contains(c.id))
             .take(_kDiscoveryItemCap)
             .toList(growable: false);
-        if (discovery.isEmpty) return const <Widget>[];
-        return [
-          const SliverToBoxAdapter(
-            child: _BlockHeader(label: 'Explorer de nouvelles sources'),
-          ),
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final article = discovery[index];
-                return FluxContinuArticleCard(
-                  article: article,
-                  onTap: () => _openArticle(context, article),
-                );
-              },
-              childCount: discovery.length,
+
+        if (discovery.isNotEmpty) {
+          return [
+            const SliverToBoxAdapter(
+              child: _BlockHeader(label: 'Explorer de nouvelles sources'),
             ),
-          ),
-        ];
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final article = discovery[index];
+                  return FluxContinuArticleCard(
+                    article: article,
+                    onTap: () => _openArticle(context, article),
+                  );
+                },
+                childCount: discovery.length,
+              ),
+            ),
+          ];
+        }
+
+        // Rien à montrer après les articles personnalisés : ni carrousel
+        // éditorial, ni article de découverte → carte "Vous êtes à jour".
+        if (!hasThemeCarousels) {
+          return [
+            SliverToBoxAdapter(
+              child: _ThemeClosingCard(label: section.label),
+            ),
+          ];
+        }
+
+        return const <Widget>[];
       },
       loading: () => const [
         SliverToBoxAdapter(
@@ -388,6 +413,63 @@ class _DiscoverySkeleton extends StatelessWidget {
           ),
         );
       }),
+    );
+  }
+}
+
+/// Carte de clôture affichée sur la page dédiée d'un thème quand le feed
+/// personnalisé est épuisé ET qu'il n'y a ni carrousel éditorial ni article
+/// de découverte de sources non-suivies. Signale à l'utilisateur qu'il a
+/// tout lu sur ce thème pour le moment.
+class _ThemeClosingCard extends StatelessWidget {
+  final String label;
+
+  const _ThemeClosingCard({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.black.withValues(alpha: 0.05),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.check_circle_outline_rounded,
+            color: colors.textSecondary,
+            size: 28,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Vous êtes à jour sur $label',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.fraunces(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              height: 1.2,
+              color: colors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Aucun autre article disponible pour le moment.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.dmSans(
+              fontSize: 13,
+              height: 1.5,
+              color: colors.textSecondary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

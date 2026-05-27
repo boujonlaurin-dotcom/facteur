@@ -964,6 +964,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             nextSectionAccent: i + 1 < state.sections.length
                 ? state.sections[i + 1].accent
                 : null,
+            nextSectionLabel: i + 1 < state.sections.length
+                ? state.sections[i + 1].label
+                : null,
             onNextSection: (section is EssentielSection ||
                     i >= state.sections.length - 1)
                 ? null
