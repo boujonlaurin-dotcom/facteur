@@ -14,19 +14,25 @@ import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_detail_modal.dart';
 import '../providers/feed_provider.dart';
 import '../repositories/feed_repository.dart' show HighlightSpan, TokenSpan;
-import '../screens/perspective_webview_screen.dart';
+import 'article_viewer_modal.dart';
 import 'coverage_spectrum_bar.dart';
 import 'diff_title.dart';
 
-/// Pushed via the root navigator so the in-app webview stacks above the
-/// bottom sheet without dismissing it.
+/// Ouvre l'URL d'une perspective dans le même reader (modal webview) que
+/// pour un article interne. `useRootNavigator: true` empile la modal au-dessus
+/// de la sheet de comparaisons — la fermer ramène l'utilisateur sur la sheet
+/// intacte (back AppBar / swipe iOS / back Android).
 void _openPerspectiveWebView(BuildContext context, Perspective p) {
-  Navigator.of(context, rootNavigator: true).push(
-    MaterialPageRoute<void>(
-      builder: (_) => PerspectiveWebViewScreen(
-        url: p.url,
-        sourceName: p.sourceName,
-      ),
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    useRootNavigator: true,
+    builder: (_) => ArticleViewerModal.perspective(
+      url: p.url,
+      sourceName: p.sourceName,
+      sourceDomain: p.sourceDomain,
+      biasStance: p.biasStance,
     ),
   );
 }
@@ -100,8 +106,10 @@ class Perspective {
     }
   }
 
-  String getBiasLabel() {
-    switch (biasStance) {
+  String getBiasLabel() => Perspective.getBiasLabelFromStance(biasStance);
+
+  static String getBiasLabelFromStance(String stance) {
+    switch (stance) {
       case 'left':
         return 'Gauche';
       case 'center-left':
