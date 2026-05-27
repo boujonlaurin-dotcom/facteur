@@ -93,6 +93,7 @@ def _strip_source_suffix(title: str, source_name: str | None = None) -> str:
         return stripped[: match.start()].rstrip()
     return stripped
 
+
 # Bias mapping for major French news sources
 DOMAIN_BIAS_MAP = {
     # LEFT
