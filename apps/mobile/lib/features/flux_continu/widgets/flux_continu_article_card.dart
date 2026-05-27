@@ -467,18 +467,20 @@ class _Footer extends StatelessWidget {
             height: 1.4,
           ),
         ),
+        if (showPressReview || divergenceLevel != null) const Spacer(),
         if (divergenceLevel != null) ...[
-          const SizedBox(width: 6),
-          DivergenceInlineBadge(divergenceLevel: divergenceLevel),
+          DivergenceInlineBadge(
+            divergenceLevel: divergenceLevel,
+            iconOnly: true,
+          ),
+          if (showPressReview) const SizedBox(width: 6),
         ],
-        if (showPressReview) ...[
-          const Spacer(),
+        if (showPressReview)
           _PressReviewChip(
             count: pressReviewCount,
             sources: perspectiveSources,
             colors: colors,
           ),
-        ],
       ],
     );
   }
