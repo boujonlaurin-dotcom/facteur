@@ -17,20 +17,33 @@ import '../../../config/theme.dart';
 class DivergenceInlineBadge extends StatelessWidget {
   final String? divergenceLevel;
 
-  const DivergenceInlineBadge({super.key, this.divergenceLevel});
+  /// Mode compact pour les listes étroites (Flux Continu) : rend uniquement
+  /// les dots, sans le label texte. Opacité des dots `medium` boostée pour
+  /// compenser l'absence du label qui portait l'information sémantique.
+  final bool iconOnly;
+
+  const DivergenceInlineBadge({
+    super.key,
+    this.divergenceLevel,
+    this.iconOnly = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final config = _configFor(divergenceLevel, context.facteurColors);
+    final config = _configFor(divergenceLevel, context.facteurColors, iconOnly);
     if (config == null) return const SizedBox.shrink();
+
+    final glyph = CustomPaint(
+      size: const Size(28, 12),
+      painter: _DivergenceGlyphPainter(config),
+    );
+
+    if (iconOnly) return glyph;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        CustomPaint(
-          size: const Size(28, 12),
-          painter: _DivergenceGlyphPainter(config),
-        ),
+        glyph,
         const SizedBox(width: 4),
         Text(
           config.label,
@@ -45,19 +58,23 @@ class DivergenceInlineBadge extends StatelessWidget {
     );
   }
 
-  static _BadgeConfig? _configFor(String? level, FacteurColors colors) {
+  static _BadgeConfig? _configFor(
+      String? level, FacteurColors colors, bool iconOnly) {
     switch (level) {
       case 'low':
         return null;
       case 'medium':
+        // En iconOnly les dots portent tout le sens — on remonte l'opacité
+        // pour qu'ils restent lisibles sans le label.
+        final dotOpacity = iconOnly ? 0.85 : 0.5;
         return _BadgeConfig(
           label: 'AVIS VARIÉS',
           dots: [
-            _Dot(4, 6, colors.textTertiary, 0.5),
-            _Dot(10, 6, colors.textTertiary, 0.5),
-            _Dot(15, 6, colors.textTertiary, 0.5),
-            _Dot(20, 6, colors.textTertiary, 0.5),
-            _Dot(25, 6, colors.textTertiary, 0.5),
+            _Dot(4, 6, colors.textTertiary, dotOpacity),
+            _Dot(10, 6, colors.textTertiary, dotOpacity),
+            _Dot(15, 6, colors.textTertiary, dotOpacity),
+            _Dot(20, 6, colors.textTertiary, dotOpacity),
+            _Dot(25, 6, colors.textTertiary, dotOpacity),
           ],
           labelColor: colors.textTertiary,
           bold: false,
