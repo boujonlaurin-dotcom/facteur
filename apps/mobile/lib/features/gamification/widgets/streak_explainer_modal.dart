@@ -416,22 +416,44 @@ class _AnimatedFlameBadgeState extends State<_AnimatedFlameBadge>
   late final AnimationController _controller;
   late final Animation<double> _scale;
   late final Animation<double> _glow;
+  late final Animation<double> _ringScale;
+  late final Animation<double> _ringOpacity;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat(reverse: true);
-    _scale = Tween<double>(
-      begin: 0.96,
-      end: 1.06,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 0.96,
+          end: 1.14,
+        ).chain(CurveTween(curve: Curves.easeOutBack)),
+        weight: 55,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 1.14,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeOut)),
+        weight: 45,
+      ),
+    ]).animate(_controller);
     _glow = Tween<double>(
       begin: 0.18,
-      end: 0.36,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+      end: 0.48,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    _ringScale = Tween<double>(
+      begin: 0.82,
+      end: 1.26,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    _ringOpacity = Tween<double>(
+      begin: 0.46,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
   }
 
   @override
@@ -447,27 +469,52 @@ class _AnimatedFlameBadgeState extends State<_AnimatedFlameBadge>
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
-        return Container(
-          width: 72,
-          height: 72,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: colors.primary.withValues(alpha: 0.08),
-            boxShadow: [
-              BoxShadow(
-                color: colors.primary.withValues(alpha: _glow.value),
-                blurRadius: 18,
-                spreadRadius: 2,
+        return SizedBox(
+          width: 88,
+          height: 88,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Transform.scale(
+                scale: _ringScale.value,
+                child: Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: colors.primary.withValues(
+                        alpha: _ringOpacity.value,
+                      ),
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+              Container(
+                width: 74,
+                height: 74,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colors.primary.withValues(alpha: 0.10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: colors.primary.withValues(alpha: _glow.value),
+                      blurRadius: 26,
+                      spreadRadius: 4,
+                    ),
+                  ],
+                ),
+                child: Transform.scale(
+                  scale: _scale.value,
+                  child: Icon(
+                    PhosphorIcons.fire(PhosphorIconsStyle.fill),
+                    color: colors.primary,
+                    size: 40,
+                  ),
+                ),
               ),
             ],
-          ),
-          child: Transform.scale(
-            scale: _scale.value,
-            child: Icon(
-              PhosphorIcons.fire(PhosphorIconsStyle.fill),
-              color: colors.primary,
-              size: 34,
-            ),
           ),
         );
       },
