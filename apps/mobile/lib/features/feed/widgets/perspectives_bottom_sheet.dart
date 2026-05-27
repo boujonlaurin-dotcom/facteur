@@ -6,11 +6,12 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../widgets/design/facteur_card.dart';
+import '../../digest/widgets/divergence_inline_badge.dart';
+import '../../digest/widgets/markdown_text.dart';
+import '../../digest/widgets/section_divider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_detail_modal.dart';
-import '../../digest/widgets/markdown_text.dart';
-import '../../digest/widgets/section_divider.dart';
 import '../providers/feed_provider.dart';
 import '../repositories/feed_repository.dart' show HighlightSpan, TokenSpan;
 import '../screens/perspective_webview_screen.dart';
@@ -161,6 +162,7 @@ class PerspectivesBottomSheet extends ConsumerStatefulWidget {
   final String sourceName;
   final String contentId;
   final String comparisonQuality;
+  final String? divergenceLevel;
 
   const PerspectivesBottomSheet({
     super.key,
@@ -171,6 +173,7 @@ class PerspectivesBottomSheet extends ConsumerStatefulWidget {
     this.sourceBiasStance = 'unknown',
     this.sourceName = '',
     this.comparisonQuality = 'low',
+    this.divergenceLevel,
   });
 
   @override
@@ -401,6 +404,12 @@ class _PerspectivesBottomSheetState
                           if (widget.comparisonQuality == 'low')
                             PerspectivesWarningBadge(
                                 colors: colors, textTheme: textTheme),
+                          if (widget.divergenceLevel != null) ...[
+                            const SizedBox(height: 8),
+                            DivergenceInlineBadge(
+                                divergenceLevel: widget.divergenceLevel),
+                            const SizedBox(height: 4),
+                          ],
                           const SizedBox(height: 12),
                           Text(
                             'Le surlignage met en évidence les termes qui '
