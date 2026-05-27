@@ -86,6 +86,12 @@ class SectionBlock extends StatelessWidget {
   /// générique « Section suivante ».
   final String? nextSectionLabel;
 
+  /// "Fin de tournée — Flâner" action shown in the footer of the **last**
+  /// Tournée section in place of "Sujet suivant". When non-null, marks all
+  /// editorial sections as consumed for the next session and scrolls to the
+  /// Flâner banner. Mutually exclusive with [onNextSection].
+  final VoidCallback? onEndOfTournee;
+
   const SectionBlock({
     super.key,
     required this.section,
@@ -110,6 +116,7 @@ class SectionBlock extends StatelessWidget {
     this.isMarkedForNextSession = false,
     this.nextSectionAccent,
     this.nextSectionLabel,
+    this.onEndOfTournee,
   });
 
   @override
@@ -167,14 +174,17 @@ class SectionBlock extends StatelessWidget {
         ...cards,
         _SectionFooterRow(
           voirPlus: _buildVoirPlusButton(section, hiddenCount),
-          sujetSuivant: onNextSection != null
-              ? NextSectionButton(
-                  isMarked: isMarkedForNextSession,
-                  nextAccent: nextSectionAccent,
-                  nextSectionLabel: nextSectionLabel,
-                  onTap: isMarkedForNextSession ? null : onNextSection,
-                )
-              : null,
+          sujetSuivant: onEndOfTournee != null
+              ? EndOfTourneeButton(onTap: onEndOfTournee)
+              : onNextSection != null
+                  ? NextSectionButton(
+                      isMarked: isMarkedForNextSession,
+                      nextAccent: nextSectionAccent,
+                      nextSectionLabel: nextSectionLabel,
+                      onTap: isMarkedForNextSession ? null : onNextSection,
+                    )
+                  : null,
+          rightTakesMoreSpace: onEndOfTournee != null,
         ),
         const SizedBox(height: 16),
       ],
@@ -293,25 +303,33 @@ class SectionBlock extends StatelessWidget {
 class _SectionFooterRow extends StatelessWidget {
   final Widget? voirPlus;
   final Widget? sujetSuivant;
+  final bool rightTakesMoreSpace;
 
-  const _SectionFooterRow({this.voirPlus, this.sujetSuivant});
+  const _SectionFooterRow({
+    this.voirPlus,
+    this.sujetSuivant,
+    this.rightTakesMoreSpace = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     if (voirPlus == null && sujetSuivant == null) {
       return const SizedBox.shrink();
     }
+    final int leftFlex = rightTakesMoreSpace ? 2 : 1;
+    final int rightFlex = rightTakesMoreSpace ? 3 : 1;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Row(
         children: [
           if (voirPlus != null)
-            Expanded(flex: 1, child: voirPlus!)
+            Expanded(flex: leftFlex, child: voirPlus!)
           else
-            const Spacer(),
+            Spacer(flex: leftFlex),
           if (voirPlus != null && sujetSuivant != null)
             const SizedBox(width: 8),
-          if (sujetSuivant != null) Expanded(flex: 1, child: sujetSuivant!),
+          if (sujetSuivant != null)
+            Expanded(flex: rightFlex, child: sujetSuivant!),
         ],
       ),
     );

@@ -101,7 +101,7 @@ void main() {
       ));
 
       // 7 items - 3 visible = +4 hidden.
-      expect(find.text('Lire plus (+4)'), findsOneWidget);
+      expect(find.text('Tout lire (+4)'), findsOneWidget);
     });
 
     testWidgets(
@@ -134,8 +134,8 @@ void main() {
         ),
       ));
 
-      // hiddenCount = 0 → label falls back to "Lire plus" (no suffix).
-      expect(find.text('Lire plus'), findsOneWidget);
+      // hiddenCount = 0 → label falls back to "Tout lire" (no suffix).
+      expect(find.text('Tout lire'), findsOneWidget);
     });
   });
 

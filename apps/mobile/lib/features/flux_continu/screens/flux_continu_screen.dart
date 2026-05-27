@@ -342,24 +342,35 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
 
   void _alignTabsToActive(int index) {
     if (!_tabsScroll.hasClients) return;
-    final maxExtent = _tabsScroll.position.maxScrollExtent;
     // Explorer is the virtual tab appended after every real section; pin it
     // to the right edge so the sticky bar visibly bottoms out instead of
     // leaving trailing whitespace when the user reaches the last zone.
     final bool isLastTab = index >= _sectionKeys.length;
-    final double target;
-    if (isLastTab) {
-      target = maxExtent;
-    } else {
-      const double estimatedTabWidth = 140.0;
-      const double leftPadding = 12.0;
-      target = (index * estimatedTabWidth - leftPadding).clamp(0.0, maxExtent);
+    void doScroll() {
+      if (!_tabsScroll.hasClients) return;
+      final maxExtent = _tabsScroll.position.maxScrollExtent;
+      final double target;
+      if (isLastTab) {
+        target = maxExtent;
+      } else {
+        const double estimatedTabWidth = 140.0;
+        const double leftPadding = 12.0;
+        target =
+            (index * estimatedTabWidth - leftPadding).clamp(0.0, maxExtent);
+      }
+      _tabsScroll.animateTo(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
     }
-    _tabsScroll.animateTo(
-      target,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-    );
+    doScroll();
+    if (isLastTab) {
+      // Second pass after layout — covers the case where the sticky bar has
+      // just appeared and `maxScrollExtent` hadn't been computed yet, so the
+      // first `animateTo(maxExtent)` resolved against a stale extent.
+      WidgetsBinding.instance.addPostFrameCallback((_) => doScroll());
+    }
   }
 
   Future<void> _scrollToSection(int index) async {
@@ -1032,6 +1043,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                     i >= state.sections.length - 1)
                 ? null
                 : () => _advanceToNextSection(section, i),
+            onEndOfTournee: (section is! EssentielSection &&
+                    i == state.sections.length - 1)
+                ? _endOfTournee
+                : null,
           ),
         ),
       ));
@@ -1041,17 +1056,46 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
 
   /// "Sujet suivant" tap handler for in-Tournée progression. Marks the
   /// current section as consumed for the next session (without folding it
-  /// visually) and smooth-scrolls to the next section banner.
+  /// visually) and smooth-scrolls to the next section banner. If the target
+  /// section is currently folded, unfolds it first so the user lands on an
+  /// expanded banner rather than a collapsed card.
   Future<void> _advanceToNextSection(FluxSection section, int index) async {
     unawaited(HapticFeedback.lightImpact());
     unawaited(ref
         .read(fluxContinuProvider.notifier)
         .markScrolledPastForNextSession(section));
+    final state = ref.read(fluxContinuProvider).valueOrNull;
+    final nextIdx = index + 1;
+    if (state != null && nextIdx < state.sections.length) {
+      final next = state.sections[nextIdx];
+      if (state.isFolded(next)) {
+        ref.read(fluxContinuProvider.notifier).unfoldLocally(next);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        if (!mounted) return;
+      }
+    }
     // Let the "Terminé" pop play before the scroll kicks in, so the user
     // sees the green confirmation flash on its own frame.
-    await Future<void>.delayed(const Duration(milliseconds: 350));
+    await Future<void>.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
-    await _scrollToSection(index + 1);
+    await _scrollToSection(nextIdx);
+  }
+
+  /// "Fin de tournée — Flâner" tap handler for the last Tournée section.
+  /// Marks every editorial section as consumed for the next session and
+  /// smooth-scrolls to the Flâner banner.
+  Future<void> _endOfTournee() async {
+    unawaited(HapticFeedback.lightImpact());
+    final state = ref.read(fluxContinuProvider).valueOrNull;
+    if (state != null) {
+      final notifier = ref.read(fluxContinuProvider.notifier);
+      for (final s in state.sections) {
+        unawaited(notifier.markScrolledPastForNextSession(s));
+      }
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    if (!mounted) return;
+    await _scrollToSection(_sectionKeys.length);
   }
 
   /// Builds the Explorer feed list by reading from `feedProvider` and filtering

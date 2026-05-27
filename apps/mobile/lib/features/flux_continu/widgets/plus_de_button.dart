@@ -19,8 +19,8 @@ class SeeAllSectionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final label = hiddenCount > 0
-        ? 'Lire plus (+$hiddenCount)'
-        : 'Lire plus';
+        ? 'Tout lire (+$hiddenCount)'
+        : 'Tout lire';
     return _ButtonShell(
       onTap: onTap,
       child: Row(
@@ -237,6 +237,60 @@ class _NextSectionButtonState extends State<NextSectionButton>
                   color: marked ? colors.success : foreground,
                   size: 16,
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "Fin de tournée — Flâner" — bottom-of-section CTA shown only on the last
+/// Tournée section. Visually similar to [NextSectionButton] (full-width
+/// pill, accent tint) but with a bolder label and forced brown accent
+/// matching the Flâner banner. One-shot: no "Passé" state, no flip.
+class EndOfTourneeButton extends StatelessWidget {
+  final VoidCallback? onTap;
+
+  const EndOfTourneeButton({super.key, required this.onTap});
+
+  static const Color _accent = Color(0xFF5D4037);
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: _accent.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  'Fin de tournée — Flâner',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: _accent,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.arrow_downward,
+                color: _accent,
+                size: 16,
               ),
             ],
           ),
