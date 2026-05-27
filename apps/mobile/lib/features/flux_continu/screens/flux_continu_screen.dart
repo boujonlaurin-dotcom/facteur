@@ -43,6 +43,7 @@ import '../widgets/section_block.dart';
 import '../widgets/section_divider_dotted.dart';
 import '../widgets/section_hairline.dart';
 import '../widgets/sticky_tab_bar.dart';
+import '../widgets/tournee_folded_group_card.dart';
 
 /// Scroll offset at which the AppBar is swapped with the sticky tab bar.
 const double _kStickyThreshold = 60.0;
@@ -74,13 +75,20 @@ class FluxContinuScreen extends ConsumerStatefulWidget {
   ConsumerState<FluxContinuScreen> createState() => _FluxContinuScreenState();
 }
 
-class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
+class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
+    with WidgetsBindingObserver {
   final ScrollController _scroll = ScrollController();
   final ScrollController _tabsScroll = ScrollController();
   final ValueNotifier<bool> _stickyVisible = ValueNotifier(false);
   final ValueNotifier<double> _scrollProgress = ValueNotifier(0);
   final ValueNotifier<int> _activeIndex = ValueNotifier(0);
   final ValueNotifier<bool> _isInExploreMode = ValueNotifier(false);
+
+  /// Controls whether the « Tournée du jour ✓ » group toggle is expanded.
+  /// Resets to [false] (collapsed) on app pause and when opening an article
+  /// from Flâner — per spec, the grouping re-appears on quit-and-return.
+  final ValueNotifier<bool> _tourneeGroupExpanded = ValueNotifier(false);
+
   final GlobalKey _closingKey = GlobalKey();
   final GlobalKey _explorerKey = GlobalKey();
   final List<GlobalKey> _sectionKeys = [];
@@ -108,10 +116,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _tabsScroll.dispose();
@@ -119,8 +129,22 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     _scrollProgress.dispose();
     _activeIndex.dispose();
     _isInExploreMode.dispose();
+    _tourneeGroupExpanded.dispose();
     _pullHintTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // Collapse the « Tournée du jour ✓ » toggle when the app is backgrounded
+    // so the user always sees it grouped on return — per spec.
+    // `hidden` covers the moment the app becomes invisible on Android (Flutter
+    // 3.13+); `paused` is the fallback and the reliable signal on iOS.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _tourneeGroupExpanded.value = false;
+    }
   }
 
   void _onScroll() {
@@ -494,6 +518,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       return;
     }
     if (!mounted) return;
+    // When the article was opened from Flâner (fromSection == null), collapse
+    // the group toggle so the user sees the « Tournée du jour ✓ » row on
+    // return — per spec.
+    if (fromSection == null) _tourneeGroupExpanded.value = false;
     ref
         .read(fluxContinuProvider.notifier)
         .applyPendingFoldsToState(exceptKeys: exceptKeys);
@@ -739,6 +767,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final exploreItems = _buildExploreItems(state, feedState);
     final exploreCarousels = feedState?.carousels ?? const <FeedCarouselData>[];
 
+    // When every editorial section is folded, the individual pile of
+    // FoldedSectionCards is replaced by a single « Tournée du jour ✓ » toggle.
+    final allFolded = state.sections.isNotEmpty &&
+        state.sections.every((s) => state.isFolded(s));
+
     if (_sectionKeys.length != state.sections.length) {
       _sectionKeys
         ..clear()
@@ -833,11 +866,39 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           // first user-favorite theme section (`theme1` / `theme2`). The
           // computed index handles both ordering modes (normal / sereine) by
           // tracking the actual position of the first favorite kind.
-          ..._buildSectionSlivers(
-            context: context,
-            state: state,
-            notifier: notifier,
-          ),
+          // When all sections are folded, collapse the pile into a single
+          // « Tournée du jour ✓ » toggle. Tapping expands it back to the
+          // individual FoldedSectionCards (each still re-openable).
+          if (allFolded)
+            SliverToBoxAdapter(
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _tourneeGroupExpanded,
+                builder: (_, expanded, __) {
+                  if (!expanded) {
+                    return TourneeFoldedGroupCard(
+                      onTap: () => _tourneeGroupExpanded.value = true,
+                    );
+                  }
+                  // Expanded: flatten the individual section slivers into a
+                  // Column so they sit inside the single SliverToBoxAdapter.
+                  final sectionWidgets = _buildSectionSlivers(
+                    context: context,
+                    state: state,
+                    notifier: notifier,
+                  ).map((s) => s.child!).toList();
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: sectionWidgets,
+                  );
+                },
+              ),
+            )
+          else
+            ..._buildSectionSlivers(
+              context: context,
+              state: state,
+              notifier: notifier,
+            ),
           if (state.sections.isEmpty)
             SliverToBoxAdapter(
               child: _EmptySectionsHint(onRetry: notifier.refresh),
@@ -881,7 +942,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
   static bool _isFavoriteSection(FluxSection s) => s is FeedThemeSection;
 
-  List<Widget> _buildSectionSlivers({
+  List<SliverToBoxAdapter> _buildSectionSlivers({
     required BuildContext context,
     required FluxContinuState state,
     required FluxContinuNotifier notifier,
@@ -898,7 +959,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final allFolded = state.sections.isNotEmpty &&
         state.sections.every((s) => state.isFolded(s));
 
-    final slivers = <Widget>[];
+    final slivers = <SliverToBoxAdapter>[];
     for (var i = 0; i < state.sections.length; i++) {
       // Inject the "Mes intérêts" intro once, right before the first
       // user-favorite section. Skipped when favorites are first (no system
