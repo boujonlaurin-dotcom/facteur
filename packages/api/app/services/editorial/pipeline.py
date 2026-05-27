@@ -292,11 +292,13 @@ class EditorialPipelineService:
         # 3B-bis. `cluster_signature` filtre les annotations obsolètes côté
         # lecture si la composition change à un run ultérieur.
         selected_content_cluster_pairs: list[tuple[UUID, UUID]] = []
+        selected_cluster_ids: set[UUID] = set()
         for topic in selected_topics:
             cluster = cluster_map.get(topic.topic_id)
             if not cluster or len(cluster.contents) < 2:
                 continue
             cluster_uuid = UUID(cluster.cluster_id)
+            selected_cluster_ids.add(cluster_uuid)
             for c in cluster.contents:
                 selected_content_cluster_pairs.append((c.id, cluster_uuid))
 
@@ -308,9 +310,7 @@ class EditorialPipelineService:
             logger.info(
                 "editorial_pipeline.content_cluster_ids_persisted",
                 content_count=len(selected_content_cluster_pairs),
-                cluster_count=len(
-                    {pair[1] for pair in selected_content_cluster_pairs}
-                ),
+                cluster_count=len(selected_cluster_ids),
             )
 
         # ÉTAPE 3B-bis: LLM bias annotation pour les clusters sélectionnés.
@@ -858,7 +858,7 @@ async def _persist_content_cluster_ids(
     """
     if not pairs:
         return
-    when_clauses = {content_id: cluster_id for content_id, cluster_id in pairs}
+    when_clauses = dict(pairs)
     stmt = (
         update(Content)
         .where(Content.id.in_(when_clauses.keys()))
