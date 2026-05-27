@@ -81,6 +81,11 @@ class SectionBlock extends StatelessWidget {
   /// Null on the last Tournée section (the button is hidden anyway).
   final Color? nextSectionAccent;
 
+  /// Label de la section suivante (ex : « Technologie », « Bonnes Nouvelles »).
+  /// Quand fourni, le bouton [NextSectionButton] affiche ce nom au lieu du
+  /// générique « Section suivante ».
+  final String? nextSectionLabel;
+
   const SectionBlock({
     super.key,
     required this.section,
@@ -104,6 +109,7 @@ class SectionBlock extends StatelessWidget {
     this.onNextSection,
     this.isMarkedForNextSession = false,
     this.nextSectionAccent,
+    this.nextSectionLabel,
   });
 
   @override
@@ -165,6 +171,7 @@ class SectionBlock extends StatelessWidget {
               ? NextSectionButton(
                   isMarked: isMarkedForNextSession,
                   nextAccent: nextSectionAccent,
+                  nextSectionLabel: nextSectionLabel,
                   onTap: isMarkedForNextSession ? null : onNextSection,
                 )
               : null,

@@ -196,6 +196,53 @@ async def test_explicit_filter_unchanged_when_personalized_false():
     )
 
 
+@pytest.mark.asyncio
+async def test_personalized_theme_relaxes_seen_consumed_filter():
+    """Régression : personalized=True + theme ne doit PAS re-filtrer les
+    articles seen/consumed — il doit tomber dans la branche explicit_filter=True
+    (identique à Flâner thème) et n'exclure que is_hidden.
+
+    Avant le fix : personalized_theme_mode=True → explicit_filter=False
+    → les articles seen/consumed disparaissaient des sections thématiques
+    de la Tournée alors qu'ils restaient visibles dans le Flâner filtré.
+    Après le fix : theme is not None → explicit_filter=True toujours.
+    """
+    service, session = _make_service()
+    captured: list[str] = []
+    session.scalars, _ = _stub_scalars(captured)
+
+    await asyncio.wait_for(
+        service._get_candidates(
+            user_id=uuid4(),
+            limit_candidates=500,
+            theme="tech",
+            personalized=True,
+            followed_source_ids={uuid4()},
+        ),
+        timeout=5.0,
+    )
+
+    assert captured, "expected at least one SQL statement"
+    sql = captured[0].lower()
+
+    # La branche explicit_filter=True n'inclut ni is_saved, ni
+    # last_impressed_at, ni manually_impressed dans le NOT EXISTS.
+    # Ces colonnes n'apparaissent que dans la branche default (explicit_filter=False).
+    assert "is_saved" not in sql, (
+        "personalized_theme_mode doit utiliser explicit_filter=True : "
+        "is_saved ne doit pas apparaître dans le NOT EXISTS.\n"
+        f"SQL:\n{captured[0]}"
+    )
+    assert "last_impressed_at" not in sql, (
+        "personalized_theme_mode ne doit pas filtrer last_impressed_at.\n"
+        f"SQL:\n{captured[0]}"
+    )
+    assert "manually_impressed" not in sql, (
+        "personalized_theme_mode ne doit pas filtrer manually_impressed.\n"
+        f"SQL:\n{captured[0]}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Story 21.2 — Tournée du jour favorite-theme sections fall through to the
 # PillarScoringEngine branch instead of the chronological short-circuit.
