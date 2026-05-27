@@ -513,53 +513,6 @@ async def undo_refresh(
     return {"restored": restored}
 
 
-@router.post("/briefing/{content_id}/read", status_code=200)
-async def mark_briefing_item_read(
-    content_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user_id: str = Depends(get_current_user_id),
-):
-    """Marque un item du briefing comme lu/consommé."""
-    from sqlalchemy import update
-
-    from app.models.daily_top3 import DailyTop3
-
-    user_uuid = UUID(current_user_id)
-    c_uuid = UUID(content_id)
-
-    # FIX: Broaden window to last 48h to avoid timezone edge cases
-    # (e.g. Generated at 23:00 UTC previous day)
-    lookback_window = datetime.now(UTC) - timedelta(hours=48)
-
-    # 1. Mark in DailyTop3
-    stmt = (
-        update(DailyTop3)
-        .where(
-            DailyTop3.user_id == user_uuid,
-            DailyTop3.content_id == c_uuid,
-            DailyTop3.generated_at >= lookback_window,
-        )
-        .values(consumed=True)
-    )
-    result = await db.execute(stmt)
-    await db.commit()
-
-    if result.rowcount == 0:
-        logger.warning(
-            "briefing_mark_read_not_found",
-            user_id=str(user_uuid),
-            content_id=str(c_uuid),
-        )
-    else:
-        logger.info(
-            "briefing_mark_read_success",
-            user_id=str(user_uuid),
-            updated_count=result.rowcount,
-        )
-
-    return {"message": "Briefing item marked as read", "updated": result.rowcount}
-
-
 @router.get("/tab-counts")
 async def get_tab_counts(
     db: AsyncSession = Depends(get_db),

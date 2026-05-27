@@ -146,24 +146,6 @@ class TestScheduler:
             # Verify rss_sync job exists
             assert "rss_sync" in job_ids, f"rss_sync job not found. Jobs: {job_ids}"
 
-    def test_scheduler_includes_daily_top3_job(self):
-        """Verify Top 3 briefing job is scheduled."""
-        with patch("app.workers.scheduler.AsyncIOScheduler") as mock_scheduler_class:
-            mock_scheduler = Mock()
-            mock_scheduler_class.return_value = mock_scheduler
-
-            job_ids = []
-
-            def capture_add_job(*args, **kwargs):
-                job_ids.append(kwargs.get("id"))
-
-            mock_scheduler.add_job = capture_add_job
-
-            start_scheduler()
-
-            # Verify daily_top3 job exists
-            assert "daily_top3" in job_ids, f"daily_top3 job not found. Jobs: {job_ids}"
-
     def test_stop_scheduler_shuts_down(self):
         """Verify stop_scheduler properly shuts down the scheduler."""
         with patch("app.workers.scheduler.AsyncIOScheduler") as mock_scheduler_class:

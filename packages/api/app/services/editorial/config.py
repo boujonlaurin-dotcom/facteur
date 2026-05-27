@@ -48,6 +48,7 @@ class EditorialConfig:
     curation_prompt: PromptConfig = field(
         default_factory=lambda: PromptConfig(system="")
     )
+    # TODO: réactiver pour la prochaine itération Pas de recul
     deep_matching_prompt: PromptConfig = field(
         default_factory=lambda: PromptConfig(system="", temperature=0.2, max_tokens=300)
     )
@@ -56,20 +57,6 @@ class EditorialConfig:
             system="", model="mistral-small-latest", temperature=0.3, max_tokens=150
         )
     )
-    writing_prompt: PromptConfig = field(
-        default_factory=lambda: PromptConfig(system="", max_tokens=2000)
-    )
-    writing_serene_prompt: PromptConfig = field(
-        default_factory=lambda: PromptConfig(system="", max_tokens=2000)
-    )
-    pepite_prompt: PromptConfig = field(
-        default_factory=lambda: PromptConfig(system="", temperature=0.3, max_tokens=500)
-    )
-    # Dedicated temperature for pépite rotation. Higher than the default
-    # prompt temperature so the LLM actually varies its picks across days
-    # on an identical candidate pool. Kept separate so operators can tune
-    # rotation behavior without fighting the base pepite_prompt settings.
-    pepite_rotation_temperature: float = 0.6
     a_la_une_prompt: PromptConfig = field(
         default_factory=lambda: PromptConfig(
             system="", model="mistral-small-latest", temperature=0.1, max_tokens=200
@@ -78,11 +65,6 @@ class EditorialConfig:
     bonne_nouvelle_prompt: PromptConfig = field(
         default_factory=lambda: PromptConfig(
             system="", model="mistral-small-latest", temperature=0.1, max_tokens=200
-        )
-    )
-    actu_decalee_prompt: PromptConfig = field(
-        default_factory=lambda: PromptConfig(
-            system="", model="mistral-small-latest", temperature=0.4, max_tokens=300
         )
     )
 
@@ -99,18 +81,11 @@ def load_editorial_config() -> EditorialConfig:
     query_expansion_prompt = PromptConfig(
         system="", model="mistral-small-latest", temperature=0.3, max_tokens=150
     )
-    writing_prompt = PromptConfig(system="", max_tokens=2000)
-    writing_serene_prompt = PromptConfig(system="", max_tokens=2000)
-    pepite_prompt = PromptConfig(system="", temperature=0.3, max_tokens=500)
-    pepite_rotation_temperature = 0.6
     a_la_une_prompt = PromptConfig(
         system="", model="mistral-small-latest", temperature=0.1, max_tokens=200
     )
     bonne_nouvelle_prompt = PromptConfig(
         system="", model="mistral-small-latest", temperature=0.1, max_tokens=200
-    )
-    actu_decalee_prompt = PromptConfig(
-        system="", model="mistral-small-latest", temperature=0.4, max_tokens=300
     )
 
     # Load pipeline config
@@ -133,7 +108,7 @@ def load_editorial_config() -> EditorialConfig:
         logger.error(
             "editorial_prompts_yaml_missing",
             path=str(prompts_path),
-            message="editorial_prompts.yaml not found — writing/pepite prompts empty",
+            message="editorial_prompts.yaml not found — curation/a_la_une prompts empty",
         )
     else:
         try:
@@ -144,20 +119,10 @@ def load_editorial_config() -> EditorialConfig:
                 deep_matching_prompt = PromptConfig(**raw["deep_matching"])
             if raw and "query_expansion" in raw:
                 query_expansion_prompt = PromptConfig(**raw["query_expansion"])
-            if raw and "writing" in raw:
-                writing_prompt = PromptConfig(**raw["writing"])
-            if raw and "writing_serene" in raw:
-                writing_serene_prompt = PromptConfig(**raw["writing_serene"])
-            if raw and "pepite" in raw:
-                pepite_prompt = PromptConfig(**raw["pepite"])
-            if raw and "pepite_rotation_temperature" in raw:
-                pepite_rotation_temperature = float(raw["pepite_rotation_temperature"])
             if raw and "a_la_une" in raw:
                 a_la_une_prompt = PromptConfig(**raw["a_la_une"])
             if raw and "bonne_nouvelle" in raw:
                 bonne_nouvelle_prompt = PromptConfig(**raw["bonne_nouvelle"])
-            if raw and "actu_decalee" in raw:
-                actu_decalee_prompt = PromptConfig(**raw["actu_decalee"])
         except Exception:
             logger.exception("editorial_prompts_load_failed", path=str(prompts_path))
 
@@ -166,20 +131,13 @@ def load_editorial_config() -> EditorialConfig:
         curation_prompt=curation_prompt,
         deep_matching_prompt=deep_matching_prompt,
         query_expansion_prompt=query_expansion_prompt,
-        writing_prompt=writing_prompt,
-        writing_serene_prompt=writing_serene_prompt,
-        pepite_prompt=pepite_prompt,
-        pepite_rotation_temperature=pepite_rotation_temperature,
         a_la_une_prompt=a_la_une_prompt,
         bonne_nouvelle_prompt=bonne_nouvelle_prompt,
-        actu_decalee_prompt=actu_decalee_prompt,
     )
 
     logger.info(
         "editorial_config_loaded",
         has_curation_prompt=bool(cfg.curation_prompt.system),
-        has_writing_prompt=bool(cfg.writing_prompt.system),
-        has_pepite_prompt=bool(cfg.pepite_prompt.system),
         config_path=str(config_path),
         prompts_path=str(prompts_path),
     )

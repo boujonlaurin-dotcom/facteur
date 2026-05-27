@@ -5,15 +5,16 @@ import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/feed/widgets/diff_title.dart';
 
-/// PR 6 — modulation d'opacité du surlignage par `weight` LLM.
+/// PR 6.1 — re-mapping discret de l'opacité du surlignage par `weight` LLM.
 ///
-/// Le surlignage du key span (Container avec BoxDecoration colorée) doit avoir
-/// une opacité = 0.22 * t * (weight ?? 1.0). animateIn=false → t=1.
+/// Le surlignage du key span (Container avec BoxDecoration colorée) suit un
+/// mapping discret nettement contrasté, avec floor visible. animateIn=false
+/// → t=1.
 ///
 /// Spec :
-///   weight = 1.0    → alpha = 0.22 (comportement actuel, max)
-///   weight = 0.5    → alpha = 0.11
-///   weight = 0.25   → alpha = 0.055
+///   weight = 1.0    → alpha = 0.30 (max)
+///   weight = 0.5    → alpha = 0.20
+///   weight = 0.25   → alpha = 0.12 (floor lisible)
 ///   weight = null   → alpha = 0.22 (fallback rétrocompat, sans modulation)
 void main() {
   Widget host(DiffTitle child) {
@@ -44,7 +45,7 @@ void main() {
   }
 
   group('DiffTitle — weight modulation', () {
-    testWidgets('weight = 1.0 → alpha ≈ 0.22', (tester) async {
+    testWidgets('weight = 1.0 → alpha ≈ 0.30', (tester) async {
       await tester.pumpWidget(host(DiffTitle(
         title: 'Macron annonce une réforme',
         highlightSpans: const [
@@ -65,10 +66,10 @@ void main() {
 
       final alpha = keyWashAlpha(tester);
       expect(alpha, isNotNull);
-      expect(alpha!, closeTo(0.22, 0.005));
+      expect(alpha!, closeTo(0.30, 0.005));
     });
 
-    testWidgets('weight = 0.5 → alpha ≈ 0.11', (tester) async {
+    testWidgets('weight = 0.5 → alpha ≈ 0.20', (tester) async {
       await tester.pumpWidget(host(DiffTitle(
         title: 'Macron annonce une réforme',
         highlightSpans: const [
@@ -89,10 +90,10 @@ void main() {
 
       final alpha = keyWashAlpha(tester);
       expect(alpha, isNotNull);
-      expect(alpha!, closeTo(0.11, 0.005));
+      expect(alpha!, closeTo(0.20, 0.005));
     });
 
-    testWidgets('weight = 0.25 → alpha ≈ 0.055', (tester) async {
+    testWidgets('weight = 0.25 → alpha ≈ 0.12', (tester) async {
       await tester.pumpWidget(host(DiffTitle(
         title: 'Macron annonce une réforme',
         highlightSpans: const [
@@ -113,7 +114,7 @@ void main() {
 
       final alpha = keyWashAlpha(tester);
       expect(alpha, isNotNull);
-      expect(alpha!, closeTo(0.055, 0.005));
+      expect(alpha!, closeTo(0.12, 0.005));
     });
 
     testWidgets('weight = null → alpha ≈ 0.22 (rétrocompat)', (tester) async {

@@ -233,15 +233,17 @@ class DeepLinkService {
       if (articleId != null && articleId.isNotEmpty) {
         return WidgetDeepLinkAction(
           target: WidgetDeepLinkTarget.article,
-          route: '/feed/content/$articleId',
+          route: '/flux-continu/content/$articleId',
           articleId: articleId,
           position: int.tryParse(uri.queryParameters['pos'] ?? ''),
           topicId: uri.queryParameters['topicId'],
         );
       }
+      // Le digest a fusionné dans la Tournée du jour lors du cleanup
+      // post-unification — on redirige vers le flux continu.
       return const WidgetDeepLinkAction(
         target: WidgetDeepLinkTarget.digest,
-        route: RoutePaths.digest,
+        route: RoutePaths.fluxContinu,
       );
     }
     if (isFeed) {
@@ -256,16 +258,18 @@ class DeepLinkService {
         if (articleId.isNotEmpty) {
           return WidgetDeepLinkAction(
             target: WidgetDeepLinkTarget.article,
-            route: '/feed/content/$articleId',
+            route: '/flux-continu/content/$articleId',
             articleId: articleId,
             position: int.tryParse(uri.queryParameters['pos'] ?? ''),
             topicId: uri.queryParameters['topicId'],
           );
         }
       }
+      // FeedScreen a été supprimé lors du cleanup post-unification — on
+      // route vers le flux continu (la nouvelle home).
       return const WidgetDeepLinkAction(
         target: WidgetDeepLinkTarget.feed,
-        route: RoutePaths.feed,
+        route: RoutePaths.fluxContinu,
       );
     }
 

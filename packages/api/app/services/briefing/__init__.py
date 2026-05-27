@@ -1,15 +1,12 @@
-"""Module Briefing pour le Top 3 quotidien.
+"""Module Briefing — détection de l'importance des clusters.
 
-Story 4.4: Top 3 Briefing Quotidien
-Ce module contient les composants pour générer le briefing quotidien:
-- ImportanceDetector: Détecte les contenus objectivement importants
-- Top3Selector: Sélectionne les 3 meilleurs articles avec contraintes
+Le Top3Selector et le job daily_top3 ont été supprimés lors du cleanup
+post-unification ; seul ImportanceDetector subsiste, réutilisé par le
+pipeline éditorial pour le clustering de sujets.
 """
 
 from app.services.briefing.importance_detector import ImportanceDetector
-from app.services.briefing.top3_selector import Top3Selector
 
 __all__ = [
     "ImportanceDetector",
-    "Top3Selector",
 ]

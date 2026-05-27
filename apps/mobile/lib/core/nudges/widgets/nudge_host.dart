@@ -67,7 +67,7 @@ class _NudgeHostState extends ConsumerState<NudgeHost> {
       if (!mounted) return;
       final currentLocation =
           GoRouter.of(context).routerDelegate.currentConfiguration.uri.path;
-      if (!currentLocation.startsWith(RoutePaths.feed)) return;
+      if (!currentLocation.startsWith(RoutePaths.fluxContinu)) return;
 
       final anchor = _anchorFor(id);
       if (anchor?.currentContext == null) return;
