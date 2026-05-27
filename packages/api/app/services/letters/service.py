@@ -14,11 +14,13 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analytics import AnalyticsEvent
+from app.models.collection import Collection, CollectionItem
 from app.models.content import Content, UserContentStatus
+from app.models.enums import ContentStatus, ContentType
 from app.models.source import UserSource
 from app.models.user_letter_progress import UserLetterProgress
 from app.models.user_topic_profile import UserTopicProfile
@@ -100,34 +102,41 @@ _detect_read_first_bonnes_nouvelles = _first_event_detector("bonnes_nouvelles_op
 
 
 async def _detect_read_3_long_articles(user_id: UUID, db: AsyncSession) -> bool:
-    """≥3 contenus articles avec reading_progress≥90 et time_spent_seconds≥60."""
+    """≥10 articles distincts avec un signal minimal d'interaction."""
     stmt = (
         select(func.count(func.distinct(UserContentStatus.content_id)))
         .select_from(UserContentStatus)
         .join(Content, Content.id == UserContentStatus.content_id)
         .where(
             UserContentStatus.user_id == user_id,
-            UserContentStatus.reading_progress >= 90,
-            UserContentStatus.time_spent_seconds >= 60,
-            Content.content_type == "article",
+            Content.content_type == ContentType.ARTICLE,
+            or_(
+                UserContentStatus.time_spent_seconds > 0,
+                UserContentStatus.reading_progress > 0,
+                UserContentStatus.status.in_(
+                    [ContentStatus.SEEN, ContentStatus.CONSUMED]
+                ),
+                UserContentStatus.seen_at.is_not(None),
+            ),
         )
     )
-    return ((await db.execute(stmt)).scalar() or 0) >= 3
+    return ((await db.execute(stmt)).scalar() or 0) >= 10
 
 
 async def _detect_read_first_video_podcast(user_id: UUID, db: AsyncSession) -> bool:
-    """Au moins un contenu podcast/youtube avec time_spent_seconds≥240."""
+    """≥3 articles distincts ajoutés dans des collections utilisateur non likées."""
     stmt = (
-        select(UserContentStatus.id)
-        .join(Content, Content.id == UserContentStatus.content_id)
+        select(func.count(func.distinct(CollectionItem.content_id)))
+        .select_from(CollectionItem)
+        .join(Collection, Collection.id == CollectionItem.collection_id)
+        .join(Content, Content.id == CollectionItem.content_id)
         .where(
-            UserContentStatus.user_id == user_id,
-            UserContentStatus.time_spent_seconds >= 240,
-            Content.content_type.in_(["podcast", "youtube"]),
+            Collection.user_id == user_id,
+            Collection.is_liked_collection.is_(False),
+            Content.content_type == ContentType.ARTICLE,
         )
-        .limit(1)
     )
-    return (await db.execute(stmt)).scalar() is not None
+    return ((await db.execute(stmt)).scalar() or 0) >= 3
 
 
 async def _detect_recommend_first_article(user_id: UUID, db: AsyncSession) -> bool:

@@ -86,19 +86,22 @@ LETTER_2: dict = {
         },
         {
             "id": "read_3_long_articles",
-            "label": "Lire 3 articles jusqu'au bout",
-            "help": "Pas de scroll express. Prends le temps de finir.",
+            "label": "Lire 10 articles",
+            "help": "Dix articles distincts avec un vrai signal de lecture.",
             "completion_palier": (
-                "Trois lectures menées au bout. C'est ce qui te distingue déjà."
+                "Dix articles parcourus. Tu prends maintenant le rythme."
             ),
             "target_route": "/feed",
         },
         {
             "id": "read_first_video_podcast",
-            "label": "Écouter un podcast ou regarder une vidéo",
-            "help": "Au moins quatre minutes. Le temps que ça t'apporte quelque chose.",
+            "label": "Sauvegarder 3 articles dans vos collections",
+            "help": (
+                "Ajoute trois articles distincts dans tes collections, y compris "
+                "la collection par défaut."
+            ),
             "completion_palier": (
-                "Tu varies les formats. C'est comme ça qu'on s'enrichit."
+                "Trois articles mis de côté. Tu commences à te constituer un fonds."
             ),
             "target_route": "/feed",
         },

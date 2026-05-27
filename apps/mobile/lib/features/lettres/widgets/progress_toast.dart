@@ -30,7 +30,6 @@ void showProgressToast(
   _currentDismiss?.call();
 
   late OverlayEntry entry;
-  late void Function() dismiss;
   bool removed = false;
 
   void onDismissed() {
@@ -43,6 +42,8 @@ void showProgressToast(
     entry.remove();
   }
 
+  VoidCallback dismiss = onDismissed;
+
   entry = OverlayEntry(
     builder: (_) => _ProgressToast(
       level: level,
@@ -54,14 +55,17 @@ void showProgressToast(
       stepTitle: stepTitle,
       onOpen: onOpen,
       onDismissed: onDismissed,
-      onRequestClose: (cb) => dismiss = cb,
+      onRequestClose: (cb) {
+        dismiss = cb;
+        if (identical(entry, _currentEntry)) {
+          _currentDismiss = cb;
+        }
+      },
     ),
   );
 
   _currentEntry = entry;
-  _currentDismiss = () {
-    dismiss();
-  };
+  _currentDismiss = dismiss;
 
   overlay.insert(entry);
 
@@ -197,8 +201,7 @@ class _ProgressToastState extends State<_ProgressToast>
 
     final body = switch (widget.level) {
       ProgressToastLevel.micro => _MicroBody(accent: accent, toast: widget),
-      ProgressToastLevel.section =>
-        _SectionBody(accent: accent, toast: widget),
+      ProgressToastLevel.section => _SectionBody(accent: accent, toast: widget),
       ProgressToastLevel.step => _StepBody(toast: widget),
     };
 
@@ -327,11 +330,7 @@ class _MicroBody extends StatelessWidget {
             const SizedBox(height: 6),
             Padding(
               padding: const EdgeInsets.only(left: 26),
-              child: _Segments(
-                current: current,
-                total: total,
-                accent: accent,
-              ),
+              child: _Segments(current: current, total: total, accent: accent),
             ),
           ],
         ),
@@ -456,8 +455,7 @@ class _SegmentState extends State<_Segment>
                 builder: (_, __) => Align(
                   alignment: Alignment.centerLeft,
                   child: FractionallySizedBox(
-                    widthFactor:
-                        Curves.easeOutCubic.transform(_fill.value),
+                    widthFactor: Curves.easeOutCubic.transform(_fill.value),
                     child: Container(color: widget.accent),
                   ),
                 ),
@@ -983,10 +981,7 @@ class _CachetStampState extends State<_CachetStamp>
                       height: 54,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(
-                          color: widget.accent,
-                          width: 1.5,
-                        ),
+                        border: Border.all(color: widget.accent, width: 1.5),
                       ),
                     ),
                   ),
@@ -1136,8 +1131,11 @@ class _DashedTopBorder extends CustomPainter {
     const gap = 3.0;
     double x = 0;
     while (x < size.width) {
-      canvas.drawLine(Offset(x, 0), Offset((x + dash).clamp(0, size.width), 0),
-          paint);
+      canvas.drawLine(
+        Offset(x, 0),
+        Offset((x + dash).clamp(0, size.width), 0),
+        paint,
+      );
       x += dash + gap;
     }
   }

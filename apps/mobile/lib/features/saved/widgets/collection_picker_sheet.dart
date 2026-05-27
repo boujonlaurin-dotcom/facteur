@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../lettres/providers/letters_provider.dart';
 import '../models/collection_model.dart';
 import '../providers/collections_provider.dart';
 
@@ -28,10 +31,8 @@ class CollectionPickerSheet extends ConsumerStatefulWidget {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => CollectionPickerSheet(
-        contentId: contentId,
-        onAddNote: onAddNote,
-      ),
+      builder: (_) =>
+          CollectionPickerSheet(contentId: contentId, onAddNote: onAddNote),
     );
   }
 
@@ -40,8 +41,7 @@ class CollectionPickerSheet extends ConsumerStatefulWidget {
       _CollectionPickerSheetState();
 }
 
-class _CollectionPickerSheetState
-    extends ConsumerState<CollectionPickerSheet>
+class _CollectionPickerSheetState extends ConsumerState<CollectionPickerSheet>
     with SingleTickerProviderStateMixin {
   final Set<String> _selectedIds = {};
   bool _isCreating = false;
@@ -54,15 +54,16 @@ class _CollectionPickerSheetState
   @override
   void initState() {
     super.initState();
-    _noteButtonAnimController = AnimationController(
-      duration: const Duration(milliseconds: 120),
-      vsync: this,
-      lowerBound: 0.93,
-      upperBound: 1.0,
-      value: 1.0,
-    )..addListener(() {
-        setState(() => _noteButtonScale = _noteButtonAnimController.value);
-      });
+    _noteButtonAnimController =
+        AnimationController(
+          duration: const Duration(milliseconds: 120),
+          vsync: this,
+          lowerBound: 0.93,
+          upperBound: 1.0,
+          value: 1.0,
+        )..addListener(() {
+          setState(() => _noteButtonScale = _noteButtonAnimController.value);
+        });
   }
 
   @override
@@ -194,8 +195,10 @@ class _CollectionPickerSheetState
               ),
               error: (_, __) => Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('Erreur de chargement',
-                    style: TextStyle(color: colors.textSecondary)),
+                child: Text(
+                  'Erreur de chargement',
+                  style: TextStyle(color: colors.textSecondary),
+                ),
               ),
             ),
 
@@ -217,7 +220,9 @@ class _CollectionPickerSheetState
                   child: Text(
                     'Confirmer (${_selectedIds.length})',
                     style: const TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 15),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
                   ),
                 ),
               ),
@@ -234,8 +239,11 @@ class _CollectionPickerSheetState
       onTap: () => setState(() => _isCreating = true),
       child: Row(
         children: [
-          Icon(PhosphorIcons.plus(PhosphorIconsStyle.regular),
-              color: colors.primary, size: 20),
+          Icon(
+            PhosphorIcons.plus(PhosphorIconsStyle.regular),
+            color: colors.primary,
+            size: 20,
+          ),
           const SizedBox(width: 12),
           Text(
             'Nouvelle collection',
@@ -265,8 +273,10 @@ class _CollectionPickerSheetState
               hintStyle: TextStyle(color: colors.textTertiary),
               counterText: '',
               isDense: true,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: colors.border),
@@ -289,8 +299,11 @@ class _CollectionPickerSheetState
             _isCreating = false;
             _createController.clear();
           }),
-          icon: Icon(PhosphorIcons.x(PhosphorIconsStyle.regular),
-              size: 18, color: colors.textTertiary),
+          icon: Icon(
+            PhosphorIcons.x(PhosphorIconsStyle.regular),
+            size: 18,
+            color: colors.textTertiary,
+          ),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
         ),
@@ -299,7 +312,9 @@ class _CollectionPickerSheetState
   }
 
   Widget _buildCollectionsList(
-      List<Collection> collections, FacteurColors colors) {
+    List<Collection> collections,
+    FacteurColors colors,
+  ) {
     if (collections.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 24),
@@ -348,9 +363,7 @@ class _CollectionPickerSheetState
                             : colors.textTertiary,
                         width: isSelected ? 2 : 1.5,
                       ),
-                      color: isSelected
-                          ? colors.primary
-                          : Colors.transparent,
+                      color: isSelected ? colors.primary : Colors.transparent,
                     ),
                     child: isSelected
                         ? Icon(
@@ -376,10 +389,7 @@ class _CollectionPickerSheetState
                   ),
                   Text(
                     '${col.itemCount}',
-                    style: TextStyle(
-                      color: colors.textTertiary,
-                      fontSize: 13,
-                    ),
+                    style: TextStyle(color: colors.textTertiary, fontSize: 13),
                   ),
                 ],
               ),
@@ -419,6 +429,7 @@ class _CollectionPickerSheetState
 
     // Refresh collections to update counts
     ref.invalidate(collectionsProvider);
+    unawaited(ref.read(lettersProvider.notifier).silentRefresh());
 
     if (mounted) Navigator.pop(context);
     HapticFeedback.mediumImpact();
