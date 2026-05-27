@@ -612,8 +612,9 @@ class TestPerspectiveCountAlignment:
         newer.source.url = "https://www.cluster.fr/"
         newer.url = "https://www.cluster.fr/newer"
 
+        cluster_id_str = str(uuid4())
         cluster = _make_cluster_mock(
-            cluster_id="c1",
+            cluster_id=cluster_id_str,
             label="Retraites",
             contents=[older, newer],
         )
@@ -662,7 +663,7 @@ class TestPerspectiveCountAlignment:
             mock_detector_cls.return_value = mock_detector
 
             mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
-                topic_id="c1",
+                topic_id=cluster_id_str,
                 label="Retraites",
                 selection_reason="Traité par 1 sources",
                 deep_angle="D",
@@ -732,8 +733,9 @@ class TestPerspectiveCountAlignment:
         article_b.url = "https://www.outlet-b.fr/story"
         article_b.published_at = datetime(2026, 4, 22, 7, tzinfo=UTC)
 
+        cluster_id_str = str(uuid4())
         cluster = _make_cluster_mock(
-            cluster_id="c1",
+            cluster_id=cluster_id_str,
             label="Breaking news",
             contents=[article_a, article_b],
             source_ids={outlet_a_id, outlet_b_id},
@@ -772,7 +774,7 @@ class TestPerspectiveCountAlignment:
             mock_detector_cls.return_value = mock_detector
 
             mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
-                topic_id="c1",
+                topic_id=cluster_id_str,
                 label="Breaking news",
                 selection_reason="Traité par 2 sources",
                 deep_angle="D",
@@ -876,8 +878,11 @@ class TestLLMBiasAnnotationStep:
             is_ready=False
         )
 
+        cluster_id_str = str(uuid4())
         cluster = _make_cluster_mock(
-            "c1", "Retraites", contents=[_make_content_mock("A"), _make_content_mock("B")]
+            cluster_id_str,
+            "Retraites",
+            contents=[_make_content_mock("A"), _make_content_mock("B")],
         )
         cluster.is_trending = False
         cluster.is_multi_source = False
@@ -894,6 +899,9 @@ class TestLLMBiasAnnotationStep:
                 "app.services.editorial.pipeline.get_title_annotation_service",
                 return_value=mock_title_service,
             ),
+            patch(
+                "app.services.editorial.pipeline._persist_content_cluster_ids",
+            ),
         ):
             mock_detector = MagicMock()
             mock_detector.build_topic_clusters.return_value = [cluster]
@@ -901,7 +909,7 @@ class TestLLMBiasAnnotationStep:
 
             mock_dependencies["curation"].select_topics.return_value = [
                 SelectedTopic(
-                    topic_id="c1",
+                    topic_id=cluster_id_str,
                     label="Retraites",
                     selection_reason="R",
                     deep_angle="D",
@@ -993,8 +1001,9 @@ class TestLLMBiasAnnotationStep:
             RuntimeError("DB explosion")
         )
 
+        cluster_id_str = str(uuid4())
         cluster = _make_cluster_mock(
-            "c1",
+            cluster_id_str,
             "Retraites",
             contents=[_make_content_mock("A"), _make_content_mock("B")],
         )
@@ -1013,6 +1022,9 @@ class TestLLMBiasAnnotationStep:
                 "app.services.editorial.pipeline.get_title_annotation_service",
                 return_value=mock_title_service,
             ),
+            patch(
+                "app.services.editorial.pipeline._persist_content_cluster_ids",
+            ),
         ):
             mock_detector = MagicMock()
             mock_detector.build_topic_clusters.return_value = [cluster]
@@ -1020,7 +1032,7 @@ class TestLLMBiasAnnotationStep:
 
             mock_dependencies["curation"].select_topics.return_value = [
                 SelectedTopic(
-                    topic_id="c1",
+                    topic_id=cluster_id_str,
                     label="Retraites",
                     selection_reason="R",
                     deep_angle="D",
@@ -1213,3 +1225,244 @@ class TestLLMBiasAnnotationStep:
             for call in mock_llm_service.annotate_variant.await_args_list
         }
         assert annotated_titles == {"Variant A", "Variant C"}
+
+
+# ============================================================================
+# Cluster id persistence (Sprint 3 — activate LLM bias pipeline)
+# ============================================================================
+
+
+class TestPersistContentClusterIds:
+    """`_persist_content_cluster_ids` doit écrire `cluster_id` en bulk sur les
+    `Content` sélectionnés, condition sine qua non pour que le router
+    `/perspectives` retrouve les annotations LLM via `content.cluster_id`."""
+
+    @pytest.mark.asyncio
+    async def test_writes_cluster_id_for_each_content(self, db_session):
+        from datetime import UTC, datetime
+        from sqlalchemy import select as sa_select
+
+        from app.models.content import Content
+        from app.models.enums import ContentType, SourceType
+        from app.models.source import Source
+        from app.services.editorial.pipeline import _persist_content_cluster_ids
+
+        source = Source(
+            id=uuid4(),
+            name="Persistence src",
+            url="https://persist.fr",
+            feed_url=f"https://persist.fr/feed-{uuid4()}.xml",
+            type=SourceType.ARTICLE,
+            theme="society",
+            is_active=True,
+            is_curated=False,
+        )
+        db_session.add(source)
+        await db_session.commit()
+
+        cluster_a = uuid4()
+        cluster_b = uuid4()
+        contents: list[Content] = []
+        for i in range(5):
+            c = Content(
+                id=uuid4(),
+                source_id=source.id,
+                title=f"Article {i}",
+                url=f"https://persist.fr/{i}",
+                published_at=datetime.now(UTC),
+                content_type=ContentType.ARTICLE,
+                guid=f"persist-{i}",
+                cluster_id=None,
+            )
+            db_session.add(c)
+            contents.append(c)
+        await db_session.commit()
+
+        # 3 articles in cluster A, 2 in cluster B.
+        pairs = [
+            (contents[0].id, cluster_a),
+            (contents[1].id, cluster_a),
+            (contents[2].id, cluster_a),
+            (contents[3].id, cluster_b),
+            (contents[4].id, cluster_b),
+        ]
+        await _persist_content_cluster_ids(db_session, pairs)
+
+        rows = (
+            await db_session.execute(
+                sa_select(Content.id, Content.cluster_id).where(
+                    Content.id.in_([c.id for c in contents])
+                )
+            )
+        ).all()
+        observed = {r.id: r.cluster_id for r in rows}
+        assert observed[contents[0].id] == cluster_a
+        assert observed[contents[1].id] == cluster_a
+        assert observed[contents[2].id] == cluster_a
+        assert observed[contents[3].id] == cluster_b
+        assert observed[contents[4].id] == cluster_b
+
+    @pytest.mark.asyncio
+    async def test_idempotent_when_pairs_unchanged(self, db_session):
+        from datetime import UTC, datetime
+        from sqlalchemy import select as sa_select
+
+        from app.models.content import Content
+        from app.models.enums import ContentType, SourceType
+        from app.models.source import Source
+        from app.services.editorial.pipeline import _persist_content_cluster_ids
+
+        source = Source(
+            id=uuid4(),
+            name="Idem src",
+            url="https://idem.fr",
+            feed_url=f"https://idem.fr/feed-{uuid4()}.xml",
+            type=SourceType.ARTICLE,
+            theme="society",
+            is_active=True,
+            is_curated=False,
+        )
+        db_session.add(source)
+        await db_session.commit()
+
+        cluster_id = uuid4()
+        c = Content(
+            id=uuid4(),
+            source_id=source.id,
+            title="Idem",
+            url="https://idem.fr/x",
+            published_at=datetime.now(UTC),
+            content_type=ContentType.ARTICLE,
+            guid="idem",
+            cluster_id=None,
+        )
+        db_session.add(c)
+        await db_session.commit()
+
+        await _persist_content_cluster_ids(db_session, [(c.id, cluster_id)])
+        await _persist_content_cluster_ids(db_session, [(c.id, cluster_id)])
+
+        row = (
+            await db_session.execute(
+                sa_select(Content.cluster_id).where(Content.id == c.id)
+            )
+        ).first()
+        assert row.cluster_id == cluster_id
+
+    @pytest.mark.asyncio
+    async def test_noop_on_empty_pairs(self, db_session):
+        from app.services.editorial.pipeline import _persist_content_cluster_ids
+
+        # No rows in DB needed — simply must not raise.
+        await _persist_content_cluster_ids(db_session, [])
+
+
+class TestPipelineWiresClusterIdPersistence:
+    """La pipeline doit appeler `_persist_content_cluster_ids` avant l'étape
+    3B-bis avec les pairs (content_id, cluster_id) des `selected_topics`
+    multi-articles."""
+
+    @pytest.mark.asyncio
+    async def test_persists_pairs_before_llm_bias_step(self, mock_dependencies):
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        v1 = _make_content_mock("Variant A")
+        v2 = _make_content_mock("Variant B")
+        cluster_id_str = str(uuid4())
+        cluster = _make_cluster_mock(cluster_id_str, "Variant A", contents=[v1, v2])
+        cluster.is_trending = True
+        cluster.is_multi_source = True
+
+        captured_pairs: list[tuple] = []
+
+        async def _fake_persist(session, pairs):
+            captured_pairs.extend(pairs)
+
+        with (
+            patch(
+                "app.services.editorial.pipeline.ImportanceDetector"
+            ) as mock_detector_cls,
+            patch(
+                "app.services.editorial.pipeline._persist_content_cluster_ids",
+                side_effect=_fake_persist,
+            ) as mock_persist,
+        ):
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = [cluster]
+            mock_detector_cls.return_value = mock_detector
+
+            mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
+                topic_id=cluster_id_str,
+                label="Variant A",
+                selection_reason="R",
+                deep_angle="D",
+                source_count=2,
+            )
+            mock_dependencies["curation"].select_topics.return_value = []
+
+            def _populate_actu(subjects, clusters, **_):
+                out = []
+                for s in subjects:
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies["actu"].match_global.side_effect = _populate_actu
+
+            svc = EditorialPipelineService(AsyncMock())
+            result = await svc.compute_global_context([_make_content_mock()])
+
+        assert result is not None
+        mock_persist.assert_awaited_once()
+        assert {pair[0] for pair in captured_pairs} == {v1.id, v2.id}
+        assert {pair[1] for pair in captured_pairs} == {UUID(cluster_id_str)}
+
+    @pytest.mark.asyncio
+    async def test_skips_persist_for_singleton_clusters(self, mock_dependencies):
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        # Un seul article → cluster.contents < 2, on ne persiste rien.
+        cluster = _make_cluster_mock(
+            str(uuid4()), "Solo", contents=[_make_content_mock("Solo")]
+        )
+        cluster.is_trending = False
+        cluster.is_multi_source = False
+
+        with (
+            patch(
+                "app.services.editorial.pipeline.ImportanceDetector"
+            ) as mock_detector_cls,
+            patch(
+                "app.services.editorial.pipeline._persist_content_cluster_ids"
+            ) as mock_persist,
+        ):
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = [cluster]
+            mock_detector_cls.return_value = mock_detector
+
+            mock_dependencies["curation"].select_topics.return_value = [
+                SelectedTopic(
+                    topic_id=cluster.cluster_id,
+                    label="Solo",
+                    selection_reason="R",
+                    deep_angle="D",
+                )
+            ]
+
+            def _populate_actu(subjects, clusters, **_):
+                out = []
+                for s in subjects:
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies["actu"].match_global.side_effect = _populate_actu
+
+            svc = EditorialPipelineService(AsyncMock())
+            await svc.compute_global_context([_make_content_mock()])
+
+        mock_persist.assert_not_awaited()
