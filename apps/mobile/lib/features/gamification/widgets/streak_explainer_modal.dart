@@ -107,62 +107,89 @@ class _ExplainerBody extends StatelessWidget {
               height: 1.4,
             ),
           ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: _MetricTile(
-                  label: 'Actuelle',
-                  value: '${activity.currentStreak}',
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _MetricTile(
-                  label: 'Record',
-                  value: '${activity.longestStreak}',
-                ),
-              ),
-              if (totalArticlesRead > 0) ...[
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _MetricTile(label: 'Lus', value: '$totalArticlesRead'),
-                ),
-              ],
-            ],
+          const SizedBox(height: 18),
+          _StreakStatsLine(
+            currentStreak: activity.currentStreak,
+            longestStreak: activity.longestStreak,
+            totalArticlesRead: totalArticlesRead,
           ),
           const SizedBox(height: 20),
-          Text(
-            '14 derniers jours',
-            style: textTheme.titleSmall?.copyWith(
-              color: colors.textPrimary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 12),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: activity.days.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: 0.86,
-            ),
-            itemBuilder: (context, index) {
-              return _DayTile(day: activity.days[index]);
-            },
-          ),
+          _RecentActivityCalendar(days: activity.days),
         ],
       ),
     );
   }
 }
 
-class _MetricTile extends StatelessWidget {
-  const _MetricTile({required this.label, required this.value});
+class _StreakStatsLine extends StatelessWidget {
+  const _StreakStatsLine({
+    required this.currentStreak,
+    required this.longestStreak,
+    required this.totalArticlesRead,
+  });
 
+  final int currentStreak;
+  final int longestStreak;
+  final int totalArticlesRead;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'En ce moment',
+          style: textTheme.labelLarge?.copyWith(
+            color: colors.textPrimary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _InlineMetric(
+                icon: PhosphorIcons.fire(PhosphorIconsStyle.fill),
+                label: 'Actuelle',
+                value: '$currentStreak j',
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _InlineMetric(
+                icon: PhosphorIcons.trophy(PhosphorIconsStyle.fill),
+                label: 'Record',
+                value: '$longestStreak j',
+              ),
+            ),
+            if (totalArticlesRead > 0) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: _InlineMetric(
+                  icon: PhosphorIcons.bookOpen(PhosphorIconsStyle.regular),
+                  label: 'Lus',
+                  value: '$totalArticlesRead',
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _InlineMetric extends StatelessWidget {
+  const _InlineMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
   final String label;
   final String value;
 
@@ -171,30 +198,130 @@ class _MetricTile extends StatelessWidget {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      decoration: BoxDecoration(
-        color: colors.backgroundSecondary.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colors.border.withValues(alpha: 0.6)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            style: textTheme.titleLarge?.copyWith(
-              color: colors.textPrimary,
-              fontWeight: FontWeight.w700,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: colors.primary.withValues(alpha: 0.82),
+            ),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.titleSmall?.copyWith(
+                  color: colors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 1),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: textTheme.labelSmall?.copyWith(
+            color: colors.textSecondary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RecentActivityCalendar extends StatelessWidget {
+  const _RecentActivityCalendar({required this.days});
+
+  final List<StreakActivityDay> days;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              PhosphorIcons.calendarBlank(PhosphorIconsStyle.regular),
+              size: 16,
+              color: colors.primary,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '14 derniers jours',
+              style: textTheme.titleSmall?.copyWith(
+                color: colors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Une flamme marque les jours où Facteur a été ouvert.',
+          style: textTheme.bodySmall?.copyWith(
+            color: colors.textSecondary,
+            height: 1.35,
+          ),
+        ),
+        const SizedBox(height: 12),
+        const _WeekdayHeader(),
+        const SizedBox(height: 6),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: days.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            mainAxisSpacing: 6,
+            crossAxisSpacing: 6,
+            childAspectRatio: 1,
+          ),
+          itemBuilder: (context, index) {
+            return _DayTile(day: days[index]);
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _WeekdayHeader extends StatelessWidget {
+  const _WeekdayHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    const labels = <String>['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+    return Row(
+      children: [
+        for (final label in labels)
+          Expanded(
+            child: Center(
+              child: Text(
+                label,
+                style: textTheme.labelSmall?.copyWith(
+                  color: colors.textTertiary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
-          ),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -209,75 +336,71 @@ class _DayTile extends StatelessWidget {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final opened = day.opened;
-    final date = day.date;
-    final weekday = _weekdayLabel(date.weekday);
+    final articleCount = day.articlesRead ?? 0;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-      decoration: BoxDecoration(
-        color: opened
-            ? colors.primary.withValues(alpha: 0.10)
-            : colors.backgroundSecondary.withValues(alpha: 0.25),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
+    return Semantics(
+      label:
+          '${day.date.day}/${day.date.month}, ${opened ? 'ouvert' : 'non ouvert'}'
+          '${articleCount > 0 ? ', $articleCount lu${articleCount > 1 ? 's' : ''}' : ''}',
+      child: Container(
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
           color: opened
-              ? colors.primary.withValues(alpha: 0.25)
-              : colors.border.withValues(alpha: 0.5),
-        ),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            weekday,
-            style: textTheme.labelSmall?.copyWith(
-              color: colors.textSecondary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Icon(
-            opened
-                ? PhosphorIcons.fire(PhosphorIconsStyle.fill)
-                : PhosphorIcons.minus(PhosphorIconsStyle.bold),
-            size: 14,
+              ? colors.primary.withValues(alpha: 0.10)
+              : colors.backgroundSecondary.withValues(alpha: 0.28),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
             color: opened
-                ? colors.primary.withValues(alpha: 0.85)
-                : colors.textTertiary,
+                ? colors.primary.withValues(alpha: 0.24)
+                : colors.border.withValues(alpha: 0.55),
           ),
-          const SizedBox(height: 4),
-          Text(
-            '${date.day}',
-            style: textTheme.labelMedium?.copyWith(
-              color: colors.textPrimary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          if (day.articlesRead != null) ...[
-            const SizedBox(height: 2),
-            Text(
-              '${day.articlesRead}',
-              style: textTheme.labelSmall?.copyWith(
-                color: colors.textSecondary,
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Center(
+              child: Icon(
+                opened
+                    ? PhosphorIcons.fire(PhosphorIconsStyle.fill)
+                    : PhosphorIcons.minus(PhosphorIconsStyle.bold),
+                size: 14,
+                color: opened
+                    ? colors.primary.withValues(alpha: 0.86)
+                    : colors.textTertiary,
               ),
             ),
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Text(
+                  '${day.date.day}',
+                  maxLines: 1,
+                  style: textTheme.labelSmall?.copyWith(
+                    color: colors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
+                ),
+              ),
+            ),
+            if (articleCount > 0)
+              Align(
+                alignment: Alignment.topRight,
+                child: Container(
+                  margin: const EdgeInsets.only(top: 3, right: 3),
+                  width: 5,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: colors.primary.withValues(alpha: 0.72),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
           ],
-        ],
+        ),
       ),
     );
-  }
-
-  String _weekdayLabel(int weekday) {
-    const labels = <int, String>{
-      DateTime.monday: 'L',
-      DateTime.tuesday: 'M',
-      DateTime.wednesday: 'M',
-      DateTime.thursday: 'J',
-      DateTime.friday: 'V',
-      DateTime.saturday: 'S',
-      DateTime.sunday: 'D',
-    };
-    return labels[weekday] ?? '';
   }
 }
 
@@ -293,22 +416,44 @@ class _AnimatedFlameBadgeState extends State<_AnimatedFlameBadge>
   late final AnimationController _controller;
   late final Animation<double> _scale;
   late final Animation<double> _glow;
+  late final Animation<double> _ringScale;
+  late final Animation<double> _ringOpacity;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat(reverse: true);
-    _scale = Tween<double>(
-      begin: 0.96,
-      end: 1.06,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 0.96,
+          end: 1.14,
+        ).chain(CurveTween(curve: Curves.easeOutBack)),
+        weight: 55,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 1.14,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeOut)),
+        weight: 45,
+      ),
+    ]).animate(_controller);
     _glow = Tween<double>(
       begin: 0.18,
-      end: 0.36,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+      end: 0.48,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    _ringScale = Tween<double>(
+      begin: 0.82,
+      end: 1.26,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    _ringOpacity = Tween<double>(
+      begin: 0.46,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
   }
 
   @override
@@ -324,27 +469,52 @@ class _AnimatedFlameBadgeState extends State<_AnimatedFlameBadge>
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
-        return Container(
-          width: 72,
-          height: 72,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: colors.primary.withValues(alpha: 0.08),
-            boxShadow: [
-              BoxShadow(
-                color: colors.primary.withValues(alpha: _glow.value),
-                blurRadius: 18,
-                spreadRadius: 2,
+        return SizedBox(
+          width: 88,
+          height: 88,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Transform.scale(
+                scale: _ringScale.value,
+                child: Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: colors.primary.withValues(
+                        alpha: _ringOpacity.value,
+                      ),
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+              Container(
+                width: 74,
+                height: 74,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colors.primary.withValues(alpha: 0.10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: colors.primary.withValues(alpha: _glow.value),
+                      blurRadius: 26,
+                      spreadRadius: 4,
+                    ),
+                  ],
+                ),
+                child: Transform.scale(
+                  scale: _scale.value,
+                  child: Icon(
+                    PhosphorIcons.fire(PhosphorIconsStyle.fill),
+                    color: colors.primary,
+                    size: 40,
+                  ),
+                ),
               ),
             ],
-          ),
-          child: Transform.scale(
-            scale: _scale.value,
-            child: Icon(
-              PhosphorIcons.fire(PhosphorIconsStyle.fill),
-              color: colors.primary,
-              size: 34,
-            ),
           ),
         );
       },
