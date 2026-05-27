@@ -2437,7 +2437,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Inline "Article complet" button shown at the end of the body when the
   /// article is in partial mode — replaces the dismissible nudge for partial
   /// articles since reading-on-site is the only path to the full content.
-  Widget _buildPartialArticleInlineButton(BuildContext context, Content content) {
+  Widget _buildPartialArticleInlineButton(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     return Padding(
@@ -2461,12 +2461,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              SourceLogoAvatar(
-                source: content.source,
-                size: 24,
-                radius: 6,
-              ),
-              const SizedBox(width: 6),
               Flexible(
                 child: Text(
                   'Article complet',
@@ -2726,7 +2720,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       ),
 
                       if (isPartial && _contentResolved)
-                        _buildPartialArticleInlineButton(context, content),
+                        _buildPartialArticleInlineButton(context),
 
                       // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation.
                       // _bridgeKey attached here so _computeScrollOffsets() can measure the bridge zone.
@@ -3258,7 +3252,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   children: [
                     articleWidget,
                     if (isPartial && _contentResolved)
-                      _buildPartialArticleInlineButton(context, content),
+                      _buildPartialArticleInlineButton(context),
                     if (_showReadOnSiteNudge) ...[
                       const SizedBox(height: FacteurSpacing.space4),
                       Padding(

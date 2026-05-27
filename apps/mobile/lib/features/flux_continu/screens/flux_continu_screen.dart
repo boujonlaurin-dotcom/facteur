@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
@@ -1158,29 +1160,68 @@ class _ScrollToTopButton extends StatelessWidget {
 
   const _ScrollToTopButton({required this.onTap});
 
+  static const _kRadius =
+      BorderRadius.all(Radius.circular(22));
+
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    return Material(
-      color: colors.backgroundPrimary,
-      shape: const CircleBorder(),
-      elevation: 4,
-      shadowColor: Colors.black26,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: colors.border),
-          ),
-          alignment: Alignment.center,
-          child: Icon(
-            PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
-            size: 18,
-            color: colors.textPrimary,
+    final isDark = context.isDarkMode;
+    // Same liquidglass mix as StickyBackdrop so the pill reads as part of the
+    // same surface family (parchment in light, dark-surface tint in dark).
+    final fillColor = isDark
+        ? colors.backgroundPrimary.withValues(alpha: 0.78)
+        : const Color.fromRGBO(242, 232, 213, 0.82);
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.10)
+        : const Color.fromRGBO(0, 0, 0, 0.08);
+
+    return ClipRRect(
+      borderRadius: _kRadius,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: _kRadius,
+            onTap: onTap,
+            child: Container(
+              height: 44,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: fillColor,
+                borderRadius: _kRadius,
+                border: Border.all(color: borderColor, width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.10),
+                    blurRadius: 12,
+                    spreadRadius: -4,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
+                    size: 16,
+                    color: colors.textPrimary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Remonter',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.1,
+                      color: colors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
