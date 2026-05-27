@@ -12,6 +12,8 @@ flutter build ipa --release --no-codesign
 
 This validates the Flutter, CocoaPods, and iOS archive pipeline on Codemagic before adding Apple signing and App Store Connect upload. `flutter analyze` is currently informational in CI because the local project reports existing analyzer issues; the workflow continues so the unsigned IPA build can still be validated.
 
+The workflow pins Flutter to `3.41.6` for now. Newer Flutter stable releases mark `IconData` as `final`, which breaks the current `phosphor_flutter 2.1.0` dependency. Remove this pin after migrating the icon package or after `phosphor_flutter` publishes a compatible release.
+
 To publish to TestFlight or App Store Connect, configure the following in Codemagic, not in the repository:
 
 - App Store Connect API key

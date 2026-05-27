@@ -5,7 +5,9 @@ workflows:
     max_build_duration: 120
 
     environment:
-      flutter: stable
+      # Keep this pinned until phosphor_flutter is migrated away.
+      # Flutter 3.44 marks IconData as final, which breaks phosphor_flutter 2.1.0.
+      flutter: 3.41.6
       xcode: latest
       cocoapods: default
 
