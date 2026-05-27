@@ -120,7 +120,7 @@ class _Header extends StatelessWidget {
               Text(
                 'Ton Essentiel',
                 style: GoogleFonts.fraunces(
-                  fontSize: 22,
+                  fontSize: 24,
                   fontWeight: FontWeight.w700,
                   height: 1.2,
                   color: colors.textPrimary,
@@ -181,9 +181,9 @@ class _DateStamp extends StatelessWidget {
       height: 52,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.16),
+        color: Colors.transparent,
         shape: BoxShape.circle,
-        border: Border.all(color: accent, width: 1.2),
+        border: Border.all(color: accent, width: 0.7),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -296,12 +296,6 @@ class _LeadTile extends StatelessWidget {
                     accent: chipAccent,
                     showFollowed: article.isFollowedTopic,
                   ),
-                  if (article.perspectiveCount > 1)
-                    Text(
-                      '+ ${article.perspectiveCount} sources',
-                      style:
-                          FacteurTypography.labelSmall(colors.textTertiary),
-                    ),
                 ],
               ),
               const SizedBox(height: FacteurSpacing.space2),
@@ -310,7 +304,7 @@ class _LeadTile extends StatelessWidget {
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.fraunces(
-                  fontSize: 17,
+                  fontSize: 19,
                   fontWeight: FontWeight.w700,
                   height: 1.3,
                   color: colors.textPrimary,
@@ -362,13 +356,6 @@ class _MediumTile extends StatelessWidget {
                       style: FacteurTypography.labelSmall(colors.textTertiary),
                     ),
                   ),
-                  if (article.perspectiveCount > 1) ...[
-                    const SizedBox(width: FacteurSpacing.space2),
-                    Text(
-                      '+${article.perspectiveCount}',
-                      style: FacteurTypography.labelSmall(colors.textTertiary),
-                    ),
-                  ],
                 ],
               ),
               const SizedBox(height: 4),
@@ -377,7 +364,7 @@ class _MediumTile extends StatelessWidget {
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.fraunces(
-                  fontSize: 14.5,
+                  fontSize: 16,
                   fontWeight: FontWeight.w600,
                   height: 1.3,
                   color: colors.textPrimary,
@@ -405,7 +392,7 @@ class _SectionChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: accent.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(FacteurRadius.pill),
@@ -427,7 +414,7 @@ class _SectionChip extends StatelessWidget {
           Text(
             label,
             style: GoogleFonts.dmSans(
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.2,
               color: accent,
@@ -451,7 +438,7 @@ class _ActuBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: overrideBackground ?? accent,
         borderRadius: BorderRadius.circular(FacteurRadius.pill),
@@ -459,16 +446,10 @@ class _ActuBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.bolt_rounded,
-            size: 12,
-            color: Colors.white,
-          ),
-          const SizedBox(width: 3),
           Text(
             'Actu du jour',
             style: GoogleFonts.dmSans(
-              fontSize: 10.5,
+              fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.4,
               color: Colors.white,
