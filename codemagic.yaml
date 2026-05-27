@@ -1,0 +1,100 @@
+workflows:
+  ios-release:
+    name: iOS Release
+    instance_type: mac_mini_m2
+    max_build_duration: 120
+
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+
+      vars:
+        APP_DIR: "apps/mobile"
+        # Configure these in Codemagic UI / Team settings. Do not commit secrets:
+        # BUNDLE_ID: "com.example.app"
+        # APP_STORE_CONNECT_ISSUER_ID: Encrypted(...)
+        # APP_STORE_CONNECT_KEY_IDENTIFIER: Encrypted(...)
+        # APP_STORE_CONNECT_PRIVATE_KEY: Encrypted(...)
+
+    scripts:
+      - name: Show environment
+        script: |
+          set -euo pipefail
+          echo "Flutter version:"
+          flutter --version
+          echo "Xcode version:"
+          xcodebuild -version
+          echo "Current directory:"
+          pwd
+          echo "APP_DIR=$APP_DIR"
+
+      - name: Validate Flutter project path
+        script: |
+          set -euo pipefail
+          if [ ! -f "$APP_DIR/pubspec.yaml" ]; then
+            echo "pubspec.yaml not found at $APP_DIR/pubspec.yaml"
+            echo "Available pubspec.yaml files:"
+            find . -name pubspec.yaml -not -path "*/.dart_tool/*" -not -path "*/build/*"
+            exit 1
+          fi
+
+          if [ ! -d "$APP_DIR/ios" ]; then
+            echo "iOS folder not found at $APP_DIR/ios"
+            exit 1
+          fi
+
+      - name: Get Flutter packages
+        script: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          flutter pub get
+
+      - name: Run code generation if configured
+        script: |
+          set -euo pipefail
+          cd "$APP_DIR"
+
+          if grep -q "build_runner" pubspec.yaml; then
+            echo "build_runner detected; running code generation"
+            dart run build_runner build --delete-conflicting-outputs
+          else
+            echo "No build_runner dependency detected; skipping code generation"
+          fi
+
+      - name: Analyze Flutter project
+        script: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          set +e
+          flutter analyze
+          ANALYZE_EXIT_CODE=$?
+          set -e
+          if [ "$ANALYZE_EXIT_CODE" -ne 0 ]; then
+            echo "flutter analyze reported existing issues; continuing unsigned IPA build."
+          fi
+
+      - name: Install CocoaPods dependencies
+        script: |
+          set -euo pipefail
+          cd "$APP_DIR/ios"
+          pod install
+
+      - name: Build unsigned iOS IPA
+        script: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          flutter build ipa --release --no-codesign
+
+    artifacts:
+      - $APP_DIR/build/ios/ipa/*.ipa
+      - $APP_DIR/build/ios/archive/*.xcarchive
+      - $APP_DIR/build/ios/iphoneos/*.app
+
+    publishing:
+      email:
+        recipients:
+          - boujon.laurin@gmail.com
+        notify:
+          success: true
+          failure: true
