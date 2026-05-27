@@ -6,6 +6,7 @@ from app.services.perspective_service import (
     PERSPECTIVE_TITLE_JACCARD_MIN,
     Perspective,
     PerspectiveService,
+    _strip_source_suffix,
 )
 from app.services.text_similarity import normalize_title
 
@@ -36,23 +37,86 @@ async def test_perspective_filtering_logic():
     </channel>
     </rss>"""
 
-    # 1. Test without exclusion
+    # 1. Test without exclusion — titles are stripped at ingestion
     results = await service._parse_rss(mock_rss)
     assert len(results) == 3
+    assert [r.title for r in results] == [
+        "Article Original",
+        "Autre Article",
+        "Doublon Titre",
+    ]
 
     # 2. Test with URL exclusion
     results_url = await service._parse_rss(mock_rss, exclude_url="http://lemonde.fr/article1")
     assert len(results_url) == 2
-    assert results_url[0].title == "Autre Article - Figaro"
+    assert results_url[0].title == "Autre Article"
 
-    # 3. Test with Title exclusion (similarity check)
-    # The logic splits by " - " and compares
+    # 3. Test with Title exclusion (similarity check on stripped title)
     results_title = await service._parse_rss(mock_rss, exclude_title="Doublon Titre")
-    assert len(results_title) == 2
-    assert results_title[1].title == "Autre Article - Figaro"  # Order might change due to set, but here list
-    # Actually Liberation was the 3rd one.
     titles = [r.title for r in results_title]
-    assert "Doublon Titre - Libe" not in titles
+    assert "Doublon Titre" not in titles
+    assert len(results_title) == 2
+
+
+def test_strip_source_suffix_uses_known_source_name():
+    """Primary path: exact match against <source> element."""
+    assert (
+        _strip_source_suffix("Macron annonce une réforme - Le Monde", "Le Monde")
+        == "Macron annonce une réforme"
+    )
+    # Em-dash variant
+    assert (
+        _strip_source_suffix("Sujet brûlant – Libération", "Libération")
+        == "Sujet brûlant"
+    )
+    # Pipe variant
+    assert (
+        _strip_source_suffix("Headline | The Guardian", "The Guardian")
+        == "Headline"
+    )
+    # Case-insensitive
+    assert (
+        _strip_source_suffix("Foo - LE MONDE", "Le Monde") == "Foo"
+    )
+
+
+def test_strip_source_suffix_fallback_regex_when_source_mismatches():
+    """When <source> doesn't match (Google News localized variant), fallback."""
+    # `Figaro` doesn't equal `Le Figaro` exactly → fallback regex catches it.
+    assert (
+        _strip_source_suffix("Autre Article - Figaro", "Le Figaro")
+        == "Autre Article"
+    )
+
+
+def test_strip_source_suffix_preserves_legitimate_dash_titles():
+    """Hyphens in real titles must NOT trigger a strip."""
+    # Suffix too long (>40 chars after separator)
+    assert (
+        _strip_source_suffix(
+            "Flipper One - Le Linux de poche qui terrifie ses propres créateurs",
+            None,
+        )
+        == "Flipper One - Le Linux de poche qui terrifie ses propres créateurs"
+    )
+    # Contains a colon → not a source suffix
+    assert (
+        _strip_source_suffix(
+            "Accord États-Unis – Iran : Finkielkraut espère", None
+        )
+        == "Accord États-Unis – Iran : Finkielkraut espère"
+    )
+    # Numeric date suffix (Google News-style timestamp on radio shows)
+    assert (
+        _strip_source_suffix("Le Grand entretien - 26/05", None)
+        == "Le Grand entretien - 26/05"
+    )
+
+
+def test_strip_source_suffix_handles_empty_and_whitespace():
+    assert _strip_source_suffix("", "Le Monde") == ""
+    assert _strip_source_suffix("Foo - Le Monde  ", "Le Monde") == "Foo"
+    assert _strip_source_suffix("Foo", "Le Monde") == "Foo"
 
 
 # ---------------------------------------------------------------------------

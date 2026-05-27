@@ -718,6 +718,84 @@ async def test_attach_highlight_spans_invalidates_llm_on_cluster_signature_misma
 
 
 @pytest.mark.asyncio
+async def test_attach_highlight_spans_clamps_out_of_bounds_llm_spans(
+    db_session, cluster_setup
+):
+    """Legacy semantic_equiv rows have positions computed on the raw RSS
+    title (before the source-suffix strip at ingestion). Once the served
+    title is shorter, any `end > len(title)` span must be dropped instead
+    of crashing the Flutter DiffTitle layout."""
+    await _seed_strong_tokens_cache(
+        db_session, cluster_setup, _REF_TOKENS_GAZA, _ALT_TOKENS_GAZA
+    )
+
+    served_title = "Armée israélienne bombarde Gaza"  # 31 chars
+    signature = _cluster_signature(cluster_setup)
+    legacy_spans = [
+        {  # in-bounds — must survive
+            "start": 18,
+            "end": 26,
+            "text": "bombarde",
+            "category": "editorial_angle",
+            "weight": 1.0,
+            "justification": "ok",
+        },
+        {  # end past served title length (stale, raw-title position)
+            "start": 32,
+            "end": 44,
+            "text": "- Le Monde",
+            "category": "noise",
+            "weight": 0.0,
+            "justification": "stale suffix span",
+        },
+        {  # negative start guard
+            "start": -1,
+            "end": 5,
+            "text": "junk",
+            "category": "noise",
+            "weight": 0.0,
+            "justification": "junk",
+        },
+        {  # zero-width
+            "start": 5,
+            "end": 5,
+            "text": "",
+            "category": "noise",
+            "weight": 0.0,
+            "justification": "empty",
+        },
+    ]
+    alt_row = await db_session.get(
+        ClusterTitleAnnotation,
+        (cluster_setup["cluster_id"], cluster_setup["alt_a"].id),
+    )
+    alt_row.semantic_equiv = _llm_payload(legacy_spans, signature)
+    await db_session.commit()
+
+    fake_svc = service_with_nlp(FakeNlp({}))
+    perspectives = [
+        {
+            "title": served_title,
+            "url": cluster_setup["alt_a"].url,
+            "bias_stance": "left",
+        }
+    ]
+    with patch(
+        "app.routers.contents.get_title_annotation_service",
+        return_value=fake_svc,
+    ):
+        _, source = await _attach_highlight_spans(
+            db_session, cluster_setup["ref"], perspectives
+        )
+
+    assert source == "llm"
+    spans = perspectives[0]["highlight_spans"]
+    assert len(spans) == 1, f"only the in-bounds span survives, got {spans}"
+    assert spans[0]["text"] == "bombarde"
+    assert spans[0]["end"] <= len(served_title)
+
+
+@pytest.mark.asyncio
 async def test_build_cluster_perspectives_propagates_content_language(db_session):
     """`Perspective.language` mirrors `Content.language` so the endpoint
     list-comp can expose it without an extra DB lookup."""
