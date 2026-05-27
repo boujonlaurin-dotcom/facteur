@@ -403,6 +403,97 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     ];
   }
 
+  /// Marks a single article as read in-memory (same-session visual feedback).
+  ///
+  /// Called by [FluxContinuScreen._openArticle] after the reader route pops so
+  /// the card immediately shows the grey + check badge without waiting for a
+  /// pull-to-refresh. No API call — the reader already fires the status update
+  /// independently.
+  void markArticleRead(String contentId) {
+    if (contentId.isEmpty) return;
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final updated = [
+      for (final s in current.sections)
+        switch (s) {
+          EssentielSection(:final articles) => EssentielSection(
+              articles: [
+                for (final a in articles)
+                  if (a.contentId == contentId)
+                    EssentielArticle(
+                      contentId: a.contentId,
+                      title: a.title,
+                      url: a.url,
+                      thumbnailUrl: a.thumbnailUrl,
+                      publishedAt: a.publishedAt,
+                      sourceName: a.sourceName,
+                      sourceLetter: a.sourceLetter,
+                      sectionLabel: a.sectionLabel,
+                      rank: a.rank,
+                      kind: a.kind,
+                      theme: a.theme,
+                      perspectiveCount: a.perspectiveCount,
+                      isRead: true,
+                      isSaved: a.isSaved,
+                      isLiked: a.isLiked,
+                      isDismissed: a.isDismissed,
+                      isFollowedSource: a.isFollowedSource,
+                      isFollowedTopic: a.isFollowedTopic,
+                      isActuDuJour: a.isActuDuJour,
+                    )
+                  else
+                    a,
+              ],
+              blurb: s.blurb,
+              illustrationAsset: s.illustrationAsset,
+            ),
+          DigestTopicSection(:final topics) => DigestTopicSection(
+              kind: s.kind,
+              label: s.label,
+              accent: s.accent,
+              coreVisibleCount: s.coreVisibleCount,
+              blurb: s.blurb,
+              illustrationAsset: s.illustrationAsset,
+              topics: [
+                for (final t in topics)
+                  t.copyWith(
+                    articles: [
+                      for (final a in t.articles)
+                        if (a.contentId == contentId)
+                          a.copyWith(isRead: true)
+                        else
+                          a,
+                    ],
+                  ),
+              ],
+            ),
+          FeedThemeSection(
+            :final items,
+            :final themeSlug,
+            :final customTopicId,
+          ) =>
+            FeedThemeSection(
+              kind: s.kind,
+              label: s.label,
+              accent: s.accent,
+              coreVisibleCount: s.coreVisibleCount,
+              blurb: s.blurb,
+              illustrationAsset: s.illustrationAsset,
+              themeSlug: themeSlug,
+              customTopicId: customTopicId,
+              items: [
+                for (final c in items)
+                  if (c.id == contentId)
+                    c.copyWith(status: ContentStatus.consumed)
+                  else
+                    c,
+              ],
+            ),
+        },
+    ];
+    state = AsyncData(current.copyWith(sections: updated));
+  }
+
   /// Toggle the expand/collapse state of a section's "Plus de…" overflow.
   void toggleMore(FluxSection section) {
     final current = state.valueOrNull;
