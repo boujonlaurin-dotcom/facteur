@@ -62,6 +62,37 @@ def _parse_entity_names(
 # User-Agent to avoid being blocked by Google News
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+# Google News RSS titles end with " - Source Name" / " | Source" / " – Source".
+# Stripping at ingestion keeps the source name out of DiffTitle highlight spans
+# (spaCy would otherwise tag « Le Monde » as PROPN and surligher).
+# Primary path: exact match against the known source name from <source>.
+# Fallback regex stays restrictive — uppercase-initial, no colon, no internal
+# separator, ≤ 40 chars — to avoid eating legitimate dash-bearing titles
+# (« Foo - Le Linux de poche… », « Etats-Unis – Iran : … », « … - 26/05 »).
+_SOURCE_SUFFIX_FALLBACK_RE = re.compile(
+    r"\s+[-–|]\s+[A-ZÀ-Ý][A-Za-zÀ-ÿ0-9\s'.&-]{0,40}\s*$"
+)
+
+
+def _strip_source_suffix(title: str, source_name: str | None = None) -> str:
+    """Remove Google News' trailing source-name suffix from an RSS title."""
+    if not title:
+        return title
+    stripped = title.rstrip()
+    if source_name:
+        sn = source_name.strip()
+        if sn:
+            lower_title = stripped.lower()
+            lower_sn = sn.lower()
+            for sep in (" - ", " – ", " | "):
+                suffix = f"{sep}{lower_sn}"
+                if lower_title.endswith(suffix):
+                    return stripped[: -len(suffix)].rstrip()
+    match = _SOURCE_SUFFIX_FALLBACK_RE.search(stripped)
+    if match:
+        return stripped[: match.start()].rstrip()
+    return stripped
+
 # Bias mapping for major French news sources
 DOMAIN_BIAS_MAP = {
     # LEFT
@@ -892,23 +923,27 @@ class PerspectiveService:
                 if title_el is None or link_el is None:
                     continue
 
-                title = title_el.text or ""
+                raw_title = title_el.text or ""
                 link = link_el.text or ""
 
                 # 1. Filter out exact URL match
                 if exclude_url and link == exclude_url:
                     continue
 
-                # 2. Filter out very similar titles (simple exact match or contains for now)
-                # Google News titles often include " - Source Name" at the end
+                source_name = source_el.text if source_el is not None else "Unknown"
+                source_url = source_el.get("url", "") if source_el is not None else ""
+
+                # Strip Google News' "- Source" suffix once, at ingestion.
+                # All downstream consumers (dedup, DiffTitle, LLM annotation)
+                # see a clean title.
+                title = _strip_source_suffix(raw_title, source_name)
+
+                # 2. Filter out very similar titles vs. the reference article
                 if exclude_title:
-                    clean_title = title.split(" - ")[0].strip().lower()
+                    clean_title = title.lower()
                     clean_exclude = exclude_title.strip().lower()
                     if clean_title == clean_exclude or clean_exclude in clean_title:
                         continue
-
-                source_name = source_el.text if source_el is not None else "Unknown"
-                source_url = source_el.get("url", "") if source_el is not None else ""
 
                 # Extract domain from source URL
                 domain = self._extract_domain(source_url)
@@ -935,7 +970,7 @@ class PerspectiveService:
 
                 perspectives.append(
                     Perspective(
-                        title=title_el.text or "",
+                        title=title,
                         url=link_el.text or "",
                         source_name=source_name,
                         source_domain=domain,

@@ -34,7 +34,7 @@ SNAPSHOT_PATH = (
 
 def test_constants_locked():
     """Verrouille les contrats publics du module (cf. plan.md)."""
-    assert LLM_VERSION == "mistral-medium-latest-v1"
+    assert LLM_VERSION == "mistral-medium-latest-v2"
     assert DEFAULT_MODEL == "mistral-medium-latest"
     assert TARGET_CATEGORIES == {
         "editorial_angle",

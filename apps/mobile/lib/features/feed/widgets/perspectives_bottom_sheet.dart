@@ -18,6 +18,14 @@ import 'article_viewer_modal.dart';
 import 'coverage_spectrum_bar.dart';
 import 'diff_title.dart';
 
+/// Texte d'introduction expliquant le surlignage. Affiché dans le bottom-sheet
+/// modal ET en tête du groupe inline de la section « Couverture médiatique »
+/// du reader d'article — single source of truth pour les deux vues.
+const String kHighlightIntroText =
+    'Le surlignage met en évidence les termes qui '
+    'marquent l\'angle éditorial : plus le surlignage '
+    'est intense, plus le choix de mot est éditorialisé.';
+
 /// Ouvre l'URL d'une perspective dans le même reader (modal webview) que
 /// pour un article interne. `useRootNavigator: true` empile la modal au-dessus
 /// de la sheet de comparaisons — la fermer ramène l'utilisateur sur la sheet
@@ -420,9 +428,7 @@ class _PerspectivesBottomSheetState
                           ],
                           const SizedBox(height: 12),
                           Text(
-                            'Le surlignage met en évidence les termes qui '
-                            'marquent l\'angle éditorial : plus le surlignage '
-                            'est intense, plus le choix de mot est éditorialisé.',
+                            kHighlightIntroText,
                             style: textTheme.bodySmall?.copyWith(
                               color: colors.textSecondary,
                               height: 1.4,
@@ -686,9 +692,7 @@ class _PerspectiveCard extends ConsumerWidget {
                     children: [
                       Expanded(
                         child: DiffTitle(
-                          title: perspective.title
-                              .replaceAll(RegExp(r'\s+[-–|]\s+[^-–|]+$'), '')
-                              .trim(),
+                          title: perspective.title.trim(),
                           highlightSpans: perspective.highlightSpans,
                           sharedTokens: perspective.sharedTokens,
                           biasColor: perspective.getBiasColor(colors),
@@ -1508,6 +1512,19 @@ class _PerspectivesInlineSectionState
               color: colors.textSecondary.withValues(alpha: 0.18),
             ),
           ],
+          if (variants.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+              child: Text(
+                kHighlightIntroText,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.bodySmall?.copyWith(
+                  color: colors.textSecondary,
+                  height: 1.35,
+                ),
+              ),
+            ),
           for (var i = 0; i < variants.length; i++)
             _VariantRow(
               key: ValueKey('variant_${_animationGeneration}_$i'),
