@@ -12,7 +12,8 @@ import '../../../config/theme.dart';
 /// still be reopened.
 ///
 /// Layout mirrors [FoldedSectionCard] (same padding / hairline) but uses a
-/// larger Fraunces H1 weight and [Icons.expand_more] to signpost the action.
+/// larger Fraunces H1 weight and [Icons.unfold_more] (double chevron) to
+/// signpost the expand action.
 class TourneeFoldedGroupCard extends StatelessWidget {
   final VoidCallback onTap;
 
@@ -42,7 +43,7 @@ class TourneeFoldedGroupCard extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Tournée du jour ✓',
+                  'Tournée du jour',
                   style: GoogleFonts.fraunces(
                     fontSize: 21,
                     fontWeight: FontWeight.w700,
@@ -56,7 +57,7 @@ class TourneeFoldedGroupCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Icon(
-                Icons.expand_more,
+                Icons.unfold_more,
                 size: 22,
                 color: colors.textPrimary.withValues(alpha: 0.45),
               ),

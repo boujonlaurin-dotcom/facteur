@@ -18,23 +18,23 @@ void main() {
   });
 
   group('TourneeFoldedGroupCard', () {
-    testWidgets('renders « Tournée du jour ✓ » title with Fraunces font',
+    testWidgets('renders « Tournée du jour » title with Fraunces font',
         (tester) async {
       await tester.pumpWidget(_wrap(
         TourneeFoldedGroupCard(onTap: () {}),
       ));
 
       // Title text is present
-      expect(find.text('Tournée du jour ✓'), findsOneWidget);
+      expect(find.text('Tournée du jour'), findsOneWidget);
     });
 
-    testWidgets('renders check icon and expand_more chevron', (tester) async {
+    testWidgets('renders check icon and double chevron', (tester) async {
       await tester.pumpWidget(_wrap(
         TourneeFoldedGroupCard(onTap: () {}),
       ));
 
       expect(find.byIcon(Icons.check), findsOneWidget);
-      expect(find.byIcon(Icons.expand_more), findsOneWidget);
+      expect(find.byIcon(Icons.unfold_more), findsOneWidget);
     });
 
     testWidgets('fires onTap callback when tapped', (tester) async {
@@ -56,7 +56,7 @@ void main() {
         TourneeFoldedGroupCard(onTap: () => taps++),
       ));
 
-      await tester.tap(find.text('Tournée du jour ✓'));
+      await tester.tap(find.text('Tournée du jour'));
       await tester.pump();
 
       expect(taps, 1);
