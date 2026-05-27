@@ -1138,6 +1138,9 @@ class _ScrollToTopButton extends StatelessWidget {
 
   const _ScrollToTopButton({required this.onTap});
 
+  static const _kRadius =
+      BorderRadius.all(Radius.circular(22));
+
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
@@ -1152,20 +1155,20 @@ class _ScrollToTopButton extends StatelessWidget {
         : const Color.fromRGBO(0, 0, 0, 0.08);
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: _kRadius,
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: _kRadius,
             onTap: onTap,
             child: Container(
               height: 44,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
                 color: fillColor,
-                borderRadius: BorderRadius.circular(22),
+                borderRadius: _kRadius,
                 border: Border.all(color: borderColor, width: 1),
                 boxShadow: [
                   BoxShadow(
