@@ -468,6 +468,17 @@ NEWS_BULLETIN_PATTERNS = [
     r"^\s*revue de presse\b",
     r"^\s*flash (info|actu)\b",
     r"^\s*le journal\b",  # Le journal de France Inter, Le Journal du week-end
+    # « Journal RTL », « Journal RFI » sans déterminant — pas catché par
+    # « Le journal » ni « Journal de Xh ».
+    r"^\s*journal (rtl|rfi|bfm|europe|france|rmc|lcp|i-?t[eé]l[eé])\b",
+    # « L'émission politique », « L'Émission du soir » — apostrophe droite
+    # ou typographique.
+    r"^\s*l[''’]\s*[ée]mission\b",
+    # « Ma chronique », « La chronique de Nicolas », « Sa chronique du lundi »
+    # — ancré sur possessif/déterminant pour éviter « Une chronique du conflit ».
+    r"^\s*(ma|la|sa|notre)\s+chronique\b",
+    # « Chronique: l'économie », « Chronique – bilan de semaine ».
+    r"^\s*chronique\s*[:\-–—]",
 ]
 
 _BULLETIN_RE = re.compile("|".join(NEWS_BULLETIN_PATTERNS), re.IGNORECASE)
@@ -485,6 +496,29 @@ def is_news_bulletin_title(title: str | None) -> bool:
     if not title:
         return False
     return bool(_BULLETIN_RE.search(title))
+
+
+# Sources dont les articles ne peuvent pas être sélectionnés comme actu dans
+# le top 10 éditorial. Match par sous-chaîne casefold sur Source.name — tolère
+# variations (« Frandroid », « FRANDROID », « frandroid.com »).
+EDITORIAL_SOURCE_DENYLIST: frozenset[str] = frozenset(
+    {
+        # Publie du contenu sponsorisé non systématiquement tagué is_ad
+        # (« Bouygues fête ses 30 ans… »).
+        "frandroid",
+    }
+)
+
+
+def is_denylisted_editorial_source(content) -> bool:  # type: ignore[no-untyped-def]
+    """True si la source du contenu est dans EDITORIAL_SOURCE_DENYLIST."""
+    source = getattr(content, "source", None)
+    if source is None:
+        return False
+    name = (getattr(source, "name", None) or "").casefold()
+    if not name:
+        return False
+    return any(token in name for token in EDITORIAL_SOURCE_DENYLIST)
 
 
 def _match_ratio(cluster: TopicCluster, keywords: list[str]) -> float:
