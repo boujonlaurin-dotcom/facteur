@@ -48,16 +48,7 @@ class DivergenceInlineBadge extends StatelessWidget {
   static _BadgeConfig? _configFor(String? level, FacteurColors colors) {
     switch (level) {
       case 'low':
-        return _BadgeConfig(
-          label: 'CONSENSUS',
-          dots: [
-            _Dot(11, 6, colors.textTertiary, 0.55),
-            _Dot(14, 6, colors.textTertiary, 0.55),
-            _Dot(17, 6, colors.textTertiary, 0.55),
-          ],
-          labelColor: colors.textTertiary,
-          bold: false,
-        );
+        return null;
       case 'medium':
         return _BadgeConfig(
           label: 'AVIS VARIÉS',

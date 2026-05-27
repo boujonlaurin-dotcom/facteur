@@ -127,6 +127,7 @@ class _DigestSectionScreenState extends ConsumerState<DigestSectionScreen> {
                 isEssentiel: section.kind == SectionKind.essentiel,
                 pressReviewCount: topic.perspectiveCount,
                 perspectiveSources: topic.perspectiveSources,
+                divergenceLevel: topic.divergenceLevel,
                 onTap: () => _openArticle(context, lead),
               );
             },

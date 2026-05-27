@@ -242,6 +242,7 @@ class SectionBlock extends StatelessWidget {
                 isEssentiel: isEssentiel,
                 pressReviewCount: visible[i].perspectiveCount,
                 perspectiveSources: visible[i].perspectiveSources,
+                divergenceLevel: visible[i].divergenceLevel,
                 onTap: () =>
                     onTapArticle(pickTopicLead(visible[i]), section),
                 onSwipeDismiss: onDismissArticle == null

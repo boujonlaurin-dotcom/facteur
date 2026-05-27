@@ -896,6 +896,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         // action (e.g. analyzePerspectives) operates on the same content.
         contentId: pivotId,
         comparisonQuality: response.comparisonQuality,
+        divergenceLevel: widget.topic.divergenceLevel,
       ),
     );
   }

@@ -15,14 +15,22 @@ void main() {
   }
 
   group('DivergenceInlineBadge', () {
-    testWidgets('low → Consensus en text_tertiary (non bold)', (tester) async {
+    testWidgets('low → silence total (même comportement que null)',
+        (tester) async {
       await tester.pumpWidget(host('low'));
       await tester.pumpAndSettle();
 
-      expect(find.text('CONSENSUS'), findsOneWidget);
-      expect(find.byType(CustomPaint), findsWidgets);
-      final label = tester.widget<Text>(find.text('CONSENSUS'));
-      expect(label.style?.fontWeight, FontWeight.w500);
+      // Option A validée : 'low' = silence total, aucun badge affiché
+      expect(find.text('CONSENSUS'), findsNothing);
+      expect(find.text('AVIS VARIÉS'), findsNothing);
+      expect(find.text('POLARISÉ'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(DivergenceInlineBadge),
+          matching: find.byType(CustomPaint),
+        ),
+        findsNothing,
+      );
     });
 
     testWidgets('medium → Avis variés en text_tertiary (non bold)',

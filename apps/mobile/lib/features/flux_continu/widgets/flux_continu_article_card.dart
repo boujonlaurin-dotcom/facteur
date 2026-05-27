@@ -8,6 +8,7 @@ import '../../../config/topic_labels.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../digest/models/digest_models.dart';
+import '../../digest/widgets/divergence_inline_badge.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/swipe_to_open_card.dart';
 import '../../sources/models/source_model.dart';
@@ -101,6 +102,7 @@ class FluxContinuArticleCard extends StatefulWidget {
   final bool isEssentiel;
   final int pressReviewCount;
   final List<SourceMini> perspectiveSources;
+  final String? divergenceLevel;
 
   const FluxContinuArticleCard({
     super.key,
@@ -112,6 +114,7 @@ class FluxContinuArticleCard extends StatefulWidget {
     this.isEssentiel = false,
     this.pressReviewCount = 0,
     this.perspectiveSources = const [],
+    this.divergenceLevel,
   });
 
   @override
@@ -210,6 +213,7 @@ class _FluxContinuArticleCardState extends State<FluxContinuArticleCard> {
                                 widget.isEssentiel && widget.pressReviewCount > 0,
                             pressReviewCount: widget.pressReviewCount,
                             perspectiveSources: widget.perspectiveSources,
+                            divergenceLevel: widget.divergenceLevel,
                           ),
                         ],
                       ),
@@ -385,6 +389,7 @@ class _Footer extends StatelessWidget {
   final bool showPressReview;
   final int pressReviewCount;
   final List<SourceMini> perspectiveSources;
+  final String? divergenceLevel;
 
   const _Footer({
     required this.vm,
@@ -392,6 +397,7 @@ class _Footer extends StatelessWidget {
     required this.showPressReview,
     required this.pressReviewCount,
     required this.perspectiveSources,
+    this.divergenceLevel,
   });
 
   @override
@@ -461,6 +467,10 @@ class _Footer extends StatelessWidget {
             height: 1.4,
           ),
         ),
+        if (divergenceLevel != null) ...[
+          const SizedBox(width: 6),
+          DivergenceInlineBadge(divergenceLevel: divergenceLevel),
+        ],
         if (showPressReview) ...[
           const Spacer(),
           _PressReviewChip(
