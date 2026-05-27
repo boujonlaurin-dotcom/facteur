@@ -180,26 +180,27 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
     final velocity = details.primaryVelocity ?? 0;
     final ratio = _dragExtent / screenWidth;
 
-    // Right swipe: open
+    // Right swipe: open. We deliberately skip _snapBack() — the parent
+    // pushes the article route immediately, so bouncing the card back to 0
+    // before the transition gave a "rebound" impression that the action
+    // wasn't firing.
     if (!_hasTriggered &&
         _dragExtent > 0 &&
         (ratio > _threshold || velocity > _flingVelocity)) {
       _hasTriggered = true;
       HapticFeedback.mediumImpact();
       widget.onSwipeOpen();
-      if (!mounted) return;
-      _snapBack();
       return;
     }
 
-    // Left swipe: snap back and fire callback (Epic 12: opens bottom sheet)
+    // Left swipe: fire callback (Epic 12: opens bottom sheet). Same rationale
+    // as above — let the bottom sheet take over instead of snapping back.
     if (!_hasTriggered &&
         _dragExtent < 0 &&
         widget.onSwipeDismiss != null &&
         (ratio < -_threshold || velocity < -_flingVelocity)) {
       _hasTriggered = true;
       HapticFeedback.mediumImpact();
-      _snapBack();
       widget.onSwipeDismiss!();
       return;
     }

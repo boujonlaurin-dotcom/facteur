@@ -27,6 +27,8 @@ class FluxArticleVM {
   final int? durationSeconds;
   final DateTime? publishedAt;
   final bool isFollowedSource;
+  final bool isRead;
+  final int readingProgress;
 
   const FluxArticleVM({
     required this.contentId,
@@ -39,7 +41,11 @@ class FluxArticleVM {
     this.durationSeconds,
     this.publishedAt,
     this.isFollowedSource = false,
+    this.isRead = false,
+    this.readingProgress = 0,
   });
+
+  bool get hasBeenRead => isRead || readingProgress > 0;
 
   factory FluxArticleVM.from(Object article) {
     if (article is DigestItem) {
@@ -57,6 +63,7 @@ class FluxArticleVM {
         durationSeconds: article.durationSeconds,
         publishedAt: article.publishedAt,
         isFollowedSource: article.isFollowedSource,
+        isRead: article.isRead,
       );
     }
     if (article is Content) {
@@ -71,6 +78,9 @@ class FluxArticleVM {
         durationSeconds: article.durationSeconds,
         publishedAt: article.publishedAt,
         isFollowedSource: article.isFollowedSource,
+        isRead: article.status == ContentStatus.consumed ||
+            article.readingProgress > 0,
+        readingProgress: article.readingProgress,
       );
     }
     throw ArgumentError('Unsupported article type: ${article.runtimeType}');
@@ -127,79 +137,83 @@ class _FluxContinuArticleCardState extends State<FluxContinuArticleCard> {
 
     Widget card = Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: Material(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(12),
-        elevation: 0,
-        child: GestureDetector(
-          onLongPressStart: (_) => ArticlePreviewOverlay.show(
-              context, articleToContent(widget.article)),
-          onLongPressMoveUpdate: (details) => ArticlePreviewOverlay.updateScroll(
-              details.localOffsetFromOrigin.dy),
-          onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-          child: InkWell(
-            onTap: widget.onTap,
-            borderRadius: BorderRadius.circular(12),
-            child: Ink(
-              decoration: BoxDecoration(
-                color: colors.surface,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            vm.title,
-                            style: GoogleFonts.dmSans(
-                              fontSize: 18.0,
-                              fontWeight: FontWeight.w600,
-                              height: 1.3,
-                              letterSpacing: -0.15,
-                              color: colors.textPrimary,
-                            ),
-                            maxLines: 4,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (hasThumb) ...[
-                          const SizedBox(width: 12),
-                          _Thumbnail(
-                            url: vm.thumbnailUrl!,
-                            isVideo: _isVideo(vm.contentType),
-                            accent: colors.primary,
-                            onError: () {
-                              if (mounted && !_thumbErrored) {
-                                setState(() => _thumbErrored = true);
-                              }
-                            },
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    _Footer(
-                      vm: vm,
-                      colors: colors,
-                      showPressReview:
-                          widget.isEssentiel && widget.pressReviewCount > 0,
-                      pressReviewCount: widget.pressReviewCount,
-                      perspectiveSources: widget.perspectiveSources,
+      child: Opacity(
+        opacity: vm.hasBeenRead ? 0.6 : 1.0,
+        child: Material(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(12),
+          elevation: 0,
+          child: GestureDetector(
+            onLongPressStart: (_) => ArticlePreviewOverlay.show(
+                context, articleToContent(widget.article)),
+            onLongPressMoveUpdate: (details) =>
+                ArticlePreviewOverlay.updateScroll(
+                    details.localOffsetFromOrigin.dy),
+            onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+            child: InkWell(
+              onTap: widget.onTap,
+              borderRadius: BorderRadius.circular(12),
+              child: Ink(
+                decoration: BoxDecoration(
+                  color: colors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
                     ),
                   ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              vm.title,
+                              style: GoogleFonts.dmSans(
+                                fontSize: 18.0,
+                                fontWeight: FontWeight.w600,
+                                height: 1.3,
+                                letterSpacing: -0.15,
+                                color: colors.textPrimary,
+                              ),
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (hasThumb) ...[
+                            const SizedBox(width: 12),
+                            _Thumbnail(
+                              url: vm.thumbnailUrl!,
+                              isVideo: _isVideo(vm.contentType),
+                              accent: colors.primary,
+                              onError: () {
+                                if (mounted && !_thumbErrored) {
+                                  setState(() => _thumbErrored = true);
+                                }
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      _Footer(
+                        vm: vm,
+                        colors: colors,
+                        showPressReview:
+                            widget.isEssentiel && widget.pressReviewCount > 0,
+                        pressReviewCount: widget.pressReviewCount,
+                        perspectiveSources: widget.perspectiveSources,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -207,6 +221,19 @@ class _FluxContinuArticleCardState extends State<FluxContinuArticleCard> {
         ),
       ),
     );
+
+    if (vm.hasBeenRead) {
+      card = Stack(
+        children: [
+          card,
+          Positioned(
+            top: 4,
+            right: 16,
+            child: _ReadCheckBadge(color: colors.success),
+          ),
+        ],
+      );
+    }
 
     if (widget.onTap != null) {
       card = SwipeToOpenCard(
@@ -618,6 +645,36 @@ class _PressReviewChip extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ReadCheckBadge extends StatelessWidget {
+  final Color color;
+  const _ReadCheckBadge({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      alignment: Alignment.center,
+      child: Icon(
+        PhosphorIcons.check(PhosphorIconsStyle.bold),
+        size: 12,
+        color: Colors.white,
+      ),
     );
   }
 }
