@@ -479,21 +479,30 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         ? const <String>{}
         : {sectionKey(fromSection)};
     final heightsBefore = _measureFoldCandidateHeights(exceptKeys);
+    String? openedContentId;
     if (article is DigestItem) {
+      openedContentId = article.contentId;
       await context
           .push('${RoutePaths.fluxContinu}/content/${article.contentId}');
     } else if (article is Content) {
+      openedContentId = article.id;
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.id}',
         extra: article,
       );
     } else if (article is EssentielArticle) {
+      openedContentId = article.contentId;
       await context
           .push('${RoutePaths.fluxContinu}/content/${article.contentId}');
     } else {
       return;
     }
     if (!mounted) return;
+    // Mark the article as read in local state so the card immediately
+    // shows the grey + check badge without waiting for a pull-to-refresh.
+    ref
+        .read(fluxContinuProvider.notifier)
+        .markArticleRead(openedContentId);
     ref
         .read(fluxContinuProvider.notifier)
         .applyPendingFoldsToState(exceptKeys: exceptKeys);
