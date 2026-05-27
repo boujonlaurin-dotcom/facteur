@@ -84,7 +84,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   final ValueNotifier<int> _activeIndex = ValueNotifier(0);
   final ValueNotifier<bool> _isInExploreMode = ValueNotifier(false);
 
-  /// Controls whether the « Tournée du jour ✓ » group toggle is expanded.
+  /// Controls whether the « Tournée du jour » group toggle is expanded.
   /// Resets to [false] (collapsed) on app pause and when opening an article
   /// from Flâner — per spec, the grouping re-appears on quit-and-return.
   final ValueNotifier<bool> _tourneeGroupExpanded = ValueNotifier(false);
@@ -137,7 +137,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    // Collapse the « Tournée du jour ✓ » toggle when the app is backgrounded
+    // Collapse the « Tournée du jour » toggle when the app is backgrounded
     // so the user always sees it grouped on return — per spec.
     // `hidden` covers the moment the app becomes invisible on Android (Flutter
     // 3.13+); `paused` is the fallback and the reliable signal on iOS.
@@ -523,7 +523,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     }
     if (!mounted) return;
     // When the article was opened from Flâner (fromSection == null), collapse
-    // the group toggle so the user sees the « Tournée du jour ✓ » row on
+    // the group toggle so the user sees the « Tournée du jour » row on
     // return — per spec.
     if (fromSection == null) _tourneeGroupExpanded.value = false;
     // Mark the article as read in local state so the card immediately
@@ -777,7 +777,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final exploreCarousels = feedState?.carousels ?? const <FeedCarouselData>[];
 
     // When every editorial section is folded, the individual pile of
-    // FoldedSectionCards is replaced by a single « Tournée du jour ✓ » toggle.
+    // FoldedSectionCards is replaced by a single « Tournée du jour » toggle.
     final allFolded = state.sections.isNotEmpty &&
         state.sections.every((s) => state.isFolded(s));
 
@@ -876,7 +876,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
           // computed index handles both ordering modes (normal / sereine) by
           // tracking the actual position of the first favorite kind.
           // When all sections are folded, collapse the pile into a single
-          // « Tournée du jour ✓ » toggle. Tapping expands it back to the
+          // « Tournée du jour » toggle. Tapping expands it back to the
           // individual FoldedSectionCards (each still re-openable).
           if (allFolded)
             SliverToBoxAdapter(
