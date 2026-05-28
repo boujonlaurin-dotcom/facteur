@@ -131,6 +131,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   Map<String, bool> _moreOpen = const {};
   Map<String, bool> _folded = const {};
   bool _closingDismissed = false;
+  // Citation du jour servie par le backend (sérène ou normal — même pool
+  // YAML, sélection déterministe seed = user_id + date). Rendue avant
+  // ClosingCardV18 comme clôture éditoriale de la tournée.
+  QuoteResponse? _quote;
   final Set<String> _dismissedIds = <String>{};
 
   /// Sections marked as "consumed" during this session via the scroll-past
@@ -230,6 +234,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       illustration: _kBonnesIllustration,
       coreVisibleCount: isSerene ? 4 : 2,
     );
+    // Citation du jour — même pool dans les deux digests (déterministe par
+    // user/date), on prend le sérène par défaut et on retombe sur le normal
+    // si seul l'un des deux a réussi.
+    _quote = dual?.serein?.quote ?? dual?.normal?.quote;
 
     final favorites = _pickFavorites(topThemes);
     _lastFavorites = favorites;
@@ -299,6 +307,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       closingDismissed: _closingDismissed,
       dismissedIds: Set.unmodifiable(_dismissedIds),
       markedForNextSession: Set.unmodifiable(_persistQueued),
+      quote: _quote,
       isLoading: false,
     );
   }
