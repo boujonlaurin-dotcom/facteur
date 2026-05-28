@@ -1047,6 +1047,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                     i == state.sections.length - 1)
                 ? _endOfTournee
                 : null,
+            scrollController:
+                section is EssentielSection ? _scroll : null,
           ),
         ),
       ));

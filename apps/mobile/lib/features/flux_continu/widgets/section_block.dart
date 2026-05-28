@@ -92,6 +92,11 @@ class SectionBlock extends StatelessWidget {
   /// Flâner banner. Mutually exclusive with [onNextSection].
   final VoidCallback? onEndOfTournee;
 
+  /// Forwarded to [EssentielHiFiCard] so its header badge can flip from the
+  /// date stamp to the Paris weather icon as the user scrolls. Ignored for
+  /// non-Essentiel sections.
+  final ScrollController? scrollController;
+
   const SectionBlock({
     super.key,
     required this.section,
@@ -117,6 +122,7 @@ class SectionBlock extends StatelessWidget {
     this.nextSectionAccent,
     this.nextSectionLabel,
     this.onEndOfTournee,
+    this.scrollController,
   });
 
   @override
@@ -152,6 +158,7 @@ class SectionBlock extends StatelessWidget {
               onTapPersonalize: () => EssentielPersonalizeSheet.show(context),
               onTapSeeAllDown: onTapSeeAllDown,
               onTapExploreAll: onTapExploreAll,
+              scrollController: scrollController,
             ),
             const SizedBox(height: 16),
           ],

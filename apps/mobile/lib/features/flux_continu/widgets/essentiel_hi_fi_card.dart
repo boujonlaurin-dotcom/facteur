@@ -1,26 +1,34 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../config/theme.dart';
 import '../models/flux_continu_models.dart';
+import '../models/weather_snapshot.dart';
+import '../providers/weather_provider.dart';
 import '../utils/theme_color_mapping.dart';
 
-/// Carte hi-fi unique "L'Essentiel du jour" (Story 9.2, composant 1).
+/// Carte hi-fi unique "L'Essentiel du jour".
 ///
 /// Présente jusqu'à 5 articles transversaux du jour :
 ///   - `articles[0]` → lead (fond teinté, bord gauche accent)
 ///   - `articles[1..2]` → médiums (filets fins)
 ///   - `articles[3..4]` → lights (filet pointillé, une ligne tronquée)
-///
-/// Le bouton config en haut-droite ouvre la modal `EssentielPersonalizeSheet`
-/// pour rediriger vers `Mes intérêts` / `Mes sources` ; son tap est isolé
-/// (`InkWell`) pour ne pas déclencher l'ouverture d'un article par erreur.
 class EssentielHiFiCard extends StatelessWidget {
   final List<EssentielArticle> articles;
   final void Function(EssentielArticle article) onTapArticle;
   final VoidCallback onTapPersonalize;
   final VoidCallback? onTapSeeAllDown;
   final VoidCallback? onTapExploreAll;
+
+  /// Optional — when provided, the header badge flips to the Paris weather
+  /// once the user scrolls past ~32 px and back to the date stamp on tap or
+  /// when scroll returns to the top. Null disables the flip entirely (the
+  /// badge stays on [_DateStamp]).
+  final ScrollController? scrollController;
 
   const EssentielHiFiCard({
     super.key,
@@ -29,6 +37,7 @@ class EssentielHiFiCard extends StatelessWidget {
     required this.onTapPersonalize,
     this.onTapSeeAllDown,
     this.onTapExploreAll,
+    this.scrollController,
   });
 
   @override
@@ -70,7 +79,11 @@ class EssentielHiFiCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _Header(accent: accent, onTapPersonalize: onTapPersonalize),
+            _Header(
+              accent: accent,
+              onTapPersonalize: onTapPersonalize,
+              scrollController: scrollController,
+            ),
             const SizedBox(height: FacteurSpacing.space4),
             if (lead != null)
               _LeadTile(
@@ -100,18 +113,22 @@ class EssentielHiFiCard extends StatelessWidget {
 class _Header extends StatelessWidget {
   final Color accent;
   final VoidCallback onTapPersonalize;
+  final ScrollController? scrollController;
 
-  const _Header({required this.accent, required this.onTapPersonalize});
+  const _Header({
+    required this.accent,
+    required this.onTapPersonalize,
+    this.scrollController,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<FacteurColors>()!;
-    final now = DateTime.now();
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        _DateStamp(day: now.day, month: _monthAbbrev(now.month), accent: accent),
+        _HeaderBadge(accent: accent, scrollController: scrollController),
         const SizedBox(width: FacteurSpacing.space3),
         Expanded(
           child: Column(
@@ -120,7 +137,7 @@ class _Header extends StatelessWidget {
               Text(
                 'Ton Essentiel',
                 style: GoogleFonts.fraunces(
-                  fontSize: 24,
+                  fontSize: 20,
                   fontWeight: FontWeight.w700,
                   height: 1.2,
                   color: colors.textPrimary,
@@ -144,22 +161,170 @@ class _Header extends StatelessWidget {
     );
   }
 
-  static String _monthAbbrev(int m) {
-    const months = [
-      'JAN',
-      'FÉV',
-      'MAR',
-      'AVR',
-      'MAI',
-      'JUIN',
-      'JUIL',
-      'AOÛT',
-      'SEPT',
-      'OCT',
-      'NOV',
-      'DÉC',
-    ];
-    return months[m - 1];
+}
+
+String _monthAbbrev(int m) {
+  const months = [
+    'JAN',
+    'FÉV',
+    'MAR',
+    'AVR',
+    'MAI',
+    'JUIN',
+    'JUIL',
+    'AOÛT',
+    'SEPT',
+    'OCT',
+    'NOV',
+    'DÉC',
+  ];
+  return months[m - 1];
+}
+
+/// Stateful badge in the header's left slot. Holds the flip state between
+/// [_DateStamp] (default) and [_WeatherBadge] (after scroll). Falls back to
+/// the date stamp when no [scrollController] is provided or when the weather
+/// snapshot is still loading / errored.
+class _HeaderBadge extends ConsumerStatefulWidget {
+  final Color accent;
+  final ScrollController? scrollController;
+
+  const _HeaderBadge({required this.accent, this.scrollController});
+
+  @override
+  ConsumerState<_HeaderBadge> createState() => _HeaderBadgeState();
+}
+
+enum _BadgeMode { dateStamp, weatherAuto, datePinned }
+
+class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
+  static const double _kShowOffset = 32;
+  static const double _kHideOffset = 8;
+
+  _BadgeMode _mode = _BadgeMode.dateStamp;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.scrollController?.addListener(_onScroll);
+  }
+
+  @override
+  void didUpdateWidget(covariant _HeaderBadge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scrollController != widget.scrollController) {
+      oldWidget.scrollController?.removeListener(_onScroll);
+      widget.scrollController?.addListener(_onScroll);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.scrollController?.removeListener(_onScroll);
+    super.dispose();
+  }
+
+  void _onScroll() {
+    final controller = widget.scrollController;
+    if (controller == null || !controller.hasClients) return;
+    final offset = controller.offset;
+    if (offset > _kShowOffset && _mode == _BadgeMode.dateStamp) {
+      setState(() => _mode = _BadgeMode.weatherAuto);
+    } else if (offset < _kHideOffset && _mode != _BadgeMode.dateStamp) {
+      setState(() => _mode = _BadgeMode.dateStamp);
+    }
+  }
+
+  void _onTapWeather() {
+    setState(() => _mode = _BadgeMode.datePinned);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final dateStamp = _DateStamp(
+      key: const ValueKey('date'),
+      day: now.day,
+      month: _monthAbbrev(now.month),
+      accent: widget.accent,
+    );
+
+    Widget child = dateStamp;
+    if (_mode == _BadgeMode.weatherAuto) {
+      final weatherAsync = ref.watch(weatherProvider);
+      final snapshot = weatherAsync.valueOrNull;
+      if (snapshot != null) {
+        child = GestureDetector(
+          key: const ValueKey('weather'),
+          behavior: HitTestBehavior.opaque,
+          onTap: _onTapWeather,
+          child: _WeatherBadge(snapshot: snapshot, accent: widget.accent),
+        );
+      }
+    }
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 320),
+      switchInCurve: Curves.easeInOut,
+      switchOutCurve: Curves.easeInOut,
+      transitionBuilder: (Widget child, Animation<double> animation) {
+        final rotate = Tween<double>(begin: math.pi, end: 0.0)
+            .animate(animation);
+        return AnimatedBuilder(
+          animation: rotate,
+          builder: (context, c) {
+            final isFront = animation.value > 0.5;
+            return Transform(
+              transform: Matrix4.identity()
+                ..setEntry(3, 2, 0.0015)
+                ..rotateY(rotate.value),
+              alignment: Alignment.center,
+              child: Opacity(opacity: isFront ? 1 : 0, child: c),
+            );
+          },
+          child: child,
+        );
+      },
+      child: child,
+    );
+  }
+}
+
+/// Weather counterpart to [_DateStamp]: SVG icon + min/max line under it.
+/// Kept the same vertical footprint range so the header doesn't reflow when
+/// the flip happens.
+class _WeatherBadge extends StatelessWidget {
+  final WeatherSnapshot snapshot;
+  final Color accent;
+
+  const _WeatherBadge({required this.snapshot, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 64,
+      height: 84,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SvgPicture.asset(
+            'assets/images/weather/${snapshot.condition.assetName}.svg',
+            width: 52,
+            height: 52,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${snapshot.minC}° / ${snapshot.maxC}°',
+            style: GoogleFonts.courierPrime(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              height: 1.0,
+              color: accent,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -169,6 +334,7 @@ class _DateStamp extends StatelessWidget {
   final Color accent;
 
   const _DateStamp({
+    super.key,
     required this.day,
     required this.month,
     required this.accent,
