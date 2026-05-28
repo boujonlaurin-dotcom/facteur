@@ -232,9 +232,7 @@ void main() {
       expect(decoration.color, FacteurPalettes.light.sectionEssentiel);
     });
 
-    testWidgets(
-        'falls back to date stamp when no scrollController is provided',
-        (tester) async {
+    testWidgets('shows date stamp before the 2 s timer fires', (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
@@ -248,7 +246,6 @@ void main() {
 
     testWidgets('flips to the weather badge once the user scrolls past 32 px',
         (tester) async {
-      final controller = ScrollController();
       final snapshot = WeatherSnapshot(
         condition: WeatherCondition.sunny,
         currentC: 19,
@@ -265,19 +262,10 @@ void main() {
           child: MaterialApp(
             theme: ThemeData(extensions: [FacteurPalettes.light]),
             home: Scaffold(
-              body: SingleChildScrollView(
-                controller: controller,
-                child: Column(
-                  children: [
-                    EssentielHiFiCard(
-                      articles: [_article(rank: 1)],
-                      onTapArticle: (_) {},
-                      onTapPersonalize: () {},
-                      scrollController: controller,
-                    ),
-                    const SizedBox(height: 2000),
-                  ],
-                ),
+              body: EssentielHiFiCard(
+                articles: [_article(rank: 1)],
+                onTapArticle: (_) {},
+                onTapPersonalize: () {},
               ),
             ),
           ),
@@ -285,14 +273,16 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // Before timer fires → date stamp.
       expect(find.byType(SvgPicture), findsNothing);
 
-      controller.jumpTo(33);
+      // Advance 2 s → badge flips to weather.
+      await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
       expect(find.byType(SvgPicture), findsOneWidget);
-      expect(find.text('12° / 21°'), findsOneWidget);
 
+      // Tap the weather badge → flips back to date stamp.
       await tester.tap(find.byType(SvgPicture), warnIfMissed: false);
       await tester.pumpAndSettle();
 
