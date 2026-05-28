@@ -2379,16 +2379,16 @@ class DigestService:
                     label=subject.get("label", ""),
                 )
 
-        # Quote for serein digest only
+        # Citation du jour — disponible dans les deux modes (normal + sérène),
+        # rendue côté mobile comme clôture éditoriale avant "Fin de tournée".
         quote_response = None
-        if digest.is_serene:
-            q = _select_daily_quote(str(digest.user_id), str(digest.target_date))
-            if q:
-                quote_response = QuoteResponse(
-                    text=q["text"],
-                    author=q["author"],
-                    source=q.get("source"),
-                )
+        q = _select_daily_quote(str(digest.user_id), str(digest.target_date))
+        if q:
+            quote_response = QuoteResponse(
+                text=q["text"],
+                author=q["author"],
+                source=q.get("source"),
+            )
 
         # Sans ce plafond, la barre de progression mobile exigerait
         # l'épuisement des 10 sujets backend même quand la pref user en
@@ -2580,16 +2580,15 @@ class DigestService:
                 )
             )
 
-        # Quote for serein digest only
+        # Citation du jour — disponible dans les deux modes (normal + sérène).
         quote_response = None
-        if digest.is_serene:
-            q = _select_daily_quote(str(digest.user_id), str(digest.target_date))
-            if q:
-                quote_response = QuoteResponse(
-                    text=q["text"],
-                    author=q["author"],
-                    source=q.get("source"),
-                )
+        q = _select_daily_quote(str(digest.user_id), str(digest.target_date))
+        if q:
+            quote_response = QuoteResponse(
+                text=q["text"],
+                author=q["author"],
+                source=q.get("source"),
+            )
 
         return DigestResponse(
             digest_id=digest.id,

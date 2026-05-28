@@ -312,6 +312,10 @@ class FluxContinuState {
   // suivant" or scroll-past detection). The section stays expanded on screen
   // — only the in-session indicator on the "Sujet suivant" button flips.
   final Set<String> markedForNextSession;
+  // Citation du jour — rendue comme clôture éditoriale juste avant
+  // ClosingCardV18 ("Fin de tournée"). Déterministe (seed = user_id + date)
+  // côté backend, disponible dans les deux modes normal + sérène.
+  final QuoteResponse? quote;
   final bool isLoading;
   final Object? error;
 
@@ -323,6 +327,7 @@ class FluxContinuState {
     this.closingDismissed = false,
     this.dismissedIds = const {},
     this.markedForNextSession = const {},
+    this.quote,
     this.isLoading = true,
     this.error,
   });
@@ -335,6 +340,7 @@ class FluxContinuState {
     bool? closingDismissed,
     Set<String>? dismissedIds,
     Set<String>? markedForNextSession,
+    QuoteResponse? quote,
     bool? isLoading,
     Object? error,
     bool clearError = false,
@@ -348,6 +354,7 @@ class FluxContinuState {
       dismissedIds: dismissedIds ?? this.dismissedIds,
       markedForNextSession:
           markedForNextSession ?? this.markedForNextSession,
+      quote: quote ?? this.quote,
       isLoading: isLoading ?? this.isLoading,
       error: clearError ? null : (error ?? this.error),
     );

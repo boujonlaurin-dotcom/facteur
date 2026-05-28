@@ -34,6 +34,7 @@ import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../../../shared/widgets/loaders/loading_view.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
+import '../widgets/citation_du_jour_card.dart';
 import '../widgets/closing_card_v18.dart';
 import '../widgets/flux_continu_article_card.dart';
 import '../widgets/my_interests_intro.dart';
@@ -926,6 +927,23 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
           if (state.sections.isEmpty)
             SliverToBoxAdapter(
               child: _EmptySectionsHint(onRetry: notifier.refresh),
+            ),
+          // Citation du jour — clôture éditoriale juste avant "Fin de
+          // tournée". Liée au même flag closingDismissed pour rester
+          // cohérente avec le "moment de fermeture". Quand la tournée est
+          // entièrement repliée et que le `TourneeFoldedGroupCard` se
+          // présente seul, on masque aussi la citation pour ne pas
+          // apparaître au-dessus de ce toggle compact.
+          if (state.quote != null && !state.closingDismissed)
+            SliverToBoxAdapter(
+              child: allFolded
+                  ? ValueListenableBuilder<bool>(
+                      valueListenable: _tourneeGroupExpanded,
+                      builder: (_, expanded, __) => expanded
+                          ? CitationDuJourCard(quote: state.quote!)
+                          : const SizedBox.shrink(),
+                    )
+                  : CitationDuJourCard(quote: state.quote!),
             ),
           SliverToBoxAdapter(
             child: state.closingDismissed
