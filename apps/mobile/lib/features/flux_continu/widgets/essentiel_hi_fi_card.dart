@@ -117,7 +117,7 @@ class _Header extends StatelessWidget {
     final colors = Theme.of(context).extension<FacteurColors>()!;
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         _HeaderBadge(accent: accent),
         const SizedBox(width: FacteurSpacing.space3),
@@ -284,10 +284,9 @@ class _WeatherBadge extends StatelessWidget {
       children: [
         SvgPicture.asset(
           'assets/images/weather/${snapshot.condition.assetName}.svg',
-          width: 94,
-          height: 94,
+          width: 64,
+          height: 64,
         ),
-        const SizedBox(height: 4),
         RichText(
           text: TextSpan(
             style: GoogleFonts.courierPrime(
@@ -301,7 +300,7 @@ class _WeatherBadge extends StatelessWidget {
                 style: TextStyle(color: colors.info),
               ),
               TextSpan(
-                text: ' / ',
+                text: '/',
                 style: TextStyle(color: colors.textSecondary),
               ),
               TextSpan(
@@ -380,8 +379,8 @@ class _PersonalizeButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.full),
         child: Container(
-          width: 32,
-          height: 32,
+          width: 26,
+          height: 26,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
@@ -389,7 +388,7 @@ class _PersonalizeButton extends StatelessWidget {
           ),
           child: Icon(
             Icons.tune_rounded,
-            size: 16,
+            size: 13,
             color: colors.textSecondary,
             semanticLabel: 'Personnaliser ton Essentiel',
           ),
