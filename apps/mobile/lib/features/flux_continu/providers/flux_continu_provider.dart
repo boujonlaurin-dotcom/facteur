@@ -56,6 +56,13 @@ const String _kBonnesBlurb = 'Un peu de douceur...';
 /// favorite list during composition. Keep aligned with the backend constant.
 const int _kMaxFavoriteSections = 3;
 
+/// Number of items requested per page for each theme section of the Tournée
+/// (initial load + each "loadMoreTheme" call). When the backend returns
+/// strictly fewer items than this, [_buildThemeSection] forces hasMore=false —
+/// no subsequent page can exist regardless of what the backend's
+/// pagination.hasNext (computed from a pre-compression candidate count) says.
+const int _kThemeSectionPageLimit = 10;
+
 /// Prefix for the day-scoped SharedPreferences key that stores which sections
 /// the user has already scrolled past today. Keys older than today are purged
 /// at startup so a new day starts with every section expanded.
@@ -442,7 +449,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final response = await _safe<FeedResponse>(
       () => _feedRepo.getFeed(
         page: nextPage,
-        limit: 10,
+        limit: _kThemeSectionPageLimit,
         theme: theme,
         topic: topic,
         serein: isSerene,
@@ -477,10 +484,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         for (final item in response.items)
           if (!existingIds.contains(item.id)) item,
       ];
+      final hasMore = _themeHasMore(
+          response.pagination.hasNext, response.items.length);
       updated = afterTarget.copyWith(
         items: appended,
         currentPage: nextPage,
-        hasMore: response.pagination.hasNext,
+        hasMore: hasMore,
         isLoadingMore: false,
       );
     }
@@ -738,6 +747,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     );
   }
 
+  /// Returns true when more theme pages exist. Guards against the backend's
+  /// total_candidates being computed before compression layers — a partial page
+  /// (< limit) is definitive proof that no next page exists regardless of
+  /// pagination.hasNext.
+  bool _themeHasMore(bool hasNext, int itemCount) =>
+      hasNext && itemCount >= _kThemeSectionPageLimit;
+
   /// Builds a FeedThemeSection from a fetched payload. The label/accent come
   /// from the canonical theme visual mapping for Theme favorites; for custom
   /// topic (Sujet) favorites the caller passes the user's topic name.
@@ -750,10 +766,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }) {
     final items = feed?.items ?? const <Content>[];
     if (items.length < 2) return null;
-    // Propagate the backend's pagination cursor so the "Voir +10" button
-    // settles into the disabled "Plus rien à voir" state immediately when
-    // page 1 already exhausted the pool.
-    final hasMore = feed?.pagination.hasNext ?? false;
+    final hasMore = _themeHasMore(
+        feed?.pagination.hasNext ?? false, items.length);
     return FeedThemeSection(
       kind: SectionKind.theme,
       label: label,
@@ -848,7 +862,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       ThemeFavoriteRef(:final slug) => _safe<FeedResponse>(
           () => _feedRepo.getFeed(
             page: 1,
-            limit: 10,
+            limit: _kThemeSectionPageLimit,
             theme: slug,
             serein: isSerene,
             personalized: true,
@@ -861,7 +875,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       CustomTopicFavoriteRef(:final id) => _safe<FeedResponse>(
           () => _feedRepo.getFeed(
             page: 1,
-            limit: 10,
+            limit: _kThemeSectionPageLimit,
             topic: id,
             serein: isSerene,
             personalized: true,

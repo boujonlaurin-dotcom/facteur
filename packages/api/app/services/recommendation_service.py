@@ -549,10 +549,6 @@ class RecommendationService:
                     muted_count=len(muted_entities),
                 )
 
-        # Story 21.2 — Tournée du jour personalized theme sections fall through to
-        # the scoring branch (PillarScoringEngine) instead of pure recency. Aligns
-        # the favorite-theme sections of the Flux Continu with user preferences
-        # (weight_effective, source affinity, hierarchical freshness, quality).
         personalized_theme_mode = is_personalized_theme_mode(
             personalized=personalized,
             theme=theme,
@@ -560,10 +556,28 @@ class RecommendationService:
             source_uuid=source_uuid,
         )
 
-        # Explicit filter OR RECENT mode: skip scoring, return pure chronological order
-        # Candidates are already sorted by published_at DESC from _get_candidates
-        if not personalized_theme_mode and (
-            source_uuid or theme or topic or entity or mode == FeedFilterMode.RECENT
+        # Explicit filter OR RECENT mode OR Tournée theme section: skip scoring,
+        # return pure chronological order. Candidates are already sorted by
+        # published_at DESC (et boost user_subtopics pour personalized_theme_mode)
+        # from _get_candidates.
+        #
+        # Note historique : Story 21.2 routait personalized_theme_mode vers le
+        # PillarScoringEngine + diversification + regroupement pour pondérer par
+        # weight_effective / source affinity / quality. En pratique cela
+        # compressait 40+ candidats à 2-3 articles visibles (cf. bug curation
+        # sections thématiques 2026-05-28) et créait un écart béant avec ce que
+        # Flâner thématique remontait sur les mêmes sources. On rebascule sur la
+        # même politique chronologique pure : « tout le contenu user récent
+        # (<24h) sur le thème, dans l'ordre publié » — la personnalisation reste
+        # exprimée via la restriction aux sources suivies + l'ordering boost
+        # user_subtopics appliqués dans _get_candidates.
+        if (
+            source_uuid
+            or theme
+            or topic
+            or entity
+            or mode == FeedFilterMode.RECENT
+            or personalized_theme_mode
         ):
             paginated = candidates[offset : offset + limit]
             await self._hydrate_user_status(paginated, user_id, followed_source_ids)
