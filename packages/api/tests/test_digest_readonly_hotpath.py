@@ -535,7 +535,7 @@ async def test_get_both_returns_200_with_one_variant_present():
         with (
             patch("app.routers.digest.read_digest_or_fallback", new=fake_resolver),
             patch(
-                "app.routers.digest.DigestService._get_user_serein_enabled",
+                "app.routers.digest.DigestService.get_user_serein_enabled",
                 new=AsyncMock(return_value=False),
             ),
             patch(
