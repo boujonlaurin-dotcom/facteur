@@ -1,20 +1,23 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../config/theme.dart';
 import '../models/flux_continu_models.dart';
+import '../models/weather_snapshot.dart';
+import '../providers/weather_provider.dart';
 import '../utils/theme_color_mapping.dart';
 
-/// Carte hi-fi unique "L'Essentiel du jour" (Story 9.2, composant 1).
+/// Carte hi-fi unique "L'Essentiel du jour".
 ///
 /// Présente jusqu'à 5 articles transversaux du jour :
 ///   - `articles[0]` → lead (fond teinté, bord gauche accent)
 ///   - `articles[1..2]` → médiums (filets fins)
 ///   - `articles[3..4]` → lights (filet pointillé, une ligne tronquée)
-///
-/// Le bouton config en haut-droite ouvre la modal `EssentielPersonalizeSheet`
-/// pour rediriger vers `Mes intérêts` / `Mes sources` ; son tap est isolé
-/// (`InkWell`) pour ne pas déclencher l'ouverture d'un article par erreur.
 class EssentielHiFiCard extends StatelessWidget {
   final List<EssentielArticle> articles;
   final void Function(EssentielArticle article) onTapArticle;
@@ -70,7 +73,10 @@ class EssentielHiFiCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _Header(accent: accent, onTapPersonalize: onTapPersonalize),
+            _Header(
+              accent: accent,
+              onTapPersonalize: onTapPersonalize,
+            ),
             const SizedBox(height: FacteurSpacing.space4),
             if (lead != null)
               _LeadTile(
@@ -101,32 +107,43 @@ class _Header extends StatelessWidget {
   final Color accent;
   final VoidCallback onTapPersonalize;
 
-  const _Header({required this.accent, required this.onTapPersonalize});
+  const _Header({
+    required this.accent,
+    required this.onTapPersonalize,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<FacteurColors>()!;
-    final now = DateTime.now();
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        _DateStamp(day: now.day, month: _monthAbbrev(now.month), accent: accent),
+        _HeaderBadge(accent: accent),
         const SizedBox(width: FacteurSpacing.space3),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Ton Essentiel',
-                style: GoogleFonts.fraunces(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  height: 1.2,
-                  color: colors.textPrimary,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Ton Essentiel',
+                      style: GoogleFonts.fraunces(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                        color: colors.textPrimary,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: FacteurSpacing.space2),
+                  _PersonalizeButton(onTap: onTapPersonalize),
+                ],
               ),
               const SizedBox(height: 4),
               Text(
@@ -138,28 +155,172 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(width: FacteurSpacing.space2),
-        _PersonalizeButton(onTap: onTapPersonalize),
       ],
     );
   }
+}
 
-  static String _monthAbbrev(int m) {
-    const months = [
-      'JAN',
-      'FÉV',
-      'MAR',
-      'AVR',
-      'MAI',
-      'JUIN',
-      'JUIL',
-      'AOÛT',
-      'SEPT',
-      'OCT',
-      'NOV',
-      'DÉC',
-    ];
-    return months[m - 1];
+String _monthAbbrev(int m) {
+  const months = [
+    'JAN',
+    'FÉV',
+    'MAR',
+    'AVR',
+    'MAI',
+    'JUIN',
+    'JUIL',
+    'AOÛT',
+    'SEPT',
+    'OCT',
+    'NOV',
+    'DÉC',
+  ];
+  return months[m - 1];
+}
+
+class _HeaderBadge extends ConsumerStatefulWidget {
+  final Color accent;
+
+  const _HeaderBadge({required this.accent});
+
+  @override
+  ConsumerState<_HeaderBadge> createState() => _HeaderBadgeState();
+}
+
+class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
+  bool _showWeather = false;
+  Timer? _flipTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _flipTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _showWeather = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _flipTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+
+    final Widget child;
+    if (_showWeather) {
+      final snapshot = ref.watch(weatherProvider).valueOrNull;
+      if (snapshot != null) {
+        child = GestureDetector(
+          key: const ValueKey('weather'),
+          behavior: HitTestBehavior.opaque,
+          onTap: () => setState(() => _showWeather = false),
+          child: _WeatherBadge(snapshot: snapshot),
+        );
+      } else {
+        child = GestureDetector(
+          key: const ValueKey('date'),
+          behavior: HitTestBehavior.opaque,
+          onTap: () => setState(() => _showWeather = true),
+          child: _DateStamp(
+            day: now.day,
+            month: _monthAbbrev(now.month),
+            accent: widget.accent,
+          ),
+        );
+      }
+    } else {
+      child = GestureDetector(
+        key: const ValueKey('date'),
+        behavior: HitTestBehavior.opaque,
+        onTap: () => setState(() => _showWeather = true),
+        child: _DateStamp(
+          day: now.day,
+          month: _monthAbbrev(now.month),
+          accent: widget.accent,
+        ),
+      );
+    }
+
+    // Fixed slot: always 78×92 so the header never reflows when flipping.
+    return SizedBox(
+      width: 78,
+      height: 92,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 320),
+        switchInCurve: Curves.easeInOut,
+        switchOutCurve: Curves.easeInOut,
+        layoutBuilder: (current, previous) => Stack(
+          alignment: Alignment.center,
+          children: [...previous, if (current != null) current],
+        ),
+        transitionBuilder: (Widget child, Animation<double> animation) {
+          final rotate = Tween<double>(begin: math.pi, end: 0.0)
+              .animate(animation);
+          return AnimatedBuilder(
+            animation: rotate,
+            builder: (context, c) {
+              final isFront = animation.value > 0.5;
+              return Transform(
+                transform: Matrix4.identity()
+                  ..setEntry(3, 2, 0.0015)
+                  ..rotateY(rotate.value),
+                alignment: Alignment.center,
+                child: Opacity(opacity: isFront ? 1 : 0, child: c),
+              );
+            },
+            child: child,
+          );
+        },
+        child: child,
+      ),
+    );
+  }
+}
+
+class _WeatherBadge extends StatelessWidget {
+  final WeatherSnapshot snapshot;
+
+  const _WeatherBadge({required this.snapshot});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).extension<FacteurColors>()!;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SvgPicture.asset(
+          'assets/images/weather/${snapshot.condition.assetName}.svg',
+          width: 78,
+          height: 78,
+        ),
+        RichText(
+          text: TextSpan(
+            style: GoogleFonts.courierPrime(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              height: 1.0,
+            ),
+            children: [
+              TextSpan(
+                text: '${snapshot.minC}°',
+                style: TextStyle(color: colors.info),
+              ),
+              TextSpan(
+                text: '/',
+                style: TextStyle(color: colors.textSecondary),
+              ),
+              TextSpan(
+                text: '${snapshot.maxC}°',
+                style: TextStyle(color: colors.error),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -177,8 +338,8 @@ class _DateStamp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 52,
-      height: 52,
+      width: 60,
+      height: 60,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.transparent,
@@ -227,8 +388,8 @@ class _PersonalizeButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.full),
         child: Container(
-          width: 32,
-          height: 32,
+          width: 26,
+          height: 26,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
@@ -236,7 +397,7 @@ class _PersonalizeButton extends StatelessWidget {
           ),
           child: Icon(
             Icons.tune_rounded,
-            size: 16,
+            size: 13,
             color: colors.textSecondary,
             semanticLabel: 'Personnaliser ton Essentiel',
           ),

@@ -1,16 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
+import 'package:facteur/features/flux_continu/models/weather_snapshot.dart';
+import 'package:facteur/features/flux_continu/providers/weather_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/essentiel_hi_fi_card.dart';
 
-Widget _wrap(Widget child) {
-  return MaterialApp(
-    theme: ThemeData(extensions: [FacteurPalettes.light]),
-    home: Scaffold(body: SingleChildScrollView(child: child)),
+Widget _wrap(Widget child, {List<Override> overrides = const []}) {
+  return ProviderScope(
+    overrides: overrides,
+    child: MaterialApp(
+      theme: ThemeData(extensions: [FacteurPalettes.light]),
+      home: Scaffold(body: SingleChildScrollView(child: child)),
+    ),
   );
+}
+
+class _FakeWeatherNotifier extends WeatherNotifier {
+  _FakeWeatherNotifier(this._value);
+  final WeatherSnapshot _value;
+  @override
+  Future<WeatherSnapshot> build() async => _value;
 }
 
 EssentielArticle _article({
@@ -216,6 +230,64 @@ void main() {
       );
       final decoration = container.decoration as BoxDecoration;
       expect(decoration.color, FacteurPalettes.light.sectionEssentiel);
+    });
+
+    testWidgets('shows date stamp before the 2 s timer fires', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+        ),
+      ));
+
+      expect(find.byType(SvgPicture), findsNothing);
+    });
+
+    testWidgets('flips to the weather badge once the user scrolls past 32 px',
+        (tester) async {
+      final snapshot = WeatherSnapshot(
+        condition: WeatherCondition.sunny,
+        currentC: 19,
+        minC: 12,
+        maxC: 21,
+        fetchedAt: DateTime(2026, 5, 28),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            weatherProvider.overrideWith(() => _FakeWeatherNotifier(snapshot)),
+          ],
+          child: MaterialApp(
+            theme: ThemeData(extensions: [FacteurPalettes.light]),
+            home: Scaffold(
+              body: EssentielHiFiCard(
+                articles: [_article(rank: 1)],
+                onTapArticle: (_) {},
+                onTapPersonalize: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Before timer fires → date stamp.
+      expect(find.byType(SvgPicture), findsNothing);
+
+      // Advance 2 s → badge flips to weather.
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SvgPicture), findsOneWidget);
+
+      // Tap the weather badge → flips back to date stamp.
+      await tester.tap(find.byType(SvgPicture), warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SvgPicture), findsNothing,
+          reason: 'Tap on the weather badge pins the date stamp back.');
     });
 
     testWidgets('slots 2-5 all use the medium layout (no dotted divider)',
