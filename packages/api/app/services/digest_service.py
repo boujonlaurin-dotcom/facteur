@@ -2831,7 +2831,7 @@ class DigestService:
             "message": message,
         }
 
-    async def _get_user_serein_enabled(self, user_id: UUID) -> bool:
+    async def get_user_serein_enabled(self, user_id: UUID) -> bool:
         """Lit la préférence serein_enabled depuis user_preferences."""
         from app.models.user import UserPreference, UserProfile
 

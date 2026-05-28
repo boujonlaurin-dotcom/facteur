@@ -246,11 +246,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   FluxContinuState _compose(bool isSerene) {
     final ordered = <FluxSection>[];
     if (isSerene) {
-      // Mode sérène — Bonnes Nouvelles d'abord, puis les thèmes,
-      // puis la carte hi-fi v3 et la section "Actus du jour" en fin de page.
+      // Mode sérène — "L'Essentiel du jour" reste en tête (parité avec le
+      // mode normal), puis Bonnes Nouvelles, thèmes favoris, "Actus du jour".
+      if (_essentiel != null) ordered.add(_essentiel!);
       if (_bonnes != null) ordered.add(_bonnes!);
       ordered.addAll(_themes);
-      if (_essentiel != null) ordered.add(_essentiel!);
       if (_actusDuJour != null) ordered.add(_actusDuJour!);
     } else {
       // Mode normal — carte hi-fi v3 ("L'Essentiel du jour"),

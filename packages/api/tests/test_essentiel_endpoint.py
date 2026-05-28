@@ -227,6 +227,10 @@ async def test_get_essentiel_returns_5_articles(auth_override: UUID):
             "app.routers.essentiel.fetch_user_essentiel_context",
             new=AsyncMock(return_value=EssentielUserContext()),
         ),
+        patch(
+            "app.routers.essentiel.DigestService.get_user_serein_enabled",
+            new=AsyncMock(return_value=False),
+        ),
     ):
         async with _client() as client:
             resp = await client.get("/api/essentiel")
@@ -242,9 +246,15 @@ async def test_get_essentiel_returns_5_articles(auth_override: UUID):
 
 @pytest.mark.asyncio
 async def test_get_essentiel_returns_202_when_no_digest(auth_override: UUID):
-    with patch(
-        "app.routers.essentiel.read_digest_or_fallback",
-        new=AsyncMock(return_value=None),
+    with (
+        patch(
+            "app.routers.essentiel.read_digest_or_fallback",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.routers.essentiel.DigestService.get_user_serein_enabled",
+            new=AsyncMock(return_value=False),
+        ),
     ):
         async with _client() as client:
             resp = await client.get("/api/essentiel")
@@ -278,6 +288,10 @@ async def test_get_essentiel_propagates_stale_fallback(auth_override: UUID):
         patch(
             "app.routers.essentiel.fetch_user_essentiel_context",
             new=AsyncMock(return_value=EssentielUserContext()),
+        ),
+        patch(
+            "app.routers.essentiel.DigestService.get_user_serein_enabled",
+            new=AsyncMock(return_value=False),
         ),
     ):
         async with _client() as client:
@@ -681,10 +695,14 @@ async def test_get_essentiel_uses_user_context_from_router(auth_override: UUID):
         patch(
             "app.routers.essentiel.read_digest_or_fallback",
             new=AsyncMock(return_value=digest),
-        ),
+        ) as mock_read,
         patch(
             "app.routers.essentiel.fetch_user_essentiel_context",
             new=AsyncMock(return_value=fake_ctx),
+        ),
+        patch(
+            "app.routers.essentiel.DigestService.get_user_serein_enabled",
+            new=AsyncMock(return_value=False),
         ),
     ):
         async with _client() as client:
@@ -694,6 +712,36 @@ async def test_get_essentiel_uses_user_context_from_router(auth_override: UUID):
     body = resp.json()
     assert body["articles"][0]["source"]["name"] == "Mediapart"
     assert body["articles"][0]["rank"] == 1
+    assert mock_read.await_args.kwargs["is_serene"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_essentiel_serein_user_fetches_serein_digest(
+    auth_override: UUID,
+):
+    """serein_enabled=True propagates is_serene=True to read_digest_or_fallback."""
+    topics = [_make_topic(rank=1, label="Tech", n_articles=3)]
+    digest = _make_digest(topics)
+
+    with (
+        patch(
+            "app.routers.essentiel.read_digest_or_fallback",
+            new=AsyncMock(return_value=digest),
+        ) as mock_read,
+        patch(
+            "app.routers.essentiel.fetch_user_essentiel_context",
+            new=AsyncMock(return_value=EssentielUserContext()),
+        ),
+        patch(
+            "app.routers.essentiel.DigestService.get_user_serein_enabled",
+            new=AsyncMock(return_value=True),
+        ),
+    ):
+        async with _client() as client:
+            resp = await client.get("/api/essentiel")
+
+    assert resp.status_code == 200
+    assert mock_read.await_args.kwargs["is_serene"] is True
 
 
 # ─── Story 9.4 — Durcissement des filtres ────────────────────────────────

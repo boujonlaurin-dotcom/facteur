@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.schemas.essentiel import EssentielResponse
-from app.services.digest_service import read_digest_or_fallback
+from app.services.digest_service import DigestService, read_digest_or_fallback
 from app.services.essentiel_service import (
     build_essentiel_response,
     fetch_user_essentiel_context,
@@ -60,8 +60,10 @@ async def get_essentiel(
     effective_date = target_date or today_paris()
     start = time.monotonic()
 
+    service = DigestService(db)
+    serein_enabled = await service.get_user_serein_enabled(user_uuid)
     digest = await read_digest_or_fallback(
-        db, user_uuid, effective_date, is_serene=False
+        db, user_uuid, effective_date, is_serene=serein_enabled
     )
     if digest is None:
         return _preparing_response()
@@ -78,6 +80,7 @@ async def get_essentiel(
         elapsed_ms=round((time.monotonic() - start) * 1000, 1),
         articles_count=len(response.articles),
         is_stale_fallback=response.is_stale_fallback,
+        serein_enabled=serein_enabled,
         followed_sources_count=len(user_context.followed_source_ids),
         topic_weights_count=len(user_context.topic_weights),
     )
