@@ -244,29 +244,38 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
       );
     }
 
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 320),
-      switchInCurve: Curves.easeInOut,
-      switchOutCurve: Curves.easeInOut,
-      transitionBuilder: (Widget child, Animation<double> animation) {
-        final rotate = Tween<double>(begin: math.pi, end: 0.0)
-            .animate(animation);
-        return AnimatedBuilder(
-          animation: rotate,
-          builder: (context, c) {
-            final isFront = animation.value > 0.5;
-            return Transform(
-              transform: Matrix4.identity()
-                ..setEntry(3, 2, 0.0015)
-                ..rotateY(rotate.value),
-              alignment: Alignment.center,
-              child: Opacity(opacity: isFront ? 1 : 0, child: c),
-            );
-          },
-          child: child,
-        );
-      },
-      child: child,
+    // Fixed slot: always 78×92 so the header never reflows when flipping.
+    return SizedBox(
+      width: 78,
+      height: 92,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 320),
+        switchInCurve: Curves.easeInOut,
+        switchOutCurve: Curves.easeInOut,
+        layoutBuilder: (current, previous) => Stack(
+          alignment: Alignment.center,
+          children: [...previous, if (current != null) current],
+        ),
+        transitionBuilder: (Widget child, Animation<double> animation) {
+          final rotate = Tween<double>(begin: math.pi, end: 0.0)
+              .animate(animation);
+          return AnimatedBuilder(
+            animation: rotate,
+            builder: (context, c) {
+              final isFront = animation.value > 0.5;
+              return Transform(
+                transform: Matrix4.identity()
+                  ..setEntry(3, 2, 0.0015)
+                  ..rotateY(rotate.value),
+                alignment: Alignment.center,
+                child: Opacity(opacity: isFront ? 1 : 0, child: c),
+              );
+            },
+            child: child,
+          );
+        },
+        child: child,
+      ),
     );
   }
 }
@@ -284,8 +293,8 @@ class _WeatherBadge extends StatelessWidget {
       children: [
         SvgPicture.asset(
           'assets/images/weather/${snapshot.condition.assetName}.svg',
-          width: 74,
-          height: 74,
+          width: 78,
+          height: 78,
         ),
         RichText(
           text: TextSpan(
@@ -329,8 +338,8 @@ class _DateStamp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 52,
-      height: 52,
+      width: 60,
+      height: 60,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.transparent,
