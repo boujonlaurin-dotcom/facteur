@@ -190,11 +190,7 @@ class _NextSectionButtonState extends State<NextSectionButton>
     final colors = context.facteurColors;
     final marked = widget.isMarked || _localMarked;
     final accent = widget.nextAccent ?? colors.primary;
-    final label = marked
-        ? 'Passé'
-        : (widget.nextSectionLabel != null
-            ? widget.nextSectionLabel!
-            : 'Section suivante');
+    final label = marked ? 'Passé' : (widget.nextSectionLabel ?? 'Section suivante');
     final foreground =
         marked ? colors.textSecondary : accent;
     final background = marked

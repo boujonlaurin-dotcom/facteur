@@ -244,15 +244,19 @@ async def test_personalized_theme_relaxes_seen_consumed_filter():
 
 
 # ---------------------------------------------------------------------------
-# Story 21.2 — Tournée du jour favorite-theme sections fall through to the
-# PillarScoringEngine branch instead of the chronological short-circuit.
+# `is_personalized_theme_mode` flag : utilisé pour activer la fenêtre 24h, la
+# restriction aux sources suivies et le boost ORDER BY user_subtopics dans
+# `_get_candidates`. Depuis le bug curation 2026-05-28, ce mode NE route plus
+# vers PillarScoringEngine (Story 21.2 inversée) — il prend le même chemin
+# chronologique court-circuité que Flâner thématique pour éviter la compression
+# regroupement/diversification qui collapsait 40+ candidats à 2-3 articles.
 # ---------------------------------------------------------------------------
 
 
 class TestPersonalizedThemeModeDispatch:
-    """Verify the dispatch flag governing the scoring vs chrono branch."""
+    """Verify the dispatch flag governing the 24h+followed+subtopic-boost path."""
 
-    def test_personalized_with_theme_routes_to_scoring(self):
+    def test_personalized_with_theme_activates_personalized_mode(self):
         assert (
             is_personalized_theme_mode(
                 personalized=True, theme="tech", topic=None, source_uuid=None
@@ -260,9 +264,9 @@ class TestPersonalizedThemeModeDispatch:
             is True
         )
 
-    def test_personalized_with_topic_routes_to_scoring(self):
+    def test_personalized_with_topic_activates_personalized_mode(self):
         # Story 22.1: custom-topic favorites send `topic=<UUID>` and must
-        # also benefit from preference-based ranking on the Tournée.
+        # also benefit from the 24h+followed+subtopic-boost restrictions.
         assert (
             is_personalized_theme_mode(
                 personalized=True, theme=None, topic="some-uuid", source_uuid=None

@@ -86,12 +86,6 @@ class SectionBlock extends StatelessWidget {
   /// générique « Section suivante ».
   final String? nextSectionLabel;
 
-  /// "Fin de tournée — Flâner" action shown in the footer of the **last**
-  /// Tournée section in place of "Sujet suivant". When non-null, marks all
-  /// editorial sections as consumed for the next session and scrolls to the
-  /// Flâner banner. Mutually exclusive with [onNextSection].
-  final VoidCallback? onEndOfTournee;
-
   const SectionBlock({
     super.key,
     required this.section,
@@ -116,7 +110,6 @@ class SectionBlock extends StatelessWidget {
     this.isMarkedForNextSession = false,
     this.nextSectionAccent,
     this.nextSectionLabel,
-    this.onEndOfTournee,
   });
 
   @override
@@ -174,17 +167,14 @@ class SectionBlock extends StatelessWidget {
         ...cards,
         _SectionFooterRow(
           voirPlus: _buildVoirPlusButton(section, hiddenCount),
-          sujetSuivant: onEndOfTournee != null
-              ? EndOfTourneeButton(onTap: onEndOfTournee)
-              : onNextSection != null
-                  ? NextSectionButton(
-                      isMarked: isMarkedForNextSession,
-                      nextAccent: nextSectionAccent,
-                      nextSectionLabel: nextSectionLabel,
-                      onTap: isMarkedForNextSession ? null : onNextSection,
-                    )
-                  : null,
-          rightTakesMoreSpace: onEndOfTournee != null,
+          sujetSuivant: onNextSection != null
+              ? NextSectionButton(
+                  isMarked: isMarkedForNextSession,
+                  nextAccent: nextSectionAccent,
+                  nextSectionLabel: nextSectionLabel,
+                  onTap: isMarkedForNextSession ? null : onNextSection,
+                )
+              : null,
         ),
         const SizedBox(height: 16),
       ],

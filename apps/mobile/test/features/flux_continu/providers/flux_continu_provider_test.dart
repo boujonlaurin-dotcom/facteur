@@ -694,7 +694,12 @@ void main() {
         () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
 
-      // Initial fetch (page 1) — 2 items, hasNext=true.
+      // Initial fetch (page 1) — 10 items (= page limit), hasNext=true.
+      // The page must be FULL to keep hasMore=true after the safety-net
+      // guard "items.length < limit ⇒ hasMore=false" (cf.
+      // `_kThemeSectionPageLimit` in flux_continu_provider.dart).
+      final pageOneIds = List.generate(10, (i) => 'a${i + 1}');
+      final pageTwoIds = List.generate(3, (i) => 'b${i + 1}');
       when(() => feedRepo.getFeed(
             page: 1,
             limit: any(named: 'limit'),
@@ -702,8 +707,8 @@ void main() {
             serein: any(named: 'serein'),
             personalized: any(named: 'personalized'),
           )).thenAnswer((_) async =>
-          _feedResponseWithIds(const ['a1', 'a2'], page: 1, hasNext: true));
-      // Load-more fetch (page 2) — 2 new items, hasNext=false.
+          _feedResponseWithIds(pageOneIds, page: 1, hasNext: true));
+      // Load-more fetch (page 2) — 3 new items, hasNext=false (last page).
       when(() => feedRepo.getFeed(
             page: 2,
             limit: any(named: 'limit'),
@@ -711,7 +716,7 @@ void main() {
             serein: any(named: 'serein'),
             personalized: any(named: 'personalized'),
           )).thenAnswer((_) async =>
-          _feedResponseWithIds(const ['a3', 'a4'], page: 2, hasNext: false));
+          _feedResponseWithIds(pageTwoIds, page: 2, hasNext: false));
 
       final container = makeContainer(
         interests: _interestsState(favorites: const [
@@ -723,7 +728,7 @@ void main() {
       final initial = await container.read(fluxContinuProvider.future);
       final themeSection =
           initial.sections.whereType<FeedThemeSection>().single;
-      expect(themeSection.items.map((c) => c.id), ['a1', 'a2']);
+      expect(themeSection.items.map((c) => c.id), pageOneIds);
       expect(themeSection.currentPage, 1);
       expect(themeSection.hasMore, true);
 
@@ -734,10 +739,45 @@ void main() {
       final after = container.read(fluxContinuProvider).requireValue;
       final updated =
           after.sections.whereType<FeedThemeSection>().single;
-      expect(updated.items.map((c) => c.id), ['a1', 'a2', 'a3', 'a4']);
+      expect(updated.items.map((c) => c.id), [...pageOneIds, ...pageTwoIds]);
       expect(updated.currentPage, 2);
       expect(updated.hasMore, false);
       expect(updated.isLoadingMore, false);
+    });
+
+    test(
+        'partial page-1 response (< limit) forces hasMore=false even if '
+        'backend reports hasNext=true', () async {
+      // Garde-fou : si la page initiale renvoie moins d'items que la limite
+      // demandée, aucune page suivante ne peut exister, peu importe ce que
+      // dit pagination.hasNext. Évite le cas où total_candidates est
+      // surestimé côté backend (compté avant compression applicative) et
+      // empêche ScrollExhausted de devenir true sur la page dédiée
+      // ThemeSectionScreen → bloque l'affichage de la closing card et du
+      // bloc "Section suivante".
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      when(() => feedRepo.getFeed(
+            page: 1,
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          )).thenAnswer((_) async =>
+          _feedResponseWithIds(const ['a1', 'a2', 'a3'], page: 1, hasNext: true));
+
+      final container = makeContainer(
+        interests: _interestsState(favorites: const [
+          ThemeFavoriteRef(slug: 'tech'),
+        ]),
+      );
+      addTearDown(container.dispose);
+
+      final initial = await container.read(fluxContinuProvider.future);
+      final themeSection =
+          initial.sections.whereType<FeedThemeSection>().single;
+      expect(themeSection.items.length, 3);
+      expect(themeSection.hasMore, false,
+          reason: 'partial page must short-circuit pagination');
     });
 
     test('does nothing when section is already at end (hasMore=false)',
