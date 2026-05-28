@@ -1065,10 +1065,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                     i >= state.sections.length - 1)
                 ? null
                 : () => _advanceToNextSection(section, i),
-            onEndOfTournee: (section is! EssentielSection &&
-                    i == state.sections.length - 1)
-                ? _endOfTournee
-                : null,
+
           ),
         ),
       ));
