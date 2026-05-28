@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/widgets/feed_filter_bar.dart';
+import '../../feed/widgets/profile_avatar_button.dart';
 import 'sticky_backdrop.dart';
 
 /// Lightweight descriptor for a sticky tab. Used by [StickyTabBar] so the
@@ -71,7 +74,7 @@ class StickyTabBar extends StatelessWidget {
             controller: tabsController,
           ),
           SizedBox(
-            height: 6,
+            height: 4,
             child: CustomPaint(
               painter: _ProgressPainter(
                 progress: progress.clamp(0.0, 1.0),
@@ -128,15 +131,15 @@ class _FeedRefreshIndicatorStrip extends ConsumerWidget {
   }
 }
 
-/// Top row of the sticky overlay — a single Fraunces label that names the
-/// current zone of the Flux Continu screen.
-class StickyHead extends StatelessWidget {
+/// Top row of the sticky overlay — a Fraunces label naming the current zone
+/// and a profile avatar button anchored to the right.
+class StickyHead extends ConsumerWidget {
   final String title;
 
   const StickyHead({super.key, this.title = 'Tournée du jour'});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
@@ -149,6 +152,10 @@ class StickyHead extends StatelessWidget {
               fontWeight: FontWeight.w700,
               color: colors.textPrimary,
             ),
+          ),
+          const Spacer(),
+          ProfileAvatarButton(
+            onTap: () => context.push(RoutePaths.settings),
           ),
         ],
       ),

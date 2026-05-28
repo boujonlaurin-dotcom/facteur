@@ -53,6 +53,10 @@ const double _kStickyThreshold = 60.0;
 /// behind the bar.
 const double _kStickyBarHeight = 100.0;
 
+/// Extra lookahead (px) before the Explorer banner reaches the sticky bottom
+/// at which we flip to Explorer mode — makes the "Flâner" tab activate earlier.
+const double _kExploreLeadPx = 120.0;
+
 /// Distance to the bottom (in px) before we trigger the next feed page.
 const double _kLoadMoreLeadingPx = 800.0;
 
@@ -250,7 +254,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final box = ctx.findRenderObject();
     if (box is! RenderBox || !box.attached) return;
     final topY = box.localToGlobal(Offset.zero).dy;
-    final shouldExplore = topY < _kStickyBarHeight;
+    final shouldExplore = topY < _kStickyBarHeight + _kExploreLeadPx;
     if (_isInExploreMode.value != shouldExplore) {
       _isInExploreMode.value = shouldExplore;
     }
