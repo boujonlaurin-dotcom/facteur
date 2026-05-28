@@ -284,8 +284,8 @@ class _WeatherBadge extends StatelessWidget {
       children: [
         SvgPicture.asset(
           'assets/images/weather/${snapshot.condition.assetName}.svg',
-          width: 64,
-          height: 64,
+          width: 74,
+          height: 74,
         ),
         RichText(
           text: TextSpan(
