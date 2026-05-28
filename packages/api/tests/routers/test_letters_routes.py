@@ -21,8 +21,9 @@ from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.main import app
 from app.models.analytics import AnalyticsEvent
+from app.models.collection import Collection, CollectionItem
 from app.models.content import Content, UserContentStatus
-from app.models.enums import ContentType, SourceType
+from app.models.enums import ContentStatus, ContentType, SourceType
 from app.models.source import Source, UserSource
 from app.models.user import UserProfile
 from app.models.user_letter_progress import UserLetterProgress
@@ -184,10 +185,12 @@ async def _add_user_content_status(
     user_id: UUID,
     *,
     content_type: ContentType,
+    status: ContentStatus = ContentStatus.UNSEEN,
     reading_progress: int = 0,
     time_spent_seconds: int = 0,
     is_liked: bool = False,
-) -> None:
+    seen_at: datetime | None = None,
+) -> UUID:
     src = await _make_source(db_session)
     content = Content(
         id=uuid4(),
@@ -204,11 +207,55 @@ async def _add_user_content_status(
         UserContentStatus(
             user_id=user_id,
             content_id=content.id,
+            status=status,
             reading_progress=reading_progress,
             time_spent_seconds=time_spent_seconds,
             is_liked=is_liked,
+            seen_at=seen_at,
         )
     )
+    await db_session.commit()
+    return content.id
+
+
+async def _add_collection_items(
+    db_session,
+    user_id: UUID,
+    *,
+    content_types: list[ContentType],
+    is_default: bool = False,
+    is_liked_collection: bool = False,
+) -> None:
+    collection = Collection(
+        id=uuid4(),
+        user_id=user_id,
+        name=f"Collection {uuid4()}",
+        is_default=is_default,
+        is_liked_collection=is_liked_collection,
+    )
+    db_session.add(collection)
+    await db_session.flush()
+
+    for content_type in content_types:
+        src = await _make_source(db_session)
+        content = Content(
+            id=uuid4(),
+            source_id=src.id,
+            title="t",
+            url=f"https://x/{uuid4()}",
+            published_at=datetime.now(UTC),
+            content_type=content_type,
+            guid=str(uuid4()),
+        )
+        db_session.add(content)
+        await db_session.flush()
+        db_session.add(
+            CollectionItem(
+                collection_id=collection.id,
+                content_id=content.id,
+            )
+        )
+
     await db_session.commit()
 
 
@@ -500,42 +547,83 @@ class TestLetter2Detection:
 
         assert "read_first_bonnes_nouvelles" in resp.json()["completed_actions"]
 
-    async def test_read_3_long_articles_detected(self, auth_user, db_session):
+    async def test_read_10_articles_detected(self, auth_user, db_session):
         await _activate_l2(db_session, auth_user)
-        for _ in range(3):
-            await _add_user_content_status(
-                db_session,
-                auth_user,
-                content_type=ContentType.ARTICLE,
-                reading_progress=95,
-                time_spent_seconds=120,
-            )
+        for idx in range(10):
+            kwargs: dict = {"content_type": ContentType.ARTICLE}
+            match idx % 5:
+                case 0:
+                    kwargs["time_spent_seconds"] = 1
+                case 1:
+                    kwargs["reading_progress"] = 1
+                case 2:
+                    kwargs["status"] = ContentStatus.SEEN
+                case 3:
+                    kwargs["status"] = ContentStatus.CONSUMED
+                case _:
+                    kwargs["seen_at"] = datetime.now(UTC)
+            await _add_user_content_status(db_session, auth_user, **kwargs)
 
         async with _client() as ac:
             resp = await ac.post("/api/letters/letter_2/refresh-status")
 
         assert "read_3_long_articles" in resp.json()["completed_actions"]
 
-    async def test_read_3_long_articles_below_threshold_not_detected(
+    async def test_read_10_articles_below_threshold_not_detected(
         self, auth_user, db_session
     ):
         await _activate_l2(db_session, auth_user)
-        # 2 articles seulement → pas détecté
-        for _ in range(2):
+        for _ in range(9):
             await _add_user_content_status(
                 db_session,
                 auth_user,
                 content_type=ContentType.ARTICLE,
-                reading_progress=95,
-                time_spent_seconds=120,
+                time_spent_seconds=1,
             )
-        # 1 article avec time_spent insuffisant → ne doit pas compter
+
+        async with _client() as ac:
+            resp = await ac.post("/api/letters/letter_2/refresh-status")
+
+        assert "read_3_long_articles" not in resp.json()["completed_actions"]
+
+    async def test_read_10_articles_non_articles_not_counted(
+        self, auth_user, db_session
+    ):
+        await _activate_l2(db_session, auth_user)
+        await _add_user_content_status(
+            db_session,
+            auth_user,
+            content_type=ContentType.PODCAST,
+            time_spent_seconds=1,
+        )
+        for _ in range(9):
+            await _add_user_content_status(
+                db_session,
+                auth_user,
+                content_type=ContentType.ARTICLE,
+                time_spent_seconds=1,
+            )
+
+        async with _client() as ac:
+            resp = await ac.post("/api/letters/letter_2/refresh-status")
+
+        assert "read_3_long_articles" not in resp.json()["completed_actions"]
+
+    async def test_read_10_articles_empty_interaction_not_counted(
+        self, auth_user, db_session
+    ):
+        await _activate_l2(db_session, auth_user)
+        for _ in range(9):
+            await _add_user_content_status(
+                db_session,
+                auth_user,
+                content_type=ContentType.ARTICLE,
+                time_spent_seconds=1,
+            )
         await _add_user_content_status(
             db_session,
             auth_user,
             content_type=ContentType.ARTICLE,
-            reading_progress=95,
-            time_spent_seconds=30,
         )
 
         async with _client() as ac:
@@ -543,19 +631,75 @@ class TestLetter2Detection:
 
         assert "read_3_long_articles" not in resp.json()["completed_actions"]
 
-    async def test_read_first_video_podcast_detected(self, auth_user, db_session):
+    async def test_saved_articles_detected(self, auth_user, db_session):
         await _activate_l2(db_session, auth_user)
-        await _add_user_content_status(
+        await _add_collection_items(
             db_session,
             auth_user,
-            content_type=ContentType.YOUTUBE,
-            time_spent_seconds=300,
+            content_types=[
+                ContentType.ARTICLE,
+                ContentType.ARTICLE,
+                ContentType.ARTICLE,
+            ],
+            is_default=True,
         )
 
         async with _client() as ac:
             resp = await ac.post("/api/letters/letter_2/refresh-status")
 
         assert "read_first_video_podcast" in resp.json()["completed_actions"]
+
+    async def test_saved_articles_below_threshold_not_detected(
+        self, auth_user, db_session
+    ):
+        await _activate_l2(db_session, auth_user)
+        await _add_collection_items(
+            db_session,
+            auth_user,
+            content_types=[ContentType.ARTICLE, ContentType.ARTICLE],
+        )
+
+        async with _client() as ac:
+            resp = await ac.post("/api/letters/letter_2/refresh-status")
+
+        assert "read_first_video_podcast" not in resp.json()["completed_actions"]
+
+    async def test_saved_articles_in_liked_collection_not_counted(
+        self, auth_user, db_session
+    ):
+        await _activate_l2(db_session, auth_user)
+        await _add_collection_items(
+            db_session,
+            auth_user,
+            content_types=[
+                ContentType.ARTICLE,
+                ContentType.ARTICLE,
+                ContentType.ARTICLE,
+            ],
+            is_liked_collection=True,
+        )
+
+        async with _client() as ac:
+            resp = await ac.post("/api/letters/letter_2/refresh-status")
+
+        assert "read_first_video_podcast" not in resp.json()["completed_actions"]
+
+    async def test_saved_non_articles_not_counted(self, auth_user, db_session):
+        await _activate_l2(db_session, auth_user)
+        await _add_collection_items(
+            db_session,
+            auth_user,
+            content_types=[
+                ContentType.ARTICLE,
+                ContentType.PODCAST,
+                ContentType.YOUTUBE,
+            ],
+        )
+
+        async with _client() as ac:
+            resp = await ac.post("/api/letters/letter_2/refresh-status")
+
+        assert "read_first_video_podcast" not in resp.json()["completed_actions"]
 
     async def test_recommend_first_article_detected(self, auth_user, db_session):
         await _activate_l2(db_session, auth_user)
@@ -606,19 +750,21 @@ class TestLetter2Idempotence:
         # Cocher toutes les actions
         await _add_event(db_session, auth_user, "digest_opened")
         await _add_event(db_session, auth_user, "bonnes_nouvelles_opened")
-        for _ in range(3):
+        for _ in range(10):
             await _add_user_content_status(
                 db_session,
                 auth_user,
                 content_type=ContentType.ARTICLE,
-                reading_progress=95,
-                time_spent_seconds=120,
+                time_spent_seconds=1,
             )
-        await _add_user_content_status(
+        await _add_collection_items(
             db_session,
             auth_user,
-            content_type=ContentType.PODCAST,
-            time_spent_seconds=300,
+            content_types=[
+                ContentType.ARTICLE,
+                ContentType.ARTICLE,
+                ContentType.ARTICLE,
+            ],
         )
         await _add_user_content_status(
             db_session,

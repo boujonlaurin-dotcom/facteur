@@ -5,6 +5,10 @@ import 'package:flutter/foundation.dart';
 /// Story 23.1 PR-2 a retiré `frequency`/`day_of_week`/`delivery_hour`/`timezone`/
 /// `last_delivered_at`/`next_scheduled_at` (scheduler async drop) et ajouté
 /// `keywords[]` (angles libres saisis par l'utilisateur).
+///
+/// PR-4 (Story 23.3) : suggesters LLM (`VeilleSuggestAngles*`,
+/// `VeilleSuggestSources*`, `VeilleAngleSuggestionDto`,
+/// `VeilleSourceSuggestionDto`) retirés — backend `/suggest/*` répond 410 Gone.
 
 @immutable
 class VeilleTopicDto {
@@ -300,143 +304,4 @@ class VeilleConfigUpsertRequest {
         'editorial_brief': editorialBrief,
         'preset_id': presetId,
       };
-}
-
-// ─── Suggesters LLM (Story 23.3) ─────────────────────────────────────────────
-
-@immutable
-class VeilleSuggestAnglesRequest {
-  final String themeId;
-  final String themeLabel;
-  final String brief;
-
-  const VeilleSuggestAnglesRequest({
-    required this.themeId,
-    required this.themeLabel,
-    this.brief = '',
-  });
-
-  Map<String, dynamic> toJson() => {
-        'theme_id': themeId,
-        'theme_label': themeLabel,
-        'brief': brief,
-      };
-}
-
-@immutable
-class VeilleAngleSuggestionDto {
-  final String title;
-  final List<String> keywords;
-  final String? reason;
-
-  const VeilleAngleSuggestionDto({
-    required this.title,
-    required this.keywords,
-    this.reason,
-  });
-
-  factory VeilleAngleSuggestionDto.fromJson(Map<String, dynamic> json) {
-    return VeilleAngleSuggestionDto(
-      title: json['title'] as String,
-      keywords: ((json['keywords'] as List?) ?? const [])
-          .whereType<String>()
-          .toList(),
-      reason: json['reason'] as String?,
-    );
-  }
-
-  VeilleAngleSuggestionDto copyWith({
-    String? title,
-    List<String>? keywords,
-    Object? reason = _AngleSentinel.value,
-  }) {
-    return VeilleAngleSuggestionDto(
-      title: title ?? this.title,
-      keywords: keywords ?? this.keywords,
-      reason: reason == _AngleSentinel.value ? this.reason : reason as String?,
-    );
-  }
-}
-
-enum _AngleSentinel { value }
-
-@immutable
-class VeilleSuggestAnglesResponse {
-  final List<VeilleAngleSuggestionDto> angles;
-
-  const VeilleSuggestAnglesResponse({required this.angles});
-
-  factory VeilleSuggestAnglesResponse.fromJson(Map<String, dynamic> json) {
-    return VeilleSuggestAnglesResponse(
-      angles: ((json['angles'] as List?) ?? const [])
-          .whereType<Map<String, dynamic>>()
-          .map(VeilleAngleSuggestionDto.fromJson)
-          .toList(),
-    );
-  }
-}
-
-@immutable
-class VeilleSuggestSourcesRequest {
-  final String themeId;
-  final String themeLabel;
-  final String brief;
-  final List<String> angles;
-  final List<String> keywords;
-
-  const VeilleSuggestSourcesRequest({
-    required this.themeId,
-    required this.themeLabel,
-    this.brief = '',
-    this.angles = const [],
-    this.keywords = const [],
-  });
-
-  Map<String, dynamic> toJson() => {
-        'theme_id': themeId,
-        'theme_label': themeLabel,
-        'brief': brief,
-        'angles': angles,
-        'keywords': keywords,
-      };
-}
-
-@immutable
-class VeilleSourceSuggestionDto {
-  final String name;
-  final String url;
-  final String? why;
-  final double relevanceScore;
-
-  const VeilleSourceSuggestionDto({
-    required this.name,
-    required this.url,
-    this.why,
-    required this.relevanceScore,
-  });
-
-  factory VeilleSourceSuggestionDto.fromJson(Map<String, dynamic> json) {
-    return VeilleSourceSuggestionDto(
-      name: json['name'] as String,
-      url: json['url'] as String,
-      why: json['why'] as String?,
-      relevanceScore: (json['relevance_score'] as num).toDouble(),
-    );
-  }
-}
-
-@immutable
-class VeilleSuggestSourcesResponse {
-  final List<VeilleSourceSuggestionDto> sources;
-
-  const VeilleSuggestSourcesResponse({required this.sources});
-
-  factory VeilleSuggestSourcesResponse.fromJson(Map<String, dynamic> json) {
-    return VeilleSuggestSourcesResponse(
-      sources: ((json['sources'] as List?) ?? const [])
-          .whereType<Map<String, dynamic>>()
-          .map(VeilleSourceSuggestionDto.fromJson)
-          .toList(),
-    );
-  }
 }

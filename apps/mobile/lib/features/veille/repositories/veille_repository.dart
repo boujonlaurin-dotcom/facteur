@@ -68,44 +68,6 @@ class VeilleRepository {
     }
   }
 
-  // ─── Suggesters LLM (Story 23.3) ───────────────────────────────────────
-
-  /// `POST /api/veille/suggest/angles` — 5-8 angles + mots-clés explicites.
-  /// Appel synchrone Mistral (~10-15s), affiche HaloLoader pendant l'appel.
-  Future<VeilleSuggestAnglesResponse> suggestAngles(
-    VeilleSuggestAnglesRequest body,
-  ) async {
-    try {
-      final response = await _dio.post<dynamic>(
-        'veille/suggest/angles',
-        data: body.toJson(),
-      );
-      return VeilleSuggestAnglesResponse.fromJson(
-        response.data as Map<String, dynamic>,
-      );
-    } on DioException catch (e) {
-      throw _wrap(e);
-    }
-  }
-
-  /// `POST /api/veille/suggest/sources` — 5-10 sources rankées (≥3 même niche).
-  /// Renvoie sources vides si LLM KO → mobile bascule sur le mode advanced URL.
-  Future<VeilleSuggestSourcesResponse> suggestSources(
-    VeilleSuggestSourcesRequest body,
-  ) async {
-    try {
-      final response = await _dio.post<dynamic>(
-        'veille/suggest/sources',
-        data: body.toJson(),
-      );
-      return VeilleSuggestSourcesResponse.fromJson(
-        response.data as Map<String, dynamic>,
-      );
-    } on DioException catch (e) {
-      throw _wrap(e);
-    }
-  }
-
   // ─── Sources curées (preview Step 3) ───────────────────────────────────
 
   /// `GET /api/veille/sources/{id}/examples` — preview ≤2 articles récents

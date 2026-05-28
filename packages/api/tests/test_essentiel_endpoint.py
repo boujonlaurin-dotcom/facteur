@@ -26,7 +26,10 @@ from app.services.essentiel_service import (
     ESSENTIEL_MAX_ARTICLES,
     EssentielUserContext,
     _perspective_score,
+    _score_article,
     _source_letter,
+    _W_TRENDING,
+    _W_UNE,
     build_essentiel_response,
 )
 
@@ -1026,3 +1029,164 @@ def test_actu_lead_slot_skips_sport_trending():
     assert response.articles[0].section_label != "Sport"
     # Sport en queue.
     assert response.articles[-1].section_label == "Sport"
+
+
+# ─── Repasse 2026-05-27 — mutes appliqués + scoring is_trending découplé ───
+
+
+def test_muted_theme_excludes_topic():
+    """Sylvie 2026-05-25/26 : mute `international` → topic de theme
+    international entièrement écarté (article Corée du Nord exclu)."""
+    international = _topic(
+        "International",
+        [_art(title="Corée du Nord tire un projectile")],
+        theme="international",
+        is_trending=True,
+        rank=1,
+    )
+    other = _topic("Société", [_art(title="Société-1")], theme="society", rank=2)
+    digest = _make_digest([international, other])
+    ctx = EssentielUserContext(muted_themes=frozenset({"international"}))
+
+    response = build_essentiel_response(digest, user_context=ctx)
+
+    labels = [a.section_label for a in response.articles]
+    assert "International" not in labels
+    assert labels == ["Société"]
+
+
+def test_muted_source_excludes_article():
+    """Article de source mutée écarté même si trending."""
+    muted_src = _src("Frandroid")
+    ok_src = _src("Le Monde")
+    same_topic = _topic(
+        "Tech",
+        [
+            _art(title="Article muted", source=muted_src),
+            _art(title="Article ok", source=ok_src),
+        ],
+        theme="tech",
+        is_trending=True,
+        rank=1,
+    )
+    digest = _make_digest([same_topic])
+    ctx = EssentielUserContext(muted_source_ids=frozenset({muted_src.id}))
+
+    response = build_essentiel_response(digest, user_context=ctx)
+
+    assert len(response.articles) == 1
+    assert response.articles[0].title == "Article ok"
+
+
+def test_muted_topic_slug_excludes_article():
+    """Sylvie : mute `space` → article taggué `topics=["space"]` exclu."""
+    src = _src("Le Monde")
+    topic = _topic(
+        "Sciences",
+        [
+            _art(title="Mission lunaire", source=src, topics=["space"]),
+            _art(title="Biologie marine", source=src, topics=["biology"]),
+        ],
+        theme="sciences",
+        rank=1,
+    )
+    digest = _make_digest([topic])
+    ctx = EssentielUserContext(muted_topic_slugs=frozenset({"space"}))
+
+    response = build_essentiel_response(digest, user_context=ctx)
+
+    titles = [a.title for a in response.articles]
+    assert "Mission lunaire" not in titles
+    assert "Biologie marine" in titles
+
+
+def test_no_mutes_no_regression():
+    """Sans mutes : comportement identique au comportement historique."""
+    topics = [
+        _make_topic(rank=i + 1, label=f"T{i + 1}", n_articles=1) for i in range(3)
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(
+        digest,
+        user_context=EssentielUserContext(),
+    )
+
+    assert [a.section_label for a in response.articles] == ["T1", "T2", "T3"]
+
+
+def test_muted_source_does_not_break_other_topics():
+    """Régression : muter une source d'un topic ne doit pas vider les
+    autres topics. Garantit que `_filter_articles_by_mutes` n'élague pas
+    trop large."""
+    muted = _src("Frandroid")
+    ok = _src("Le Monde")
+    topics = [
+        _topic("Tech", [_art(title="T1", source=muted)], theme="tech", rank=1),
+        _topic("Politique", [_art(title="P1", source=ok)], theme="politique", rank=2),
+    ]
+    digest = _make_digest(topics)
+    ctx = EssentielUserContext(muted_source_ids=frozenset({muted.id}))
+
+    response = build_essentiel_response(digest, user_context=ctx)
+
+    labels = [a.section_label for a in response.articles]
+    assert labels == ["Politique"]
+
+
+def test_trending_and_une_decoupled_in_scoring():
+    """Bug audit #6 : `is_une` et `is_trending` étaient lus du même champ
+    JSONB → tout subject à la une recevait +70 (40+30). Après découplage,
+    un subject avec `is_une=True` seul reçoit `+_W_UNE` (30) uniquement."""
+    topic_une_only = _topic(
+        "UneOnly",
+        [_art(title="A1")],
+        theme="theme-une",
+        is_trending=False,
+        is_une=True,
+        perspective_count=1,
+        rank=1,
+    )
+    topic_trending_only = _topic(
+        "TrendingOnly",
+        [_art(title="A2")],
+        theme="theme-trending",
+        is_trending=True,
+        is_une=False,
+        perspective_count=1,
+        rank=2,
+    )
+    ctx = EssentielUserContext()
+
+    une_score = _score_article(topic_une_only, topic_une_only.articles[0], ctx)
+    trending_score = _score_article(
+        topic_trending_only, topic_trending_only.articles[0], ctx
+    )
+
+    # `is_une` seul : +_W_UNE (30), `is_trending` seul : +_W_TRENDING (40).
+    # Tie-break par rank pénalisé (-0.5 * 1).
+    assert une_score == pytest.approx(_W_UNE - 0.5)
+    assert trending_score == pytest.approx(_W_TRENDING - 0.5)
+    # Le découplage doit produire des scores différents (avant le fix,
+    # is_une=true et is_trending=true étaient toujours cumulés → scores égaux
+    # ne se distinguaient jamais).
+    assert une_score != trending_score
+
+
+def test_une_and_trending_can_cumulate_when_both_set():
+    """Cumul `+70` toujours possible mais légitime — quand le subject est
+    à la fois à la une éditoriale (`is_une`) et couvert par ≥3 sources
+    (`is_trending`)."""
+    topic = _topic(
+        "Both",
+        [_art(title="A1")],
+        theme="t",
+        is_trending=True,
+        is_une=True,
+        perspective_count=1,
+        rank=1,
+    )
+
+    score = _score_article(topic, topic.articles[0], EssentielUserContext())
+
+    assert score == pytest.approx(_W_TRENDING + _W_UNE - 0.5)

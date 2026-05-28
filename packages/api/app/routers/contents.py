@@ -885,9 +885,17 @@ async def _attach_highlight_spans(
             if llm_payload is not None:
                 # Inject `bias` per span for clients pre-PR-6 that read it
                 # alongside the new `weight`/`category`/`justification`.
+                # Clamp spans against the served title length: legacy rows
+                # stored positions on the raw RSS title before the source
+                # suffix was stripped at ingestion, so an end > len(title)
+                # would crash the Flutter DiffTitle layout.
+                title_len = len(p.get("title") or "")
                 p["highlight_spans"] = [
                     {**span, "bias": bias}
-                    for span in llm_payload.get("target_spans") or []
+                    for span in (llm_payload.get("target_spans") or [])
+                    if span.get("start", 0) >= 0
+                    and span.get("end", 0) <= title_len
+                    and span.get("start", 0) < span.get("end", 0)
                 ]
                 llm_used += 1
             else:

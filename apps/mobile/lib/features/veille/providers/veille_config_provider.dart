@@ -32,14 +32,15 @@ class VeilleSourceMeta {
   });
 }
 
-/// État du flow de configuration de la veille — Story 23.2 PR-4.
+/// État du flow de configuration de la veille.
 ///
-/// Flow : intro → step1 (thème) → step1.5 (preset, optionnel) → step2 (sujets,
-/// skippable) → step3 (sources). Plus de step4 frequency (drop scheduler).
+/// Flow : intro → step1 (thème + brief) → step1.5 (preset preview, optionnel)
+/// → step2 (sujets, skippable) → step3 (sources). PR-4 (Story 23.3) :
+/// suggesters LLM dropés — la curation se fait en temps réel côté backend
+/// via les keywords + topics + brief.
 @immutable
 class VeilleConfigState {
-  /// Step courant (1..3). Pas de loadingFrom : la curation LLM async est
-  /// remplacée par un filtre temps-réel côté backend.
+  /// Step courant (1..3).
   final int step;
 
   /// Vrai après que l'utilisateur a passé l'écran d'introduction. Tant que
@@ -91,40 +92,10 @@ class VeilleConfigState {
   final String? editorialBrief;
   final String? presetId;
 
-  // ─── Suggesters LLM (Story 23.3) ──────────────────────────────────────────
-
   /// Quand `selectedTheme == 'other'`, label libre saisi par le user
   /// (ex : "Musées contemporains Barcelone"). Envoyé comme `theme_label` au
-  /// backend pour les endpoints /suggest/* et l'upsert config.
+  /// backend pour l'upsert config.
   final String? customThemeLabel;
-
-  /// Angles renvoyés par POST /api/veille/suggest/angles. Mutable côté front
-  /// (l'user édite titres/keywords/sélection en Step 2).
-  final List<VeilleAngleSuggestionDto> suggestedAngles;
-
-  /// Indexes des angles cochés dans `suggestedAngles`. Tous cochés par défaut
-  /// à la réception.
-  final Set<int> selectedAngleIndexes;
-
-  /// Sources renvoyées par POST /api/veille/suggest/sources. Mappées vers
-  /// `sourcesMeta` (kind='niche', apiSourceId=null) au moment où le user les
-  /// coche dans Step 3.
-  final List<VeilleSourceSuggestionDto> suggestedSources;
-
-  /// Indexes des sources LLM cochées (parmi `suggestedSources`).
-  final Set<int> selectedSuggestedSourceIndexes;
-
-  /// Loading flags pour les appels LLM synchrones.
-  final bool loadingAngles;
-  final bool loadingSources;
-
-  /// Dernière erreur LLM (timeout, 500, etc.). UI affiche fallback.
-  final String? suggestionError;
-
-  /// Affiche `FlowLoadingScreen(from: transitionFrom)` au lieu du step quand
-  /// non-null. 1 = transition Step1→Step2/3 (call /suggest/angles), 2 =
-  /// transition Step2→Step3 (call /suggest/sources).
-  final int? transitionFrom;
 
   /// Submit en cours — empêche les double-tap.
   final bool isSubmitting;
@@ -152,14 +123,6 @@ class VeilleConfigState {
     required this.isSubmitting,
     required this.lastError,
     required this.customThemeLabel,
-    required this.suggestedAngles,
-    required this.selectedAngleIndexes,
-    required this.suggestedSources,
-    required this.selectedSuggestedSourceIndexes,
-    required this.loadingAngles,
-    required this.loadingSources,
-    required this.suggestionError,
-    required this.transitionFrom,
   });
 
   factory VeilleConfigState.initial() => const VeilleConfigState(
@@ -182,20 +145,7 @@ class VeilleConfigState {
         isSubmitting: false,
         lastError: null,
         customThemeLabel: null,
-        suggestedAngles: [],
-        selectedAngleIndexes: <int>{},
-        suggestedSources: [],
-        selectedSuggestedSourceIndexes: <int>{},
-        loadingAngles: false,
-        loadingSources: false,
-        suggestionError: null,
-        transitionFrom: null,
       );
-
-  int get totalSelectedAngles =>
-      selectedTopics.length + selectedSuggestions.length;
-  int get totalSelectedSources => selectedSourceIds.length;
-  int get totalSelectedTopics => selectedTopics.length;
 
   /// Nombre de sources réellement persistables (avec `apiSourceId`).
   /// Une source mock sans `apiSourceId` est filtrée par `_buildUpsertRequest`,
@@ -223,14 +173,6 @@ class VeilleConfigState {
     bool? isSubmitting,
     Object? lastError = _Sentinel.value,
     Object? customThemeLabel = _Sentinel.value,
-    List<VeilleAngleSuggestionDto>? suggestedAngles,
-    Set<int>? selectedAngleIndexes,
-    List<VeilleSourceSuggestionDto>? suggestedSources,
-    Set<int>? selectedSuggestedSourceIndexes,
-    bool? loadingAngles,
-    bool? loadingSources,
-    Object? suggestionError = _Sentinel.value,
-    Object? transitionFrom = _Sentinel.value,
   }) =>
       VeilleConfigState(
         step: step ?? this.step,
@@ -263,20 +205,6 @@ class VeilleConfigState {
         customThemeLabel: customThemeLabel == _Sentinel.value
             ? this.customThemeLabel
             : customThemeLabel as String?,
-        suggestedAngles: suggestedAngles ?? this.suggestedAngles,
-        selectedAngleIndexes:
-            selectedAngleIndexes ?? this.selectedAngleIndexes,
-        suggestedSources: suggestedSources ?? this.suggestedSources,
-        selectedSuggestedSourceIndexes:
-            selectedSuggestedSourceIndexes ?? this.selectedSuggestedSourceIndexes,
-        loadingAngles: loadingAngles ?? this.loadingAngles,
-        loadingSources: loadingSources ?? this.loadingSources,
-        suggestionError: suggestionError == _Sentinel.value
-            ? this.suggestionError
-            : suggestionError as String?,
-        transitionFrom: transitionFrom == _Sentinel.value
-            ? this.transitionFrom
-            : transitionFrom as int?,
       );
 
   /// `theme_label` final pour le backend — utilise `customThemeLabel` quand
@@ -302,23 +230,19 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
   void selectTheme(String id) {
     // Changer de thème reset les topics pré-sélectionnés (les preset topics
-    // dépendent du thème) et les angles LLM (qui dépendent eux aussi du thème).
-    // Les customTopics, eux, persistent (le user les a saisis manuellement).
+    // dépendent du thème). Les customTopics, eux, persistent (le user les
+    // a saisis manuellement).
     if (state.selectedTheme == id) return;
     state = state.copyWith(
       selectedTheme: id,
       selectedTopics: const {},
-      suggestedAngles: const [],
-      selectedAngleIndexes: const <int>{},
-      suggestedSources: const [],
-      selectedSuggestedSourceIndexes: const <int>{},
-      // Reset customThemeLabel quand on quitte 'other'
+      // Reset customThemeLabel quand on quitte 'other'.
       customThemeLabel: id == kVeilleOtherThemeSlug ? state.customThemeLabel : null,
     );
   }
 
-  /// Label libre quand le user a choisi la tuile "Autre" (Story 23.3).
-  /// Trim + cap 120 chars (aligné avec backend `VeilleConfigUpsert.theme_label`).
+  /// Label libre quand le user a choisi la tuile "Autre". Trim + cap 120 chars
+  /// (aligné avec backend `VeilleConfigUpsert.theme_label`).
   void setCustomThemeLabel(String? raw) {
     final v = (raw ?? '').trim();
     final next = v.isEmpty ? null : (v.length > 120 ? v.substring(0, 120) : v);
@@ -428,10 +352,9 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     state = state.copyWith(advancedMode: value);
   }
 
-  /// L'utilisateur a tapé "Passer cette étape" sur step2. On clear les
-  /// sélections optionnelles (suggestions LLM dropped, donc déjà vide ;
-  /// keywords + brief restent vides pour ne pas envoyer un signal involontaire)
-  /// et on bascule en step3.
+  /// L'utilisateur a tapé "Passer cette étape" sur step2 — on clear les
+  /// signaux optionnels (keywords + brief restent vides pour ne pas envoyer
+  /// une intention involontaire) et on bascule en step3.
   void skipStep2() {
     if (state.step != 2) return;
     state = state.copyWith(
@@ -463,7 +386,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     return trimmed.isEmpty ? null : trimmed;
   }
 
-  /// Avance d'une étape. Cap à 3 (était 4 avant le drop step4 frequency).
+  /// Avance d'une étape. Cap à 3.
   void goNext() {
     if (state.step >= 3) return;
     state = state.copyWith(step: state.step + 1);
@@ -476,205 +399,10 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     state = state.copyWith(step: clamped, skippedStep2: skipStep2 || state.skippedStep2);
   }
 
-  /// Démarre la transition Step1→Step2 ou Step2→Step3. L'orchestrator affiche
-  /// `FlowLoadingScreen(from: from)` qui déclenche l'appel LLM.
-  void startTransition(int from) {
-    if (from != 1 && from != 2) return;
-    state = state.copyWith(transitionFrom: from, suggestionError: null);
-  }
-
-  /// Sort de la transition vers le step cible. Si `skipStep2=true`, ça veut dire
-  /// l'user a tapé "Passer aux sources" après /suggest/angles → on persiste
-  /// `skippedStep2` pour la durée du flow.
-  void exitTransition({required int toStep, bool skipStep2 = false}) {
-    state = state.copyWith(
-      transitionFrom: null,
-      step: toStep.clamp(1, 3),
-      skippedStep2: skipStep2 || state.skippedStep2,
-    );
-  }
-
-  // ─── Suggesters LLM (Story 23.3) ───────────────────────────────────────────
-
-  /// POST /api/veille/suggest/angles — appel synchrone Mistral (~10-15s).
-  /// Idempotent : si `suggestedAngles` déjà rempli ET thème/brief inchangés,
-  /// no-op (cache déjà côté front via FlowLoadingScreen qui n'appelle qu'une
-  /// fois par transition).
-  Future<void> loadSuggestedAngles() async {
-    final themeId = state.selectedTheme;
-    if (themeId == null) return;
-    if (state.loadingAngles) return;
-
-    state = state.copyWith(loadingAngles: true, suggestionError: null);
-    try {
-      final repo = _ref.read(veilleRepositoryProvider);
-      final themeLabel = state.resolvedThemeLabel(veilleThemeLabelForSlug(themeId));
-      final resp = await repo.suggestAngles(
-        VeilleSuggestAnglesRequest(
-          themeId: themeId,
-          themeLabel: themeLabel,
-          brief: state.editorialBrief ?? '',
-        ),
-      );
-      state = state.copyWith(
-        loadingAngles: false,
-        suggestedAngles: resp.angles,
-        // Tous cochés par défaut — l'user décoche ce qui ne l'intéresse pas.
-        selectedAngleIndexes: {for (var i = 0; i < resp.angles.length; i++) i},
-      );
-    } catch (e) {
-      state = state.copyWith(
-        loadingAngles: false,
-        suggestionError: e.toString(),
-      );
-    }
-  }
-
-  /// POST /api/veille/suggest/sources — utilise les angles SÉLECTIONNÉS + leurs
-  /// keywords (à plat) pour cadrer la curation des sources.
-  Future<void> loadSuggestedSources() async {
-    final themeId = state.selectedTheme;
-    if (themeId == null) return;
-    if (state.loadingSources) return;
-
-    state = state.copyWith(loadingSources: true, suggestionError: null);
-    try {
-      final repo = _ref.read(veilleRepositoryProvider);
-      final themeLabel = state.resolvedThemeLabel(veilleThemeLabelForSlug(themeId));
-      final selectedAngles = <VeilleAngleSuggestionDto>[
-        for (var i = 0; i < state.suggestedAngles.length; i++)
-          if (state.selectedAngleIndexes.contains(i)) state.suggestedAngles[i],
-      ];
-      final angleTitles = selectedAngles.map((a) => a.title).toList();
-      final keywords = <String>{
-        ...state.keywords,
-        for (final a in selectedAngles) ...a.keywords,
-      }.toList();
-
-      final resp = await repo.suggestSources(
-        VeilleSuggestSourcesRequest(
-          themeId: themeId,
-          themeLabel: themeLabel,
-          brief: state.editorialBrief ?? '',
-          angles: angleTitles,
-          keywords: keywords,
-        ),
-      );
-      state = state.copyWith(
-        loadingSources: false,
-        suggestedSources: resp.sources,
-        // Toutes cochées par défaut — l'user décoche.
-        selectedSuggestedSourceIndexes: {
-          for (var i = 0; i < resp.sources.length; i++) i,
-        },
-      );
-    } catch (e) {
-      state = state.copyWith(
-        loadingSources: false,
-        suggestionError: e.toString(),
-      );
-    }
-  }
-
-  void toggleSuggestedAngle(int index) {
-    if (index < 0 || index >= state.suggestedAngles.length) return;
-    final next = Set<int>.from(state.selectedAngleIndexes);
-    if (!next.add(index)) next.remove(index);
-    state = state.copyWith(selectedAngleIndexes: next);
-  }
-
-  void updateAngleTitle(int index, String title) {
-    if (index < 0 || index >= state.suggestedAngles.length) return;
-    final t = title.trim();
-    if (t.isEmpty) return;
-    final next = List<VeilleAngleSuggestionDto>.from(state.suggestedAngles);
-    next[index] = next[index].copyWith(title: t);
-    state = state.copyWith(suggestedAngles: next);
-  }
-
-  void addKeywordToAngle(int index, String raw) {
-    if (index < 0 || index >= state.suggestedAngles.length) return;
-    final kw = raw.trim().toLowerCase();
-    if (kw.length < 2 || kw.length > 60) return;
-    final angle = state.suggestedAngles[index];
-    if (angle.keywords.contains(kw)) return;
-    if (angle.keywords.length >= 8) return; // soft cap pour ne pas surcharger l'UI
-    final next = List<VeilleAngleSuggestionDto>.from(state.suggestedAngles);
-    next[index] = angle.copyWith(keywords: [...angle.keywords, kw]);
-    state = state.copyWith(suggestedAngles: next);
-  }
-
-  void removeKeywordFromAngle(int index, String keyword) {
-    if (index < 0 || index >= state.suggestedAngles.length) return;
-    final angle = state.suggestedAngles[index];
-    if (!angle.keywords.contains(keyword)) return;
-    final next = List<VeilleAngleSuggestionDto>.from(state.suggestedAngles);
-    next[index] = angle.copyWith(
-      keywords: angle.keywords.where((k) => k != keyword).toList(),
-    );
-    state = state.copyWith(suggestedAngles: next);
-  }
-
-  /// Ajoute un angle custom au-dessus des angles LLM. Le user peut renseigner
-  /// des keywords ensuite via `addKeywordToAngle`.
-  void addCustomAngle(String title, {List<String> keywords = const []}) {
-    final t = title.trim();
-    if (t.isEmpty) return;
-    final newAngle = VeilleAngleSuggestionDto(
-      title: t,
-      keywords: keywords.map((k) => k.trim().toLowerCase()).where((k) => k.length >= 2).toList(),
-      reason: null,
-    );
-    final next = [...state.suggestedAngles, newAngle];
-    final newIndex = next.length - 1;
-    state = state.copyWith(
-      suggestedAngles: next,
-      selectedAngleIndexes: {...state.selectedAngleIndexes, newIndex},
-    );
-  }
-
-  void toggleSuggestedSource(int index) {
-    if (index < 0 || index >= state.suggestedSources.length) return;
-    final next = Set<int>.from(state.selectedSuggestedSourceIndexes);
-    if (!next.add(index)) next.remove(index);
-    state = state.copyWith(selectedSuggestedSourceIndexes: next);
-  }
-
   /// Recul instantané.
   void goBack() {
     if (state.step <= 1) return;
     state = state.copyWith(step: state.step - 1);
-  }
-
-  /// Construit les params topics depuis le state courant. Conservé pour la
-  /// rétrocompat des callers existants (steps qui passent ces params pour
-  /// hydrater une preview LLM — désormais no-op côté backend).
-  VeilleTopicsSuggestionParams? topicsParamsFromState() {
-    final themeId = state.selectedTheme;
-    if (themeId == null) return null;
-    return VeilleTopicsSuggestionParams(
-      themeId: themeId,
-      themeLabel: veilleThemeLabelForSlug(themeId),
-      selectedTopicIds: state.selectedTopics.toList()..sort(),
-      purpose: state.purpose,
-      editorialBrief: state.editorialBrief,
-    );
-  }
-
-  /// Idem pour les sources.
-  VeilleSourcesSuggestionParams? sourcesParamsFromState() {
-    final themeId = state.selectedTheme;
-    if (themeId == null) return null;
-    final topicLabels = <String>[
-      ...state.selectedTopics.map((id) => state.topicLabels[id] ?? id),
-      ...state.selectedSuggestions.map((id) => state.topicLabels[id] ?? id),
-    ];
-    return VeilleSourcesSuggestionParams(
-      themeId: themeId,
-      topicLabels: topicLabels,
-      purpose: state.purpose,
-      editorialBrief: state.editorialBrief,
-    );
   }
 
   /// Ajoute une source custom (ajoutée via le sheet "+ Ajouter une source")
@@ -723,8 +451,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
   /// Hydrate le state depuis un pré-set : thème, topics (matérialisés en
   /// custom topics + cochés), sources curées (followed + apiSourceId), purpose
-  /// + brief éditorial. Le user retombe en Step 1 (était possible de jumper
-  /// à step4 dans l'ancien flow — drop avec step4).
+  /// + brief éditorial. Le user retombe en Step 1 pour ajuster.
   void applyPreset(VeillePreset preset) {
     final topicSlugs = <String>{};
     final newCustomTopics = <VeilleTopic>[];
@@ -908,23 +635,6 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
         ),
       );
     }
-    // Story 23.3 : les angles LLM cochés deviennent des topics 'suggested'
-    // (leur titre = label, leur reason = raison LLM). Leurs keywords sont
-    // flattenés dans la liste keywords ci-dessous.
-    for (var i = 0; i < s.suggestedAngles.length; i++) {
-      if (!s.selectedAngleIndexes.contains(i)) continue;
-      final angle = s.suggestedAngles[i];
-      topics.add(
-        VeilleTopicSelectionRequest(
-          topicId: VeilleConfigNotifier._slugifyCustom(angle.title)
-              .replaceFirst('custom-', 'angle-'),
-          label: angle.title,
-          kind: 'suggested',
-          reason: angle.reason,
-          position: pos++,
-        ),
-      );
-    }
 
     final sourceSelections = <VeilleSourceSelectionRequest>[];
     var spos = 0;
@@ -940,38 +650,10 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
         ),
       );
     }
-    // Story 23.3 : les sources LLM cochées sont envoyées comme niche_candidate
-    // (name+url). Le backend les ingère via _resolve_source_id (dédoublonne
-    // sur feed_url si la source existe déjà dans la table sources).
-    for (var i = 0; i < s.suggestedSources.length; i++) {
-      if (!s.selectedSuggestedSourceIndexes.contains(i)) continue;
-      final src = s.suggestedSources[i];
-      sourceSelections.add(
-        VeilleSourceSelectionRequest(
-          kind: 'niche',
-          nicheCandidate: VeilleNicheCandidateRequest(
-            name: src.name,
-            url: src.url,
-            why: src.why,
-          ),
-          why: src.why,
-          position: spos++,
-        ),
-      );
-    }
 
-    // Flatten les keywords des angles cochés + ceux manuels. Cap à maxKeywords
-    // (20) pour respecter MAX_KEYWORDS_PER_CONFIG côté backend. Dédup
-    // automatique via Set.
-    final allKeywords = <String>{
-      ...s.keywords,
-      for (var i = 0; i < s.suggestedAngles.length; i++)
-        if (s.selectedAngleIndexes.contains(i))
-          ...s.suggestedAngles[i].keywords,
-    };
     final keywords = <VeilleKeywordSelectionRequest>[];
     var kpos = 0;
-    for (final kw in allKeywords.take(maxKeywords)) {
+    for (final kw in s.keywords.take(maxKeywords)) {
       keywords.add(
         VeilleKeywordSelectionRequest(keyword: kw, position: kpos++),
       );
@@ -994,81 +676,3 @@ final veilleConfigProvider =
     StateNotifierProvider.autoDispose<VeilleConfigNotifier, VeilleConfigState>(
   (ref) => VeilleConfigNotifier(ref),
 );
-
-/// Params placeholders — conservés pour compat des steps qui les
-/// instanciaient pour pré-fetch LLM. Le pré-fetch est désormais un no-op
-/// (filtre temps-réel côté backend) mais les types restent pour ne pas
-/// casser les widgets de steps avant leur refonte complète (commit 3).
-@immutable
-class VeilleTopicsSuggestionParams {
-  final String themeId;
-  final String themeLabel;
-  final List<String> selectedTopicIds;
-  final String? purpose;
-  final String? editorialBrief;
-
-  const VeilleTopicsSuggestionParams({
-    required this.themeId,
-    required this.themeLabel,
-    required this.selectedTopicIds,
-    this.purpose,
-    this.editorialBrief,
-  });
-
-  @override
-  bool operator ==(Object other) =>
-      other is VeilleTopicsSuggestionParams &&
-      other.themeId == themeId &&
-      other.themeLabel == themeLabel &&
-      _listEquals(other.selectedTopicIds, selectedTopicIds) &&
-      other.purpose == purpose &&
-      other.editorialBrief == editorialBrief;
-
-  @override
-  int get hashCode => Object.hash(
-        themeId,
-        themeLabel,
-        Object.hashAll(selectedTopicIds),
-        purpose,
-        editorialBrief,
-      );
-}
-
-@immutable
-class VeilleSourcesSuggestionParams {
-  final String themeId;
-  final List<String> topicLabels;
-  final String? purpose;
-  final String? editorialBrief;
-
-  const VeilleSourcesSuggestionParams({
-    required this.themeId,
-    required this.topicLabels,
-    this.purpose,
-    this.editorialBrief,
-  });
-
-  @override
-  bool operator ==(Object other) =>
-      other is VeilleSourcesSuggestionParams &&
-      other.themeId == themeId &&
-      _listEquals(other.topicLabels, topicLabels) &&
-      other.purpose == purpose &&
-      other.editorialBrief == editorialBrief;
-
-  @override
-  int get hashCode => Object.hash(
-        themeId,
-        Object.hashAll(topicLabels),
-        purpose,
-        editorialBrief,
-      );
-}
-
-bool _listEquals(List<String> a, List<String> b) {
-  if (a.length != b.length) return false;
-  for (var i = 0; i < a.length; i++) {
-    if (a[i] != b[i]) return false;
-  }
-  return true;
-}

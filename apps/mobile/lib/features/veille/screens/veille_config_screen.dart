@@ -11,7 +11,6 @@ import 'steps/step1_5_preset_preview_screen.dart';
 import 'steps/step1_theme_screen.dart';
 import 'steps/step2_suggestions_screen.dart';
 import 'steps/step3_sources_screen.dart';
-import 'transitions/flow_loading_screen.dart';
 import 'veille_intro_screen.dart';
 
 /// Host du flow de configuration de la veille (Story 23.2 PR-4).
@@ -108,18 +107,6 @@ class VeilleConfigScreen extends ConsumerWidget {
         onClose: close,
       );
       key = 'preset-${state.previewPresetId}';
-    } else if (state.transitionFrom != null) {
-      // Story 23.3 : transition LLM (HaloLoader + bifurcation pour from=1).
-      body = FlowLoadingScreen(
-        from: state.transitionFrom!,
-        onChoosePrecisier: () => notifier.exitTransition(toStep: 2),
-        onChooseSkipToSources: () {
-          notifier.exitTransition(toStep: 3, skipStep2: true);
-          notifier.startTransition(2);
-        },
-        onSourcesReady: () => notifier.exitTransition(toStep: 3),
-      );
-      key = 'transition-${state.transitionFrom}';
     } else {
       switch (state.step) {
         case 1:

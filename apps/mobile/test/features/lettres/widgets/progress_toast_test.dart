@@ -22,17 +22,20 @@ void main() {
     GoogleFonts.config.allowRuntimeFetching = false;
   });
 
-  testWidgets('niveau micro affiche le label + compteur puis disparaît',
-      (tester) async {
-    await tester.pumpWidget(_harness(
-      onReady: (ctx) => showProgressToast(
-        ctx,
-        level: ProgressToastLevel.micro,
-        current: 1,
-        total: 3,
-        label: 'Premier rendez-vous tenu.',
+  testWidgets('niveau micro affiche le label + compteur puis disparaît', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        onReady: (ctx) => showProgressToast(
+          ctx,
+          level: ProgressToastLevel.micro,
+          current: 1,
+          total: 3,
+          label: 'Premier rendez-vous tenu.',
+        ),
       ),
-    ));
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -47,15 +50,17 @@ void main() {
 
   testWidgets('niveau étape est cliquable et invoque onOpen', (tester) async {
     var opened = 0;
-    await tester.pumpWidget(_harness(
-      onReady: (ctx) => showProgressToast(
-        ctx,
-        level: ProgressToastLevel.step,
-        stepNum: '01',
-        stepTitle: 'Tes premières sources',
-        onOpen: () => opened++,
+    await tester.pumpWidget(
+      _harness(
+        onReady: (ctx) => showProgressToast(
+          ctx,
+          level: ProgressToastLevel.step,
+          stepNum: '01',
+          stepTitle: 'Tes premières sources',
+          onOpen: () => opened++,
+        ),
       ),
-    ));
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -69,19 +74,54 @@ void main() {
     expect(opened, 1);
   });
 
-  testWidgets('niveau section affiche titre Fraunces + sous-titre 100%',
-      (tester) async {
-    await tester.pumpWidget(_harness(
-      onReady: (ctx) => showProgressToast(
-        ctx,
-        level: ProgressToastLevel.section,
-        sectionTitle: 'Bonne nouvelle du jour',
+  testWidgets('niveau section affiche titre Fraunces + sous-titre 100%', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        onReady: (ctx) => showProgressToast(
+          ctx,
+          level: ProgressToastLevel.section,
+          sectionTitle: 'Bonne nouvelle du jour',
+        ),
       ),
-    ));
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('Bonne nouvelle du jour'), findsOneWidget);
     expect(find.text('Lue de bout en bout · 100%'), findsOneWidget);
+  });
+
+  testWidgets('deux affichages rapprochés remplacent proprement le toast', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        onReady: (ctx) {
+          showProgressToast(
+            ctx,
+            level: ProgressToastLevel.micro,
+            current: 1,
+            total: 3,
+            label: 'Premier toast',
+          );
+          showProgressToast(
+            ctx,
+            level: ProgressToastLevel.micro,
+            current: 2,
+            total: 3,
+            label: 'Second toast',
+          );
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Premier toast'), findsNothing);
+    expect(find.text('Second toast'), findsOneWidget);
+    expect(find.text('2/3'), findsOneWidget);
   });
 }

@@ -48,7 +48,7 @@ class SectionBanner extends StatelessWidget {
     const topRadius = BorderRadius.vertical(top: Radius.circular(10));
     final container = Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(0, 4, 0, 12),
+      margin: const EdgeInsets.fromLTRB(0, 4, 0, 6),
       constraints: const BoxConstraints(minHeight: 96),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(

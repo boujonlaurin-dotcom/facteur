@@ -479,6 +479,16 @@ NEWS_BULLETIN_PATTERNS = [
     r"^\s*(ma|la|sa|notre)\s+chronique\b",
     # « Chronique: l'économie », « Chronique – bilan de semaine ».
     r"^\s*chronique\s*[:\-–—]",
+    # Préfixe descriptif avant « émission du <jour> » :
+    # « L'humeur du jour, émission du mercredi 27 mai 2026 »
+    # « La revue de presse internationale, émission du lundi 25 mai 2026 »
+    r",\s*émission du (lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b",
+    # « La revue de presse », « La matinale », « L'invité » — liste fermée
+    # pour ne pas attraper « La revue d'un livre ».
+    r"^\s*(la|l[''’])\s*(revue de presse|humeur du jour|invité|matinale)\b",
+    # « L'humeur du jour », « L'idée du jour » — chronique matinale type
+    # France Culture / France Inter.
+    r"^\s*l[''’][a-zéèêàâîôûç]+ du jour\b",
 ]
 
 _BULLETIN_RE = re.compile("|".join(NEWS_BULLETIN_PATTERNS), re.IGNORECASE)

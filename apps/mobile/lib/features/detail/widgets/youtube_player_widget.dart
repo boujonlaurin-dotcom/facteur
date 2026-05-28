@@ -7,13 +7,17 @@ import '../../../config/theme.dart';
 
 /// YouTube video player widget (Story 5.2)
 ///
-/// Uses flutter_inappwebview with a custom Chrome User-Agent to bypass
-/// YouTube's server-side WebView detection (Error 153 on Android — blocks
-/// User-Agents containing the "wv" marker). Embeds via youtube-nocookie.com
-/// for better embed permissiveness.
-/// JS bridge for progress tracking and long-press 2x speed boost.
+/// Uses flutter_inappwebview with the official YouTube IFrame Player API,
+/// loaded via `initialData` with `baseUrl: https://www.youtube.com`. This is
+/// the canonical fix for Android WebView Error 153 — YouTube checks the
+/// embed page origin, and pointing baseUrl at youtube.com makes the iframe
+/// think it lives on YouTube's own domain (where embedding is always allowed).
 ///
-/// Falls back to "open in YouTube" if playback still fails.
+/// A standard Chrome mobile User-Agent is also set (no "wv" marker) so
+/// YouTube doesn't fall back to its WebView block.
+///
+/// The YT.Player JS API provides progress, play state, and playbackRate
+/// (long-press 2x speed boost). Falls back to "open in YouTube" on error.
 class YouTubePlayerWidget extends StatefulWidget {
   final String videoUrl;
   final String title;
@@ -85,48 +89,74 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
   }
 
   // ---------------------------------------------------------------------------
-  // JS bridge injection — after page loads
+  // HTML page hosting the YouTube IFrame Player API.
+  // Loaded via initialData with baseUrl=https://www.youtube.com so the iframe
+  // origin matches youtube.com (bypasses Error 153).
   // ---------------------------------------------------------------------------
 
-  Future<void> _injectPlayerBridge() async {
-    await _controller?.evaluateJavascript(source: '''
-(function() {
-  if (window._bridgeInitialized) return;
-  window._bridgeInitialized = true;
+  String _buildPlayerHtml(String videoId) {
+    return '''
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<style>
+  html, body { margin: 0; padding: 0; background: #000; height: 100%; overflow: hidden; }
+  #player { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="player"></div>
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+  var player;
+  var progressTimer;
 
-  var checkCount = 0;
-
-  function findAndSetup() {
-    var video = document.querySelector('video');
-    if (!video && checkCount < 50) {
-      checkCount++;
-      setTimeout(findAndSetup, 200);
-      return;
-    }
-    if (video) {
-      setInterval(function() {
-        if (video.duration > 0) {
-          window.flutter_inappwebview.callHandler('FlutterProgress', video.currentTime / video.duration);
+  function onYouTubeIframeAPIReady() {
+    player = new YT.Player('player', {
+      videoId: '$videoId',
+      width: '100%',
+      height: '100%',
+      playerVars: {
+        playsinline: 1,
+        rel: 0,
+        modestbranding: 1,
+        autoplay: 0,
+        controls: 1,
+        fs: 1
+      },
+      events: {
+        onReady: function() {
+          progressTimer = setInterval(function() {
+            try {
+              var d = player.getDuration();
+              if (d > 0) {
+                window.flutter_inappwebview.callHandler(
+                  'FlutterProgress', player.getCurrentTime() / d
+                );
+              }
+            } catch (e) {}
+          }, 1000);
+        },
+        onStateChange: function(e) {
+          // YT.PlayerState.PLAYING === 1
+          var isPlaying = e.data === 1 ? 1 : 0;
+          window.flutter_inappwebview.callHandler('FlutterPlayState', isPlaying);
+        },
+        onError: function(e) {
+          window.flutter_inappwebview.callHandler('FlutterError', e.data);
         }
-      }, 1000);
-
-      video.addEventListener('playing', function() {
-        window.flutter_inappwebview.callHandler('FlutterPlayState', 1);
-      });
-      video.addEventListener('pause', function() {
-        window.flutter_inappwebview.callHandler('FlutterPlayState', 0);
-      });
-      video.addEventListener('ended', function() {
-        window.flutter_inappwebview.callHandler('FlutterPlayState', 0);
-      });
-
-      window.setPlaybackRate = function(rate) { video.playbackRate = rate; };
-    }
+      }
+    });
   }
 
-  findAndSetup();
-})();
-''');
+  window.setPlaybackRate = function(rate) {
+    if (player && player.setPlaybackRate) player.setPlaybackRate(rate);
+  };
+</script>
+</body>
+</html>
+''';
   }
 
   void _startSpeedBoost() {
@@ -169,26 +199,27 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
       );
     }
 
-    final embedUrl =
-        'https://www.youtube-nocookie.com/embed/$_videoId'
-        '?playsinline=1&rel=0&modestbranding=1&autoplay=0&controls=1&fs=1';
-
     final settings = InAppWebViewSettings(
       javaScriptEnabled: true,
       mediaPlaybackRequiresUserGesture: false,
       allowsInlineMediaPlayback: true,
       transparentBackground: true,
-      // Bypasses YouTube WebView detection: Android WebView UA contains "wv"
-      // which YouTube uses to block in-app playback (Error 152-4 / 153).
-      // A standard Chrome mobile UA (no "wv") is indistinguishable from a
-      // real browser — no external proxy needed.
+      // Chrome mobile UA (no "wv" marker) so YouTube doesn't block via
+      // WebView detection (Error 153 / 152-4).
       userAgent:
           'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 '
           '(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
     );
 
     final playerWidget = InAppWebView(
-      initialUrlRequest: URLRequest(url: WebUri(embedUrl)),
+      // baseUrl=youtube.com aligns the iframe origin with YouTube's own
+      // domain — the canonical fix for embed Error 153 in WebViews.
+      initialData: InAppWebViewInitialData(
+        data: _buildPlayerHtml(_videoId!),
+        baseUrl: WebUri('https://www.youtube.com'),
+        mimeType: 'text/html',
+        encoding: 'utf8',
+      ),
       initialSettings: settings,
       onWebViewCreated: (controller) {
         _controller = controller;
@@ -215,9 +246,13 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
             widget.onPlayStateChanged?.call(isPlaying);
           },
         );
-      },
-      onLoadStop: (controller, url) async {
-        _injectPlayerBridge();
+
+        controller.addJavaScriptHandler(
+          handlerName: 'FlutterError',
+          callback: (args) {
+            if (mounted) setState(() => _hasError = true);
+          },
+        );
       },
       onReceivedError: (controller, request, error) {
         if (request.isForMainFrame ?? false) {

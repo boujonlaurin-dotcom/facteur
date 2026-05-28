@@ -22,7 +22,8 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 import structlog
-from sqlalchemy import or_, select
+from sqlalchemy import case as sa_case
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.content import Content
@@ -284,6 +285,33 @@ class EditorialPipelineService:
         )
 
         cluster_map = {c.cluster_id: c for c in clusters}
+
+        # Persiste `cluster_id` sur les Content sélectionnés — condition sine
+        # qua non pour que `_attach_highlight_spans` (router perspectives)
+        # retrouve les rows `cluster_title_annotations` écrites par l'étape
+        # 3B-bis. `cluster_signature` filtre les annotations obsolètes côté
+        # lecture si la composition change à un run ultérieur.
+        selected_content_cluster_pairs: list[tuple[UUID, UUID]] = []
+        selected_cluster_ids: set[UUID] = set()
+        for topic in selected_topics:
+            cluster = cluster_map.get(topic.topic_id)
+            if not cluster or len(cluster.contents) < 2:
+                continue
+            cluster_uuid = UUID(cluster.cluster_id)
+            selected_cluster_ids.add(cluster_uuid)
+            for c in cluster.contents:
+                selected_content_cluster_pairs.append((c.id, cluster_uuid))
+
+        if selected_content_cluster_pairs:
+            async with self._short_session() as session:
+                await _persist_content_cluster_ids(
+                    session, selected_content_cluster_pairs
+                )
+            logger.info(
+                "editorial_pipeline.content_cluster_ids_persisted",
+                content_count=len(selected_content_cluster_pairs),
+                cluster_count=len(selected_cluster_ids),
+            )
 
         # ÉTAPE 3B-bis: LLM bias annotation pour les clusters sélectionnés.
         # Skip silencieux si MISTRAL_API_KEY absente (fallback spaCy hors-ligne
@@ -816,6 +844,28 @@ class EditorialPipelineService:
     async def close(self) -> None:
         """Cleanup resources."""
         await self.llm.close()
+
+
+async def _persist_content_cluster_ids(
+    session: AsyncSession,
+    pairs: list[tuple[UUID, UUID]],
+) -> None:
+    """UPDATE bulk `contents.cluster_id` pour les articles d'un run.
+
+    Idempotent : ré-applique le même `cluster_id` si déjà set. Les anciennes
+    valeurs sont écrasées — au prochain run, `cluster_signature` côté CTA
+    invalide les annotations dont la composition a changé.
+    """
+    if not pairs:
+        return
+    when_clauses = dict(pairs)
+    stmt = (
+        update(Content)
+        .where(Content.id.in_(when_clauses.keys()))
+        .values(cluster_id=sa_case(when_clauses, value=Content.id))
+    )
+    await session.execute(stmt)
+    await session.commit()
 
 
 async def _annotate_cluster_llm_bias(

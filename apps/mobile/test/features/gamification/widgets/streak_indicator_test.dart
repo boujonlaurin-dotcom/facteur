@@ -33,7 +33,7 @@ Widget _wrap(List<Override> overrides) {
 }
 
 void main() {
-  final streak = StreakModel(
+  const streak = StreakModel(
     currentStreak: 5,
     longestStreak: 8,
     weeklyCount: 2,
@@ -77,7 +77,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.text('Ta série d\'ouverture'), findsOneWidget);
+    expect(find.text('En ce moment'), findsOneWidget);
     expect(find.text('14 derniers jours'), findsOneWidget);
+    expect(
+      find.text('Une flamme marque les jours où Facteur a été ouvert.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('streak indicator is hidden when gamification is disabled', (

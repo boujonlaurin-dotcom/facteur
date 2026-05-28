@@ -41,6 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.enums import ContentType, SourceType
 from app.models.source import UserSource
 from app.models.user import UserInterest, UserSubtopic
+from app.models.user_personalization import UserPersonalization
 from app.schemas.digest import DigestResponse, DigestTopic, DigestTopicArticle
 from app.schemas.essentiel import EssentielArticle, EssentielKind, EssentielResponse
 from app.services.language_user_filter import (
@@ -99,6 +100,12 @@ class EssentielUserContext:
     # Préférence langue : si True, on masque les articles des sources
     # non-FR (sauf si la source est explicitement suivie).
     hide_non_fr_sources: bool = False
+    # Mutes (`user_personalization`) appliqués en tête de pipeline avant
+    # tout autre filtre — un article muté ne doit jamais devenir le fallback
+    # Tournée ni être proposé en lead Actu.
+    muted_themes: frozenset[str] = field(default_factory=frozenset)
+    muted_topic_slugs: frozenset[str] = field(default_factory=frozenset)
+    muted_source_ids: frozenset[UUID] = field(default_factory=frozenset)
 
 
 async def fetch_user_essentiel_context(
@@ -151,11 +158,31 @@ async def fetch_user_essentiel_context(
 
     hide_non_fr_sources = await get_hide_non_fr_pref(db, user_id)
 
+    perso_row = (
+        await db.execute(
+            select(
+                UserPersonalization.muted_themes,
+                UserPersonalization.muted_topics,
+                UserPersonalization.muted_sources,
+            ).where(UserPersonalization.user_id == user_id)
+        )
+    ).first()
+    muted_themes = frozenset(perso_row.muted_themes or ()) if perso_row else frozenset()
+    muted_topic_slugs = (
+        frozenset(perso_row.muted_topics or ()) if perso_row else frozenset()
+    )
+    muted_source_ids = (
+        frozenset(perso_row.muted_sources or ()) if perso_row else frozenset()
+    )
+
     return EssentielUserContext(
         followed_source_ids=followed_source_ids,
         source_priority_multipliers=source_priority_multipliers,
         topic_weights=topic_weights,
         hide_non_fr_sources=hide_non_fr_sources,
+        muted_themes=muted_themes,
+        muted_topic_slugs=muted_topic_slugs,
+        muted_source_ids=muted_source_ids,
     )
 
 
@@ -298,6 +325,40 @@ def _score_article(
     return score
 
 
+def _filter_articles_by_mutes(
+    topics: list[DigestTopic],
+    ctx: EssentielUserContext,
+) -> list[DigestTopic]:
+    """Retire les articles mutés par l'utilisateur (`user_personalization`).
+
+    Trois leviers :
+    - `muted_themes` (slugs macro comme "tech", "international") → topic entier
+      écarté si `topic.theme` est muté.
+    - `muted_source_ids` (UUID des sources) → article écarté.
+    - `muted_topic_slugs` (slugs granulaires ML) → article écarté si
+      `article.topics` intersecte la liste.
+
+    Appliqué *avant* tout autre filtre — un article muté ne doit jamais devenir
+    le fallback Tournée ni être proposé en lead Actu.
+    """
+    if not (ctx.muted_themes or ctx.muted_source_ids or ctx.muted_topic_slugs):
+        return topics
+
+    filtered: list[DigestTopic] = []
+    for topic in topics:
+        if topic.theme and topic.theme in ctx.muted_themes:
+            continue
+        kept = [
+            a
+            for a in topic.articles
+            if a.source.id not in ctx.muted_source_ids
+            and not (ctx.muted_topic_slugs.intersection(a.topics))
+        ]
+        if kept:
+            filtered.append(topic.model_copy(update={"articles": kept}))
+    return filtered
+
+
 def _filter_articles_by_language(
     topics: list[DigestTopic],
     ctx: EssentielUserContext,
@@ -368,6 +429,9 @@ def _pick_transversal_articles(
     4. **Diversité dure** : max `ESSENTIEL_MAX_PER_SOURCE` (=2) articles d'une
        même source à toutes les étapes.
     """
+    # Mutes utilisateur (`user_personalization`) — prime sur tous les autres
+    # filtres : un article muté ne doit jamais devenir le fallback Tournée.
+    topics = _filter_articles_by_mutes(topics, ctx)
     topics = _filter_articles_by_language(topics, ctx)
     # Story 9.4 : exclure podcasts/youtube/reddit/bulletins en tête de pipeline
     # — ces contenus ne reflètent pas l'actualité chaude traitée par la presse.

@@ -7,7 +7,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 
-import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import '../../../config/theme.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
@@ -17,9 +16,41 @@ import 'perspectives_bottom_sheet.dart';
 import '../../../core/ui/notification_service.dart';
 
 class ArticleViewerModal extends ConsumerStatefulWidget {
-  final Content content;
+  final Content? content;
 
-  const ArticleViewerModal({super.key, required this.content});
+  /// URL chargée dans la webview. Si [content] est fourni, on utilise son URL ;
+  /// sinon (mode "perspective") on charge directement cette URL.
+  final String? url;
+
+  /// Nom de la source affiché dans le header en mode perspective.
+  final String? sourceName;
+
+  /// Domaine source — utile pour fallback favicon / source detail.
+  final String? sourceDomain;
+
+  /// Bias stance en mode perspective ('left', 'center-left', 'center',
+  /// 'center-right', 'right', 'unknown').
+  final String? biasStance;
+
+  const ArticleViewerModal({super.key, required Content this.content})
+      : url = null,
+        sourceName = null,
+        sourceDomain = null,
+        biasStance = null;
+
+  /// Mode "perspective" : la modal ouvre une URL externe (autre source) avec
+  /// le même header / webview que pour un article interne. Pas de tracking
+  /// `trackArticleRead` ni d'update de `user_content_status` (l'event
+  /// `perspective_article_viewed` est déjà émis par
+  /// `PerspectivesBottomSheet` au tap). Bouton "Comparer" masqué — on est
+  /// déjà dans une sheet de comparaisons.
+  const ArticleViewerModal.perspective({
+    super.key,
+    required String this.url,
+    required String this.sourceName,
+    this.sourceDomain,
+    String this.biasStance = 'unknown',
+  }) : content = null;
 
   @override
   ConsumerState<ArticleViewerModal> createState() => _ArticleViewerModalState();
@@ -31,6 +62,9 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
   bool _hasError = false;
   bool _isSupported = true;
   late DateTime _startTime;
+
+  String get _url => widget.content?.url ?? widget.url!;
+
 
   @override
   void initState() {
@@ -45,21 +79,11 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
     }
 
     try {
-      // 1. Définir les paramètres de création selon la plateforme
-      late final PlatformWebViewControllerCreationParams params;
-
-      // On évite d'appeler WebViewPlatform.instance sur les plateformes desktop où il est souvent null
-      // Sauf si on est sur iOS (WebKit) ou Android.
-      if (!kIsWeb && Platform.isIOS) {
-        params = WebKitWebViewControllerCreationParams(
-          allowsInlineMediaPlayback: true,
-        );
-      } else {
-        params = const PlatformWebViewControllerCreationParams();
-      }
-
-      // 2. Initialiser le controller
-      _controller = WebViewController.fromPlatformCreationParams(params)
+      // Bare WebViewController() — pattern identique à
+      // `ContentDetailScreen._initScrollToSiteWebView()`. On évite les
+      // `WebKitWebViewControllerCreationParams` qui faisaient apparaître des
+      // redirects Google login sur certains domaines.
+      _controller = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
         ..setBackgroundColor(const Color(0x00000000))
         ..setNavigationDelegate(
@@ -95,7 +119,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
             },
           ),
         )
-        ..loadRequest(Uri.parse(widget.content.url));
+        ..loadRequest(Uri.parse(_url));
     } catch (e) {
       debugPrint('WebView initialization error: $e');
       _isSupported = false;
@@ -104,25 +128,30 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
 
   @override
   void dispose() {
-    // Track article read on close
-    final duration = DateTime.now().difference(_startTime).inSeconds;
-    // We use ref.read here because dispose is called when the widget is unmounted
-    // but the provider container should still be alive.
-    // However, if the whole app is closing, it might be too late.
-    // For modal close, it's fine.
-    ref.read(analyticsServiceProvider).trackArticleRead(
-          widget.content.id,
-          widget.content.source.id,
-          duration,
-        );
-    // Accumulate reading time on user_content_status for recommendation signal.
-    ref
-        .read(feedRepositoryProvider)
-        .updateContentStatusWithTimeSpent(widget.content.id, duration);
+    final content = widget.content;
+    if (content != null) {
+      final duration = DateTime.now().difference(_startTime).inSeconds;
+      // Le ProviderScope peut être disposé avant ce widget en tests / teardown.
+      try {
+        ref.read(analyticsServiceProvider).trackArticleRead(
+              content.id,
+              content.source.id,
+              duration,
+            );
+        ref
+            .read(feedRepositoryProvider)
+            .updateContentStatusWithTimeSpent(content.id, duration);
+      } catch (e) {
+        debugPrint('[ArticleViewerModal] dispose tracking error: $e');
+      }
+    }
     super.dispose();
   }
 
   Future<void> _showPerspectives(BuildContext context) async {
+    final content = widget.content;
+    if (content == null) return;
+
     // Show loading indicator
     showModalBottomSheet<void>(
       context: context,
@@ -151,7 +180,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
       final repository = ref.read(feedRepositoryProvider);
 
       // Fetch perspectives
-      final response = await repository.getPerspectives(widget.content.id);
+      final response = await repository.getPerspectives(content.id);
 
       // Close loading dialog
       if (context.mounted) Navigator.pop(context);
@@ -180,8 +209,8 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
             biasDistribution: response.biasDistribution,
             keywords: response.keywords,
             sourceBiasStance: response.sourceBiasStance,
-            sourceName: widget.content.source.name,
-            contentId: widget.content.id,
+            sourceName: content.source.name,
+            contentId: content.id,
             comparisonQuality: response.comparisonQuality,
           ),
         );
@@ -199,6 +228,15 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+    final content = widget.content;
+    final displaySourceName =
+        content?.source.name ?? widget.sourceName ?? '';
+    final displayBiasStance =
+        content?.source.biasStance ?? widget.biasStance ?? 'unknown';
+    final displayBiasLabel =
+        content?.source.getBiasLabel() ?? Perspective.getBiasLabelFromStance(displayBiasStance);
+    final displayReliability =
+        content?.source.reliabilityScore ?? 'unknown';
 
     return Container(
       height: MediaQuery.of(context).size.height,
@@ -242,7 +280,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                               children: [
                                 Flexible(
                                   child: Text(
-                                    widget.content.source.name,
+                                    displaySourceName,
                                     style: textTheme.labelLarge?.copyWith(
                                       fontWeight: FontWeight.bold,
                                       color: colors.textPrimary,
@@ -252,8 +290,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
-                                if (widget.content.source.biasStance !=
-                                    'unknown') ...[
+                                if (displayBiasStance != 'unknown') ...[
                                   const SizedBox(width: 6),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
@@ -265,7 +302,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
-                                      widget.content.source.getBiasLabel(),
+                                      displayBiasLabel,
                                       style: TextStyle(
                                         fontSize: 9,
                                         fontWeight: FontWeight.w600,
@@ -274,12 +311,10 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                                     ),
                                   ),
                                 ],
-                                if (widget.content.source.reliabilityScore !=
-                                    'unknown') ...[
+                                if (displayReliability != 'unknown') ...[
                                   const SizedBox(width: 4),
                                   Icon(
-                                    widget.content.source.reliabilityScore ==
-                                            'high'
+                                    displayReliability == 'high'
                                         ? PhosphorIcons.sealCheck(
                                             PhosphorIconsStyle.fill,
                                           )
@@ -287,9 +322,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                                             PhosphorIconsStyle.fill,
                                           ),
                                     size: 13,
-                                    color: widget.content.source
-                                                .reliabilityScore ==
-                                            'high'
+                                    color: displayReliability == 'high'
                                         ? Colors.blue.shade300
                                         : Colors.amber.shade600,
                                   ),
@@ -304,14 +337,8 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                         icon: Icon(PhosphorIcons.shareNetwork(
                             PhosphorIconsStyle.bold)),
                         onPressed: () async {
-                          // Simple share using Share package or Clipboard for now if package not ready
-                          // Since I don't know if share_plus is in pubspec, I'll fallback to Clipboard like before
-                          // BUT the user asked for "Partager" specifically.
-                          // I'll assume share_plus is intended. If not available, I'll use Clipboard.
-                          // Checking imports: no share_plus import.
-                          // I'll use Clipboard logic for now to be safe, but visually it's a Share button.
                           await Clipboard.setData(
-                              ClipboardData(text: widget.content.url));
+                              ClipboardData(text: _url));
                           if (context.mounted) {
                             NotificationService.showInfo('Lien copié !');
                           }
@@ -321,8 +348,10 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                       ),
                       const SizedBox(width: 8),
 
-                      // Perspectives CTA
-                      if (widget.content.contentType == ContentType.article)
+                      // Perspectives CTA — caché en mode perspective (on est
+                      // déjà dans une sheet de comparaisons).
+                      if (content != null &&
+                          content.contentType == ContentType.article)
                         TextButton(
                           onPressed: () => _showPerspectives(context),
                           style: TextButton.styleFrom(
@@ -416,8 +445,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                           ),
                           const SizedBox(height: 32),
                           ElevatedButton.icon(
-                            onPressed: () =>
-                                launchUrl(Uri.parse(widget.content.url)),
+                            onPressed: () => launchUrl(Uri.parse(_url)),
                             icon: Icon(
                               PhosphorIcons.browser(PhosphorIconsStyle.bold),
                             ),

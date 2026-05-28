@@ -285,6 +285,48 @@ class TestIsNewsBulletinTitle:
             "Une nouvelle émission de Radio France pour les jeunes"
         )
 
+    # --- Repasse Essentiel 2026-05-27 : chroniques France Culture ---
+
+    def test_humeur_du_jour_emission_du_mercredi(self):
+        """« L'humeur du jour, émission du mercredi 27 mai 2026 » — chronique
+        quotidienne France Culture passée à travers le filtre avant repasse."""
+        assert is_news_bulletin_title(
+            "L'humeur du jour, émission du mercredi 27 mai 2026"
+        )
+
+    def test_revue_de_presse_internationale_emission_du_lundi(self):
+        """« La revue de presse internationale, émission du lundi 25 mai 2026 »
+        — chronique France Culture, non matchée par `^revue de presse` à cause
+        du préfixe « La ». Doit l'être désormais."""
+        assert is_news_bulletin_title(
+            "La revue de presse internationale, émission du lundi 25 mai 2026"
+        )
+
+    def test_humeur_du_jour_short(self):
+        """Forme courte sans suffixe d'édition — chronique matinale."""
+        assert is_news_bulletin_title("L'humeur du jour")
+
+    def test_idee_du_jour(self):
+        """Variante France Inter / France Culture."""
+        assert is_news_bulletin_title("L'idée du jour")
+
+    def test_la_matinale(self):
+        """« La matinale du 27 mai » — chronique régulière."""
+        assert is_news_bulletin_title("La matinale du 27 mai")
+
+    def test_revue_d_un_livre_not_matched(self):
+        """Régression : « La revue d'un livre… » n'est pas dans la liste
+        fermée (revue de presse / matinale / humeur du jour / invité) et
+        ne doit donc pas matcher."""
+        assert not is_news_bulletin_title("La revue d'un livre de Camus")
+
+    def test_l_emission_du_president(self):
+        """Régression : la forme « L'émission du <x> » reste matchée par le
+        pattern historique `^l['émission`."""
+        assert is_news_bulletin_title(
+            "L'émission du président qu'il faut écouter"
+        )
+
 
 class TestIsDenylistedEditorialSource:
     """Sources bloquées du top 10 éditorial."""

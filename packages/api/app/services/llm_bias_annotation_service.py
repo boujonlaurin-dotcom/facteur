@@ -16,7 +16,7 @@ from app.services.editorial.llm_client import EditorialLLMClient
 
 logger = structlog.get_logger(__name__)
 
-LLM_VERSION = "mistral-medium-latest-v1"
+LLM_VERSION = "mistral-medium-latest-v2"
 DEFAULT_MODEL = "mistral-medium-latest"
 
 TARGET_CATEGORIES = frozenset(
@@ -98,7 +98,9 @@ Où :
       "désigne", "appelle").
     - entity_alias : nom propre alternatif ("Donald Trump" ⊂ "Trump").
     - geographic_alias : variante d'un lieu.
-    - noise : faits secondaires (titres de films, dates, noms de poste).
+    - noise : faits secondaires (titres de films, dates, noms de poste,
+      noms de médias résiduels comme « - Le Monde », « | Libération »,
+      « – BFMTV » qui auraient échappé au strip backend).
 
 RÈGLES IMPORTANTES :
 - Tes `start`/`end` doivent référer EXACTEMENT à des indices dans le titre

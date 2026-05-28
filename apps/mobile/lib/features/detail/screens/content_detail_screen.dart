@@ -43,6 +43,7 @@ import '../../../core/nudges/widgets/nudge_inline_banner.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/widgets/editorial_badge.dart';
 import '../../../core/ui/notification_service.dart';
+import '../../lettres/providers/letters_provider.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
@@ -59,11 +60,7 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
   final String contentId;
   final Content? content; // Passed via extra from GoRouter
 
-  const ContentDetailScreen({
-    super.key,
-    required this.contentId,
-    this.content,
-  });
+  const ContentDetailScreen({super.key, required this.contentId, this.content});
 
   @override
   ConsumerState<ContentDetailScreen> createState() =>
@@ -207,13 +204,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
     _bookmarkScaleAnimation = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 1.3)
-            .chain(CurveTween(curve: Curves.easeOut)),
+        tween: Tween<double>(
+          begin: 1.0,
+          end: 1.3,
+        ).chain(CurveTween(curve: Curves.easeOut)),
         weight: 30,
       ),
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.3, end: 1.0)
-            .chain(CurveTween(curve: Curves.bounceOut)),
+        tween: Tween<double>(
+          begin: 1.3,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.bounceOut)),
         weight: 70,
       ),
     ]).animate(_bookmarkBounceController);
@@ -225,13 +226,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
     _likeScaleAnimation = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 1.3)
-            .chain(CurveTween(curve: Curves.easeOut)),
+        tween: Tween<double>(
+          begin: 1.0,
+          end: 1.3,
+        ).chain(CurveTween(curve: Curves.easeOut)),
         weight: 30,
       ),
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.3, end: 1.0)
-            .chain(CurveTween(curve: Curves.bounceOut)),
+        tween: Tween<double>(
+          begin: 1.3,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.bounceOut)),
         weight: 70,
       ),
     ]).animate(_likeBounceController);
@@ -246,7 +251,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       vsync: this,
     );
     _footerAutoController.addListener(() {
-      _footerOffset.value = _footerAutoStart +
+      _footerOffset.value =
+          _footerAutoStart +
           (_footerAutoTarget - _footerAutoStart) * _footerAutoController.value;
     });
 
@@ -326,11 +332,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     _webViewController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(NavigationDelegate(
-        onPageFinished: (_) => _injectScrollBridgeScript(),
-      ))
-      ..addJavaScriptChannel('ScrollBridge',
-          onMessageReceived: _onScrollBridgeMessage)
+      ..setNavigationDelegate(
+        NavigationDelegate(onPageFinished: (_) => _injectScrollBridgeScript()),
+      )
+      ..addJavaScriptChannel(
+        'ScrollBridge',
+        onMessageReceived: _onScrollBridgeMessage,
+      )
       ..loadRequest(Uri.parse(content.url));
   }
 
@@ -606,7 +614,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (endBox == null || svBox == null) return;
     if (!_scrollController.hasClients) return;
     // content-coord of marker = screen Y of marker − screen Y of sv top + scroll offset
-    final extent = endBox.localToGlobal(Offset.zero).dy -
+    final extent =
+        endBox.localToGlobal(Offset.zero).dy -
         svBox.localToGlobal(Offset.zero).dy +
         _scrollController.offset;
     if (extent > 0) _articleContentExtent = extent;
@@ -666,8 +675,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     setState(() {
       final current = _perspectivesSelectedSegments;
       if (current.contains(key)) {
-        _perspectivesSelectedSegments =
-            current.length == 1 ? {} : (Set.from(current)..remove(key));
+        _perspectivesSelectedSegments = current.length == 1
+            ? {}
+            : (Set.from(current)..remove(key));
       } else {
         _perspectivesSelectedSegments = current.isEmpty || current.length == 3
             ? {key}
@@ -707,8 +717,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       // Drop the article subtree from the tree once the 300 ms fade-out is
       // done, so Flutter stops painting it under the scrolling WebView.
       _articleLayerUnmountTimer?.cancel();
-      _articleLayerUnmountTimer =
-          Timer(const Duration(milliseconds: 320), () {
+      _articleLayerUnmountTimer = Timer(const Duration(milliseconds: 320), () {
         if (mounted && _isWebViewActive && _articleLayerMounted) {
           setState(() => _articleLayerMounted = false);
         }
@@ -749,8 +758,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (_footerPermanent.value) return;
     final footerHeight =
         _kFooterContentHeight + MediaQuery.of(context).viewPadding.bottom;
-    _footerOffset.value =
-        (_footerOffset.value + delta / footerHeight).clamp(0.0, 1.0);
+    _footerOffset.value = (_footerOffset.value + delta / footerHeight).clamp(
+      0.0,
+      1.0,
+    );
   }
 
   /// Update footer offset based on a native scroll delta (in-app reader only).
@@ -837,10 +848,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           // Fixes cases where RSS provides longer htmlContent than the API
           // (e.g. Le Monde articles where enrichment returns a shorter version).
           final merged = content.copyWith(
-            description:
-                _pickLongest(content.description, _content?.description),
-            htmlContent:
-                _pickLongest(content.htmlContent, _content?.htmlContent),
+            description: _pickLongest(
+              content.description,
+              _content?.description,
+            ),
+            htmlContent: _pickLongest(
+              content.htmlContent,
+              _content?.htmlContent,
+            ),
             editorialBadge: content.editorialBadge ?? _content?.editorialBadge,
           );
           setState(() {
@@ -881,8 +896,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         } else {
           // Show error and pop if content not found
           setState(() => _contentResolved = true);
-          NotificationService.showError('Contenu introuvable',
-              context: context);
+          NotificationService.showError(
+            'Contenu introuvable',
+            context: context,
+          );
           context.pop();
         }
       }
@@ -914,10 +931,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       final supabase = Supabase.instance.client;
       final apiClient = ApiClient(supabase);
       final repository = FeedRepository(apiClient);
-      await repository.updateContentStatus(
-        content.id,
-        ContentStatus.consumed,
-      );
+      await repository.updateContentStatus(content.id, ContentStatus.consumed);
 
       // Silent update - no notification needed as this is tracked automatically
     } catch (e) {
@@ -948,6 +962,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           final colRepo = ref.read(collectionsRepositoryProvider);
           await colRepo.addToCollection(defaultCol.id, content.id);
           ref.invalidate(collectionsProvider);
+          unawaited(ref.read(lettersProvider.notifier).silentRefresh());
         }
         CollectionPickerSheet.show(
           context,
@@ -1114,8 +1129,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (response == null) return;
     if (response.perspectives.isEmpty || !response.shouldDisplay) return;
     _perspectivesCtaTriggered = true;
-    NudgeCounters.increment(NudgeCounters.articleWithPerspectivesCount)
-        .then((count) async {
+    NudgeCounters.increment(NudgeCounters.articleWithPerspectivesCount).then((
+      count,
+    ) async {
       if (!mounted) return;
       if (count < 2) return;
       final coordinator = ref.read(nudgeCoordinatorProvider);
@@ -1131,13 +1147,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-    _perspectivesPulseScale ??= TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 50),
-      TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0), weight: 50),
-    ]).animate(CurvedAnimation(
-      parent: _perspectivesPulseController!,
-      curve: Curves.easeOutCubic,
-    ));
+    _perspectivesPulseScale ??=
+        TweenSequence<double>([
+          TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 50),
+          TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0), weight: 50),
+        ]).animate(
+          CurvedAnimation(
+            parent: _perspectivesPulseController!,
+            curve: Curves.easeOutCubic,
+          ),
+        );
     _perspectivesPulseController!.forward(from: 0).whenComplete(() async {
       if (!mounted) return;
       final coordinator = ref.read(nudgeCoordinatorProvider);
@@ -1165,24 +1184,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
         // Persist reading progress via status endpoint
         if (progressPct > 0) {
-          repository.updateContentStatusWithProgress(
-            _content!.id,
-            progressPct,
-          );
+          repository.updateContentStatusWithProgress(_content!.id, progressPct);
         }
 
         // Accumulate reading time on user_content_status for recommendation signal.
-        repository.updateContentStatusWithTimeSpent(
-          _content!.id,
-          duration,
-        );
+        repository.updateContentStatusWithTimeSpent(_content!.id, duration);
 
         // Track article read duration
-        ref.read(analyticsServiceProvider).trackArticleRead(
-              _content!.id,
-              _content!.source.id,
-              duration,
-            );
+        ref
+            .read(analyticsServiceProvider)
+            .trackArticleRead(_content!.id, _content!.source.id, duration);
       }
     } catch (e) {
       debugPrint('Error tracking on dispose: $e');
@@ -1330,7 +1341,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (contentId == null) return;
 
     setState(
-        () => _perspectivesAnalysisState = PerspectivesAnalysisState.loading);
+      () => _perspectivesAnalysisState = PerspectivesAnalysisState.loading,
+    );
 
     // Scroll to analysis zone so the user can see the progress
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1360,7 +1372,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       debugPrint('Error requesting perspectives analysis: $e');
       if (!mounted) return;
       setState(
-          () => _perspectivesAnalysisState = PerspectivesAnalysisState.error);
+        () => _perspectivesAnalysisState = PerspectivesAnalysisState.error,
+      );
     }
   }
 
@@ -1384,16 +1397,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             onPressed: () => context.pop(),
           ),
         ),
-        body: Center(
-          child: CircularProgressIndicator(color: colors.primary),
-        ),
+        body: Center(child: CircularProgressIndicator(color: colors.primary)),
       );
     }
 
     // Premium source → redirect to external browser for authenticated access
     final userSources = ref.read(userSourcesProvider).valueOrNull ?? [];
-    final isPremiumSource =
-        userSources.any((s) => s.id == content.source.id && s.hasSubscription);
+    final isPremiumSource = userSources.any(
+      (s) => s.id == content.source.id && s.hasSubscription,
+    );
     if (isPremiumSource &&
         content.url.isNotEmpty &&
         !_premiumRedirectScheduled) {
@@ -1415,9 +1427,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               const SizedBox(height: FacteurSpacing.space4),
               Text(
                 'Ouverture dans votre navigateur...',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colors.textSecondary,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
               ),
             ],
           ),
@@ -1431,7 +1443,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Skip scroll-to-site for articles with too little content
     final articleText = content.htmlContent ?? content.description;
     final hasEnoughContent = plainTextLength(articleText) >= 100;
-    final useScrollToSite = content.hasInAppContent &&
+    final useScrollToSite =
+        content.hasInAppContent &&
         content.contentType == ContentType.article &&
         hasEnoughContent &&
         !_showWebView &&
@@ -1465,9 +1478,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               const SizedBox(height: FacteurSpacing.space4),
               Text(
                 'Ouverture dans votre navigateur...',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colors.textSecondary,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
               ),
             ],
           ),
@@ -1533,10 +1546,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 child: isVideoContent
                     ? _buildVideoContent(context, content)
                     : useScrollToSite
-                        ? _buildScrollToSiteContent(context, content)
-                        : useInAppReading
-                            ? _buildInAppContent(context, content)
-                            : _buildWebViewFallback(content),
+                    ? _buildScrollToSiteContent(context, content)
+                    : useInAppReading
+                    ? _buildInAppContent(context, content)
+                    : _buildWebViewFallback(content),
               ),
             ),
             // Header — pinned at the top of the screen; no scroll-driven
@@ -1558,9 +1571,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 top: MediaQuery.of(context).padding.top + _kHeaderVisualBottom,
                 left: 0,
                 right: 0,
-                child: RepaintBoundary(
-                  child: _buildReadingProgressBar(colors),
-                ),
+                child: RepaintBoundary(child: _buildReadingProgressBar(colors)),
               ),
             // Exit animation overlay — fade-to-white + scale-down
             if (_isExitAnimating)
@@ -1570,8 +1581,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   return Positioned.fill(
                     child: IgnorePointer(
                       child: ColoredBox(
-                        color: Colors.white
-                            .withValues(alpha: 0.6 * _exitAnimController.value),
+                        color: Colors.white.withValues(
+                          alpha: 0.6 * _exitAnimController.value,
+                        ),
                       ),
                     ),
                   );
@@ -1611,7 +1623,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (content == null) return;
     final articleText = content.htmlContent ?? content.description;
     final hasEnoughContent = plainTextLength(articleText) >= 100;
-    final isScrollToSite = content.hasInAppContent &&
+    final isScrollToSite =
+        content.hasInAppContent &&
         content.contentType == ContentType.article &&
         hasEnoughContent &&
         !_showWebView;
@@ -1641,18 +1654,22 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // (htmlContent missing or too short — common race on Android). Reveal
     // the internal WebView instead of jumping straight to the external
     // browser, so the user stays inside the reader.
-    unawaited(Sentry.addBreadcrumb(Breadcrumb(
-      category: 'reader.cta',
-      message: 'fallback to internal webview',
-      level: SentryLevel.info,
-      data: {
-        'contentId': content.id,
-        'contentType': content.contentType.name,
-        'hasInAppContent': content.hasInAppContent,
-        'plainTextLen': plainTextLength(articleText),
-        'platform': defaultTargetPlatform.name,
-      },
-    )));
+    unawaited(
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'reader.cta',
+          message: 'fallback to internal webview',
+          level: SentryLevel.info,
+          data: {
+            'contentId': content.id,
+            'contentType': content.contentType.name,
+            'hasInAppContent': content.hasInAppContent,
+            'plainTextLen': plainTextLength(articleText),
+            'platform': defaultTargetPlatform.name,
+          },
+        ),
+      ),
+    );
     setState(() {
       _showWebView = true;
       _ctaTapped = true;
@@ -1671,9 +1688,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       style: OutlinedButton.styleFrom(
         backgroundColor: Colors.white.withValues(alpha: 0.5),
         foregroundColor: colors.textPrimary,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         side: BorderSide(color: colors.border.withValues(alpha: 0.5)),
         padding: const EdgeInsets.symmetric(horizontal: 12),
       ),
@@ -1745,7 +1760,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         color: colors.backgroundPrimary,
         border: Border(
           top: BorderSide(
-              color: colors.border.withValues(alpha: 0.5), width: 0.5),
+            color: colors.border.withValues(alpha: 0.5),
+            width: 0.5,
+          ),
         ),
         boxShadow: [
           BoxShadow(
@@ -1770,102 +1787,113 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   height: 53,
                   child: isArticle
                       ? ValueListenableBuilder<bool>(
-                    valueListenable: _footerPermanent,
-                    builder: (context, permanent, _) {
-                      final isWebViewMode = _ctaTapped || _isWebViewActive;
-                      // Primary orange ONLY when the user has reached the
-                      // bottom of the article (footer locked permanent) AND
-                      // the WebView hasn't been revealed yet.
-                      final usePrimary = permanent && !isWebViewMode;
+                          valueListenable: _footerPermanent,
+                          builder: (context, permanent, _) {
+                            final isWebViewMode =
+                                _ctaTapped || _isWebViewActive;
+                            // Primary orange ONLY when the user has reached the
+                            // bottom of the article (footer locked permanent) AND
+                            // the WebView hasn't been revealed yet.
+                            final usePrimary = permanent && !isWebViewMode;
 
-                      final label = isWebViewMode
-                          ? 'Lire via Navigateur'
-                          : 'Lire sur ${content.source.name}';
-                      final showLogo = !isWebViewMode;
-                      final iconData = isWebViewMode
-                          ? PhosphorIcons.arrowUpRight(
-                              PhosphorIconsStyle.regular)
-                          : PhosphorIcons.arrowDown(
-                              PhosphorIconsStyle.regular);
+                            final label = isWebViewMode
+                                ? 'Lire via Navigateur'
+                                : 'Lire sur ${content.source.name}';
+                            final showLogo = !isWebViewMode;
+                            final iconData = isWebViewMode
+                                ? PhosphorIcons.arrowUpRight(
+                                    PhosphorIconsStyle.regular,
+                                  )
+                                : PhosphorIcons.arrowDown(
+                                    PhosphorIconsStyle.regular,
+                                  );
 
-                      final children = <Widget>[
-                        if (showLogo) ...[
-                          SourceLogoAvatar(
-                            source: content.source,
-                            size: 28,
-                            radius: 8,
-                          ),
-                          const SizedBox(width: 6),
-                        ],
-                        Flexible(
-                          child: Text(
-                            label,
-                            style: textTheme.labelMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: usePrimary
-                                  ? Colors.white
-                                  : colors.textPrimary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.left,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          iconData,
-                          size: 16,
-                          color: usePrimary
-                              ? Colors.white.withValues(alpha: 0.8)
-                              : colors.textSecondary,
-                        ),
-                      ];
-
-                      if (usePrimary) {
-                        return AnimatedBuilder(
-                          animation: _ctaPulseController,
-                          builder: (context, child) {
-                            // Subtle pop: 1.0 → 1.04 → 1.0 over 280ms.
-                            final t = _ctaPulseController.value;
-                            final scale = 1.0 + 0.04 * math.sin(t * math.pi);
-                            return Transform.scale(scale: scale, child: child);
-                          },
-                          child: FilledButton(
-                            onPressed: _onReadOnSiteTap,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: colors.primary,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                            final children = <Widget>[
+                              if (showLogo) ...[
+                                SourceLogoAvatar(
+                                  source: content.source,
+                                  size: 28,
+                                  radius: 8,
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                              Flexible(
+                                child: Text(
+                                  label,
+                                  style: textTheme.labelMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: usePrimary
+                                        ? Colors.white
+                                        : colors.textPrimary,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.left,
+                                ),
                               ),
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 12),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: children,
-                            ),
-                          ),
-                        );
-                      }
+                              const SizedBox(width: 4),
+                              Icon(
+                                iconData,
+                                size: 16,
+                                color: usePrimary
+                                    ? Colors.white.withValues(alpha: 0.8)
+                                    : colors.textSecondary,
+                              ),
+                            ];
 
-                      return OutlinedButton(
-                        onPressed: _onReadOnSiteTap,
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor:
-                              Colors.white.withValues(alpha: 0.5),
-                          foregroundColor: colors.textPrimary,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          side: BorderSide(
-                              color: colors.border.withValues(alpha: 0.5)),
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 12),
-                        ),
-                        child: Row(children: children),
-                      );
-                    },
-                  )
+                            if (usePrimary) {
+                              return AnimatedBuilder(
+                                animation: _ctaPulseController,
+                                builder: (context, child) {
+                                  // Subtle pop: 1.0 → 1.04 → 1.0 over 280ms.
+                                  final t = _ctaPulseController.value;
+                                  final scale =
+                                      1.0 + 0.04 * math.sin(t * math.pi);
+                                  return Transform.scale(
+                                    scale: scale,
+                                    child: child,
+                                  );
+                                },
+                                child: FilledButton(
+                                  onPressed: _onReadOnSiteTap,
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: colors.primary,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: children,
+                                  ),
+                                ),
+                              );
+                            }
+
+                            return OutlinedButton(
+                              onPressed: _onReadOnSiteTap,
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: Colors.white.withValues(
+                                  alpha: 0.5,
+                                ),
+                                foregroundColor: colors.textPrimary,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                side: BorderSide(
+                                  color: colors.border.withValues(alpha: 0.5),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                              ),
+                              child: Row(children: children),
+                            );
+                          },
+                        )
                       : _buildExternalCtaButton(context, content),
                 ),
               ),
@@ -1873,58 +1901,61 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-              // Sauvegarder (long-press → collection picker)
-              GestureDetector(
-                onLongPress: () {
-                  HapticFeedback.mediumImpact();
-                  CollectionPickerSheet.show(
-                    context,
-                    content.id,
-                    onAddNote: () => _openNoteSheet(),
-                  );
-                },
-                child: ScaleTransition(
-                  scale: _bookmarkScaleAnimation,
-                  child: IconButton(
-                    style: iconButtonStyle.copyWith(
-                      backgroundColor: content.isSaved
-                          ? WidgetStatePropertyAll(colors.primary)
-                          : null,
+                  // Sauvegarder (long-press → collection picker)
+                  GestureDetector(
+                    onLongPress: () {
+                      HapticFeedback.mediumImpact();
+                      CollectionPickerSheet.show(
+                        context,
+                        content.id,
+                        onAddNote: () => _openNoteSheet(),
+                      );
+                    },
+                    child: ScaleTransition(
+                      scale: _bookmarkScaleAnimation,
+                      child: IconButton(
+                        style: iconButtonStyle.copyWith(
+                          backgroundColor: content.isSaved
+                              ? WidgetStatePropertyAll(colors.primary)
+                              : null,
+                        ),
+                        onPressed: _toggleBookmark,
+                        icon: Icon(
+                          content.isSaved
+                              ? PhosphorIcons.bookmarkSimple(
+                                  PhosphorIconsStyle.fill,
+                                )
+                              : PhosphorIcons.bookmarkSimple(
+                                  PhosphorIconsStyle.regular,
+                                ),
+                          size: 28,
+                          color: content.isSaved
+                              ? Colors.white
+                              : colors.textSecondary,
+                        ),
+                        tooltip: 'Sauvegarder',
+                      ),
                     ),
-                    onPressed: _toggleBookmark,
-                    icon: Icon(
-                      content.isSaved
-                          ? PhosphorIcons.bookmarkSimple(
-                              PhosphorIconsStyle.fill)
-                          : PhosphorIcons.bookmarkSimple(
-                              PhosphorIconsStyle.regular),
-                      size: 28,
-                      color:
-                          content.isSaved ? Colors.white : colors.textSecondary,
-                    ),
-                    tooltip: 'Sauvegarder',
                   ),
-                ),
-              ),
 
-              // 🌻 Recommander
-              ScaleTransition(
-                scale: _likeScaleAnimation,
-                child: IconButton(
-                  style: iconButtonStyle.copyWith(
-                    backgroundColor: content.isLiked
-                        ? WidgetStatePropertyAll(colors.primary)
-                        : null,
+                  // 🌻 Recommander
+                  ScaleTransition(
+                    scale: _likeScaleAnimation,
+                    child: IconButton(
+                      style: iconButtonStyle.copyWith(
+                        backgroundColor: content.isLiked
+                            ? WidgetStatePropertyAll(colors.primary)
+                            : null,
+                      ),
+                      onPressed: _toggleLike,
+                      icon: SunflowerIcon(
+                        isActive: content.isLiked,
+                        size: 26,
+                        inactiveColor: colors.textSecondary,
+                      ),
+                      tooltip: 'Recommander',
+                    ),
                   ),
-                  onPressed: _toggleLike,
-                  icon: SunflowerIcon(
-                    isActive: content.isLiked,
-                    size: 26,
-                    inactiveColor: colors.textSecondary,
-                  ),
-                  tooltip: 'Recommander',
-                ),
-              ),
                 ],
               ),
             ],
@@ -1965,7 +1996,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ? Container(
                       key: const ValueKey('nudge_visible'),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFFFF8E1).withValues(alpha: 0.5),
                         borderRadius: BorderRadius.circular(16),
@@ -1986,9 +2019,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ),
                       ),
                     )
-                  : const SizedBox.shrink(
-                      key: ValueKey('nudge_hidden'),
-                    ),
+                  : const SizedBox.shrink(key: ValueKey('nudge_hidden')),
             ),
           ),
           footerContent,
@@ -2008,7 +2039,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Fallback to the article payload before the provider has loaded — avoids
     // a flash of the "Suivre +" chip on cold open when the source is already
     // followed server-side.
-    final InterestState effectiveState = liveState ??
+    final InterestState effectiveState =
+        liveState ??
         (content.isFollowedSource
             ? InterestState.followed
             : InterestState.unfollowed);
@@ -2026,8 +2058,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             right: FacteurSpacing.space2,
           ),
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
+            padding: const EdgeInsets.symmetric(
+              horizontal: FacteurSpacing.space2,
+            ),
             child: Row(
               children: [
                 // Discreet Back Button (reduced icon, maintained hitbox)
@@ -2092,14 +2125,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                               child: Container(
                                                 padding:
                                                     const EdgeInsets.symmetric(
-                                                        horizontal: 6,
-                                                        vertical: 2),
+                                                      horizontal: 6,
+                                                      vertical: 2,
+                                                    ),
                                                 decoration: BoxDecoration(
                                                   color: Color.lerp(
-                                                      colors
-                                                          .backgroundSecondary,
-                                                      Colors.black,
-                                                      0.003)!,
+                                                    colors.backgroundSecondary,
+                                                    Colors.black,
+                                                    0.003,
+                                                  )!,
                                                   borderRadius:
                                                       BorderRadius.circular(8),
                                                 ),
@@ -2107,9 +2141,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                                   content.source.name,
                                                   style: textTheme.labelMedium
                                                       ?.copyWith(
-                                                    fontWeight: FontWeight.bold,
-                                                    color: colors.textPrimary,
-                                                  ),
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color:
+                                                            colors.textPrimary,
+                                                      ),
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
@@ -2150,18 +2186,20 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                             child: InkWell(
                                               onTap: () =>
                                                   TopicChip.showArticleSheet(
-                                                context,
-                                                content,
-                                                initialSection:
-                                                    ArticleSheetSection.source,
-                                              ),
+                                                    context,
+                                                    content,
+                                                    initialSection:
+                                                        ArticleSheetSection
+                                                            .source,
+                                                  ),
                                               child: Padding(
-                                                padding:
-                                                    const EdgeInsets.all(3),
+                                                padding: const EdgeInsets.all(
+                                                  3,
+                                                ),
                                                 child: Icon(
                                                   PhosphorIcons.gear(
-                                                      PhosphorIconsStyle
-                                                          .regular),
+                                                    PhosphorIconsStyle.regular,
+                                                  ),
                                                   size: 11,
                                                   color: colors.textTertiary,
                                                 ),
@@ -2176,21 +2214,24 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                         children: [
                                           Icon(
                                             PhosphorIcons.clock(
-                                                PhosphorIconsStyle.regular),
+                                              PhosphorIconsStyle.regular,
+                                            ),
                                             size: 11,
                                             color: colors.textTertiary,
                                           ),
                                           const SizedBox(width: 3),
                                           Text(
                                             timeago
-                                                .format(content.publishedAt,
-                                                    locale: 'fr_short')
+                                                .format(
+                                                  content.publishedAt,
+                                                  locale: 'fr_short',
+                                                )
                                                 .replaceAll('il y a ', ''),
-                                            style:
-                                                textTheme.bodySmall?.copyWith(
-                                              color: colors.textTertiary,
-                                              fontSize: 11,
-                                            ),
+                                            style: textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: colors.textTertiary,
+                                                  fontSize: 11,
+                                                ),
                                           ),
                                         ],
                                       ),
@@ -2253,8 +2294,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
-  double _measureChipWidth(String text, TextStyle? style,
-      {bool isEntity = false}) {
+  double _measureChipWidth(
+    String text,
+    TextStyle? style, {
+    bool isEntity = false,
+  }) {
     const chipHPad = 16.0;
     const followIconExtra = 13.0; // icon 10px + gap 3px
     final tp = TextPainter(
@@ -2292,8 +2336,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   /// Builds a 2-line-max Wrap of article chips: Aperçu (if partial) + topic
   /// chips + entity chips, followed by a +X overflow chip if needed.
-  Widget _buildTagsWrap(BuildContext context, Content content,
-      {bool isPartial = false}) {
+  Widget _buildTagsWrap(
+    BuildContext context,
+    Content content, {
+    bool isPartial = false,
+  }) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final labelStyle = textTheme.labelSmall;
@@ -2348,57 +2395,64 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     if (chips.isEmpty) return const SizedBox.shrink();
 
-    return LayoutBuilder(builder: (context, constraints) {
-      const spacing = 6.0;
-      final availWidth = constraints.maxWidth;
-      final widths = chips.map((c) => c.width).toList();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 6.0;
+        final availWidth = constraints.maxWidth;
+        final widths = chips.map((c) => c.width).toList();
 
-      // How many chips fit in 2 lines without any overflow chip?
-      int visibleCount = _simulateWrapVisible(widths, availWidth);
-      final total = chips.length;
+        // How many chips fit in 2 lines without any overflow chip?
+        int visibleCount = _simulateWrapVisible(widths, availWidth);
+        final total = chips.length;
 
-      if (visibleCount < total) {
-        // Need an overflow chip — find the largest visibleCount such that
-        // [visibleCount chips + overflow chip] all fit within 2 lines.
-        // Use the max possible overflow width for a stable estimate.
-        final overflowChipW = _measureChipWidth('+$total', labelStyle);
-        while (visibleCount > 0) {
-          final test = [...widths.take(visibleCount), overflowChipW];
-          if (_simulateWrapVisible(test, availWidth) == test.length) break;
-          visibleCount--;
+        if (visibleCount < total) {
+          // Need an overflow chip — find the largest visibleCount such that
+          // [visibleCount chips + overflow chip] all fit within 2 lines.
+          // Use the max possible overflow width for a stable estimate.
+          final overflowChipW = _measureChipWidth('+$total', labelStyle);
+          while (visibleCount > 0) {
+            final test = [...widths.take(visibleCount), overflowChipW];
+            if (_simulateWrapVisible(test, availWidth) == test.length) break;
+            visibleCount--;
+          }
         }
-      }
 
-      final overflow = total - visibleCount;
+        final overflow = total - visibleCount;
 
-      return Wrap(
-        spacing: spacing,
-        runSpacing: spacing,
-        children: [
-          ...chips.take(visibleCount).map((c) => c.widget),
-          if (overflow > 0)
-            GestureDetector(
-              onTap: () => TopicChip.showArticleSheet(context, content,
-                  initialSection: ArticleSheetSection.entities),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: colors.textTertiary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            ...chips.take(visibleCount).map((c) => c.widget),
+            if (overflow > 0)
+              GestureDetector(
+                onTap: () => TopicChip.showArticleSheet(
+                  context,
+                  content,
+                  initialSection: ArticleSheetSection.entities,
                 ),
-                child: Text(
-                  '+$overflow',
-                  style: labelStyle?.copyWith(
-                    color: colors.textTertiary,
-                    fontWeight: FontWeight.w500,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.textTertiary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '+$overflow',
+                    style: labelStyle?.copyWith(
+                      color: colors.textTertiary,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
-      );
-    });
+          ],
+        );
+      },
+    );
   }
 
   Widget _buildReadingProgressBar(FacteurColors colors) {
@@ -2414,8 +2468,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           Colors.grey.shade400,
           colors.primary,
           clamped,
-        )!
-            .withValues(alpha: alpha);
+        )!.withValues(alpha: alpha);
         return TweenAnimationBuilder<double>(
           tween: Tween<double>(end: clamped),
           duration: const Duration(milliseconds: 300),
@@ -2561,178 +2614,198 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // of the scrolling WebView.
         if (_articleLayerMounted)
           Positioned.fill(
-          child: AnimatedOpacity(
-            opacity: _isWebViewActive ? 0.0 : 1.0,
-            duration: const Duration(milliseconds: 300),
-            child: IgnorePointer(
-              ignoring: _isWebViewActive,
-              child: ColoredBox(
-                color: _isWebViewActive
-                    ? const Color(0x00000000)
-                    : colors.backgroundPrimary,
-                child: SingleChildScrollView(
-                  controller: _scrollController,
-                  physics: _isWebViewActive
-                      ? const NeverScrollableScrollPhysics()
-                      : const ClampingScrollPhysics(),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Spacer: scrolls with content, initially behind the header overlay
-                      SizedBox(height: headerHeight),
-                      // ZONE 1a: Top header (thumbnail / tags / title / reading-time)
-                      Container(
-                        color: colors.backgroundPrimary,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: FacteurSpacing.space4),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: FacteurSpacing.space2),
-                            if (content.thumbnailUrl != null) ...[
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(
-                                    FacteurRadius.large),
-                                child: FacteurThumbnail(
-                                  imageUrl: content.thumbnailUrl,
-                                  aspectRatio: 16 / 9,
+            child: AnimatedOpacity(
+              opacity: _isWebViewActive ? 0.0 : 1.0,
+              duration: const Duration(milliseconds: 300),
+              child: IgnorePointer(
+                ignoring: _isWebViewActive,
+                child: ColoredBox(
+                  color: _isWebViewActive
+                      ? const Color(0x00000000)
+                      : colors.backgroundPrimary,
+                  child: SingleChildScrollView(
+                    controller: _scrollController,
+                    physics: _isWebViewActive
+                        ? const NeverScrollableScrollPhysics()
+                        : const ClampingScrollPhysics(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Spacer: scrolls with content, initially behind the header overlay
+                        SizedBox(height: headerHeight),
+                        // ZONE 1a: Top header (thumbnail / tags / title / reading-time)
+                        Container(
+                          color: colors.backgroundPrimary,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: FacteurSpacing.space4,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: FacteurSpacing.space2),
+                              if (content.thumbnailUrl != null) ...[
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(
+                                    FacteurRadius.large,
+                                  ),
+                                  child: FacteurThumbnail(
+                                    imageUrl: content.thumbnailUrl,
+                                    aspectRatio: 16 / 9,
+                                  ),
+                                ),
+                                const SizedBox(height: FacteurSpacing.space3),
+                              ],
+                              if (isPartial ||
+                                  content.entities.isNotEmpty ||
+                                  content.topics.isNotEmpty) ...[
+                                _buildTagsWrap(
+                                  context,
+                                  content,
+                                  isPartial: isPartial,
+                                ),
+                                const SizedBox(height: FacteurSpacing.space4),
+                              ],
+                              Text(
+                                content.title,
+                                style: textTheme.displayLarge?.copyWith(
+                                  fontSize: 24,
                                 ),
                               ),
-                              const SizedBox(height: FacteurSpacing.space3),
-                            ],
-                            if (isPartial ||
-                                content.entities.isNotEmpty ||
-                                content.topics.isNotEmpty) ...[
-                              _buildTagsWrap(context, content,
-                                  isPartial: isPartial),
+                              const SizedBox(height: FacteurSpacing.space2),
+                              if (readingTime != null) ...[
+                                Row(
+                                  children: [
+                                    Icon(
+                                      PhosphorIcons.timer(
+                                        PhosphorIconsStyle.regular,
+                                      ),
+                                      size: 14,
+                                      color: colors.textTertiary,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      readingTime,
+                                      style: textTheme.bodySmall?.copyWith(
+                                        color: colors.textTertiary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: FacteurSpacing.space3),
+                              ],
                               const SizedBox(height: FacteurSpacing.space4),
                             ],
-                            Text(
-                              content.title,
-                              style: textTheme.displayLarge
-                                  ?.copyWith(fontSize: 24),
-                            ),
-                            const SizedBox(height: FacteurSpacing.space2),
-                            if (readingTime != null) ...[
-                              Row(
-                                children: [
-                                  Icon(
-                                    PhosphorIcons.timer(
-                                        PhosphorIconsStyle.regular),
-                                    size: 14,
-                                    color: colors.textTertiary,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    readingTime,
-                                    style: textTheme.bodySmall?.copyWith(
-                                        color: colors.textTertiary),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: FacteurSpacing.space3),
-                            ],
-                            const SizedBox(height: FacteurSpacing.space4),
-                          ],
-                        ),
-                      ),
-
-                      // ZONE 1b: Perspectives section, framed by dividers.
-                      if (_perspectivesResponse != null &&
-                          _perspectivesResponse!.perspectives.isNotEmpty) ...[
-                        Container(
-                          color: colors.backgroundPrimary,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: FacteurSpacing.space4),
-                          child: Divider(color: colors.textTertiary.withValues(alpha: 0.3), height: 1, thickness: 1),
-                        ),
-                        Container(
-                          color: colors.backgroundPrimary,
-                          child: PerspectivesInlineSection(
-                            key: _perspectivesKey,
-                            perspectives: _perspectivesResponse!.perspectives
-                                .map(
-                                  (PerspectiveData p) => Perspective(
-                                    title: p.title,
-                                    url: p.url,
-                                    sourceName: p.sourceName,
-                                    sourceDomain: p.sourceDomain,
-                                    biasStance: p.biasStance,
-                                    publishedAt: p.publishedAt,
-                                    highlightSpans: p.highlightSpans,
-                                    sharedTokens: p.sharedTokens,
-                                  ),
-                                )
-                                .toList(),
-                            biasDistribution:
-                                _perspectivesResponse!.biasDistribution,
-                            keywords: _perspectivesResponse!.keywords,
-                            sourceBiasStance:
-                                _perspectivesResponse!.sourceBiasStance,
-                            sourceName: _content?.source.name ?? '',
-                            contentId: widget.contentId,
-                            comparisonQuality:
-                                _perspectivesResponse!.comparisonQuality,
-                            externalSelectedSegments:
-                                _perspectivesSelectedSegments,
-                            onSegmentTap: _onPerspectivesSegmentTap,
-                            onClearSegments: () {
-                              setState(() =>
-                                  _perspectivesSelectedSegments = {});
-                            },
-                            analysisState: _perspectivesAnalysisState,
-                            analysisText: _perspectivesAnalysisText,
-                            onRequestAnalysis: _requestPerspectivesAnalysis,
-                            analysisZoneKey: _analysisZoneKey,
-                            isExpanded: _perspectivesExpanded,
-                            onToggle: _onPerspectivesToggle,
-                            referenceTitle: _content?.title ?? '',
-                            referencePivot:
-                                _perspectivesResponse!.referencePivot,
                           ),
                         ),
+
+                        // ZONE 1b: Perspectives section, framed by dividers.
+                        if (_perspectivesResponse != null &&
+                            _perspectivesResponse!.perspectives.isNotEmpty) ...[
+                          Container(
+                            color: colors.backgroundPrimary,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: FacteurSpacing.space4,
+                            ),
+                            child: Divider(
+                              color: colors.textTertiary.withValues(alpha: 0.3),
+                              height: 1,
+                              thickness: 1,
+                            ),
+                          ),
+                          Container(
+                            color: colors.backgroundPrimary,
+                            child: PerspectivesInlineSection(
+                              key: _perspectivesKey,
+                              perspectives: _perspectivesResponse!.perspectives
+                                  .map(
+                                    (PerspectiveData p) => Perspective(
+                                      title: p.title,
+                                      url: p.url,
+                                      sourceName: p.sourceName,
+                                      sourceDomain: p.sourceDomain,
+                                      biasStance: p.biasStance,
+                                      publishedAt: p.publishedAt,
+                                      highlightSpans: p.highlightSpans,
+                                      sharedTokens: p.sharedTokens,
+                                    ),
+                                  )
+                                  .toList(),
+                              biasDistribution:
+                                  _perspectivesResponse!.biasDistribution,
+                              keywords: _perspectivesResponse!.keywords,
+                              sourceBiasStance:
+                                  _perspectivesResponse!.sourceBiasStance,
+                              sourceName: _content?.source.name ?? '',
+                              contentId: widget.contentId,
+                              comparisonQuality:
+                                  _perspectivesResponse!.comparisonQuality,
+                              externalSelectedSegments:
+                                  _perspectivesSelectedSegments,
+                              onSegmentTap: _onPerspectivesSegmentTap,
+                              onClearSegments: () {
+                                setState(
+                                  () => _perspectivesSelectedSegments = {},
+                                );
+                              },
+                              analysisState: _perspectivesAnalysisState,
+                              analysisText: _perspectivesAnalysisText,
+                              onRequestAnalysis: _requestPerspectivesAnalysis,
+                              analysisZoneKey: _analysisZoneKey,
+                              isExpanded: _perspectivesExpanded,
+                              onToggle: _onPerspectivesToggle,
+                              referenceTitle: _content?.title ?? '',
+                              referencePivot:
+                                  _perspectivesResponse!.referencePivot,
+                            ),
+                          ),
+                          Container(
+                            color: colors.backgroundPrimary,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: FacteurSpacing.space4,
+                            ),
+                            child: Divider(
+                              color: colors.textTertiary.withValues(alpha: 0.3),
+                              height: 1,
+                              thickness: 1,
+                            ),
+                          ),
+                          const SizedBox(height: FacteurSpacing.space4),
+                        ],
+
+                        // ZONE 2: Article body — _articleKey scopes scroll-bridge
+                        // measurement to the body, excluding header + perspectives.
                         Container(
+                          key: _articleKey,
                           color: colors.backgroundPrimary,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: FacteurSpacing.space4),
-                          child: Divider(color: colors.textTertiary.withValues(alpha: 0.3), height: 1, thickness: 1),
+                          child: ArticleReaderWidget(
+                            htmlContent: content.htmlContent,
+                            description: content.description,
+                            title: content.title,
+                            shrinkWrap: true,
+                            onLinkTap: _animateAndLaunch,
+                            bodyPlaceholder: !_contentResolved
+                                ? _buildArticleBodySkeleton(colors)
+                                : null,
+                            footer: SizedBox(
+                              height: _kFooterContentHeight + bottomInset,
+                            ),
+                          ),
                         ),
-                        const SizedBox(height: FacteurSpacing.space4),
+
+                        if (isPartial && _contentResolved)
+                          _buildPartialArticleInlineButton(context),
+
+                        // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation.
+                        // _bridgeKey attached here so _computeScrollOffsets() can measure the bridge zone.
+                        if (_ctaTapped)
+                          SizedBox(key: _bridgeKey, height: availableHeight),
                       ],
-
-                      // ZONE 2: Article body — _articleKey scopes scroll-bridge
-                      // measurement to the body, excluding header + perspectives.
-                      Container(
-                        key: _articleKey,
-                        color: colors.backgroundPrimary,
-                        child: ArticleReaderWidget(
-                          htmlContent: content.htmlContent,
-                          description: content.description,
-                          title: content.title,
-                          shrinkWrap: true,
-                          onLinkTap: _animateAndLaunch,
-                          bodyPlaceholder: !_contentResolved
-                              ? _buildArticleBodySkeleton(colors)
-                              : null,
-                          footer: SizedBox(
-                              height: _kFooterContentHeight + bottomInset),
-                        ),
-                      ),
-
-                      if (isPartial && _contentResolved)
-                        _buildPartialArticleInlineButton(context),
-
-                      // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation.
-                      // _bridgeKey attached here so _computeScrollOffsets() can measure the bridge zone.
-                      if (_ctaTapped)
-                        SizedBox(key: _bridgeKey, height: availableHeight),
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -2754,9 +2827,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       gestureRecognizers: _isWebViewActive
           ? {
               Factory<VerticalDragGestureRecognizer>(
-                  () => VerticalDragGestureRecognizer()),
+                () => VerticalDragGestureRecognizer(),
+              ),
               Factory<HorizontalDragGestureRecognizer>(
-                  () => HorizontalDragGestureRecognizer()),
+                () => HorizontalDragGestureRecognizer(),
+              ),
             }
           : const {},
     );
@@ -2775,47 +2850,210 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // Description text: prefer htmlContent (stripped), fallback to description
     final rawDescription = content.htmlContent ?? content.description;
-    final descriptionText =
-        rawDescription != null ? stripHtml(rawDescription).trim() : null;
+    final descriptionText = rawDescription != null
+        ? stripHtml(rawDescription).trim()
+        : null;
 
-    return LayoutBuilder(builder: (context, constraints) {
-      final maxHeight = constraints.maxHeight;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxHeight = constraints.maxHeight;
 
-      // --- Shorts: Column layout (no overlay on iframe → all buttons clickable) ---
-      if (isShort) {
-        // Reserve ~160px below the player for metadata (scrollable, same
-        // pattern as regular videos). FABs float over this Flutter text area
-        // (not an iframe) so they remain clickable.
-        final shortsPlayerHeight =
-            (maxHeight - headerHeight - 140).clamp(200.0, screenWidth * 16 / 9);
+        // --- Shorts: Column layout (no overlay on iframe → all buttons clickable) ---
+        if (isShort) {
+          // Reserve ~160px below the player for metadata (scrollable, same
+          // pattern as regular videos). FABs float over this Flutter text area
+          // (not an iframe) so they remain clickable.
+          final shortsPlayerHeight = (maxHeight - headerHeight - 140).clamp(
+            200.0,
+            screenWidth * 16 / 9,
+          );
+
+          return Column(
+            children: [
+              // Spacer for the pinned header overlay.
+              SizedBox(height: headerHeight),
+
+              // Centered player — bounded height, narrower than screen width
+              SizedBox(
+                height: shortsPlayerHeight,
+                width: screenWidth,
+                child: Center(
+                  child: YouTubePlayerWidget(
+                    videoUrl: content.url,
+                    title: content.title,
+                    aspectRatio: 9 / 16,
+                    onProgressChanged: _onVideoProgressChanged,
+                    onPlayStateChanged: _onVideoPlayStateChanged,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: FacteurSpacing.space3),
+
+              // Scrollable metadata — same design as regular video
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: FacteurSpacing.space4,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Video Title
+                      Text(
+                        content.title,
+                        style: textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: FacteurSpacing.space2),
+
+                      // Published date
+                      Text(
+                        timeago.format(content.publishedAt, locale: 'fr_short'),
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: FacteurSpacing.space3),
+
+                      // Channel row: avatar + name + optional theme chip
+                      Row(
+                        children: [
+                          if (content.source.logoUrl != null)
+                            CircleAvatar(
+                              radius: 16,
+                              backgroundImage: CachedNetworkImageProvider(
+                                content.source.logoUrl!,
+                              ),
+                              backgroundColor: colors.surfaceElevated,
+                            )
+                          else
+                            CircleAvatar(
+                              radius: 16,
+                              backgroundColor: colors.surfaceElevated,
+                              child: Icon(
+                                PhosphorIcons.user(PhosphorIconsStyle.regular),
+                                size: 16,
+                                color: colors.textTertiary,
+                              ),
+                            ),
+                          const SizedBox(width: FacteurSpacing.space3),
+                          Expanded(
+                            child: Text(
+                              content.source.name,
+                              style: textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (content.source.theme != null &&
+                              content.source.theme!.isNotEmpty) ...[
+                            const SizedBox(width: FacteurSpacing.space2),
+                            Opacity(
+                              opacity: 0.9,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: colors.primary,
+                                  borderRadius: BorderRadius.circular(
+                                    FacteurRadius.pill,
+                                  ),
+                                ),
+                                child: Text(
+                                  content.source.getThemeLabel(),
+                                  style: textTheme.labelSmall?.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+
+                      // Expandable description
+                      if (descriptionText != null &&
+                          descriptionText.isNotEmpty) ...[
+                        const SizedBox(height: FacteurSpacing.space3),
+                        Divider(color: colors.border, height: 1),
+                        const SizedBox(height: FacteurSpacing.space3),
+                        Text(
+                          descriptionText,
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: colors.textSecondary,
+                            height: 1.5,
+                          ),
+                          maxLines: _isDescriptionExpanded ? null : 2,
+                          overflow: _isDescriptionExpanded
+                              ? TextOverflow.visible
+                              : TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: FacteurSpacing.space2),
+                        GestureDetector(
+                          onTap: () {
+                            setState(
+                              () => _isDescriptionExpanded =
+                                  !_isDescriptionExpanded,
+                            );
+                          },
+                          child: Text(
+                            _isDescriptionExpanded ? 'Voir moins' : 'Voir plus',
+                            style: textTheme.bodySmall?.copyWith(
+                              color: colors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+
+                      // Bottom spacing — clears the persistent footer.
+                      SizedBox(
+                        height:
+                            _kFooterContentHeight +
+                            MediaQuery.of(context).viewPadding.bottom,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        // --- Regular video: Column layout ---
+        final playerHeight = screenWidth * 9 / 16;
 
         return Column(
           children: [
-            // Spacer for the pinned header overlay.
+            // Push below the pinned header overlay.
             SizedBox(height: headerHeight),
 
-            // Centered player — bounded height, narrower than screen width
+            // Sticky player container
             SizedBox(
-              height: shortsPlayerHeight,
               width: screenWidth,
-              child: Center(
-                child: YouTubePlayerWidget(
-                  videoUrl: content.url,
-                  title: content.title,
-                  aspectRatio: 9 / 16,
-                  onProgressChanged: _onVideoProgressChanged,
-                  onPlayStateChanged: _onVideoPlayStateChanged,
-                ),
+              height: playerHeight,
+              child: YouTubePlayerWidget(
+                videoUrl: content.url,
+                title: content.title,
+                aspectRatio: 16 / 9,
+                onProgressChanged: _onVideoProgressChanged,
+                onPlayStateChanged: _onVideoPlayStateChanged,
               ),
             ),
 
-            const SizedBox(height: FacteurSpacing.space3),
-
-            // Scrollable metadata — same design as regular video
+            // Scrollable metadata below the player
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: FacteurSpacing.space4),
+                padding: const EdgeInsets.all(FacteurSpacing.space4),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -2825,7 +3063,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       style: textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
-                      maxLines: 3,
+                      maxLines: 4,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: FacteurSpacing.space2),
@@ -2837,7 +3075,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         color: colors.textSecondary,
                       ),
                     ),
-                    const SizedBox(height: FacteurSpacing.space3),
+                    const SizedBox(height: FacteurSpacing.space4),
 
                     // Channel row: avatar + name + optional theme chip
                     Row(
@@ -2846,7 +3084,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           CircleAvatar(
                             radius: 16,
                             backgroundImage: CachedNetworkImageProvider(
-                                content.source.logoUrl!),
+                              content.source.logoUrl!,
+                            ),
                             backgroundColor: colors.surfaceElevated,
                           )
                         else
@@ -2873,24 +3112,22 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         if (content.source.theme != null &&
                             content.source.theme!.isNotEmpty) ...[
                           const SizedBox(width: FacteurSpacing.space2),
-                          Opacity(
-                            opacity: 0.9,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colors.primary,
+                              borderRadius: BorderRadius.circular(
+                                FacteurRadius.pill,
                               ),
-                              decoration: BoxDecoration(
-                                color: colors.primary,
-                                borderRadius:
-                                    BorderRadius.circular(FacteurRadius.pill),
-                              ),
-                              child: Text(
-                                content.source.getThemeLabel(),
-                                style: textTheme.labelSmall?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                            ),
+                            child: Text(
+                              content.source.getThemeLabel(),
+                              style: textTheme.labelSmall?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
@@ -2901,16 +3138,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     // Expandable description
                     if (descriptionText != null &&
                         descriptionText.isNotEmpty) ...[
-                      const SizedBox(height: FacteurSpacing.space3),
+                      const SizedBox(height: FacteurSpacing.space4),
                       Divider(color: colors.border, height: 1),
-                      const SizedBox(height: FacteurSpacing.space3),
+                      const SizedBox(height: FacteurSpacing.space4),
                       Text(
                         descriptionText,
                         style: textTheme.bodyMedium?.copyWith(
                           color: colors.textSecondary,
                           height: 1.5,
                         ),
-                        maxLines: _isDescriptionExpanded ? null : 2,
+                        maxLines: _isDescriptionExpanded ? null : 3,
                         overflow: _isDescriptionExpanded
                             ? TextOverflow.visible
                             : TextOverflow.ellipsis,
@@ -2918,8 +3155,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       const SizedBox(height: FacteurSpacing.space2),
                       GestureDetector(
                         onTap: () {
-                          setState(() =>
-                              _isDescriptionExpanded = !_isDescriptionExpanded);
+                          setState(
+                            () => _isDescriptionExpanded =
+                                !_isDescriptionExpanded,
+                          );
                         },
                         child: Text(
                           _isDescriptionExpanded ? 'Voir moins' : 'Voir plus',
@@ -2933,7 +3172,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                     // Bottom spacing — clears the persistent footer.
                     SizedBox(
-                      height: _kFooterContentHeight +
+                      height:
+                          _kFooterContentHeight +
                           MediaQuery.of(context).viewPadding.bottom,
                     ),
                   ],
@@ -2942,157 +3182,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             ),
           ],
         );
-      }
-
-      // --- Regular video: Column layout ---
-      final playerHeight = screenWidth * 9 / 16;
-
-      return Column(
-        children: [
-          // Push below the pinned header overlay.
-          SizedBox(height: headerHeight),
-
-          // Sticky player container
-          SizedBox(
-            width: screenWidth,
-            height: playerHeight,
-            child: YouTubePlayerWidget(
-              videoUrl: content.url,
-              title: content.title,
-              aspectRatio: 16 / 9,
-              onProgressChanged: _onVideoProgressChanged,
-              onPlayStateChanged: _onVideoPlayStateChanged,
-            ),
-          ),
-
-          // Scrollable metadata below the player
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(FacteurSpacing.space4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Video Title
-                  Text(
-                    content.title,
-                    style: textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 4,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: FacteurSpacing.space2),
-
-                  // Published date
-                  Text(
-                    timeago.format(content.publishedAt, locale: 'fr_short'),
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: FacteurSpacing.space4),
-
-                  // Channel row: avatar + name + optional theme chip
-                  Row(
-                    children: [
-                      if (content.source.logoUrl != null)
-                        CircleAvatar(
-                          radius: 16,
-                          backgroundImage: CachedNetworkImageProvider(
-                              content.source.logoUrl!),
-                          backgroundColor: colors.surfaceElevated,
-                        )
-                      else
-                        CircleAvatar(
-                          radius: 16,
-                          backgroundColor: colors.surfaceElevated,
-                          child: Icon(
-                            PhosphorIcons.user(PhosphorIconsStyle.regular),
-                            size: 16,
-                            color: colors.textTertiary,
-                          ),
-                        ),
-                      const SizedBox(width: FacteurSpacing.space3),
-                      Expanded(
-                        child: Text(
-                          content.source.name,
-                          style: textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (content.source.theme != null &&
-                          content.source.theme!.isNotEmpty) ...[
-                        const SizedBox(width: FacteurSpacing.space2),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colors.primary,
-                            borderRadius:
-                                BorderRadius.circular(FacteurRadius.pill),
-                          ),
-                          child: Text(
-                            content.source.getThemeLabel(),
-                            style: textTheme.labelSmall?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-
-                  // Expandable description
-                  if (descriptionText != null &&
-                      descriptionText.isNotEmpty) ...[
-                    const SizedBox(height: FacteurSpacing.space4),
-                    Divider(color: colors.border, height: 1),
-                    const SizedBox(height: FacteurSpacing.space4),
-                    Text(
-                      descriptionText,
-                      style: textTheme.bodyMedium?.copyWith(
-                        color: colors.textSecondary,
-                        height: 1.5,
-                      ),
-                      maxLines: _isDescriptionExpanded ? null : 3,
-                      overflow: _isDescriptionExpanded
-                          ? TextOverflow.visible
-                          : TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: FacteurSpacing.space2),
-                    GestureDetector(
-                      onTap: () {
-                        setState(() =>
-                            _isDescriptionExpanded = !_isDescriptionExpanded);
-                      },
-                      child: Text(
-                        _isDescriptionExpanded ? 'Voir moins' : 'Voir plus',
-                        style: textTheme.bodySmall?.copyWith(
-                          color: colors.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-
-                  // Bottom spacing — clears the persistent footer.
-                  SizedBox(
-                    height: _kFooterContentHeight +
-                        MediaQuery.of(context).viewPadding.bottom,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      );
-    }); // LayoutBuilder
+      },
+    ); // LayoutBuilder
   }
 
   Widget _buildInAppContent(BuildContext context, Content content) {
@@ -3127,8 +3218,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           title: content.title,
           shrinkWrap: true,
           onLinkTap: _animateAndLaunch,
-          bodyPlaceholder:
-              !_contentResolved ? _buildArticleBodySkeleton(colors) : null,
+          bodyPlaceholder: !_contentResolved
+              ? _buildArticleBodySkeleton(colors)
+              : null,
         );
 
         return ScrollConfiguration(
@@ -3147,15 +3239,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 // ── Top section: thumbnail → chips → title → reading time ─
                 Padding(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: FacteurSpacing.space4),
+                    horizontal: FacteurSpacing.space4,
+                  ),
                   child: Column(
                     spacing: 12,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       if (content.thumbnailUrl != null)
                         ClipRRect(
-                          borderRadius:
-                              BorderRadius.circular(FacteurRadius.large),
+                          borderRadius: BorderRadius.circular(
+                            FacteurRadius.large,
+                          ),
                           child: FacteurThumbnail(
                             imageUrl: content.thumbnailUrl,
                             aspectRatio: 16 / 9,
@@ -3180,8 +3274,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             const SizedBox(width: 4),
                             Text(
                               readingTime,
-                              style: textTheme.bodySmall
-                                  ?.copyWith(color: colors.textTertiary),
+                              style: textTheme.bodySmall?.copyWith(
+                                color: colors.textTertiary,
+                              ),
                             ),
                           ],
                         ),
@@ -3195,8 +3290,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   const SizedBox(height: FacteurSpacing.space4),
                   Padding(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: FacteurSpacing.space4),
-                    child: Divider(color: colors.textTertiary.withValues(alpha: 0.3), height: 1, thickness: 1),
+                      horizontal: FacteurSpacing.space4,
+                    ),
+                    child: Divider(
+                      color: colors.textTertiary.withValues(alpha: 0.3),
+                      height: 1,
+                      thickness: 1,
+                    ),
                   ),
                   PerspectivesInlineSection(
                     key: _perspectivesKey,
@@ -3219,8 +3319,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     sourceBiasStance: _perspectivesResponse!.sourceBiasStance,
                     sourceName: _content?.source.name ?? '',
                     contentId: widget.contentId,
-                    comparisonQuality:
-                        _perspectivesResponse!.comparisonQuality,
+                    comparisonQuality: _perspectivesResponse!.comparisonQuality,
                     externalSelectedSegments: _perspectivesSelectedSegments,
                     onSegmentTap: _onPerspectivesSegmentTap,
                     onClearSegments: () {
@@ -3237,8 +3336,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: FacteurSpacing.space4),
-                    child: Divider(color: colors.textTertiary.withValues(alpha: 0.3), height: 1, thickness: 1),
+                      horizontal: FacteurSpacing.space4,
+                    ),
+                    child: Divider(
+                      color: colors.textTertiary.withValues(alpha: 0.3),
+                      height: 1,
+                      thickness: 1,
+                    ),
                   ),
                 ],
 
@@ -3257,7 +3361,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       const SizedBox(height: FacteurSpacing.space4),
                       Padding(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: FacteurSpacing.space4),
+                          horizontal: FacteurSpacing.space4,
+                        ),
                         child: NudgeInlineBanner(
                           body:
                               "Préférez l'expérience du site original ? Ouvrez l'article dans votre navigateur.",
@@ -3279,7 +3384,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 // ── Footer clearance ───────────────────────────────────────
                 const SizedBox(height: FacteurSpacing.space4),
                 SizedBox(
-                  height: _kFooterContentHeight +
+                  height:
+                      _kFooterContentHeight +
                       MediaQuery.of(context).viewPadding.bottom,
                 ),
               ],
@@ -3336,19 +3442,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Legacy web fallback — unreachable since build() auto-redirects
     // and footer CTA opens externally on web. Kept as safety net.
     if (kIsWeb) {
-      return Center(
-        child: CircularProgressIndicator(color: colors.primary),
-      );
+      return Center(child: CircularProgressIndicator(color: colors.primary));
     }
 
     // Mobile: Use native WebView with ScrollBridge for progress + auto-hide
     _webViewController ??= WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(NavigationDelegate(
-        onPageFinished: (_) => _injectScrollBridgeScript(),
-      ))
-      ..addJavaScriptChannel('ScrollBridge',
-          onMessageReceived: _onScrollBridgeMessage)
+      ..setNavigationDelegate(
+        NavigationDelegate(onPageFinished: (_) => _injectScrollBridgeScript()),
+      )
+      ..addJavaScriptChannel(
+        'ScrollBridge',
+        onMessageReceived: _onScrollBridgeMessage,
+      )
       ..loadRequest(Uri.parse(content.url));
 
     final topInset = MediaQuery.of(context).padding.top;
@@ -3361,7 +3467,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         if (content.entities.isNotEmpty || content.topics.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(
-                horizontal: FacteurSpacing.space4, vertical: 6),
+              horizontal: FacteurSpacing.space4,
+              vertical: 6,
+            ),
             child: _buildTagsWrap(context, content),
           ),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
@@ -3395,8 +3503,11 @@ class _SourceFollowAction extends ConsumerStatefulWidget {
 class _SourceFollowActionState extends ConsumerState<_SourceFollowAction> {
   bool _busy = false;
 
-  Future<void> _apply(InterestState next, {required String successMessage,
-      required String errorMessage}) async {
+  Future<void> _apply(
+    InterestState next, {
+    required String successMessage,
+    required String errorMessage,
+  }) async {
     if (_busy) return;
     setState(() => _busy = true);
     HapticFeedback.lightImpact();
@@ -3506,10 +3617,10 @@ class _FollowChip extends StatelessWidget {
               Text(
                 'Suivre',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: colors.textSecondary,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.2,
-                    ),
+                  color: colors.textSecondary,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
               ),
             ],
           ),
@@ -3659,10 +3770,7 @@ class _ShimmerSkeletonState extends State<_ShimmerSkeleton>
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
-        return Opacity(
-          opacity: 0.3 + 0.4 * _controller.value,
-          child: child,
-        );
+        return Opacity(opacity: 0.3 + 0.4 * _controller.value, child: child);
       },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3742,10 +3850,7 @@ class _FadeScrollRowState extends State<_FadeScrollRow> {
               child: SingleChildScrollView(
                 controller: _controller,
                 scrollDirection: Axis.horizontal,
-                child: Row(
-                  spacing: 6,
-                  children: widget.children,
-                ),
+                child: Row(spacing: 6, children: widget.children),
               ),
             ),
           ),
