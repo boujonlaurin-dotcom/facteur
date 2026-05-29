@@ -337,6 +337,12 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                 currentState: InterestState.favorite,
               ),
             ),
+            // CTA "Crée ta veille" — visible si aucun VeilleFavoriteRef dans
+            // les favoris. La veille devient le 3ᵉ type de favori (Story 23.2 PR-4).
+            if (interests.favorites.whereType<VeilleFavoriteRef>().isEmpty)
+              _CreateVeilleCta(
+                onTap: () => context.pushNamed(RouteNames.veilleConfig),
+              ),
           ],
           ...macroThemeOrder.map((macroLabel) {
             final themeSlug = macroThemeToApiSlug[macroLabel] ?? macroLabel;
