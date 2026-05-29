@@ -30,7 +30,6 @@ Fallback sans préférences : le scorer dégénère en `actu_boost + perspective
 """
 
 import logging
-import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -53,6 +52,7 @@ from app.services.recommendation.filter_presets import (
     LOW_PRIORITY_SPORT_THEMES,
     is_news_bulletin_title,
 )
+from app.services.recommendation.helpers import compute_coverage_score
 from app.services.recommendation.scoring_config import ScoringWeights
 
 logger = logging.getLogger(__name__)
@@ -72,8 +72,10 @@ _BADGE_ACTU = "actu"
 # Poids du scoring composite — réglés pour que chaque levier puisse l'emporter
 # isolément sans qu'aucun ne phagocyte les autres. Toute modif → ajouter un
 # test dans `test_essentiel_endpoint.py`.
-_W_TRENDING = 40.0  # `Top3Selector.BOOST_TRENDING` — topic.is_trending
-_W_UNE = 30.0  # `Top3Selector.BOOST_UNE` — topic.is_une
+# Source de vérité partagée avec le digest topics et le feed thématique
+# (`ScoringWeights.TOPIC_IS_TRENDING_BONUS` / `TOPIC_IS_UNE_BONUS`).
+_W_TRENDING = ScoringWeights.TOPIC_IS_TRENDING_BONUS  # 50 — topic.is_trending
+_W_UNE = ScoringWeights.TOPIC_IS_UNE_BONUS  # 35 — topic.is_une
 _W_BADGE_ACTU = 25.0  # article.badge == _BADGE_ACTU (signal explicite du digest)
 _W_FOLLOWED_SOURCE = 100.0
 _W_FOLLOWED_SOURCE_FLAG = 50.0  # bonus moindre si on n'a que le flag du digest
@@ -257,17 +259,10 @@ def _filter_articles_allowed(topics: list[DigestTopic]) -> list[DigestTopic]:
 def _perspective_score(perspective_count: int) -> float:
     """Score non-linéaire des perspectives (Story 9.4).
 
-    `min(CAP, BASE * log2(n))` — 1→0, 2→+12, 3→+19, 4→+24, 5→+28, 6→+30 (cap).
-    Permet à un sujet à 6+ relais de rivaliser avec un BOOST_BADGE_ACTU (+25)
-    et d'égaler un BOOST_UNE (+30). Le linéaire `+5/perspective` d'origine
-    laissait passer des scoops isolés devant des sujets très relayés.
+    Délègue à `helpers.compute_coverage_score` — source de vérité partagée
+    avec le feed thématique (`PertinencePillar._score_coverage`).
     """
-    if perspective_count <= 1:
-        return 0.0
-    return min(
-        ScoringWeights.ESSENTIEL_PERSPECTIVE_CAP,
-        ScoringWeights.ESSENTIEL_PERSPECTIVE_BASE * math.log2(perspective_count),
-    )
+    return compute_coverage_score(perspective_count)
 
 
 def _is_followed_topic(topic: DigestTopic, ctx: EssentielUserContext) -> bool:

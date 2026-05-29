@@ -49,8 +49,10 @@ class ScoringWeights:
     # --- CUSTOM TOPIC LAYER (Epic 11) ---
 
     # Base bonus when an article matches a user's custom topic.
-    # Calibrated: 15 * 2.0 max = 30pts (competes with THEME_MATCH=50 without dominating).
-    CUSTOM_TOPIC_BASE_BONUS = 15.0
+    # Top3 thematic selection: bumped 15→25 (B3) — un sujet perso précis est
+    # le signal d'intention le plus fort dont on dispose, il doit pouvoir
+    # peser autant qu'un TRUSTED_SOURCE (35) à multiplier max 2.0.
+    CUSTOM_TOPIC_BASE_BONUS = 25.0
 
     # --- DIGEST RECENCY BONUSES (Tiered) ---
     # Bonus de fraîcheur hiérarchisés pour l'algorithme de digest
@@ -157,8 +159,13 @@ class ScoringWeights:
     # 1→0  2→+12  3→+19  4→+24  5→+28  6→+30 (cap)  8+→+30
     # Permet à un sujet relayé par 3+ médias de rivaliser avec un BOOST_BADGE_ACTU
     # (+25) et d'égaler un BOOST_UNE (+30). Un scoop isolé n'a aucun bonus.
-    ESSENTIEL_PERSPECTIVE_BASE = 12.0
-    ESSENTIEL_PERSPECTIVE_CAP = 30.0
+    # Source de vérité unique partagée par Essentiel, feed thématique et digest
+    # via `helpers/coverage_score.py`.
+    COVERAGE_BASE = 12.0
+    COVERAGE_CAP = 30.0
+    # Anciens noms maintenus pour rétrocompat (essentiel_service avant migration).
+    ESSENTIEL_PERSPECTIVE_BASE = COVERAGE_BASE
+    ESSENTIEL_PERSPECTIVE_CAP = COVERAGE_CAP
 
     # --- DIGEST TRENDING/IMPORTANCE (Pour vous hybride) ---
 
@@ -181,10 +188,13 @@ class ScoringWeights:
     TOPIC_FOLLOWED_SOURCE_BONUS = 40.0
 
     # Bonus pour un topic trending (couvert par ≥3 sources distinctes).
+    # Source de vérité partagée avec Essentiel et feed thématique.
     TOPIC_TRENDING_BONUS = 50.0
+    TOPIC_IS_TRENDING_BONUS = TOPIC_TRENDING_BONUS  # alias canonique
 
     # Bonus pour un topic contenant ≥1 article "À la Une".
     TOPIC_UNE_BONUS = 35.0
+    TOPIC_IS_UNE_BONUS = TOPIC_UNE_BONUS  # alias canonique
 
     # Bonus pour un topic dont le thème dominant matche les intérêts user.
     TOPIC_THEME_MATCH_BONUS = 45.0

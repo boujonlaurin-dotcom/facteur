@@ -579,6 +579,36 @@ class RecommendationService:
             or mode == FeedFilterMode.RECENT
             or personalized_theme_mode
         ):
+            # Top3 thematic selection (PR 1) : sur Tournée du jour, on promeut
+            # 3 articles "essentiel-grade" en tête de section — multi-sources
+            # (coverage), filtrés qualité, diversifiés par cluster_id. Le reste
+            # reste en ordre chronologique pour préserver la cohérence de
+            # « Voir tout » et éviter la sur-compression de la version Story 21.2.
+            if personalized_theme_mode and len(candidates) > 3:
+                if not self.user_custom_topics:
+                    from app.models.user_topic_profile import UserTopicProfile
+
+                    custom_topics_stmt = select(UserTopicProfile).where(
+                        UserTopicProfile.user_id == user_id
+                    )
+                    async with safe_async_session(
+                        statement_timeout_ms=8_000, idle_in_tx_timeout_ms=5_000
+                    ) as s:
+                        self.user_custom_topics = list(
+                            (await s.scalars(custom_topics_stmt)).all()
+                        )
+                candidates = await self._curate_thematic_top_n(
+                    candidates,
+                    user_interests=user_interests,
+                    user_interest_weights=user_interest_weights,
+                    user_interest_states=user_interest_states,
+                    user_subtopics=user_subtopics,
+                    user_subtopic_weights=user_subtopic_weights,
+                    followed_source_ids=followed_source_ids,
+                    user_prefs=user_prefs,
+                    user_profile=user_profile,
+                    top_n=3,
+                )
             paginated = candidates[offset : offset + limit]
             await self._hydrate_user_status(paginated, user_id, followed_source_ids)
             return paginated
@@ -916,6 +946,137 @@ class RecommendationService:
             "feed_total", duration_ms=round((t_end - t0) * 1000), items=len(result)
         )
         return result
+
+    async def _curate_thematic_top_n(
+        self,
+        candidates: list[Content],
+        *,
+        user_interests: set[str],
+        user_interest_weights: dict[str, float],
+        user_interest_states: dict[str, InterestState],
+        user_subtopics: set[str],
+        user_subtopic_weights: dict[str, float],
+        followed_source_ids: set[UUID],
+        user_prefs: dict[str, Any],
+        user_profile: UserProfile | None,
+        top_n: int = 3,
+    ) -> list[Content]:
+        """Promeut N articles "essentiel-grade" en tête d'une section thématique.
+
+        Algorithme :
+        1. Calcule cluster_source_counts (24h) pour les N premiers candidats.
+        2. Score le pool via PillarScoringEngine — gagne le bonus coverage
+           dans Pertinence quand un cluster est multi-sources.
+        3. Applique un floor qualité (D2) : exclut les articles sans visuel,
+           sans contenu lisible et sans description suffisante.
+        4. Diversifie par cluster_id, fallback souple sur topic_slug, jusqu'à
+           obtenir N articles distincts en tête.
+        5. Retourne curated_top_N + reste chronologique (dedupe sur id).
+
+        En cas de pool trop pauvre (<N candidats après floor), on relâche
+        le floor pour ne jamais renvoyer une liste tronquée.
+        """
+        from app.services.recommendation.helpers import diversify
+
+        if len(candidates) <= top_n:
+            return candidates
+
+        # Pool restreint aux 50 plus récents (les candidats sont déjà triés
+        # par published_at DESC + boost subtopic). 50 est suffisant pour
+        # capter les sujets relayés du jour sans coût SQL prohibitif.
+        pool = candidates[:50]
+
+        now = datetime.datetime.now(datetime.UTC)
+
+        # 1. cluster_source_counts (24h, distinct sources per cluster_id)
+        cluster_ids = list({c.cluster_id for c in pool if c.cluster_id is not None})
+        cluster_source_counts: dict[UUID, int] = {}
+        if cluster_ids:
+            cutoff = now - datetime.timedelta(hours=24)
+            stmt = (
+                select(
+                    Content.cluster_id,
+                    func.count(func.distinct(Content.source_id)),
+                )
+                .where(
+                    Content.cluster_id.in_(cluster_ids),
+                    Content.published_at >= cutoff,
+                )
+                .group_by(Content.cluster_id)
+            )
+            rows = (await self.session.execute(stmt)).all()
+            cluster_source_counts = {row[0]: int(row[1]) for row in rows}
+
+        # 2. Build scoring context (minimal — pas d'impressions ni d'affinity
+        # pour rester léger ; les signaux clés Pertinence + Source + Coverage
+        # suffisent pour la promotion top N).
+        context = ScoringContext(
+            user_profile=user_profile,
+            user_interests=user_interests,
+            user_interest_weights=user_interest_weights,
+            followed_source_ids=followed_source_ids,
+            user_prefs=user_prefs,
+            now=now,
+            user_subtopics=user_subtopics,
+            user_subtopic_weights=user_subtopic_weights,
+            user_custom_topics=self.user_custom_topics,
+            user_interest_states=user_interest_states,
+            cluster_source_counts=cluster_source_counts,
+        )
+
+        scored: list[tuple[Content, float]] = []
+        for c in pool:
+            try:
+                result = self.pillar_engine.compute_score(c, context)
+                scored.append((c, result.final_score))
+            except Exception as exc:
+                logger.warning(
+                    "curate_thematic_top_score_failed",
+                    content_id=str(c.id),
+                    error=str(exc),
+                )
+                scored.append((c, 0.0))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+
+        # 3. Floor qualité (D2) — un article du top doit avoir un minimum
+        # de crédibilité visuelle/éditoriale. Exclut les rss bare-bones sans
+        # image, sans contenu in-app et avec un résumé < 100 caractères.
+        def _is_low_quality(c: Content) -> bool:
+            has_thumb = bool(c.thumbnail_url and c.thumbnail_url.strip())
+            has_content = getattr(c, "content_quality", None) in ("full", "partial")
+            desc_len = len(c.description or "")
+            return not has_thumb and not has_content and desc_len < 100
+
+        filtered = [pair for pair in scored if not _is_low_quality(pair[0])]
+        if len(filtered) < top_n:
+            # Pool insuffisant après floor — on dégrade gracieusement pour
+            # ne pas renvoyer un top tronqué (l'UI section a besoin de N).
+            filtered = scored
+
+        # 4. Diversification (souple) : 1 article max par cluster_id, sinon
+        # fallback topic_slug, sinon ordre score.
+        def _diversification_key(pair: tuple[Content, float]) -> Any:
+            c = pair[0]
+            if c.cluster_id is not None:
+                return ("cluster", c.cluster_id)
+            if c.topics:
+                return ("topic", c.topics[0].lower().strip())
+            return None
+
+        diversified = diversify(
+            filtered,
+            key_fn=_diversification_key,
+            target_size=top_n,
+            max_per_key=1,
+            fallback_ok=True,
+        )
+
+        curated_top = [pair[0] for pair in diversified[:top_n]]
+        curated_ids = {c.id for c in curated_top}
+
+        rest = [c for c in candidates if c.id not in curated_ids]
+        return curated_top + rest
 
     async def _hydrate_user_status(
         self,
