@@ -2,9 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:timezone/data/latest.dart' as tz_data;
-import 'package:timezone/timezone.dart' as tz;
 
 import '../../digest/models/digest_models.dart';
 import '../../digest/models/dual_digest_response.dart';
@@ -21,6 +18,7 @@ import '../../veille/providers/veille_active_config_provider.dart';
 import '../models/flux_continu_models.dart';
 import '../repositories/essentiel_repository.dart';
 import '../repositories/flux_continu_repository.dart';
+import '../services/tournee_progress_service.dart';
 import '../utils/theme_color_mapping.dart';
 
 /// Accent applied to the legacy "Actus du jour" digest topic section
@@ -63,48 +61,6 @@ const int _kMaxFavoriteSections = 3;
 /// pagination.hasNext (computed from a pre-compression candidate count) says.
 const int _kThemeSectionPageLimit = 10;
 
-/// Prefix for the day-scoped SharedPreferences key that stores which sections
-/// the user has already scrolled past today. Keys older than today are purged
-/// at startup so a new day starts with every section expanded.
-const String _kFoldedPrefsKeyPrefix = 'flux_continu_folded_';
-const String _kClosingPrefsKeyPrefix = 'flux_continu_closing_dismissed_';
-
-/// Boundary hour (Paris time) at which the "tournée day" flips. Aligned with
-/// the API digest cron at 07:30 Paris (`DIGEST_CRON_HOUR_PARIS`,
-/// `packages/api/app/workers/scheduler.py`). The boundary is computed against
-/// Europe/Paris — not the device's local timezone — so a user in Tokyo
-/// (UTC+9) at 02:00 local doesn't roll over to a fresh tournée hours before
-/// the backend has even generated tomorrow's digest.
-const int _kTourneeDayBoundaryHour = 7;
-const int _kTourneeDayBoundaryMinute = 30;
-const String _kTourneeDayBoundaryTz = 'Europe/Paris';
-
-tz.Location? _parisLocation;
-
-tz.Location _parisTz() {
-  if (_parisLocation != null) return _parisLocation!;
-  tz_data.initializeTimeZones();
-  return _parisLocation = tz.getLocation(_kTourneeDayBoundaryTz);
-}
-
-/// Returns the canonical ISO day (`YYYY-MM-DD`) for the tournée at [now],
-/// using a 07:30 Europe/Paris boundary instead of midnight.
-String _dayKey(DateTime now) {
-  final paris = tz.TZDateTime.from(now, _parisTz());
-  final shifted = (paris.hour < _kTourneeDayBoundaryHour ||
-          (paris.hour == _kTourneeDayBoundaryHour &&
-              paris.minute < _kTourneeDayBoundaryMinute))
-      ? paris.subtract(const Duration(days: 1))
-      : paris;
-  return shifted.toIso8601String().substring(0, 10);
-}
-
-String _foldedPrefsKey(DateTime day) =>
-    '$_kFoldedPrefsKeyPrefix${_dayKey(day)}';
-
-String _closingPrefsKey(DateTime day) =>
-    '$_kClosingPrefsKeyPrefix${_dayKey(day)}';
-
 /// Riverpod provider for the Flux Continu V1.8 home screen.
 ///
 /// Orchestrates three parallel API calls at mount (digest, top-themes,
@@ -115,8 +71,8 @@ String _closingPrefsKey(DateTime day) =>
 /// sticky bar actually shape the list.
 final fluxContinuProvider =
     AsyncNotifierProvider<FluxContinuNotifier, FluxContinuState>(
-  FluxContinuNotifier.new,
-);
+      FluxContinuNotifier.new,
+    );
 
 class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   late DigestRepository _digestRepo;
@@ -175,16 +131,16 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
     // React to favorite reorders / additions / removals without rebuilding
     // the digest (the digest doesn't depend on favorites).
-    ref.listen<AsyncValue<UserInterestsState>>(
-      userInterestsProvider,
-      (prev, next) {
-        final nextFavorites = next.valueOrNull?.favorites;
-        if (nextFavorites == null) return;
-        if (_favoriteListsEqual(_lastFavorites, nextFavorites)) return;
-        if (!state.hasValue) return;
-        unawaited(_refetchThemesOnly(nextFavorites));
-      },
-    );
+    ref.listen<AsyncValue<UserInterestsState>>(userInterestsProvider, (
+      prev,
+      next,
+    ) {
+      final nextFavorites = next.valueOrNull?.favorites;
+      if (nextFavorites == null) return;
+      if (_favoriteListsEqual(_lastFavorites, nextFavorites)) return;
+      if (!state.hasValue) return;
+      unawaited(_refetchThemesOnly(nextFavorites));
+    });
 
     return _fetchAll();
   }
@@ -298,8 +254,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
     // Filter persistQueued against present sections to avoid stale keys
     // surviving a compose (e.g. a favorite was removed).
-    final persistFiltered =
-        _persistQueued.where(keysPresent.contains).toSet();
+    final persistFiltered = _persistQueued.where(keysPresent.contains).toSet();
     if (persistFiltered.length != _persistQueued.length) {
       _persistQueued
         ..clear()
@@ -344,10 +299,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     _dismissedIds.add(contentId);
     final current = state.valueOrNull;
     if (current == null) return;
-    state = AsyncData(current.copyWith(
-      sections: _filterSections(current.sections),
-      dismissedIds: Set.unmodifiable(_dismissedIds),
-    ));
+    state = AsyncData(
+      current.copyWith(
+        sections: _filterSections(current.sections),
+        dismissedIds: Set.unmodifiable(_dismissedIds),
+      ),
+    );
   }
 
   /// Restores an article that was hidden remotely but not yet purged from
@@ -377,24 +334,25 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       for (final s in sections)
         switch (s) {
           EssentielSection(:final articles) => EssentielSection(
-              articles: articles
-                  .where((a) => !_dismissedIds.contains(a.contentId))
-                  .toList(growable: false),
-              blurb: s.blurb,
-              illustrationAsset: s.illustrationAsset,
-            ),
+            articles: articles
+                .where((a) => !_dismissedIds.contains(a.contentId))
+                .toList(growable: false),
+            blurb: s.blurb,
+            illustrationAsset: s.illustrationAsset,
+          ),
           DigestTopicSection(:final topics) => DigestTopicSection(
-              kind: s.kind,
-              label: s.label,
-              accent: s.accent,
-              coreVisibleCount: s.coreVisibleCount,
-              blurb: s.blurb,
-              illustrationAsset: s.illustrationAsset,
-              topics: topics
-                  .where((t) =>
-                      !_dismissedIds.contains(pickTopicLead(t).contentId))
-                  .toList(growable: false),
-            ),
+            kind: s.kind,
+            label: s.label,
+            accent: s.accent,
+            coreVisibleCount: s.coreVisibleCount,
+            blurb: s.blurb,
+            illustrationAsset: s.illustrationAsset,
+            topics: topics
+                .where(
+                  (t) => !_dismissedIds.contains(pickTopicLead(t).contentId),
+                )
+                .toList(growable: false),
+          ),
           FeedThemeSection(
             :final items,
             :final themeSlug,
@@ -431,56 +389,56 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       for (final s in current.sections)
         switch (s) {
           EssentielSection(:final articles) => EssentielSection(
-              articles: [
-                for (final a in articles)
-                  if (a.contentId == contentId)
-                    EssentielArticle(
-                      contentId: a.contentId,
-                      title: a.title,
-                      url: a.url,
-                      thumbnailUrl: a.thumbnailUrl,
-                      publishedAt: a.publishedAt,
-                      sourceName: a.sourceName,
-                      sourceLetter: a.sourceLetter,
-                      sectionLabel: a.sectionLabel,
-                      rank: a.rank,
-                      kind: a.kind,
-                      theme: a.theme,
-                      perspectiveCount: a.perspectiveCount,
-                      isRead: true,
-                      isSaved: a.isSaved,
-                      isLiked: a.isLiked,
-                      isDismissed: a.isDismissed,
-                      isFollowedSource: a.isFollowedSource,
-                      isFollowedTopic: a.isFollowedTopic,
-                      isActuDuJour: a.isActuDuJour,
-                    )
-                  else
-                    a,
-              ],
-              blurb: s.blurb,
-              illustrationAsset: s.illustrationAsset,
-            ),
+            articles: [
+              for (final a in articles)
+                if (a.contentId == contentId)
+                  EssentielArticle(
+                    contentId: a.contentId,
+                    title: a.title,
+                    url: a.url,
+                    thumbnailUrl: a.thumbnailUrl,
+                    publishedAt: a.publishedAt,
+                    sourceName: a.sourceName,
+                    sourceLetter: a.sourceLetter,
+                    sectionLabel: a.sectionLabel,
+                    rank: a.rank,
+                    kind: a.kind,
+                    theme: a.theme,
+                    perspectiveCount: a.perspectiveCount,
+                    isRead: true,
+                    isSaved: a.isSaved,
+                    isLiked: a.isLiked,
+                    isDismissed: a.isDismissed,
+                    isFollowedSource: a.isFollowedSource,
+                    isFollowedTopic: a.isFollowedTopic,
+                    isActuDuJour: a.isActuDuJour,
+                  )
+                else
+                  a,
+            ],
+            blurb: s.blurb,
+            illustrationAsset: s.illustrationAsset,
+          ),
           DigestTopicSection(:final topics) => DigestTopicSection(
-              kind: s.kind,
-              label: s.label,
-              accent: s.accent,
-              coreVisibleCount: s.coreVisibleCount,
-              blurb: s.blurb,
-              illustrationAsset: s.illustrationAsset,
-              topics: [
-                for (final t in topics)
-                  t.copyWith(
-                    articles: [
-                      for (final a in t.articles)
-                        if (a.contentId == contentId)
-                          a.copyWith(isRead: true)
-                        else
-                          a,
-                    ],
-                  ),
-              ],
-            ),
+            kind: s.kind,
+            label: s.label,
+            accent: s.accent,
+            coreVisibleCount: s.coreVisibleCount,
+            blurb: s.blurb,
+            illustrationAsset: s.illustrationAsset,
+            topics: [
+              for (final t in topics)
+                t.copyWith(
+                  articles: [
+                    for (final a in t.articles)
+                      if (a.contentId == contentId)
+                        a.copyWith(isRead: true)
+                      else
+                        a,
+                  ],
+                ),
+            ],
+          ),
           FeedThemeSection(
             :final items,
             :final themeSlug,
@@ -571,10 +529,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (response == null || response.items.isEmpty) {
       // Treat empty/error response as "no more" so the button settles into
       // the disabled "Plus rien à voir" state rather than spinning forever.
-      updated = afterTarget.copyWith(
-        isLoadingMore: false,
-        hasMore: false,
-      );
+      updated = afterTarget.copyWith(isLoadingMore: false, hasMore: false);
     } else {
       // Dedupe by content id — guards against a new article being published
       // between page 1 and page 2 and shifting the chronological cursor.
@@ -585,7 +540,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
           if (!existingIds.contains(item.id)) item,
       ];
       final hasMore = _themeHasMore(
-          response.pagination.hasNext, response.items.length);
+        response.pagination.hasNext,
+        response.items.length,
+      );
       updated = afterTarget.copyWith(
         items: appended,
         currentPage: nextPage,
@@ -610,9 +567,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     _persistQueued.add(key);
     final current = state.valueOrNull;
     if (current != null) {
-      state = AsyncData(current.copyWith(
-        markedForNextSession: Set.unmodifiable(_persistQueued),
-      ));
+      state = AsyncData(
+        current.copyWith(
+          markedForNextSession: Set.unmodifiable(_persistQueued),
+        ),
+      );
     }
     final combined = <String, bool>{
       ..._folded,
@@ -657,20 +616,19 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (current == null) return;
     final toPromote = _persistQueued.difference(exceptKeys);
     if (toPromote.isEmpty) return;
-    final next = <String, bool>{
-      ..._folded,
-      for (final k in toPromote) k: true,
-    };
+    final next = <String, bool>{..._folded, for (final k in toPromote) k: true};
     if (next.length == _folded.length &&
         next.entries.every((e) => _folded[e.key] == e.value)) {
       return;
     }
     _folded = next;
     _persistQueued.removeAll(toPromote);
-    state = AsyncData(current.copyWith(
-      folded: next,
-      markedForNextSession: Set.unmodifiable(_persistQueued),
-    ));
+    state = AsyncData(
+      current.copyWith(
+        folded: next,
+        markedForNextSession: Set.unmodifiable(_persistQueued),
+      ),
+    );
   }
 
   /// Read-only snapshot of the sections queued for fold at next apply.
@@ -696,21 +654,24 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (wasFolded) {
       final next = Map<String, bool>.from(current.folded)..remove(key);
       _folded = next;
-      state = AsyncData(current.copyWith(
-        folded: next,
-        markedForNextSession: Set.unmodifiable(_persistQueued),
-      ));
+      state = AsyncData(
+        current.copyWith(
+          folded: next,
+          markedForNextSession: Set.unmodifiable(_persistQueued),
+        ),
+      );
     } else if (wasQueued) {
-      state = AsyncData(current.copyWith(
-        markedForNextSession: Set.unmodifiable(_persistQueued),
-      ));
+      state = AsyncData(
+        current.copyWith(
+          markedForNextSession: Set.unmodifiable(_persistQueued),
+        ),
+      );
     }
     // Rewrite the prefs blob with the new (live + still-queued) fold set so
     // the unfold survives a cold launch in the same tournée day.
-    unawaited(_persistFolded({
-      ..._folded,
-      for (final k in _persistQueued) k: true,
-    }));
+    unawaited(
+      _persistFolded({..._folded, for (final k in _persistQueued) k: true}),
+    );
   }
 
   /// Manually folds a section in the current session only (not persisted).
@@ -726,75 +687,34 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }
 
   Future<Map<String, bool>> _loadFoldedForToday() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final names = prefs.getStringList(_foldedPrefsKey(DateTime.now())) ??
-          const <String>[];
-      if (names.isEmpty) return const {};
-      // Parse tolerantly: legacy enum-style names (`essentiel`, `bonnes`) are
-      // still valid. Anything that doesn't match the new string-key shape
-      // (`essentiel` / `bonnes` / `theme:slug` / `topic:uuid`) — notably the
-      // dead `theme1` / `theme2` from the previous schema — is silently
-      // dropped. The day purge below will remove the prefs blob in <24h.
-      return {
-        for (final name in names)
-          if (_isLiveFoldedKey(name)) name: true,
-      };
-    } catch (e) {
-      debugPrint('FluxContinu: _loadFoldedForToday failed: $e');
-      return const {};
-    }
+    // Parse tolerantly: legacy enum-style names (`essentiel`, `bonnes`) are
+    // still valid. Anything that doesn't match the new string-key shape
+    // (`essentiel` / `bonnes` / `theme:slug` / `topic:uuid`) — notably the
+    // dead `theme1` / `theme2` from the previous schema — is silently
+    // dropped. The day purge below will remove the prefs blob in <24h.
+    return ref
+        .read(tourneeProgressServiceProvider)
+        .loadFoldedForToday(isLiveKey: _isLiveFoldedKey);
   }
 
   Future<void> _persistFolded(Map<String, bool> folded) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final names =
-          folded.entries.where((e) => e.value).map((e) => e.key).toList();
-      await prefs.setStringList(_foldedPrefsKey(DateTime.now()), names);
-    } catch (e) {
-      debugPrint('FluxContinu: _persistFolded failed: $e');
-    }
+    await ref.read(tourneeProgressServiceProvider).persistFolded(folded);
   }
 
   Future<bool> _loadClosingDismissedForToday() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool(_closingPrefsKey(DateTime.now())) ?? false;
-    } catch (e) {
-      debugPrint('FluxContinu: _loadClosingDismissedForToday failed: $e');
-      return false;
-    }
+    return ref
+        .read(tourneeProgressServiceProvider)
+        .loadClosingDismissedForToday();
   }
 
   Future<void> _persistClosingDismissed(bool dismissed) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_closingPrefsKey(DateTime.now()), dismissed);
-    } catch (e) {
-      debugPrint('FluxContinu: _persistClosingDismissed failed: $e');
-    }
+    await ref
+        .read(tourneeProgressServiceProvider)
+        .setClosingDismissedToday(dismissed);
   }
 
   Future<void> _purgeOldPrefsKeys() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final today = DateTime.now();
-      final foldedToday = _foldedPrefsKey(today);
-      final closingToday = _closingPrefsKey(today);
-      final stale = prefs.getKeys().where((k) {
-        if (k.startsWith(_kFoldedPrefsKeyPrefix) && k != foldedToday) {
-          return true;
-        }
-        if (k.startsWith(_kClosingPrefsKeyPrefix) && k != closingToday) {
-          return true;
-        }
-        return false;
-      }).toList();
-      await Future.wait(stale.map(prefs.remove));
-    } catch (e) {
-      debugPrint('FluxContinu: _purgeOldPrefsKeys failed: $e');
-    }
+    await ref.read(tourneeProgressServiceProvider).purgeOldPrefsKeys();
   }
 
   /// Pull-to-refresh: refetch all upstream calls from scratch.
@@ -831,7 +751,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     required String illustration,
     required int coreVisibleCount,
   }) {
-    final topics = digest?.topics
+    final topics =
+        digest?.topics
             .where((t) => t.articles.isNotEmpty)
             .toList(growable: false) ??
         const <DigestTopic>[];
@@ -867,7 +788,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final items = feed?.items ?? const <Content>[];
     if (items.length < 2) return null;
     final hasMore = _themeHasMore(
-        feed?.pagination.hasNext ?? false, items.length);
+      feed?.pagination.hasNext ?? false,
+      items.length,
+    );
     return FeedThemeSection(
       kind: SectionKind.theme,
       label: label,
@@ -905,8 +828,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // Pad with canonical macro themes the user is missing — order: tech,
     // environment, science (matches the backend backfill list).
     const canonical = [fallbackTheme1, fallbackTheme2, 'science'];
-    final present =
-        valid.whereType<ThemeFavoriteRef>().map((r) => r.slug).toSet();
+    final present = valid
+        .whereType<ThemeFavoriteRef>()
+        .map((r) => r.slug)
+        .toSet();
     for (final slug in canonical) {
       if (valid.length >= _kMaxFavoriteSections) break;
       if (present.contains(slug)) continue;
@@ -934,17 +859,17 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       final feed = feeds[i];
       final section = switch (favRef) {
         ThemeFavoriteRef(:final slug) => _buildThemeSection(
-            feed: feed,
-            label: visualFor(slug).label,
-            accent: visualFor(slug).accent,
-            themeSlug: slug,
-          ),
+          feed: feed,
+          label: visualFor(slug).label,
+          accent: visualFor(slug).accent,
+          themeSlug: slug,
+        ),
         CustomTopicFavoriteRef(:final id) => _buildThemeSection(
-            feed: feed,
-            label: _customTopicLabel(interestsState, id),
-            accent: _customTopicAccent(interestsState, id),
-            customTopicId: id,
-          ),
+          feed: feed,
+          label: _customTopicLabel(interestsState, id),
+          accent: _customTopicAccent(interestsState, id),
+          customTopicId: id,
+        ),
         // Story 23.2 PR-4 : la veille devient une section Tournée dédiée
         // avec son propre accent et label, calculée séparément des thèmes.
         VeilleFavoriteRef() => _buildVeilleSection(feed),
@@ -960,39 +885,37 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // sections (vs. the unrestricted exploration mode used by feed chips).
     return switch (favRef) {
       ThemeFavoriteRef(:final slug) => _safe<FeedResponse>(
-          () => _feedRepo.getFeed(
-            page: 1,
-            limit: _kThemeSectionPageLimit,
-            theme: slug,
-            serein: isSerene,
-            personalized: true,
-          ),
-          'getFeed?theme=$slug&personalized=true',
+        () => _feedRepo.getFeed(
+          page: 1,
+          limit: _kThemeSectionPageLimit,
+          theme: slug,
+          serein: isSerene,
+          personalized: true,
         ),
+        'getFeed?theme=$slug&personalized=true',
+      ),
       // Backend `/api/feed` accepts a UUID stringified in the `topic` param
       // (story 22.1) — looked up against `user_topic_profiles` scoped on the
       // current user, so no cross-user leak.
       CustomTopicFavoriteRef(:final id) => _safe<FeedResponse>(
-          () => _feedRepo.getFeed(
-            page: 1,
-            limit: _kThemeSectionPageLimit,
-            topic: id,
-            serein: isSerene,
-            personalized: true,
-          ),
-          'getFeed?topic=$id&personalized=true',
+        () => _feedRepo.getFeed(
+          page: 1,
+          limit: _kThemeSectionPageLimit,
+          topic: id,
+          serein: isSerene,
+          personalized: true,
         ),
+        'getFeed?topic=$id&personalized=true',
+      ),
       // Story 23.2 PR-4 : la veille est résolue via `/api/veille/feed`,
       // exposée par FluxContinuRepository.getVeilleFeedItems (normalise la
       // réponse en FeedResponse Content-compatible).
       VeilleFavoriteRef() => _safe<FeedResponse>(
-          () =>
-              ref.read(fluxContinuRepositoryProvider).getVeilleFeedItems(
-                    limit: 10,
-                    serein: isSerene,
-                  ),
-          'getVeilleFeedItems',
-        ),
+        () => ref
+            .read(fluxContinuRepositoryProvider)
+            .getVeilleFeedItems(limit: 10, serein: isSerene),
+        'getVeilleFeedItems',
+      ),
     };
   }
 
@@ -1035,8 +958,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// favorites.
   Future<void> _refetchThemesOnly(List<FavoriteRef> nextFavorites) async {
     final isSerene = ref.read(sereinToggleProvider).enabled;
-    final capped =
-        nextFavorites.take(_kMaxFavoriteSections).toList(growable: false);
+    final capped = nextFavorites
+        .take(_kMaxFavoriteSections)
+        .toList(growable: false);
     final themes = await _fetchThemeSections(capped, isSerene);
     _lastFavorites = capped;
     _themes = themes;

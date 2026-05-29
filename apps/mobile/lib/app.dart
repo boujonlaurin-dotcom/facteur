@@ -9,9 +9,9 @@ import 'core/auth/auth_state.dart';
 import 'core/providers/analytics_provider.dart';
 import 'core/services/deep_link_service.dart';
 import 'core/services/widget_service.dart';
-import 'features/feed/providers/feed_preload_provider.dart';
 import 'features/feed/providers/feed_provider.dart';
 import 'features/flux_continu/providers/flux_continu_preload_provider.dart';
+import 'features/flux_continu/services/tournee_progress_service.dart';
 import 'features/my_interests/services/interests_sync_service.dart';
 import 'features/onboarding/providers/onboarding_sync_provider.dart';
 import 'features/settings/providers/theme_provider.dart';
@@ -89,7 +89,18 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
         final elapsed = _backgroundedAt != null
             ? DateTime.now().difference(_backgroundedAt!)
             : null;
+        final router = ref.read(routerProvider);
+        final currentPath = router.routeInformationProvider.value.uri.path;
         if (ref.read(authStateProvider).isAuthenticated &&
+            currentPath == RoutePaths.fluxContinu &&
+            ref
+                .read(tourneeProgressServiceProvider)
+                .isClosingDismissedTodaySync()) {
+          router.go(RoutePaths.flaner);
+          return;
+        }
+        if (ref.read(authStateProvider).isAuthenticated &&
+            currentPath == RoutePaths.flaner &&
             (elapsed == null || elapsed.inSeconds >= 60)) {
           ref.read(feedProvider.notifier).refresh();
         }
@@ -117,11 +128,6 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     debugPrint('FacteurApp: build() called');
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeNotifierProvider);
-
-    // Keep feed preloader alive for the entire authenticated session: it
-    // watches auth state and kicks off `feedProvider.future` in the
-    // background so the Feed tab renders instantly on first tap.
-    ref.watch(feedPreloadProvider);
 
     // Same pattern for the home screen (Flux Continu) — kicks off the 4
     // endpoints in parallel as soon as auth is confirmed, in parallel with

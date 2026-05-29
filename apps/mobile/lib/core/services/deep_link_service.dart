@@ -13,20 +13,18 @@ import 'analytics_service.dart';
 /// Supported URIs:
 /// - `io.supabase.facteur://digest` → `/digest`
 /// - `io.supabase.facteur://digest/<contentId>?pos=<n>&topicId=<id>`
-///   → `/feed/content/<contentId>` (article reader, Essentiel deep link)
-/// - `io.supabase.facteur://feed` → `/feed`
+///   → `/flux-continu/content/<contentId>` (article reader, Essentiel deep link)
+/// - `io.supabase.facteur://feed` → `/flaner`
 /// - `io.supabase.facteur://feed/content/<contentId>?pos=<n>&topicId=<id>`
-///   → `/feed/content/<contentId>` (article reader, Flux deep link)
+///   → `/flaner/content/<contentId>` (article reader, Flâner deep link)
 /// - `io.supabase.facteur://veille/dashboard` → `/veille/dashboard`
 ///
 /// `io.supabase.facteur://login-callback` is intentionally ignored — Supabase
 /// SDK intercepts it before it reaches us. Anything else falls through to
 /// GoRouter's `errorBuilder`, which is a safety net only.
 class DeepLinkService {
-  DeepLinkService._({
-    AppLinks? appLinks,
-    AnalyticsService? analytics,
-  })  : _appLinks = appLinks ?? AppLinks(),
+  DeepLinkService._({AppLinks? appLinks, AnalyticsService? analytics})
+      : _appLinks = appLinks ?? AppLinks(),
         _analytics = analytics;
 
   /// Test-only factory letting suites inject a fake AppLinks/Analytics.
@@ -73,10 +71,7 @@ class DeepLinkService {
   bool _authenticated = false;
 
   /// Bind the service to the running router and analytics. Idempotent.
-  void bind({
-    required GoRouter router,
-    AnalyticsService? analytics,
-  }) {
+  void bind({required GoRouter router, AnalyticsService? analytics}) {
     _router = router;
     if (analytics != null) {
       _analytics = analytics;
@@ -258,18 +253,18 @@ class DeepLinkService {
         if (articleId.isNotEmpty) {
           return WidgetDeepLinkAction(
             target: WidgetDeepLinkTarget.article,
-            route: '/flux-continu/content/$articleId',
+            route: '${RoutePaths.flaner}/content/$articleId',
             articleId: articleId,
             position: int.tryParse(uri.queryParameters['pos'] ?? ''),
             topicId: uri.queryParameters['topicId'],
           );
         }
       }
-      // FeedScreen a été supprimé lors du cleanup post-unification — on
-      // route vers le flux continu (la nouvelle home).
+      // FeedScreen historique — on route vers Flâner, désormais page feed
+      // autonome.
       return const WidgetDeepLinkAction(
         target: WidgetDeepLinkTarget.feed,
-        route: RoutePaths.fluxContinu,
+        route: RoutePaths.flaner,
       );
     }
 

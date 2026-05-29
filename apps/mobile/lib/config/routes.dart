@@ -9,10 +9,12 @@ import '../features/auth/screens/splash_screen.dart';
 import '../features/onboarding/screens/onboarding_screen.dart';
 import '../features/onboarding/screens/conclusion_animation_screen.dart';
 import '../features/feed/models/content_model.dart';
+import '../features/feed/screens/flaner_screen.dart';
 import '../features/flux_continu/screens/digest_section_screen.dart';
 import '../features/flux_continu/screens/flux_continu_screen.dart';
 import '../features/flux_continu/screens/theme_section_screen.dart';
 import '../features/flux_continu/models/flux_continu_models.dart';
+import '../features/flux_continu/services/tournee_progress_service.dart';
 import '../features/auth/screens/email_confirmation_screen.dart';
 import '../features/detail/screens/content_detail_screen.dart';
 
@@ -49,6 +51,7 @@ class RouteNames {
   static const String onboardingConclusion = 'onboarding-conclusion';
   static const String digest = 'digest';
   static const String feed = 'feed';
+  static const String flaner = 'flaner';
   static const String fluxContinu = 'flux-continu';
   static const String contentDetail = 'content-detail';
   static const String saved = 'saved';
@@ -83,6 +86,7 @@ class RoutePaths {
   static const String onboardingConclusion = '/onboarding/conclusion';
   static const String digest = '/digest';
   static const String feed = '/feed';
+  static const String flaner = '/flaner';
   static const String fluxContinu = '/flux-continu';
   static const String contentDetail = '/content/:id';
   static const String saved = '/saved';
@@ -132,6 +136,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       final authState = ref.read(authStateProvider);
+      String postAuthHomePath() {
+        final tournee = ref.read(tourneeProgressServiceProvider);
+        return tournee.isClosingDismissedTodaySync()
+            ? RoutePaths.flaner
+            : RoutePaths.fluxContinu;
+      }
 
       // Attendre que l'auth state soit initialisé
       if (authState.isLoading) {
@@ -180,7 +190,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (isOnLoginPage || isOnEmailConfirmation || isOnSplash) {
         return authState.needsOnboarding
             ? RoutePaths.onboarding
-            : RoutePaths.fluxContinu;
+            : postAuthHomePath();
       }
 
       // 4. Onboarding : forcer si nécessaire
@@ -192,7 +202,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // 5. Onboarding : empêcher d'y retourner si fini → atterrissage flux continu
       if (!authState.needsOnboarding && isOnOnboarding) {
-        return RoutePaths.fluxContinu;
+        return postAuthHomePath();
       }
 
       return null;
@@ -244,12 +254,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePaths.fluxContinu,
         name: RouteNames.fluxContinu,
-        builder: (context, state) => const Stack(
-          children: [
-            FluxContinuScreen(),
-            NudgeHost(),
-          ],
-        ),
+        builder: (context, state) =>
+            const Stack(children: [FluxContinuScreen(), NudgeHost()]),
         routes: [
           GoRoute(
             path: 'content/:id',
@@ -299,13 +305,45 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
 
-      // Feed (legacy) — redirige vers FluxContinu pour préserver les deep
+      // Flâner — feed autonome.
+      GoRoute(
+        path: RoutePaths.flaner,
+        name: RouteNames.flaner,
+        builder: (context, state) =>
+            const Stack(children: [FlanerScreen(), NudgeHost()]),
+        routes: [
+          GoRoute(
+            path: 'content/:id',
+            parentNavigatorKey: NotificationService.navigatorKey,
+            pageBuilder: (context, state) {
+              final contentId = state.pathParameters['id']!;
+              final content = state.extra as Content?;
+              return FullSwipeCupertinoPage(
+                child: ContentDetailScreen(
+                  contentId: contentId,
+                  content: content,
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+
+      GoRoute(
+        path: '${RoutePaths.feed}/content/:id',
+        redirect: (context, state) {
+          final id = state.pathParameters['id']!;
+          return '${RoutePaths.flaner}/content/$id';
+        },
+      ),
+
+      // Feed (legacy) — redirige vers Flâner pour préserver les deep
       // links sortants en circulation (push notifs, partages, anciennes
       // versions de l'app). Voir cleanup post-unification du flux.
       GoRoute(
         path: RoutePaths.feed,
         name: RouteNames.feed,
-        redirect: (context, state) => RoutePaths.fluxContinu,
+        redirect: (context, state) => RoutePaths.flaner,
       ),
 
       // Saved (Sauvegardés)
@@ -317,9 +355,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'all',
             name: RouteNames.savedAll,
-            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-              child: SavedAllScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: SavedAllScreen()),
           ),
           GoRoute(
             path: 'collection/:id',
@@ -351,30 +388,26 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePaths.settings,
         name: RouteNames.settings,
-        pageBuilder: (context, state) => const ModalBottomSheetPage(
-          child: SettingsSheet(),
-        ),
+        pageBuilder: (context, state) =>
+            const ModalBottomSheetPage(child: SettingsSheet()),
         routes: [
           GoRoute(
             path: 'profile', // /settings/profile
             name: RouteNames.profile,
-            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-              child: ProfileScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: ProfileScreen()),
           ),
           GoRoute(
             path: 'sources', // /settings/sources
             name: RouteNames.sources,
-            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-              child: SourcesScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: SourcesScreen()),
             routes: [
               GoRoute(
                 path: 'add', // /settings/sources/add
                 name: RouteNames.addSource,
-                pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-                  child: AddSourceScreen(),
-                ),
+                pageBuilder: (context, state) =>
+                    const FullSwipeCupertinoPage(child: AddSourceScreen()),
               ),
               GoRoute(
                 path: 'theme/:slug', // /settings/sources/theme/:slug
@@ -395,23 +428,20 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'account', // /settings/account
             name: RouteNames.account,
-            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-              child: AccountScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: AccountScreen()),
           ),
           GoRoute(
             path: 'notifications', // /settings/notifications
             name: RouteNames.notifications,
-            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-              child: NotificationsScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: NotificationsScreen()),
           ),
           GoRoute(
             path: 'about', // /settings/about
             name: RouteNames.about,
-            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-              child: AboutScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: AboutScreen()),
           ),
           GoRoute(
             path: 'interests', // /settings/interests
@@ -444,9 +474,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePaths.lettres,
         name: RouteNames.lettres,
-        pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-          child: CourrierScreen(),
-        ),
+        pageBuilder: (context, state) =>
+            const FullSwipeCupertinoPage(child: CourrierScreen()),
         routes: [
           GoRoute(
             path: ':id',
@@ -489,18 +518,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => CustomTransitionPage(
           child: const PaywallScreen(),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(
-              opacity: animation,
-              child: child,
-            );
+            return FadeTransition(opacity: animation, child: child);
           },
         ),
       ),
     ],
-    errorBuilder: (context, state) => Scaffold(
-      body: Center(
-        child: Text('Page non trouvée: ${state.uri}'),
-      ),
-    ),
+    errorBuilder: (context, state) =>
+        Scaffold(body: Center(child: Text('Page non trouvée: ${state.uri}'))),
   );
 });

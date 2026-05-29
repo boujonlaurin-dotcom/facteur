@@ -56,11 +56,11 @@ class _ConclusionAnimationScreenState
           ConclusionSuccess() =>
             const _LoadingView(), // Garde l'animation pendant la transition
           ConclusionError() => LaurinFallbackView(
-              title: OnboardingFallbackStrings.title,
-              subtitle: OnboardingFallbackStrings.subtitle,
-              onRetry: () =>
-                  ref.read(conclusionNotifierProvider.notifier).retry(),
-            ),
+            title: OnboardingFallbackStrings.title,
+            subtitle: OnboardingFallbackStrings.subtitle,
+            onRetry: () =>
+                ref.read(conclusionNotifierProvider.notifier).retry(),
+          ),
         },
       ),
     );
@@ -72,8 +72,9 @@ class _ConclusionAnimationScreenState
 
     // Capture la liste des customs échoués AVANT clearSavedData pour pouvoir
     // afficher le résumé utilisateur ("tu pourras les réajouter").
-    final failedCustomTopics =
-        List<String>.from(ref.read(onboardingProvider).failedCustomTopics);
+    final failedCustomTopics = List<String>.from(
+      ref.read(onboardingProvider).failedCustomTopics,
+    );
 
     // Effacer les données locales temporaires
     ref.read(onboardingProvider.notifier).clearSavedData();
@@ -118,7 +119,7 @@ class _ConclusionAnimationScreenState
     // context.go() remplace toute la stack pour bloquer le back vers
     // l'onboarding.
     if (mounted) {
-      context.go(RoutePaths.feed);
+      context.go(RoutePaths.fluxContinu);
     }
   }
 }
@@ -149,4 +150,3 @@ class _LoadingView extends StatelessWidget {
     );
   }
 }
-

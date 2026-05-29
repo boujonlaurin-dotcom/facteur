@@ -17,7 +17,7 @@ import 'nudge_tooltip_bubble.dart';
 /// Les autres placements (inlineBanner, hintAnimation, tooltip intra-article)
 /// sont rendus en place par les feature widgets eux-mêmes — ce host ne fait
 /// que coordonner quand activer le spotlight et qu'il a les bonnes conditions
-/// (GlobalKey montée, route `/feed` courante).
+/// (GlobalKey montée, route feed courante).
 class NudgeHost extends ConsumerStatefulWidget {
   const NudgeHost({super.key});
 
@@ -65,9 +65,13 @@ class _NudgeHostState extends ConsumerState<NudgeHost> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final currentLocation =
-          GoRouter.of(context).routerDelegate.currentConfiguration.uri.path;
-      if (!currentLocation.startsWith(RoutePaths.fluxContinu)) return;
+      final currentLocation = GoRouter.of(
+        context,
+      ).routerDelegate.currentConfiguration.uri.path;
+      if (!currentLocation.startsWith(RoutePaths.fluxContinu) &&
+          !currentLocation.startsWith(RoutePaths.flaner)) {
+        return;
+      }
 
       final anchor = _anchorFor(id);
       if (anchor?.currentContext == null) return;

@@ -8,6 +8,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:home_widget/home_widget.dart';
@@ -19,6 +20,7 @@ import 'core/auth/supabase_storage.dart';
 import 'core/services/posthog_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/ui/notification_service.dart';
+import 'features/flux_continu/services/tournee_progress_service.dart';
 
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:timeago/src/messages/fr_messages.dart'
@@ -32,20 +34,17 @@ Future<void> main() async {
   // pendant l'init. Si DSN absent (dev local sans clé), l'init est skip.
   // Cf. docs/bugs/bug-android-disconnect-race.md (P5 — instrumentation).
   if (SentryConstants.isEnabled) {
-    await SentryFlutter.init(
-      (options) {
-        options.dsn = SentryConstants.dsn;
-        options.environment = SentryConstants.environment;
-        if (SentryConstants.release.isNotEmpty) {
-          options.release = SentryConstants.release;
-        }
-        // Sample 100% des erreurs, pas de perf tracing pour le moment.
-        options.tracesSampleRate = 0.0;
-        // Ne pas envoyer les PII par défaut.
-        options.sendDefaultPii = false;
-      },
-      appRunner: _bootstrap,
-    );
+    await SentryFlutter.init((options) {
+      options.dsn = SentryConstants.dsn;
+      options.environment = SentryConstants.environment;
+      if (SentryConstants.release.isNotEmpty) {
+        options.release = SentryConstants.release;
+      }
+      // Sample 100% des erreurs, pas de perf tracing pour le moment.
+      options.tracesSampleRate = 0.0;
+      // Ne pas envoyer les PII par défaut.
+      options.sendDefaultPii = false;
+    }, appRunner: _bootstrap);
   } else {
     await _bootstrap();
   }
@@ -75,16 +74,20 @@ Future<void> _bootstrap() async {
   await Hive.initFlutter();
 
   final boxesSw = Stopwatch()..start();
-  final boxes = await Future.wait<Box<dynamic>>([
+  final initResults = await Future.wait<Object>([
     _openBoxSafe<dynamic>('settings'),
     _openBoxSafe<dynamic>('auth_prefs'),
     _openBoxSafe<String>('supabase_auth_persistence'),
     _openBoxSafe<String>('feed_cache'),
+    SharedPreferences.getInstance(),
   ]);
+  final boxes = initResults.take(4).cast<Box<dynamic>>().toList();
+  final sharedPreferences = initResults[4] as SharedPreferences;
   final authBox = boxes[1];
   final supabaseBox = boxes[2];
   debugPrint(
-      '[PERF] boot.hive_boxes_ms=${boxesSw.elapsedMilliseconds} (4 boxes parallel)');
+    '[PERF] boot.hive_boxes_ms=${boxesSw.elapsedMilliseconds} (4 boxes + prefs parallel)',
+  );
 
   debugPrint('Main: Hive auth_prefs keys: ${authBox.keys.toList()}');
   debugPrint(
@@ -130,16 +133,16 @@ Future<void> _bootstrap() async {
         authOptions: FlutterAuthClientOptions(
           localStorage: SupabaseHiveStorage(),
         ),
-        headers: {
-          'X-Client-Info': 'supabase-flutter/2.5.0',
-        },
+        headers: {'X-Client-Info': 'supabase-flutter/2.5.0'},
       ).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
           debugPrint(
-              'Main: Supabase.initialize TIMEOUT 10s — throwing to catch block');
+            'Main: Supabase.initialize TIMEOUT 10s — throwing to catch block',
+          );
           throw TimeoutException(
-              'Supabase.initialize timeout after 10 seconds');
+            'Supabase.initialize timeout after 10 seconds',
+          );
         },
       ),
       _initPosthogSafe(posthog),
@@ -166,10 +169,12 @@ Future<void> _bootstrap() async {
   if (hasSession) {
     final user = Supabase.instance.client.auth.currentUser;
     if (user != null) {
-      unawaited(posthog.identify(
-        userId: user.id,
-        properties: _userIdentifyProperties(user, appVersion: appVersion),
-      ));
+      unawaited(
+        posthog.identify(
+          userId: user.id,
+          properties: _userIdentifyProperties(user, appVersion: appVersion),
+        ),
+      );
       unawaited(_loginRevenueCatSafe(user.id));
     }
   }
@@ -182,8 +187,7 @@ Future<void> _bootstrap() async {
         if (user != null) {
           posthog.identify(
             userId: user.id,
-            properties:
-                _userIdentifyProperties(user, appVersion: appVersion),
+            properties: _userIdentifyProperties(user, appVersion: appVersion),
           );
           unawaited(_loginRevenueCatSafe(user.id));
         }
@@ -200,7 +204,14 @@ Future<void> _bootstrap() async {
   debugPrint('[PERF] boot.pre_runapp_ms=${bootSw.elapsedMilliseconds}');
 
   // Lancer l'app
-  runApp(const ProviderScope(child: FacteurApp()));
+  runApp(
+    ProviderScope(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(sharedPreferences),
+      ],
+      child: const FacteurApp(),
+    ),
+  );
 
   // Inits différés post-runApp : non bloquants pour la 1ère frame.
   // - Notif scheduling (alarm, permissions, diagnostics)
@@ -282,7 +293,8 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
 
   try {
     unawaited(
-        HomeWidget.registerInteractivityCallback(homeWidgetBackgroundCallback));
+      HomeWidget.registerInteractivityCallback(homeWidgetBackgroundCallback),
+    );
   } catch (e) {
     debugPrint('Main: Home Widget init failed (non-critical): $e');
   }
@@ -317,7 +329,8 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
             await pushNotificationService.scheduleDailyDigestNotification();
         if (!scheduled) {
           debugPrint(
-              'Main: WARNING — digest notification scheduling failed, retrying...');
+            'Main: WARNING — digest notification scheduling failed, retrying...',
+          );
           await pushNotificationService.requestExactAlarmPermission();
           final retryOk =
               await pushNotificationService.scheduleDailyDigestNotification();
@@ -325,13 +338,13 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
         }
       } else {
         debugPrint(
-            'Main: Digest notification already scheduled — skipping static placeholder.');
+          'Main: Digest notification already scheduled — skipping static placeholder.',
+        );
       }
     }
     bootNotifDiag = await diagFuture;
   } catch (e, s) {
-    debugPrint(
-        'ERROR: Deferred push notifications init failed: $e\n$s');
+    debugPrint('ERROR: Deferred push notifications init failed: $e\n$s');
   }
 
   if (bootNotifDiag != null) {
@@ -386,7 +399,8 @@ Future<Box<T>> _openBoxSafe<T>(String name) async {
   } catch (e) {
     debugPrint('Main: Hive box "$name" corrupted, recreating: $e');
     debugPrint(
-        '[AUTH_TELEMETRY] event=hive_box_corrupted box_name=$name error=$e');
+      '[AUTH_TELEMETRY] event=hive_box_corrupted box_name=$name error=$e',
+    );
     await Hive.deleteBoxFromDisk(name);
     return await Hive.openBox<T>(name);
   }

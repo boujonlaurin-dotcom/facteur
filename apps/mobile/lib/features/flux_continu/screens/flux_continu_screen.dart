@@ -14,19 +14,15 @@ import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../../core/providers/analytics_provider.dart';
-import '../../../widgets/article_preview_modal.dart';
 import '../../../widgets/design/facteur_logo.dart';
+import '../../../shared/widgets/navigation/main_bottom_nav.dart';
 import '../../app_update/providers/app_update_provider.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
-import '../../feed/providers/feed_provider.dart';
 import '../../feed/providers/swipe_hint_provider.dart';
-import '../../feed/widgets/feed_carousel.dart';
 import '../../feed/widgets/feedback_inline.dart';
-import '../../feed/widgets/follow_keyword_suggestion_card.dart';
 import '../../feed/widgets/profile_avatar_button.dart';
-import '../../sources/widgets/pepites_carousel.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
 import '../../notifications/widgets/notification_renudge_banner.dart';
@@ -39,10 +35,7 @@ import '../widgets/closing_card_v18.dart';
 import '../widgets/flux_continu_article_card.dart';
 import '../widgets/my_interests_intro.dart';
 import '../widgets/my_interests_sheet.dart';
-import '../widgets/section_banner.dart';
 import '../widgets/section_block.dart';
-import '../widgets/section_divider_dotted.dart';
-import '../widgets/section_hairline.dart';
 import '../widgets/sticky_tab_bar.dart';
 import '../widgets/tournee_folded_group_card.dart';
 
@@ -53,13 +46,6 @@ const double _kStickyThreshold = 60.0;
 /// when scrolling a section into view so its banner doesn't disappear
 /// behind the bar.
 const double _kStickyBarHeight = 100.0;
-
-/// Extra lookahead (px) before the Explorer banner reaches the sticky bottom
-/// at which we flip to Explorer mode — makes the "Flâner" tab activate earlier.
-const double _kExploreLeadPx = 120.0;
-
-/// Distance to the bottom (in px) before we trigger the next feed page.
-const double _kLoadMoreLeadingPx = 800.0;
 
 /// Minimum delta (px) before the scroll-up FAB toggles, to avoid flicker
 /// on tiny inertia bounces. Matches the legacy FeedScreen behaviour.
@@ -87,17 +73,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   final ValueNotifier<bool> _stickyVisible = ValueNotifier(false);
   final ValueNotifier<double> _scrollProgress = ValueNotifier(0);
   final ValueNotifier<int> _activeIndex = ValueNotifier(0);
-  final ValueNotifier<bool> _isInExploreMode = ValueNotifier(false);
 
   /// Controls whether the « Tournée du jour ✓ » group toggle is expanded.
-  /// Resets to [false] (collapsed) on app pause and when opening an article
-  /// from Flâner — per spec, the grouping re-appears on quit-and-return.
+  /// Resets to [false] (collapsed) on app pause.
   final ValueNotifier<bool> _tourneeGroupExpanded = ValueNotifier(false);
 
-  final GlobalKey _closingKey = GlobalKey();
-  final GlobalKey _explorerKey = GlobalKey();
   final List<GlobalKey> _sectionKeys = [];
-  bool _loadingMore = false;
 
   /// Articles swipe-dismissed and replaced by a [FeedbackInline] banner at
   /// the same position. The hide API has already fired (via
@@ -133,7 +114,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     _stickyVisible.dispose();
     _scrollProgress.dispose();
     _activeIndex.dispose();
-    _isInExploreMode.dispose();
     _tourneeGroupExpanded.dispose();
     _pullHintTimer?.cancel();
     super.dispose();
@@ -160,23 +140,15 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     if (_stickyVisible.value != showSticky) {
       _stickyVisible.value = showSticky;
     }
-    // Progress is bounded by the end of the "Tournée" zone (just before the
-    // Explorer banner), not by the full scroll extent — once the user reaches
-    // Explorer, the Tournée is conceptually complete, so the bar stays full.
-    final tourneEnd = _explorerScrollOffset();
-    final nextProgress = tourneEnd > 0
-        ? (currentScroll / tourneEnd).clamp(0.0, 1.0).toDouble()
+    final maxExtent = pos.maxScrollExtent;
+    final nextProgress = maxExtent > 0
+        ? (currentScroll / maxExtent).clamp(0.0, 1.0).toDouble()
         : 0.0;
     if (_scrollProgress.value != nextProgress) {
       _scrollProgress.value = nextProgress;
     }
-    // Explore-mode flag must be refreshed before the active-section pass: the
-    // sticky's "Explorer" virtual tab is selected from that flag, and we want
-    // the same frame the user crosses the banner to swap to it.
-    _updateExploreMode();
     _updateActiveSection();
     _maybeFoldSections();
-    _maybeDismissClosingCard();
 
     if (currentScroll > _maxScrollDepthPx) {
       _maxScrollDepthPx = currentScroll;
@@ -203,8 +175,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
 
     // Pull-to-refresh hint pill — discoverability cue when the user scrolls
     // back to the very top after browsing deep. Never triggers a refresh.
-    final scrollingUp =
-        pos.userScrollDirection == ScrollDirection.forward;
+    final scrollingUp = pos.userScrollDirection == ScrollDirection.forward;
     if (scrollingUp &&
         currentScroll < 20 &&
         _maxScrollDepthPx >= _kPullHintMinDepthPx) {
@@ -219,46 +190,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
         });
       }
     }
-
-    if (pos.maxScrollExtent - currentScroll < _kLoadMoreLeadingPx &&
-        !_loadingMore) {
-      _loadingMore = true;
-      ref
-          .read(feedProvider.notifier)
-          .loadMore()
-          .whenComplete(() => _loadingMore = false);
-    }
-  }
-
-  /// Absolute scroll offset (in pixels) at which the Explorer banner reaches
-  /// the bottom of the sticky bar. Used to bound the "Tournée" progress so
-  /// the bar reads 100% the moment the user lands on Explorer (and stays
-  /// pinned at 100% while scrolling Explorer). Falls back to the full extent
-  /// before the banner has been laid out.
-  double _explorerScrollOffset() {
-    if (!_scroll.hasClients) return 1.0;
-    final maxExtent = _scroll.position.maxScrollExtent;
-    final ctx = _explorerKey.currentContext;
-    if (ctx == null) return maxExtent;
-    final box = ctx.findRenderObject();
-    if (box is! RenderBox || !box.attached) return maxExtent;
-    final globalDy = box.localToGlobal(Offset.zero).dy;
-    return (_scroll.position.pixels + globalDy - _kStickyBarHeight)
-        .clamp(1.0, maxExtent);
-  }
-
-  /// Flips the sticky overlay from the editorial tab bar to the feed filter
-  /// bar once the user crosses the Explorer banner.
-  void _updateExploreMode() {
-    final ctx = _explorerKey.currentContext;
-    if (ctx == null) return;
-    final box = ctx.findRenderObject();
-    if (box is! RenderBox || !box.attached) return;
-    final topY = box.localToGlobal(Offset.zero).dy;
-    final shouldExplore = topY < _kStickyBarHeight + _kExploreLeadPx;
-    if (_isInExploreMode.value != shouldExplore) {
-      _isInExploreMode.value = shouldExplore;
-    }
   }
 
   /// Records sections that have fully scrolled above the viewport, **without
@@ -266,10 +197,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   void _maybeFoldSections() {
     final value = ref.read(fluxContinuProvider).valueOrNull;
     if (value == null) return;
-    final count =
-        value.sections.length < _sectionKeys.length
-            ? value.sections.length
-            : _sectionKeys.length;
+    final count = value.sections.length < _sectionKeys.length
+        ? value.sections.length
+        : _sectionKeys.length;
     final notifier = ref.read(fluxContinuProvider.notifier);
     for (var i = 0; i < count; i++) {
       final section = value.sections[i];
@@ -286,32 +216,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     }
   }
 
-  void _maybeDismissClosingCard() {
-    final value = ref.read(fluxContinuProvider).valueOrNull;
-    if (value == null || value.closingDismissed) return;
-    final ctx = _closingKey.currentContext;
-    if (ctx == null) return;
-    final box = ctx.findRenderObject();
-    if (box is! RenderBox || !box.attached) return;
-    final bottom = box.localToGlobal(Offset.zero).dy + box.size.height;
-    if (bottom < -32) {
-      ref.read(fluxContinuProvider.notifier).markClosingDismissedForNextSession();
-    }
-  }
-
   void _updateActiveSection() {
-    // Explorer is rendered as the last virtual tab in the sticky overlay.
-    // Once the user crosses the Explorer banner, that tab takes precedence
-    // over the editorial active-section measurement so the sticky reflects
-    // the zone the user is actually browsing.
-    if (_isInExploreMode.value) {
-      final exploreIndex = _sectionKeys.length;
-      if (_activeIndex.value != exploreIndex) {
-        _activeIndex.value = exploreIndex;
-        _alignTabsToActive(exploreIndex);
-      }
-      return;
-    }
     if (_sectionKeys.isEmpty) return;
     // Active = section that occupies the most visible area below the sticky
     // bar. The previous heuristic ("last section whose top has crossed
@@ -320,7 +225,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     // dominance flips the active tab as soon as the next section becomes
     // majority-visible, which matches what the user is actually reading.
     const viewportTop = _kStickyBarHeight;
-    final viewportBottom = viewportTop +
+    final viewportBottom =
+        viewportTop +
         (_scroll.hasClients ? _scroll.position.viewportDimension : 0.0);
     int activeAt = 0;
     double bestVisible = -1;
@@ -347,49 +253,36 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
 
   void _alignTabsToActive(int index) {
     if (!_tabsScroll.hasClients) return;
-    // Explorer is the virtual tab appended after every real section; pin it
-    // to the right edge so the sticky bar visibly bottoms out instead of
-    // leaving trailing whitespace when the user reaches the last zone.
-    final bool isLastTab = index >= _sectionKeys.length;
     void doScroll() {
       if (!_tabsScroll.hasClients) return;
       final maxExtent = _tabsScroll.position.maxScrollExtent;
-      final double target;
-      if (isLastTab) {
-        target = maxExtent;
-      } else {
-        const double estimatedTabWidth = 140.0;
-        const double leftPadding = 12.0;
-        target =
-            (index * estimatedTabWidth - leftPadding).clamp(0.0, maxExtent);
-      }
+      const double estimatedTabWidth = 140.0;
+      const double leftPadding = 12.0;
+      final target = (index * estimatedTabWidth - leftPadding).clamp(
+        0.0,
+        maxExtent,
+      );
       _tabsScroll.animateTo(
         target,
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOutCubic,
       );
     }
+
     doScroll();
-    if (isLastTab) {
-      // Second pass after layout — covers the case where the sticky bar has
-      // just appeared and `maxScrollExtent` hadn't been computed yet, so the
-      // first `animateTo(maxExtent)` resolved against a stale extent.
-      WidgetsBinding.instance.addPostFrameCallback((_) => doScroll());
-    }
   }
 
   Future<void> _scrollToSection(int index) async {
     if (index < 0) return;
-    // Last tab is the virtual "Explorer" entry — scrolls to its banner key.
-    final GlobalKey targetKey = index >= _sectionKeys.length
-        ? _explorerKey
-        : _sectionKeys[index];
+    if (index >= _sectionKeys.length) return;
+    final targetKey = _sectionKeys[index];
     final ctx = targetKey.currentContext;
     if (ctx == null) return;
     final box = ctx.findRenderObject();
     if (box is! RenderBox) return;
-    final scrollBox = _scroll.position.context.notificationContext
-        ?.findRenderObject() as RenderBox?;
+    final scrollBox =
+        _scroll.position.context.notificationContext?.findRenderObject()
+            as RenderBox?;
     if (scrollBox == null) {
       await Scrollable.ensureVisible(
         ctx,
@@ -400,9 +293,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     }
     final delta =
         box.localToGlobal(Offset.zero, ancestor: scrollBox).dy -
-            _kStickyBarHeight;
-    final target = (_scroll.offset + delta)
-        .clamp(0.0, _scroll.position.maxScrollExtent);
+        _kStickyBarHeight;
+    final target = (_scroll.offset + delta).clamp(
+      0.0,
+      _scroll.position.maxScrollExtent,
+    );
     await _scroll.animateTo(
       target,
       duration: const Duration(milliseconds: 700),
@@ -413,8 +308,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   /// Folds the Essentiel card then scrolls to [targetIndex]. The 50ms delay
   /// lets the fold settle so the scroll target's measured position is the
   /// post-fold one. Used by both "Tout l'essentiel" (scroll to Actus du
-  /// jour) and "Tous mes articles ↓" (scroll to Explorer banner via the
-  /// `targetIndex == _sectionKeys.length` branch of [_scrollToSection]).
+  /// jour) and "Tous mes articles ↓".
   Future<void> _foldEssentielAndScroll(
     EssentielSection essentiel,
     int targetIndex,
@@ -435,15 +329,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   }
 
   /// "Tous mes articles ↓" action of the Essentiel hi-fi card: folds the
-  /// card then scrolls all the way down to the "Explorer" banner. Reuses the
-  /// `index >= _sectionKeys.length` branch of [_scrollToSection], which
-  /// targets [_explorerKey] directly.
+  /// card then opens Flâner.
   Future<void> _skipEssentielToExplorer(EssentielSection essentiel) async {
     final notifier = ref.read(fluxContinuProvider.notifier);
     notifier.foldLocally(essentiel);
     await Future<void>.delayed(const Duration(milliseconds: 50));
     if (!mounted) return;
-    await _scrollToSection(_sectionKeys.length);
+    context.go(RoutePaths.flaner);
   }
 
   Future<void> _scrollToTop() async {
@@ -468,11 +360,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       setState(_pendingFeedback.clear);
     }
     if (_scroll.hasClients) {
-      unawaited(_scroll.animateTo(
-        0,
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeOutCubic,
-      ));
+      unawaited(
+        _scroll.animateTo(
+          0,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+        ),
+      );
     }
   }
 
@@ -481,10 +375,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   /// the cached items immediately rather than waiting on the provider.
   void _openThemeSection(BuildContext context, FeedThemeSection section) {
     final key = Uri.encodeComponent(sectionKey(section));
-    context.push(
-      '${RoutePaths.fluxContinu}/theme/$key',
-      extra: section,
-    );
+    context.push('${RoutePaths.fluxContinu}/theme/$key', extra: section);
   }
 
   /// Opens the dedicated full-page view for a [DigestTopicSection]
@@ -522,8 +413,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     String? openedContentId;
     if (article is DigestItem) {
       openedContentId = article.contentId;
-      await context
-          .push('${RoutePaths.fluxContinu}/content/${article.contentId}');
+      await context.push(
+        '${RoutePaths.fluxContinu}/content/${article.contentId}',
+      );
     } else if (article is Content) {
       openedContentId = article.id;
       await context.push(
@@ -532,21 +424,16 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       );
     } else if (article is EssentielArticle) {
       openedContentId = article.contentId;
-      await context
-          .push('${RoutePaths.fluxContinu}/content/${article.contentId}');
+      await context.push(
+        '${RoutePaths.fluxContinu}/content/${article.contentId}',
+      );
     } else {
       return;
     }
     if (!mounted) return;
-    // When the article was opened from Flâner (fromSection == null), collapse
-    // the group toggle so the user sees the « Tournée du jour ✓ » row on
-    // return — per spec.
-    if (fromSection == null) _tourneeGroupExpanded.value = false;
     // Mark the article as read in local state so the card immediately
     // shows the grey + check badge without waiting for a pull-to-refresh.
-    ref
-        .read(fluxContinuProvider.notifier)
-        .markArticleRead(openedContentId);
+    ref.read(fluxContinuProvider.notifier).markArticleRead(openedContentId);
     ref
         .read(fluxContinuProvider.notifier)
         .applyPendingFoldsToState(exceptKeys: exceptKeys);
@@ -556,8 +443,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       final delta = heightsBefore - heightsAfter;
       if (delta <= 0.5) return;
       final position = _scroll.position;
-      final corrected =
-          (position.pixels - delta).clamp(0.0, position.maxScrollExtent);
+      final corrected = (position.pixels - delta).clamp(
+        0.0,
+        position.maxScrollExtent,
+      );
       position.correctBy(corrected - position.pixels);
     });
   }
@@ -568,8 +457,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   double _measureFoldCandidateHeights(Set<String> exceptKeys) {
     final value = ref.read(fluxContinuProvider).valueOrNull;
     if (value == null) return 0.0;
-    final queued =
-        ref.read(fluxContinuProvider.notifier).persistQueuedSnapshot();
+    final queued = ref
+        .read(fluxContinuProvider.notifier)
+        .persistQueuedSnapshot();
     if (queued.isEmpty) return 0.0;
     final count = math.min(value.sections.length, _sectionKeys.length);
     double sum = 0.0;
@@ -591,8 +481,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final value = ref.read(fluxContinuProvider).valueOrNull;
     if (value == null) return;
     final notifier = ref.read(fluxContinuProvider.notifier);
-    final fromKey =
-        fromSection == null ? null : sectionKey(fromSection);
+    final fromKey = fromSection == null ? null : sectionKey(fromSection);
     if (fromKey == null) {
       for (final s in value.sections) {
         unawaited(notifier.markScrolledPastForNextSession(s));
@@ -631,7 +520,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
 
   void _trackFeedbackSubmit(String contentId, String feedbackType) {
     unawaited(
-      ref.read(analyticsServiceProvider).trackArticleFeedbackSubmitted(
+      ref
+          .read(analyticsServiceProvider)
+          .trackArticleFeedbackSubmitted(
             contentId: contentId,
             feedbackType: feedbackType,
             origin: 'flux_continu',
@@ -645,10 +536,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     FluxFeedbackChip chip,
   ) async {
     final state = ref.read(fluxContinuProvider).valueOrNull;
-    final feedItems =
-        ref.read(feedProvider).valueOrNull?.items ?? const <Content>[];
-    final article =
-        state == null ? null : _lookupArticle(state, feedItems, contentId);
+    final article = state == null ? null : _lookupArticle(state, contentId);
     switch (chip) {
       case FluxFeedbackChip.source:
         _trackFeedbackSubmit(contentId, 'less_source');
@@ -678,19 +566,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     }
   }
 
-  /// Finds an article in the current state by its content id, looking
-  /// across digest leads, theme items and the Explorer continuation
-  /// (sourced from `feedProvider`). Returns the raw [DigestItem] or
-  /// [Content] so the caller can route it through [articleToContent] for
-  /// the article sheet.
-  Object? _lookupArticle(
-    FluxContinuState state,
-    List<Content> exploreItems,
-    String contentId,
-  ) {
-    for (final c in exploreItems) {
-      if (c.id == contentId) return c;
-    }
+  /// Finds an article in the current state by its content id.
+  Object? _lookupArticle(FluxContinuState state, String contentId) {
     for (final s in state.sections) {
       switch (s) {
         case EssentielSection(:final articles):
@@ -716,6 +593,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final state = ref.watch(fluxContinuProvider);
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
+      bottomNavigationBar: const MainBottomNav(
+        current: MainBottomNavDestination.essentiel,
+      ),
       body: SafeArea(
         bottom: false,
         child: Stack(
@@ -724,8 +604,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
               loading: () => const LoadingView(),
               error: (e, _) => _ErrorView(
                 error: e,
-                onRetry: () =>
-                    ref.read(fluxContinuProvider.notifier).refresh(),
+                onRetry: () => ref.read(fluxContinuProvider.notifier).refresh(),
               ),
               data: (data) => _buildContent(context, data),
             ),
@@ -733,7 +612,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
               stickyVisible: _stickyVisible,
               scrollProgress: _scrollProgress,
               activeIndex: _activeIndex,
-              isInExploreMode: _isInExploreMode,
               stateProvider: fluxContinuProvider,
               onTapTab: _scrollToSection,
               tabsController: _tabsScroll,
@@ -747,8 +625,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                 child: AnimatedSlide(
                   duration: const Duration(milliseconds: 220),
                   curve: Curves.easeOutCubic,
-                  offset:
-                      _showScrollTopFab ? Offset.zero : const Offset(0, 1.6),
+                  offset: _showScrollTopFab
+                      ? Offset.zero
+                      : const Offset(0, 1.6),
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 220),
                     opacity: _showScrollTopFab ? 1.0 : 0.0,
@@ -783,18 +662,15 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final notifier = ref.read(fluxContinuProvider.notifier);
     final colors = context.facteurColors;
     final impressionSlot = ref.watch(firstImpressionSlotProvider);
-    final feedState = ref.watch(feedProvider).valueOrNull;
-    final keyword = ref.watch(feedProvider.notifier).selectedKeyword;
     final totalArticles = state.sections.fold<int>(
       0,
       (sum, s) => sum + s.totalCount,
     );
-    final exploreItems = _buildExploreItems(state, feedState);
-    final exploreCarousels = feedState?.carousels ?? const <FeedCarouselData>[];
 
     // When every editorial section is folded, the individual pile of
     // FoldedSectionCards is replaced by a single « Tournée du jour ✓ » toggle.
-    final allFolded = state.sections.isNotEmpty &&
+    final allFolded =
+        state.sections.isNotEmpty &&
         state.sections.every((s) => state.isFolded(s));
 
     if (_sectionKeys.length != state.sections.length) {
@@ -826,39 +702,42 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                   ),
                   Align(
                     alignment: Alignment.centerRight,
-                    child: Consumer(builder: (context, ref, _) {
-                      final hasUpdate = ref
-                              .watch(appUpdateProvider)
-                              .valueOrNull
-                              ?.updateAvailable ==
-                          true;
-                      final settingsButton = ProfileAvatarButton(
-                        onTap: () => context.push(RoutePaths.settings),
-                      );
-                      if (!hasUpdate) return settingsButton;
-                      return Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          settingsButton,
-                          Positioned(
-                            top: -2,
-                            right: -2,
-                            child: Container(
-                              width: 12,
-                              height: 12,
-                              decoration: BoxDecoration(
-                                color: colors.error,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: colors.backgroundPrimary,
-                                  width: 2,
+                    child: Consumer(
+                      builder: (context, ref, _) {
+                        final hasUpdate =
+                            ref
+                                .watch(appUpdateProvider)
+                                .valueOrNull
+                                ?.updateAvailable ==
+                            true;
+                        final settingsButton = ProfileAvatarButton(
+                          onTap: () => context.push(RoutePaths.settings),
+                        );
+                        if (!hasUpdate) return settingsButton;
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            settingsButton,
+                            Positioned(
+                              top: -2,
+                              right: -2,
+                              child: Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: colors.error,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: colors.backgroundPrimary,
+                                    width: 2,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ],
-                      );
-                    }),
+                          ],
+                        );
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -874,14 +753,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                 ? const WellInformedPrompt()
                 : const SizedBox.shrink(),
           ),
-          const SliverToBoxAdapter(
-            child: LettresNotificationBanner(),
-          ),
-          SliverToBoxAdapter(
-            child: (keyword == null || keyword.trim().isEmpty)
-                ? const SizedBox.shrink()
-                : FollowKeywordSuggestionCard(keyword: keyword),
-          ),
+          const SliverToBoxAdapter(child: LettresNotificationBanner()),
           // One SliverToBoxAdapter per section. Sections never resize during
           // a session (folds are deferred to the next cold launch), so the
           // simpler non-lazy adapter is sufficient and keeps the GlobalKey
@@ -948,35 +820,16 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
           SliverToBoxAdapter(
             child: state.closingDismissed
                 ? const SizedBox.shrink()
-                : KeyedSubtree(
-                    key: _closingKey,
-                    child: ClosingCardV18(
-                      articleCount: totalArticles,
-                      onContinue: () => notifier.markClosingDismissed(),
-                      onClose: () => notifier.markClosingDismissed(),
-                    ),
+                : ClosingCardV18(
+                    articleCount: totalArticles,
+                    onContinue: () async {
+                      await notifier.markClosingDismissed();
+                      if (context.mounted) context.go(RoutePaths.flaner);
+                    },
+                    onClose: () => notifier.markClosingDismissed(),
                   ),
           ),
-          const SliverToBoxAdapter(
-            child: SectionDividerDotted(label: 'Tous tes articles'),
-          ),
-          SliverToBoxAdapter(
-            child: KeyedSubtree(
-              key: _explorerKey,
-              child: const SectionBanner(
-                title: 'Flâner',
-                blurb:
-                    'Tous les articles de tes sources triés par récence, à consulter à ton rythme',
-                accent: Color(0xFF5D4037),
-                illustrationAsset: 'assets/notifications/facteur_bike.png',
-              ),
-            ),
-          ),
-          if (exploreItems.isNotEmpty) ...[
-            _buildIntercalatedFeed(context, exploreItems, exploreCarousels),
-            const SliverToBoxAdapter(child: SectionHairline()),
-          ],
-          const SliverToBoxAdapter(child: SizedBox(height: 60)),
+          const SliverToBoxAdapter(child: SizedBox(height: 92)),
         ],
       ),
     );
@@ -989,16 +842,15 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     required FluxContinuState state,
     required FluxContinuNotifier notifier,
   }) {
-    final firstFavoriteIndex =
-        state.sections.indexWhere(_isFavoriteSection);
-    final favoriteCount =
-        state.sections.where(_isFavoriteSection).length;
+    final firstFavoriteIndex = state.sections.indexWhere(_isFavoriteSection);
+    final favoriteCount = state.sections.where(_isFavoriteSection).length;
     final swipeLeftHintSeen =
         ref.watch(swipeLeftHintSeenProvider).valueOrNull ?? true;
     // When the user has consumed every editorial section, the inline
     // "Mes intérêts" intro reads as residual chrome — hide it so the
     // folded stack collapses tightly into the closing card.
-    final allFolded = state.sections.isNotEmpty &&
+    final allFolded =
+        state.sections.isNotEmpty &&
         state.sections.every((s) => state.isFolded(s));
 
     final slivers = <SliverToBoxAdapter>[];
@@ -1008,67 +860,70 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       // section above to separate from), absent altogether, or once every
       // section above has been folded (no editorial context left to break).
       if (i == firstFavoriteIndex && firstFavoriteIndex > 0 && !allFolded) {
-        slivers.add(SliverToBoxAdapter(
-          child: MyInterestsIntro(
-            favoriteCount: favoriteCount,
-            onTapManage: () => showMyInterestsBottomSheet(context),
+        slivers.add(
+          SliverToBoxAdapter(
+            child: MyInterestsIntro(
+              favoriteCount: favoriteCount,
+              onTapManage: () => showMyInterestsBottomSheet(context),
+            ),
           ),
-        ));
+        );
       }
       final section = state.sections[i];
       final isFavorite = _isFavoriteSection(section);
-      slivers.add(SliverToBoxAdapter(
-        child: KeyedSubtree(
-          key: _sectionKeys[i],
-          child: SectionBlock(
-            section: section,
-            isOpen: state.isOpen(section),
-            isFolded: state.isFolded(section),
-            onToggleMore: () => notifier.toggleMore(section),
-            onUnfold: () => notifier.unfoldLocally(section),
-            onFold: () => notifier.foldLocally(section),
-            onTapArticle: (a, s) =>
-                _openArticle(context, a, fromSection: s),
-            onDismissArticle: _onSwipeDismiss,
-            pendingFeedbackIds: _pendingFeedback,
-            onSelectFeedbackChip: (id, chip) =>
-                _onSelectFeedbackChip(context, id, chip),
-            onResolveFeedback: _resolveFeedback,
-            onUndoFeedback: _undoFeedback,
-            enableSwipeHintOnFirstCard: i == 0 && !swipeLeftHintSeen,
-            onSwipeHintComplete: () async {
-              await markSwipeLeftHintSeen();
-              if (mounted) ref.invalidate(swipeLeftHintSeenProvider);
-            },
-            onTapFavorite: isFavorite
-                ? () => showMyInterestsBottomSheet(context)
-                : null,
-            onSeeAll: section is FeedThemeSection
-                ? () => _openThemeSection(context, section)
-                : section is DigestTopicSection
-                    ? () => _openDigestSection(context, section)
-                    : null,
-            onTapExploreAll: section is EssentielSection
-                ? () => _exploreAllEssentiel(section, i)
-                : null,
-            onTapSeeAllDown: section is EssentielSection
-                ? () => _skipEssentielToExplorer(section)
-                : null,
-            isMarkedForNextSession: state.isMarkedForNextSession(section),
-            nextSectionAccent: i + 1 < state.sections.length
-                ? state.sections[i + 1].accent
-                : null,
-            nextSectionLabel: i + 1 < state.sections.length
-                ? state.sections[i + 1].label
-                : null,
-            onNextSection: (section is EssentielSection ||
-                    i >= state.sections.length - 1)
-                ? null
-                : () => _advanceToNextSection(section, i),
-
+      slivers.add(
+        SliverToBoxAdapter(
+          child: KeyedSubtree(
+            key: _sectionKeys[i],
+            child: SectionBlock(
+              section: section,
+              isOpen: state.isOpen(section),
+              isFolded: state.isFolded(section),
+              onToggleMore: () => notifier.toggleMore(section),
+              onUnfold: () => notifier.unfoldLocally(section),
+              onFold: () => notifier.foldLocally(section),
+              onTapArticle: (a, s) => _openArticle(context, a, fromSection: s),
+              onDismissArticle: _onSwipeDismiss,
+              pendingFeedbackIds: _pendingFeedback,
+              onSelectFeedbackChip: (id, chip) =>
+                  _onSelectFeedbackChip(context, id, chip),
+              onResolveFeedback: _resolveFeedback,
+              onUndoFeedback: _undoFeedback,
+              enableSwipeHintOnFirstCard: i == 0 && !swipeLeftHintSeen,
+              onSwipeHintComplete: () async {
+                await markSwipeLeftHintSeen();
+                if (mounted) ref.invalidate(swipeLeftHintSeenProvider);
+              },
+              onTapFavorite: isFavorite
+                  ? () => showMyInterestsBottomSheet(context)
+                  : null,
+              onSeeAll: section is FeedThemeSection
+                  ? () => _openThemeSection(context, section)
+                  : section is DigestTopicSection
+                  ? () => _openDigestSection(context, section)
+                  : null,
+              onTapExploreAll: section is EssentielSection
+                  ? () => _exploreAllEssentiel(section, i)
+                  : null,
+              onTapSeeAllDown: section is EssentielSection
+                  ? () => _skipEssentielToExplorer(section)
+                  : null,
+              isMarkedForNextSession: state.isMarkedForNextSession(section),
+              nextSectionAccent: i + 1 < state.sections.length
+                  ? state.sections[i + 1].accent
+                  : null,
+              nextSectionLabel: i + 1 < state.sections.length
+                  ? state.sections[i + 1].label
+                  : null,
+              onNextSection:
+                  (section is EssentielSection ||
+                      i >= state.sections.length - 1)
+                  ? null
+                  : () => _advanceToNextSection(section, i),
+            ),
           ),
         ),
-      ));
+      );
     }
     return slivers;
   }
@@ -1080,9 +935,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   /// expanded banner rather than a collapsed card.
   Future<void> _advanceToNextSection(FluxSection section, int index) async {
     unawaited(HapticFeedback.lightImpact());
-    unawaited(ref
-        .read(fluxContinuProvider.notifier)
-        .markScrolledPastForNextSession(section));
+    unawaited(
+      ref
+          .read(fluxContinuProvider.notifier)
+          .markScrolledPastForNextSession(section),
+    );
     final state = ref.read(fluxContinuProvider).valueOrNull;
     final nextIdx = index + 1;
     if (state != null && nextIdx < state.sections.length) {
@@ -1099,140 +956,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     if (!mounted) return;
     await _scrollToSection(nextIdx);
   }
-
-  /// "Fin de tournée — Flâner" tap handler for the last Tournée section.
-  /// Marks every editorial section as consumed for the next session and
-  /// smooth-scrolls to the Flâner banner.
-  Future<void> _endOfTournee() async {
-    unawaited(HapticFeedback.lightImpact());
-    final state = ref.read(fluxContinuProvider).valueOrNull;
-    if (state != null) {
-      final notifier = ref.read(fluxContinuProvider.notifier);
-      for (final s in state.sections) {
-        unawaited(notifier.markScrolledPastForNextSession(s));
-      }
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    if (!mounted) return;
-    await _scrollToSection(_sectionKeys.length);
-  }
-
-  /// Builds the Explorer feed list by reading from `feedProvider` and filtering
-  /// out (a) articles already rendered above and (b) ids swipe-dismissed
-  /// during this session. Keeps the Tournée / Explorer dedup invariant while
-  /// letting the filter chips drive the underlying list.
-  List<Content> _buildExploreItems(
-    FluxContinuState state,
-    FeedState? feedState,
-  ) {
-    final items = feedState?.items ?? const <Content>[];
-    if (items.isEmpty) return const [];
-    final rendered = renderedContentIds(state.sections);
-    final dismissed = state.dismissedIds;
-    if (rendered.isEmpty && dismissed.isEmpty) return items;
-    return items
-        .where((c) => !rendered.contains(c.id) && !dismissed.contains(c.id))
-        .toList(growable: false);
-  }
-
-  Widget _buildIntercalatedFeed(
-    BuildContext context,
-    List<Content> contents,
-    List<FeedCarouselData> carousels,
-  ) {
-    final intercalations = <({int position, Widget Function() builder})>[];
-
-    if (contents.length > 4) {
-      intercalations.add((
-        position: 4,
-        builder: () => const Padding(
-          key: ValueKey('flux_continu_pepites'),
-          padding: EdgeInsets.only(bottom: 12),
-          child: PepitesCarousel(),
-        ),
-      ));
-    }
-
-    for (final carousel in carousels) {
-      if (carousel.items.isEmpty || carousel.position >= contents.length) {
-        continue;
-      }
-      intercalations.add((
-        position: carousel.position,
-        builder: () => Padding(
-          key: ValueKey('flux_continu_carousel_${carousel.carouselType}'),
-          padding: const EdgeInsets.only(bottom: 12),
-          child: FeedCarousel(
-            data: carousel,
-            onArticleTap: (c) => _openArticle(context, c, fromSection: null),
-            onLongPressStart: (c, _) => ArticlePreviewOverlay.show(context, c),
-            onLongPressMoveUpdate: (details) =>
-                ArticlePreviewOverlay.updateScroll(
-                    details.localOffsetFromOrigin.dy),
-            onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-          ),
-        ),
-      ));
-    }
-
-    intercalations.sort((a, b) => a.position.compareTo(b.position));
-
-    return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (context, listIndex) {
-          int offset = 0;
-          for (final inter in intercalations) {
-            final effective = inter.position + offset;
-            if (listIndex == effective) return inter.builder();
-            if (listIndex > effective) offset++;
-          }
-          final articleIndex = listIndex - offset;
-          if (articleIndex < 0 || articleIndex >= contents.length) return null;
-          final article = contents[articleIndex];
-          if (_pendingFeedback.contains(article.id)) {
-            return Padding(
-              key: ValueKey('flux_feedback_${article.id}'),
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: FeedbackInline(
-                onSelectSource: () => _onSelectFeedbackChip(
-                    context, article.id, FluxFeedbackChip.source),
-                onSelectTopic: () => _onSelectFeedbackChip(
-                    context, article.id, FluxFeedbackChip.topic),
-                onSelectAlreadySeen: () => _onSelectFeedbackChip(
-                    context, article.id, FluxFeedbackChip.alreadySeen),
-                onUndo: () => _undoFeedback(article.id),
-                onClose: () => _resolveFeedback(article.id),
-              ),
-            );
-          }
-          return FluxContinuArticleCard(
-            article: article,
-            onTap: () => _openArticle(context, article, fromSection: null),
-            onSwipeDismiss: () => _onSwipeDismiss(article.id),
-          );
-        },
-        childCount: contents.length + intercalations.length,
-      ),
-    );
-  }
 }
-
-/// Sticky overlay shown at the top of the screen once the user scrolls past
-/// the AppBar threshold. Always hosts the editorial tab bar — the "Explorer"
-/// virtual tab is appended at the end so the same bar covers the whole
-/// screen instead of swapping out when the user crosses the Explorer banner.
-/// When the user is in Explorer mode, [FeedFilterBar] morphs in under the
-/// tabs (within the same parchment surface) so filtering stays available.
-const String _kExplorerLabel = 'Flâner';
-const Color _kExplorerAccent = Color(0xFF5D4037);
 
 class _StickyHostOverlay extends ConsumerWidget {
   final ValueNotifier<bool> stickyVisible;
   final ValueNotifier<double> scrollProgress;
   final ValueNotifier<int> activeIndex;
-  final ValueNotifier<bool> isInExploreMode;
   final AsyncNotifierProvider<FluxContinuNotifier, FluxContinuState>
-      stateProvider;
+  stateProvider;
   final ValueChanged<int> onTapTab;
   final ScrollController tabsController;
 
@@ -1240,7 +971,6 @@ class _StickyHostOverlay extends ConsumerWidget {
     required this.stickyVisible,
     required this.scrollProgress,
     required this.activeIndex,
-    required this.isInExploreMode,
     required this.stateProvider,
     required this.onTapTab,
     required this.tabsController,
@@ -1249,8 +979,7 @@ class _StickyHostOverlay extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sections =
-        ref.watch(stateProvider).valueOrNull?.sections ??
-            const <FluxSection>[];
+        ref.watch(stateProvider).valueOrNull?.sections ?? const <FluxSection>[];
     return Positioned(
       top: 0,
       left: 0,
@@ -1265,23 +994,19 @@ class _StickyHostOverlay extends ConsumerWidget {
           final tabs = <StickyTab>[
             for (final s in sections)
               StickyTab(label: s.label, accent: s.accent),
-            const StickyTab(label: _kExplorerLabel, accent: _kExplorerAccent),
           ];
-          return ValueListenableBuilder<bool>(
-            valueListenable: isInExploreMode,
-            builder: (context, explore, _) => ValueListenableBuilder<int>(
-              valueListenable: activeIndex,
-              builder: (context, idx, _) => ValueListenableBuilder<double>(
-                valueListenable: scrollProgress,
-                builder: (context, progress, _) => StickyTabBar(
-                  tabs: tabs,
-                  activeIndex: idx.clamp(0, tabs.length - 1),
-                  progress: progress,
-                  onTapTab: onTapTab,
-                  tabsController: tabsController,
-                  title: explore ? _kExplorerLabel : 'Tournée du jour',
-                  showFilterBar: explore,
-                ),
+          return ValueListenableBuilder<int>(
+            valueListenable: activeIndex,
+            builder: (context, idx, _) => ValueListenableBuilder<double>(
+              valueListenable: scrollProgress,
+              builder: (context, progress, _) => StickyTabBar(
+                tabs: tabs,
+                activeIndex: idx.clamp(0, tabs.length - 1),
+                progress: progress,
+                onTapTab: onTapTab,
+                tabsController: tabsController,
+                title: 'Tournée du jour',
+                showFilterBar: false,
               ),
             ),
           );
@@ -1296,8 +1021,7 @@ class _ScrollToTopButton extends StatelessWidget {
 
   const _ScrollToTopButton({required this.onTap});
 
-  static const _kRadius =
-      BorderRadius.all(Radius.circular(22));
+  static const _kRadius = BorderRadius.all(Radius.circular(22));
 
   @override
   Widget build(BuildContext context) {
@@ -1474,21 +1198,17 @@ class _ErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.cloud_off_rounded,
-                size: 48, color: colors.textTertiary),
+            Icon(Icons.cloud_off_rounded, size: 48, color: colors.textTertiary),
             const SizedBox(height: FacteurSpacing.space3),
             Text(
               'Le flux continu est indisponible.',
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: colors.textSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(color: colors.textSecondary),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: FacteurSpacing.space4),
-            OutlinedButton(
-              onPressed: onRetry,
-              child: const Text('Réessayer'),
-            ),
+            OutlinedButton(onPressed: onRetry, child: const Text('Réessayer')),
           ],
         ),
       ),
@@ -1511,16 +1231,13 @@ class _EmptySectionsHint extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'Pas encore de contenu pour la tournée du jour.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 12),
-          TextButton(
-            onPressed: onRetry,
-            child: const Text('Recharger'),
-          ),
+          TextButton(onPressed: onRetry, child: const Text('Recharger')),
         ],
       ),
     );

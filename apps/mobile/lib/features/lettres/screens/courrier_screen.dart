@@ -24,9 +24,11 @@ class CourrierScreen extends ConsumerWidget {
       backgroundColor: colors.backgroundPrimary,
       body: state.when(
         loading: () => const _Loader(),
-        error: (e, _) => _ErrorView(onRetry: () {
-          ref.read(lettersProvider.notifier).refresh();
-        }),
+        error: (e, _) => _ErrorView(
+          onRetry: () {
+            ref.read(lettersProvider.notifier).refresh();
+          },
+        ),
         data: (data) => _Body(state: data),
       ),
     );
@@ -209,7 +211,7 @@ class _TopBar extends StatelessWidget {
               if (Navigator.of(context).canPop()) {
                 Navigator.of(context).pop();
               } else {
-                context.go(RoutePaths.feed);
+                context.go(RoutePaths.flaner);
               }
             },
             tooltip: 'Retour',
@@ -255,10 +257,7 @@ class _SectionHeader extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Container(
-              height: 1,
-              color: Colors.black.withOpacity(0.08),
-            ),
+            child: Container(height: 1, color: Colors.black.withOpacity(0.08)),
           ),
         ],
       ),

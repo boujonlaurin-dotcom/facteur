@@ -49,22 +49,22 @@ void main() {
       expect(action.route, '/flux-continu');
     });
 
-    test('feed host → flux continu (FeedScreen supprimé)', () {
+    test('feed host → flâner (FeedScreen supprimé)', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://feed'),
       );
       expect(action.target, WidgetDeepLinkTarget.feed);
-      expect(action.route, '/flux-continu');
+      expect(action.route, '/flaner');
     });
 
-    test('feed/content/<id> → article reader (Flux deep link)', () {
+    test('feed/content/<id> → article reader (Flâner deep link)', () {
       final action = DeepLinkService.parse(
         Uri.parse(
           'io.supabase.facteur://feed/content/abc-123?pos=4&topicId=tech',
         ),
       );
       expect(action.target, WidgetDeepLinkTarget.article);
-      expect(action.route, '/flux-continu/content/abc-123');
+      expect(action.route, '/flaner/content/abc-123');
       expect(action.articleId, 'abc-123');
       expect(action.position, 4);
       expect(action.topicId, 'tech');
@@ -77,17 +77,17 @@ void main() {
         Uri.parse('io.supabase.facteur:///feed/content/abc-123?pos=7'),
       );
       expect(action.target, WidgetDeepLinkTarget.article);
-      expect(action.route, '/flux-continu/content/abc-123');
+      expect(action.route, '/flaner/content/abc-123');
       expect(action.articleId, 'abc-123');
       expect(action.position, 7);
     });
 
-    test('feed/content/ (id missing) falls back to flux continu', () {
+    test('feed/content/ (id missing) falls back to flâner', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://feed/content/'),
       );
       expect(action.target, WidgetDeepLinkTarget.feed);
-      expect(action.route, '/flux-continu');
+      expect(action.route, '/flaner');
     });
 
     test('login-callback URI is ignored (handled by Supabase SDK)', () {

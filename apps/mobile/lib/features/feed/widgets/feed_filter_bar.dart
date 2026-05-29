@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
-import '../../flux_continu/providers/flux_continu_provider.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../providers/feed_provider.dart';
 import '../providers/tab_counts_provider.dart';
@@ -27,8 +26,13 @@ import 'search_filter_sheet.dart';
 /// them here behind optional callbacks rather than duplicating the logic.
 class FeedFilterBar extends ConsumerStatefulWidget {
   final VoidCallback? onAfterChange;
+  final List<String> excludedThemeSlugs;
 
-  const FeedFilterBar({super.key, this.onAfterChange});
+  const FeedFilterBar({
+    super.key,
+    this.onAfterChange,
+    this.excludedThemeSlugs = const [],
+  });
 
   @override
   ConsumerState<FeedFilterBar> createState() => _FeedFilterBarState();
@@ -50,11 +54,6 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
     final feedItems =
         ref.watch(feedProvider).valueOrNull?.items ?? const <dynamic>[];
     final serverCounts = ref.watch(tabCountsProvider).valueOrNull;
-    final tourneeSlugs = ref
-            .watch(fluxContinuProvider)
-            .valueOrNull
-            ?.tourneeThemeSlugs ??
-        const <String>[];
     return FilterCollapsiblePanel(
       activeCount: selection.activeCount,
       chipsRow: _buildChipsRow(context, selection),
@@ -64,7 +63,7 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
         selectedTopicSlug: selection.topic,
         selectedThemeSlug: selection.theme,
         selectedEntitySlug: selection.entity,
-        excludedThemeSlugs: tourneeSlugs,
+        excludedThemeSlugs: widget.excludedThemeSlugs,
         onTabTap: (kind, slug) async {
           // Sheet owns this override ; clear it so the chip label rebuilds
           // from the tapped tab's name on next layout.
@@ -101,8 +100,12 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
             currentTopicSlug:
                 selection.topic ?? selection.theme ?? selection.entity,
             currentIsTheme: selection.theme != null,
-            onInterestSelected:
-                (slug, name, {bool isTheme = false, bool isEntity = false}) async {
+            onInterestSelected: (
+              slug,
+              name, {
+              bool isTheme = false,
+              bool isEntity = false,
+            }) async {
               setState(() {
                 _selectedInterestNameOverride = name;
               });
@@ -188,8 +191,12 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
             selectedName: _selectedInterestNameOverride,
             selectedIsTheme: selectedIsTheme,
             discreet: true,
-            onInterestChanged: (slug, name,
-                {bool isTheme = false, bool isEntity = false}) async {
+            onInterestChanged: (
+              slug,
+              name, {
+              bool isTheme = false,
+              bool isEntity = false,
+            }) async {
               setState(() {
                 _selectedInterestNameOverride = name;
               });
@@ -271,8 +278,10 @@ class _SearchTrigger extends StatelessWidget {
                 behavior: HitTestBehavior.opaque,
                 onTap: onClear,
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 8,
+                  ),
                   child: Icon(
                     PhosphorIcons.x(PhosphorIconsStyle.bold),
                     size: 13,
