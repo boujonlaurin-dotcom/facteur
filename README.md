@@ -71,6 +71,12 @@ Documentation complète de l'architecture data pour les ingénieurs data/backend
 - **Services** : Supabase (Auth/DB), RevenueCat (Paiements).
 - **Déploiement** : Railway.
 
+## 📄 Licence
+
+Le code de Facteur est disponible sous licence `PolyForm Noncommercial 1.0.0`.
+
+Tout usage commercial requiert un accord de licence séparé. Contact : `laurin_boujon@proton.me`.
+
 ---
 
 *Propulsé par la méthode BMAD.*
