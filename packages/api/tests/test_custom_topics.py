@@ -601,9 +601,9 @@ class TestRecencyBaseAdjustment:
         """Verify recency_base has been raised to 100 (Epic 11)."""
         assert ScoringWeights.recency_base == 100.0
 
-    def test_custom_topic_base_bonus_is_15(self):
-        """Verify CUSTOM_TOPIC_BASE_BONUS is set."""
-        assert ScoringWeights.CUSTOM_TOPIC_BASE_BONUS == 15.0
+    def test_custom_topic_base_bonus_is_25(self):
+        """Verify CUSTOM_TOPIC_BASE_BONUS is set (bumped 15→25 for top3 thematic)."""
+        assert ScoringWeights.CUSTOM_TOPIC_BASE_BONUS == 25.0
 
 
 # ============================================================

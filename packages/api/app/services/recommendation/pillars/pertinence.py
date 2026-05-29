@@ -6,6 +6,7 @@ Consolide : CoreLayer (theme), ArticleTopicLayer, BehavioralLayer,
 
 from app.models.content import Content
 from app.models.enums import ContentType, InterestState
+from app.services.recommendation.helpers import compute_coverage_score
 from app.services.recommendation.pillars.base import BasePillar, PillarContribution
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import ScoringContext
@@ -155,6 +156,15 @@ class PertinencePillar(BasePillar):
         score += format_result[0]
         contributions.extend(format_result[1])
 
+        # --- 5b. Coverage Bonus (multi-sources sur même cluster) ---
+        # Un sujet relayé par plusieurs médias distincts dans les 24h dernières
+        # est plus probablement "l'essentiel" que les 3 articles standalone
+        # de la même section. Signal capé pour ne pas écraser la pertinence
+        # thématique (max +30 sur un base pertinence ~130).
+        coverage_result = self._score_coverage(content, context)
+        score += coverage_result[0]
+        contributions.extend(coverage_result[1])
+
         # --- 6. Theme Mismatch Malus ---
         # Léger désavantage pour les articles hors des thèmes/sous-thèmes suivis,
         # sans les exclure. Ne s'applique qu'aux utilisateurs ayant déclaré des
@@ -166,6 +176,32 @@ class PertinencePillar(BasePillar):
         contributions.extend(mismatch_result[1])
 
         return score, contributions
+
+    def _score_coverage(
+        self, content: Content, context: ScoringContext
+    ) -> tuple[float, list[PillarContribution]]:
+        """Bonus log-calibré pour les clusters multi-sources.
+
+        `cluster_source_counts` est rempli en mode thématique personnalisé ;
+        sinon (cold start, autres surfaces) on n'a aucun coût ni effet.
+        """
+        cluster_id = getattr(content, "cluster_id", None)
+        if cluster_id is None or not context.cluster_source_counts:
+            return 0.0, []
+
+        source_count = context.cluster_source_counts.get(cluster_id, 1)
+        bonus = compute_coverage_score(source_count)
+        if bonus <= 0:
+            return 0.0, []
+
+        # is_trending = ≥3 sources distinctes (définition partagée avec
+        # ImportanceDetector). On l'expose comme contribution dédiée pour
+        # l'explicabilité ; le bonus de couverture reste log-calibré.
+        if source_count >= 3:
+            label = f"Couvert par {source_count} sources"
+        else:
+            label = "Sujet relayé"
+        return bonus, [PillarContribution(label=label, points=bonus)]
 
     def _score_theme_mismatch(
         self,
