@@ -41,6 +41,44 @@ import '../core/services/deep_link_service.dart';
 import '../core/ui/notification_service.dart';
 import '../shared/widgets/navigation/modal_bottom_sheet_page.dart';
 
+/// Onglet de bottom-nav affiché en dernier (Essentiel = 0, Flâner = 1).
+///
+/// Suivi au niveau module pour que la transition directionnelle entre onglets
+/// reste correcte quel que soit le chemin de navigation (tap footer, closing
+/// card, redirect, resume), et pas seulement sur un tap explicite du footer.
+int _lastMainTabIndex = 0;
+
+/// Construit la page d'un onglet principal avec une transition latérale
+/// directionnelle : l'onglet cible glisse depuis la gauche quand on avance vers
+/// la droite (Essentiel → Flâner) et depuis la droite quand on recule vers la
+/// gauche (Flâner → Essentiel). Sur le même onglet (delta nul) → simple fondu.
+CustomTransitionPage<void> _mainTabPage({
+  required LocalKey key,
+  required int tabIndex,
+  required Widget child,
+}) {
+  final delta = tabIndex - _lastMainTabIndex;
+  _lastMainTabIndex = tabIndex;
+  return CustomTransitionPage<void>(
+    key: key,
+    transitionDuration: const Duration(milliseconds: 260),
+    reverseTransitionDuration: const Duration(milliseconds: 260),
+    transitionsBuilder: (context, animation, secondaryAnimation, page) {
+      if (delta == 0) {
+        return FadeTransition(opacity: animation, child: page);
+      }
+      final begin = delta > 0 ? const Offset(-1, 0) : const Offset(1, 0);
+      return SlideTransition(
+        position: Tween<Offset>(begin: begin, end: Offset.zero).animate(
+          CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+        ),
+        child: page,
+      );
+    },
+    child: child,
+  );
+}
+
 /// Noms des routes
 class RouteNames {
   RouteNames._();
@@ -254,8 +292,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePaths.fluxContinu,
         name: RouteNames.fluxContinu,
-        builder: (context, state) =>
-            const Stack(children: [FluxContinuScreen(), NudgeHost()]),
+        pageBuilder: (context, state) => _mainTabPage(
+          key: state.pageKey,
+          tabIndex: 0,
+          child: const Stack(children: [FluxContinuScreen(), NudgeHost()]),
+        ),
         routes: [
           GoRoute(
             path: 'content/:id',
@@ -309,8 +350,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePaths.flaner,
         name: RouteNames.flaner,
-        builder: (context, state) =>
-            const Stack(children: [FlanerScreen(), NudgeHost()]),
+        pageBuilder: (context, state) => _mainTabPage(
+          key: state.pageKey,
+          tabIndex: 1,
+          child: const Stack(children: [FlanerScreen(), NudgeHost()]),
+        ),
         routes: [
           GoRoute(
             path: 'content/:id',

@@ -48,8 +48,8 @@ class SectionBanner extends StatelessWidget {
     const topRadius = BorderRadius.vertical(top: Radius.circular(10));
     final container = Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(0, 4, 0, 6),
-      constraints: const BoxConstraints(minHeight: 96),
+      margin: const EdgeInsets.fromLTRB(0, 3, 0, 5),
+      constraints: const BoxConstraints(minHeight: 84),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: topRadius,
@@ -99,7 +99,7 @@ class SectionBanner extends StatelessWidget {
               ),
             ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 14, 14),
+            padding: const EdgeInsets.fromLTRB(20, 10, 14, 11),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -126,7 +126,7 @@ class SectionBanner extends StatelessWidget {
                                     ),
                                   ],
                             style: GoogleFonts.fraunces(
-                              fontSize: 21,
+                              fontSize: 20,
                               fontWeight: FontWeight.w700,
                               height: 1.06,
                               letterSpacing: -0.4,
@@ -150,8 +150,8 @@ class SectionBanner extends StatelessWidget {
                 if (illustrationAsset != null) ...[
                   const SizedBox(width: 12),
                   SizedBox(
-                    width: 78,
-                    height: 78,
+                    width: 70,
+                    height: 70,
                     child: IgnorePointer(
                       child: ShaderMask(
                         blendMode: BlendMode.dstIn,
@@ -165,10 +165,10 @@ class SectionBanner extends StatelessWidget {
                           opacity: 0.72,
                           child: Image.asset(
                             illustrationAsset!,
-                            height: 78,
+                            height: 70,
                             // Source PNGs are 1024² — decode at 2× display
                             // height to keep texture memory bounded.
-                            cacheHeight: 156,
+                            cacheHeight: 140,
                             fit: BoxFit.contain,
                             errorBuilder: (_, __, ___) =>
                                 const SizedBox.shrink(),

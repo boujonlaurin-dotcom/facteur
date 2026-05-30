@@ -9,6 +9,7 @@ import 'core/auth/auth_state.dart';
 import 'core/providers/analytics_provider.dart';
 import 'core/services/deep_link_service.dart';
 import 'core/services/widget_service.dart';
+import 'features/feed/providers/feed_preload_provider.dart';
 import 'features/feed/providers/feed_provider.dart';
 import 'features/flux_continu/providers/flux_continu_preload_provider.dart';
 import 'features/flux_continu/services/tournee_progress_service.dart';
@@ -134,6 +135,11 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     // GoRouter's splash → /flux-continu redirect. Cuts ~1-2s off the cold
     // open path.
     ref.watch(fluxContinuPreloadProvider);
+
+    // Idem pour l'onglet Flâner (feedProvider) — sans ce watch le feed n'était
+    // jamais préchargé, d'où une ouverture lente du tab. Le provider est
+    // fire-and-forget et gardé par l'âge du cache (cf. feed_preload_provider).
+    ref.watch(feedPreloadProvider);
 
     // Active la re-sync automatique de l'onboarding quand la session devient
     // authentifiée (best-effort, silencieux) — voir onboarding_sync_provider.dart.

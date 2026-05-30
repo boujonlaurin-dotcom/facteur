@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/flux_continu/widgets/sticky_tab_bar.dart';
@@ -33,8 +36,21 @@ const _tabs = [
 ];
 
 void main() {
-  setUpAll(() {
+  late Directory tempDir;
+
+  setUpAll(() async {
     GoogleFonts.config.allowRuntimeFetching = false;
+    // StickyHead renders a ProfileAvatarButton, which reads providers backed
+    // by Hive (user profile cache). Initialize Hive against a temp dir so the
+    // avatar can build; Supabase stays uninitialized and is handled gracefully
+    // by the providers (auth-less → default/empty state).
+    tempDir = await Directory.systemTemp.createTemp('sticky_tab_bar_test_');
+    Hive.init(tempDir.path);
+  });
+
+  tearDownAll(() async {
+    await Hive.close();
+    await tempDir.delete(recursive: true);
   });
 
   group('StickyTabBar', () {

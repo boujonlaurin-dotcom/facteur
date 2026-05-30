@@ -15,6 +15,7 @@ import '../../../widgets/article_preview_modal.dart';
 import '../../../widgets/design/facteur_logo.dart';
 import '../../app_update/providers/app_update_provider.dart';
 import '../../flux_continu/widgets/flux_continu_article_card.dart';
+import '../../flux_continu/widgets/section_banner.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../sources/widgets/pepites_carousel.dart';
 import '../models/content_model.dart';
@@ -174,6 +175,15 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           const SliverToBoxAdapter(child: _Header()),
+          const SliverToBoxAdapter(
+            child: SectionBanner(
+              title: 'Flâner',
+              blurb:
+                  'Tous les articles de tes sources triés par récence, à consulter à ton rythme',
+              accent: Color(0xFF5D4037),
+              illustrationAsset: 'assets/notifications/facteur_bike.png',
+            ),
+          ),
           const SliverPersistentHeader(
             pinned: true,
             delegate: _FilterHeaderDelegate(child: _FilterSurface()),
