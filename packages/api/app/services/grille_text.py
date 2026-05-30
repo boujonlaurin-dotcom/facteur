@@ -22,9 +22,7 @@ def normalize_word(word: str) -> str:
     """
     stripped = word.strip()
     decomposed = unicodedata.normalize("NFKD", stripped)
-    without_accents = "".join(
-        ch for ch in decomposed if not unicodedata.combining(ch)
-    )
+    without_accents = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
     return without_accents.upper()
 
 

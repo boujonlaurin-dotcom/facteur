@@ -34,9 +34,7 @@ class GrillePuzzle(Base):
     """
 
     __tablename__ = "grille_puzzles"
-    __table_args__ = (
-        UniqueConstraint("puzzle_date", name="uq_grille_puzzles_date"),
-    )
+    __table_args__ = (UniqueConstraint("puzzle_date", name="uq_grille_puzzles_date"),)
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4

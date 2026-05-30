@@ -147,9 +147,7 @@ class GrilleService:
 
     # ----- POST /today/guess -----------------------------------------------
 
-    async def submit_guess(
-        self, user_id: str, raw_mot: str
-    ) -> GrilleGuessResponse:
+    async def submit_guess(self, user_id: str, raw_mot: str) -> GrilleGuessResponse:
         puzzle_date = today_paris()
         puzzle = await self._get_puzzle(puzzle_date)
         if puzzle is None:
