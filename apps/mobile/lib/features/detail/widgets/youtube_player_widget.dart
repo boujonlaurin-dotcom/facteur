@@ -44,6 +44,10 @@ class YouTubePlayerWidget extends StatefulWidget {
 }
 
 class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
+  /// Host of our backend origin — whitelisted in [shouldOverrideUrlLoading].
+  /// Derived once from the (constant) [ApiConstants.baseUrl].
+  static final String _apiHost = WebUri(ApiConstants.baseUrl).host;
+
   InAppWebViewController? _controller;
   String? _videoId;
   double _lastReportedProgress = -1.0;
@@ -135,8 +139,6 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
       );
     }
 
-    final apiHost = WebUri(ApiConstants.baseUrl).host;
-
     final settings = InAppWebViewSettings(
       javaScriptEnabled: true,
       mediaPlaybackRequiresUserGesture: false,
@@ -215,7 +217,7 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
         final uri = navigationAction.request.url;
         if (uri == null) return NavigationActionPolicy.CANCEL;
         final host = uri.host;
-        if (host == apiHost ||
+        if (host == _apiHost ||
             host.endsWith('youtube.com') ||
             host.endsWith('youtube-nocookie.com') ||
             host.endsWith('ytimg.com') ||
