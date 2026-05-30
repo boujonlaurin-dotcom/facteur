@@ -344,6 +344,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                 onTap: () => context.pushNamed(RouteNames.veilleConfig),
               ),
           ],
+          if (sereinMode) const _SereinSettingsHeader(),
           ...macroThemeOrder.map((macroLabel) {
             final themeSlug = macroThemeToApiSlug[macroLabel] ?? macroLabel;
             return _ThemeBlock(
@@ -559,6 +560,69 @@ class _SereinToggleTile extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// En-tête qui encadre la configuration du mode serein (cases à cocher des
+/// sujets) pour la distinguer visuellement du toggle d'activation au-dessus.
+class _SereinSettingsHeader extends StatelessWidget {
+  const _SereinSettingsHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        FacteurSpacing.space4,
+        FacteurSpacing.space2,
+        FacteurSpacing.space4,
+        FacteurSpacing.space2,
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(FacteurSpacing.space3),
+        decoration: BoxDecoration(
+          color: SereinColors.sereinColor.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(FacteurRadius.large),
+          border: Border.all(
+            color: SereinColors.sereinColor.withOpacity(0.25),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              SereinColors.sereinIcon,
+              color: SereinColors.sereinColor,
+              size: 18,
+            ),
+            const SizedBox(width: FacteurSpacing.space2),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Paramètres du mode serein',
+                    style: textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Contenu à garder dans vos bonnes nouvelles. '
+                    'Décochez un sujet pour le mettre de côté.',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
