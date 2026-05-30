@@ -101,6 +101,7 @@ from app.routers import (
     waitlist,
     webhooks,
     well_informed,
+    youtube_player,
 )
 from app.workers.scheduler import start_scheduler, stop_scheduler
 
@@ -452,6 +453,7 @@ app.include_router(digest.router, prefix="/api/digest", tags=["Digest"])
 app.include_router(essentiel.router, prefix="/api/essentiel", tags=["Essentiel"])
 app.include_router(contents.router, prefix="/api/contents", tags=["Contents"])
 app.include_router(images.router, prefix="/api/images", tags=["Images"])
+app.include_router(youtube_player.router, prefix="/api/youtube", tags=["YouTube"])
 app.include_router(sources.router, prefix="/api/sources", tags=["Sources"])
 app.include_router(
     subscription.router, prefix="/api/subscription", tags=["Subscription"]
