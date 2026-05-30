@@ -93,6 +93,7 @@ Pour chaque interprétation, retourne :
 Règles :
 - Si le terme est NON ambigu (ex: "Emmanuel Macron"), retourne exactement 1 résultat.
 - Si le terme est ambigu (ex: "Paris", "Apple", "Mercury"), retourne 2-3 interprétations les plus probables.
+- Si le terme est un token isolé courant (prénom seul, nom partiel), ne le renvoie PAS littéralement : étends-le vers le(s) sujet(s) public(s) le(s) plus saillant(s) avec leur nom complet (toujours 1 à 3 interprétations). Priorise les figures de forte notoriété et évite les personnalités mineures ou locales.
 - slug_parent doit OBLIGATOIREMENT être un slug de la liste ci-dessus.
 - Si un thème est fourni, priorise les interprétations liées à ce thème.
 
@@ -101,6 +102,12 @@ Exemple pour "Apple" :
 
 Exemple pour "Emmanuel Macron" :
 [{{"canonical_name": "Emmanuel Macron", "entity_type": "PERSON", "description": "Président de la République française", "slug_parent": "politics"}}]
+
+Exemple pour "Donald" (prénom isolé → étendre) :
+[{{"canonical_name": "Donald Trump", "entity_type": "PERSON", "description": "Président des États-Unis", "slug_parent": "politics"}}, {{"canonical_name": "Donald Tusk", "entity_type": "PERSON", "description": "Premier ministre polonais", "slug_parent": "politics"}}]
+
+Exemple pour "Patrick" (prénom isolé → étendre) :
+[{{"canonical_name": "Patrick Bruel", "entity_type": "PERSON", "description": "Chanteur et acteur français", "slug_parent": "music"}}, {{"canonical_name": "Patrick Pouyanné", "entity_type": "PERSON", "description": "PDG de TotalEnergies", "slug_parent": "economy"}}]
 
 Réponds UNIQUEMENT avec le JSON array, rien d'autre."""
 

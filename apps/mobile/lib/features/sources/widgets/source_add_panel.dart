@@ -6,6 +6,9 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/ui/notification_service.dart';
+import '../../custom_topics/models/topic_models.dart';
+import '../../custom_topics/providers/custom_topics_provider.dart';
+import '../../custom_topics/widgets/disambiguation_suggestion_tile.dart';
 import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../models/smart_search_result.dart';
@@ -66,6 +69,12 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   late final FocusNode _searchFocusNode;
   bool _searchActive = false;
 
+  // B1 — suggestions de sujets (« Donald » → « Donald Trump ») remontées en
+  // live dans la recherche via l'infra de désambiguïsation existante.
+  List<DisambiguationSuggestion> _topicSuggestions = const [];
+  String? _topicsForQuery;
+  int? _followingTopicIndex;
+
   @override
   void initState() {
     super.initState();
@@ -73,6 +82,11 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
     _searchFocusNode = FocusNode();
     _searchFocusNode.addListener(_handleSearchActivity);
     _searchController.addListener(_handleSearchActivity);
+    // B2 — précharge les pépites en arrière-plan dès l'ouverture pour que le
+    // dépliage du bandeau communautaire soit instantané (le strip est lazy).
+    if (widget.showCommunityGems) {
+      ref.read(trendingSourcesProvider);
+    }
     if (widget.autoFocusSearch) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _searchFocusNode.requestFocus();
@@ -117,13 +131,21 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
       _currentQuery = value;
       _expanded = false;
     });
+    _fetchTopicSuggestions(value);
   }
 
   void _clearSearch() {
     _searchController.clear();
+    _resetSearchState();
+  }
+
+  /// Remet l'état de recherche à zéro (query, résultats, suggestions de sujets).
+  void _resetSearchState() {
     setState(() {
       _currentQuery = '';
       _expanded = false;
+      _topicSuggestions = const [];
+      _topicsForQuery = null;
     });
   }
 
@@ -254,10 +276,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
 
   void _resetForNextAdd() {
     _searchController.clear();
-    setState(() {
-      _currentQuery = '';
-      _expanded = false;
-    });
+    _resetSearchState();
   }
 
   Future<void> _showSourceModal(
@@ -376,6 +395,8 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // B1 — sujets proposés (« Donald » → « Donald Trump ») en tête.
+        _buildTopicSuggestions(),
         _buildFilterChips(),
         const SizedBox(height: 12),
         searchAsync.when(
@@ -393,7 +414,65 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
             );
           },
         ),
+        // B3 — les exemples restent visibles pendant la recherche (ne plus
+        // tout cacher dès qu'on tape).
+        const SizedBox(height: FacteurSpacing.space8),
+        ExampleChips(onTap: _onExampleTap),
       ],
+    );
+  }
+
+  /// Section « Sujets » : suggestions de désambiguïsation suivables, rendues
+  /// avec le tile partagé (réutilise le rendu de `EntityAddSheet`).
+  Widget _buildTopicSuggestions() {
+    if (_topicSuggestions.isEmpty) return const SizedBox.shrink();
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: FacteurSpacing.space4),
+      child: Container(
+        padding: const EdgeInsets.all(FacteurSpacing.space3),
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(FacteurRadius.large),
+          border: Border.all(color: colors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(PhosphorIcons.tag(PhosphorIconsStyle.regular),
+                    size: 16, color: colors.primary),
+                const SizedBox(width: 6),
+                Text(
+                  'Sujets',
+                  style: textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Suivre un sujet d\'actualité dans vos intérêts',
+              style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
+            ),
+            const SizedBox(height: FacteurSpacing.space3),
+            ...List.generate(_topicSuggestions.length, (index) {
+              return DisambiguationSuggestionTile(
+                suggestion: _topicSuggestions[index],
+                isFollowing: _followingTopicIndex == index,
+                onFollow: _followingTopicIndex != null
+                    ? null
+                    : () =>
+                        _followTopicSuggestion(_topicSuggestions[index], index),
+              );
+            }),
+          ],
+        ),
+      ),
     );
   }
 
@@ -401,6 +480,56 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
     _searchController.text = text;
     setState(() => _currentQuery = text);
     ref.read(analyticsServiceProvider).trackAddSourceExampleTap(text);
+    _fetchTopicSuggestions(text);
+  }
+
+  /// B1 — interroge `/personalization/topics/disambiguate` en parallèle de la
+  /// recherche de sources et alimente la section « Sujets ». URLs et tokens
+  /// trop courts sont ignorés (la désambiguïsation vise des mots-sujets).
+  Future<void> _fetchTopicSuggestions(String query) async {
+    final trimmed = query.trim();
+    final looksLikeUrl =
+        trimmed.startsWith('http') || trimmed.contains('://') || trimmed.contains('@');
+    if (trimmed.length < 2 || looksLikeUrl) {
+      setState(() {
+        _topicSuggestions = const [];
+        _topicsForQuery = null;
+      });
+      return;
+    }
+    // Évite un appel LLM (quota Mistral) redondant pour une requête déjà
+    // résolue ou en cours — la recherche est explicite et peut se rejouer.
+    if (_topicsForQuery == trimmed) return;
+    setState(() => _topicsForQuery = trimmed);
+    try {
+      final suggestions =
+          await ref.read(topicRepositoryProvider).disambiguate(trimmed);
+      if (!mounted || _topicsForQuery != trimmed) return; // stale guard
+      setState(() => _topicSuggestions = suggestions);
+    } catch (_) {
+      if (!mounted || _topicsForQuery != trimmed) return;
+      setState(() => _topicSuggestions = const []);
+    }
+  }
+
+  Future<void> _followTopicSuggestion(
+    DisambiguationSuggestion s,
+    int index,
+  ) async {
+    setState(() => _followingTopicIndex = index);
+    try {
+      await ref.read(customTopicsProvider.notifier).followSuggestion(s);
+      if (!mounted) return;
+      NotificationService.showSuccess(
+          '« ${s.canonicalName} » ajouté à vos intérêts');
+      // Retire le sujet suivi de la liste (les autres restent proposés).
+      final updated = [..._topicSuggestions]..removeAt(index);
+      setState(() => _topicSuggestions = updated);
+    } catch (e) {
+      if (mounted) NotificationService.showError('Erreur lors de l\'ajout : $e');
+    } finally {
+      if (mounted) setState(() => _followingTopicIndex = null);
+    }
   }
 
   Widget _buildEmptyState() {
