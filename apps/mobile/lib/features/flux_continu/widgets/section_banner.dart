@@ -39,6 +39,7 @@ class SectionBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+    final hasBlurb = blurb != null && blurb!.trim().isNotEmpty;
     // `width: double.infinity` is required because the parent SectionBlock
     // Column uses `CrossAxisAlignment.start`, which would otherwise size
     // this Container to its intrinsic width and leave parchment showing
@@ -49,7 +50,9 @@ class SectionBanner extends StatelessWidget {
     final container = Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(0, 3, 0, 5),
-      constraints: const BoxConstraints(minHeight: 84),
+      // Thematic sections have no blurb — a single title line doesn't need
+      // the taller editorial floor, so we drop it to keep the scroll tight.
+      constraints: BoxConstraints(minHeight: hasBlurb ? 78 : 60),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: topRadius,
@@ -99,7 +102,7 @@ class SectionBanner extends StatelessWidget {
               ),
             ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 14, 11),
+            padding: const EdgeInsets.fromLTRB(20, 8, 14, 9),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -109,7 +112,7 @@ class SectionBanner extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Padding(
-                        padding: const EdgeInsets.only(top: 2, bottom: 4),
+                        padding: EdgeInsets.only(top: 2, bottom: hasBlurb ? 4 : 0),
                         child: Text.rich(
                           TextSpan(
                             text: title,
@@ -135,7 +138,7 @@ class SectionBanner extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (blurb != null && blurb!.trim().isNotEmpty)
+                      if (hasBlurb)
                         Text(
                           blurb!,
                           style: GoogleFonts.dmSans(
@@ -150,8 +153,8 @@ class SectionBanner extends StatelessWidget {
                 if (illustrationAsset != null) ...[
                   const SizedBox(width: 12),
                   SizedBox(
-                    width: 70,
-                    height: 70,
+                    width: 62,
+                    height: 62,
                     child: IgnorePointer(
                       child: ShaderMask(
                         blendMode: BlendMode.dstIn,
@@ -165,10 +168,10 @@ class SectionBanner extends StatelessWidget {
                           opacity: 0.72,
                           child: Image.asset(
                             illustrationAsset!,
-                            height: 70,
+                            height: 62,
                             // Source PNGs are 1024² — decode at 2× display
                             // height to keep texture memory bounded.
-                            cacheHeight: 140,
+                            cacheHeight: 124,
                             fit: BoxFit.contain,
                             errorBuilder: (_, __, ___) =>
                                 const SizedBox.shrink(),

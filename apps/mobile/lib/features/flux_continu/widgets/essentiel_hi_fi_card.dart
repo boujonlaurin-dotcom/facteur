@@ -244,10 +244,10 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
       );
     }
 
-    // Fixed slot: always 78×92 so the header never reflows when flipping.
+    // Fixed slot: always 84×98 so the header never reflows when flipping.
     return SizedBox(
-      width: 78,
-      height: 92,
+      width: 84,
+      height: 98,
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 320),
         switchInCurve: Curves.easeInOut,
@@ -293,8 +293,8 @@ class _WeatherBadge extends StatelessWidget {
       children: [
         SvgPicture.asset(
           'assets/images/weather/${snapshot.condition.assetName}.svg',
-          width: 78,
-          height: 78,
+          width: 84,
+          height: 84,
         ),
         RichText(
           text: TextSpan(

@@ -43,7 +43,7 @@ class MainBottomNav extends StatelessWidget {
           child: SafeArea(
             top: false,
             child: SizedBox(
-              height: 56,
+              height: 50,
               child: Row(
                 children: [
                   Expanded(
@@ -97,18 +97,18 @@ class _FooterTab extends StatelessWidget {
           children: [
             AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              width: 9,
-              height: 9,
+              width: 7,
+              height: 7,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: selected ? colors.primary : Colors.transparent,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             Text(
               label,
               style: GoogleFonts.dmSans(
-                fontSize: 16,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: selected ? colors.primary : colors.textSecondary,
               ),
