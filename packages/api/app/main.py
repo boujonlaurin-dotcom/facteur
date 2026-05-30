@@ -83,6 +83,7 @@ from app.routers import (
     digest,
     essentiel,
     feed,
+    grille,
     images,
     internal,
     legal,
@@ -456,6 +457,7 @@ app.include_router(
     subscription.router, prefix="/api/subscription", tags=["Subscription"]
 )
 app.include_router(streaks.router, prefix="/api/streaks", tags=["Streaks"])
+app.include_router(grille.router, prefix="/api/grille", tags=["Grille"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
 app.include_router(checkout.router, prefix="/api/checkout", tags=["Checkout"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])

@@ -1,0 +1,111 @@
+{
+  "_comment": "La Grille du jour — puzzles seedés (Story 24.1). Une entrée par jour (>= aujourd'hui + 14 j). 'date_affichee' / 'date_court' / 'cancel' sont calculés depuis 'date' par scripts/seed_grille_puzzles.py. Voix éditoriale FR : tutoiement, serein, vocabulaire postal, pas de point d'exclamation. 'word' MAJUSCULES sans accent, présent dans grille_words_fr.txt (vérifié par le seed).",
+  "indice_default": "Le mot qui a traversé ta tournée d'aujourd'hui",
+  "puzzles": [
+    {
+      "date": "2026-05-30",
+      "numero": "N°143",
+      "word": "CLIMAT",
+      "theme": "Environnement · Société",
+      "pourquoi": "« Climat » est revenu dans trois titres de ta tournée — accord sur l'eau, énergie, agriculture. Un mot, trois angles : c'est ça, prendre du recul."
+    },
+    {
+      "date": "2026-05-31",
+      "numero": "N°144",
+      "word": "BUDGET",
+      "theme": "Économie · Politique",
+      "pourquoi": "Le budget a structuré la moitié de ta tournée : un même mot derrière les débats sur la dette, les retraites et l'hôpital."
+    },
+    {
+      "date": "2026-06-01",
+      "numero": "N°145",
+      "word": "SOMMET",
+      "theme": "Diplomatie · International",
+      "pourquoi": "Un sommet réunit des dirigeants ; il a porté plusieurs titres de ta tournée, du climat au commerce. Le décor change, le mot reste."
+    },
+    {
+      "date": "2026-06-02",
+      "numero": "N°146",
+      "word": "IMPOTS",
+      "theme": "Économie · Société",
+      "pourquoi": "Les impôts traversaient ta tournée sans le dire : réforme, niches, collectivités. Un mot discret qui décide beaucoup."
+    },
+    {
+      "date": "2026-06-03",
+      "numero": "N°147",
+      "word": "EUROPE",
+      "theme": "International · Politique",
+      "pourquoi": "L'Europe revenait par la fenêtre dans tes titres : énergie, défense, agriculture. Un cadre commun derrière des sujets épars."
+    },
+    {
+      "date": "2026-06-04",
+      "numero": "N°148",
+      "word": "GREVES",
+      "theme": "Social · Économie",
+      "pourquoi": "Les grèves ont rythmé ta tournée — transports, santé, éducation. Un même mot pour des colères distinctes."
+    },
+    {
+      "date": "2026-06-05",
+      "numero": "N°149",
+      "word": "OCEANS",
+      "theme": "Environnement · Sciences",
+      "pourquoi": "Les océans portaient trois de tes titres : pêche, biodiversité, montée des eaux. Le plus grand sujet tient parfois en six lettres."
+    },
+    {
+      "date": "2026-06-06",
+      "numero": "N°150",
+      "word": "DEBATS",
+      "theme": "Politique · Société",
+      "pourquoi": "Les débats ont occupé ta tournée plus que les décisions : beaucoup de mots, peu de votes. Repérer l'écart, c'est déjà lire mieux."
+    },
+    {
+      "date": "2026-06-07",
+      "numero": "N°151",
+      "word": "MANDAT",
+      "theme": "Politique · Institutions",
+      "pourquoi": "Un mandat fixe le temps du pouvoir ; il était en jeu dans plusieurs de tes titres, des municipales à la justice."
+    },
+    {
+      "date": "2026-06-08",
+      "numero": "N°152",
+      "word": "MARCHE",
+      "theme": "Économie · Société",
+      "pourquoi": "Le marché reliait des titres éloignés de ta tournée : énergie, logement, emploi. Un mot qui range le monde en offres et demandes."
+    },
+    {
+      "date": "2026-06-09",
+      "numero": "N°153",
+      "word": "GUERRE",
+      "theme": "International · Géopolitique",
+      "pourquoi": "La guerre cadrait l'international de ta tournée — fronts, sanctions, négociations. Un mot lourd qu'on préférerait poser."
+    },
+    {
+      "date": "2026-06-10",
+      "numero": "N°154",
+      "word": "FORETS",
+      "theme": "Environnement · Climat",
+      "pourquoi": "Les forêts traversaient ta tournée : incendies, reboisement, carbone. Un même mot pour un poumon et un risque."
+    },
+    {
+      "date": "2026-06-11",
+      "numero": "N°155",
+      "word": "TRAITE",
+      "theme": "Diplomatie · International",
+      "pourquoi": "Un traité scelle un accord entre États ; il sous-tendait tes titres sur le commerce et le climat. L'encre fait parfois plus que les armes."
+    },
+    {
+      "date": "2026-06-12",
+      "numero": "N°156",
+      "word": "SEISME",
+      "theme": "International · Sciences",
+      "pourquoi": "Un séisme a ouvert ta tournée — secours, reconstruction, prévention. La terre tremble, l'information relie ceux qui aident."
+    },
+    {
+      "date": "2026-06-13",
+      "numero": "N°157",
+      "word": "MUSEES",
+      "theme": "Culture · Société",
+      "pourquoi": "Les musées portaient la part calme de ta tournée : restitutions, fréquentation, mémoire. Un mot pour ce qu'on garde."
+    }
+  ]
+}
