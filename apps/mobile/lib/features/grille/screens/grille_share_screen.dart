@@ -24,7 +24,7 @@ class GrilleShareScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.facteurColors;
-    final today = ref.watch(grilleProvider).value?.today;
+    final today = ref.watch(grilleProvider).valueOrNull?.today;
 
     return Scaffold(
       backgroundColor: c.backgroundPrimary,

@@ -36,7 +36,7 @@ class _GrilleLeaderboardScreenState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final numero = ref.read(grilleProvider).value?.today.numero;
+      final numero = ref.read(grilleProvider).valueOrNull?.today.numero;
       ref.read(analyticsServiceProvider).trackGrilleLeaderboardOpened(numero: numero);
     });
   }
@@ -104,7 +104,7 @@ class _GrilleLeaderboardScreenState
   }
 
   Future<void> _defier(BuildContext context) async {
-    final today = ref.read(grilleProvider).value?.today;
+    final today = ref.read(grilleProvider).valueOrNull?.today;
     if (today == null) return;
     final messenger = ScaffoldMessenger.of(context);
     await Clipboard.setData(ClipboardData(text: buildGrilleShareLink(today)));

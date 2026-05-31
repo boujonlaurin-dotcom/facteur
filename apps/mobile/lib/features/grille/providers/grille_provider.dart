@@ -86,10 +86,16 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
   @override
   Future<GrilleState> build() async {
     final today = await _repo.getToday();
-    return GrilleState(today: today);
+    return GrilleState(today: today, draft: _initialDraft(today));
   }
 
   GrilleState? get _current => state.value;
+
+  /// Draft initial d'une ligne neuve : la **1re lettre offerte est pré-saisie
+  /// et verrouillée** (l'utilisateur ne tape que les lettres suivantes). Vide
+  /// si la partie est finie (aucune ligne en cours).
+  static String _initialDraft(GrilleTodayResponse today) =>
+      today.isFinished ? '' : today.premiereLettre.toUpperCase();
 
   /// Ajoute une lettre à la ligne en cours (no-op si partie finie / pleine).
   void addLetter(String letter) {
@@ -102,10 +108,13 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
     state = AsyncData(s.copyWith(draft: s.draft + clean, invalidReason: null));
   }
 
-  /// Efface la dernière lettre saisie.
+  /// Efface la dernière lettre saisie — **sans jamais effacer la 1re lettre
+  /// offerte** (verrouillée).
   void removeLetter() {
     final s = _current;
-    if (s == null || s.draft.isEmpty || s.submitting) return;
+    if (s == null || s.submitting) return;
+    final lockedLen = s.today.premiereLettre.length; // 1re lettre verrouillée
+    if (s.draft.length <= lockedLen) return;
     state = AsyncData(
       s.copyWith(
         draft: s.draft.substring(0, s.draft.length - 1),
@@ -165,7 +174,9 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
       state = AsyncData(
         after.copyWith(
           today: updatedToday,
-          draft: '',
+          // Nouvelle ligne : re-pré-saisir la 1re lettre offerte (vide si la
+          // partie vient de se terminer).
+          draft: _initialDraft(updatedToday),
           submitting: false,
           invalidReason: null,
           revealRow: essais.length - 1,
