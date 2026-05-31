@@ -89,7 +89,9 @@ async def build_veille_scoring_context(
         custom_topics.append(
             VeilleAngleTopic(
                 slug_parent="",
-                keywords=[k.lower().strip() for k in filters.global_keywords if k.strip()],
+                keywords=[
+                    k.lower().strip() for k in filters.global_keywords if k.strip()
+                ],
                 topic_name="Mots-clés",
             )
         )
