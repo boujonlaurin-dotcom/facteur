@@ -10,7 +10,7 @@ Fix: is_curated=false — la source principale France Info reste active.
 
 from alembic import op
 
-revision: str = "dd01_dedup_franceinfo_vrai_ou_fake"
+revision: str = "dd01_franceinfo_dedup"
 down_revision: str | None = "gr01_la_grille_du_jour"
 branch_labels: str | None = None
 depends_on: str | None = None

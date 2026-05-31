@@ -191,7 +191,9 @@ class EditorialPipelineService:
         # modes. Clusters are sorted by size desc so the largest — typically
         # the most trending — is kept. Skip the cap if the remaining non-
         # low-priority pool would be too small pour atteindre la cible sujets.
-        sorted_by_size = sorted(clusters, key=lambda c: len(c.source_domains), reverse=True)
+        sorted_by_size = sorted(
+            clusters, key=lambda c: len(c.source_domains), reverse=True
+        )
         capped = cap_low_priority_clusters(sorted_by_size)
         if len(capped) >= _read_target_subject_count():
             dropped = len(sorted_by_size) - len(capped)
@@ -251,9 +253,9 @@ class EditorialPipelineService:
                     trending=len(trending_clusters),
                 )
         elif a_la_une_pool:
-            top3 = sorted(a_la_une_pool, key=lambda c: len(c.source_domains), reverse=True)[
-                :3
-            ]
+            top3 = sorted(
+                a_la_une_pool, key=lambda c: len(c.source_domains), reverse=True
+            )[:3]
 
             if len(top3) == 1:
                 a_la_une_topic = _cluster_to_une_topic(top3[0])
