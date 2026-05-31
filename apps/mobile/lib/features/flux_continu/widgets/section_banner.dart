@@ -26,6 +26,12 @@ class SectionBanner extends StatelessWidget {
   /// sections (theme1 / theme2) wire this up.
   final VoidCallback? onTapFavorite;
 
+  /// When true, the banner renders in a larger "page hero" variant (bigger
+  /// title / blurb / illustration and a taller floor). Used by the dedicated
+  /// Flâner page to distinguish it from the inline thematic banners. Default
+  /// [false] keeps the thematic banners pixel-identical.
+  final bool large;
+
   const SectionBanner({
     super.key,
     required this.title,
@@ -34,6 +40,7 @@ class SectionBanner extends StatelessWidget {
     this.illustrationAsset,
     this.onTapFold,
     this.onTapFavorite,
+    this.large = false,
   });
 
   @override
@@ -52,7 +59,10 @@ class SectionBanner extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(0, 3, 0, 5),
       // Thematic sections have no blurb — a single title line doesn't need
       // the taller editorial floor, so we drop it to keep the scroll tight.
-      constraints: BoxConstraints(minHeight: hasBlurb ? 78 : 60),
+      // The `large` page-hero variant gets a taller floor to breathe.
+      constraints: BoxConstraints(
+        minHeight: hasBlurb ? (large ? 120 : 78) : 60,
+      ),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: topRadius,
@@ -102,7 +112,9 @@ class SectionBanner extends StatelessWidget {
               ),
             ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 14, 9),
+            padding: large
+                ? const EdgeInsets.fromLTRB(22, 16, 16, 16)
+                : const EdgeInsets.fromLTRB(20, 8, 14, 9),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -129,7 +141,7 @@ class SectionBanner extends StatelessWidget {
                                     ),
                                   ],
                             style: GoogleFonts.fraunces(
-                              fontSize: 20,
+                              fontSize: large ? 28 : 20,
                               fontWeight: FontWeight.w700,
                               height: 1.06,
                               letterSpacing: -0.4,
@@ -142,7 +154,7 @@ class SectionBanner extends StatelessWidget {
                         Text(
                           blurb!,
                           style: GoogleFonts.dmSans(
-                            fontSize: 12,
+                            fontSize: large ? 14 : 12,
                             height: 1.35,
                             color: colors.textSecondary,
                           ),
@@ -153,8 +165,8 @@ class SectionBanner extends StatelessWidget {
                 if (illustrationAsset != null) ...[
                   const SizedBox(width: 12),
                   SizedBox(
-                    width: 62,
-                    height: 62,
+                    width: large ? 96 : 62,
+                    height: large ? 96 : 62,
                     child: IgnorePointer(
                       child: ShaderMask(
                         blendMode: BlendMode.dstIn,
@@ -168,10 +180,10 @@ class SectionBanner extends StatelessWidget {
                           opacity: 0.72,
                           child: Image.asset(
                             illustrationAsset!,
-                            height: 62,
+                            height: large ? 96 : 62,
                             // Source PNGs are 1024² — decode at 2× display
                             // height to keep texture memory bounded.
-                            cacheHeight: 124,
+                            cacheHeight: large ? 192 : 124,
                             fit: BoxFit.contain,
                             errorBuilder: (_, __, ___) =>
                                 const SizedBox.shrink(),
