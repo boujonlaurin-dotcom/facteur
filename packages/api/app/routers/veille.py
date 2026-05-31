@@ -306,7 +306,7 @@ async def upsert_config(
     # Un seul flush matérialise tous les topic.id, puis on rattache les grappes.
     if topic_rows:
         await db.flush()
-    for topic, t in zip(topic_rows, body.topics):
+    for topic, t in zip(topic_rows, body.topics, strict=True):
         for kpos, kw in enumerate(t.keywords):
             db.add(
                 VeilleKeyword(

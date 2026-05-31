@@ -1,31 +1,31 @@
-# PR 1 · Backend « La Grille du jour » (Story 24.1)
+# Veille — curation premium + config liée aux angles + fix navigation
 
-Fondation serveur du jeu **La Grille du jour** (Wordle postal Facteur). Le mobile (PR 2) consomme ce contrat — **cette PR merge en premier.**
+Refonte de la **veille** sur 3 axes (par impact) : curation par score (le « 90 % »), config où chaque angle porte sa grappe de mots-clés, et fix du bug « Créer ma veille » → feed.
 
-## Contenu
-- **Modèles** : `grille_puzzles` (puzzle global daté, mot secret serveur) + `grille_game_states` (1 partie/user/jour, unicité `(user_id, puzzle_date)`).
-- **Migration** `gr01_la_grille_du_jour` (additive, `down_revision = cl01_drop_daily_top3`, 1 head).
-- **Dictionnaire FR** embarqué (`app/data/grille_words_fr.txt`) chargé en `frozenset` au boot.
-- **Logique** (`grille_text` + `grille_service`) :
-  - `compute_tiles` à **comptage d'occurrences** (corrige la version simplifiée du proto, ne sur-colore plus les lettres doublées).
-  - Validation 100 % serveur : longueur / hors-dictionnaire (essai non consommé), rejeu interdit (409), `solved`/`failed`.
-  - Streak **dérivé** des parties (ne touche pas `UserStreak`).
-  - Classement quotidien : `distribution`, `percentile`, podium anonymisé (initiales via hash quotidien salé, `Toi` au rang du joueur).
-- **3 endpoints** sous `/api/grille` : `GET /today`, `POST /today/guess`, `GET /today/leaderboard`.
-- **Seed** : `app/data/grille_puzzles_seed.json` (≥ J+14) + `scripts/seed_grille_puzzles.py` (idempotent, assert word ∈ dico).
+## Part A — Curation premium (cœur)
+Remplace le filtre `OR` (où le **thème** suffisait à faire entrer tout l'article) par un pipeline **prefilter SQL axes forts → scoring piliers → seuil → tri par score**, en réutilisant le moteur de la Tournée (`PillarScoringEngine`).
+- `feed_filter.py` : `build_strong_predicate` (topics/sources/mots-clés ; **thème retiré du prédicat**) + fenêtre récence 168h + `CANDIDATE_CAP` 300 + `_score_and_rank` (seuil + tri score/récence). `matched_on` ne qualifie plus via `theme`.
+- `scoring_context.py` (nouveau) : adaptateur `VeilleAngleTopic` (duck-type de `_score_custom_topics`) + `build_veille_scoring_context` — thème = signal **faible** (`user_interests`), topics → `user_subtopics` (+45), angles → `user_custom_topics` (+25), sources → `followed_source_ids` (+35).
+- `scoring_config.py` : `VEILLE_RELEVANCE_THRESHOLD=40`, `VEILLE_CANDIDATE_CAP=300`, `VEILLE_RECENCY_HOURS=168` + log structuré (`max_score`/`pass_count`/`candidate_count`) pour calibrer en prod.
 
-## ⚠️ Note pour PR 2 (mobile)
-Les chemins réels sont préfixés `/api` (convention repo) : **`/api/grille/today`**, `/api/grille/today/guess`, `/api/grille/today/leaderboard` — et non `/grille/...`. Clés JSON = noms FR exacts (`dateAffichee`, `nbEssais`, `premiereLettre`, `prochainMotDansSec`, …). Le mot (`mot`) et le `pourquoi` ne sont jamais renvoyés tant que `statut == in_progress`.
+## Part B — Modèle : angle = sujet + grappe
+- `VeilleKeyword.veille_topic_id` (FK `veille_topics`, nullable = mot-clé global), index `ix_veille_keywords_topic`, unique relâché en `(config, topic_id, keyword)`.
+- Migration `vk01_link_keywords_to_topics` (`down_revision = dd01_franceinfo_dedup`, 1 head, downgrade symétrique).
 
-## Décisions (défauts confirmés par le PO au GO)
-- Préfixe API `/api/grille` (et non `/grille`).
-- Podium anonymisé via **hash quotidien salé** de `user_id` → 2 initiales non nominatives.
-- Ajout colonne `date_affichee` (absente du proto, requise par le masthead).
+## Part C — Config enrichie
+- `schemas` + `routers/veille.py` : `VeilleTopicSelection.keywords` persisté lié à l'angle ; `_hydrate_response` round-trip (grappes nichées, globaux à plat).
+- `angle_suggester.py` : prompt **8-12 angles** (au lieu de 5-8), `max_tokens` 2000, fallback étendu.
+- Sources : `/presets` 6 → 12 ; `_fetch_source_examples` **préfère** les articles matchant les mots-clés de la veille active (sinon récence brute).
+- Mobile : DTO round-trip des grappes ; brief introduit **une fois** au Step 1 (suppression du doublon Step 2).
+
+## Part D — Fix navigation « Créer ma veille » → feed (2 leviers)
+- `veille_config_provider.submit()` : `invalidate(userInterestsProvider)` après hydratation (lever racine).
+- `my_interests_screen.dart` : CTA masqué si veille active connue **ET** pas de `VeilleFavoriteRef` (défense en profondeur).
 
 ## Tests / VERIFY
-- `pytest tests/test_grille_logic.py tests/test_grille_api.py` → **24 passed**.
-- Suite complète backend → **1383 passed, 1 skipped, 2 xfailed** (aucune régression).
-- Alembic : `upgrade head` + `downgrade -1` + re-upgrade OK sur DB **vide**.
-- Seed rejoué → idempotent (0 créés / 15 maj).
+- Backend complet : **1408 passed, 1 skipped, 2 xfailed** (0 régression). Veille : 65 passed (scoring, thème-seul exclu, topic>keyword, source/keyword, frontière seuil, exclusions hidden/seen/inactive, pagination, persistance grappes round-trip, unique triplet).
+- Alembic : 1 head ; `upgrade head` + `downgrade -1` + re-upgrade OK sur DB **vide**.
+- Mobile : `flutter analyze` → 0 erreur (548 infos préexistantes).
 
-Story : `docs/stories/core/24.1.la-grille-du-jour-backend.md`.
+## Hors-scope (suite)
+Le fetch LLM `/suggest/angles` n'est pas encore branché dans l'écran suggestions mobile (il consomme aujourd'hui les preset topics statiques) ; le backend + le round-trip DTO sont prêts à l'accueillir → l'affichage éditable des chips de mots-clés par angle (C3 UI) suivra dans une PR mobile dédiée.
