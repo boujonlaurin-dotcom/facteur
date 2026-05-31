@@ -25,7 +25,13 @@ class _GrilleCtaCardState extends ConsumerState<GrilleCtaCard> {
 
   @override
   Widget build(BuildContext context) {
-    final today = ref.watch(grilleProvider).value?.today;
+    // `.valueOrNull` (et non `.value`) : sur un état d'erreur, `AsyncValue.value`
+    // **re-lève** l'exception (ici `GrilleNotFoundException` quand le serveur
+    // n'a pas de mot du jour) — elle s'échappait alors de `build()` et faisait
+    // tomber tout l'arbre de la Tournée (long écran gris, sans message). Cf.
+    // docs/bugs/bug-grille-du-jour-crash.md. `.valueOrNull` rend `null` en
+    // loading/erreur → la carte disparaît proprement, comme documenté ci-dessus.
+    final today = ref.watch(grilleProvider).valueOrNull?.today;
     if (today == null) return const SizedBox.shrink();
 
     final state = today.isFinished ? CarteCtaState.deja : CarteCtaState.neuf;
