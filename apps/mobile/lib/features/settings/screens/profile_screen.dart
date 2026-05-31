@@ -8,6 +8,7 @@ import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
+import '../../onboarding/widgets/theme_choice_bottom_sheet.dart';
 import '../providers/theme_provider.dart';
 
 /// Page « Profil » regroupant les réglages applicatifs accessibles depuis
@@ -57,14 +58,7 @@ class ProfileScreen extends ConsumerWidget {
                   icon: Icons.palette_outlined,
                   title: 'Thème',
                   subtitle: _themeName(themeMode),
-                  onTap: () {
-                    final next = themeMode == ThemeMode.light
-                        ? ThemeMode.dark
-                        : ThemeMode.light;
-                    ref
-                        .read(themeNotifierProvider.notifier)
-                        .setThemeMode(next);
-                  },
+                  onTap: () => showThemeChoiceBottomSheet(context, ref),
                 ),
                 _Tile(
                   icon: Icons.settings_suggest_outlined,
@@ -100,14 +94,14 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-  String _themeName(ThemeMode mode) {
+  String _themeName(AppThemeMode mode) {
     switch (mode) {
-      case ThemeMode.light:
+      case AppThemeMode.light:
         return 'Papier Dessin';
-      case ThemeMode.dark:
+      case AppThemeMode.dark:
         return 'Encre & Nuit';
-      case ThemeMode.system:
-        return 'Système';
+      case AppThemeMode.oled:
+        return 'Encre Pure';
     }
   }
 }

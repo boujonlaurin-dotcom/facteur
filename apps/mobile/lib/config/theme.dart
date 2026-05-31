@@ -256,6 +256,37 @@ class FacteurPalettes {
     sectionVeille1: const Color(0xFF5B7187),
     sectionVeille2: const Color(0xFFA569BD),
   );
+
+  // « Encre Pure » — true black pour écrans OLED (Story 3e thème)
+  static final FacteurColors oled = FacteurColors(
+    backgroundPrimary: const Color(0xFF000000),
+    backgroundSecondary: const Color(0xFF050505),
+    surface: const Color(0xFF0A0A0A),
+    surfaceElevated: const Color(0xFF141414),
+    surfacePaper: const Color(0xFF1A1A1A),
+    primary: const Color(0xFFE74C3C),
+    primaryMuted: const Color(0xFF5A2A25),
+    secondary: const Color(0xFF5D6D7E),
+    success: FacteurColors.sSuccess,
+    warning: FacteurColors.sWarning,
+    error: FacteurColors.sError,
+    info: FacteurColors.sInfo,
+    textPrimary: const Color(0xFFF5F5F5),
+    textSecondary: const Color(0xFFB0B0B0),
+    textTertiary: const Color(0xFF6E6E6E),
+    textStamp: const Color(0xFFE74C3C).withOpacity(0.85),
+    biasLeft: const Color(0xFFFF5252),
+    biasCenterLeft: const Color(0xFFFFCDD2),
+    biasCenter: const Color(0xFF8C8C8C),
+    biasCenterRight: const Color(0xFFBBDEFB),
+    biasRight: const Color(0xFF448AFF),
+    biasUnknown: const Color(0xFF5A5A5A),
+    border: const Color(0xFF1F1F1F),
+    sectionEssentiel: const Color(0xFFE07B3D),
+    sectionBonnes: const Color(0xFF66BB6A),
+    sectionVeille1: const Color(0xFF6E8AA3),
+    sectionVeille2: const Color(0xFFBA84D1),
+  );
 }
 
 /// Typographie Facteur - Helper classes (Stateless)
@@ -385,6 +416,8 @@ class FacteurTheme {
       _buildTheme(FacteurPalettes.light, Brightness.light);
   static ThemeData get darkTheme =>
       _buildTheme(FacteurPalettes.dark, Brightness.dark);
+  static ThemeData get oledTheme =>
+      _buildTheme(FacteurPalettes.oled, Brightness.dark);
 
   static ThemeData _buildTheme(FacteurColors colors, Brightness brightness) {
     return ThemeData(
