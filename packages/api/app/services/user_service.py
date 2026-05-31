@@ -7,7 +7,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.source import UserSource
+from app.models.source import Source, UserSource
 from app.models.user import (
     UserInterest,
     UserPreference,
@@ -200,27 +200,47 @@ class UserService:
                     self.db.add(topic_profile)
 
         # Sauvegarder les sources sélectionnées (UserSource)
-        # Atomique avec le reste de l'onboarding — pas de race condition
+        # Atomique avec le reste de l'onboarding — pas de race condition.
+        # Robustesse : on n'insère QUE des sources existantes et actives, afin
+        # qu'un ID obsolète/inconnu ne déclenche pas une IntegrityError FK qui
+        # ferait rollback TOUT l'onboarding (cf. bug enregistrement silencieux).
+        sources_requested = 0
         sources_created = 0
+        skipped_source_ids: list[str] = []
         if answers.preferred_sources:
-            # Vérifier quelles sources existent et sont actives
-            valid_source_ids = set()
+            # 1. Parser les IDs (ignorer les formats invalides)
+            valid_source_ids: set[UUID] = set()
             for sid in answers.preferred_sources:
+                sources_requested += 1
                 try:
                     valid_source_ids.add(UUID(sid))
-                except ValueError:
-                    continue
+                except (ValueError, TypeError):
+                    skipped_source_ids.append(str(sid))
 
             if valid_source_ids:
+                # 2. Ne conserver que les sources réellement existantes et actives
+                active_result = await self.db.execute(
+                    select(Source.id).where(
+                        Source.id.in_(list(valid_source_ids)),
+                        Source.is_active,
+                    )
+                )
+                active_ids = set(active_result.scalars().all())
+                skipped_source_ids.extend(
+                    str(sid) for sid in valid_source_ids - active_ids
+                )
+
+                # 3. Idempotence : ne pas réinsérer une source déjà suivie
                 existing_result = await self.db.execute(
                     select(UserSource.source_id).where(
                         UserSource.user_id == UUID(user_id),
-                        UserSource.source_id.in_(list(valid_source_ids)),
+                        UserSource.source_id.in_(list(active_ids)),
                     )
                 )
                 already_trusted = set(existing_result.scalars().all())
 
-                for source_id in valid_source_ids - already_trusted:
+                for source_id in active_ids - already_trusted:
+                    # state laissé au défaut DB ('followed') → visible dans le feed
                     user_source = UserSource(
                         id=uuid4(),
                         user_id=UUID(user_id),
@@ -231,12 +251,28 @@ class UserService:
                     sources_created += 1
 
         await self.db.flush()
+
+        # Observabilité : tracer tout écart entre demandé et enregistré.
+        # Un écart sur des sources onboarding ne devrait jamais passer inaperçu.
+        if skipped_source_ids:
+            logger.warning(
+                "Onboarding sources skipped (inexistantes/inactives/invalides) "
+                "user=%s requested=%s created=%s skipped=%s ids=%s",
+                user_id,
+                sources_requested,
+                sources_created,
+                len(skipped_source_ids),
+                skipped_source_ids,
+            )
+
         return {
             "profile": profile,
             "interests_created": interest_count,
             "subtopics_created": subtopic_count,
             "preferences_created": pref_count,
             "sources_created": sources_created,
+            "sources_requested": sources_requested,
+            "sources_skipped": len(skipped_source_ids),
         }
 
     async def get_preferences(self, user_id: str) -> list[UserPreference]:

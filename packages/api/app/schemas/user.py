@@ -122,6 +122,10 @@ class OnboardingResponse(BaseModel):
     subtopics_created: int
     preferences_created: int
     sources_created: int = 0
+    # Nombre de sources demandées par le client (pour détecter un écart côté app)
+    sources_requested: int = 0
+    # Sources ignorées car inexistantes / inactives / format invalide
+    sources_skipped: int = 0
 
 
 class UserStatsResponse(BaseModel):

@@ -24,6 +24,15 @@ class OnboardingResult {
   final int? interestsCreated;
   final int? preferencesCreated;
 
+  /// Sources effectivement enregistrées côté serveur (atomique avec l'onboarding)
+  final int? sourcesCreated;
+
+  /// Sources demandées par le client (pour détecter un écart)
+  final int? sourcesRequested;
+
+  /// Sources ignorées par le serveur (inexistantes / inactives / invalides)
+  final int? sourcesSkipped;
+
   const OnboardingResult._({
     required this.success,
     this.profile,
@@ -31,6 +40,9 @@ class OnboardingResult {
     this.errorType,
     this.interestsCreated,
     this.preferencesCreated,
+    this.sourcesCreated,
+    this.sourcesRequested,
+    this.sourcesSkipped,
   });
 
   /// Créer un résultat de succès
@@ -38,12 +50,18 @@ class OnboardingResult {
     required UserProfile profile,
     int? interestsCreated,
     int? preferencesCreated,
+    int? sourcesCreated,
+    int? sourcesRequested,
+    int? sourcesSkipped,
   }) {
     return OnboardingResult._(
       success: true,
       profile: profile,
       interestsCreated: interestsCreated,
       preferencesCreated: preferencesCreated,
+      sourcesCreated: sourcesCreated,
+      sourcesRequested: sourcesRequested,
+      sourcesSkipped: sourcesSkipped,
     );
   }
 

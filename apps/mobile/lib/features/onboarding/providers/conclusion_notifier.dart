@@ -6,9 +6,9 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../../models/onboarding_result.dart';
 import '../../../models/user_profile.dart';
-import '../../../features/sources/providers/sources_providers.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import 'onboarding_provider.dart';
 
@@ -63,8 +63,9 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
       _apiCompleted = true;
       _checkCompletion();
     } catch (e) {
-      // Tous les retries ont échoué → montrer l'erreur
+      // Tous les retries ont échoué → montrer l'erreur (jamais silencieux)
       _minAnimationTimer?.cancel();
+      _reportSourcesFailure();
       state = ConclusionError(e.toString());
     }
   }
@@ -110,8 +111,10 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
 
       if (result.success) {
         await _saveProfileLocally(result.profile!);
-        // Trust sources en parallèle avec timeout (important pour le digest)
-        await _trustSelectedSourcesWithTimeout(answers.preferredSources);
+        // Les sources sont désormais enregistrées ATOMIQUEMENT côté serveur
+        // dans POST /users/onboarding (transaction commitée avant la réponse).
+        // Plus de "trust loop" silencieuse : on se contente de tracer l'issue.
+        _reportSourcesOutcome(answers.preferredSources, result);
         await _ref.read(onboardingProvider.notifier).clearSavedData();
         _ref.invalidate(customTopicsProvider);
 
@@ -156,29 +159,51 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
     }
   }
 
-  /// Marque les sources sélectionnées comme "de confiance" (avec timeout)
-  /// Awaité pour que les UserSource existent avant la génération du digest
-  Future<void> _trustSelectedSourcesWithTimeout(List<String>? sourceIds) async {
-    if (sourceIds == null || sourceIds.isEmpty) return;
+  /// Trace (télémétrie) l'issue de l'enregistrement des sources d'onboarding.
+  ///
+  /// Les sources sont enregistrées côté serveur, atomiquement, dans la réponse
+  /// de `POST /users/onboarding`. Ici on ne fait que **rendre visible** l'issue :
+  /// fini la silent error, tout écart (sources ignorées) est tracé, jamais avalé.
+  void _reportSourcesOutcome(
+    List<String>? requestedSources,
+    OnboardingResult result,
+  ) {
+    final requested = requestedSources?.length ?? 0;
+    if (requested == 0) return;
 
-    final repository = _ref.read(sourcesRepositoryProvider);
+    final registered = result.sourcesCreated ?? 0;
+    final skipped = result.sourcesSkipped ?? 0;
 
-    try {
-      await Future.wait(
-        sourceIds.map((sourceId) async {
-          try {
-            await repository.trustSource(sourceId);
-            debugPrint('Source $sourceId marquée comme de confiance');
-          } catch (e) {
-            debugPrint('Erreur trust source $sourceId: $e');
-          }
-        }),
-      ).timeout(const Duration(seconds: 5));
-    } on TimeoutException {
-      debugPrint('Trust sources timeout (5s) — digest utilisera le fallback');
-    } catch (e) {
-      debugPrint('Erreur globale trust sources: $e');
+    // Télémétrie best-effort (ne bloque jamais l'onboarding)
+    unawaited(
+      _ref.read(analyticsServiceProvider).trackOnboardingSources(
+            requested: result.sourcesRequested ?? requested,
+            registered: registered,
+            skipped: skipped,
+          ),
+    );
+
+    if (skipped > 0) {
+      debugPrint(
+        'Onboarding sources: $skipped/${result.sourcesRequested ?? requested} '
+        'ignorée(s) par le serveur (inexistantes/inactives).',
+      );
     }
+  }
+
+  /// Trace un échec global d'enregistrement (transport : tous les retries KO).
+  void _reportSourcesFailure() {
+    final requested =
+        _ref.read(onboardingProvider).answers.preferredSources?.length ?? 0;
+    if (requested == 0) return;
+    unawaited(
+      _ref.read(analyticsServiceProvider).trackOnboardingSources(
+            requested: requested,
+            registered: 0,
+            skipped: 0,
+            failed: true,
+          ),
+    );
   }
 
   /// Réessayer après une erreur

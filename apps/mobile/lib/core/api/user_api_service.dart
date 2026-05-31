@@ -42,6 +42,9 @@ class UserApiService {
         profile: profile,
         interestsCreated: data['interests_created'] as int?,
         preferencesCreated: data['preferences_created'] as int?,
+        sourcesCreated: data['sources_created'] as int?,
+        sourcesRequested: data['sources_requested'] as int?,
+        sourcesSkipped: data['sources_skipped'] as int?,
       );
     } on DioException catch (e) {
       return _handleDioError(e);

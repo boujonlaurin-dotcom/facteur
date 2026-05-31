@@ -149,6 +149,25 @@ class AnalyticsService {
     await _logEvent('feed_complete', {'session_id': _sessionId});
   }
 
+  /// Enregistre le résultat de l'enregistrement des sources en fin d'onboarding.
+  /// Permet de surveiller le funnel "sources demandées → enregistrées" et de
+  /// détecter tout écart (cf. bug enregistrement silencieux). `failed` indique un
+  /// échec de transport (l'appel onboarding lui-même n'a pas abouti).
+  Future<void> trackOnboardingSources({
+    required int requested,
+    required int registered,
+    required int skipped,
+    bool failed = false,
+  }) async {
+    await _logEvent('onboarding_sources', {
+      'session_id': _sessionId,
+      'requested': requested,
+      'registered': registered,
+      'skipped': skipped,
+      'failed': failed,
+    });
+  }
+
   Future<void> trackSourceAdd(String sourceId) async {
     await _logEvent('source_add', {'source_id': sourceId});
   }

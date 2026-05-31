@@ -156,6 +156,14 @@ class UserSource(Base):
         Boolean, default=False, server_default="false"
     )
 
+    # NOTE (alignement modèle/DB) : la table prod possède aussi une colonne
+    # `state` (enum `interest_state` : followed/unfollowed/hidden/favorite,
+    # défaut DB 'followed', NOT NULL). Elle est gérée côté mobile (favori/masquer)
+    # et n'est volontairement PAS mappée ici : le backend ne lit/écrit jamais ce
+    # champ. Les insertions ORM (onboarding, trust) omettent donc `state`, ce qui
+    # applique le défaut DB 'followed' → la source est bien visible dans le feed.
+    # Ne pas mapper en `native_enum=False` : risquerait un cast text→enum en prod.
+
     # Relations
     source: Mapped["Source"] = relationship(back_populates="user_sources")
 
