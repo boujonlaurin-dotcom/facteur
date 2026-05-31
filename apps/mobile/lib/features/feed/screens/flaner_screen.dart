@@ -9,21 +9,17 @@ import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../core/providers/navigation_providers.dart';
 import '../../../shared/widgets/loaders/loading_view.dart';
-import '../../../shared/widgets/navigation/main_bottom_nav.dart';
 import '../../../widgets/article_preview_modal.dart';
-import '../../../widgets/design/facteur_logo.dart';
-import '../../app_update/providers/app_update_provider.dart';
 import '../../flux_continu/widgets/flux_continu_article_card.dart';
 import '../../flux_continu/widgets/section_banner.dart';
-import '../../gamification/widgets/streak_indicator.dart';
 import '../../sources/widgets/pepites_carousel.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
 import '../widgets/feed_carousel.dart';
 import '../widgets/feed_filter_bar.dart';
 import '../widgets/follow_keyword_suggestion_card.dart';
-import '../widgets/profile_avatar_button.dart';
 
 const double _kLoadMoreLeadingPx = 800.0;
 const double _kScrollDirThreshold = 12.0;
@@ -124,12 +120,13 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
   Widget build(BuildContext context) {
     final async = ref.watch(feedProvider);
     final colors = context.facteurColors;
+    // Re-tap de l'onglet actif (depuis le shell) → remonter en haut.
+    ref.listen(feedScrollTriggerProvider, (_, __) => _scrollToTop());
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
-      bottomNavigationBar: const MainBottomNav(
-        current: MainBottomNavDestination.flaner,
-      ),
+      // Header & footer vivent désormais dans le shell partagé (MainShell).
       body: SafeArea(
+        top: false,
         bottom: false,
         child: Stack(
           children: [
@@ -174,7 +171,8 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
         controller: _scroll,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          const SliverToBoxAdapter(child: _Header()),
+          // NB : le header (logo · streak · réglages) vit dans le shell partagé
+          // (MainShell) — fixe, hors du scroll.
           const SliverToBoxAdapter(
             child: SectionBanner(
               title: 'Flâner',
@@ -267,67 +265,6 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
           ),
         );
       }, childCount: contents.length + intercalations.length),
-    );
-  }
-}
-
-class _Header extends ConsumerWidget {
-  const _Header();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.facteurColors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: FacteurSpacing.space6,
-        vertical: FacteurSpacing.space3,
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          const FacteurLogo(size: 22, showIcon: false),
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: StreakIndicator(),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Consumer(
-              builder: (context, ref, _) {
-                final hasUpdate =
-                    ref.watch(appUpdateProvider).valueOrNull?.updateAvailable ==
-                        true;
-                final settingsButton = ProfileAvatarButton(
-                  onTap: () => context.push(RoutePaths.settings),
-                );
-                if (!hasUpdate) return settingsButton;
-                return Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    settingsButton,
-                    Positioned(
-                      top: -2,
-                      right: -2,
-                      child: Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color: colors.error,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: colors.backgroundPrimary,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
