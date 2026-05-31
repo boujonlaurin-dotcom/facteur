@@ -261,6 +261,29 @@ class AnalyticsService {
     await _logEvent('source_remove', {'source_id': sourceId});
   }
 
+  /// Issue de l'enregistrement des sources en fin d'onboarding.
+  ///
+  /// Rend OBSERVABLE en production l'écart "sources demandées → enregistrées".
+  /// Avant, un échec n'était qu'un `debugPrint` (invisible en release) → classe
+  /// de bug "enregistrement silencieux". `failed` = l'appel onboarding lui-même
+  /// n'a pas abouti (tous les retries KO).
+  Future<void> trackOnboardingSourcesRegistered({
+    required int requested,
+    required int created,
+    bool failed = false,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'requested': requested,
+      'created': created,
+      // signal clé pour l'alerting : des sources demandées mais 0 enregistrée
+      'missing': failed ? requested : (requested - created).clamp(0, requested),
+      'failed': failed,
+    };
+    await _logEvent('onboarding_sources_registered', props);
+    await _capturePostHog('onboarding_sources_registered', props);
+  }
+
   // ──────────────────────────────────────────────────────────────
   // Sprint 2 — feature-by-feature events (PR1)
   // ──────────────────────────────────────────────────────────────

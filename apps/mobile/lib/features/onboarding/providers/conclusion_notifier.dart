@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../../models/onboarding_result.dart';
 import '../../../models/user_profile.dart';
 import '../../../features/sources/providers/sources_providers.dart';
@@ -68,6 +69,18 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
       // automatique au prochain lancement, puis afficher le fallback.
       _minAnimationTimer?.cancel();
       await _saveProfileLocallyDegraded();
+      // Échec de transport tracé (jamais silencieux) si des sources étaient demandées.
+      final requestedSources =
+          _ref.read(onboardingProvider).answers.preferredSources?.length ?? 0;
+      if (requestedSources > 0) {
+        unawaited(
+          _ref.read(analyticsServiceProvider).trackOnboardingSourcesRegistered(
+                requested: requestedSources,
+                created: 0,
+                failed: true,
+              ),
+        );
+      }
       state = ConclusionError(e.toString());
     }
   }
@@ -128,13 +141,24 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
           'Sources: ${result.sourcesCreated}',
         );
 
-        // Alerte si l'utilisateur avait sélectionné des sources mais aucune n'a été créée
-        if ((answers.preferredSources?.isNotEmpty ?? false) &&
-            (result.sourcesCreated ?? 0) == 0) {
-          debugPrint(
-            '⚠️ ATTENTION: ${answers.preferredSources!.length} sources sélectionnées '
-            'mais 0 créées côté serveur !',
+        // Observabilité : rendre l'issue de l'enregistrement des sources visible
+        // EN PRODUCTION (télémétrie), et plus seulement via un debugPrint avalé
+        // en release → fin de la classe de bug "enregistrement silencieux".
+        final requestedSources = answers.preferredSources?.length ?? 0;
+        if (requestedSources > 0) {
+          final created = result.sourcesCreated ?? 0;
+          unawaited(
+            _ref.read(analyticsServiceProvider).trackOnboardingSourcesRegistered(
+                  requested: requestedSources,
+                  created: created,
+                ),
           );
+          if (created == 0) {
+            debugPrint(
+              '⚠️ ATTENTION: $requestedSources sources sélectionnées '
+              'mais 0 créées côté serveur !',
+            );
+          }
         }
         return; // Succès, on sort
       }
