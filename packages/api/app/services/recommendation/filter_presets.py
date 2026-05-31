@@ -308,28 +308,35 @@ def apply_theme_focus_filter(query, theme_slug: str):
     Optimisé : résout le matching source-level via subquery sur la petite
     table sources (~100 rows), puis utilise deux chemins indexés sur contents
     via BitmapOr :
-      1. Content.source_id IN (source IDs matchant le thème) → ix_contents_source_id
-      2. Content.theme = theme_slug → ix_contents_theme_published
+      1. Content.theme = theme_slug → ix_contents_theme_published
+      2. Content.source_id IN (sources dont le thème PRINCIPAL matche)
+         ET Content.theme IS NULL → ix_contents_source_id
 
     Utilisé par le mode THEME_FOCUS (digest) et le filtre thème (feed).
+
+    NOTE (fix bug curation 2026-05-31) : pour les articles non classifiés
+    (`Content.theme IS NULL`), on ne s'appuie QUE sur le thème **principal** de
+    la source — jamais sur ses `secondary_themes`. Les sources généralistes ont
+    des `secondary_themes` très larges (Le Monde → society/politics/economy/
+    culture/tech/science) : les utiliser pour des articles frais non classifiés
+    déversait chaque article du matin dans des sections sans rapport (un fil
+    « guerre en Ukraine » apparaissant sous Technologie ET Science). Les articles
+    classifiés, eux, passent toujours par le chemin (1) via `content.theme`, donc
+    `secondary_themes` n'apporte rien d'autre que la fuite.
     """
-    # Subquery : source IDs dont le thème principal ou secondaire matche
-    theme_source_ids_subq = select(Source.id).where(
-        or_(
-            Source.theme == theme_slug,
-            Source.secondary_themes.any(theme_slug),
-        )
-    )
+    # Subquery : source IDs dont le thème PRINCIPAL matche (pas les secondaires).
+    primary_theme_source_ids_subq = select(Source.id).where(Source.theme == theme_slug)
     # Deux chemins indexés sur la même table (contents) :
     # 1. Articles classifiés ML dans ce thème → toujours inclus
-    # 2. Articles de sources matchant le thème MAIS pas encore classifiés
-    #    (Content.theme IS NULL) → bénéfice du doute
+    # 2. Articles d'une source dont le thème principal matche MAIS pas encore
+    #    classifiés (Content.theme IS NULL) → bénéfice du doute, borné à la
+    #    section principale de la source.
     # Exclut: articles de sources matchantes mais classifiés dans un AUTRE thème
     return query.where(
         or_(
             Content.theme == theme_slug,
             and_(
-                Content.source_id.in_(theme_source_ids_subq),
+                Content.source_id.in_(primary_theme_source_ids_subq),
                 Content.theme.is_(None),
             ),
         )
