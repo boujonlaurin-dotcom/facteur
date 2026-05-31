@@ -6,10 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
-import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
 import '../models/topic_models.dart';
 import '../providers/custom_topics_provider.dart';
+import 'disambiguation_suggestion_tile.dart';
 
 const Color _terracotta = Color(0xFFE07A5F);
 
@@ -108,12 +108,7 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
   ) async {
     setState(() => _followingIndex = index);
     try {
-      final notifier = ref.read(customTopicsProvider.notifier);
-      if (s.entityType != null) {
-        await notifier.followEntity(s.canonicalName, s.entityType!, slugParent: s.slugParent);
-      } else {
-        await notifier.followTopic(s.canonicalName, slugParent: s.slugParent);
-      }
+      await ref.read(customTopicsProvider.notifier).followSuggestion(s);
       if (mounted) {
         Navigator.of(context).pop();
         NotificationService.showInfo(
@@ -290,99 +285,12 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
 
         // Suggestion rows
         ...List.generate(suggestions.length, (index) {
-          final s = suggestions[index];
-          final isFollowing = _followingIndex == index;
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        s.canonicalName,
-                        style: textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (s.entityType != null) ...[
-                        const SizedBox(height: 2),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color:
-                                colors.textTertiary.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            getEntityTypeLabel(s.entityType!),
-                            style: textTheme.labelSmall?.copyWith(
-                              color: colors.textTertiary,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ),
-                      ],
-                      if (s.description.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          s.description,
-                          style: textTheme.bodySmall?.copyWith(
-                            color: colors.textTertiary,
-                            fontSize: 12,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (isFollowing)
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: _terracotta,
-                    ),
-                  )
-                else
-                  TextButton.icon(
-                    onPressed: _followingIndex != null
-                        ? null
-                        : () => _followSuggestion(s, index),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    icon: Icon(
-                      PhosphorIcons.plus(PhosphorIconsStyle.bold),
-                      size: 14,
-                      color: _terracotta,
-                    ),
-                    label: Text(
-                      'Suivre',
-                      style: textTheme.labelSmall?.copyWith(
-                        color: _terracotta,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+          return DisambiguationSuggestionTile(
+            suggestion: suggestions[index],
+            isFollowing: _followingIndex == index,
+            onFollow: _followingIndex != null
+                ? null
+                : () => _followSuggestion(suggestions[index], index),
           );
         }),
 

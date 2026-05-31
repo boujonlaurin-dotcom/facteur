@@ -259,6 +259,20 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
       rethrow;
     }
   });
+
+  /// Follow a disambiguation suggestion — entity if typed, plain topic
+  /// otherwise. Shared by `EntityAddSheet` and the source-search « Sujets »
+  /// section so the entity/topic branching lives in one place.
+  Future<UserTopicProfile?> followSuggestion(DisambiguationSuggestion s) {
+    if (s.entityType != null) {
+      return followEntity(
+        s.canonicalName,
+        s.entityType!,
+        slugParent: s.slugParent,
+      );
+    }
+    return followTopic(s.canonicalName, slugParent: s.slugParent);
+  }
 }
 
 // Topic suggestions provider (parameterized by optional theme slug)
