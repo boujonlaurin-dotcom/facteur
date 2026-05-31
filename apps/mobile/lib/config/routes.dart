@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../shared/widgets/navigation/swipe_back_page.dart';
+import '../shared/widgets/navigation/main_shell.dart';
 
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/splash_screen.dart';
@@ -44,43 +45,16 @@ import '../core/services/deep_link_service.dart';
 import '../core/ui/notification_service.dart';
 import '../shared/widgets/navigation/modal_bottom_sheet_page.dart';
 
-/// Onglet de bottom-nav affiché en dernier (Essentiel = 0, Flâner = 1).
+/// Clés de navigator des deux branches du shell principal (Essentiel / Flâner).
 ///
-/// Suivi au niveau module pour que la transition directionnelle entre onglets
-/// reste correcte quel que soit le chemin de navigation (tap footer, closing
-/// card, redirect, resume), et pas seulement sur un tap explicite du footer.
-int _lastMainTabIndex = 0;
-
-/// Construit la page d'un onglet principal avec une transition latérale
-/// directionnelle : l'onglet cible glisse depuis la gauche quand on avance vers
-/// la droite (Essentiel → Flâner) et depuis la droite quand on recule vers la
-/// gauche (Flâner → Essentiel). Sur le même onglet (delta nul) → simple fondu.
-CustomTransitionPage<void> _mainTabPage({
-  required LocalKey key,
-  required int tabIndex,
-  required Widget child,
-}) {
-  final delta = tabIndex - _lastMainTabIndex;
-  _lastMainTabIndex = tabIndex;
-  return CustomTransitionPage<void>(
-    key: key,
-    transitionDuration: const Duration(milliseconds: 260),
-    reverseTransitionDuration: const Duration(milliseconds: 260),
-    transitionsBuilder: (context, animation, secondaryAnimation, page) {
-      if (delta == 0) {
-        return FadeTransition(opacity: animation, child: page);
-      }
-      final begin = delta > 0 ? const Offset(-1, 0) : const Offset(1, 0);
-      return SlideTransition(
-        position: Tween<Offset>(begin: begin, end: Offset.zero).animate(
-          CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-        ),
-        child: page,
-      );
-    },
-    child: child,
-  );
-}
+/// Chaque branche d'un `StatefulShellRoute` possède son propre navigator pour
+/// préserver son état (scroll, pile) quand on passe d'un onglet à l'autre. Le
+/// navigator *root* reste `NotificationService.navigatorKey` (cf. `GoRouter`
+/// plus bas) — c'est lui que ciblent les sous-routes article via
+/// `parentNavigatorKey` pour s'afficher plein écran au-dessus du footer.
+final _essentielBranchKey =
+    GlobalKey<NavigatorState>(debugLabel: 'essentielBranch');
+final _flanerBranchKey = GlobalKey<NavigatorState>(debugLabel: 'flanerBranch');
 
 /// Noms des routes
 class RouteNames {
@@ -297,87 +271,106 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ConclusionAnimationScreen(),
       ),
 
-      // Flux Continu V1.8 — nouvelle home post-auth (Story 21.1)
-      GoRoute(
-        path: RoutePaths.fluxContinu,
-        name: RouteNames.fluxContinu,
-        pageBuilder: (context, state) => _mainTabPage(
-          key: state.pageKey,
-          tabIndex: 0,
-          child: const Stack(children: [FluxContinuScreen(), NudgeHost()]),
+      // Shell principal des deux onglets (Essentiel / Flâner). Le shell pose un
+      // header + footer FIXES (MainShell) ; seul le body glisse au changement
+      // d'onglet (BranchPageView). Les sous-routes article s'échappent vers le
+      // navigator root via `parentNavigatorKey` pour s'afficher plein écran
+      // au-dessus du footer (swipe-back Cupertino conservé).
+      StatefulShellRoute(
+        builder: (context, state, navigationShell) =>
+            MainShell(navigationShell: navigationShell),
+        navigatorContainerBuilder: (context, navigationShell, children) =>
+            BranchPageView(
+          navigationShell: navigationShell,
+          children: children,
         ),
-        routes: [
-          GoRoute(
-            path: 'content/:id',
-            // Nom historique conservé pour que `context.pushNamed(contentDetail)`
-            // continue de fonctionner après la suppression de la route /feed.
-            name: RouteNames.contentDetail,
-            parentNavigatorKey: NotificationService.navigatorKey,
-            pageBuilder: (context, state) {
-              final contentId = state.pathParameters['id']!;
-              final content = state.extra as Content?;
-              return FullSwipeCupertinoPage(
-                child: ContentDetailScreen(
-                  contentId: contentId,
-                  content: content,
-                ),
-              );
-            },
+        branches: [
+          // Branche 0 — L'Essentiel (Flux Continu, home post-auth Story 21.1).
+          StatefulShellBranch(
+            navigatorKey: _essentielBranchKey,
+            routes: [
+              GoRoute(
+                path: RoutePaths.fluxContinu,
+                name: RouteNames.fluxContinu,
+                builder: (context, state) =>
+                    const Stack(children: [FluxContinuScreen(), NudgeHost()]),
+                routes: [
+                  GoRoute(
+                    path: 'content/:id',
+                    // Nom historique conservé pour que
+                    // `context.pushNamed(contentDetail)` fonctionne toujours.
+                    name: RouteNames.contentDetail,
+                    parentNavigatorKey: NotificationService.navigatorKey,
+                    pageBuilder: (context, state) {
+                      final contentId = state.pathParameters['id']!;
+                      final content = state.extra as Content?;
+                      return FullSwipeCupertinoPage(
+                        child: ContentDetailScreen(
+                          contentId: contentId,
+                          content: content,
+                        ),
+                      );
+                    },
+                  ),
+                  GoRoute(
+                    path: 'theme/:key',
+                    parentNavigatorKey: NotificationService.navigatorKey,
+                    pageBuilder: (context, state) {
+                      final key = state.pathParameters['key']!;
+                      final section = state.extra as FeedThemeSection?;
+                      return FullSwipeCupertinoPage(
+                        child: ThemeSectionScreen(
+                          sectionKeyValue: key,
+                          initialSection: section,
+                        ),
+                      );
+                    },
+                  ),
+                  GoRoute(
+                    path: 'section/:key',
+                    parentNavigatorKey: NotificationService.navigatorKey,
+                    pageBuilder: (context, state) {
+                      final key = state.pathParameters['key']!;
+                      final section = state.extra as DigestTopicSection?;
+                      return FullSwipeCupertinoPage(
+                        child: DigestSectionScreen(
+                          sectionKeyValue: key,
+                          initialSection: section,
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
           ),
-          GoRoute(
-            path: 'theme/:key',
-            parentNavigatorKey: NotificationService.navigatorKey,
-            pageBuilder: (context, state) {
-              final key = state.pathParameters['key']!;
-              final section = state.extra as FeedThemeSection?;
-              return FullSwipeCupertinoPage(
-                child: ThemeSectionScreen(
-                  sectionKeyValue: key,
-                  initialSection: section,
-                ),
-              );
-            },
-          ),
-          GoRoute(
-            path: 'section/:key',
-            parentNavigatorKey: NotificationService.navigatorKey,
-            pageBuilder: (context, state) {
-              final key = state.pathParameters['key']!;
-              final section = state.extra as DigestTopicSection?;
-              return FullSwipeCupertinoPage(
-                child: DigestSectionScreen(
-                  sectionKeyValue: key,
-                  initialSection: section,
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-
-      // Flâner — feed autonome.
-      GoRoute(
-        path: RoutePaths.flaner,
-        name: RouteNames.flaner,
-        pageBuilder: (context, state) => _mainTabPage(
-          key: state.pageKey,
-          tabIndex: 1,
-          child: const Stack(children: [FlanerScreen(), NudgeHost()]),
-        ),
-        routes: [
-          GoRoute(
-            path: 'content/:id',
-            parentNavigatorKey: NotificationService.navigatorKey,
-            pageBuilder: (context, state) {
-              final contentId = state.pathParameters['id']!;
-              final content = state.extra as Content?;
-              return FullSwipeCupertinoPage(
-                child: ContentDetailScreen(
-                  contentId: contentId,
-                  content: content,
-                ),
-              );
-            },
+          // Branche 1 — Flâner (feed autonome).
+          StatefulShellBranch(
+            navigatorKey: _flanerBranchKey,
+            routes: [
+              GoRoute(
+                path: RoutePaths.flaner,
+                name: RouteNames.flaner,
+                builder: (context, state) =>
+                    const Stack(children: [FlanerScreen(), NudgeHost()]),
+                routes: [
+                  GoRoute(
+                    path: 'content/:id',
+                    parentNavigatorKey: NotificationService.navigatorKey,
+                    pageBuilder: (context, state) {
+                      final contentId = state.pathParameters['id']!;
+                      final content = state.extra as Content?;
+                      return FullSwipeCupertinoPage(
+                        child: ContentDetailScreen(
+                          contentId: contentId,
+                          content: content,
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
           ),
         ],
       ),

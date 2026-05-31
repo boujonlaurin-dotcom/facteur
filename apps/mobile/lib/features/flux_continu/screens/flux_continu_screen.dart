@@ -14,16 +14,12 @@ import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../../core/providers/analytics_provider.dart';
-import '../../../widgets/design/facteur_logo.dart';
-import '../../../shared/widgets/navigation/main_bottom_nav.dart';
-import '../../app_update/providers/app_update_provider.dart';
+import '../../../core/providers/navigation_providers.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/swipe_hint_provider.dart';
 import '../../feed/widgets/feedback_inline.dart';
-import '../../feed/widgets/profile_avatar_button.dart';
-import '../../gamification/widgets/streak_indicator.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
 import '../../notifications/widgets/notification_renudge_banner.dart';
 import '../../well_informed/widgets/well_informed_prompt.dart';
@@ -592,12 +588,15 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(fluxContinuProvider);
+    // Re-tap de l'onglet actif (depuis le shell) → remonter en haut.
+    ref.listen(essentielScrollTriggerProvider, (_, __) => _scrollToTop());
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
-      bottomNavigationBar: const MainBottomNav(
-        current: MainBottomNavDestination.essentiel,
-      ),
+      // Header & footer vivent désormais dans le shell partagé (MainShell) :
+      // l'écran ne fournit plus de bottomNavigationBar ni de header, et son top
+      // inset est déjà consommé par le header fixe du shell.
       body: SafeArea(
+        top: false,
         bottom: false,
         child: Stack(
           children: [
@@ -687,63 +686,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
         controller: _scroll,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: FacteurSpacing.space6,
-                vertical: FacteurSpacing.space3,
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  const FacteurLogo(size: 22, showIcon: false),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: StreakIndicator(),
-                  ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Consumer(
-                      builder: (context, ref, _) {
-                        final hasUpdate =
-                            ref
-                                .watch(appUpdateProvider)
-                                .valueOrNull
-                                ?.updateAvailable ==
-                            true;
-                        final settingsButton = ProfileAvatarButton(
-                          onTap: () => context.push(RoutePaths.settings),
-                        );
-                        if (!hasUpdate) return settingsButton;
-                        return Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            settingsButton,
-                            Positioned(
-                              top: -2,
-                              right: -2,
-                              child: Container(
-                                width: 12,
-                                height: 12,
-                                decoration: BoxDecoration(
-                                  color: colors.error,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: colors.backgroundPrimary,
-                                    width: 2,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          // NB : le header (logo · streak · réglages) vit dans le shell partagé
+          // (MainShell) — fixe, hors du scroll.
           SliverToBoxAdapter(
             child: impressionSlot == FirstImpressionSlot.renudgeBanner
                 ? const NotificationRenudgeBanner()
