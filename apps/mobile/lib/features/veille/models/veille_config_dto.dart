@@ -19,6 +19,9 @@ class VeilleTopicDto {
   final String? reason;
   final int position;
 
+  /// Grappe de mots-clés de l'angle (round-trip avec le backend).
+  final List<String> keywords;
+
   const VeilleTopicDto({
     required this.id,
     required this.topicId,
@@ -26,6 +29,7 @@ class VeilleTopicDto {
     required this.kind,
     required this.reason,
     required this.position,
+    this.keywords = const [],
   });
 
   factory VeilleTopicDto.fromJson(Map<String, dynamic> json) {
@@ -36,6 +40,9 @@ class VeilleTopicDto {
       kind: json['kind'] as String,
       reason: json['reason'] as String?,
       position: (json['position'] as num?)?.toInt() ?? 0,
+      keywords: ((json['keywords'] as List?) ?? const [])
+          .map((e) => e as String)
+          .toList(),
     );
   }
 }
@@ -195,12 +202,16 @@ class VeilleTopicSelectionRequest {
   final String? reason;
   final int position;
 
+  /// Grappe de mots-clés de l'angle — pilote le scoring côté backend.
+  final List<String> keywords;
+
   const VeilleTopicSelectionRequest({
     required this.topicId,
     required this.label,
     required this.kind,
     this.reason,
     this.position = 0,
+    this.keywords = const [],
   });
 
   Map<String, dynamic> toJson() => {
@@ -209,6 +220,7 @@ class VeilleTopicSelectionRequest {
         'kind': kind,
         if (reason != null) 'reason': reason,
         'position': position,
+        'keywords': keywords,
       };
 }
 

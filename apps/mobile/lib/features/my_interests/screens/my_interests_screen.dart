@@ -338,8 +338,11 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
               ),
             ),
             // CTA "Crée ta veille" — visible si aucun VeilleFavoriteRef dans
-            // les favoris. La veille devient le 3ᵉ type de favori (Story 23.2 PR-4).
-            if (interests.favorites.whereType<VeilleFavoriteRef>().isEmpty)
+            // les favoris ET aucune veille active connue. La double condition
+            // évite le faux CTA quand la liste des favoris est transitoirement
+            // périmée (sinon clic → VeilleConfigScreen redirige vers le feed).
+            if (interests.favorites.whereType<VeilleFavoriteRef>().isEmpty &&
+                ref.watch(veilleActiveConfigProvider).valueOrNull == null)
               _CreateVeilleCta(
                 onTap: () => context.pushNamed(RouteNames.veilleConfig),
               ),
