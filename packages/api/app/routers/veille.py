@@ -9,7 +9,7 @@ import sentry_sdk
 import structlog
 from cachetools import TTLCache
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import delete, select
+from sqlalchemy import case, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.data.veille_presets import get_presets
@@ -47,7 +47,7 @@ from app.schemas.veille import (
 from app.services.rss_parser import RSSParser
 from app.services.source_service import SourceService
 from app.services.user_interests_service import ensure_veille_favorite
-from app.services.veille.feed_filter import fetch_veille_feed
+from app.services.veille.feed_filter import fetch_veille_feed, load_veille_filters
 from app.services.veille.llm import get_angle_suggester, get_source_suggester
 
 logger = structlog.get_logger()
@@ -123,6 +123,13 @@ async def _hydrate_response(
         ):
             sources_by_id[src.id] = src
 
+    # Split mots-clés : globaux (veille_topic_id NULL) vs grappes d'angles.
+    global_keywords = [kw for kw in keywords_rows if kw.veille_topic_id is None]
+    keywords_by_topic: dict[UUID, list[str]] = {}
+    for kw in keywords_rows:
+        if kw.veille_topic_id is not None:
+            keywords_by_topic.setdefault(kw.veille_topic_id, []).append(kw.keyword)
+
     return VeilleConfigResponse(
         id=cfg.id,
         user_id=cfg.user_id,
@@ -142,6 +149,7 @@ async def _hydrate_response(
                 kind=t.kind,  # type: ignore[arg-type]
                 reason=t.reason,
                 position=t.position,
+                keywords=keywords_by_topic.get(t.id, []),
             )
             for t in topics_rows
         ],
@@ -158,7 +166,7 @@ async def _hydrate_response(
         ],
         keywords=[
             VeilleKeywordResponse(id=kw.id, keyword=kw.keyword, position=kw.position)
-            for kw in keywords_rows
+            for kw in global_keywords
         ],
     )
 
@@ -282,17 +290,32 @@ async def upsert_config(
         delete(VeilleKeyword).where(VeilleKeyword.veille_config_id == cfg.id)
     )
 
-    for idx, t in enumerate(body.topics):
-        db.add(
-            VeilleTopic(
-                veille_config_id=cfg.id,
-                topic_id=t.topic_id,
-                label=t.label,
-                kind=t.kind,
-                reason=t.reason,
-                position=idx,
-            )
+    topic_rows = [
+        VeilleTopic(
+            veille_config_id=cfg.id,
+            topic_id=t.topic_id,
+            label=t.label,
+            kind=t.kind,
+            reason=t.reason,
+            position=idx,
         )
+        for idx, t in enumerate(body.topics)
+    ]
+    for topic in topic_rows:
+        db.add(topic)
+    # Un seul flush matérialise tous les topic.id, puis on rattache les grappes.
+    if topic_rows:
+        await db.flush()
+    for topic, t in zip(topic_rows, body.topics):
+        for kpos, kw in enumerate(t.keywords):
+            db.add(
+                VeilleKeyword(
+                    veille_config_id=cfg.id,
+                    veille_topic_id=topic.id,
+                    keyword=kw,
+                    position=kpos,
+                )
+            )
 
     seen_source_ids: set[UUID] = set()
     for idx, sel in enumerate(body.source_selections):
@@ -436,7 +459,7 @@ async def list_presets(db: AsyncSession = Depends(get_db)):
                         Source.is_active.is_(True),
                     )
                     .order_by(Source.name)
-                    .limit(6)
+                    .limit(12)
                 )
             )
             .scalars()
@@ -462,28 +485,44 @@ async def list_presets(db: AsyncSession = Depends(get_db)):
 
 
 async def _fetch_source_examples(
-    db: AsyncSession, source_id: UUID
+    db: AsyncSession,
+    source_id: UUID,
+    keywords: list[str] | None = None,
 ) -> list[VeilleSourceExample]:
-    """Renvoie jusqu'à 2 exemples récents d'une source. Cache TTL 24 h."""
-    cache_key = str(source_id)
+    """Renvoie jusqu'à 2 exemples récents d'une source. Cache TTL 24 h.
+
+    Si `keywords` (issus de la config en cours) sont fournis, on **préfère**
+    les articles de la source qui matchent l'un d'eux (title/description) —
+    les exemples illustrent alors vraiment ce que la veille remontera, plutôt
+    que les 2 derniers articles bruts.
+    """
+    norm_keywords = sorted({k.lower().strip() for k in (keywords or []) if k.strip()})
+    cache_key = f"{source_id}|{'|'.join(norm_keywords)}"
     if cache_key in _SOURCE_EXAMPLES_CACHE:
         return _SOURCE_EXAMPLES_CACHE[cache_key]
 
     cutoff = datetime.now(UTC) - timedelta(days=_SOURCE_EXAMPLES_LOOKBACK_DAYS)
-    contents = (
-        (
-            await db.execute(
-                select(Content)
-                .where(
-                    Content.source_id == source_id,
-                    Content.published_at >= cutoff,
-                )
-                .order_by(Content.published_at.desc())
-                .limit(_SOURCE_EXAMPLES_LIMIT)
-            )
+    base_query = select(Content).where(
+        Content.source_id == source_id,
+        Content.published_at >= cutoff,
+    )
+    if norm_keywords:
+        match_expr = or_(
+            *[
+                Content.title.ilike(f"%{kw}%") | Content.description.ilike(f"%{kw}%")
+                for kw in norm_keywords
+            ]
         )
-        .scalars()
-        .all()
+        # Boost les articles matchant un mot-clé, puis tri par récence.
+        base_query = base_query.order_by(
+            case((match_expr, 1), else_=0).desc(),
+            Content.published_at.desc(),
+        )
+    else:
+        base_query = base_query.order_by(Content.published_at.desc())
+
+    contents = (
+        (await db.execute(base_query.limit(_SOURCE_EXAMPLES_LIMIT))).scalars().all()
     )
     if contents:
         examples = [
@@ -562,9 +601,18 @@ async def get_source_examples(
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
-    """Renvoie un aperçu (≤2 articles) pour rassurer l'utilisateur au Step 3."""
-    UUID(current_user_id)
-    return await _fetch_source_examples(db, source_id)
+    """Renvoie un aperçu (≤2 articles) pour rassurer l'utilisateur au Step 3.
+
+    Si l'utilisateur a déjà une veille active, on préfère les articles de la
+    source qui matchent ses mots-clés (globaux + grappes d'angles).
+    """
+    user_uuid = UUID(current_user_id)
+    keywords: list[str] = []
+    cfg = await _get_active_config(db, user_uuid)
+    if cfg is not None:
+        filters = await load_veille_filters(db, cfg)
+        keywords = filters.all_keywords
+    return await _fetch_source_examples(db, source_id, keywords=keywords)
 
 
 # ─── Suggesters LLM (Story 23.3) ─────────────────────────────────────────────
@@ -575,7 +623,7 @@ async def suggest_angles(
     body: VeilleSuggestAnglesRequest,
     current_user_id: str = Depends(get_current_user_id),
 ):
-    """Renvoie 5-8 angles + mots-clés explicites pour un thème + brief.
+    """Renvoie 8-12 angles + mots-clés explicites pour un thème + brief.
 
     Appel synchrone Mistral (~10-15s), cache TTL 24h sur (theme + brief).
     Mobile affiche un HaloLoader pendant l'appel.

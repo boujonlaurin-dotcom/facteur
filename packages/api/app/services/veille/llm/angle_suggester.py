@@ -44,7 +44,7 @@ class _LLMAngle(BaseModel):
 
 _SYSTEM_PROMPT = """Tu es un expert en curation éditoriale francophone, spécialisé en veille thématique.
 
-Tâche : pour un thème et un brief éditorial donnés, propose 5 à 8 ANGLES de veille pertinents. Chaque angle vient avec 3 à 5 mots-clés explicites qui serviront ensuite à filtrer des articles d'actualité.
+Tâche : pour un thème et un brief éditorial donnés, propose 8 à 12 ANGLES de veille pertinents. Chaque angle vient avec 3 à 5 mots-clés explicites qui serviront ensuite à filtrer des articles d'actualité.
 
 Format JSON strict :
 {
@@ -59,7 +59,7 @@ Format JSON strict :
 }
 
 Contraintes :
-- 5 à 8 angles distincts (pas de redondance).
+- 8 à 12 angles distincts (pas de redondance).
 - title : titre court (max 80 chars), explicite, complémentaire aux autres angles.
 - keywords : 3 à 5 mots ou expressions courtes (1-3 mots chacun), en français, en minuscules. Ce sont les mots qui doivent matcher dans les titres / descriptions des articles. Pense large (synonymes, variantes, noms propres pertinents) mais reste précis pour le sujet.
 - reason : 1 phrase max 200 chars qui explique l'intérêt de cet angle pour le thème + brief.
@@ -94,6 +94,21 @@ def _fallback_angles(theme_label: str) -> list[AngleSuggestion]:
             title="Initiatives et bonnes pratiques",
             keywords=["initiative", "bonne pratique", "retour d'expérience"],
             reason="Cas concrets et solutions testées",
+        ),
+        AngleSuggestion(
+            title="Acteurs et personnalités",
+            keywords=["interview", "portrait", "personnalité"],
+            reason="Les figures qui font bouger le domaine",
+        ),
+        AngleSuggestion(
+            title="Tendances de fond",
+            keywords=["tendance", "prospective", "futur"],
+            reason="Mouvements de long terme et signaux faibles",
+        ),
+        AngleSuggestion(
+            title="Réglementation et politique",
+            keywords=["réglementation", "loi", "politique"],
+            reason="Cadre légal et décisions publiques",
         ),
     ]
 
@@ -139,7 +154,7 @@ class AngleSuggester:
         user_message = (
             f"Thème : {theme_label} (slug: {theme_id})\n"
             f"Brief éditorial : {brief or '(aucun)'}\n\n"
-            f"Propose 5 à 8 angles avec leurs mots-clés explicites."
+            f"Propose 8 à 12 angles avec leurs mots-clés explicites."
         )
 
         raw = await self._llm.chat_json(
@@ -147,7 +162,7 @@ class AngleSuggester:
             user_message=user_message,
             model=self._model,
             temperature=0.3,
-            max_tokens=1200,
+            max_tokens=2000,
         )
 
         angles = self._parse(raw)

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../my_interests/providers/user_interests_provider.dart';
 import '../models/veille_config.dart';
 import '../models/veille_config_dto.dart';
 import '../repositories/veille_repository.dart';
@@ -513,6 +514,11 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       _ref
           .read(veilleActiveConfigProvider.notifier)
           .hydrateFromServer(cfg);
+      // La veille est un favori d'intérêt : sans invalidation, la liste des
+      // favoris reste périmée (sans VeilleFavoriteRef) et le CTA « Créer ma
+      // veille » reste affiché → clic → redirection feed (bug navigation).
+      // Le chemin archivage le fait déjà (my_interests_screen.dart).
+      _ref.invalidate(userInterestsProvider);
       state = state.copyWith(isSubmitting: false);
     } on VeilleApiException catch (e) {
       state = state.copyWith(

@@ -1,16 +1,20 @@
-"""Service de filtre temps-réel pour /api/veille/feed (Story 23.1).
+"""Feed veille curé par score (refonte curation).
 
-Compose la config veille de l'utilisateur (thèmes/topics/sources/keywords) en
-une clause `OR` SQL appliquée live sur `contents`. Boost les articles dont la
-source matche la config (priorité dans le tri). Aucun appel LLM — pur SQL.
+Pipeline : **prefilter SQL (axes forts) → scoring piliers → seuil → tri par
+score**, en réutilisant le moteur de la Tournée (`PillarScoringEngine`). Le
+thème macro est retiré du prédicat : un article « thème seul » ne peut donc
+jamais entrer dans le pool de candidats. Les axes forts sont les topics/angles,
+les sources suivies et les mots-clés (globaux + grappes d'angles).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import case, exists, or_, select
+import structlog
+from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -28,19 +32,60 @@ from app.services.recommendation.filter_presets import (
     apply_serein_filter,
     load_serein_preferences,
 )
+from app.services.recommendation.scoring_config import ScoringWeights
+from app.services.recommendation.scoring_engine import PillarScoringEngine
+from app.services.veille.scoring_context import build_veille_scoring_context
+
+logger = structlog.get_logger()
+
+
+@dataclass(frozen=True)
+class VeilleAngle:
+    """Un angle = sujet (`topic_id`) + sa grappe de mots-clés."""
+
+    topic_id: str
+    label: str
+    keywords: list[str] = field(default_factory=list)
 
 
 @dataclass
 class VeilleFilters:
-    """Filtres chargés depuis une VeilleConfig active."""
+    """Filtres chargés depuis une VeilleConfig active.
 
-    themes: list[str] = field(default_factory=list)
-    topic_slugs: list[str] = field(default_factory=list)
+    `theme_id` est un signal faible (scoring uniquement, jamais dans le
+    prédicat). Les axes forts qui peuplent le pool de candidats sont
+    `angles` (topics + grappes), `source_ids` et `global_keywords`.
+    """
+
+    theme_id: str | None = None
+    angles: list[VeilleAngle] = field(default_factory=list)
     source_ids: list[UUID] = field(default_factory=list)
-    keywords: list[str] = field(default_factory=list)
+    global_keywords: list[str] = field(default_factory=list)
 
-    def has_any(self) -> bool:
-        return bool(self.themes or self.topic_slugs or self.source_ids or self.keywords)
+    @property
+    def topic_slugs(self) -> list[str]:
+        return [a.topic_id for a in self.angles]
+
+    @property
+    def all_keywords(self) -> list[str]:
+        """Mots-clés globaux + grappes d'angles, dédupliqués (ordre stable)."""
+        seen: set[str] = set()
+        out: list[str] = []
+        for kw in self.global_keywords:
+            low = kw.lower().strip()
+            if low and low not in seen:
+                seen.add(low)
+                out.append(low)
+        for angle in self.angles:
+            for kw in angle.keywords:
+                low = kw.lower().strip()
+                if low and low not in seen:
+                    seen.add(low)
+                    out.append(low)
+        return out
+
+    def has_strong_axis(self) -> bool:
+        return bool(self.topic_slugs or self.source_ids or self.all_keywords)
 
 
 async def _get_active_config(
@@ -56,18 +101,45 @@ async def _get_active_config(
 async def load_veille_filters(
     session: AsyncSession, config: VeilleConfig
 ) -> VeilleFilters:
-    """Charge topics/sources/keywords liés à la config en 3 SELECT indexés."""
-    topics = (
-        (
-            await session.execute(
-                select(VeilleTopic.topic_id).where(
-                    VeilleTopic.veille_config_id == config.id
-                )
-            )
+    """Charge angles (topics + grappes), sources et mots-clés globaux.
+
+    Les `VeilleKeyword` rattachés à un angle (`veille_topic_id`) forment la
+    grappe de cet angle ; ceux sans rattachement (`veille_topic_id IS NULL`)
+    sont des mots-clés globaux de la config.
+    """
+    topic_rows = (
+        await session.execute(
+            select(VeilleTopic.id, VeilleTopic.topic_id, VeilleTopic.label)
+            .where(VeilleTopic.veille_config_id == config.id)
+            .order_by(VeilleTopic.position, VeilleTopic.created_at)
         )
-        .scalars()
-        .all()
-    )
+    ).all()
+
+    keyword_rows = (
+        await session.execute(
+            select(VeilleKeyword.keyword, VeilleKeyword.veille_topic_id)
+            .where(VeilleKeyword.veille_config_id == config.id)
+            .order_by(VeilleKeyword.position)
+        )
+    ).all()
+
+    keywords_by_topic: dict[UUID, list[str]] = {}
+    global_keywords: list[str] = []
+    for keyword, topic_id in keyword_rows:
+        if topic_id is None:
+            global_keywords.append(keyword)
+        else:
+            keywords_by_topic.setdefault(topic_id, []).append(keyword)
+
+    angles = [
+        VeilleAngle(
+            topic_id=topic_id,
+            label=label,
+            keywords=keywords_by_topic.get(row_id, []),
+        )
+        for row_id, topic_id, label in topic_rows
+    ]
+
     sources = (
         (
             await session.execute(
@@ -79,66 +151,97 @@ async def load_veille_filters(
         .scalars()
         .all()
     )
-    keywords = (
-        (
-            await session.execute(
-                select(VeilleKeyword.keyword)
-                .where(VeilleKeyword.veille_config_id == config.id)
-                .order_by(VeilleKeyword.position)
-            )
-        )
-        .scalars()
-        .all()
-    )
+
     return VeilleFilters(
-        themes=[config.theme_id] if config.theme_id else [],
-        topic_slugs=list(topics),
+        theme_id=config.theme_id or None,
+        angles=angles,
         source_ids=list(sources),
-        keywords=list(keywords),
+        global_keywords=global_keywords,
     )
 
 
-def build_or_predicate(filters: VeilleFilters):
-    """Construit la clause `OR` SQL combinant les 4 axes du filtre.
+def build_strong_predicate(filters: VeilleFilters):
+    """Clause `OR` SQL sur les axes **forts uniquement** (jamais le thème).
 
-    - `theme` : Content.theme IN (themes) — index ix_contents_theme_published
     - `topic` : Content.topics && topic_slugs — index GIN ix_contents_topics
     - `source` : Content.source_id IN (source_ids) — index ix_contents_source_id
-    - `keyword` : title ILIKE OR description ILIKE — pas d'index trigramme V1,
-      benchmark requis (cf. R1 Story 23.1).
+    - `keyword` : title ILIKE OR description ILIKE (globaux + grappes d'angles)
+
+    Renvoie `None` si aucun axe fort (p.ex. thème seul) → exclusion voulue.
     """
     clauses = []
-    if filters.themes:
-        clauses.append(Content.theme.in_(filters.themes))
     if filters.topic_slugs:
         clauses.append(Content.topics.overlap(filters.topic_slugs))
     if filters.source_ids:
         clauses.append(Content.source_id.in_(filters.source_ids))
-    if filters.keywords:
-        for kw in filters.keywords:
-            pattern = f"%{kw}%"
-            clauses.append(Content.title.ilike(pattern))
-            clauses.append(Content.description.ilike(pattern))
+    for kw in filters.all_keywords:
+        pattern = f"%{kw}%"
+        clauses.append(Content.title.ilike(pattern))
+        clauses.append(Content.description.ilike(pattern))
     return or_(*clauses) if clauses else None
 
 
-def _matched_axes(content: Content, filters: VeilleFilters) -> list[str]:
-    """Calcule sur quels axes l'article matche (info exposée au front)."""
+def _matched_axes(
+    content: Content,
+    topic_slugs: set[str],
+    source_ids: set[UUID],
+    keywords: list[str],
+) -> list[str]:
+    """Axes **qualifiants** sur lesquels l'article matche (exposés au front).
+
+    Le thème n'est plus un axe qualifiant : l'inclusion est gérée par le
+    prédicat fort + le seuil de score. On garde topic/source/keyword. Les
+    collections sont pré-calculées par l'appelant (hot path : ~CANDIDATE_CAP
+    appels par fetch).
+    """
     axes: list[str] = []
-    if filters.themes and content.theme in filters.themes:
-        axes.append("theme")
-    if filters.topic_slugs and content.topics:
-        topic_set = set(filters.topic_slugs)
-        if any(t in topic_set for t in content.topics):
+    if topic_slugs and content.topics:
+        if any(t in topic_slugs for t in content.topics):
             axes.append("topic")
-    if filters.source_ids and content.source_id in filters.source_ids:
+    if source_ids and content.source_id in source_ids:
         axes.append("source")
-    if filters.keywords:
+    if keywords:
         title_lower = (content.title or "").lower()
         desc_lower = (content.description or "").lower()
-        if any(kw in title_lower or kw in desc_lower for kw in filters.keywords):
+        if any(kw in title_lower or kw in desc_lower for kw in keywords):
             axes.append("keyword")
     return axes
+
+
+def _score_and_rank(
+    candidates: list[Content],
+    context,
+    filters: VeilleFilters,
+) -> list[tuple[Content, float, list[str]]]:
+    """Score chaque candidat, garde ≥ seuil, trie par (score, récence) desc."""
+    engine = PillarScoringEngine()
+    # Pré-calcul hors boucle : ces dérivations sont stables sur tout le fetch.
+    topic_slugs = set(filters.topic_slugs)
+    source_ids = set(filters.source_ids)
+    keywords = filters.all_keywords
+    passing: list[tuple[Content, float, list[str]]] = []
+    max_score = 0.0
+    for content in candidates:
+        result = engine.compute_score(content, context)
+        score = result.final_score
+        if score > max_score:
+            max_score = score
+        if score >= ScoringWeights.VEILLE_RELEVANCE_THRESHOLD:
+            axes = _matched_axes(content, topic_slugs, source_ids, keywords)
+            passing.append((content, score, axes))
+
+    _epoch = datetime.min.replace(tzinfo=UTC)
+    passing.sort(
+        key=lambda t: (t[1], t[0].published_at or _epoch),
+        reverse=True,
+    )
+    logger.info(
+        "veille.feed_scored",
+        candidate_count=len(candidates),
+        pass_count=len(passing),
+        max_score=round(max_score, 1),
+    )
+    return passing
 
 
 async def fetch_veille_feed(
@@ -149,25 +252,26 @@ async def fetch_veille_feed(
     offset: int = 0,
     serein: bool = False,
 ) -> tuple[list[tuple[Content, list[str]]], bool]:
-    """Récupère le feed veille filtré pour `user_id`.
+    """Récupère le feed veille curé pour `user_id`.
 
-    Returns (items_with_axes, has_more). `items_with_axes` est la liste paginée
-    de tuples (Content hydraté, axes matchés). `has_more` est dérivé d'un
-    fetch limit+1 pour éviter un COUNT séparé.
+    Returns (items_with_axes, has_more). Pipeline : prefilter SQL sur axes
+    forts (≤ CANDIDATE_CAP) → scoring piliers → seuil → tri par score, puis
+    pagination sur l'ensemble scoré. Contrat API (limit/offset/has_more)
+    inchangé.
 
-    Si aucune config active OU filtres vides → liste vide (200 OK avec items=[]).
+    Si aucune config active OU aucun axe fort (thème seul) → liste vide.
     """
     config = await _get_active_config(session, user_id)
     if config is None:
         return [], False
 
     filters = await load_veille_filters(session, config)
-    if not filters.has_any():
-        return [], False
-
-    predicate = build_or_predicate(filters)
+    predicate = build_strong_predicate(filters)
     if predicate is None:
         return [], False
+
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(hours=ScoringWeights.VEILLE_RECENCY_HOURS)
 
     exclude_user_status = exists().where(
         UserContentStatus.content_id == Content.id,
@@ -185,6 +289,7 @@ async def fetch_veille_feed(
         .where(~exclude_user_status)
         .where(predicate)
         .where(Source.is_active.is_(True))
+        .where(Content.published_at >= cutoff)
     )
 
     if serein:
@@ -195,17 +300,17 @@ async def fetch_veille_feed(
             excluded_topics=serein_prefs.excluded_topics,
         )
 
-    if filters.source_ids:
-        source_boost = case(
-            (Content.source_id.in_(filters.source_ids), 1), else_=0
-        ).desc()
-        query = query.order_by(source_boost, Content.published_at.desc())
-    else:
-        query = query.order_by(Content.published_at.desc())
-
-    rows = (
-        (await session.execute(query.limit(limit + 1).offset(offset))).scalars().all()
+    query = query.order_by(Content.published_at.desc()).limit(
+        ScoringWeights.VEILLE_CANDIDATE_CAP
     )
-    has_more = len(rows) > limit
-    items = rows[:limit]
-    return [(c, _matched_axes(c, filters)) for c in items], has_more
+
+    candidates = (await session.execute(query)).scalars().all()
+    if not candidates:
+        return [], False
+
+    context = await build_veille_scoring_context(session, config, filters, now)
+    scored = _score_and_rank(list(candidates), context, filters)
+
+    page = scored[offset : offset + limit]
+    has_more = len(scored) > offset + limit
+    return [(content, axes) for content, _score, axes in page], has_more

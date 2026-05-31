@@ -74,8 +74,6 @@ class Step2SuggestionsScreen extends ConsumerWidget {
                 if (state.advancedMode) ...[
                   const SizedBox(height: 16),
                   _KeywordsSection(state: state, notifier: notifier),
-                  const SizedBox(height: 18),
-                  _BriefSection(state: state, notifier: notifier),
                 ],
               ],
             ),
@@ -484,44 +482,6 @@ class _AddKeywordButton extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _BriefSection extends StatelessWidget {
-  final VeilleConfigState state;
-  final VeilleConfigNotifier notifier;
-  const _BriefSection({required this.state, required this.notifier});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'BRIEF ÉDITORIAL',
-          style: GoogleFonts.dmSans(
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.8,
-            color: const Color(0xFF8B7E63),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'Précise le format ou l\'angle (analyses long format, focus PME, etc.).',
-          style: GoogleFonts.dmSans(
-            fontSize: 12,
-            color: const Color(0xFF5D5B5A),
-            height: 1.4,
-          ),
-        ),
-        const SizedBox(height: 10),
-        VeilleEditorialBriefField(
-          value: state.editorialBrief,
-          onChanged: notifier.setEditorialBrief,
-        ),
-      ],
     );
   }
 }

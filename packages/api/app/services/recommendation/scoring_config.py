@@ -286,6 +286,24 @@ class ScoringWeights:
     # Scoring engine version: "layers_v1" (legacy) or "pillars_v1" (new).
     SCORING_VERSION = "pillars_v1"
 
+    # --- VEILLE (feed temps-réel curé par score) ---
+
+    # Seuil de pertinence (score final piliers, échelle ~0-100) en-deçà duquel
+    # un article candidat est élagué du feed veille. Dérivé analytiquement :
+    # un article "thème seul" score ~47 (mais ne peut de toute façon pas entrer
+    # car le thème est absent du prédicat SQL), "thème + topic" ~66,
+    # "thème + mot-clé d'angle" ~55, "source suivie seule" ~37-45.
+    # 40 passe topic/mot-clé largement ; la source-seule reste limite.
+    # Point de calibration à figer via les logs de prod (max_score/pass_count).
+    VEILLE_RELEVANCE_THRESHOLD = 40.0
+
+    # Plafond du pool de candidats scorés par fetch (borne le coût ILIKE +
+    # scoring sur un feed curé ; offsets au-delà renvoient vide — acceptable).
+    VEILLE_CANDIDATE_CAP = 300
+
+    # Fenêtre de récence (heures) du prédicat veille — aligné sur le digest.
+    VEILLE_RECENCY_HOURS = 168
+
     # --- TOPIC-AWARE FEED DIVERSIFICATION (Phase 2 — Budget Neutre) ---
 
     # Floor ratio: minimum fraction of neutral articles kept visible (discovery).

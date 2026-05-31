@@ -151,12 +151,24 @@ class VeilleSource(Base):
 
 
 class VeilleKeyword(Base):
-    """Mot-clé/angle rattaché à une veille_config — matché ILIKE sur title+desc."""
+    """Mot-clé/angle rattaché à une veille_config — matché ILIKE sur title+desc.
+
+    Chaque mot-clé peut être rattaché à un angle (`veille_topic_id`) — c'est
+    alors la grappe de cet angle — ou rester **global** à la config
+    (`veille_topic_id IS NULL`). L'unique sur le triplet autorise la même clé
+    sous deux angles distincts (dédoublonnage fonctionnel géré côté API).
+    """
 
     __tablename__ = "veille_keywords"
     __table_args__ = (
-        UniqueConstraint("veille_config_id", "keyword", name="uq_veille_keywords"),
+        UniqueConstraint(
+            "veille_config_id",
+            "veille_topic_id",
+            "keyword",
+            name="uq_veille_keywords",
+        ),
         Index("ix_veille_keywords_config", "veille_config_id"),
+        Index("ix_veille_keywords_topic", "veille_topic_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -166,6 +178,11 @@ class VeilleKeyword(Base):
         PGUUID(as_uuid=True),
         ForeignKey("veille_configs.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    veille_topic_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("veille_topics.id", ondelete="CASCADE"),
+        nullable=True,
     )
     keyword: Mapped[str] = mapped_column(String(80), nullable=False)
     position: Mapped[int] = mapped_column(
