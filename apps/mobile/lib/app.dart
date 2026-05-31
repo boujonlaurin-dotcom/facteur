@@ -176,10 +176,14 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
       debugShowCheckedModeBanner: false,
       scaffoldMessengerKey: NotificationService.messengerKey,
 
-      // Thème
-      theme: FacteurTheme.lightTheme,
-      darkTheme: FacteurTheme.darkTheme,
-      themeMode: themeMode,
+      // Thème — sélection dynamique parmi 3 palettes (Papier Dessin /
+      // Encre & Nuit / Encre Pure). Pas de fallback `darkTheme` ni de
+      // suivi système : on contrôle entièrement la palette via Hive.
+      theme: switch (themeMode) {
+        AppThemeMode.light => FacteurTheme.lightTheme,
+        AppThemeMode.dark => FacteurTheme.darkTheme,
+        AppThemeMode.oled => FacteurTheme.oledTheme,
+      },
 
       // Router
       routerConfig: router,
