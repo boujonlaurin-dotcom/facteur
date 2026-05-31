@@ -60,7 +60,7 @@ La Croix — Analyses,https://www.la-croix.com/a-vif/,Site,society,CURATED,"Anal
 Courrier International — Analyses,https://www.courrierinternational.com/feed/all/,Site,international,CURATED,"Analyses et dossiers de Courrier International. Perspective mondiale par la traduction de la presse étrangère.",center,high,0.7,0.9,0.8,"[""geopolitics"", ""democracy""]",deep
 Slate FR — Explainers,https://www.slate.fr/explainers/,Site,culture,CURATED,"Articles explicatifs et analyses de Slate FR. Décryptage de l'actualité avec recul et profondeur.",center-left,high,0.7,0.8,0.8,"[""social-justice"", ""philosophy""]",deep
 Numerama — Décryptages,https://www.numerama.com/decryptage/,Site,tech,CURATED,"Décryptages tech et société numérique de Numerama. Analyses de fond sur le numérique et ses impacts.",center-left,high,0.7,0.8,0.8,"[""data-privacy"", ""regulation"", ""applied-science""]",deep
-France Info — Vrai ou Fake,https://www.francetvinfo.fr/vrai-ou-fake/,Site,society,CURATED,"Section fact-checking de France Info (Service Public). Vérification factuelle rigoureuse et pédagogique.",center,high,0.9,0.9,0.9,"[""democracy"", ""social-justice""]",deep
+France Info — Vrai ou Fake,https://www.francetvinfo.fr/vrai-ou-fake/,Site,society,INDEXED,"Section fact-checking de France Info (Service Public). Vérification factuelle rigoureuse et pédagogique.",center,high,0.9,0.9,0.9,"[""democracy"", ""social-justice""]",deep
 # --- 3. CANDIDATES (INDEXED) - Selection from sources_candidates.csv ---
 TF1 Info,https://www.tf1info.fr/,Site,society,INDEXED,"Information grand public du groupe TF1.",center-right,medium,,,,mainstream
 Public Sénat,https://www.publicsenat.fr/,Site,international,INDEXED,"Chaîne politique et parlementaire.",center,high,,,,mainstream
