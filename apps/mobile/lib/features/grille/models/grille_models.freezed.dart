@@ -651,6 +651,182 @@ abstract class _GrilleTodayResponse extends GrilleTodayResponse {
       throw _privateConstructorUsedError;
 }
 
+GrilleRevealResponse _$GrilleRevealResponseFromJson(Map<String, dynamic> json) {
+  return _GrilleRevealResponse.fromJson(json);
+}
+
+/// @nodoc
+mixin _$GrilleRevealResponse {
+  String get statut => throw _privateConstructorUsedError;
+  String get mot => throw _privateConstructorUsedError;
+  String get pourquoi => throw _privateConstructorUsedError;
+
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+  @JsonKey(ignore: true)
+  $GrilleRevealResponseCopyWith<GrilleRevealResponse> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $GrilleRevealResponseCopyWith<$Res> {
+  factory $GrilleRevealResponseCopyWith(GrilleRevealResponse value,
+          $Res Function(GrilleRevealResponse) then) =
+      _$GrilleRevealResponseCopyWithImpl<$Res, GrilleRevealResponse>;
+  @useResult
+  $Res call({String statut, String mot, String pourquoi});
+}
+
+/// @nodoc
+class _$GrilleRevealResponseCopyWithImpl<$Res,
+        $Val extends GrilleRevealResponse>
+    implements $GrilleRevealResponseCopyWith<$Res> {
+  _$GrilleRevealResponseCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? statut = null,
+    Object? mot = null,
+    Object? pourquoi = null,
+  }) {
+    return _then(_value.copyWith(
+      statut: null == statut
+          ? _value.statut
+          : statut // ignore: cast_nullable_to_non_nullable
+              as String,
+      mot: null == mot
+          ? _value.mot
+          : mot // ignore: cast_nullable_to_non_nullable
+              as String,
+      pourquoi: null == pourquoi
+          ? _value.pourquoi
+          : pourquoi // ignore: cast_nullable_to_non_nullable
+              as String,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$GrilleRevealResponseImplCopyWith<$Res>
+    implements $GrilleRevealResponseCopyWith<$Res> {
+  factory _$$GrilleRevealResponseImplCopyWith(_$GrilleRevealResponseImpl value,
+          $Res Function(_$GrilleRevealResponseImpl) then) =
+      __$$GrilleRevealResponseImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call({String statut, String mot, String pourquoi});
+}
+
+/// @nodoc
+class __$$GrilleRevealResponseImplCopyWithImpl<$Res>
+    extends _$GrilleRevealResponseCopyWithImpl<$Res, _$GrilleRevealResponseImpl>
+    implements _$$GrilleRevealResponseImplCopyWith<$Res> {
+  __$$GrilleRevealResponseImplCopyWithImpl(_$GrilleRevealResponseImpl _value,
+      $Res Function(_$GrilleRevealResponseImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? statut = null,
+    Object? mot = null,
+    Object? pourquoi = null,
+  }) {
+    return _then(_$GrilleRevealResponseImpl(
+      statut: null == statut
+          ? _value.statut
+          : statut // ignore: cast_nullable_to_non_nullable
+              as String,
+      mot: null == mot
+          ? _value.mot
+          : mot // ignore: cast_nullable_to_non_nullable
+              as String,
+      pourquoi: null == pourquoi
+          ? _value.pourquoi
+          : pourquoi // ignore: cast_nullable_to_non_nullable
+              as String,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$GrilleRevealResponseImpl implements _GrilleRevealResponse {
+  const _$GrilleRevealResponseImpl(
+      {required this.statut, required this.mot, required this.pourquoi});
+
+  factory _$GrilleRevealResponseImpl.fromJson(Map<String, dynamic> json) =>
+      _$$GrilleRevealResponseImplFromJson(json);
+
+  @override
+  final String statut;
+  @override
+  final String mot;
+  @override
+  final String pourquoi;
+
+  @override
+  String toString() {
+    return 'GrilleRevealResponse(statut: $statut, mot: $mot, pourquoi: $pourquoi)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$GrilleRevealResponseImpl &&
+            (identical(other.statut, statut) || other.statut == statut) &&
+            (identical(other.mot, mot) || other.mot == mot) &&
+            (identical(other.pourquoi, pourquoi) ||
+                other.pourquoi == pourquoi));
+  }
+
+  @JsonKey(ignore: true)
+  @override
+  int get hashCode => Object.hash(runtimeType, statut, mot, pourquoi);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$GrilleRevealResponseImplCopyWith<_$GrilleRevealResponseImpl>
+      get copyWith =>
+          __$$GrilleRevealResponseImplCopyWithImpl<_$GrilleRevealResponseImpl>(
+              this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$GrilleRevealResponseImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _GrilleRevealResponse implements GrilleRevealResponse {
+  const factory _GrilleRevealResponse(
+      {required final String statut,
+      required final String mot,
+      required final String pourquoi}) = _$GrilleRevealResponseImpl;
+
+  factory _GrilleRevealResponse.fromJson(Map<String, dynamic> json) =
+      _$GrilleRevealResponseImpl.fromJson;
+
+  @override
+  String get statut;
+  @override
+  String get mot;
+  @override
+  String get pourquoi;
+  @override
+  @JsonKey(ignore: true)
+  _$$GrilleRevealResponseImplCopyWith<_$GrilleRevealResponseImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
 GrilleGuessResponse _$GrilleGuessResponseFromJson(Map<String, dynamic> json) {
   return _GrilleGuessResponse.fromJson(json);
 }

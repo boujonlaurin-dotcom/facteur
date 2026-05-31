@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -8,6 +10,11 @@ import '../models/grille_models.dart';
 /// Distribution des essais du quartier (`.gl-dist`) — une barre par nombre
 /// d'essais, la ligne du joueur (`score == monScore`) surlignée en ocre avec
 /// le suffixe « · toi ».
+///
+/// Les barres sont **normalisées sur le score le plus fréquent** (la barre la
+/// plus haute remplit toute la largeur, les autres sont proportionnelles) pour
+/// que les ordres de grandeur soient lisibles d'un coup d'œil. Une barre non
+/// nulle garde une largeur minimale pour rester visible.
 class LeaderboardDistribution extends StatelessWidget {
   const LeaderboardDistribution({
     super.key,
@@ -21,6 +28,7 @@ class LeaderboardDistribution extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.facteurColors;
+    final maxPct = distribution.fold<int>(0, (m, d) => math.max(m, d.pct));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -33,19 +41,23 @@ class LeaderboardDistribution extends StatelessWidget {
             color: c.textTertiary,
           ),
         ),
-        const SizedBox(height: 12),
-        for (final d in distribution) _row(context, d),
+        const SizedBox(height: 10),
+        for (final d in distribution) _row(context, d, maxPct),
       ],
     );
   }
 
-  Widget _row(BuildContext context, GrilleDistributionItem d) {
+  Widget _row(BuildContext context, GrilleDistributionItem d, int maxPct) {
     final c = context.facteurColors;
     final moi = d.score == monScore;
-    final factor = (d.pct * 2.5 / 100).clamp(0.0, 1.0);
+    // Proportionnel au plus fréquent ; min 8 % de largeur pour qu'une barre
+    // non nulle reste visible, 0 % → barre vide.
+    final factor = (maxPct == 0 || d.pct == 0)
+        ? 0.0
+        : (d.pct / maxPct).clamp(0.08, 1.0);
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         children: [
           SizedBox(
@@ -64,7 +76,7 @@ class LeaderboardDistribution extends StatelessWidget {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(FacteurRadius.small),
               child: Container(
-                height: 18,
+                height: 15,
                 color: c.backgroundSecondary,
                 alignment: Alignment.centerLeft,
                 child: FractionallySizedBox(

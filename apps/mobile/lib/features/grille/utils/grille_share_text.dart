@@ -6,18 +6,18 @@ import '../models/tile_state.dart';
 ///
 /// Format (façon Wordle, voix Facteur) :
 /// ```
-/// La Grille du jour N°143 · Ven. 30 mai · 3/6
+/// Le mot du jour N°143 · Ven. 30 mai · 3/6
 /// 🟧⬛⬛🟧⬛🟧
 /// 🟩🟩⬛🟧⬛🟩
 /// 🟩🟩🟩🟩🟩🟩
 ///
-/// https://facteur.app/grille
+/// io.supabase.facteur://grille
 /// ```
 /// Les carrés ne révèlent jamais les lettres → on peut partager sans gâcher.
 String buildGrilleShareText(GrilleTodayResponse today) {
   final score = grilleShareScore(today);
   final header =
-      'La Grille du jour ${today.numero} · ${today.dateCourt} · $score';
+      'Le mot du jour ${today.numero} · ${today.dateCourt} · $score';
   final grid = buildGrilleEmojiGrid(today.essais);
   return '$header\n$grid\n\n${buildGrilleShareLink(today)}';
 }
@@ -39,7 +39,8 @@ String buildGrilleEmojiGrid(List<GrilleEssai> essais) {
       .join('\n');
 }
 
-/// Lien de partage (sans spoiler). Le deep-link entrant est hors MVP, donc on
-/// pointe vers la page publique de la Grille.
+/// Lien de partage (sans spoiler) : deep-link custom-scheme qui ouvre « Le mot
+/// du jour » directement dans l'app (cf. [GrilleConstants.shareBaseUrl] +
+/// `DeepLinkService`).
 String buildGrilleShareLink(GrilleTodayResponse today) =>
     GrilleConstants.shareBaseUrl;

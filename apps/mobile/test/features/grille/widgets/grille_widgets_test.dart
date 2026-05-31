@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/features/grille/grille_constants.dart';
 import 'package:facteur/features/grille/models/grille_models.dart';
 import 'package:facteur/features/grille/models/tile_state.dart';
 import 'package:facteur/features/grille/widgets/azerty_keyboard.dart';
@@ -103,6 +104,62 @@ void main() {
       return d is BoxDecoration && d.color == success;
     });
     expect(hasSuccessKey, isTrue);
+  });
+
+  testWidgets('Clavier : highlightEnter remplit « Entrée » en primary',
+      (t) async {
+    await t.pumpWidget(_wrap(AzertyKeyboard(
+      states: const {},
+      highlightEnter: true,
+      onKey: (_) {},
+      onEnter: () {},
+      onBackspace: () {},
+    )));
+    await t.pump(); // une frame (le pulse repeat ne settle jamais)
+    final primary = FacteurPalettes.light.primary;
+    final hasPrimaryKey = t.widgetList<Container>(find.byType(Container)).any((w) {
+      final d = w.decoration;
+      return d is BoxDecoration && d.color == primary;
+    });
+    expect(hasPrimaryKey, isTrue);
+  });
+
+  testWidgets('Clavier : touche « present » teintée en ocre stable (pas rouge)',
+      (t) async {
+    await t.pumpWidget(_wrap(AzertyKeyboard(
+      states: const {'A': TileState.present},
+      onKey: (_) {},
+      onEnter: () {},
+      onBackspace: () {},
+    )));
+    await t.pumpAndSettle();
+    final hasPresentKey = t.widgetList<Container>(find.byType(Container)).any((w) {
+      final d = w.decoration;
+      return d is BoxDecoration && d.color == GrilleConstants.presentTile;
+    });
+    expect(hasPresentKey, isTrue);
+  });
+
+  testWidgets(
+      'Distribution : barre la + fréquente = pleine largeur, normalisée',
+      (t) async {
+    await t.pumpWidget(_wrap(const LeaderboardDistribution(
+      distribution: [
+        GrilleDistributionItem(score: '2', pct: 20),
+        GrilleDistributionItem(score: '3', pct: 40), // max
+        GrilleDistributionItem(score: 'X', pct: 0),
+      ],
+      monScore: '3',
+    )));
+    await t.pumpAndSettle();
+    final factors = t
+        .widgetList<FractionallySizedBox>(find.byType(FractionallySizedBox))
+        .map((w) => w.widthFactor)
+        .toList();
+    // 40 % → pleine largeur ; 20 % → moitié ; 0 % → vide.
+    expect(factors.contains(1.0), isTrue);
+    expect(factors.any((f) => (f! - 0.5).abs() < 0.001), isTrue);
+    expect(factors.contains(0.0), isTrue);
   });
 
   testWidgets('Podium : « Toi » présent et avatar en ocre', (t) async {

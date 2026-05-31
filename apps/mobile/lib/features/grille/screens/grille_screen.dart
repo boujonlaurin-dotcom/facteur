@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -20,6 +22,7 @@ import '../widgets/grille_intro_sheet.dart';
 import '../widgets/grille_masthead.dart';
 import '../widgets/grille_result_view.dart';
 import '../widgets/grille_status_line.dart';
+import '../widgets/grille_victory.dart';
 import '../widgets/mot_grid.dart';
 
 /// Écran principal de La Grille — aiguille entre Jeu, Résultat et Déjà-joué
@@ -121,8 +124,7 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
     await GrilleIntroSheet.show(context);
   }
 
-  /// Soumet la ligne en cours + trace l'évènement (chemin commun à
-  /// l'auto-validation et à la touche « Entrer »).
+  /// Soumet la ligne en cours + trace l'évènement (validation via « Entrée »).
   void _submitGuess(GrilleTodayResponse today) {
     final notifier = ref.read(grilleProvider.notifier);
     final essai = today.nbEssais + 1;
@@ -156,9 +158,16 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
     final notifier = ref.read(grilleProvider.notifier);
     final keyboardStates = ref.watch(grilleKeyboardStatesProvider);
 
+    final complete = state.draft.length == today.longueur && !state.submitting;
+
     return Column(
       children: [
-        GAppBar(showBack: true, streak: today.streak, onHelp: _openIntro),
+        GAppBar(
+          showBack: true,
+          streak: today.streak,
+          onHelp: _openIntro,
+          onReveal: () => _confirmReveal(today),
+        ),
         GrilleMasthead(
           numero: today.numero,
           date: today.dateAffichee,
@@ -191,22 +200,17 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
                 message: _statusMessage(state),
                 isError: state.invalidReason != null,
               ),
+              // Rappel discret du lien avec l'actu, après 2 essais infructueux.
+              if (today.nbEssais >= 2 && !today.isFinished)
+                _buildActusHint(context, today),
               const SizedBox(height: 10),
               AzertyKeyboard(
                 states: keyboardStates,
                 enabled: !state.submitting,
-                onKey: (k) {
-                  notifier.addLetter(k);
-                  // Auto-validation : dès que le mot est complet, on soumet
-                  // sans passer par « Entrer ».
-                  final s = ref.read(grilleProvider).valueOrNull;
-                  if (s != null &&
-                      !s.submitting &&
-                      !s.today.isFinished &&
-                      s.draft.length == s.today.longueur) {
-                    _submitGuess(s.today);
-                  }
-                },
+                highlightEnter: complete,
+                // Plus d'auto-validation : la saisie n'ajoute que la lettre,
+                // la validation se fait uniquement via la touche « Entrée ».
+                onKey: notifier.addLetter,
                 onBackspace: notifier.removeLetter,
                 onEnter: () => _submitGuess(today),
               ),
@@ -217,49 +221,147 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
     );
   }
 
+  /// Mini-CTA « le mot est dans l'actu du jour » + lien vers le flux continu.
+  Widget _buildActusHint(BuildContext context, GrilleTodayResponse today) {
+    final c = context.facteurColors;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _goToActus(today),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(PhosphorIcons.lightbulb(), size: 13, color: c.textTertiary),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                'Indice : le mot est dans l’actu du jour — ',
+                style: FacteurTypography.bodySmall(c.textTertiary)
+                    .copyWith(fontSize: 12),
+              ),
+            ),
+            Text(
+              'aller lire',
+              style: FacteurTypography.bodySmall(c.primary).copyWith(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Navigue vers les Actus du jour (flux continu) + trace l'évènement.
+  void _goToActus(GrilleTodayResponse today) {
+    ref.read(analyticsServiceProvider).trackGrilleActusTapped(
+          numero: today.numero,
+        );
+    context.go(RoutePaths.fluxContinu);
+  }
+
+  /// Confirme « donner sa langue au chat » puis révèle le mot.
+  Future<void> _confirmReveal(GrilleTodayResponse today) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Donner sa langue au chat ?'),
+        content: const Text(
+          'Le mot du jour te sera révélé. Pas de défaite — mais cette grille '
+          'ne comptera pas au classement.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Continuer à jouer'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Révéler le mot'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await ref.read(grilleProvider.notifier).reveal();
+    if (!mounted) return;
+    unawaited(ref.read(analyticsServiceProvider).trackGrilleRevealed(
+          numero: today.numero,
+        ));
+    // Aiguille vers l'écran Résultat (mode révélé).
+    setState(() => _reviewing = true);
+  }
+
   String _statusMessage(GrilleState state) {
     switch (state.invalidReason) {
       case 'longueur':
-        return 'Tape les ${state.today.longueur} lettres.';
+        return 'Il manque des lettres.';
       case 'hors_dictionnaire':
-        return 'Ce mot n’est pas distribué — essaie un autre.';
+        return 'Mot absent du dictionnaire.';
       default:
-        return 'Première lettre offerte — le mot part dès la dernière lettre.';
+        if (state.draft.length == state.today.longueur) {
+          return 'Mot complet ? Appuie sur Entrée pour valider.';
+        }
+        return 'Première lettre offerte — complète le mot, puis Entrée.';
     }
   }
 
   // ── Phase Résultat ───────────────────────────────────────────────────────
   Widget _buildResult(BuildContext context, GrilleState state) {
-    return Column(
+    final today = state.today;
+    final revealed = today.isRevealed;
+    final won = state.justFinished && today.isSolved;
+
+    return Stack(
       children: [
-        GAppBar(showBack: true, streak: state.today.streak),
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: GrilleResultView(
-              today: state.today,
-              animateReveal: state.justFinished,
+        Column(
+          children: [
+            GAppBar(showBack: true, streak: today.streak),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: GrilleResultView(
+                  today: today,
+                  animateReveal: state.justFinished,
+                ),
+              ),
             ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
-          child: Column(
-            children: [
-              GrilleButton(
-                label: 'Partager ma grille',
-                icon: PhosphorIcons.shareNetwork(),
-                onPressed: () => context.pushNamed(RouteNames.grilleShare),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
+              child: Column(
+                children: [
+                  GrilleButton(
+                    label: 'Lire les actus du jour',
+                    icon: PhosphorIcons.newspaper(),
+                    onPressed: () => _goToActus(today),
+                  ),
+                  const SizedBox(height: 4),
+                  GrilleButton(
+                    label: 'Partager ma grille',
+                    style: GrilleButtonStyle.ghost,
+                    icon: PhosphorIcons.shareNetwork(),
+                    onPressed: () => context.pushNamed(RouteNames.grilleShare),
+                  ),
+                  // Le classement est masqué pour une grille « langue au chat »
+                  // (non classée).
+                  if (!revealed) ...[
+                    const SizedBox(height: 4),
+                    GrilleButton(
+                      label: 'Voir le classement du jour',
+                      style: GrilleButtonStyle.ghost,
+                      onPressed: () =>
+                          context.pushNamed(RouteNames.grilleLeaderboard),
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(height: 4),
-              GrilleButton(
-                label: 'Voir le classement du jour',
-                style: GrilleButtonStyle.ghost,
-                onPressed: () => context.pushNamed(RouteNames.grilleLeaderboard),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
+        if (won) const Positioned.fill(child: GrilleVictory(active: true)),
       ],
     );
   }

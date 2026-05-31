@@ -56,7 +56,7 @@ class GrilleShareCard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'La Grille du jour',
+                'Le mot du jour',
                 style: GoogleFonts.fraunces(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
