@@ -305,3 +305,44 @@ class TestPersonalizedThemeModeDispatch:
             )
             is False
         )
+
+
+# ---------------------------------------------------------------------------
+# `apply_theme_focus_filter` — bug curation 2026-05-31.
+#
+# Un article frais NON classifié (`Content.theme IS NULL`) d'une source
+# généraliste (ex: Le Monde, theme="international", secondary_themes incluant
+# "tech"/"science") ne doit PAS apparaître dans les sections Technologie/Science.
+# Le chemin "bénéfice du doute" ne s'appuie désormais que sur le thème PRINCIPAL
+# de la source, jamais sur ses `secondary_themes`.
+# ---------------------------------------------------------------------------
+
+
+class TestThemeFocusFilterUnclassified:
+    """Le filtre thématique ne fuit plus via les `secondary_themes`."""
+
+    def _compiled_sql(self, theme_slug: str) -> str:
+        from sqlalchemy import select
+
+        from app.models.content import Content
+        from app.services.recommendation.filter_presets import (
+            apply_theme_focus_filter,
+        )
+
+        query = apply_theme_focus_filter(select(Content), theme_slug)
+        return str(query.compile(compile_kwargs={"literal_binds": False}))
+
+    def test_unclassified_path_uses_source_primary_theme_only(self):
+        sql = self._compiled_sql("tech")
+        # Chemin (1) : article classifié dans le thème.
+        assert "contents.theme = " in sql
+        # Chemin (2) : sous-requête sur le thème PRINCIPAL de la source.
+        assert "sources.theme = " in sql
+        # Garde la borne "non classifié" sur le chemin (2).
+        assert "contents.theme IS NULL" in sql
+
+    def test_secondary_themes_no_longer_referenced(self):
+        sql = self._compiled_sql("tech")
+        # Régression : les secondary_themes déversaient les articles non
+        # classifiés des sources généralistes dans des sections sans rapport.
+        assert "secondary_themes" not in sql

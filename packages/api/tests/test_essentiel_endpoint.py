@@ -136,17 +136,21 @@ def test_build_essentiel_picks_one_article_per_topic():
         assert article.section_label == f"T{i + 1}"
 
 
-def test_build_essentiel_round_robin_when_few_topics():
+def test_build_essentiel_one_subject_per_topic_no_backfill():
+    """Invariant transversal : un topic (= 1 sujet) ne fournit qu'1 article.
+
+    Régression bug 2026-05-31 : un topic « revue de presse » multi-articles
+    (ex: météore couvert par 3 médias) remplissait l'Essentiel avec le même
+    sujet 3×. On préfère désormais rendre < 5 articles plutôt que dupliquer.
+    """
     topics = [_make_topic(rank=1, label="Tech", n_articles=5)]
     digest = _make_digest(topics)
 
     response = build_essentiel_response(digest)
 
-    assert len(response.articles) == ESSENTIEL_MAX_ARTICLES
-    # Tous viennent du même topic, ranks 1..5 de l'essentiel.
-    assert all(a.section_label == "Tech" for a in response.articles)
-    seen_ids = {a.content_id for a in response.articles}
-    assert len(seen_ids) == 5  # déduplication implicite OK
+    # 1 seul sujet disponible → 1 seul article (pas de remplissage intra-topic).
+    assert len(response.articles) == 1
+    assert response.articles[0].section_label == "Tech"
 
 
 def test_build_essentiel_handles_sparse_digest():
@@ -155,9 +159,9 @@ def test_build_essentiel_handles_sparse_digest():
 
     response = build_essentiel_response(digest)
 
-    assert len(response.articles) == 2
+    # Un topic = un sujet → 1 article, jamais 2 angles du même sujet.
+    assert len(response.articles) == 1
     assert response.articles[0].rank == 1
-    assert response.articles[1].rank == 2
 
 
 def test_build_essentiel_empty_when_no_topics():
@@ -175,8 +179,70 @@ def test_build_essentiel_skips_topics_without_articles():
 
     response = build_essentiel_response(digest)
 
-    assert len(response.articles) == 3
+    # Topic vide ignoré ; le topic Tech ne contribue qu'1 article (1 sujet).
+    assert len(response.articles) == 1
     assert all(a.section_label == "Tech" for a in response.articles)
+
+
+def test_build_essentiel_dedup_same_subject_multi_source_topic():
+    """Bug 1 reproduction : 1 topic multi-sources sur le MÊME sujet (météore
+    couvert par 3 médias distincts) ne doit apparaître qu'une fois."""
+    src_home = _make_source("Home Fil actu")
+    src_ouest = _make_source("Ouest-France")
+    src_figaro = _make_source("Le Figaro")
+    meteor = _make_topic(rank=1, label="Météore", theme="science", n_articles=0)
+    meteor.articles = [
+        _make_article(
+            rank=1,
+            title='"300 tonnes de TNT": un météore explose au-dessus des États-Unis',
+            source=src_home,
+            badge="actu",
+        ),
+        _make_article(
+            rank=2,
+            title="Un météore explose au-dessus des États-Unis et se fait entendre",
+            source=src_ouest,
+        ),
+        _make_article(
+            rank=3,
+            title="Un météore explose au-dessus des États-Unis, détonations",
+            source=src_figaro,
+        ),
+    ]
+    other = _make_topic(rank=2, label="Économie", theme="economy", n_articles=1)
+    digest = _make_digest([meteor, other])
+
+    response = build_essentiel_response(digest)
+
+    # Le sujet météore (même topic, 3 sources) n'apparaît qu'une fois.
+    meteor_articles = [a for a in response.articles if "météore" in a.title.lower()]
+    assert len(meteor_articles) == 1
+
+
+def test_build_essentiel_dedup_near_duplicate_titles_across_topics():
+    """Filet anti-doublon de titre : deux topics distincts couvrant le même
+    événement (titres quasi-identiques) ne produisent qu'un seul article."""
+    split_a = _make_topic(rank=1, label="Élection A", theme="politics", n_articles=0)
+    split_a.articles = [
+        _make_article(
+            rank=1,
+            title="Élection présidentielle : large victoire du candidat sortant annoncée",
+            source=_make_source("Le Monde"),
+        )
+    ]
+    split_b = _make_topic(rank=2, label="Élection B", theme="politics", n_articles=0)
+    split_b.articles = [
+        _make_article(
+            rank=1,
+            title="Élection présidentielle : victoire large du candidat sortant",
+            source=_make_source("Le Figaro"),
+        )
+    ]
+    digest = _make_digest([split_a, split_b])
+
+    response = build_essentiel_response(digest)
+
+    assert len(response.articles) == 1
 
 
 def test_build_essentiel_propagates_stale_flag():

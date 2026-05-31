@@ -54,6 +54,7 @@ from app.services.recommendation.filter_presets import (
 )
 from app.services.recommendation.helpers import compute_coverage_score
 from app.services.recommendation.scoring_config import ScoringWeights
+from app.services.text_similarity import jaccard_similarity, normalize_title
 
 logger = logging.getLogger(__name__)
 
@@ -462,6 +463,31 @@ def _pick_transversal_articles(
     seen_content_ids: set[UUID] = set()
     used_topics: set[str] = set()
     source_count: dict[UUID, int] = {}
+    picked_title_tokens: list[set[str]] = []
+
+    def _is_duplicate_subject(topic: DigestTopic, article: DigestTopicArticle) -> bool:
+        """Un même sujet ne doit jamais occuper deux slots de l'Essentiel.
+
+        L'Essentiel est une sélection *transversale* (1 article par sujet). On
+        bloque sur deux niveaux complémentaires :
+        - `topic.topic_id` déjà servi → un topic « revue de presse » multi-sources
+          (ex: météore couvert par 3 médias) ne peut ré-entrer via un round de
+          remplissage.
+        - similarité de titre Jaccard ≥ `TOPIC_CLUSTER_THRESHOLD` → filet pour les
+          clusters scindés ou le couple actu/deep d'un même sujet, dont les titres
+          quasi-identiques tomberaient sinon sur des `topic_id` différents.
+        """
+        if topic.topic_id in used_topics:
+            return True
+        tokens = normalize_title(article.title)
+        if tokens:
+            for prev in picked_title_tokens:
+                if (
+                    jaccard_similarity(tokens, prev)
+                    >= ScoringWeights.TOPIC_CLUSTER_THRESHOLD
+                ):
+                    return True
+        return False
 
     def _try_pick(topic: DigestTopic, article: DigestTopicArticle) -> bool:
         """Tente d'ajouter un article en respectant dédup + diversité source.
@@ -472,10 +498,13 @@ def _pick_transversal_articles(
             return False
         if source_count.get(article.source.id, 0) >= ESSENTIEL_MAX_PER_SOURCE:
             return False
+        if _is_duplicate_subject(topic, article):
+            return False
         picked.append((topic, article))
         seen_content_ids.add(article.content_id)
         used_topics.add(topic.topic_id)
         source_count[article.source.id] = source_count.get(article.source.id, 0) + 1
+        picked_title_tokens.append(normalize_title(article.title))
         return True
 
     # ─── Slot lead Actu ──────────────────────────────────────────────────
