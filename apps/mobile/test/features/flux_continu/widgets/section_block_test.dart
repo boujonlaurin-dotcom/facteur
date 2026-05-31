@@ -158,160 +158,8 @@ void main() {
     });
   });
 
-  group('SectionBlock — Sujet suivant button', () {
-    testWidgets('renders the button when onNextSection is provided',
-        (tester) async {
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-          onNextSection: () {},
-        ),
-      ));
-
-      expect(find.byType(NextSectionButton), findsOneWidget);
-      expect(find.text('Section suivante'), findsOneWidget);
-    });
-
-    testWidgets('hides the button when onNextSection is null', (tester) async {
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-          // onNextSection deliberately omitted (null)
-        ),
-      ));
-
-      expect(find.byType(NextSectionButton), findsNothing);
-    });
-
-    testWidgets('switches to "Passé" non-interactive state when '
-        'isMarkedForNextSession is true', (tester) async {
-      var taps = 0;
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-          isMarkedForNextSession: true,
-          onNextSection: () => taps++,
-        ),
-      ));
-
-      expect(find.text('Passé'), findsOneWidget);
-      expect(find.text('Section suivante'), findsNothing);
-
-      // Tap should be a no-op (parent passes onTap=null when already marked).
-      await tester.tap(find.byType(NextSectionButton));
-      await tester.pump();
-      expect(taps, 0);
-    });
-
-    testWidgets('uses arrow_downward when not marked', (tester) async {
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-          onNextSection: () {},
-        ),
-      ));
-
-      final iconInNext = find.descendant(
-        of: find.byType(NextSectionButton),
-        matching: find.byIcon(Icons.arrow_downward),
-      );
-      expect(iconInNext, findsOneWidget);
-      expect(
-        find.descendant(
-          of: find.byType(NextSectionButton),
-          matching: find.byIcon(Icons.arrow_forward),
-        ),
-        findsNothing,
-      );
-    });
-
-    testWidgets('Passé state has neutral grey background + green check_circle',
-        (tester) async {
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-          isMarkedForNextSession: true,
-          onNextSection: () {},
-        ),
-      ));
-
-      final container = tester.widget<AnimatedContainer>(
-        find.descendant(
-          of: find.byType(NextSectionButton),
-          matching: find.byType(AnimatedContainer),
-        ),
-      );
-      final decoration = container.decoration as BoxDecoration;
-      expect(
-        decoration.color,
-        FacteurPalettes.light.textPrimary.withValues(alpha: 0.05),
-      );
-      expect(
-        find.descendant(
-          of: find.byType(NextSectionButton),
-          matching: find.byIcon(Icons.check_circle),
-        ),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets(
-        'optimistic flip: tap shows "Passé" + neutral grey background on the '
-        'next frame even when isMarkedForNextSession stays false',
-        (tester) async {
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-          isMarkedForNextSession: false,
-          onNextSection: () {},
-        ),
-      ));
-      expect(find.text('Section suivante'), findsOneWidget);
-
-      await tester.tap(find.byType(NextSectionButton));
-      await tester.pump();
-
-      expect(find.text('Passé'), findsOneWidget);
-      final container = tester.widget<AnimatedContainer>(
-        find.descendant(
-          of: find.byType(NextSectionButton),
-          matching: find.byType(AnimatedContainer),
-        ),
-      );
-      expect(
-        (container.decoration as BoxDecoration).color,
-        FacteurPalettes.light.textPrimary.withValues(alpha: 0.05),
-      );
-    });
-  });
-
   group('SectionBlock — Footer Row', () {
-    testWidgets('wraps Lire plus and Section suivante in the same Row',
-        (tester) async {
+    testWidgets('"Tout lire" button spans the full footer width', (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
           section: _themeSection(items: 7, coreVisibleCount: 3),
@@ -319,63 +167,23 @@ void main() {
           onToggleMore: () {},
           onTapArticle: (_, __) {},
           onSeeAll: () {},
-          onNextSection: () {},
         ),
       ));
 
       final voirPlus = find.byType(SeeAllSectionButton);
-      final sujetSuivant = find.byType(NextSectionButton);
       expect(voirPlus, findsOneWidget);
-      expect(sujetSuivant, findsOneWidget);
 
-      // Both buttons must share a Row ancestor (the footer row).
-      final voirPlusRows =
-          find.ancestor(of: voirPlus, matching: find.byType(Row));
-      final sujetRows =
-          find.ancestor(of: sujetSuivant, matching: find.byType(Row));
-      final voirPlusRowSet =
-          tester.widgetList<Row>(voirPlusRows).toSet();
-      final sujetRowSet = tester.widgetList<Row>(sujetRows).toSet();
-      final shared = voirPlusRowSet.intersection(sujetRowSet);
-      expect(shared, isNotEmpty,
-          reason: 'Lire plus and Section suivante must share a Row ancestor.');
-
-      // Lire plus sits to the left of Section suivante.
-      final voirPlusLeft = tester.getTopLeft(voirPlus).dx;
-      final sujetLeft = tester.getTopLeft(sujetSuivant).dx;
-      expect(voirPlusLeft < sujetLeft, isTrue);
-
-      // 1:1 ratio — both buttons must have roughly the same width
-      // (flex 1 / flex 1 in _SectionFooterRow). Allow a small delta to
-      // account for sub-pixel rounding on different DPRs.
-      final leftWidth = tester.getSize(voirPlus).width;
-      final rightWidth = tester.getSize(sujetSuivant).width;
+      // With the "Section suivante" CTA removed, the footer renders the
+      // overflow button alone — it should take (nearly) the full content
+      // width inside its 12px horizontal padding.
+      final footerWidth = tester.getSize(find.byType(SingleChildScrollView)).width;
+      final buttonWidth = tester.getSize(voirPlus).width;
       expect(
-        (leftWidth - rightWidth).abs() < 2.0,
+        buttonWidth > footerWidth - 40,
         isTrue,
-        reason:
-            'Lire plus et Section suivante doivent avoir des largeurs égales '
-            '(flex 1/1). Got left=$leftWidth right=$rightWidth.',
+        reason: '"Tout lire" doit occuper toute la largeur du footer. '
+            'Got button=$buttonWidth footer=$footerWidth.',
       );
-    });
-
-    testWidgets('tap fires onNextSection exactly once when not marked',
-        (tester) async {
-      var taps = 0;
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-          onNextSection: () => taps++,
-        ),
-      ));
-
-      await tester.tap(find.byType(NextSectionButton));
-      await tester.pump();
-      expect(taps, 1);
     });
   });
 }

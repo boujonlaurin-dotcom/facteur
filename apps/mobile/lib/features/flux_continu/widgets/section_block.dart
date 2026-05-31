@@ -64,28 +64,6 @@ class SectionBlock extends StatelessWidget {
   /// null on system sections (`essentiel` / `bonnes`).
   final VoidCallback? onTapFavorite;
 
-  /// "Sujet suivant →" action shown in the section footer. Marks the section
-  /// as consumed for the next session and scrolls smoothly to the next
-  /// section. When null, the button is hidden (used for [EssentielSection]
-  /// which has its own progression CTAs, and for the last Tournée section
-  /// before Explorer).
-  final VoidCallback? onNextSection;
-
-  /// When true, the "Section suivante" button flips to the non-interactive
-  /// "Passé ✓" state — derived from the provider's queue of sections marked
-  /// for fold at the next cold launch.
-  final bool isMarkedForNextSession;
-
-  /// Hero accent of the section the "Section suivante" button will land on.
-  /// Used to tint the CTA so it preflights the upcoming section visually.
-  /// Null on the last Tournée section (the button is hidden anyway).
-  final Color? nextSectionAccent;
-
-  /// Label de la section suivante (ex : « Technologie », « Bonnes Nouvelles »).
-  /// Quand fourni, le bouton [NextSectionButton] affiche ce nom au lieu du
-  /// générique « Section suivante ».
-  final String? nextSectionLabel;
-
   const SectionBlock({
     super.key,
     required this.section,
@@ -106,10 +84,6 @@ class SectionBlock extends StatelessWidget {
     this.onSeeAll,
     this.onTapExploreAll,
     this.onTapSeeAllDown,
-    this.onNextSection,
-    this.isMarkedForNextSession = false,
-    this.nextSectionAccent,
-    this.nextSectionLabel,
   });
 
   @override
@@ -167,14 +141,6 @@ class SectionBlock extends StatelessWidget {
         ...cards,
         _SectionFooterRow(
           voirPlus: _buildVoirPlusButton(section, hiddenCount),
-          sujetSuivant: onNextSection != null
-              ? NextSectionButton(
-                  isMarked: isMarkedForNextSession,
-                  nextAccent: nextSectionAccent,
-                  nextSectionLabel: nextSectionLabel,
-                  onTap: isMarkedForNextSession ? null : onNextSection,
-                )
-              : null,
         ),
         const SizedBox(height: 16),
       ],
@@ -287,41 +253,21 @@ class SectionBlock extends StatelessWidget {
   }
 }
 
-/// Two-column footer for a [SectionBlock]: "Voir tout" / "Plus de…" on the
-/// left, "Sujet suivant" on the right. Owns the bottom padding so both
-/// children stay flush regardless of which combination is rendered.
+/// Footer for a [SectionBlock]: renders the full-width "Voir tout" / "Plus
+/// de…" overflow button (or nothing when the section has no overflow CTA).
+/// Owns the bottom padding so the button stays flush with the cards above.
 class _SectionFooterRow extends StatelessWidget {
   final Widget? voirPlus;
-  final Widget? sujetSuivant;
-  final bool rightTakesMoreSpace;
 
-  const _SectionFooterRow({
-    this.voirPlus,
-    this.sujetSuivant,
-    this.rightTakesMoreSpace = false,
-  });
+  const _SectionFooterRow({this.voirPlus});
 
   @override
   Widget build(BuildContext context) {
-    if (voirPlus == null && sujetSuivant == null) {
-      return const SizedBox.shrink();
-    }
-    final int leftFlex = rightTakesMoreSpace ? 2 : 1;
-    final int rightFlex = rightTakesMoreSpace ? 3 : 1;
+    final voirPlus = this.voirPlus;
+    if (voirPlus == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: Row(
-        children: [
-          if (voirPlus != null)
-            Expanded(flex: leftFlex, child: voirPlus!)
-          else
-            Spacer(flex: leftFlex),
-          if (voirPlus != null && sujetSuivant != null)
-            const SizedBox(width: 8),
-          if (sujetSuivant != null)
-            Expanded(flex: rightFlex, child: sujetSuivant!),
-        ],
-      ),
+      child: voirPlus,
     );
   }
 }
