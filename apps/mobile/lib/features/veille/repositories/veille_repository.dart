@@ -87,6 +87,36 @@ class VeilleRepository {
     }
   }
 
+  // ─── Suggestion d'angles LLM (Step 2) ──────────────────────────────────
+
+  /// `POST /api/veille/suggest/angles` — suggère des angles éditoriaux (titre +
+  /// grappe de mots-clés) pour un thème/brief via LLM (~10-15 s côté backend,
+  /// cache 24 h). Toute erreur/timeout → **liste vide** : l'UI retombe alors
+  /// sur les preset topics statiques, donc aucune régression si le LLM est KO.
+  Future<List<VeilleAngleSuggestionDto>> suggestAngles({
+    required String themeId,
+    required String themeLabel,
+    String brief = '',
+  }) async {
+    try {
+      final response = await _dio.post<dynamic>(
+        'veille/suggest/angles',
+        data: {
+          'theme_id': themeId,
+          'theme_label': themeLabel,
+          'brief': brief,
+        },
+      );
+      return VeilleSuggestAnglesResponse.fromJson(
+        response.data as Map<String, dynamic>,
+      ).angles;
+    } catch (_) {
+      // Erreur réseau/timeout (DioException) ou réponse inattendue/parsing :
+      // on dégrade en silence vers les preset topics statiques.
+      return const [];
+    }
+  }
+
   VeilleApiException _wrap(DioException e) {
     final code = e.response?.statusCode;
     final detail = e.response?.data is Map
