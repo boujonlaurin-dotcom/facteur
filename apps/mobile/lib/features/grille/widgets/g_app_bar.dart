@@ -12,12 +12,16 @@ class GAppBar extends StatelessWidget {
     this.streak = 0,
     this.title = 'Facteur',
     this.onBack,
+    this.onHelp,
   });
 
   final bool showBack;
   final int streak;
   final String title;
   final VoidCallback? onBack;
+
+  /// Si fourni, affiche une icône « ? » (côté droit) qui ouvre l'intro du jeu.
+  final VoidCallback? onHelp;
 
   @override
   Widget build(BuildContext context) {
@@ -54,26 +58,44 @@ class GAppBar extends StatelessWidget {
               ),
             ),
           ),
-          SizedBox(
-            width: 36,
-            child: streak > 0
-                ? Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Icon(
-                        PhosphorIcons.fire(PhosphorIconsStyle.fill),
-                        size: 16,
-                        color: c.primary,
+          ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 36),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (streak > 0) ...[
+                  Icon(
+                    PhosphorIcons.fire(PhosphorIconsStyle.fill),
+                    size: 16,
+                    color: c.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '$streak',
+                    style: FacteurTypography.bodySmall(c.textSecondary)
+                        .copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ],
+                if (onHelp != null) ...[
+                  if (streak > 0) const SizedBox(width: 8),
+                  SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: onHelp,
+                      tooltip: 'Comment jouer',
+                      icon: Icon(
+                        PhosphorIcons.info(),
+                        size: 19,
+                        color: c.textSecondary,
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '$streak',
-                        style: FacteurTypography.bodySmall(c.textSecondary)
-                            .copyWith(fontWeight: FontWeight.w700),
-                      ),
-                    ],
-                  )
-                : null,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         ],
       ),

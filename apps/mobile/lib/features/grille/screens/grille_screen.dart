@@ -9,12 +9,14 @@ import '../../../core/providers/analytics_provider.dart';
 import '../../../shared/widgets/loaders/editorial_loader_card.dart';
 import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../models/grille_models.dart';
+import '../providers/grille_intro_provider.dart';
 import '../providers/grille_provider.dart';
 import '../repositories/grille_repository.dart';
 import '../widgets/azerty_keyboard.dart';
 import '../widgets/g_app_bar.dart';
 import '../widgets/grille_button.dart';
 import '../widgets/grille_deja_joue_view.dart';
+import '../widgets/grille_intro_sheet.dart';
 import '../widgets/grille_masthead.dart';
 import '../widgets/grille_result_view.dart';
 import '../widgets/grille_status_line.dart';
@@ -33,6 +35,7 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
   /// « Revoir ma grille » depuis l'écran Déjà-joué.
   bool _reviewing = false;
   bool _openTracked = false;
+  bool _introChecked = false;
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +43,7 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
     final async = ref.watch(grilleProvider);
 
     ref.listen<AsyncValue<GrilleState>>(grilleProvider, (prev, next) {
-      final data = next.value;
+      final data = next.valueOrNull;
       if (data != null && !_openTracked) {
         _openTracked = true;
         ref.read(analyticsServiceProvider).trackGrilleOpened(
@@ -48,7 +51,13 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
               statut: data.today.statut,
             );
       }
-      final wasFinished = prev?.value?.justFinished ?? false;
+      // Intro one-shot : au 1er chargement de données, si jamais vue, on
+      // l'affiche une fois puis on la marque comme vue.
+      if (data != null && !_introChecked) {
+        _introChecked = true;
+        _maybeShowIntro();
+      }
+      final wasFinished = prev?.valueOrNull?.justFinished ?? false;
       if (data != null && data.justFinished && !wasFinished) {
         ref.read(analyticsServiceProvider).trackGrilleCompleted(
               numero: data.today.numero,
@@ -97,6 +106,38 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
     );
   }
 
+  /// Affiche l'intro « Comment jouer » une seule fois (1er lancement).
+  Future<void> _maybeShowIntro() async {
+    final seen = await ref.read(grilleIntroSeenProvider.future);
+    if (seen || !mounted) return;
+    await _openIntro();
+    await markGrilleIntroSeen();
+    ref.invalidate(grilleIntroSeenProvider);
+  }
+
+  /// Ouvre l'intro à la demande (icône « ? »).
+  Future<void> _openIntro() async {
+    if (!mounted) return;
+    await GrilleIntroSheet.show(context);
+  }
+
+  /// Soumet la ligne en cours + trace l'évènement (chemin commun à
+  /// l'auto-validation et à la touche « Entrer »).
+  void _submitGuess(GrilleTodayResponse today) {
+    final notifier = ref.read(grilleProvider.notifier);
+    final essai = today.nbEssais + 1;
+    notifier.submitGuess().then((_) {
+      if (!mounted) return;
+      final after = ref.read(grilleProvider).valueOrNull;
+      ref.read(analyticsServiceProvider).trackGrilleGuessSubmitted(
+            numero: today.numero,
+            essai: essai,
+            valide: after?.invalidReason == null,
+            raison: after?.invalidReason,
+          );
+    });
+  }
+
   Widget _buildContent(BuildContext context, GrilleState state) {
     final today = state.today;
     if (!today.isFinished) {
@@ -117,7 +158,7 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
 
     return Column(
       children: [
-        GAppBar(showBack: true, streak: today.streak),
+        GAppBar(showBack: true, streak: today.streak, onHelp: _openIntro),
         GrilleMasthead(
           numero: today.numero,
           date: today.dateAffichee,
@@ -154,20 +195,20 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
               AzertyKeyboard(
                 states: keyboardStates,
                 enabled: !state.submitting,
-                onKey: notifier.addLetter,
-                onBackspace: notifier.removeLetter,
-                onEnter: () {
-                  final essai = today.nbEssais + 1;
-                  notifier.submitGuess().then((_) {
-                    final after = ref.read(grilleProvider).value;
-                    ref.read(analyticsServiceProvider).trackGrilleGuessSubmitted(
-                          numero: today.numero,
-                          essai: essai,
-                          valide: after?.invalidReason == null,
-                          raison: after?.invalidReason,
-                        );
-                  });
+                onKey: (k) {
+                  notifier.addLetter(k);
+                  // Auto-validation : dès que le mot est complet, on soumet
+                  // sans passer par « Entrer ».
+                  final s = ref.read(grilleProvider).valueOrNull;
+                  if (s != null &&
+                      !s.submitting &&
+                      !s.today.isFinished &&
+                      s.draft.length == s.today.longueur) {
+                    _submitGuess(s.today);
+                  }
                 },
+                onBackspace: notifier.removeLetter,
+                onEnter: () => _submitGuess(today),
               ),
             ],
           ),
@@ -183,7 +224,7 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
       case 'hors_dictionnaire':
         return 'Ce mot n’est pas distribué — essaie un autre.';
       default:
-        return 'Première lettre offerte. Tape un mot de ${state.today.longueur} lettres.';
+        return 'Première lettre offerte — le mot part dès la dernière lettre.';
     }
   }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,13 +16,18 @@ import 'package:facteur/features/grille/widgets/grille_cta_card.dart';
 
 /// Repository pilotable : `getToday` peut lever ou rendre une partie.
 class _FakeGrilleRepository implements GrilleRepository {
-  _FakeGrilleRepository({this.error, this.today});
+  _FakeGrilleRepository({this.error, this.today, this.gate});
 
   final Object? error;
   final GrilleTodayResponse? today;
 
+  /// Si fourni, `getToday` attend ce future avant de répondre — permet
+  /// d'observer l'état loading de façon déterministe.
+  final Future<void>? gate;
+
   @override
   Future<GrilleTodayResponse> getToday() async {
+    if (gate != null) await gate;
     if (error != null) throw error!;
     return today!;
   }
@@ -85,19 +92,17 @@ void main() {
     },
   );
 
-  testWidgets('loading → rien rendu (SizedBox.shrink)', (t) async {
+  testWidgets('loading → rien rendu, puis carte au passage en data', (t) async {
+    final gate = Completer<void>();
     await t.pumpWidget(
-      _wrap(_FakeGrilleRepository(today: _todayInProgress())),
+      _wrap(_FakeGrilleRepository(today: _todayInProgress(), gate: gate.future)),
     );
-    // Premier frame : le build() async n'a pas encore résolu → loading.
+    // Tant que le future est en vol : état loading → rien.
     await t.pump();
     expect(find.byType(CarteCta), findsNothing);
-  });
 
-  testWidgets('data (partie neuve) → la carte CTA est rendue', (t) async {
-    await t.pumpWidget(
-      _wrap(_FakeGrilleRepository(today: _todayInProgress())),
-    );
+    // Résolution → data → la carte apparaît.
+    gate.complete();
     await t.pumpAndSettle();
     expect(find.byType(CarteCta), findsOneWidget);
   });
