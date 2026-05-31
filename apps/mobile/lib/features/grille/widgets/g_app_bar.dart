@@ -13,6 +13,7 @@ class GAppBar extends StatelessWidget {
     this.title = 'Facteur',
     this.onBack,
     this.onHelp,
+    this.onReveal,
   });
 
   final bool showBack;
@@ -22,6 +23,9 @@ class GAppBar extends StatelessWidget {
 
   /// Si fourni, affiche une icône « ? » (côté droit) qui ouvre l'intro du jeu.
   final VoidCallback? onHelp;
+
+  /// Si fourni, affiche un menu « ⋯ » avec « Donner sa langue au chat ».
+  final VoidCallback? onReveal;
 
   @override
   Widget build(BuildContext context) {
@@ -94,6 +98,29 @@ class GAppBar extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (onReveal != null)
+                  SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: PopupMenuButton<String>(
+                      padding: EdgeInsets.zero,
+                      tooltip: 'Options',
+                      icon: Icon(
+                        PhosphorIcons.dotsThreeVertical(),
+                        size: 20,
+                        color: c.textSecondary,
+                      ),
+                      onSelected: (value) {
+                        if (value == 'reveal') onReveal!();
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem<String>(
+                          value: 'reveal',
+                          child: Text('Donner sa langue au chat'),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),

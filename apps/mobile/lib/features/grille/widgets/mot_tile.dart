@@ -19,7 +19,11 @@ class _TileColors {
       case TileState.place:
         return _TileColors(c.success, c.success, Colors.white);
       case TileState.present:
-        return _TileColors(c.primary, c.primary, Colors.white);
+        return const _TileColors(
+          GrilleConstants.presentTile,
+          GrilleConstants.presentTile,
+          Colors.white,
+        );
       case TileState.absent:
         return const _TileColors(
           GrilleConstants.absentGrille,

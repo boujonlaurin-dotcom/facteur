@@ -13,6 +13,7 @@ class _FakeGrilleRepository implements GrilleRepository {
   GrilleTodayResponse today;
   GrilleGuessResponse? guessResult;
   int guessCalls = 0;
+  int revealCalls = 0;
 
   @override
   Future<GrilleTodayResponse> getToday() async => today;
@@ -21,6 +22,16 @@ class _FakeGrilleRepository implements GrilleRepository {
   Future<GrilleGuessResponse> submitGuess(String mot) async {
     guessCalls++;
     return guessResult ?? const GrilleGuessResponse(valide: false, raison: 'longueur');
+  }
+
+  @override
+  Future<GrilleRevealResponse> revealWord() async {
+    revealCalls++;
+    return const GrilleRevealResponse(
+      statut: 'revealed',
+      mot: 'CLIMAT',
+      pourquoi: 'parce que',
+    );
   }
 
   @override
@@ -172,6 +183,24 @@ void main() {
     expect(s.today.isFinished, isFalse);
     expect(s.draft, 'C', reason: 'la ligne suivante repart sur la 1re offerte');
     expect(s.justFinished, isFalse);
+  });
+
+  test('reveal : mot exposé, statut revealed, justFinished reste faux',
+      () async {
+    final repo = _FakeGrilleRepository(_todayInProgress());
+    final c = await _container(repo);
+    final notifier = c.read(grilleProvider.notifier);
+
+    await notifier.reveal();
+
+    final s = c.read(grilleProvider).value!;
+    expect(repo.revealCalls, 1);
+    expect(s.today.isRevealed, isTrue);
+    expect(s.today.isFinished, isTrue);
+    expect(s.today.mot, 'CLIMAT');
+    expect(s.today.pourquoi, 'parce que');
+    expect(s.justFinished, isFalse, reason: 'révéler n’est pas une victoire');
+    expect(s.draft, isEmpty);
   });
 
   test('addLetter borné à longueur ; removeLetter ne supprime jamais la 1re',

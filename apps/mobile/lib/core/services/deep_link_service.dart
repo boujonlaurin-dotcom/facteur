@@ -18,6 +18,8 @@ import 'analytics_service.dart';
 /// - `io.supabase.facteur://feed/content/<contentId>?pos=<n>&topicId=<id>`
 ///   → `/flaner/content/<contentId>` (article reader, Flâner deep link)
 /// - `io.supabase.facteur://veille/dashboard` → `/veille/dashboard`
+/// - `io.supabase.facteur://grille` → `/grille` (« Le mot du jour », partagé
+///   entre amis — ouvre la grille dans l'app au lieu du site facteur.app)
 ///
 /// `io.supabase.facteur://login-callback` is intentionally ignored — Supabase
 /// SDK intercepts it before it reaches us. Anything else falls through to
@@ -182,6 +184,10 @@ class DeepLinkService {
         _analytics?.trackWidgetAppOpened(target: 'veille');
         router.go(action.route!);
         return;
+      case WidgetDeepLinkTarget.grille:
+        _analytics?.trackWidgetAppOpened(target: 'grille');
+        router.go(action.route!);
+        return;
       case WidgetDeepLinkTarget.ignored:
       case WidgetDeepLinkTarget.unhandled:
         debugPrint('DeepLinkService: unhandled uri=$uri');
@@ -211,6 +217,16 @@ class DeepLinkService {
         (host.isEmpty && segments.isNotEmpty && segments.first == 'feed');
     final isVeille = host == 'veille' ||
         (host.isEmpty && segments.isNotEmpty && segments.first == 'veille');
+    final isGrille = host == 'grille' ||
+        (host.isEmpty && segments.isNotEmpty && segments.first == 'grille');
+
+    if (isGrille) {
+      // « Le mot du jour » partagé entre amis : ouvre la grille dans l'app.
+      return const WidgetDeepLinkAction(
+        target: WidgetDeepLinkTarget.grille,
+        route: RoutePaths.grille,
+      );
+    }
 
     if (isVeille) {
       // La veille n'a plus d'écran dédié — son contenu vit dans la Tournée
@@ -290,7 +306,15 @@ class DeepLinkService {
   }
 }
 
-enum WidgetDeepLinkTarget { digest, article, feed, veille, ignored, unhandled }
+enum WidgetDeepLinkTarget {
+  digest,
+  article,
+  feed,
+  veille,
+  grille,
+  ignored,
+  unhandled,
+}
 
 class WidgetDeepLinkAction {
   final WidgetDeepLinkTarget target;

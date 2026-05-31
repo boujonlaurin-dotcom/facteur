@@ -45,7 +45,7 @@ class GrilleMasthead extends StatelessWidget {
           Text('$numero · $date'.toUpperCase(), style: mono),
           const SizedBox(height: 6),
           Text(
-            'La Grille du jour',
+            'Le mot du jour',
             style: GoogleFonts.fraunces(
               fontSize: 27,
               fontWeight: FontWeight.w700,

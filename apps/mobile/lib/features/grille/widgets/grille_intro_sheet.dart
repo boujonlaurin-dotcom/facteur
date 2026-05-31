@@ -50,7 +50,7 @@ class GrilleIntroSheet extends StatelessWidget {
               ),
               const SizedBox(height: 18),
               Text(
-                'La Grille du jour',
+                'Le mot du jour',
                 style: textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w700,
                   color: colors.textPrimary,

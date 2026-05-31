@@ -15,6 +15,7 @@ from app.schemas.grille import (
     GrilleGuessRequest,
     GrilleGuessResponse,
     GrilleLeaderboardResponse,
+    GrilleRevealResponse,
     GrilleTodayResponse,
 )
 from app.services.grille_service import (
@@ -50,6 +51,21 @@ async def submit_guess(
     service = GrilleService(db)
     try:
         return await service.submit_guess(user_id, payload.mot)
+    except PuzzleNotFound:
+        raise HTTPException(status_code=404, detail="Aucun mot du jour disponible")
+    except GameAlreadyFinished:
+        raise HTTPException(status_code=409, detail="deja_termine")
+
+
+@router.post("/today/reveal", response_model=GrilleRevealResponse)
+async def reveal_word(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> GrilleRevealResponse:
+    """« Donner sa langue au chat » : révèle le mot (exclu du classement)."""
+    service = GrilleService(db)
+    try:
+        return await service.reveal_word(user_id)
     except PuzzleNotFound:
         raise HTTPException(status_code=404, detail="Aucun mot du jour disponible")
     except GameAlreadyFinished:

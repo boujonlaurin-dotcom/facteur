@@ -818,17 +818,19 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                     )
                   : CitationDuJourCard(quote: state.quote!),
             ),
-          // La Grille du jour — récompense de fin de Tournée. Sliver additif
+          // « Le mot du jour » — récompense de fin de Tournée. Sliver additif
           // au-dessus de ClosingCardV18 (cette dernière n'est pas modifiée :
           // zéro régression, revert trivial). La carte se câble seule au
           // grilleProvider et ne rend rien tant que `GET today` n'a pas répondu.
-          if (!state.closingDismissed)
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
-                child: GrilleCtaCard(),
-              ),
+          // Hors gate `closingDismissed` : elle reste dans le feed même après
+          // fermeture de la tournée (en état « déjà jouée »), et se masque
+          // seule (SizedBox.shrink) s'il n'y a pas de mot du jour.
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
+              child: GrilleCtaCard(),
             ),
+          ),
           SliverToBoxAdapter(
             child: state.closingDismissed
                 ? const SizedBox.shrink()
