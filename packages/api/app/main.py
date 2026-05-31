@@ -226,6 +226,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                     "lifespan_startup_checks_skipped", reason="skip_startup_checks=True"
                 )
 
+            # SEED « La Grille du jour » : upsert idempotent des puzzles au boot.
+            # Le seed était manuel-only et n'avait jamais tourné en prod → table
+            # vide → GET /grille/today en 404 pour tous → crash silencieux côté
+            # mobile (écran gris). Cf. docs/bugs/bug-grille-du-jour-crash.md.
+            # Best-effort : un échec ici ne doit pas dégrader le reste de l'API.
+            try:
+                from app.database import safe_async_session
+                from app.services.grille_seed import seed_puzzles
+
+                async with safe_async_session() as _seed_db:
+                    created, updated = await seed_puzzles(_seed_db)
+                    await _seed_db.commit()
+                logger.info("lifespan_grille_seeded", created=created, updated=updated)
+            except Exception as seed_exc:
+                logger.error(
+                    "lifespan_grille_seed_failed",
+                    error=str(seed_exc),
+                    exc_info=True,
+                )
+                sentry_sdk.capture_exception(seed_exc)
+
         except Exception as e:
             logger.critical(
                 "lifespan_startup_db_error",

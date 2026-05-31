@@ -202,7 +202,11 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
 /// État coloré du clavier, déduit des essais joués (pli `place>present>absent`).
 final grilleKeyboardStatesProvider = Provider<Map<String, TileState>>((ref) {
   final async = ref.watch(grilleProvider);
-  final today = async.value?.today;
+  // `.valueOrNull` (et non `.value`) : sur un état d'erreur `.value` re-lève
+  // l'exception (cf. docs/bugs/bug-grille-du-jour-crash.md). Chemin latent —
+  // ce provider n'est lu que dans la branche `data` de l'écran Grille — mais
+  // fermé par cohérence pour éviter tout futur crash en erreur/loading.
+  final today = async.valueOrNull?.today;
   if (today == null) return const {};
   return computeKeyboardStates(
     today.essais.map((e) => (mot: e.mot, etats: e.etats)),
