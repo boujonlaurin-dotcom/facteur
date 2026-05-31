@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'package:facteur/config/serein_colors.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/lettres/widgets/ring_avatar.dart';
 
@@ -44,6 +45,24 @@ void main() {
 
     test('lowercase input is uppercased', () {
       expect(RingAvatar.fromName('laurin boujon', null).initials, 'LB');
+    });
+  });
+
+  group('RingAvatar serein indicator', () {
+    testWidgets('shows the lotus badge when serein is true', (tester) async {
+      await tester.pumpWidget(_wrap(
+        const RingAvatar(initials: 'LB', progress: null, serein: true),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(SereinColors.sereinIcon), findsOneWidget);
+    });
+
+    testWidgets('hides the lotus badge when serein is false', (tester) async {
+      await tester.pumpWidget(_wrap(
+        const RingAvatar(initials: 'LB', progress: 0.5),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(SereinColors.sereinIcon), findsNothing);
     });
   });
 

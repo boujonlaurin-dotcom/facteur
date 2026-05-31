@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../digest/providers/serein_toggle_provider.dart';
 import '../../lettres/providers/letters_provider.dart';
 import '../../lettres/widgets/ring_avatar.dart';
 import '../../settings/providers/user_profile_provider.dart';
@@ -21,6 +22,7 @@ class ProfileAvatarButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final displayName = ref.watch(userProfileProvider).displayName;
     final lettersAsync = ref.watch(lettersProvider);
+    final serein = ref.watch(sereinToggleProvider.select((s) => s.enabled));
 
     final progress = lettersAsync.maybeWhen(
       data: (state) {
@@ -32,7 +34,7 @@ class ProfileAvatarButton extends ConsumerWidget {
       orElse: () => null,
     );
 
-    final avatar = RingAvatar.fromName(displayName, progress);
+    final avatar = RingAvatar.fromName(displayName, progress, serein: serein);
 
     if (onTap == null) return avatar;
 

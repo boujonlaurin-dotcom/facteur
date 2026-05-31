@@ -11,6 +11,7 @@ import '../../../models/user_profile.dart';
 import '../../../features/sources/providers/sources_providers.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../custom_topics/providers/personalization_provider.dart';
+import '../../digest/providers/serein_toggle_provider.dart';
 import 'onboarding_provider.dart';
 
 /// État de l'animation de conclusion
@@ -113,6 +114,14 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
 
       if (result.success) {
         await _saveProfileLocally(result.profile!);
+        // Pré-règle le mode serein dès l'entrée dans le feed depuis le choix
+        // d'onboarding, sans attendre /digest/both. La préférence est déjà
+        // persistée côté serveur (save_onboarding ⇒ serein_enabled='true'), et
+        // initFromApi reste idempotent (sync uniquement au 1er chargement), donc
+        // ce pré-réglage n'est jamais écrasé au scroll / refetch.
+        if (answers.digestMode == 'serein') {
+          _ref.read(sereinToggleProvider.notifier).setEnabledLocal(true);
+        }
         // Trust sources en parallèle avec timeout (important pour le digest)
         await _trustSelectedSourcesWithTimeout(answers.preferredSources);
         await _ref.read(onboardingProvider.notifier).clearSavedData();
