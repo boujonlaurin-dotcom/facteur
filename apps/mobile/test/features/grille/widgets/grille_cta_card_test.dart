@@ -37,6 +37,10 @@ class _FakeGrilleRepository implements GrilleRepository {
       throw UnimplementedError();
 
   @override
+  Future<GrilleRevealResponse> revealWord() async =>
+      throw UnimplementedError();
+
+  @override
   Future<GrilleLeaderboardResponse> getLeaderboard() async =>
       throw UnimplementedError();
 }

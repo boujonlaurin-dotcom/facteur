@@ -64,6 +64,18 @@ class GrilleGuessResponse(BaseModel):
     pourquoi: str | None = None
 
 
+class GrilleRevealResponse(BaseModel):
+    """Réponse de `POST /api/grille/today/reveal` (« donner sa langue au chat »).
+
+    Le mot du jour est exposé (`statut == revealed`) sans compter comme défaite ;
+    la partie est seulement exclue du classement.
+    """
+
+    statut: str
+    mot: str
+    pourquoi: str
+
+
 class GrilleDistributionItem(BaseModel):
     """Part (%) des joueurs pour un nombre d'essais donné (`score` ou "X")."""
 

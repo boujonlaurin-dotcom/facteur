@@ -72,6 +72,27 @@ class GrilleRepository {
     }
   }
 
+  /// `POST grille/today/reveal` — « donner sa langue au chat » (révèle le mot).
+  /// 409 si la partie est déjà finie.
+  Future<GrilleRevealResponse> revealWord() async {
+    try {
+      final response =
+          await _apiClient.dio.post<dynamic>('grille/today/reveal');
+      return GrilleRevealResponse.fromJson(
+        response.data as Map<String, dynamic>,
+      );
+    } on DioException catch (e) {
+      final code = e.response?.statusCode;
+      if (code == 409) {
+        throw const GrilleAlreadyFinishedException();
+      }
+      if (code == 404) {
+        throw const GrilleNotFoundException();
+      }
+      rethrow;
+    }
+  }
+
   /// `GET grille/today/leaderboard` (partie terminée requise).
   Future<GrilleLeaderboardResponse> getLeaderboard() async {
     try {

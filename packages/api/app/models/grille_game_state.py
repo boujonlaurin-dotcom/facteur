@@ -27,6 +27,9 @@ from app.database import Base
 STATUS_IN_PROGRESS = "in_progress"
 STATUS_SOLVED = "solved"
 STATUS_FAILED = "failed"
+# Le joueur a « donné sa langue au chat » : le mot lui est révélé mais la partie
+# n'est pas comptée comme défaite — elle est seulement exclue du classement.
+STATUS_REVEALED = "revealed"
 
 
 class GrilleGameState(Base):
@@ -36,7 +39,7 @@ class GrilleGameState(Base):
         user_id: UUID de l'utilisateur.
         puzzle_date: Date du puzzle joué.
         guesses: Propositions MAJUSCULES dans l'ordre (liste JSONB).
-        status: in_progress | solved | failed.
+        status: in_progress | solved | failed | revealed.
         attempts: Nombre d'essais consommés.
         finished_at: Date/heure de fin de partie (null tant qu'en cours).
     """

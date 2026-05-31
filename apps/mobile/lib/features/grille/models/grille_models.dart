@@ -60,7 +60,24 @@ class GrilleTodayResponse with _$GrilleTodayResponse {
   bool get isInProgress => statut == 'in_progress';
   bool get isSolved => statut == 'solved';
   bool get isFailed => statut == 'failed';
-  bool get isFinished => isSolved || isFailed;
+
+  /// Le joueur a « donné sa langue au chat » : mot révélé, exclu du classement,
+  /// mais ce n'est pas une défaite (streak préservé).
+  bool get isRevealed => statut == 'revealed';
+  bool get isFinished => isSolved || isFailed || isRevealed;
+}
+
+/// Réponse de `POST grille/today/reveal` (« donner sa langue au chat »).
+@freezed
+class GrilleRevealResponse with _$GrilleRevealResponse {
+  const factory GrilleRevealResponse({
+    required String statut,
+    required String mot,
+    required String pourquoi,
+  }) = _GrilleRevealResponse;
+
+  factory GrilleRevealResponse.fromJson(Map<String, dynamic> json) =>
+      _$GrilleRevealResponseFromJson(json);
 }
 
 /// Réponse de `POST grille/today/guess`.

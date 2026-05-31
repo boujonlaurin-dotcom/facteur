@@ -773,6 +773,21 @@ class AnalyticsService {
     await _capturePostHog('grille_cta_tapped', props);
   }
 
+  /// Tap sur un lien « lire les actus du jour » depuis La Grille (résultat ou
+  /// mini-CTA en cours de jeu).
+  Future<void> trackGrilleActusTapped({String? numero}) async {
+    final props = {'session_id': _sessionId, 'numero': numero};
+    await _logEvent('grille_actus_tapped', props);
+    await _capturePostHog('grille_actus_tapped', props);
+  }
+
+  /// Le joueur a « donné sa langue au chat » (mot révélé, exclu du classement).
+  Future<void> trackGrilleRevealed({String? numero}) async {
+    final props = {'session_id': _sessionId, 'numero': numero};
+    await _logEvent('grille_revealed', props);
+    await _capturePostHog('grille_revealed', props);
+  }
+
   Future<void> _logEvent(
     String eventType,
     Map<String, dynamic> eventData,

@@ -62,6 +62,22 @@ Map<String, dynamic> _$$GrilleTodayResponseImplToJson(
       'prochainMotDansSec': instance.prochainMotDansSec,
     };
 
+_$GrilleRevealResponseImpl _$$GrilleRevealResponseImplFromJson(
+        Map<String, dynamic> json) =>
+    _$GrilleRevealResponseImpl(
+      statut: json['statut'] as String,
+      mot: json['mot'] as String,
+      pourquoi: json['pourquoi'] as String,
+    );
+
+Map<String, dynamic> _$$GrilleRevealResponseImplToJson(
+        _$GrilleRevealResponseImpl instance) =>
+    <String, dynamic>{
+      'statut': instance.statut,
+      'mot': instance.mot,
+      'pourquoi': instance.pourquoi,
+    };
+
 _$GrilleGuessResponseImpl _$$GrilleGuessResponseImplFromJson(
         Map<String, dynamic> json) =>
     _$GrilleGuessResponseImpl(

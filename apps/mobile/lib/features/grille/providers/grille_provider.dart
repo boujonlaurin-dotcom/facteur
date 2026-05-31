@@ -193,6 +193,39 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
     }
   }
 
+  /// « Donner sa langue au chat » : révèle le mot via le serveur. La partie
+  /// passe en `revealed` (mot + pourquoi exposés), `justFinished` reste **faux**
+  /// (pas de victoire) — l'aiguillage vers le Résultat est piloté par l'écran.
+  Future<void> reveal() async {
+    final s = _current;
+    if (s == null || s.today.isFinished || s.submitting) return;
+    state = AsyncData(s.copyWith(submitting: true));
+    try {
+      final res = await _repo.revealWord();
+      final after = _current ?? s;
+      final updatedToday = after.today.copyWith(
+        statut: res.statut,
+        mot: res.mot,
+        pourquoi: res.pourquoi,
+      );
+      state = AsyncData(
+        after.copyWith(
+          today: updatedToday,
+          draft: '',
+          submitting: false,
+          invalidReason: null,
+          justFinished: false,
+        ),
+      );
+    } on GrilleAlreadyFinishedException {
+      await refresh();
+    } catch (e) {
+      final after = _current ?? s;
+      state = AsyncData(after.copyWith(submitting: false));
+      rethrow;
+    }
+  }
+
   /// Consomme le flag transitoire `justFinished` (après aiguillage écran).
   void consumeJustFinished() {
     final s = _current;

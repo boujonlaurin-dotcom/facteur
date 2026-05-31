@@ -18,6 +18,12 @@ class GrilleConstants {
   /// Touche clavier « absente » : gris plus clair. (`.kb-key.s-absent`)
   static const Color absentClavier = Color(0xFFBBB1A1);
 
+  /// Tuile/touche « présent » (bonne lettre, mal placée) : ocre/ambre **stable
+  /// sur les deux thèmes**. On n'utilise pas `c.primary` ici car il vire au
+  /// rouge en dark mode (le « jaune Wordle » deviendrait rouge, illisible et
+  /// confondu avec une erreur). Ocre fixe ≈ couleur primaire light.
+  static const Color presentTile = Color(0xFFD9A441);
+
   /// Bouton « steel » (footer Défier un·e ami·e). (`.g-btn.steel`)
   static const Color steel = Color(0xFF34495E);
 
@@ -70,6 +76,9 @@ class GrilleConstants {
   static const Duration shakeDuration = Duration(milliseconds: 250);
 
   // ── Lien de partage ─────────────────────────────────────────────────────
-  /// Base de lien de partage (sans spoiler). Le deep-link entrant est hors MVP.
-  static const String shareBaseUrl = 'https://facteur.app/grille';
+  /// Lien de partage (sans spoiler) : **deep-link** custom-scheme qui ouvre
+  /// directement « Le mot du jour » dans l'app (cf. `DeepLinkService` +
+  /// redirect GoRouter), au lieu de retomber sur le site facteur.app. C'est le
+  /// même schéma que les autres deep-links de l'app (widgets, notifs).
+  static const String shareBaseUrl = 'io.supabase.facteur://grille';
 }
