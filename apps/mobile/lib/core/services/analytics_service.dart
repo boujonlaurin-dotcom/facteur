@@ -698,6 +698,81 @@ class AnalyticsService {
     await prefs.setBool('has_launched_before', true);
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // La Grille du jour (Story 24.2)
+  // ──────────────────────────────────────────────────────────────
+
+  Future<void> trackGrilleOpened({String? numero, required String statut}) async {
+    final props = {
+      'session_id': _sessionId,
+      'numero': numero,
+      'statut': statut,
+    };
+    await _logEvent('grille_opened', props);
+    await _capturePostHog('grille_opened', props);
+  }
+
+  Future<void> trackGrilleGuessSubmitted({
+    String? numero,
+    required int essai,
+    required bool valide,
+    String? raison,
+  }) async {
+    await _logEvent('grille_guess_submitted', {
+      'session_id': _sessionId,
+      'numero': numero,
+      'essai': essai,
+      'valide': valide,
+      'raison': raison,
+    });
+  }
+
+  Future<void> trackGrilleCompleted({
+    String? numero,
+    required String statut,
+    required int nbEssais,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'numero': numero,
+      'statut': statut,
+      'nb_essais': nbEssais,
+    };
+    await _logEvent('grille_completed', props);
+    await _capturePostHog('grille_completed', props);
+  }
+
+  /// `medium` ∈ `texte | lien`.
+  Future<void> trackGrilleShared({String? numero, required String medium}) async {
+    final props = {
+      'session_id': _sessionId,
+      'numero': numero,
+      'medium': medium,
+    };
+    await _logEvent('grille_shared', props);
+    await _capturePostHog('grille_shared', props);
+  }
+
+  Future<void> trackGrilleLeaderboardOpened({String? numero}) async {
+    await _logEvent('grille_leaderboard_opened', {
+      'session_id': _sessionId,
+      'numero': numero,
+    });
+  }
+
+  Future<void> trackGrilleCtaShown({required String state}) async {
+    await _logEvent('grille_cta_shown', {
+      'session_id': _sessionId,
+      'state': state,
+    });
+  }
+
+  Future<void> trackGrilleCtaTapped({required String state}) async {
+    final props = {'session_id': _sessionId, 'state': state};
+    await _logEvent('grille_cta_tapped', props);
+    await _capturePostHog('grille_cta_tapped', props);
+  }
+
   Future<void> _logEvent(
     String eventType,
     Map<String, dynamic> eventData,

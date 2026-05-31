@@ -32,6 +32,9 @@ import '../features/subscription/screens/paywall_screen.dart';
 import '../features/veille/screens/veille_config_screen.dart';
 import '../features/lettres/screens/courrier_screen.dart';
 import '../features/lettres/screens/open_letter_screen.dart';
+import '../features/grille/screens/grille_screen.dart';
+import '../features/grille/screens/grille_leaderboard_screen.dart';
+import '../features/grille/screens/grille_share_screen.dart';
 import '../features/saved/screens/saved_screen.dart';
 import '../features/saved/screens/saved_all_screen.dart';
 import '../features/saved/screens/collection_detail_screen.dart';
@@ -112,6 +115,9 @@ class RouteNames {
   static const String veilleConfig = 'veille-config';
   static const String lettres = 'lettres';
   static const String openLetter = 'open-letter';
+  static const String grille = 'grille';
+  static const String grilleLeaderboard = 'grille-leaderboard';
+  static const String grilleShare = 'grille-share';
 }
 
 /// Chemins des routes
@@ -144,6 +150,9 @@ class RoutePaths {
   static const String veilleConfig = '/veille/config';
   static const String lettres = '/lettres';
   static const String openLetter = '/lettres/:id';
+  static const String grille = '/grille';
+  static const String grilleLeaderboard = '/grille/leaderboard';
+  static const String grilleShare = '/grille/share';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -537,6 +546,29 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: RoutePaths.digest,
         name: RouteNames.digest,
         redirect: (context, state) => RoutePaths.fluxContinu,
+      ),
+
+      // La Grille du jour — route top-level (hors transition main-tab) +
+      // sous-routes classement / partage, toutes en FullSwipeCupertinoPage.
+      GoRoute(
+        path: RoutePaths.grille,
+        name: RouteNames.grille,
+        pageBuilder: (context, state) =>
+            const FullSwipeCupertinoPage(child: GrilleScreen()),
+        routes: [
+          GoRoute(
+            path: 'leaderboard',
+            name: RouteNames.grilleLeaderboard,
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: GrilleLeaderboardScreen()),
+          ),
+          GoRoute(
+            path: 'share',
+            name: RouteNames.grilleShare,
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: GrilleShareScreen()),
+          ),
+        ],
       ),
 
       // Topic Explorer (outside ShellRoute to hide bottom nav)

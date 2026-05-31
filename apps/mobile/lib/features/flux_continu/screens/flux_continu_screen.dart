@@ -38,6 +38,7 @@ import '../widgets/my_interests_sheet.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
 import '../widgets/tournee_folded_group_card.dart';
+import '../../grille/widgets/grille_cta_card.dart';
 
 /// Scroll offset at which the AppBar is swapped with the sticky tab bar.
 const double _kStickyThreshold = 60.0;
@@ -816,6 +817,17 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                           : const SizedBox.shrink(),
                     )
                   : CitationDuJourCard(quote: state.quote!),
+            ),
+          // La Grille du jour — récompense de fin de Tournée. Sliver additif
+          // au-dessus de ClosingCardV18 (cette dernière n'est pas modifiée :
+          // zéro régression, revert trivial). La carte se câble seule au
+          // grilleProvider et ne rend rien tant que `GET today` n'a pas répondu.
+          if (!state.closingDismissed)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
+                child: GrilleCtaCard(),
+              ),
             ),
           SliverToBoxAdapter(
             child: state.closingDismissed
