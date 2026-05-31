@@ -27,6 +27,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.content import Content
+from app.models.enums import SourceType
 from app.models.source import Source
 from app.services.briefing.importance_detector import ImportanceDetector, TopicCluster
 from app.services.editorial.actu_matcher import ActuMatcher
@@ -50,6 +51,26 @@ from app.services.title_annotation_service import (
 )
 
 logger = structlog.get_logger()
+
+
+def _is_singleton_podcast(cluster: TopicCluster) -> bool:
+    """Vrai si le cluster n'est couvert que par un seul podcast.
+
+    Les épisodes de podcasts traitent de sujets thématiques spécifiques (ex:
+    Science CQFD) qui ne constituent pas de l'actualité multi-source. On les
+    exclut du pool LLM pour ne pas polluer le digest quotidien avec des sujets
+    de niche qui n'intéressent qu'une seule source.
+    Un cluster podcast + article reste inclus (is_multi_source=True).
+    """
+    if len(cluster.source_domains) > 1 or not cluster.contents:
+        return False
+    src = getattr(cluster.contents[0], "source", None)
+    src_type = getattr(src, "type", None) if src else None
+    try:
+        return bool(src_type) and SourceType(src_type) == SourceType.PODCAST
+    except (ValueError, TypeError):
+        return False
+
 
 # Curation oversample : on demande +buffer sujets de plus que la cible pour
 # absorber les échecs d'actu/deep matching. EDITORIAL_TARGET_SUBJECT_COUNT=5
@@ -170,7 +191,9 @@ class EditorialPipelineService:
         # modes. Clusters are sorted by size desc so the largest — typically
         # the most trending — is kept. Skip the cap if the remaining non-
         # low-priority pool would be too small pour atteindre la cible sujets.
-        sorted_by_size = sorted(clusters, key=lambda c: len(c.source_ids), reverse=True)
+        sorted_by_size = sorted(
+            clusters, key=lambda c: len(c.source_domains), reverse=True
+        )
         capped = cap_low_priority_clusters(sorted_by_size)
         if len(capped) >= _read_target_subject_count():
             dropped = len(sorted_by_size) - len(capped)
@@ -189,6 +212,18 @@ class EditorialPipelineService:
                 capped_size=len(capped),
             )
 
+        # Filtre singletons-podcast : épisodes thématiques d'une seule source
+        # (ex: Science CQFD) exclus du pool — pas de l'actu multi-source.
+        # Un cluster podcast + ≥1 autre source reste inclus.
+        filtered = [c for c in clusters if not _is_singleton_podcast(c)]
+        if dropped := len(clusters) - len(filtered):
+            logger.info(
+                "editorial_pipeline.singleton_podcast_filtered",
+                dropped=dropped,
+                remaining=len(filtered),
+            )
+        clusters = filtered
+
         # ÉTAPE 1B: Pré-sélection "À la Une" — cluster le plus couvert.
         # Cas standard : on prend parmi les clusters "trending" (≥3 sources).
         # Cas creux (week-end / jours fériés) : si aucun cluster ≥3, on
@@ -206,7 +241,7 @@ class EditorialPipelineService:
             if a_la_une_pool:
                 top3 = sorted(
                     a_la_une_pool,
-                    key=lambda c: len(c.source_ids),
+                    key=lambda c: len(c.source_domains),
                     reverse=True,
                 )[:3]
                 a_la_une_topic = await self.curation.select_bonne_nouvelle(top3)
@@ -218,9 +253,9 @@ class EditorialPipelineService:
                     trending=len(trending_clusters),
                 )
         elif a_la_une_pool:
-            top3 = sorted(a_la_une_pool, key=lambda c: len(c.source_ids), reverse=True)[
-                :3
-            ]
+            top3 = sorted(
+                a_la_une_pool, key=lambda c: len(c.source_domains), reverse=True
+            )[:3]
 
             if len(top3) == 1:
                 a_la_une_topic = _cluster_to_une_topic(top3[0])
