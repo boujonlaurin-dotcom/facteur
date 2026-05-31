@@ -325,9 +325,7 @@ def apply_theme_focus_filter(query, theme_slug: str):
     `secondary_themes` n'apporte rien d'autre que la fuite.
     """
     # Subquery : source IDs dont le thème PRINCIPAL matche (pas les secondaires).
-    primary_theme_source_ids_subq = select(Source.id).where(
-        Source.theme == theme_slug
-    )
+    primary_theme_source_ids_subq = select(Source.id).where(Source.theme == theme_slug)
     # Deux chemins indexés sur la même table (contents) :
     # 1. Articles classifiés ML dans ce thème → toujours inclus
     # 2. Articles d'une source dont le thème principal matche MAIS pas encore

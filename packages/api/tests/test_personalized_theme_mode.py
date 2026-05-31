@@ -32,9 +32,7 @@ def _stub_scalars(captured: list):
     result.all.return_value = []
 
     async def _scalars(stmt):
-        captured.append(
-            stmt.compile(compile_kwargs={"literal_binds": False}).__str__()
-        )
+        captured.append(stmt.compile(compile_kwargs={"literal_binds": False}).__str__())
         return result
 
     return _scalars, result
@@ -186,13 +184,11 @@ async def test_explicit_filter_unchanged_when_personalized_false():
     )
     # No 24h window either.
     assert ">= " not in sql or "published_at" not in sql, (
-        "exploration must not add a 24h published_at filter. "
-        f"Got:\n{captured[0]}"
+        f"exploration must not add a 24h published_at filter. Got:\n{captured[0]}"
     )
     # No overlap-based ORDER BY.
     assert "overlap" not in sql and "&&" not in sql, (
-        "exploration must not add a subtopic overlap ORDER BY. "
-        f"Got:\n{captured[0]}"
+        f"exploration must not add a subtopic overlap ORDER BY. Got:\n{captured[0]}"
     )
 
 
