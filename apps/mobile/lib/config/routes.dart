@@ -109,6 +109,7 @@ class RoutePaths {
   static const String flaner = '/flaner';
   static const String fluxContinu = '/flux-continu';
   static const String contentDetail = '/content/:id';
+  static const String contentExternal = '/content-external';
   static const String saved = '/saved';
   static const String sources = '/settings/sources'; // Moved to settings
   // static const String addSource = '/sources/add'; // Removed for V0
@@ -423,7 +424,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       // du site. Top-level sur le root navigator + swipe-back iOS : la sheet de
       // comparaisons (elle-même sur le root navigator) reste vivante dessous.
       GoRoute(
-        path: 'content-external',
+        path: RoutePaths.contentExternal,
         name: RouteNames.contentExternal,
         parentNavigatorKey: NotificationService.navigatorKey,
         pageBuilder: (context, state) {
