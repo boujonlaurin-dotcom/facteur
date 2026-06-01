@@ -1474,13 +1474,6 @@ class _PerspectivesInlineSectionState
                           ),
                         ),
                       ),
-                      if (widget.divergenceLevel != null) ...[
-                        const SizedBox(width: 8),
-                        DivergenceInlineBadge(
-                          divergenceLevel: widget.divergenceLevel,
-                          iconOnly: true,
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -1530,44 +1523,26 @@ class _PerspectivesInlineSectionState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (widget.referenceTitle.isNotEmpty) ...[
-            _RefBlock(
-              key: ValueKey('ref_$_animationGeneration'),
-              title: widget.referenceTitle,
-              pivot: widget.referencePivot,
-              sourceBiasStance: widget.sourceBiasStance,
-              sourceName: widget.sourceName,
-            ),
-            Container(
-              margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-              height: 1,
-              color: colors.textSecondary.withValues(alpha: 0.18),
-            ),
-          ],
-          if (variants.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-              child: Text(
-                kHighlightIntroText,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: textTheme.bodySmall?.copyWith(
-                  color: colors.textSecondary,
-                  height: 1.35,
-                ),
-              ),
-            ),
           if (_polarizationText != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
               child: Text(
                 _polarizationText!,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
                 style: textTheme.bodySmall?.copyWith(
                   color: colors.textSecondary,
                   height: 1.35,
                   fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          if (variants.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.fromLTRB(16, _polarizationText != null ? 0 : 10, 16, 6),
+              child: Text(
+                kHighlightIntroText,
+                style: textTheme.bodySmall?.copyWith(
+                  color: colors.textSecondary,
+                  height: 1.35,
                 ),
               ),
             ),
@@ -1607,6 +1582,20 @@ class _PerspectivesInlineSectionState
                 zoneKey: widget.analysisZoneKey,
               ),
             ),
+          if (widget.referenceTitle.isNotEmpty) ...[
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              height: 1,
+              color: colors.textSecondary.withValues(alpha: 0.18),
+            ),
+            _RefBlock(
+              key: ValueKey('ref_$_animationGeneration'),
+              title: widget.referenceTitle,
+              pivot: widget.referencePivot,
+              sourceBiasStance: widget.sourceBiasStance,
+              sourceName: widget.sourceName,
+            ),
+          ],
           const SizedBox(height: 16),
         ],
       ),
