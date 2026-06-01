@@ -17,8 +17,9 @@ final sourcesRepositoryProvider = Provider<SourcesRepository>((ref) {
 
 typedef SmartSearchQuery = ({String query, String? contentType, bool expand});
 
-final smartSearchProvider = FutureProvider.family<SmartSearchResponse,
-    SmartSearchQuery>((ref, params) async {
+final smartSearchProvider =
+    FutureProvider.family<SmartSearchResponse, SmartSearchQuery>(
+        (ref, params) async {
   final trimmed = params.query.trim();
   if (trimmed.isEmpty) {
     return const SmartSearchResponse(queryNormalized: '', results: []);
@@ -36,8 +37,7 @@ final trendingSourcesProvider = FutureProvider<List<Source>>((ref) async {
   return repository.getTrendingSources(limit: 30);
 });
 
-final themesFollowedProvider =
-    FutureProvider<List<FollowedTheme>>((ref) async {
+final themesFollowedProvider = FutureProvider<List<FollowedTheme>>((ref) async {
   final repository = ref.watch(sourcesRepositoryProvider);
   return repository.getThemesFollowed();
 });
@@ -78,7 +78,6 @@ class PepitesNotifier extends AsyncNotifier<List<Source>> {
       print('PepitesNotifier: [ERROR] dismiss failed: $e\n$stack');
     }
   }
-
 }
 
 class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
@@ -130,8 +129,19 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
     }
   }
 
-  Future<void> toggleSubscription(
-      String sourceId, bool currentlySubscribed) async {
+  Future<void> connectSubscription(String sourceId) async {
+    await setSubscription(sourceId, true, rethrowOnError: true);
+  }
+
+  Future<void> disconnectSubscription(String sourceId) async {
+    await setSubscription(sourceId, false);
+  }
+
+  Future<void> setSubscription(
+    String sourceId,
+    bool hasSubscription, {
+    bool rethrowOnError = false,
+  }) async {
     final repository = ref.read(sourcesRepositoryProvider);
 
     // Optimistic Update
@@ -140,22 +150,25 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
       state = AsyncValue.data([
         for (final source in state.value!)
           if (source.id == sourceId)
-            source.copyWith(hasSubscription: !currentlySubscribed)
+            source.copyWith(
+              hasSubscription: hasSubscription,
+              isTrusted: hasSubscription ? true : source.isTrusted,
+            )
           else
             source
       ]);
     }
 
     try {
-      await repository.updateSourceSubscription(
-          sourceId, !currentlySubscribed);
+      await repository.updateSourceSubscription(sourceId, hasSubscription);
       // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
       unawaited(ref.read(lettersProvider.notifier).silentRefresh());
     } catch (e, stack) {
       // ignore: avoid_print
       print(
-          'UserSourcesNotifier: [ERROR] toggleSubscription failed: $e\n$stack');
+          'UserSourcesNotifier: [ERROR] setSubscription failed: $e\n$stack');
       state = previousState;
+      if (rethrowOnError) rethrow;
     }
   }
 

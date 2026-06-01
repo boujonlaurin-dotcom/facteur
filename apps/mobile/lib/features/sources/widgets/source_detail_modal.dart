@@ -9,6 +9,7 @@ import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
 import '../../../widgets/design/facteur_button.dart';
+import 'premium_source_connection.dart';
 import 'source_logo_avatar.dart';
 
 class SourceDetailModal extends ConsumerWidget {
@@ -16,7 +17,6 @@ class SourceDetailModal extends ConsumerWidget {
   final VoidCallback onToggleTrust;
   final VoidCallback? onToggleMute;
   final VoidCallback? onCopyFeedUrl;
-  final VoidCallback? onToggleSubscription;
   final List<SmartSearchRecentItem>? recentItems;
 
   const SourceDetailModal({
@@ -25,7 +25,6 @@ class SourceDetailModal extends ConsumerWidget {
     required this.onToggleTrust,
     this.onToggleMute,
     this.onCopyFeedUrl,
-    this.onToggleSubscription,
     this.recentItems,
   });
 
@@ -124,8 +123,7 @@ class SourceDetailModal extends ConsumerWidget {
             decoration: BoxDecoration(
               color: colors.backgroundSecondary,
               borderRadius: BorderRadius.circular(16),
-              border:
-                  Border.all(color: colors.textTertiary.withOpacity(0.2)),
+              border: Border.all(color: colors.textTertiary.withOpacity(0.2)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -171,14 +169,12 @@ class SourceDetailModal extends ConsumerWidget {
               decoration: BoxDecoration(
                 color: colors.backgroundSecondary,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                    color: colors.textTertiary.withOpacity(0.2)),
+                border: Border.all(color: colors.textTertiary.withOpacity(0.2)),
               ),
               child: Row(
                 children: [
                   Icon(
-                    PhosphorIcons.slidersHorizontal(
-                        PhosphorIconsStyle.regular),
+                    PhosphorIcons.slidersHorizontal(PhosphorIconsStyle.regular),
                     size: 18,
                     color: colors.textSecondary,
                   ),
@@ -209,8 +205,7 @@ class SourceDetailModal extends ConsumerWidget {
               decoration: BoxDecoration(
                 color: colors.backgroundSecondary,
                 borderRadius: BorderRadius.circular(16),
-                border:
-                    Border.all(color: colors.textTertiary.withOpacity(0.2)),
+                border: Border.all(color: colors.textTertiary.withOpacity(0.2)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -228,13 +223,11 @@ class SourceDetailModal extends ConsumerWidget {
                         child: Text(
                           'Recommandé par ${displaySource.recommendedBy} '
                           '— équipe Facteur',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleSmall
-                              ?.copyWith(
-                                color: colors.textPrimary,
-                                fontWeight: FontWeight.bold,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    color: colors.textPrimary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                         ),
                       ),
                     ],
@@ -264,8 +257,7 @@ class SourceDetailModal extends ConsumerWidget {
             decoration: BoxDecoration(
               color: colors.surface,
               borderRadius: BorderRadius.circular(16),
-              border:
-                  Border.all(color: colors.textTertiary.withOpacity(0.2)),
+              border: Border.all(color: colors.textTertiary.withOpacity(0.2)),
             ),
             child: Text(
               source.description ??
@@ -366,18 +358,41 @@ class SourceDetailModal extends ConsumerWidget {
                 );
               }),
             ],
-            if (onToggleSubscription != null) ...[
+            if (displaySource.premiumConnection != null) ...[
               const SizedBox(height: 8),
               FacteurButton(
-                onPressed: () {
-                  onToggleSubscription!();
-                  Navigator.pop(context);
-                },
+                onPressed: () =>
+                    _openPremiumConnectionFlow(context, ref, displaySource),
                 label: displaySource.hasSubscription
-                    ? 'Dissocier mon abonnement'
-                    : 'Associer mon abonnement',
+                    ? 'Reconnecter cet abonnement'
+                    : 'Connecter mon abonnement',
                 type: FacteurButtonType.secondary,
                 icon: PhosphorIcons.link(PhosphorIconsStyle.regular),
+              ),
+            ],
+            if (displaySource.hasSubscription) ...[
+              const SizedBox(height: 8),
+              FacteurButton(
+                onPressed: () async {
+                  try {
+                    await ref
+                        .read(userSourcesProvider.notifier)
+                        .disconnectSubscription(displaySource.id);
+                    if (context.mounted) Navigator.pop(context);
+                  } catch (_) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content:
+                            Text('Impossible de dissocier cet abonnement.'),
+                        duration: Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                },
+                label: 'Dissocier mon abonnement',
+                type: FacteurButtonType.secondary,
+                icon: PhosphorIcons.linkBreak(PhosphorIconsStyle.regular),
               ),
             ],
             if (onToggleMute != null) ...[
@@ -405,6 +420,26 @@ class SourceDetailModal extends ConsumerWidget {
           ],
           SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
         ],
+      ),
+    );
+  }
+
+  Future<void> _openPremiumConnectionFlow(
+    BuildContext context,
+    WidgetRef ref,
+    Source source,
+  ) async {
+    final navigator = Navigator.of(context);
+    navigator.pop();
+    await Future<void>.delayed(Duration.zero);
+    await navigator.push<void>(
+      MaterialPageRoute(
+        builder: (_) => PremiumSourceConnection(
+          source: source,
+          onConnected: () => ref
+              .read(userSourcesProvider.notifier)
+              .connectSubscription(source.id),
+        ),
       ),
     );
   }

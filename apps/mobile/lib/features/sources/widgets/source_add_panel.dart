@@ -155,9 +155,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
       _expanded = false;
     });
     if (value != null) {
-      ref
-          .read(analyticsServiceProvider)
-          .trackAddSourceContentTypeFilter(value);
+      ref.read(analyticsServiceProvider).trackAddSourceContentTypeFilter(value);
     }
   }
 
@@ -291,22 +289,6 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         source: source,
         recentItems: recentItems,
         onToggleTrust: () => _toggleTrustSource(source),
-        onToggleSubscription: source.id.isNotEmpty
-            ? () {
-                final current = ref
-                        .read(userSourcesProvider)
-                        .valueOrNull
-                        ?.firstWhere(
-                          (s) => s.id == source.id,
-                          orElse: () => source,
-                        )
-                        .hasSubscription ??
-                    source.hasSubscription;
-                ref
-                    .read(userSourcesProvider.notifier)
-                    .toggleSubscription(source.id, current);
-              }
-            : null,
         onCopyFeedUrl: source.isCustom && (source.url?.isNotEmpty ?? false)
             ? () async {
                 await Clipboard.setData(ClipboardData(text: source.url!));
@@ -346,8 +328,9 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   }
 
   Widget _buildBreathingSearch(FacteurColors colors) {
-    final glow =
-        _searchActive ? colors.primary.withValues(alpha: 0.18) : Colors.transparent;
+    final glow = _searchActive
+        ? colors.primary.withValues(alpha: 0.18)
+        : Colors.transparent;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 320),
       curve: Curves.easeOut,
@@ -488,8 +471,9 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   /// trop courts sont ignorés (la désambiguïsation vise des mots-sujets).
   Future<void> _fetchTopicSuggestions(String query) async {
     final trimmed = query.trim();
-    final looksLikeUrl =
-        trimmed.startsWith('http') || trimmed.contains('://') || trimmed.contains('@');
+    final looksLikeUrl = trimmed.startsWith('http') ||
+        trimmed.contains('://') ||
+        trimmed.contains('@');
     if (trimmed.length < 2 || looksLikeUrl) {
       setState(() {
         _topicSuggestions = const [];
@@ -526,7 +510,8 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
       final updated = [..._topicSuggestions]..removeAt(index);
       setState(() => _topicSuggestions = updated);
     } catch (e) {
-      if (mounted) NotificationService.showError('Erreur lors de l\'ajout : $e');
+      if (mounted)
+        NotificationService.showError('Erreur lors de l\'ajout : $e');
     } finally {
       if (mounted) setState(() => _followingTopicIndex = null);
     }

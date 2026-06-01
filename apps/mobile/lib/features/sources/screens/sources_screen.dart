@@ -304,8 +304,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                 const SizedBox(height: 12),
                 // Story 22.1 — section Favoris (drag-reorderable, cap 3).
                 _SourceFavoritesSection(
-                  favorites:
-                      sourcesStateAsync.value?.favorites ?? const [],
+                  favorites: sourcesStateAsync.value?.favorites ?? const [],
                   allSources: allSources,
                   onReorder: (reordered) async {
                     try {
@@ -316,8 +315,8 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                       if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text(
-                              'Impossible de réordonner les favoris.'),
+                          content:
+                              Text('Impossible de réordonner les favoris.'),
                           duration: Duration(seconds: 3),
                         ),
                       );
@@ -540,11 +539,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
         ref
             .read(userSourcesProvider.notifier)
             .toggleMute(source.id, source.isMuted);
-      },
-      onToggleSubscription: () {
-        ref
-            .read(userSourcesProvider.notifier)
-            .toggleSubscription(source.id, source.hasSubscription);
       },
     );
   }

@@ -40,8 +40,7 @@ class _SourcesPage2QuestionState extends ConsumerState<SourcesPage2Question> {
     // Restore selections from Page 1
     final existingSources =
         ref.read(onboardingProvider).answers.preferredSources;
-    _selectedSourceIds =
-        existingSources != null ? existingSources.toSet() : {};
+    _selectedSourceIds = existingSources != null ? existingSources.toSet() : {};
 
     _searchController.addListener(() {
       setState(() {
@@ -108,17 +107,6 @@ class _SourcesPage2QuestionState extends ConsumerState<SourcesPage2Question> {
       backgroundColor: Colors.transparent,
       builder: (context) => PremiumSourcesSheet(
         allSources: allSources,
-        onDone: (subscribedIds) {
-          // Mark subscriptions via the sources provider
-          final sourcesNotifier = ref.read(userSourcesProvider.notifier);
-          for (final source in allSources.where((s) => s.isCurated)) {
-            final wasSubscribed = source.hasSubscription;
-            final isNowSubscribed = subscribedIds.contains(source.id);
-            if (wasSubscribed != isNowSubscribed) {
-              sourcesNotifier.toggleSubscription(source.id, wasSubscribed);
-            }
-          }
-        },
       ),
     );
   }
@@ -177,8 +165,7 @@ class _SourcesPage2QuestionState extends ConsumerState<SourcesPage2Question> {
             child: Text(
               _selectedSourceIds.isEmpty
                   ? OnboardingStrings.skipButton
-                  : OnboardingStrings.selectedCount(
-                      _selectedSourceIds.length),
+                  : OnboardingStrings.selectedCount(_selectedSourceIds.length),
             ),
           ),
         ),
@@ -280,8 +267,7 @@ class _SourcesPage2QuestionState extends ConsumerState<SourcesPage2Question> {
                 controller: _searchController,
                 decoration: InputDecoration(
                   hintText: OnboardingStrings.q9SearchHint,
-                  prefixIcon:
-                      Icon(Icons.search, color: colors.textSecondary),
+                  prefixIcon: Icon(Icons.search, color: colors.textSecondary),
                   filled: true,
                   fillColor: colors.surface,
                   contentPadding: const EdgeInsets.symmetric(
@@ -289,8 +275,7 @@ class _SourcesPage2QuestionState extends ConsumerState<SourcesPage2Question> {
                     vertical: FacteurSpacing.space3,
                   ),
                   border: OutlineInputBorder(
-                    borderRadius:
-                        BorderRadius.circular(FacteurRadius.full),
+                    borderRadius: BorderRadius.circular(FacteurRadius.full),
                     borderSide: BorderSide.none,
                   ),
                   hintStyle: TextStyle(color: colors.textSecondary),
@@ -306,8 +291,8 @@ class _SourcesPage2QuestionState extends ConsumerState<SourcesPage2Question> {
             if (_searchQuery.isNotEmpty &&
                 _filteredCatalog(reco.catalog).isEmpty)
               Padding(
-                padding: const EdgeInsets.symmetric(
-                    vertical: FacteurSpacing.space4),
+                padding:
+                    const EdgeInsets.symmetric(vertical: FacteurSpacing.space4),
                 child: Text(
                   OnboardingStrings.q9NoMatch,
                   style: TextStyle(color: colors.textSecondary),
@@ -352,8 +337,7 @@ class _SourcesPage2QuestionState extends ConsumerState<SourcesPage2Question> {
       final sources = grouped[themeSlug]!;
       final macroTheme = getTopicMacroTheme(themeSlug);
       final label = macroTheme ?? getTopicLabel(themeSlug);
-      final emoji =
-          macroTheme != null ? getMacroThemeEmoji(macroTheme) : '';
+      final emoji = macroTheme != null ? getMacroThemeEmoji(macroTheme) : '';
 
       // Mini-header for the theme group
       widgets.add(Padding(

@@ -18,6 +18,7 @@ from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.source import Source
 from app.models.user import UserInterest
 from app.schemas.source import (
+    PremiumConnectionResponse,
     SearchAbandonedRequest,
     SmartSearchRecentItem,
     SmartSearchRequest,
@@ -41,7 +42,7 @@ from app.services.search.smart_source_search import (
     SmartSourceSearchService,
     mark_search_abandoned,
 )
-from app.services.source_service import SourceService
+from app.services.source_service import PremiumConnectionNotEnabled, SourceService
 from app.services.sources_cache import SOURCES_CACHE
 from app.utils.db_retry import retry_db_op
 
@@ -257,6 +258,9 @@ def _source_to_response(
         score_ux=s.score_ux,
         recommended_by=getattr(s, "recommended_by", None),
         recommendation_reason=getattr(s, "recommendation_reason", None),
+        premium_connection=PremiumConnectionResponse.from_config(
+            getattr(s, "premium_connection_config", None)
+        ),
     )
 
 
@@ -600,9 +604,15 @@ async def update_source_subscription(
 ) -> SourceResponse:
     """Mettre à jour l'abonnement premium d'une source."""
     service = SourceService(db)
-    result = await service.update_source_subscription(
-        user_id, str(source_id), data.has_subscription
-    )
+    try:
+        result = await service.update_source_subscription(
+            user_id, str(source_id), data.has_subscription
+        )
+    except PremiumConnectionNotEnabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Premium connection is not enabled for this source",
+        ) from None
 
     if not result:
         raise HTTPException(
