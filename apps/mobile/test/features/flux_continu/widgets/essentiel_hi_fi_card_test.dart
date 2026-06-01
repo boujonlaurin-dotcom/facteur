@@ -6,7 +6,9 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
+import 'package:facteur/features/flux_continu/models/weather_location.dart';
 import 'package:facteur/features/flux_continu/models/weather_snapshot.dart';
+import 'package:facteur/features/flux_continu/providers/weather_location_provider.dart';
 import 'package:facteur/features/flux_continu/providers/weather_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/essentiel_hi_fi_card.dart';
 
@@ -22,9 +24,15 @@ Widget _wrap(Widget child, {List<Override> overrides = const []}) {
 
 class _FakeWeatherNotifier extends WeatherNotifier {
   _FakeWeatherNotifier(this._value);
-  final WeatherSnapshot _value;
+  final WeatherForecast _value;
   @override
-  Future<WeatherSnapshot> build() async => _value;
+  Future<WeatherForecast> build() async => _value;
+}
+
+/// Évite le chargement Hive (non initialisé en test unitaire) : renvoie Paris.
+class _FakeLocationNotifier extends WeatherLocationNotifier {
+  @override
+  WeatherLocation build() => WeatherLocation.paris;
 }
 
 EssentielArticle _article({
@@ -244,20 +252,31 @@ void main() {
       expect(find.byType(SvgPicture), findsNothing);
     });
 
-    testWidgets('flips to the weather badge once the user scrolls past 32 px',
-        (tester) async {
-      final snapshot = WeatherSnapshot(
+    testWidgets('flips to the weather badge and tapping it opens the detail '
+        'sheet', (tester) async {
+      final forecast = WeatherForecast(
         condition: WeatherCondition.sunny,
         currentC: 19,
+        feelsLikeC: 18,
         minC: 12,
         maxC: 21,
         fetchedAt: DateTime(2026, 5, 28),
+        days: [
+          for (var i = 0; i < 5; i++)
+            WeatherDay(
+              date: DateTime(2026, 5, 28).add(Duration(days: i)),
+              condition: WeatherCondition.sunny,
+              minC: 12 + i,
+              maxC: 21 + i,
+            ),
+        ],
       );
 
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            weatherProvider.overrideWith(() => _FakeWeatherNotifier(snapshot)),
+            weatherProvider.overrideWith(() => _FakeWeatherNotifier(forecast)),
+            weatherLocationProvider.overrideWith(_FakeLocationNotifier.new),
           ],
           child: MaterialApp(
             theme: ThemeData(extensions: [FacteurPalettes.light]),
@@ -273,21 +292,23 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Before timer fires → date stamp.
+      // Before timer fires → date stamp, no weather icon.
       expect(find.byType(SvgPicture), findsNothing);
 
-      // Advance 2 s → badge flips to weather.
+      // Advance 2 s → badge flips to weather (current temp + icon visible).
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
       expect(find.byType(SvgPicture), findsOneWidget);
+      expect(find.text('19°'), findsOneWidget);
 
-      // Tap the weather badge → flips back to date stamp.
+      // Tap the weather badge → opens the detail sheet (5-day forecast).
       await tester.tap(find.byType(SvgPicture), warnIfMissed: false);
       await tester.pumpAndSettle();
 
-      expect(find.byType(SvgPicture), findsNothing,
-          reason: 'Tap on the weather badge pins the date stamp back.');
+      expect(find.text('Prévisions'), findsOneWidget,
+          reason: 'Tapping the weather badge opens the detail sheet.');
+      expect(find.text("Aujourd'hui"), findsOneWidget);
     });
 
     testWidgets('slots 2-5 all use the medium layout (no dotted divider)',

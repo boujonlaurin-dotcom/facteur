@@ -536,6 +536,30 @@ class AnalyticsService {
     await _capturePostHog('discover_disable_skipped', props);
   }
 
+  Future<void> trackGeolocPromptShown({required int displayCount}) async {
+    final props = {
+      'session_id': _sessionId,
+      'display_count': displayCount,
+    };
+    await _logEvent('geoloc_prompt_shown', props);
+    await _capturePostHog('geoloc_prompt_shown', props);
+  }
+
+  Future<void> trackGeolocPromptActivated({required bool granted}) async {
+    final props = {
+      'session_id': _sessionId,
+      'granted': granted,
+    };
+    await _logEvent('geoloc_prompt_activated', props);
+    await _capturePostHog('geoloc_prompt_activated', props);
+  }
+
+  Future<void> trackGeolocPromptDismissed() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('geoloc_prompt_dismissed', props);
+    await _capturePostHog('geoloc_prompt_dismissed', props);
+  }
+
   /// target: 'digest' | 'article' | 'feed'.
   /// Fired whenever a `io.supabase.facteur://` widget URI lands in the app.
   Future<void> trackWidgetAppOpened({

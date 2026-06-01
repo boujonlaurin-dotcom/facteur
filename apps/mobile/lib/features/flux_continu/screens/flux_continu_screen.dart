@@ -13,6 +13,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../core/nudges/nudge_counters.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
@@ -32,6 +33,7 @@ import '../widgets/closing_card_v18.dart';
 import '../widgets/flux_continu_article_card.dart';
 import '../widgets/my_interests_intro.dart';
 import '../widgets/my_interests_sheet.dart';
+import '../widgets/geoloc_prompt_banner.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
 import '../../grille/widgets/grille_cta_card.dart';
@@ -94,6 +96,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
+    // Compte une ouverture du feed par montage de l'écran. Alimente la bannière
+    // de demande de géoloc (déclenchée après 5 ouvertures, cf.
+    // geoloc_prompt_provider). Best-effort, n'impacte pas le rendu.
+    unawaited(NudgeCounters.increment(NudgeCounters.feedOpenCount));
   }
 
   @override
@@ -672,6 +678,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           SliverToBoxAdapter(
             child: impressionSlot == FirstImpressionSlot.wellInformed
                 ? const WellInformedPrompt()
+                : const SizedBox.shrink(),
+          ),
+          SliverToBoxAdapter(
+            child: impressionSlot == FirstImpressionSlot.geolocPrompt
+                ? const GeolocPromptBanner()
                 : const SizedBox.shrink(),
           ),
           const SliverToBoxAdapter(child: LettresNotificationBanner()),

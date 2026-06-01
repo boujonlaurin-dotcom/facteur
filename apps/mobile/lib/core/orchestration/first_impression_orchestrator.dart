@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/auth_state.dart';
 import '../web/web_perf.dart';
 import '../../features/notifications/providers/notification_renudge_provider.dart';
+import '../../features/flux_continu/providers/geoloc_prompt_provider.dart';
 import '../../features/onboarding/providers/ios_add_to_home_provider.dart';
 import '../../features/settings/providers/notifications_settings_provider.dart';
 import '../../features/well_informed/providers/well_informed_prompt_provider.dart';
@@ -18,6 +19,7 @@ enum FirstImpressionSlot {
   notifModal,
   renudgeBanner,
   wellInformed,
+  geolocPrompt,
 }
 
 /// Une fois la modal notif affichée dans la session, on ne déclenche aucun
@@ -38,6 +40,8 @@ final nudgeConsumedThisSessionProvider = StateProvider<bool>((_) => false);
 /// 4. Re-nudge éligible (cap, espacement, refus passé) ET aucun nudge déjà
 ///    consommé cette session → `renudgeBanner`.
 /// 5. Well-informed prompt dû ET aucun nudge déjà consommé → `wellInformed`.
+/// 6. Géoloc due (≥5 ouvertures, pas device, cap) ET aucun nudge consommé →
+///    `geolocPrompt` (priorité la plus basse).
 final firstImpressionSlotProvider = Provider<FirstImpressionSlot>((ref) {
   final auth = ref.watch(authStateProvider);
   final notif = ref.watch(notificationsSettingsProvider);
@@ -50,6 +54,8 @@ final firstImpressionSlotProvider = Provider<FirstImpressionSlot>((ref) {
       ref.watch(iosAddToHomeShouldShowProvider).valueOrNull ?? false;
   final iosAddToHomeConsumed =
       ref.watch(iosAddToHomeConsumedThisSessionProvider);
+  final geolocPromptShould =
+      ref.watch(geolocPromptShouldShowProvider).valueOrNull ?? false;
 
   if (!auth.isAuthenticated || !auth.isEmailConfirmed) {
     return FirstImpressionSlot.none;
@@ -73,6 +79,10 @@ final firstImpressionSlotProvider = Provider<FirstImpressionSlot>((ref) {
 
   if (!nudgeConsumed && wellInformedShould) {
     return FirstImpressionSlot.wellInformed;
+  }
+
+  if (!nudgeConsumed && geolocPromptShould) {
+    return FirstImpressionSlot.geolocPrompt;
   }
 
   return FirstImpressionSlot.none;
