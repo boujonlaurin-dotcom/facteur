@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
-import '../../../config/topic_labels.dart';
 import '../../custom_topics/models/topic_models.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../my_interests/models/user_interests_state.dart';
@@ -43,10 +42,6 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
   final VoidCallback onTapActiveTab;
   final VoidCallback onTapActiveTabRefresh;
   final VoidCallback onAddFavorite;
-  /// API slugs (macro themes) to omit from the tab list. Used by the Flux
-  /// Continu Explorer filter bar to hide themes already covered by the day's
-  /// tournée — avoiding the "double serving" of the same theme.
-  final List<String> excludedThemeSlugs;
 
   const FavoriteTopicTabs({
     super.key,
@@ -59,7 +54,6 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
     required this.onTapActiveTab,
     required this.onTapActiveTabRefresh,
     required this.onAddFavorite,
-    this.excludedThemeSlugs = const [],
   });
 
   @override
@@ -128,7 +122,6 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
       selectedTopicSlug: widget.selectedTopicSlug,
       selectedThemeSlug: widget.selectedThemeSlug,
       selectedEntitySlug: widget.selectedEntitySlug,
-      excludedThemeSlugs: widget.excludedThemeSlugs,
     );
 
     _activeKey = null;
@@ -186,10 +179,6 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
   }
 }
 
-final Map<String, String> _apiSlugToMacroLabel = {
-  for (final e in macroThemeToApiSlug.entries) e.value: e.key,
-};
-
 @visibleForTesting
 List<FavoriteTabModel> buildFavoriteTabModelsForTest({
   required List<UserTopicProfile> topics,
@@ -199,7 +188,6 @@ List<FavoriteTabModel> buildFavoriteTabModelsForTest({
   String? selectedTopicSlug,
   String? selectedThemeSlug,
   String? selectedEntitySlug,
-  List<String> excludedThemeSlugs = const [],
 }) =>
     _buildTabModels(
       topics: topics,
@@ -209,9 +197,11 @@ List<FavoriteTabModel> buildFavoriteTabModelsForTest({
       selectedTopicSlug: selectedTopicSlug,
       selectedThemeSlug: selectedThemeSlug,
       selectedEntitySlug: selectedEntitySlug,
-      excludedThemeSlugs: excludedThemeSlugs,
     );
 
+/// Onglets Flâner = uniquement les *sujets épinglés* (custom topics + entités
+/// favoris). Les *thèmes/veille* pilotent la Tournée du jour et ne sont donc
+/// pas rendus en onglet ici — ils restent filtrables via la chip thème.
 List<FavoriteTabModel> _buildTabModels({
   required List<UserTopicProfile> topics,
   required List<FavoriteRef> favorites,
@@ -220,17 +210,12 @@ List<FavoriteTabModel> _buildTabModels({
   String? selectedTopicSlug,
   String? selectedThemeSlug,
   String? selectedEntitySlug,
-  List<String> excludedThemeSlugs = const [],
 }) {
   final useServer = serverCounts != null && serverCounts.total > 0;
 
   final favoriteCustomIds = <String>{
     for (final f in favorites)
       if (f is CustomTopicFavoriteRef) f.id,
-  };
-  final favoriteThemeSlugs = <String>{
-    for (final f in favorites)
-      if (f is ThemeFavoriteRef) f.slug,
   };
 
   final entitySubjects = topics
@@ -243,11 +228,6 @@ List<FavoriteTabModel> _buildTabModels({
           t.entityType == null && favoriteCustomIds.contains(t.id))
       .toList()
     ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-
-  final favoriteThemes = macroThemeOrder
-      .where((label) =>
-          favoriteThemeSlugs.contains(macroThemeToApiSlug[label]))
-      .toList();
 
   final cutoff = DateTime.now().subtract(const Duration(hours: 48));
   final tabs = <FavoriteTabModel>[];
@@ -267,9 +247,8 @@ List<FavoriteTabModel> _buildTabModels({
         selectedEntitySlug == null,
   ));
 
-  // 2. Onglets favoris (entités, topics, thèmes) fusionnés et triés
-  // par nombre d'articles disponibles décroissant. Pas de hiérarchie
-  // Sujet > Thème : seul le volume d'actu disponible compte.
+  // 2. Onglets favoris (entités + sujets épinglés) triés par nombre
+  // d'articles disponibles décroissant.
   final favoriteTabs = <FavoriteTabModel>[];
 
   for (final entity in entitySubjects) {
@@ -302,23 +281,6 @@ List<FavoriteTabModel> _buildTabModels({
     ));
   }
 
-  for (final label in favoriteThemes) {
-    final apiSlug = macroThemeToApiSlug[label];
-    if (apiSlug == null) continue;
-    if (excludedThemeSlugs.contains(apiSlug)) continue;
-    favoriteTabs.add(FavoriteTabModel(
-      kind: FavoriteTabKind.theme,
-      slug: apiSlug,
-      label: label,
-      emoji: getMacroThemeEmoji(label),
-      count: useServer
-          ? (serverCounts.themes[apiSlug] ?? 0)
-          : _countUnreadRecent(items,
-              cutoff: cutoff, kind: FavoriteTabKind.theme, slug: apiSlug),
-      active: selectedThemeSlug != null && selectedThemeSlug == apiSlug,
-    ));
-  }
-
   favoriteTabs.sort((a, b) {
     final byCount = b.count.compareTo(a.count);
     if (byCount != 0) return byCount;
@@ -346,11 +308,9 @@ int _countUnreadRecent(
         final lower = slug.toLowerCase();
         return c.entities.any((e) => e.text.toLowerCase() == lower);
       case FavoriteTabKind.theme:
-        if (slug == null) return false;
-        final label = _apiSlugToMacroLabel[slug];
-        if (label == null) return false;
-        final themeSlugs = getSlugsForMacroTheme(label);
-        return c.topics.any(themeSlugs.contains);
+        // Les thèmes ne sont plus rendus en onglet Flâner (ils pilotent la
+        // Tournée). Valeur conservée dans l'enum pour la chip thème.
+        return false;
     }
   }
 
