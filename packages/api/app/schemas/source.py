@@ -39,9 +39,41 @@ class SourceResponse(BaseModel):
     score_ux: float | None = None
     recommended_by: str | None = None
     recommendation_reason: str | None = None
+    premium_connection: "PremiumConnectionResponse | None" = None
 
     class Config:
         from_attributes = True
+
+
+class PremiumConnectionResponse(BaseModel):
+    """Configuration mobile pour connecter une source payante en WebView."""
+
+    enabled: bool = True
+    login_url: str
+    test_url: str
+    display_hint: str | None = None
+
+    @classmethod
+    def from_config(cls, config: object) -> "PremiumConnectionResponse | None":
+        if not isinstance(config, dict) or config.get("enabled") is not True:
+            return None
+
+        login_url = config.get("login_url")
+        test_url = config.get("test_url")
+        if not isinstance(login_url, str) or not login_url.strip():
+            return None
+        if not isinstance(test_url, str) or not test_url.strip():
+            return None
+
+        display_hint = config.get("display_hint")
+        return cls(
+            enabled=True,
+            login_url=login_url.strip(),
+            test_url=test_url.strip(),
+            display_hint=display_hint.strip()
+            if isinstance(display_hint, str) and display_hint.strip()
+            else None,
+        )
 
 
 class SourceCreate(BaseModel):

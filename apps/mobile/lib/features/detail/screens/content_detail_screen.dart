@@ -100,7 +100,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _perspectivesCtaTriggered = false;
   bool _linkCopiedHeader = false;
   Timer? _linkCopiedHeaderTimer;
-  bool _premiumRedirectScheduled = false;
   bool _webFallbackRedirectScheduled = false;
   late DateTime _startTime;
   WebViewController? _webViewController;
@@ -251,8 +250,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       vsync: this,
     );
     _footerAutoController.addListener(() {
-      _footerOffset.value =
-          _footerAutoStart +
+      _footerOffset.value = _footerAutoStart +
           (_footerAutoTarget - _footerAutoStart) * _footerAutoController.value;
     });
 
@@ -614,8 +612,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (endBox == null || svBox == null) return;
     if (!_scrollController.hasClients) return;
     // content-coord of marker = screen Y of marker − screen Y of sv top + scroll offset
-    final extent =
-        endBox.localToGlobal(Offset.zero).dy -
+    final extent = endBox.localToGlobal(Offset.zero).dy -
         svBox.localToGlobal(Offset.zero).dy +
         _scrollController.offset;
     if (extent > 0) _articleContentExtent = extent;
@@ -675,9 +672,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     setState(() {
       final current = _perspectivesSelectedSegments;
       if (current.contains(key)) {
-        _perspectivesSelectedSegments = current.length == 1
-            ? {}
-            : (Set.from(current)..remove(key));
+        _perspectivesSelectedSegments =
+            current.length == 1 ? {} : (Set.from(current)..remove(key));
       } else {
         _perspectivesSelectedSegments = current.isEmpty || current.length == 3
             ? {key}
@@ -1147,16 +1143,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-    _perspectivesPulseScale ??=
-        TweenSequence<double>([
-          TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 50),
-          TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0), weight: 50),
-        ]).animate(
-          CurvedAnimation(
-            parent: _perspectivesPulseController!,
-            curve: Curves.easeOutCubic,
-          ),
-        );
+    _perspectivesPulseScale ??= TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0), weight: 50),
+    ]).animate(
+      CurvedAnimation(
+        parent: _perspectivesPulseController!,
+        curve: Curves.easeOutCubic,
+      ),
+    );
     _perspectivesPulseController!.forward(from: 0).whenComplete(() async {
       if (!mounted) return;
       final coordinator = ref.read(nudgeCoordinatorProvider);
@@ -1401,56 +1396,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       );
     }
 
-    // Premium source → redirect to external browser for authenticated access
-    final userSources = ref.read(userSourcesProvider).valueOrNull ?? [];
-    final isPremiumSource = userSources.any(
-      (s) => s.id == content.source.id && s.hasSubscription,
-    );
-    if (isPremiumSource &&
-        content.url.isNotEmpty &&
-        !_premiumRedirectScheduled) {
-      _premiumRedirectScheduled = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        final uri = Uri.tryParse(content.url);
-        if (uri != null) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
-        if (mounted) context.pop();
-      });
-      return Scaffold(
-        backgroundColor: colors.backgroundPrimary,
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: colors.primary),
-              const SizedBox(height: FacteurSpacing.space4),
-              Text(
-                'Ouverture dans votre navigateur...',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     // Determine display mode:
     // - Articles with in-app content: progressive scroll-to-site
     // - Non-articles or explicit WebView toggle: old behavior
     // Skip scroll-to-site for articles with too little content
+    final userSources = ref.watch(userSourcesProvider).valueOrNull ?? [];
+    final isConnectedPremiumSource = userSources.any(
+      (s) => s.id == content.source.id && s.hasSubscription,
+    );
     final articleText = content.htmlContent ?? content.description;
     final hasEnoughContent = plainTextLength(articleText) >= 100;
-    final useScrollToSite =
+    final useScrollToSite = !isConnectedPremiumSource &&
         content.hasInAppContent &&
         content.contentType == ContentType.article &&
         hasEnoughContent &&
         !_showWebView &&
         !kIsWeb;
-    final useInAppReading =
-        content.hasInAppContent && !_showWebView && !useScrollToSite;
+    final useInAppReading = !isConnectedPremiumSource &&
+        content.hasInAppContent &&
+        !_showWebView &&
+        !useScrollToSite;
     final isVideoContent = content.isVideo;
 
     // Web: no WebView available — auto-redirect to original URL
@@ -1546,10 +1511,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 child: isVideoContent
                     ? _buildVideoContent(context, content)
                     : useScrollToSite
-                    ? _buildScrollToSiteContent(context, content)
-                    : useInAppReading
-                    ? _buildInAppContent(context, content)
-                    : _buildWebViewFallback(content),
+                        ? _buildScrollToSiteContent(context, content)
+                        : useInAppReading
+                            ? _buildInAppContent(context, content)
+                            : _buildWebViewFallback(content),
               ),
             ),
             // Header — pinned at the top of the screen; no scroll-driven
@@ -1623,8 +1588,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (content == null) return;
     final articleText = content.htmlContent ?? content.description;
     final hasEnoughContent = plainTextLength(articleText) >= 100;
-    final isScrollToSite =
-        content.hasInAppContent &&
+    final isScrollToSite = content.hasInAppContent &&
         content.contentType == ContentType.article &&
         hasEnoughContent &&
         !_showWebView;
@@ -2039,8 +2003,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Fallback to the article payload before the provider has loaded — avoids
     // a flash of the "Suivre +" chip on cold open when the source is already
     // followed server-side.
-    final InterestState effectiveState =
-        liveState ??
+    final InterestState effectiveState = liveState ??
         (content.isFollowedSource
             ? InterestState.followed
             : InterestState.unfollowed);
@@ -2125,9 +2088,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                               child: Container(
                                                 padding:
                                                     const EdgeInsets.symmetric(
-                                                      horizontal: 6,
-                                                      vertical: 2,
-                                                    ),
+                                                  horizontal: 6,
+                                                  vertical: 2,
+                                                ),
                                                 decoration: BoxDecoration(
                                                   color: Color.lerp(
                                                     colors.backgroundSecondary,
@@ -2141,11 +2104,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                                   content.source.name,
                                                   style: textTheme.labelMedium
                                                       ?.copyWith(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        color:
-                                                            colors.textPrimary,
-                                                      ),
+                                                    fontWeight: FontWeight.bold,
+                                                    color: colors.textPrimary,
+                                                  ),
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
@@ -2186,12 +2147,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                             child: InkWell(
                                               onTap: () =>
                                                   TopicChip.showArticleSheet(
-                                                    context,
-                                                    content,
-                                                    initialSection:
-                                                        ArticleSheetSection
-                                                            .source,
-                                                  ),
+                                                context,
+                                                content,
+                                                initialSection:
+                                                    ArticleSheetSection.source,
+                                              ),
                                               child: Padding(
                                                 padding: const EdgeInsets.all(
                                                   3,
@@ -2227,11 +2187,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                                   locale: 'fr_short',
                                                 )
                                                 .replaceAll('il y a ', ''),
-                                            style: textTheme.bodySmall
-                                                ?.copyWith(
-                                                  color: colors.textTertiary,
-                                                  fontSize: 11,
-                                                ),
+                                            style:
+                                                textTheme.bodySmall?.copyWith(
+                                              color: colors.textTertiary,
+                                              fontSize: 11,
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -2468,7 +2428,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           Colors.grey.shade400,
           colors.primary,
           clamped,
-        )!.withValues(alpha: alpha);
+        )!
+            .withValues(alpha: alpha);
         return TweenAnimationBuilder<double>(
           tween: Tween<double>(end: clamped),
           duration: const Duration(milliseconds: 300),
@@ -2850,9 +2811,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // Description text: prefer htmlContent (stripped), fallback to description
     final rawDescription = content.htmlContent ?? content.description;
-    final descriptionText = rawDescription != null
-        ? stripHtml(rawDescription).trim()
-        : null;
+    final descriptionText =
+        rawDescription != null ? stripHtml(rawDescription).trim() : null;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -3017,8 +2977,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                       // Bottom spacing — clears the persistent footer.
                       SizedBox(
-                        height:
-                            _kFooterContentHeight +
+                        height: _kFooterContentHeight +
                             MediaQuery.of(context).viewPadding.bottom,
                       ),
                     ],
@@ -3172,8 +3131,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                     // Bottom spacing — clears the persistent footer.
                     SizedBox(
-                      height:
-                          _kFooterContentHeight +
+                      height: _kFooterContentHeight +
                           MediaQuery.of(context).viewPadding.bottom,
                     ),
                   ],
@@ -3218,9 +3176,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           title: content.title,
           shrinkWrap: true,
           onLinkTap: _animateAndLaunch,
-          bodyPlaceholder: !_contentResolved
-              ? _buildArticleBodySkeleton(colors)
-              : null,
+          bodyPlaceholder:
+              !_contentResolved ? _buildArticleBodySkeleton(colors) : null,
         );
 
         return ScrollConfiguration(
@@ -3384,8 +3341,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 // ── Footer clearance ───────────────────────────────────────
                 const SizedBox(height: FacteurSpacing.space4),
                 SizedBox(
-                  height:
-                      _kFooterContentHeight +
+                  height: _kFooterContentHeight +
                       MediaQuery.of(context).viewPadding.bottom,
                 ),
               ],
@@ -3617,10 +3573,10 @@ class _FollowChip extends StatelessWidget {
               Text(
                 'Suivre',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
-                ),
+                      color: colors.textSecondary,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.2,
+                    ),
               ),
             ],
           ),

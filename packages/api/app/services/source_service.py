@@ -1,14 +1,17 @@
 """Service source."""
 
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.enums import InterestState
 from app.models.source import Source, UserSource
 from app.models.user_personalization import UserPersonalization
 from app.schemas.source import (
+    PremiumConnectionResponse,
     SourceCatalogResponse,
     SourceDetectResponse,
     SourceResponse,
@@ -19,12 +22,22 @@ from app.services.rss_parser import RSSParser
 logger = structlog.get_logger()
 
 
+class PremiumConnectionNotEnabled(Exception):
+    """Raised when a source cannot be marked subscribed via WebView flow."""
+
+
 class SourceService:
     """Service pour la gestion des sources."""
 
     def __init__(self, db: AsyncSession):
         self.db = db
         self.rss_parser = RSSParser()
+
+    @staticmethod
+    def _premium_connection(s: Source) -> PremiumConnectionResponse | None:
+        return PremiumConnectionResponse.from_config(
+            getattr(s, "premium_connection_config", None)
+        )
 
     async def _load_user_source_context(
         self, user_id: UUID
@@ -90,6 +103,7 @@ class SourceService:
             score_ux=s.score_ux,
             recommended_by=getattr(s, "recommended_by", None),
             recommendation_reason=getattr(s, "recommendation_reason", None),
+            premium_connection=self._premium_connection(s),
         )
 
     async def get_all_sources(self, user_id: str) -> SourceCatalogResponse:
@@ -377,6 +391,7 @@ class SourceService:
             score_ux=source.score_ux,
             recommended_by=getattr(source, "recommended_by", None),
             recommendation_reason=getattr(source, "recommendation_reason", None),
+            premium_connection=self._premium_connection(source),
         )
 
     async def delete_custom_source(self, user_id: str, source_id: str) -> bool:
@@ -454,9 +469,21 @@ class SourceService:
     async def update_source_subscription(
         self, user_id: str, source_id: str, has_subscription: bool
     ) -> SourceResponse | None:
-        """Met à jour le has_subscription d'une source suivie."""
+        """Met à jour le has_subscription d'une source.
+
+        La connexion positive exige une config premium explicite côté source,
+        puis crée le lien UserSource si nécessaire. La dissociation reste
+        autorisée même si la config source a été retirée.
+        """
         user_uuid = UUID(user_id)
         source_uuid = UUID(source_id)
+
+        source = await self.db.scalar(select(Source).where(Source.id == source_uuid))
+        if not source:
+            return None
+
+        if has_subscription and self._premium_connection(source) is None:
+            raise PremiumConnectionNotEnabled
 
         user_source = await self.db.scalar(
             select(UserSource).where(
@@ -465,14 +492,28 @@ class SourceService:
             )
         )
         if not user_source:
-            return None
+            if not has_subscription:
+                return None
+            user_source = UserSource(
+                id=uuid4(),
+                user_id=user_uuid,
+                source_id=source_uuid,
+                is_custom=not source.is_curated,
+            )
+            self.db.add(user_source)
 
         user_source.has_subscription = has_subscription
-        await self.db.flush()
+        if has_subscription:
+            now = datetime.now(UTC)
+            user_source.state = InterestState.FOLLOWED
+            if user_source.subscription_connected_at is None:
+                user_source.subscription_connected_at = now
+            user_source.subscription_last_verified_at = now
+        else:
+            user_source.subscription_connected_at = None
+            user_source.subscription_last_verified_at = None
 
-        source = await self.db.scalar(select(Source).where(Source.id == source_uuid))
-        if not source:
-            return None
+        await self.db.flush()
 
         # Load muted status
         muted_source_ids = set()
@@ -512,6 +553,7 @@ class SourceService:
             score_ux=source.score_ux,
             recommended_by=getattr(source, "recommended_by", None),
             recommendation_reason=getattr(source, "recommendation_reason", None),
+            premium_connection=self._premium_connection(source),
         )
 
     async def untrust_source(self, user_id: str, source_id: str) -> bool:

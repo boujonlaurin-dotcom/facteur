@@ -119,6 +119,10 @@ class Source(Base):
     # Paywall detection config (per-source patterns)
     paywall_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # Premium source connection config. Credentials are never collected by
+    # Facteur; the mobile app only uses these URLs in its own WebView session.
+    premium_connection_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     # Editorial digest: source tier (Story 10.22)
     # "mainstream" (default) or "deep" (fond/systémique sources for "pas de recul")
     source_tier: Mapped[str] = mapped_column(
@@ -189,6 +193,12 @@ class UserSource(Base):
     # Premium source: user declares they have a subscription to this source
     has_subscription: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
+    )
+    subscription_connected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    subscription_last_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     state: Mapped[InterestState] = mapped_column(
         Enum(

@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.source import Source, UserSource
 from app.models.user import UserInterest
 from app.models.user_personalization import UserPersonalization
-from app.schemas.source import SourceResponse
+from app.schemas.source import PremiumConnectionResponse, SourceResponse
 
 logger = structlog.get_logger()
 
@@ -181,6 +181,9 @@ class PepiteService:
                 score_ux=s.score_ux,
                 recommended_by=getattr(s, "recommended_by", None),
                 recommendation_reason=getattr(s, "recommendation_reason", None),
+                premium_connection=PremiumConnectionResponse.from_config(
+                    getattr(s, "premium_connection_config", None)
+                ),
             )
             for s, follower_count in selected
         ]
