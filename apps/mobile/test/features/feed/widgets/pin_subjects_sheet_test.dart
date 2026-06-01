@@ -46,11 +46,16 @@ class _FakeUserInterestsNotifier extends UserInterestsNotifier {
   }
 }
 
-CustomTopicInterest _topic(String id, String name, InterestState state) {
+CustomTopicInterest _topic(
+  String id,
+  String name,
+  InterestState state, {
+  String slugParent = 'tech',
+}) {
   return CustomTopicInterest(
     id: id,
     topicName: name,
-    slugParent: 'tech',
+    slugParent: slugParent,
     state: state,
     priorityMultiplier: state == InterestState.favorite ? 2.0 : 1.0,
   );
@@ -100,7 +105,7 @@ void main() {
       await tester.pumpWidget(_host(st, const PinSubjectsBanner()));
       await tester.pumpAndSettle();
 
-      expect(find.text('Épingle tes sujets de veille'), findsOneWidget);
+      expect(find.text('Épingle tes sujets'), findsOneWidget);
     });
 
     testWidgets('hidden when 3 or more subjects are pinned', (tester) async {
@@ -112,7 +117,7 @@ void main() {
       await tester.pumpWidget(_host(st, const PinSubjectsBanner()));
       await tester.pumpAndSettle();
 
-      expect(find.text('Épingle tes sujets de veille'), findsNothing);
+      expect(find.text('Épingle tes sujets'), findsNothing);
     });
   });
 
@@ -152,6 +157,90 @@ void main() {
       expect(notifier.calls.first.$2, InterestState.favorite);
       // Après épinglage il bascule dans la section « SUJETS ÉPINGLÉS ».
       expect(find.text('SUJETS ÉPINGLÉS'), findsOneWidget);
+    });
+
+    testWidgets('search filters the followed subjects', (tester) async {
+      final st = _state(topics: [
+        _topic('t1', 'Climat', InterestState.followed),
+        _topic('t2', 'Intelligence artificielle', InterestState.followed),
+      ]);
+
+      await tester.pumpWidget(_host(
+        st,
+        Builder(
+          builder: (ctx) => Center(
+            child: ElevatedButton(
+              onPressed: () => showPinSubjectsSheet(ctx),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // Recherche insensible aux accents/casse.
+      await tester.enterText(find.byType(TextField), 'clim');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Climat'), findsOneWidget);
+      expect(find.text('Intelligence artificielle'), findsNothing);
+    });
+
+    testWidgets('offers to create a subject when no match', (tester) async {
+      final st = _state(topics: [
+        _topic('t1', 'Climat', InterestState.followed),
+      ]);
+
+      await tester.pumpWidget(_host(
+        st,
+        Builder(
+          builder: (ctx) => Center(
+            child: ElevatedButton(
+              onPressed: () => showPinSubjectsSheet(ctx),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'Zélande');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Climat'), findsNothing);
+      // La tuile « Créer le sujet » reprend la requête entre guillemets.
+      expect(find.textContaining('Créer le sujet « Zélande »'), findsOneWidget);
+    });
+
+    testWidgets('groups followed subjects by theme', (tester) async {
+      final st = _state(topics: [
+        _topic('t1', 'Climat', InterestState.followed,
+            slugParent: 'environment'),
+        _topic('t2', 'IA', InterestState.followed, slugParent: 'tech'),
+      ]);
+
+      await tester.pumpWidget(_host(
+        st,
+        Builder(
+          builder: (ctx) => Center(
+            child: ElevatedButton(
+              onPressed: () => showPinSubjectsSheet(ctx),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // En-têtes de groupe par thématique (labels canoniques Facteur).
+      expect(find.text('Technologie'), findsOneWidget);
+      expect(find.text('Environnement'), findsOneWidget);
     });
   });
 }

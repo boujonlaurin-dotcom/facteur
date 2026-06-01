@@ -25,12 +25,22 @@ class EntityAddSheet extends ConsumerStatefulWidget {
   /// historique (simple suivi) inchangé pour les autres appelants.
   final bool pinOnFollow;
 
-  const EntityAddSheet({super.key, this.themeSlug, this.pinOnFollow = false});
+  /// Pré-remplit le champ de saisie (ex : depuis la recherche de la modale
+  /// d'épinglage, quand aucun sujet existant ne matche → « Créer le sujet ... »).
+  final String? initialQuery;
+
+  const EntityAddSheet({
+    super.key,
+    this.themeSlug,
+    this.pinOnFollow = false,
+    this.initialQuery,
+  });
 
   static void show(
     BuildContext context, {
     String? themeSlug,
     bool pinOnFollow = false,
+    String? initialQuery,
   }) {
     showModalBottomSheet<void>(
       context: context,
@@ -42,7 +52,11 @@ class EntityAddSheet extends ConsumerStatefulWidget {
         child: Padding(
           padding:
               EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-          child: EntityAddSheet(themeSlug: themeSlug, pinOnFollow: pinOnFollow),
+          child: EntityAddSheet(
+            themeSlug: themeSlug,
+            pinOnFollow: pinOnFollow,
+            initialQuery: initialQuery,
+          ),
         ),
       ),
     );
@@ -57,6 +71,17 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
   bool _loading = false;
   List<DisambiguationSuggestion>? _suggestions;
   int? _followingIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialQuery?.trim() ?? '';
+    if (initial.isNotEmpty) {
+      _controller.text = initial;
+      _controller.selection =
+          TextSelection.collapsed(offset: _controller.text.length);
+    }
+  }
 
   @override
   void dispose() {
