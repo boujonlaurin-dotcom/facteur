@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/widgets/feed_filter_bar.dart';
-import '../../feed/widgets/profile_avatar_button.dart';
 import 'sticky_backdrop.dart';
 
 /// Lightweight descriptor for a sticky tab. Used by [StickyTabBar] so the
@@ -131,8 +128,9 @@ class _FeedRefreshIndicatorStrip extends ConsumerWidget {
   }
 }
 
-/// Top row of the sticky overlay — a Fraunces label naming the current zone
-/// and a profile avatar button anchored to the right.
+/// Top row of the sticky overlay — a Fraunces label naming the current zone.
+/// L'avatar profil vit désormais uniquement dans le header fixe du shell
+/// (`MainShell`) ; il a été retiré d'ici pour ne plus apparaître en double.
 class StickyHead extends ConsumerWidget {
   final String title;
 
@@ -152,10 +150,6 @@ class StickyHead extends ConsumerWidget {
               fontWeight: FontWeight.w700,
               color: colors.textPrimary,
             ),
-          ),
-          const Spacer(),
-          ProfileAvatarButton(
-            onTap: () => context.push(RoutePaths.settings),
           ),
         ],
       ),

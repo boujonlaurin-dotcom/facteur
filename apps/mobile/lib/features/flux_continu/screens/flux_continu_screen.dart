@@ -695,9 +695,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             SliverToBoxAdapter(
               child: _EmptySectionsHint(onRetry: notifier.refresh),
             ),
-          // Citation du jour — clôture éditoriale juste avant "Fin de
-          // tournée". Liée au même flag closingDismissed pour rester
-          // cohérente avec le "moment de fermeture".
+          // Citation du jour — clôture éditoriale juste avant la Grille.
+          // Affichée dès qu'une citation existe et que la tournée n'est pas
+          // clôturée (`closingDismissed`), exactement comme la Grille en
+          // dessous : replier la tournée ne doit pas la masquer, c'est un
+          // rituel de fin de tournée.
           if (state.quote != null && !state.closingDismissed)
             SliverToBoxAdapter(
               child: CitationDuJourCard(quote: state.quote!),
