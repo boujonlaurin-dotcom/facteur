@@ -48,7 +48,11 @@ GoRouter _router(Widget home) {
     routes: [
       GoRoute(path: '/', builder: (_, __) => home),
       GoRoute(
-        path: '/content-external',
+        // Utilise la VRAIE constante de path (pas un littéral) pour que ce
+        // harness reflète le wiring de production — un path relatif au
+        // top-level (régression "Page non trouvée: /content-external")
+        // ferait alors échouer ces tests.
+        path: RoutePaths.contentExternal,
         name: RouteNames.contentExternal,
         builder: (_, state) {
           _routedPerspective = state.extra as Perspective?;
@@ -116,6 +120,26 @@ Widget _app(Widget home) {
 }
 
 void main() {
+  // Garde-fou direct contre la régression "Page non trouvée:
+  // /content-external" : une GoRoute top-level DOIT avoir un path absolu
+  // (commençant par '/'), sinon go_router ne sait pas résoudre la route nommée.
+  test('content-external : route top-level avec path absolu résolvable', () {
+    expect(RoutePaths.contentExternal.startsWith('/'), isTrue,
+        reason: 'Une GoRoute top-level doit avoir un path absolu.');
+    final router = GoRouter(
+      routes: [
+        GoRoute(path: '/', builder: (_, __) => const SizedBox()),
+        GoRoute(
+          path: RoutePaths.contentExternal,
+          name: RouteNames.contentExternal,
+          builder: (_, __) => const SizedBox(),
+        ),
+      ],
+    );
+    expect(router.namedLocation(RouteNames.contentExternal),
+        RoutePaths.contentExternal);
+  });
+
   setUp(() {
     _routedPerspective = null;
     // FacteurCard.onTap await `HapticFeedback.mediumImpact()` avant de
