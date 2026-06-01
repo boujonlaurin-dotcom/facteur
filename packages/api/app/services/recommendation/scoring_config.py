@@ -75,6 +75,15 @@ class ScoringWeights:
     # Article ancien (< 168h): +1 pt
     RECENT_OLD_BONUS = 1.0
 
+    # --- THEMATIC SECTION ADAPTIVE FRESHNESS WINDOW (rareté de contenu) ---
+    # Sections thématiques de la Tournée (personalized_theme_mode) : la fenêtre
+    # 24h + sources-suivies-seulement peut rendre une section quasi vide pour les
+    # thèmes à faible fréquence (ex. science = 4 candidats/24h). On élargit la
+    # fenêtre par paliers UNIQUEMENT quand le pool 24h est sous le seuil ; le
+    # scoring Fraîcheur continue de privilégier « le plus frais d'abord ».
+    THEMATIC_WINDOW_TIERS_HOURS = (24, 48, 72)  # paliers d'élargissement successifs
+    THEMATIC_MIN_POOL_SIZE = 8  # sous ce seuil → on tente le palier suivant
+
     # --- QUALITY LAYER (FQS - Facteur Quality Score) ---
 
     # Bonus léger pour les sources qualitatives (curées par Facteur).

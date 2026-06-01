@@ -556,59 +556,24 @@ class RecommendationService:
             source_uuid=source_uuid,
         )
 
-        # Explicit filter OR RECENT mode OR Tournée theme section: skip scoring,
+        # Explicit filter (exploration chip) OR RECENT mode : skip scoring,
         # return pure chronological order. Candidates are already sorted by
-        # published_at DESC (et boost user_subtopics pour personalized_theme_mode)
-        # from _get_candidates.
+        # published_at DESC from _get_candidates.
         #
-        # Note historique : Story 21.2 routait personalized_theme_mode vers le
-        # PillarScoringEngine + diversification + regroupement pour pondérer par
-        # weight_effective / source affinity / quality. En pratique cela
-        # compressait 40+ candidats à 2-3 articles visibles (cf. bug curation
-        # sections thématiques 2026-05-28) et créait un écart béant avec ce que
-        # Flâner thématique remontait sur les mêmes sources. On rebascule sur la
-        # même politique chronologique pure : « tout le contenu user récent
-        # (<24h) sur le thème, dans l'ordre publié » — la personnalisation reste
-        # exprimée via la restriction aux sources suivies + l'ordering boost
-        # user_subtopics appliqués dans _get_candidates.
+        # Note historique : les sections thématiques de la Tournée
+        # (personalized_theme_mode) ont oscillé — compression regroupement
+        # (Story 21.2), chrono pur (#706), puis promotion top-3 "essentiel-grade"
+        # + reste chronologique (#710). Décision PO 2026-06-01 : aucune de ces
+        # variantes ne satisfait la qualité de curation perçue. On route
+        # désormais la section ENTIÈRE par le PillarScoringEngine (chemin scoré
+        # ci-dessous) — classement qualité/source/pertinence/fraîcheur sur tous
+        # les candidats, sans compression ni promotion top-N. D'où le
+        # `and not personalized_theme_mode` : le mode saute cet early-return ET
+        # la compression chrono-diversifiée (garde plus bas) pour atterrir dans
+        # le chemin scoré (cf. bug curation sections thématiques + hand-off QA).
         if (
-            source_uuid
-            or theme
-            or topic
-            or entity
-            or mode == FeedFilterMode.RECENT
-            or personalized_theme_mode
-        ):
-            # Top3 thematic selection (PR 1) : sur Tournée du jour, on promeut
-            # 3 articles "essentiel-grade" en tête de section — multi-sources
-            # (coverage), filtrés qualité, diversifiés par cluster_id. Le reste
-            # reste en ordre chronologique pour préserver la cohérence de
-            # « Voir tout » et éviter la sur-compression de la version Story 21.2.
-            if personalized_theme_mode and len(candidates) > 3:
-                if not self.user_custom_topics:
-                    from app.models.user_topic_profile import UserTopicProfile
-
-                    custom_topics_stmt = select(UserTopicProfile).where(
-                        UserTopicProfile.user_id == user_id
-                    )
-                    async with safe_async_session(
-                        statement_timeout_ms=8_000, idle_in_tx_timeout_ms=5_000
-                    ) as s:
-                        self.user_custom_topics = list(
-                            (await s.scalars(custom_topics_stmt)).all()
-                        )
-                candidates = await self._curate_thematic_top_n(
-                    candidates,
-                    user_interests=user_interests,
-                    user_interest_weights=user_interest_weights,
-                    user_interest_states=user_interest_states,
-                    user_subtopics=user_subtopics,
-                    user_subtopic_weights=user_subtopic_weights,
-                    followed_source_ids=followed_source_ids,
-                    user_prefs=user_prefs,
-                    user_profile=user_profile,
-                    top_n=3,
-                )
+            source_uuid or theme or topic or entity or mode == FeedFilterMode.RECENT
+        ) and not personalized_theme_mode:
             paginated = candidates[offset : offset + limit]
             await self._hydrate_user_status(paginated, user_id, followed_source_ids)
             return paginated
@@ -626,8 +591,12 @@ class RecommendationService:
         }
 
         # Epic 12: Chronological diversified mode (new default)
-        # mode=None means no chip selected → chronological diversified
-        if mode is None or mode == FeedFilterMode.CHRONOLOGICAL:
+        # mode=None means no chip selected → chronological diversified.
+        # personalized_theme_mode est exclu : il saute cette compression
+        # (regroupement + safety-net) et tombe dans le chemin scoré ci-dessous.
+        if (
+            mode is None or mode == FeedFilterMode.CHRONOLOGICAL
+        ) and not personalized_theme_mode:
             t3 = time.monotonic()
             logger.info(
                 "feed_phase2_candidates",
@@ -857,22 +826,32 @@ class RecommendationService:
         # 4b. Diversity Re-ranking (Source Fatigue)
         # Apply a cumulative penalty for multiple items from the same source
         # to ensure a diverse top-of-feed.
-        final_list = []
-        source_counts = {}
-        decay_factor = 0.70  # Each subsequent item from same source loses 30% score (Story diversity fix)
+        #
+        # personalized_theme_mode : decay NEUTRALISÉ. Sur une section mono-thème
+        # où le user suit délibérément ~10 sources, 0.70^n enterre ses meilleures
+        # sources suivies (ex. Next.ink = 7/21 candidats tech → 0.70^6 ≈ 0.12×).
+        # On conserve l'ordre par score ; les murs de même source seront évités
+        # par un interleaving doux (sans pénalité de score) juste avant la
+        # pagination (cf. étape 5).
+        if personalized_theme_mode:
+            final_list = scored_candidates
+        else:
+            final_list = []
+            source_counts = {}
+            decay_factor = 0.70  # Each subsequent item from same source loses 30% score (Story diversity fix)
 
-        for content, base_score in scored_candidates:
-            source_id = content.source_id
-            count = source_counts.get(source_id, 0)
+            for content, base_score in scored_candidates:
+                source_id = content.source_id
+                count = source_counts.get(source_id, 0)
 
-            # FinalScore = BaseScore * (decay_factor ^ count)
-            final_score = base_score * (decay_factor**count)
+                # FinalScore = BaseScore * (decay_factor ^ count)
+                final_score = base_score * (decay_factor**count)
 
-            final_list.append((content, final_score))
-            source_counts[source_id] = count + 1
+                final_list.append((content, final_score))
+                source_counts[source_id] = count + 1
 
-        # Sort again with diversity penalties applied to find the new Top-N
-        final_list.sort(key=lambda x: x[1], reverse=True)
+            # Sort again with diversity penalties applied to find the new Top-N
+            final_list.sort(key=lambda x: x[1], reverse=True)
 
         # 4c. Randomization (v2 only — Gumbel noise for discovery)
         # Story 21.2 — disabled on personalized_theme_mode so paginated "Plus de…"
@@ -901,15 +880,14 @@ class RecommendationService:
         if (theme or topic) and followed_source_ids:
             final_list = stratify_followed_first(final_list, followed_source_ids)
 
-        # 5. Paginate
-        scored_candidates = final_list
-        start = offset
-        end = offset + limit
-        # Check bounds
-        if start >= len(scored_candidates):
-            return []
-
-        result = [item[0] for item in scored_candidates[start:end]]
+        # 5. Paginate (le slice gère seul un offset hors-borne → [])
+        ordered = [item[0] for item in final_list]
+        if personalized_theme_mode:
+            # Interleaving doux sur la liste ordonnée complète : remplace le
+            # decay neutralisé en 4b (évite les murs de même source SANS
+            # pénalité de score). Pagination stable (slice déterministe).
+            ordered = self._apply_source_interleaving(ordered)
+        result = ordered[offset : offset + limit]
 
         # 5.5 Hydrate Recommendation Reason (Transparency)
         if use_pillars:
@@ -946,137 +924,6 @@ class RecommendationService:
             "feed_total", duration_ms=round((t_end - t0) * 1000), items=len(result)
         )
         return result
-
-    async def _curate_thematic_top_n(
-        self,
-        candidates: list[Content],
-        *,
-        user_interests: set[str],
-        user_interest_weights: dict[str, float],
-        user_interest_states: dict[str, InterestState],
-        user_subtopics: set[str],
-        user_subtopic_weights: dict[str, float],
-        followed_source_ids: set[UUID],
-        user_prefs: dict[str, Any],
-        user_profile: UserProfile | None,
-        top_n: int = 3,
-    ) -> list[Content]:
-        """Promeut N articles "essentiel-grade" en tête d'une section thématique.
-
-        Algorithme :
-        1. Calcule cluster_source_counts (24h) pour les N premiers candidats.
-        2. Score le pool via PillarScoringEngine — gagne le bonus coverage
-           dans Pertinence quand un cluster est multi-sources.
-        3. Applique un floor qualité (D2) : exclut les articles sans visuel,
-           sans contenu lisible et sans description suffisante.
-        4. Diversifie par cluster_id, fallback souple sur topic_slug, jusqu'à
-           obtenir N articles distincts en tête.
-        5. Retourne curated_top_N + reste chronologique (dedupe sur id).
-
-        En cas de pool trop pauvre (<N candidats après floor), on relâche
-        le floor pour ne jamais renvoyer une liste tronquée.
-        """
-        from app.services.recommendation.helpers import diversify
-
-        if len(candidates) <= top_n:
-            return candidates
-
-        # Pool restreint aux 50 plus récents (les candidats sont déjà triés
-        # par published_at DESC + boost subtopic). 50 est suffisant pour
-        # capter les sujets relayés du jour sans coût SQL prohibitif.
-        pool = candidates[:50]
-
-        now = datetime.datetime.now(datetime.UTC)
-
-        # 1. cluster_source_counts (24h, distinct sources per cluster_id)
-        cluster_ids = list({c.cluster_id for c in pool if c.cluster_id is not None})
-        cluster_source_counts: dict[UUID, int] = {}
-        if cluster_ids:
-            cutoff = now - datetime.timedelta(hours=24)
-            stmt = (
-                select(
-                    Content.cluster_id,
-                    func.count(func.distinct(Content.source_id)),
-                )
-                .where(
-                    Content.cluster_id.in_(cluster_ids),
-                    Content.published_at >= cutoff,
-                )
-                .group_by(Content.cluster_id)
-            )
-            rows = (await self.session.execute(stmt)).all()
-            cluster_source_counts = {row[0]: int(row[1]) for row in rows}
-
-        # 2. Build scoring context (minimal — pas d'impressions ni d'affinity
-        # pour rester léger ; les signaux clés Pertinence + Source + Coverage
-        # suffisent pour la promotion top N).
-        context = ScoringContext(
-            user_profile=user_profile,
-            user_interests=user_interests,
-            user_interest_weights=user_interest_weights,
-            followed_source_ids=followed_source_ids,
-            user_prefs=user_prefs,
-            now=now,
-            user_subtopics=user_subtopics,
-            user_subtopic_weights=user_subtopic_weights,
-            user_custom_topics=self.user_custom_topics,
-            user_interest_states=user_interest_states,
-            cluster_source_counts=cluster_source_counts,
-        )
-
-        scored: list[tuple[Content, float]] = []
-        for c in pool:
-            try:
-                result = self.pillar_engine.compute_score(c, context)
-                scored.append((c, result.final_score))
-            except Exception as exc:
-                logger.warning(
-                    "curate_thematic_top_score_failed",
-                    content_id=str(c.id),
-                    error=str(exc),
-                )
-                scored.append((c, 0.0))
-
-        scored.sort(key=lambda x: x[1], reverse=True)
-
-        # 3. Floor qualité (D2) — un article du top doit avoir un minimum
-        # de crédibilité visuelle/éditoriale. Exclut les rss bare-bones sans
-        # image, sans contenu in-app et avec un résumé < 100 caractères.
-        def _is_low_quality(c: Content) -> bool:
-            has_thumb = bool(c.thumbnail_url and c.thumbnail_url.strip())
-            has_content = getattr(c, "content_quality", None) in ("full", "partial")
-            desc_len = len(c.description or "")
-            return not has_thumb and not has_content and desc_len < 100
-
-        filtered = [pair for pair in scored if not _is_low_quality(pair[0])]
-        if len(filtered) < top_n:
-            # Pool insuffisant après floor — on dégrade gracieusement pour
-            # ne pas renvoyer un top tronqué (l'UI section a besoin de N).
-            filtered = scored
-
-        # 4. Diversification (souple) : 1 article max par cluster_id, sinon
-        # fallback topic_slug, sinon ordre score.
-        def _diversification_key(pair: tuple[Content, float]) -> Any:
-            c = pair[0]
-            if c.cluster_id is not None:
-                return ("cluster", c.cluster_id)
-            if c.topics:
-                return ("topic", c.topics[0].lower().strip())
-            return None
-
-        diversified = diversify(
-            filtered,
-            key_fn=_diversification_key,
-            target_size=top_n,
-            max_per_key=1,
-            fallback_ok=True,
-        )
-
-        curated_top = [pair[0] for pair in diversified[:top_n]]
-        curated_ids = {c.id for c in curated_top}
-
-        rest = [c for c in candidates if c.id not in curated_ids]
-        return curated_top + rest
 
     async def _hydrate_user_status(
         self,
@@ -2739,79 +2586,107 @@ class RecommendationService:
         if keyword and not source_id:
             query = apply_keyword_filter(query, keyword)
 
-        # Tournée du jour : fenêtre 24h sur les sections curées par thème/topic.
-        # Aligne le pool de candidats avec la notion de "fraîcheur du jour".
-        if personalized_theme_mode:
-            since_24h = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
-                hours=24
-            )
-            query = query.where(Content.published_at >= since_24h)
-
-        if _use_two_phase:
-            # Followed sources only — no curated enrichment in default feed.
-            # Curated enrichment is reserved for digest (digest_selector.py).
-            # In serein mode, also include serein_default sources (humorous/satirical).
-            if serein:
-                user_query = query.where(
-                    or_(
-                        Source.id.in_(list(followed_source_ids)),
-                        Source.serein_default == True,  # noqa: E712
+        async def _fetch_candidates(base_query) -> list[Content]:
+            """Exécute le fetch (two-phase ou simple) sur une `base_query` déjà
+            filtrée (thème/topic/fenêtre). Isolé pour pouvoir rejouer la requête
+            avec une fenêtre élargie (Tournée — rareté de contenu)."""
+            if _use_two_phase:
+                # Followed sources only — no curated enrichment in default feed.
+                # Curated enrichment is reserved for digest (digest_selector.py).
+                # In serein mode, also include serein_default sources (humorous/satirical).
+                if serein:
+                    user_query = base_query.where(
+                        or_(
+                            Source.id.in_(list(followed_source_ids)),
+                            Source.serein_default == True,  # noqa: E712
+                        )
                     )
-                )
-            else:
-                user_query = query.where(Source.id.in_(list(followed_source_ids)))
-            if personalized_theme_mode and user_subtopics:
-                # Soft boost via ORDER BY : articles matchant un user_subtopic
-                # remontent en tête, mais pas de section vide si l'intersection
-                # est nulle (`overlap` retourne False, on dégrade vers le tri
-                # chronologique pur).
-                user_query = user_query.order_by(
-                    Content.topics.overlap(list(user_subtopics)).desc(),
-                    Content.published_at.desc(),
-                ).limit(limit_candidates)
-            else:
-                user_query = user_query.order_by(Content.published_at.desc()).limit(
-                    limit_candidates
-                )
-            # The followed-only query on the default (unfiltered) view can
-            # hang under a bad plan when the user has many followed sources —
-            # other branches dodge it thanks to their `is_curated` narrowing.
-            # Bound the wait and degrade to the curated query on timeout so
-            # the client never gets stuck on a spinner. Cf.
-            # docs/bugs/bug-feed-default-hang.md
-            try:
-                user_result = await asyncio.wait_for(
-                    self.session.scalars(user_query),
-                    timeout=_FEED_TWO_PHASE_TIMEOUT_S,
-                )
-                candidates_list = list(user_result.all())
-            except TimeoutError:
-                await self.session.rollback()
-                logger.warning(
-                    "feed_two_phase_timeout_fallback_curated",
+                else:
+                    user_query = base_query.where(
+                        Source.id.in_(list(followed_source_ids))
+                    )
+                if personalized_theme_mode and user_subtopics:
+                    # Soft boost via ORDER BY : articles matchant un user_subtopic
+                    # remontent en tête, mais pas de section vide si l'intersection
+                    # est nulle (`overlap` retourne False, on dégrade vers le tri
+                    # chronologique pur).
+                    user_query = user_query.order_by(
+                        Content.topics.overlap(list(user_subtopics)).desc(),
+                        Content.published_at.desc(),
+                    ).limit(limit_candidates)
+                else:
+                    user_query = user_query.order_by(Content.published_at.desc()).limit(
+                        limit_candidates
+                    )
+                # The followed-only query on the default (unfiltered) view can
+                # hang under a bad plan when the user has many followed sources —
+                # other branches dodge it thanks to their `is_curated` narrowing.
+                # Bound the wait and degrade to the curated query on timeout so
+                # the client never gets stuck on a spinner. Cf.
+                # docs/bugs/bug-feed-default-hang.md
+                try:
+                    user_result = await asyncio.wait_for(
+                        self.session.scalars(user_query),
+                        timeout=_FEED_TWO_PHASE_TIMEOUT_S,
+                    )
+                    fetched = list(user_result.all())
+                except TimeoutError:
+                    await self.session.rollback()
+                    logger.warning(
+                        "feed_two_phase_timeout_fallback_curated",
+                        user_id=str(user_id),
+                        followed_source_count=len(followed_source_ids),
+                        timeout_seconds=_FEED_TWO_PHASE_TIMEOUT_S,
+                    )
+                    fallback_query = (
+                        base_query.where(
+                            Source.is_curated, Source.source_tier != "deep"
+                        )
+                        .order_by(Content.published_at.desc())
+                        .limit(limit_candidates)
+                    )
+                    fallback_result = await self.session.scalars(fallback_query)
+                    fetched = list(fallback_result.all())
+
+                logger.info(
+                    "feed_candidates_followed_only",
                     user_id=str(user_id),
                     followed_source_count=len(followed_source_ids),
-                    timeout_seconds=_FEED_TWO_PHASE_TIMEOUT_S,
+                    serein_default_included=serein,
+                    candidates=len(fetched),
                 )
-                fallback_query = (
-                    query.where(Source.is_curated, Source.source_tier != "deep")
-                    .order_by(Content.published_at.desc())
-                    .limit(limit_candidates)
-                )
-                fallback_result = await self.session.scalars(fallback_query)
-                candidates_list = list(fallback_result.all())
+                return fetched
 
+            simple_query = base_query.order_by(Content.published_at.desc()).limit(
+                limit_candidates
+            )
+            simple_result = await self.session.scalars(simple_query)
+            return list(simple_result.all())
+
+        if personalized_theme_mode:
+            # Tournée du jour : fenêtre de fraîcheur adaptative. On part de 24h
+            # (« fraîcheur du jour ») et on n'élargit (48h puis 72h) que si le
+            # pool reste sous THEMATIC_MIN_POOL_SIZE — évite la section quasi
+            # vide sur les thèmes rares sans dégrader les thèmes denses. On ne
+            # rejoue la requête que si nécessaire (pas 3 requêtes systématiques).
+            now_window = datetime.datetime.now(datetime.UTC)
+            for tier_hours in ScoringWeights.THEMATIC_WINDOW_TIERS_HOURS:
+                since = now_window - datetime.timedelta(hours=tier_hours)
+                candidates_list = await _fetch_candidates(
+                    query.where(Content.published_at >= since)
+                )
+                if len(candidates_list) >= ScoringWeights.THEMATIC_MIN_POOL_SIZE:
+                    break
+            # `tier_hours` reste le dernier palier essayé (tiers non vide).
             logger.info(
-                "feed_candidates_followed_only",
+                "feed_thematic_adaptive_window",
                 user_id=str(user_id),
-                followed_source_count=len(followed_source_ids),
-                serein_default_included=serein,
+                window_hours=tier_hours,
                 candidates=len(candidates_list),
+                threshold=ScoringWeights.THEMATIC_MIN_POOL_SIZE,
             )
         else:
-            query = query.order_by(Content.published_at.desc()).limit(limit_candidates)
-            candidates = await self.session.scalars(query)
-            candidates_list = list(candidates.all())
+            candidates_list = await _fetch_candidates(query)
 
         # Debug logging for mode filters
         if mode:

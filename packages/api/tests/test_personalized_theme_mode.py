@@ -2,7 +2,8 @@
 
 When `?personalized=true` is combined with `?theme=` or `?topic=` on
 `/api/feed/`, `_get_candidates` must:
-  1. restrict the candidate pool to articles published in the last 24h,
+  1. restrict the candidate pool to articles published in the last 24h
+     (fenêtre élargie à 48h/72h si le pool est trop maigre — Fix #2),
   2. restrict sources to the user's followed sources (with the existing
      two-phase + curated fallback path on empty follow set), and
   3. boost articles whose `Content.topics` overlap `user_subtopics` via a
@@ -240,12 +241,14 @@ async def test_personalized_theme_relaxes_seen_consumed_filter():
 
 
 # ---------------------------------------------------------------------------
-# `is_personalized_theme_mode` flag : utilisé pour activer la fenêtre 24h, la
-# restriction aux sources suivies et le boost ORDER BY user_subtopics dans
-# `_get_candidates`. Depuis le bug curation 2026-05-28, ce mode NE route plus
-# vers PillarScoringEngine (Story 21.2 inversée) — il prend le même chemin
-# chronologique court-circuité que Flâner thématique pour éviter la compression
-# regroupement/diversification qui collapsait 40+ candidats à 2-3 articles.
+# `is_personalized_theme_mode` flag : utilisé pour activer la fenêtre de
+# fraîcheur (adaptative 24/48/72h — Fix #2), la restriction aux sources suivies
+# et le boost ORDER BY user_subtopics dans `_get_candidates`. Décision PO
+# 2026-06-01 : ce mode route vers le PillarScoringEngine (chemin scoré) — il
+# saute l'early-return chrono pur ET la compression regroupement/diversification.
+# Supersede l'approche top-3 "essentiel-grade" (#710). Le routage et le
+# reclassement sont couverts par tests/test_thematic_curation.py +
+# scripts/prove_thematic_scoring.py.
 # ---------------------------------------------------------------------------
 
 
