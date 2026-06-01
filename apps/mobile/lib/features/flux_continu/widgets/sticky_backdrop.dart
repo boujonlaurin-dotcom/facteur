@@ -44,7 +44,11 @@ class StickyBackdrop extends StatelessWidget {
               ),
             ],
           ),
-          child: SafeArea(bottom: false, child: child),
+          // Le sticky vit désormais SOUS le header fixe du shell (MainShell),
+          // plus collé en haut de l'écran : on ne réserve donc plus l'inset de
+          // status bar ici — c'est lui qui créait un grand vide au-dessus de
+          // « Tournée du jour ».
+          child: child,
         ),
       ),
     );
