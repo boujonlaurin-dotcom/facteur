@@ -14,6 +14,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../core/nudges/nudge_counters.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
@@ -33,6 +34,7 @@ import '../widgets/closing_card_v18.dart';
 import '../widgets/flux_continu_article_card.dart';
 import '../widgets/my_interests_intro.dart';
 import '../widgets/my_interests_sheet.dart';
+import '../widgets/geoloc_prompt_banner.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
 import '../../grille/widgets/grille_cta_card.dart';
@@ -95,6 +97,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
+    // Compte une ouverture du feed par montage de l'écran. Alimente la bannière
+    // de demande de géoloc (déclenchée après 5 ouvertures, cf.
+    // geoloc_prompt_provider). Best-effort, n'impacte pas le rendu.
+    unawaited(NudgeCounters.increment(NudgeCounters.feedOpenCount));
   }
 
   @override
@@ -202,8 +208,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // dominance flips the active tab as soon as the next section becomes
     // majority-visible, which matches what the user is actually reading.
     const viewportTop = _kStickyBarHeight;
-    final viewportBottom =
-        viewportTop +
+    final viewportBottom = viewportTop +
         (_scroll.hasClients ? _scroll.position.viewportDimension : 0.0);
     int activeAt = 0;
     double bestVisible = -1;
@@ -257,9 +262,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (ctx == null) return;
     final box = ctx.findRenderObject();
     if (box is! RenderBox) return;
-    final scrollBox =
-        _scroll.position.context.notificationContext?.findRenderObject()
-            as RenderBox?;
+    final scrollBox = _scroll.position.context.notificationContext
+        ?.findRenderObject() as RenderBox?;
     if (scrollBox == null) {
       await Scrollable.ensureVisible(
         ctx,
@@ -268,8 +272,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       );
       return;
     }
-    final delta =
-        box.localToGlobal(Offset.zero, ancestor: scrollBox).dy -
+    final delta = box.localToGlobal(Offset.zero, ancestor: scrollBox).dy -
         _kStickyBarHeight;
     final target = (_scroll.offset + delta).clamp(
       0.0,
@@ -383,9 +386,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     FluxSection? fromSection,
   }) async {
     _markSectionsAboveAsScrolledPast(fromSection);
-    final exceptKeys = fromSection == null
-        ? const <String>{}
-        : {sectionKey(fromSection)};
+    final exceptKeys =
+        fromSection == null ? const <String>{} : {sectionKey(fromSection)};
     final heightsBefore = _measureFoldCandidateHeights(exceptKeys);
     String? openedContentId;
     if (article is DigestItem) {
@@ -434,9 +436,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   double _measureFoldCandidateHeights(Set<String> exceptKeys) {
     final value = ref.read(fluxContinuProvider).valueOrNull;
     if (value == null) return 0.0;
-    final queued = ref
-        .read(fluxContinuProvider.notifier)
-        .persistQueuedSnapshot();
+    final queued =
+        ref.read(fluxContinuProvider.notifier).persistQueuedSnapshot();
     if (queued.isEmpty) return 0.0;
     final count = math.min(value.sections.length, _sectionKeys.length);
     double sum = 0.0;
@@ -497,9 +498,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
   void _trackFeedbackSubmit(String contentId, String feedbackType) {
     unawaited(
-      ref
-          .read(analyticsServiceProvider)
-          .trackArticleFeedbackSubmitted(
+      ref.read(analyticsServiceProvider).trackArticleFeedbackSubmitted(
             contentId: contentId,
             feedbackType: feedbackType,
             origin: 'flux_continu',
@@ -605,9 +604,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 child: AnimatedSlide(
                   duration: const Duration(milliseconds: 220),
                   curve: Curves.easeOutCubic,
-                  offset: _showScrollTopFab
-                      ? Offset.zero
-                      : const Offset(0, 1.6),
+                  offset:
+                      _showScrollTopFab ? Offset.zero : const Offset(0, 1.6),
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 220),
                     opacity: _showScrollTopFab ? 1.0 : 0.0,
@@ -675,6 +673,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 ? const WellInformedPrompt()
                 : const SizedBox.shrink(),
           ),
+          SliverToBoxAdapter(
+            child: impressionSlot == FirstImpressionSlot.geolocPrompt
+                ? const GeolocPromptBanner()
+                : const SizedBox.shrink(),
+          ),
           const SliverToBoxAdapter(child: LettresNotificationBanner()),
           // One SliverToBoxAdapter per section. Sections never resize during
           // a session (folds are deferred to the next cold launch), so the
@@ -727,9 +730,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
               articleCount: totalArticles,
               onContinue: () => context.go(RoutePaths.flaner),
               onClose: isAndroid ? () => SystemNavigator.pop() : null,
-              closeHint: isAndroid
-                  ? null
-                  : 'Vous pouvez refermer l’app — à demain',
+              closeHint:
+                  isAndroid ? null : 'Vous pouvez refermer l’app — à demain',
             ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 92)),
@@ -752,8 +754,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // When the user has consumed every editorial section, the inline
     // "Mes intérêts" intro reads as residual chrome — hide it so the
     // folded stack collapses tightly into the closing card.
-    final allFolded =
-        state.sections.isNotEmpty &&
+    final allFolded = state.sections.isNotEmpty &&
         state.sections.every((s) => state.isFolded(s));
 
     final slivers = <SliverToBoxAdapter>[];
@@ -797,14 +798,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 await markSwipeLeftHintSeen();
                 if (mounted) ref.invalidate(swipeLeftHintSeenProvider);
               },
-              onTapFavorite: isFavorite
-                  ? () => showMyInterestsBottomSheet(context)
-                  : null,
+              onTapFavorite:
+                  isFavorite ? () => showMyInterestsBottomSheet(context) : null,
               onSeeAll: section is FeedThemeSection
                   ? () => _openThemeSection(context, section)
                   : section is DigestTopicSection
-                  ? () => _openDigestSection(context, section)
-                  : null,
+                      ? () => _openDigestSection(context, section)
+                      : null,
               onTapExploreAll: section is EssentielSection
                   ? () => _exploreAllEssentiel(section, i)
                   : null,
@@ -825,7 +825,7 @@ class _StickyHostOverlay extends ConsumerWidget {
   final ValueNotifier<double> scrollProgress;
   final ValueNotifier<int> activeIndex;
   final AsyncNotifierProvider<FluxContinuNotifier, FluxContinuState>
-  stateProvider;
+      stateProvider;
   final ValueChanged<int> onTapTab;
   final ScrollController tabsController;
 

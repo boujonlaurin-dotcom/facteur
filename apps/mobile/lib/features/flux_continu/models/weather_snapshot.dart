@@ -36,18 +36,42 @@ WeatherCondition weatherConditionFromWmo(int code) {
   return WeatherCondition.cloudy;
 }
 
-class WeatherSnapshot {
+/// Une journée de prévision (today = `days[0]` dans [WeatherForecast]).
+class WeatherDay {
+  final DateTime date;
+  final WeatherCondition condition;
+  final int minC;
+  final int maxC;
+
+  const WeatherDay({
+    required this.date,
+    required this.condition,
+    required this.minC,
+    required this.maxC,
+  });
+}
+
+/// Prévision météo riche alimentant à la fois le badge du header (champs
+/// `condition` / `currentC` / `minC` / `maxC`) et la modal détaillée
+/// (`feelsLikeC` + [days] sur 5 jours). Un seul fetch sert les deux usages.
+class WeatherForecast {
   final WeatherCondition condition;
   final int currentC;
+  final int feelsLikeC;
   final int minC;
   final int maxC;
   final DateTime fetchedAt;
 
-  const WeatherSnapshot({
+  /// Prévision sur 5 jours, today inclus en `days[0]`.
+  final List<WeatherDay> days;
+
+  const WeatherForecast({
     required this.condition,
     required this.currentC,
+    required this.feelsLikeC,
     required this.minC,
     required this.maxC,
     required this.fetchedAt,
+    required this.days,
   });
 }

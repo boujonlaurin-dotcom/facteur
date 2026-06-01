@@ -11,6 +11,7 @@ import '../models/flux_continu_models.dart';
 import '../models/weather_snapshot.dart';
 import '../providers/weather_provider.dart';
 import '../utils/theme_color_mapping.dart';
+import 'weather_detail_sheet.dart';
 
 /// Carte hi-fi unique "L'Essentiel du jour".
 ///
@@ -227,13 +228,13 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
 
     final Widget child;
     if (_showWeather) {
-      final snapshot = ref.watch(weatherProvider).valueOrNull;
-      if (snapshot != null) {
+      final forecast = ref.watch(weatherProvider).valueOrNull;
+      if (forecast != null) {
         child = GestureDetector(
           key: const ValueKey('weather'),
           behavior: HitTestBehavior.opaque,
-          onTap: () => setState(() => _showWeather = false),
-          child: _WeatherBadge(snapshot: snapshot),
+          onTap: () => showWeatherDetailSheet(context),
+          child: _WeatherBadge(forecast: forecast),
         );
       } else {
         child = GestureDetector(
@@ -260,9 +261,9 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
       );
     }
 
-    // Fixed slot: always 94×108 so the header never reflows when flipping.
+    // Fixed slot: the header never reflows when flipping between date/weather.
     return SizedBox(
-      width: 94,
+      width: 90,
       height: 108,
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 320),
@@ -298,10 +299,12 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
   }
 }
 
+/// Bloc météo compact du header : icône condition, min/max, et un indice
+/// discret signalant qu'un tap ouvre la modal détaillée 5 jours.
 class _WeatherBadge extends StatelessWidget {
-  final WeatherSnapshot snapshot;
+  final WeatherForecast forecast;
 
-  const _WeatherBadge({required this.snapshot});
+  const _WeatherBadge({required this.forecast});
 
   @override
   Widget build(BuildContext context) {
@@ -310,20 +313,21 @@ class _WeatherBadge extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         SvgPicture.asset(
-          'assets/images/weather/${snapshot.condition.assetName}.svg',
-          width: 94,
-          height: 94,
+          'assets/images/weather/${forecast.condition.assetName}.svg',
+          width: 60,
+          height: 60,
         ),
+        const SizedBox(height: 3),
         RichText(
           text: TextSpan(
             style: GoogleFonts.courierPrime(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
               height: 1.0,
             ),
             children: [
               TextSpan(
-                text: '${snapshot.minC}°',
+                text: '${forecast.minC}°',
                 style: TextStyle(color: colors.info),
               ),
               TextSpan(
@@ -331,11 +335,18 @@ class _WeatherBadge extends StatelessWidget {
                 style: TextStyle(color: colors.textSecondary),
               ),
               TextSpan(
-                text: '${snapshot.maxC}°',
+                text: '${forecast.maxC}°',
                 style: TextStyle(color: colors.error),
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 1),
+        Icon(
+          Icons.keyboard_arrow_down_rounded,
+          size: 12,
+          color: colors.textTertiary.withValues(alpha: 0.7),
+          semanticLabel: 'Voir la météo détaillée',
         ),
       ],
     );
