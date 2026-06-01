@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../widgets/design/facteur_card.dart';
@@ -14,7 +16,6 @@ import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_detail_modal.dart';
 import '../providers/feed_provider.dart';
 import '../repositories/feed_repository.dart' show HighlightSpan, TokenSpan;
-import 'article_viewer_modal.dart';
 import 'coverage_spectrum_bar.dart';
 import 'diff_title.dart';
 
@@ -26,23 +27,14 @@ const String kHighlightIntroText =
     'marquent l\'angle éditorial : plus le surlignage '
     'est intense, plus le choix de mot est éditorialisé.';
 
-/// Ouvre l'URL d'une perspective dans le même reader (modal webview) que
-/// pour un article interne. `useRootNavigator: true` empile la modal au-dessus
-/// de la sheet de comparaisons — la fermer ramène l'utilisateur sur la sheet
-/// intacte (back AppBar / swipe iOS / back Android).
+/// Ouvre l'URL d'une perspective dans le reader unique (`ContentDetailScreen`
+/// en mode externe) via la route `content-external` sur le root navigator.
+/// On garde ainsi le MÊME header / footer / scroll / anti-saccades que pour un
+/// article interne — plus de webview dupliquée à re-diverger. La route étant
+/// full-screen + swipe-back iOS, fermer le reader ramène sur la sheet de
+/// comparaisons intacte (elle-même sur le root navigator).
 void _openPerspectiveWebView(BuildContext context, Perspective p) {
-  showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    useRootNavigator: true,
-    builder: (_) => ArticleViewerModal.perspective(
-      url: p.url,
-      sourceName: p.sourceName,
-      sourceDomain: p.sourceDomain,
-      biasStance: p.biasStance,
-    ),
-  );
+  context.pushNamed(RouteNames.contentExternal, extra: p);
 }
 
 /// Model for a perspective from an external source

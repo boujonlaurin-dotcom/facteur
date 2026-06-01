@@ -11,6 +11,7 @@ import '../features/onboarding/screens/onboarding_screen.dart';
 import '../features/onboarding/screens/conclusion_animation_screen.dart';
 import '../features/feed/models/content_model.dart';
 import '../features/feed/screens/flaner_screen.dart';
+import '../features/feed/widgets/perspectives_bottom_sheet.dart' show Perspective;
 import '../features/flux_continu/screens/digest_section_screen.dart';
 import '../features/flux_continu/screens/flux_continu_screen.dart';
 import '../features/flux_continu/screens/theme_section_screen.dart';
@@ -69,6 +70,7 @@ class RouteNames {
   static const String flaner = 'flaner';
   static const String fluxContinu = 'flux-continu';
   static const String contentDetail = 'content-detail';
+  static const String contentExternal = 'content-external';
   static const String saved = 'saved';
   static const String savedAll = 'saved-all';
   static const String collectionDetail = 'collection-detail';
@@ -414,6 +416,28 @@ final routerProvider = Provider<GoRouter>((ref) {
             ),
           ),
         ],
+      ),
+
+      // Reader externe (perspective) — ouvre une "autre source" de la sheet de
+      // comparaisons dans le reader unique (ContentDetailScreen) en mode webview
+      // du site. Top-level sur le root navigator + swipe-back iOS : la sheet de
+      // comparaisons (elle-même sur le root navigator) reste vivante dessous.
+      GoRoute(
+        path: 'content-external',
+        name: RouteNames.contentExternal,
+        parentNavigatorKey: NotificationService.navigatorKey,
+        pageBuilder: (context, state) {
+          final p = state.extra as Perspective;
+          return FullSwipeCupertinoPage(
+            child: ContentDetailScreen.external(
+              url: p.url,
+              sourceName: p.sourceName,
+              sourceDomain: p.sourceDomain,
+              title: p.title,
+              biasStance: p.biasStance,
+            ),
+          );
+        },
       ),
 
       // Progress / Quiz (legacy) — redirige vers FluxContinu.
