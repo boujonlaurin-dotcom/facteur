@@ -31,13 +31,18 @@ class MockPersonalizationRepository extends Mock
 class MockAuthStateNotifier extends StateNotifier<app_auth.AuthState>
     implements app_auth.AuthStateNotifier {
   MockAuthStateNotifier()
-      : super(const app_auth.AuthState(
-            user: supabase.User(
-                id: 'u1',
-                appMetadata: {},
-                userMetadata: {},
-                aud: 'authenticated',
-                createdAt: '2023-01-01')));
+    : super(
+        const app_auth.AuthState(
+          user: supabase.User(
+            id: 'u1',
+            appMetadata: {},
+            userMetadata: {},
+            aud: 'authenticated',
+            createdAt: '2023-01-01',
+            emailConfirmedAt: '2023-01-01',
+          ),
+        ),
+      );
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -58,13 +63,13 @@ void main() {
   );
 
   Content makeContent(String id) => Content(
-        id: id,
-        title: 'Title $id',
-        url: 'url',
-        contentType: ContentType.article,
-        publishedAt: DateTime.now(),
-        source: mockSource,
-      );
+    id: id,
+    title: 'Title $id',
+    url: 'url',
+    contentType: ContentType.article,
+    publishedAt: DateTime.now(),
+    source: mockSource,
+  );
 
   setUp(() {
     mockFeedRepo = MockFeedRepository();
@@ -104,21 +109,27 @@ void main() {
         final initialItems = [makeContent('a'), makeContent('b')];
 
         // First call (build): return 2 items.
-        when(() => mockFeedRepo.getFeed(
-              page: any(named: 'page'),
-              limit: any(named: 'limit'),
-              mode: any(named: 'mode'),
-              theme: any(named: 'theme'),
-              topic: any(named: 'topic'),
-              sourceId: any(named: 'sourceId'),
-              entity: any(named: 'entity'),
-              keyword: any(named: 'keyword'),
-              serein: any(named: 'serein'),
-            )).thenAnswer(
+        when(
+          () => mockFeedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            mode: any(named: 'mode'),
+            theme: any(named: 'theme'),
+            topic: any(named: 'topic'),
+            sourceId: any(named: 'sourceId'),
+            entity: any(named: 'entity'),
+            keyword: any(named: 'keyword'),
+            serein: any(named: 'serein'),
+          ),
+        ).thenAnswer(
           (_) async => FeedResponse(
             items: initialItems,
-            pagination:
-                Pagination(page: 1, perPage: 20, total: 2, hasNext: false),
+            pagination: Pagination(
+              page: 1,
+              perPage: 20,
+              total: 2,
+              hasNext: false,
+            ),
           ),
         );
 
@@ -127,30 +138,37 @@ void main() {
         expect(container.read(feedProvider).value!.items.length, 2);
 
         // Simulate the 2nd call (refresh) failing with 403 "Email not confirmed".
-        when(() => mockFeedRepo.getFeed(
-              page: any(named: 'page'),
-              limit: any(named: 'limit'),
-              mode: any(named: 'mode'),
-              theme: any(named: 'theme'),
-              topic: any(named: 'topic'),
-              sourceId: any(named: 'sourceId'),
-              entity: any(named: 'entity'),
-              keyword: any(named: 'keyword'),
-              serein: any(named: 'serein'),
-            )).thenThrow(_dioException(
-          statusCode: 403,
-          detail: 'Email not confirmed',
-        ));
+        when(
+          () => mockFeedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            mode: any(named: 'mode'),
+            theme: any(named: 'theme'),
+            topic: any(named: 'topic'),
+            sourceId: any(named: 'sourceId'),
+            entity: any(named: 'entity'),
+            keyword: any(named: 'keyword'),
+            serein: any(named: 'serein'),
+          ),
+        ).thenThrow(
+          _dioException(statusCode: 403, detail: 'Email not confirmed'),
+        );
 
         // Act : refresh fails. Must NOT rethrow and must NOT wipe items.
         await notifier.refresh();
 
         final asyncState = container.read(feedProvider);
-        expect(asyncState.hasError, isFalse,
-            reason: 'state must not be AsyncError when we have previous items');
+        expect(
+          asyncState.hasError,
+          isFalse,
+          reason: 'state must not be AsyncError when we have previous items',
+        );
         expect(asyncState.value, isNotNull);
-        expect(asyncState.value!.items.length, 2,
-            reason: 'previous items must be preserved on refresh failure');
+        expect(
+          asyncState.value!.items.length,
+          2,
+          reason: 'previous items must be preserved on refresh failure',
+        );
         expect(asyncState.value!.items.map((c) => c.id), ['a', 'b']);
       },
     );
@@ -162,24 +180,30 @@ void main() {
         final refreshedItems = [makeContent('x'), makeContent('y')];
         var callCount = 0;
 
-        when(() => mockFeedRepo.getFeed(
-              page: any(named: 'page'),
-              limit: any(named: 'limit'),
-              mode: any(named: 'mode'),
-              theme: any(named: 'theme'),
-              topic: any(named: 'topic'),
-              sourceId: any(named: 'sourceId'),
-              entity: any(named: 'entity'),
-              keyword: any(named: 'keyword'),
-              serein: any(named: 'serein'),
-            )).thenAnswer((_) async {
+        when(
+          () => mockFeedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            mode: any(named: 'mode'),
+            theme: any(named: 'theme'),
+            topic: any(named: 'topic'),
+            sourceId: any(named: 'sourceId'),
+            entity: any(named: 'entity'),
+            keyword: any(named: 'keyword'),
+            serein: any(named: 'serein'),
+          ),
+        ).thenAnswer((_) async {
           callCount++;
           if (callCount == 1) {
             // initial build
             return FeedResponse(
               items: initialItems,
-              pagination:
-                  Pagination(page: 1, perPage: 20, total: 1, hasNext: false),
+              pagination: Pagination(
+                page: 1,
+                perPage: 20,
+                total: 1,
+                hasNext: false,
+              ),
             );
           } else if (callCount == 2) {
             // first refresh → 500
@@ -188,8 +212,12 @@ void main() {
             // second refresh → success
             return FeedResponse(
               items: refreshedItems,
-              pagination:
-                  Pagination(page: 1, perPage: 20, total: 2, hasNext: false),
+              pagination: Pagination(
+                page: 1,
+                perPage: 20,
+                total: 2,
+                hasNext: false,
+              ),
             );
           }
         });
@@ -199,30 +227,37 @@ void main() {
         expect(container.read(feedProvider).value!.items.length, 1);
 
         await notifier.refresh(); // fails, items preserved
-        expect(container.read(feedProvider).value!.items.length, 1,
-            reason: 'items preserved after first failed refresh');
+        expect(
+          container.read(feedProvider).value!.items.length,
+          1,
+          reason: 'items preserved after first failed refresh',
+        );
 
         await notifier.refresh(); // succeeds
         expect(container.read(feedProvider).value!.items.length, 2);
-        expect(container.read(feedProvider).value!.items.map((c) => c.id),
-            ['x', 'y']);
+        expect(container.read(feedProvider).value!.items.map((c) => c.id), [
+          'x',
+          'y',
+        ]);
       },
     );
 
     test(
       'initial load failure (no previous items) → AsyncError is expected',
       () async {
-        when(() => mockFeedRepo.getFeed(
-              page: any(named: 'page'),
-              limit: any(named: 'limit'),
-              mode: any(named: 'mode'),
-              theme: any(named: 'theme'),
-              topic: any(named: 'topic'),
-              sourceId: any(named: 'sourceId'),
-              entity: any(named: 'entity'),
-              keyword: any(named: 'keyword'),
-              serein: any(named: 'serein'),
-            )).thenThrow(_dioException(statusCode: 500));
+        when(
+          () => mockFeedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            mode: any(named: 'mode'),
+            theme: any(named: 'theme'),
+            topic: any(named: 'topic'),
+            sourceId: any(named: 'sourceId'),
+            entity: any(named: 'entity'),
+            keyword: any(named: 'keyword'),
+            serein: any(named: 'serein'),
+          ),
+        ).thenThrow(_dioException(statusCode: 500));
 
         // Trigger build; it should surface as AsyncError since there's no
         // prior state to fall back to.

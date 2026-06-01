@@ -20,6 +20,13 @@ import 'features/settings/providers/theme_provider.dart';
 import 'core/api/api_client.dart' show ApiGoneNotifier;
 import 'core/ui/notification_service.dart';
 
+const flanerForegroundRefreshThreshold = Duration(minutes: 30);
+
+@visibleForTesting
+bool shouldRefreshFlanerOnForeground(Duration? elapsed) {
+  return elapsed == null || elapsed >= flanerForegroundRefreshThreshold;
+}
+
 /// Application principale Facteur
 class FacteurApp extends ConsumerStatefulWidget {
   const FacteurApp({super.key});
@@ -102,7 +109,7 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
         }
         if (ref.read(authStateProvider).isAuthenticated &&
             currentPath == RoutePaths.flaner &&
-            (elapsed == null || elapsed.inSeconds >= 60)) {
+            shouldRefreshFlanerOnForeground(elapsed)) {
           ref.read(feedProvider.notifier).refresh();
         }
       }
