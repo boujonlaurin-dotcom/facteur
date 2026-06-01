@@ -30,18 +30,21 @@ void main() {
       expect(data.sharedTokens.first.text, 'Macron');
     });
 
-    test('back rétrocompatible : pas de highlight_spans/shared_tokens → listes vides', () {
-      final data = PerspectiveData.fromJson({
-        'title': 'X',
-        'url': 'https://y.fr',
-        'source_name': 'Y',
-        'source_domain': 'y.fr',
-        'bias_stance': 'unknown',
-      });
+    test(
+      'back rétrocompatible : pas de highlight_spans/shared_tokens → listes vides',
+      () {
+        final data = PerspectiveData.fromJson({
+          'title': 'X',
+          'url': 'https://y.fr',
+          'source_name': 'Y',
+          'source_domain': 'y.fr',
+          'bias_stance': 'unknown',
+        });
 
-      expect(data.highlightSpans, isEmpty);
-      expect(data.sharedTokens, isEmpty);
-    });
+        expect(data.highlightSpans, isEmpty);
+        expect(data.sharedTokens, isEmpty);
+      },
+    );
 
     test('valeurs vides parsent en listes vides (pas de crash)', () {
       final data = PerspectiveData.fromJson({
@@ -50,8 +53,8 @@ void main() {
         'source_name': 'Y',
         'source_domain': 'y.fr',
         'bias_stance': 'unknown',
-        'highlight_spans': [],
-        'shared_tokens': [],
+        'highlight_spans': <dynamic>[],
+        'shared_tokens': <dynamic>[],
       });
       expect(data.highlightSpans, isEmpty);
       expect(data.sharedTokens, isEmpty);
@@ -64,8 +67,12 @@ void main() {
         'perspectives': <dynamic>[],
         'keywords': <dynamic>[],
         'bias_distribution': <String, dynamic>{},
+        'partial': true,
+        'divergence_level': 'medium',
         'reference_pivot': {'start': 7, 'end': 14, 'text': 'frappe'},
       });
+      expect(res.partial, isTrue);
+      expect(res.divergenceLevel, 'medium');
       expect(res.referencePivot, isNotNull);
       expect(res.referencePivot!.start, 7);
       expect(res.referencePivot!.end, 14);
@@ -100,9 +107,11 @@ void main() {
     });
 
     test('parse une Map valide', () {
-      final span = TokenSpan.fromJsonOrNull(
-        {'start': 1, 'end': 5, 'text': 'foo'},
-      );
+      final span = TokenSpan.fromJsonOrNull({
+        'start': 1,
+        'end': 5,
+        'text': 'foo',
+      });
       expect(span, isNotNull);
       expect(span!.start, 1);
       expect(span.end, 5);

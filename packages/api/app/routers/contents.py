@@ -1,11 +1,12 @@
 import asyncio
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -571,6 +572,35 @@ _perspectives_cache: TTLCache = TTLCache(maxsize=256, ttl=7200)
 # value ("llm"/"spacy") for the cached body — so cache hits re-emit the
 # debug header instead of dropping it silently.
 _perspectives_source_cache: TTLCache = TTLCache(maxsize=256, ttl=7200)
+# In-flight guard: prevent stacking background refresh tasks for the same key.
+_perspectives_refresh_inflight: set[str] = set()
+
+
+def _empty_timings() -> dict[str, int]:
+    return dict.fromkeys(
+        (
+            "cache",
+            "digest_snapshot",
+            "cluster_internal_db",
+            "google_news",
+            "highlights",
+            "total",
+        ),
+        0,
+    )
+
+
+def _perspective_to_dict(p: object) -> dict:
+    return {
+        "title": p.title,
+        "url": p.url,
+        "source_name": p.source_name,
+        "source_domain": p.source_domain,
+        "bias_stance": p.bias_stance,
+        "published_at": p.published_at,
+        "description": p.description,
+        "language": getattr(p, "language", None),
+    }
 
 
 def _normalize_url_for_match(raw: str | None) -> str:
@@ -723,7 +753,7 @@ async def _load_stored_perspectives_for_representative(
     db: AsyncSession,
     content_id: UUID,
     user_id: UUID,
-) -> tuple[list[dict], dict[str, int]] | None:
+) -> tuple[list[dict], dict[str, int], str | None] | None:
     """Return the perspective_articles list the pipeline persisted on the
     digest subject containing ``content_id``, plus its bias_distribution.
 
@@ -779,8 +809,9 @@ async def _load_stored_perspectives_for_representative(
             if target_str in ids:
                 stored = subject.get("perspective_articles")
                 bias = subject.get("bias_distribution") or {}
+                divergence_level = subject.get("divergence_level")
                 if stored is not None:
-                    return list(stored), dict(bias)
+                    return list(stored), dict(bias), divergence_level
                 # Subject trouvé dans un digest récent mais snapshot absent
                 # (legacy digest, ou bug pipeline). Pour préserver l'invariant
                 # "content_id du digest → toujours stored, jamais live",
@@ -792,8 +823,226 @@ async def _load_stored_perspectives_for_representative(
                     digest_id=str(digest.id),
                     subject_topic_id=subject.get("topic_id"),
                 )
-                return [], dict(bias)
+                return [], dict(bias), divergence_level
     return None
+
+
+def _stored_snapshot_has_highlights(perspectives: list[dict]) -> bool:
+    if not perspectives:
+        return False
+    return all(
+        isinstance(p, dict) and "highlight_spans" in p and "shared_tokens" in p
+        for p in perspectives
+    )
+
+
+def _snapshot_reference_pivot(perspectives: list[dict]) -> dict | None:
+    for p in perspectives:
+        if isinstance(p, dict) and isinstance(p.get("reference_pivot"), dict):
+            return p["reference_pivot"]
+    return None
+
+
+def _extract_source_context(content: Content) -> tuple[str | None, str]:
+    source_domain = None
+    source_bias_stance = "unknown"
+    if content.source:
+        from urllib.parse import urlparse
+
+        from app.services.perspective_service import DOMAIN_BIAS_MAP
+
+        try:
+            parsed = urlparse(content.source.url)
+            source_domain = parsed.netloc
+            if source_domain and source_domain.startswith("www."):
+                source_domain = source_domain[4:]
+        except Exception:
+            pass
+        if content.source.bias_stance:
+            source_bias_stance = (
+                content.source.bias_stance.value
+                if hasattr(content.source.bias_stance, "value")
+                else str(content.source.bias_stance)
+            )
+        if source_bias_stance == "unknown" and source_domain:
+            source_bias_stance = DOMAIN_BIAS_MAP.get(source_domain, "unknown")
+    return source_domain, source_bias_stance
+
+
+def _comparison_fields(
+    count: int,
+    bias_distribution: dict[str, int],
+    has_entities: bool,
+) -> tuple[int, str, bool, str]:
+    from app.services.editorial.schemas import compute_divergence_level
+    from app.services.perspective_service import (
+        PERSPECTIVE_MIN_BIAS_GROUPS,
+        PERSPECTIVE_MIN_VALID_RESULTS,
+    )
+
+    bias_groups = sum(1 for v in bias_distribution.values() if v > 0)
+    if has_entities and count >= 5 and bias_groups >= 3:
+        comparison_quality = "high"
+    elif count >= 3 and bias_groups >= 2:
+        comparison_quality = "medium"
+    else:
+        comparison_quality = "low"
+    should_display = (
+        count >= PERSPECTIVE_MIN_VALID_RESULTS
+        and bias_groups >= PERSPECTIVE_MIN_BIAS_GROUPS
+    )
+    divergence_level = compute_divergence_level(bias_distribution)
+    return bias_groups, comparison_quality, should_display, divergence_level
+
+
+async def _track_perspectives_open_background(
+    user_id: str,
+    content_id: str,
+) -> None:
+    try:
+        from app.services.analytics_service import AnalyticsService
+
+        async with safe_async_session() as session:
+            await AnalyticsService(session).log_event(
+                user_id=UUID(user_id),
+                event_type="perspectives_opened",
+                event_data={"content_id": content_id},
+            )
+    except Exception:
+        logger.warning("perspectives_open_tracking_failed", exc_info=True)
+
+
+async def _refresh_perspectives_cache_background(
+    content_id: str,
+    user_id: str,
+) -> None:
+    """Complete a fast-first partial response with the full Google News path."""
+    if content_id in _perspectives_refresh_inflight:
+        return
+    _perspectives_refresh_inflight.add(content_id)
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import joinedload
+
+    from app.models.content import Content
+    from app.models.perspective_analysis import PerspectiveAnalysis
+    from app.services.perspective_service import PerspectiveService, _parse_entity_names
+
+    started = time.perf_counter()
+    timings = _empty_timings()
+    try:
+        async with safe_async_session() as db:
+            result = await db.execute(
+                select(Content)
+                .options(joinedload(Content.source))
+                .where(Content.id == UUID(content_id))
+            )
+            content = result.scalars().first()
+            if content is None:
+                return
+
+            source_domain, source_bias_stance = _extract_source_context(content)
+            service = PerspectiveService(db=db)
+
+            phase = time.perf_counter()
+            cluster_perspectives: list = []
+            cluster_domains: set[str] = set()
+            cluster_contents = await _load_cluster_articles_for_representative(
+                db=db,
+                content_id=UUID(content_id),
+                user_id=UUID(user_id),
+            )
+            if cluster_contents:
+                cluster_perspectives = await service.build_cluster_perspectives(
+                    cluster_contents
+                )
+                cluster_domains = {
+                    p.source_domain for p in cluster_perspectives if p.source_domain
+                }
+            timings["cluster_internal_db"] = round((time.perf_counter() - phase) * 1000)
+
+            phase = time.perf_counter()
+            gnews_perspectives, keywords = await service.get_perspectives_hybrid(
+                content=content,
+                exclude_domain=source_domain,
+            )
+            timings["google_news"] = round((time.perf_counter() - phase) * 1000)
+
+            new_gnews = [
+                p
+                for p in gnews_perspectives
+                if p.source_domain and p.source_domain not in cluster_domains
+            ]
+            ref_url_key_live = _normalize_url_for_match(content.url)
+            merged = [
+                p
+                for p in (cluster_perspectives + new_gnews)
+                if not ref_url_key_live
+                or _normalize_url_for_match(getattr(p, "url", None)) != ref_url_key_live
+            ]
+            known_perspectives = [p for p in merged if p.bias_stance != "unknown"]
+            perspectives = (
+                cluster_perspectives
+                if not known_perspectives and cluster_perspectives
+                else known_perspectives
+            )
+
+            perspectives_dicts_pre = [_perspective_to_dict(p) for p in perspectives]
+            bias_distribution = _recompute_bias_distribution(perspectives_dicts_pre)
+            has_entities = bool(
+                _parse_entity_names(content.entities, types={"PERSON", "ORG"})
+            )
+            bias_groups, comparison_quality, should_display, divergence_level = (
+                _comparison_fields(len(perspectives), bias_distribution, has_entities)
+            )
+
+            analysis_result = await db.execute(
+                select(PerspectiveAnalysis).where(
+                    PerspectiveAnalysis.content_id == UUID(content_id)
+                )
+            )
+            cached_row = analysis_result.scalars().first()
+            cached_analysis = cached_row.analysis_text if cached_row else None
+
+            perspectives_dicts = perspectives_dicts_pre
+            phase = time.perf_counter()
+            reference_pivot, bias_source = await _attach_highlight_spans(
+                db, content, perspectives_dicts
+            )
+            timings["highlights"] = round((time.perf_counter() - phase) * 1000)
+            timings["total"] = round((time.perf_counter() - started) * 1000)
+
+            response_body = {
+                "content_id": content_id,
+                "keywords": keywords,
+                "source_bias_stance": source_bias_stance,
+                "perspectives": perspectives_dicts,
+                "bias_distribution": bias_distribution,
+                "comparison_quality": comparison_quality,
+                "should_display": should_display,
+                "analysis": cached_analysis,
+                "analysis_cached": cached_analysis is not None,
+                "reference_pivot": reference_pivot,
+                "partial": False,
+                "divergence_level": divergence_level,
+                "timings_ms": timings,
+            }
+            _perspectives_cache[content_id] = response_body
+            _perspectives_source_cache[content_id] = bias_source
+            logger.info(
+                "perspectives_background_refresh_complete",
+                content_id=content_id,
+                count=len(perspectives),
+                bias_groups=bias_groups,
+                timings_ms=timings,
+            )
+    except Exception:
+        logger.exception(
+            "perspectives_background_refresh_failed",
+            content_id=content_id,
+        )
+    finally:
+        _perspectives_refresh_inflight.discard(content_id)
 
 
 async def _attach_highlight_spans(
@@ -922,6 +1171,7 @@ async def _attach_highlight_spans(
 async def get_perspectives(
     content_id: UUID,
     response: Response,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -939,29 +1189,34 @@ async def get_perspectives(
     logger = structlog.get_logger(__name__)
 
     cache_key = str(content_id)
-
-    # Track perspective open (Story 19.1 — Lettres du Facteur, action 4).
-    # Non-bloquant : un échec ne doit pas casser l'endpoint. Un seul event
-    # suffit pour la détection (DETECTORS["first_perspectives_open"] LIMIT 1).
-    try:
-        from app.services.analytics_service import AnalyticsService
-
-        await AnalyticsService(db).log_event(
-            user_id=UUID(current_user_id),
-            event_type="perspectives_opened",
-            event_data={"content_id": cache_key},
-        )
-    except Exception:
-        logger.warning("perspectives_open_tracking_failed", exc_info=True)
+    endpoint_started = time.perf_counter()
+    timings = _empty_timings()
 
     # Check cache (TTLCache handles expiration automatically)
+    phase = time.perf_counter()
     cached_response = _perspectives_cache.get(cache_key)
+    timings["cache"] = round((time.perf_counter() - phase) * 1000)
     if cached_response is not None:
         logger.info("perspectives_cache_hit", content_id=cache_key)
         response.headers["X-Bias-Annotation-Source"] = _perspectives_source_cache.get(
             cache_key, "spacy"
         )
+        response.headers["X-Perspectives-Cache"] = "hit"
+        if cached_response.get("partial") is True:
+            background_tasks.add_task(
+                _refresh_perspectives_cache_background,
+                cache_key,
+                current_user_id,
+            )
         return cached_response
+
+    # Track perspective open (Story 19.1 — Lettres du Facteur, action 4).
+    # It must never delay the reader, and cache hits stay DB-free.
+    background_tasks.add_task(
+        _track_perspectives_open_background,
+        current_user_id,
+        cache_key,
+    )
 
     logger.info(
         "perspectives_endpoint_start",
@@ -991,29 +1246,7 @@ async def get_perspectives(
     )
 
     # Extract the source domain for exclusion and bias
-    source_domain = None
-    source_bias_stance = "unknown"
-    if content.source:
-        from urllib.parse import urlparse
-
-        from app.services.perspective_service import DOMAIN_BIAS_MAP
-
-        try:
-            parsed = urlparse(content.source.url)
-            source_domain = parsed.netloc
-            if source_domain and source_domain.startswith("www."):
-                source_domain = source_domain[4:]
-        except Exception:
-            pass
-        if content.source.bias_stance:
-            source_bias_stance = (
-                content.source.bias_stance.value
-                if hasattr(content.source.bias_stance, "value")
-                else str(content.source.bias_stance)
-            )
-        # Fallback to DOMAIN_BIAS_MAP if DB bias is unknown
-        if source_bias_stance == "unknown" and source_domain:
-            source_bias_stance = DOMAIN_BIAS_MAP.get(source_domain, "unknown")
+    source_domain, source_bias_stance = _extract_source_context(content)
 
     # Hybrid perspectives search: DB entities → Google News entities → fallback keywords
     service = PerspectiveService(db=db)
@@ -1024,11 +1257,13 @@ async def get_perspectives(
     # the same JSONB blob) instead of running a fresh Google News query
     # that drifts from the digest-time results.
     try:
+        phase = time.perf_counter()
         stored = await _load_stored_perspectives_for_representative(
             db=db,
             content_id=content_id,
             user_id=UUID(current_user_id),
         )
+        timings["digest_snapshot"] = round((time.perf_counter() - phase) * 1000)
     except Exception as e:
         stored = None
         logger.warning(
@@ -1038,7 +1273,7 @@ async def get_perspectives(
         )
 
     if stored is not None:
-        stored_perspectives, stored_bias = stored
+        stored_perspectives, stored_bias, stored_divergence_level = stored
         # Strip the reference article from the persisted snapshot — the
         # pipeline doesn't pre-filter it, and the UI must not show the
         # currently-open article as one of its alternative perspectives.
@@ -1055,28 +1290,12 @@ async def get_perspectives(
             if len(filtered) != len(stored_perspectives):
                 stored_perspectives = filtered
                 stored_bias = _recompute_bias_distribution(stored_perspectives)
-        bias_groups = len([v for v in stored_bias.values() if v > 0])
         count = len(stored_perspectives)
         has_entities = bool(
             _parse_entity_names(content.entities, types={"PERSON", "ORG"})
         )
-        if has_entities and count >= 5 and bias_groups >= 3:
-            comparison_quality = "high"
-        elif count >= 3 and bias_groups >= 2:
-            comparison_quality = "medium"
-        else:
-            comparison_quality = "low"
-
-        # Gate UI : masquer la Comparaison si trop peu d'angles distincts
-        # (cf. docs/bugs/bug-comparison-clustering-too-loose.md)
-        from app.services.perspective_service import (
-            PERSPECTIVE_MIN_BIAS_GROUPS,
-            PERSPECTIVE_MIN_VALID_RESULTS,
-        )
-
-        should_display = (
-            count >= PERSPECTIVE_MIN_VALID_RESULTS
-            and bias_groups >= PERSPECTIVE_MIN_BIAS_GROUPS
+        bias_groups, comparison_quality, should_display, derived_divergence = (
+            _comparison_fields(count, stored_bias, has_entities)
         )
 
         from app.models.perspective_analysis import PerspectiveAnalysis as _PA
@@ -1087,10 +1306,17 @@ async def get_perspectives(
         cached_row = analysis_result.scalars().first()
         cached_analysis = cached_row.analysis_text if cached_row else None
 
-        reference_pivot, bias_source = await _attach_highlight_spans(
-            db, content, stored_perspectives
-        )
+        if _stored_snapshot_has_highlights(stored_perspectives):
+            reference_pivot = _snapshot_reference_pivot(stored_perspectives)
+            bias_source = "llm"
+        else:
+            phase = time.perf_counter()
+            reference_pivot, bias_source = await _attach_highlight_spans(
+                db, content, stored_perspectives
+            )
+            timings["highlights"] = round((time.perf_counter() - phase) * 1000)
         response.headers["X-Bias-Annotation-Source"] = bias_source
+        timings["total"] = round((time.perf_counter() - endpoint_started) * 1000)
 
         response_body = {
             "content_id": cache_key,
@@ -1106,6 +1332,9 @@ async def get_perspectives(
             "analysis": cached_analysis,
             "analysis_cached": cached_analysis is not None,
             "reference_pivot": reference_pivot,
+            "partial": False,
+            "divergence_level": stored_divergence_level or derived_divergence,
+            "timings_ms": timings,
         }
         _perspectives_cache[cache_key] = response_body
         _perspectives_source_cache[cache_key] = bias_source
@@ -1125,6 +1354,7 @@ async def get_perspectives(
     cluster_perspectives: list = []
     cluster_domains: set[str] = set()
     try:
+        phase = time.perf_counter()
         cluster_contents = await _load_cluster_articles_for_representative(
             db=db,
             content_id=content_id,
@@ -1137,6 +1367,7 @@ async def get_perspectives(
             cluster_domains = {
                 p.source_domain for p in cluster_perspectives if p.source_domain
             }
+        timings["cluster_internal_db"] = round((time.perf_counter() - phase) * 1000)
     except Exception as e:
         logger.warning(
             "perspectives_cluster_lookup_failed",
@@ -1144,17 +1375,14 @@ async def get_perspectives(
             error=str(e),
         )
 
-    gnews_perspectives, keywords = await service.get_perspectives_hybrid(
-        content=content,
-        exclude_domain=source_domain,
-    )
-
-    # Keep only Google News entries whose domain isn't already covered by
-    # the cluster — no double-counting.
-    new_gnews = [
+    internal_perspectives = await service.search_internal_perspectives(content)
+    keywords = service.build_entity_query(content.entities, content.title)
+    quick_internal = [
         p
-        for p in gnews_perspectives
-        if p.source_domain and p.source_domain not in cluster_domains
+        for p in internal_perspectives
+        if p.source_domain
+        and p.source_domain not in cluster_domains
+        and p.source_domain != source_domain
     ]
 
     # Single source of truth for the 3 UI counters — mirror pipeline.py.
@@ -1164,7 +1392,7 @@ async def get_perspectives(
     ref_url_key_live = _normalize_url_for_match(content.url)
     merged = [
         p
-        for p in (cluster_perspectives + new_gnews)
+        for p in (cluster_perspectives + quick_internal)
         if not ref_url_key_live
         or _normalize_url_for_match(getattr(p, "url", None)) != ref_url_key_live
     ]
@@ -1184,9 +1412,9 @@ async def get_perspectives(
     logger.info(
         "perspectives_composition",
         content_id=cache_key,
-        path="live",
+        path="live_partial",
         cluster_sources_count=len(cluster_perspectives),
-        gnews_added=len(new_gnews),
+        internal_added=len(quick_internal),
         known_bias=len(known_perspectives),
         safety_net_triggered=safety_net_triggered,
     )
@@ -1203,28 +1431,10 @@ async def get_perspectives(
         if p.bias_stance in bias_distribution:
             bias_distribution[p.bias_stance] += 1
 
-    # Compute comparison quality from pipeline signals
-    bias_groups = len([v for v in bias_distribution.values() if v > 0])
     has_entities = bool(_parse_entity_names(content.entities, types={"PERSON", "ORG"}))
     count = len(perspectives)
-
-    if has_entities and count >= 5 and bias_groups >= 3:
-        comparison_quality = "high"
-    elif count >= 3 and bias_groups >= 2:
-        comparison_quality = "medium"
-    else:
-        comparison_quality = "low"
-
-    # Gate UI : masquer la Comparaison si trop peu d'angles distincts
-    # (cf. docs/bugs/bug-comparison-clustering-too-loose.md)
-    from app.services.perspective_service import (
-        PERSPECTIVE_MIN_BIAS_GROUPS,
-        PERSPECTIVE_MIN_VALID_RESULTS,
-    )
-
-    should_display = (
-        count >= PERSPECTIVE_MIN_VALID_RESULTS
-        and bias_groups >= PERSPECTIVE_MIN_BIAS_GROUPS
+    bias_groups, comparison_quality, should_display, divergence_level = (
+        _comparison_fields(count, bias_distribution, has_entities)
     )
 
     logger.info(
@@ -1234,6 +1444,7 @@ async def get_perspectives(
         keywords=keywords,
         should_display=should_display,
         comparison_quality=comparison_quality,
+        partial=True,
     )
 
     # Check if a cached Mistral analysis exists in DB
@@ -1247,23 +1458,14 @@ async def get_perspectives(
     if cached_row:
         cached_analysis = cached_row.analysis_text
 
-    perspectives_dicts = [
-        {
-            "title": p.title,
-            "url": p.url,
-            "source_name": p.source_name,
-            "source_domain": p.source_domain,
-            "bias_stance": p.bias_stance,
-            "published_at": p.published_at,
-            "description": p.description,
-            "language": getattr(p, "language", None),
-        }
-        for p in perspectives
-    ]
+    perspectives_dicts = [_perspective_to_dict(p) for p in perspectives]
+    phase = time.perf_counter()
     reference_pivot, bias_source = await _attach_highlight_spans(
         db, content, perspectives_dicts
     )
+    timings["highlights"] = round((time.perf_counter() - phase) * 1000)
     response.headers["X-Bias-Annotation-Source"] = bias_source
+    timings["total"] = round((time.perf_counter() - endpoint_started) * 1000)
 
     response_body = {
         "content_id": cache_key,
@@ -1276,11 +1478,20 @@ async def get_perspectives(
         "analysis": cached_analysis,
         "analysis_cached": cached_analysis is not None,
         "reference_pivot": reference_pivot,
+        "partial": True,
+        "divergence_level": divergence_level,
+        "timings_ms": timings,
     }
 
-    # Store in cache (TTLCache handles expiration automatically)
+    # Store partial response immediately; background refresh replaces this
+    # same cache key with the complete Google-enriched response.
     _perspectives_cache[cache_key] = response_body
     _perspectives_source_cache[cache_key] = bias_source
+    background_tasks.add_task(
+        _refresh_perspectives_cache_background,
+        cache_key,
+        current_user_id,
+    )
 
     return response_body
 

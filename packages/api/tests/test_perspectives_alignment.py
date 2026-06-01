@@ -94,9 +94,10 @@ async def test_fast_path_matches_representative():
     )
 
     assert result is not None
-    perspectives, bias = result
+    perspectives, bias, divergence_level = result
     assert len(perspectives) == 5
     assert bias["center"] == 5
+    assert divergence_level is None
 
 
 @pytest.mark.asyncio
@@ -148,7 +149,7 @@ async def test_fast_path_matches_deep_article():
         db=db, content_id=deep, user_id=digest.user_id
     )
     assert result is not None
-    perspectives, bias = result
+    perspectives, bias, _ = result
     assert len(perspectives) == 5
     assert bias["center"] == 5
 
@@ -161,9 +162,7 @@ async def test_fast_path_all_five_ids_return_same_snapshot():
     actu = uuid4()
     extras = [uuid4(), uuid4()]
     deep = uuid4()
-    subject = _make_subject(
-        representative, actu, extras, deep, perspective_count=5
-    )
+    subject = _make_subject(representative, actu, extras, deep, perspective_count=5)
     digest = _make_digest([subject])
 
     all_ids = [representative, actu, *extras, deep]
@@ -200,7 +199,7 @@ async def test_fast_path_returns_empty_when_snapshot_missing():
     )
 
     assert result is not None, "must NOT fall back to live path"
-    perspectives, _ = result
+    perspectives, _, _ = result
     assert perspectives == []
 
 
