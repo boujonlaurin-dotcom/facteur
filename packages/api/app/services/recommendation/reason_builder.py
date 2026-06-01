@@ -4,11 +4,40 @@ Centralise la construction des labels pour "Pourquoi cet article ?".
 Utilisé par le Feed et le Digest pour une cohérence des labels.
 """
 
+from typing import Callable, TypeVar
+
 from app.schemas.content import RecommendationReason, ScoreContribution
+from app.schemas.digest import DigestRecommendationReason, DigestScoreBreakdown
 from app.services.recommendation.scoring_engine import PillarScoreResult
 
 # Maximum de raisons affichées dans le breakdown
 MAX_BREAKDOWN_ITEMS = 6
+
+_BreakdownItem = TypeVar("_BreakdownItem", ScoreContribution, DigestScoreBreakdown)
+
+
+def _build_breakdown(
+    result: PillarScoreResult,
+    item_cls: Callable[..., _BreakdownItem],
+) -> list[_BreakdownItem]:
+    """Map pillar contributions to breakdown items, sorted by |points| then capped.
+
+    Shared by the feed (:class:`ScoreContribution`) and digest
+    (:class:`DigestScoreBreakdown`) builders — both schemas carry the same
+    fields (``label`` / ``points`` / ``is_positive`` / ``pillar``), so only the
+    target type differs.
+    """
+    breakdown = [
+        item_cls(
+            label=contrib["label"],
+            points=contrib["points"],
+            is_positive=contrib["is_positive"],
+            pillar=contrib["pillar"],
+        )
+        for contrib in result.contributions
+    ]
+    breakdown.sort(key=lambda x: abs(x.points), reverse=True)
+    return breakdown[:MAX_BREAKDOWN_ITEMS]
 
 
 def build_recommendation_reason(result: PillarScoreResult) -> RecommendationReason:
@@ -20,28 +49,41 @@ def build_recommendation_reason(result: PillarScoreResult) -> RecommendationReas
     Returns:
         RecommendationReason with label, score_total, and breakdown.
     """
-    # Build breakdown list from contributions
-    breakdown: list[ScoreContribution] = []
-    for contrib in result.contributions:
-        breakdown.append(
-            ScoreContribution(
-                label=contrib["label"],
-                points=contrib["points"],
-                is_positive=contrib["is_positive"],
-                pillar=contrib["pillar"],
-            )
-        )
-
-    # Sort by absolute contribution (highest first)
-    breakdown.sort(key=lambda x: abs(x.points), reverse=True)
-
-    # Limit to MAX_BREAKDOWN_ITEMS
-    breakdown = breakdown[:MAX_BREAKDOWN_ITEMS]
+    breakdown = _build_breakdown(result, ScoreContribution)
 
     # Compute top label
     label = _compute_top_label(result, breakdown)
 
     return RecommendationReason(
+        label=label,
+        score_total=result.final_score,
+        breakdown=breakdown,
+    )
+
+
+def build_digest_recommendation_reason(
+    result: PillarScoreResult,
+) -> DigestRecommendationReason:
+    """Build a DigestRecommendationReason from a PillarScoreResult.
+
+    Digest counterpart of :func:`build_recommendation_reason`. The digest
+    schemas (``DigestScoreBreakdown`` / ``DigestRecommendationReason``) carry
+    the exact same fields as the feed ones (``label`` / ``points`` /
+    ``is_positive`` / ``pillar``), so the mapping is identical — only the
+    target type differs. Centralising it here keeps the "Pourquoi cet
+    article ?" labels consistent between Feed and Digest.
+
+    ``score_total`` is the engine's combined ``final_score`` (the breakdown
+    is for transparency only and is not re-summed).
+    """
+    breakdown = _build_breakdown(result, DigestScoreBreakdown)
+
+    # `_compute_top_label` only reads `.pillar` / `.label` on the breakdown
+    # items and `result.pillar_scores`, so it works on DigestScoreBreakdown
+    # as-is.
+    label = _compute_top_label(result, breakdown)
+
+    return DigestRecommendationReason(
         label=label,
         score_total=result.final_score,
         breakdown=breakdown,
