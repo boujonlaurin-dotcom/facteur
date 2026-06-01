@@ -28,6 +28,16 @@ const List<String> _kWeekdaysShort = [
   'Dim',
 ];
 
+const List<String> _kWeekdaysFull = [
+  'Lundi',
+  'Mardi',
+  'Mercredi',
+  'Jeudi',
+  'Vendredi',
+  'Samedi',
+  'Dimanche',
+];
+
 const List<String> _kMonthsShort = [
   'janv.',
   'févr.',
@@ -44,6 +54,65 @@ const List<String> _kMonthsShort = [
 ];
 
 String _weekdayShort(DateTime d) => _kWeekdaysShort[d.weekday - 1];
+String _weekdayFull(DateTime d) => _kWeekdaysFull[d.weekday - 1];
+
+String weatherIntroLine(WeatherForecast forecast) {
+  final min = forecast.minC;
+  final max = forecast.maxC;
+
+  if (max >= 35) {
+    return 'Canicule en vue, mieux vaut garder le rythme léger.';
+  }
+  if (max >= 30) {
+    return 'Très chaud aujourd\'hui, pense à chercher l\'ombre.';
+  }
+  if (max <= 2) {
+    return 'Froid vif au programme, la journée demande une couche de plus.';
+  }
+  if (min <= 0) {
+    return 'Matinée glaciale, même si la journée peut s\'adoucir.';
+  }
+
+  switch (forecast.condition) {
+    case WeatherCondition.sunny:
+      if (max <= 9) {
+        return 'Beau soleil, mais l\'air reste frais.';
+      }
+      if (max >= 26) {
+        return 'Grand soleil, à savourer plutôt côté fraîcheur.';
+      }
+      return 'Grand soleil, la journée s\'annonce lumineuse.';
+    case WeatherCondition.partlyCloudy:
+      if (max >= 22) {
+        return 'Éclaircies et douceur, météo facile à vivre.';
+      }
+      if (max <= 10) {
+        return 'Quelques éclaircies, avec un fond d\'air encore frais.';
+      }
+      return 'Quelques éclaircies devraient rythmer la journée.';
+    case WeatherCondition.cloudy:
+      if (max >= 19) {
+        return 'Ciel couvert mais redoux sensible aujourd\'hui.';
+      }
+      if (max <= 9) {
+        return 'Ciel gris et air frais, ambiance calme aujourd\'hui.';
+      }
+      return 'Ciel couvert, une journée discrète côté météo.';
+    case WeatherCondition.rainy:
+      if (max <= 8) {
+        return 'Pluie froide aujourd\'hui, mieux vaut sortir couvert.';
+      }
+      if (max >= 22) {
+        return 'Averses possibles malgré la douceur, garde un oeil au ciel.';
+      }
+      return 'Journée humide, le parapluie mérite sa place.';
+    case WeatherCondition.snowy:
+      if (max <= 1) {
+        return 'Neige et froid installés, ambiance très hivernale.';
+      }
+      return 'Quelques flocons possibles, avec une météo bien fraîche.';
+  }
+}
 
 class _WeatherDetailSheet extends ConsumerWidget {
   const _WeatherDetailSheet();
@@ -55,7 +124,7 @@ class _WeatherDetailSheet extends ConsumerWidget {
     final weather = ref.watch(weatherProvider);
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.6,
+      initialChildSize: 0.7,
       minChildSize: 0.4,
       maxChildSize: 0.92,
       expand: false,
@@ -172,39 +241,53 @@ class _Content extends ConsumerWidget {
             borderRadius: BorderRadius.circular(FacteurRadius.large),
             border: Border.all(color: colors.border, width: 0.6),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SvgPicture.asset(
-                'assets/images/weather/${forecast.condition.assetName}.svg',
-                width: 72,
-                height: 72,
-              ),
-              const SizedBox(width: FacteurSpacing.space4),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${forecast.currentC}°',
-                      style: GoogleFonts.fraunces(
-                        fontSize: 40,
-                        fontWeight: FontWeight.w700,
-                        height: 1.0,
-                        color: colors.textPrimary,
-                      ),
+              Row(
+                children: [
+                  SvgPicture.asset(
+                    'assets/images/weather/${forecast.condition.assetName}.svg',
+                    width: 72,
+                    height: 72,
+                  ),
+                  const SizedBox(width: FacteurSpacing.space4),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${forecast.currentC}°',
+                          style: GoogleFonts.fraunces(
+                            fontSize: 40,
+                            fontWeight: FontWeight.w700,
+                            height: 1.0,
+                            color: colors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Ressenti ${forecast.feelsLikeC}°',
+                          style:
+                              FacteurTypography.bodySmall(colors.textSecondary),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Ressenti ${forecast.feelsLikeC}°',
-                      style: FacteurTypography.bodySmall(colors.textSecondary),
-                    ),
-                  ],
-                ),
+                  ),
+                  _TempRange(
+                    minC: forecast.minC,
+                    maxC: forecast.maxC,
+                    fontSize: 17,
+                  ),
+                ],
               ),
-              _TempRange(
-                minC: forecast.minC,
-                maxC: forecast.maxC,
-                fontSize: 16,
+              const SizedBox(height: FacteurSpacing.space3),
+              Text(
+                weatherIntroLine(forecast),
+                style: FacteurTypography.bodySmall(colors.textSecondary)
+                    .copyWith(height: 1.3),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -255,9 +338,9 @@ class _DayRow extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 64,
+            width: 96,
             child: Text(
-              isToday ? "Aujourd'hui" : _weekdayShort(day.date),
+              isToday ? "Aujourd'hui" : _weekdayFull(day.date),
               style: FacteurTypography.bodyMedium(colors.textPrimary).copyWith(
                 fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
               ),
@@ -266,11 +349,11 @@ class _DayRow extends StatelessWidget {
           const SizedBox(width: FacteurSpacing.space2),
           SvgPicture.asset(
             'assets/images/weather/${day.condition.assetName}.svg',
-            width: 32,
-            height: 32,
+            width: 40,
+            height: 40,
           ),
           const Spacer(),
-          _TempRange(minC: day.minC, maxC: day.maxC, fontSize: 14),
+          _TempRange(minC: day.minC, maxC: day.maxC, fontSize: 16),
         ],
       ),
     );

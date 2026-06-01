@@ -149,7 +149,8 @@ class _Header extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 'Tes 5 articles du jour, basé sur tes préférences',
-                style: FacteurTypography.bodySmall(colors.textSecondary).copyWith(
+                style:
+                    FacteurTypography.bodySmall(colors.textSecondary).copyWith(
                   height: 1.35,
                 ),
               ),
@@ -245,12 +246,10 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
       );
     }
 
-    // Fixed slot: always 100×120 so the header never reflows when flipping.
-    // Enlarged vs. the MVP (94×108) to give the accentuated weather block more
-    // presence; the date stamp (60×60) stays centered in the same slot.
+    // Fixed slot: the header never reflows when flipping between date/weather.
     return SizedBox(
-      width: 100,
-      height: 120,
+      width: 90,
+      height: 108,
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 320),
         switchInCurve: Curves.easeInOut,
@@ -260,8 +259,8 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
           children: [...previous, if (current != null) current],
         ),
         transitionBuilder: (Widget child, Animation<double> animation) {
-          final rotate = Tween<double>(begin: math.pi, end: 0.0)
-              .animate(animation);
+          final rotate =
+              Tween<double>(begin: math.pi, end: 0.0).animate(animation);
           return AnimatedBuilder(
             animation: rotate,
             builder: (context, c) {
@@ -283,9 +282,8 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
   }
 }
 
-/// Bloc météo accentué du header : température actuelle en gros, icône
-/// condition, min/max, et un indice visuel signalant qu'un tap ouvre la modal
-/// détaillée 5 jours.
+/// Bloc météo compact du header : icône condition, min/max, et un indice
+/// discret signalant qu'un tap ouvre la modal détaillée 5 jours.
 class _WeatherBadge extends StatelessWidget {
   final WeatherForecast forecast;
 
@@ -297,27 +295,17 @@ class _WeatherBadge extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          '${forecast.currentC}°',
-          style: GoogleFonts.fraunces(
-            fontSize: 26,
-            fontWeight: FontWeight.w700,
-            height: 1.0,
-            color: colors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 2),
         SvgPicture.asset(
           'assets/images/weather/${forecast.condition.assetName}.svg',
-          width: 56,
-          height: 56,
+          width: 60,
+          height: 60,
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 3),
         RichText(
           text: TextSpan(
             style: GoogleFonts.courierPrime(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
               height: 1.0,
             ),
             children: [
@@ -336,11 +324,11 @@ class _WeatherBadge extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 1),
         Icon(
           Icons.keyboard_arrow_down_rounded,
-          size: 14,
-          color: colors.textTertiary,
+          size: 12,
+          color: colors.textTertiary.withValues(alpha: 0.7),
           semanticLabel: 'Voir la météo détaillée',
         ),
       ],
@@ -656,8 +644,9 @@ class _SourceRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<FacteurColors>()!;
     final isFollowed = article.isFollowedSource;
-    final avatarBg =
-        isFollowed ? accent.withValues(alpha: 0.18) : colors.backgroundSecondary;
+    final avatarBg = isFollowed
+        ? accent.withValues(alpha: 0.18)
+        : colors.backgroundSecondary;
     final avatarBorder = isFollowed ? accent : colors.border;
     final avatarTextColor = isFollowed ? accent : colors.textSecondary;
     return Row(
@@ -788,4 +777,3 @@ String _sectionLabelFor(EssentielArticle article) {
   if (raw.isNotEmpty) return raw;
   return 'Actus';
 }
-

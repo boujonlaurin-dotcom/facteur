@@ -101,7 +101,8 @@ void main() {
       expect(tapped?.contentId, 'c-1');
     });
 
-    testWidgets('tap on the personalize button fires the callback and not the '
+    testWidgets(
+        'tap on the personalize button fires the callback and not the '
         'lead', (tester) async {
       var personalizeTaps = 0;
       var articleTaps = 0;
@@ -154,7 +155,8 @@ void main() {
       expect(exploreTaps, 1);
     });
 
-    testWidgets('"Tout l\'essentiel" button is omitted when onTapExploreAll is null',
+    testWidgets(
+        '"Tout l\'essentiel" button is omitted when onTapExploreAll is null',
         (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
@@ -252,7 +254,8 @@ void main() {
       expect(find.byType(SvgPicture), findsNothing);
     });
 
-    testWidgets('flips to the weather badge and tapping it opens the detail '
+    testWidgets(
+        'flips to the weather badge and tapping it opens the detail '
         'sheet', (tester) async {
       final forecast = WeatherForecast(
         condition: WeatherCondition.sunny,
@@ -295,12 +298,18 @@ void main() {
       // Before timer fires → date stamp, no weather icon.
       expect(find.byType(SvgPicture), findsNothing);
 
-      // Advance 2 s → badge flips to weather (current temp + icon visible).
+      // Advance 2 s → badge flips to weather (icon + min/max visible).
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
       expect(find.byType(SvgPicture), findsOneWidget);
-      expect(find.text('19°'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is RichText && widget.text.toPlainText() == '12°/21°',
+        ),
+        findsOneWidget,
+      );
 
       // Tap the weather badge → opens the detail sheet (5-day forecast).
       await tester.tap(find.byType(SvgPicture), warnIfMissed: false);
