@@ -578,7 +578,14 @@ _perspectives_refresh_inflight: set[str] = set()
 
 def _empty_timings() -> dict[str, int]:
     return dict.fromkeys(
-        ("cache", "digest_snapshot", "cluster_internal_db", "google_news", "highlights", "total"),
+        (
+            "cache",
+            "digest_snapshot",
+            "cluster_internal_db",
+            "google_news",
+            "highlights",
+            "total",
+        ),
         0,
     )
 
