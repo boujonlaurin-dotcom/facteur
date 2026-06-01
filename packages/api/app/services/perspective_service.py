@@ -1,5 +1,6 @@
 """Perspectives service - hybrid search via DB entities + Google News RSS."""
 
+import asyncio
 import html
 import json
 import os
@@ -851,11 +852,36 @@ class PerspectiveService:
                 seen_domains.add(p.source_domain)
                 merged.append(p)
 
-        # Layer 2: Google News with quoted entities + post-filtre titre Jaccard
+        # Layer 2/3: run Google News entity and fallback queries in parallel.
+        # The endpoint may decide not to wait for Google at all (fast-first),
+        # but when this full path is used, avoid entity→fallback serial latency.
         entity_keywords = self.build_entity_query(content.entities, content.title)
-        google_raw = await self.search_perspectives(
-            entity_keywords, exclude_url, exclude_title, exclude_domain
+        fallback_keywords = self.extract_keywords(content.title)
+        google_tasks = [
+            self.search_perspectives(
+                entity_keywords, exclude_url, exclude_title, exclude_domain
+            )
+        ]
+        include_fallback = entity_keywords != fallback_keywords
+        if include_fallback:
+            google_tasks.append(
+                self.search_perspectives(
+                    fallback_keywords, exclude_url, exclude_title, exclude_domain
+                )
+            )
+
+        google_outputs = await asyncio.gather(*google_tasks, return_exceptions=True)
+        google_raw = (
+            google_outputs[0]
+            if google_outputs and not isinstance(google_outputs[0], Exception)
+            else []
         )
+        if google_outputs and isinstance(google_outputs[0], Exception):
+            logger.warning(
+                "perspectives_entity_google_failed",
+                error=str(google_outputs[0]),
+                error_type=type(google_outputs[0]).__name__,
+            )
         google_results, google_filtered = self._filter_external_perspectives(
             seed_tokens, google_raw
         )
@@ -864,13 +890,20 @@ class PerspectiveService:
                 seen_domains.add(p.source_domain)
                 merged.append(p)
 
-        # Layer 3: Fallback if < 6 results and entity query differs from title keywords
-        fallback_keywords = self.extract_keywords(content.title)
         fallback_filtered = 0
-        if len(merged) < 6 and entity_keywords != fallback_keywords:
-            fallback_raw = await self.search_perspectives(
-                fallback_keywords, exclude_url, exclude_title, exclude_domain
+        if include_fallback and len(merged) < 6:
+            fallback_raw = (
+                google_outputs[1]
+                if len(google_outputs) > 1
+                and not isinstance(google_outputs[1], Exception)
+                else []
             )
+            if len(google_outputs) > 1 and isinstance(google_outputs[1], Exception):
+                logger.warning(
+                    "perspectives_fallback_google_failed",
+                    error=str(google_outputs[1]),
+                    error_type=type(google_outputs[1]).__name__,
+                )
             fallback_results, fallback_filtered = self._filter_external_perspectives(
                 seed_tokens, fallback_raw
             )

@@ -6,17 +6,18 @@ import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/feed/widgets/perspectives_bottom_sheet.dart';
 
 Perspective _p(String name, {String bias = 'center'}) => Perspective(
-      title: 'Titre $name',
-      url: 'https://example.com/$name',
-      sourceName: name,
-      sourceDomain: '',
-      biasStance: bias,
-    );
+  title: 'Titre $name',
+  url: 'https://example.com/$name',
+  sourceName: name,
+  sourceDomain: '',
+  biasStance: bias,
+);
 
 Future<void> _pumpInline(
   WidgetTester tester, {
   required List<Perspective> perspectives,
   bool isExpanded = true,
+  String? divergenceLevel,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -33,6 +34,7 @@ Future<void> _pumpInline(
                 contentId: 'test-content-id',
                 sourceBiasStance: 'center',
                 sourceName: 'Test',
+                divergenceLevel: divergenceLevel,
                 referenceTitle: 'Titre référence',
                 isExpanded: isExpanded,
                 onToggle: () {},
@@ -52,7 +54,13 @@ void main() {
   testWidgets(
     'inline expanded + perspectives non vides → intro rendue en haut du groupe',
     (tester) async {
-      await _pumpInline(tester, perspectives: [_p('A'), _p('B', bias: 'left')]);
+      await _pumpInline(
+        tester,
+        perspectives: [
+          _p('A'),
+          _p('B', bias: 'left'),
+        ],
+      );
 
       expect(find.textContaining(introSnippet), findsOneWidget);
     },
@@ -67,16 +75,29 @@ void main() {
     },
   );
 
-  testWidgets(
-    'inline collapsé → pas d\'intro (body non rendu)',
-    (tester) async {
-      await _pumpInline(
-        tester,
-        perspectives: [_p('A')],
-        isExpanded: false,
-      );
+  testWidgets('inline collapsé → pas d\'intro (body non rendu)', (
+    tester,
+  ) async {
+    await _pumpInline(tester, perspectives: [_p('A')], isExpanded: false);
 
-      expect(find.textContaining(introSnippet), findsNothing);
-    },
-  );
+    expect(find.textContaining(introSnippet), findsNothing);
+  });
+
+  testWidgets('inline high divergence → phrase polarisation rendue', (
+    tester,
+  ) async {
+    await _pumpInline(
+      tester,
+      perspectives: [
+        _p('A'),
+        _p('B', bias: 'right'),
+      ],
+      divergenceLevel: 'high',
+    );
+
+    expect(
+      find.text('Forte polarisation dans le traitement de ce sujet'),
+      findsOneWidget,
+    );
+  });
 }

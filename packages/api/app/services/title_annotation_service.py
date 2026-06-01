@@ -173,6 +173,7 @@ class TitleAnnotationService:
                 "end": t["end"],
                 "text": t["text"],
                 "bias": alt_bias,
+                "weight": 0.5,
             }
             for t in ranked[: self.MAX_HIGHLIGHTED_PER_TITLE]
         ]
