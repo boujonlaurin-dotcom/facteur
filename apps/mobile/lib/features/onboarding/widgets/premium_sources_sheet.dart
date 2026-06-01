@@ -20,7 +20,7 @@ class PremiumSourcesSheet extends ConsumerStatefulWidget {
   const PremiumSourcesSheet({
     super.key,
     required this.allSources,
-    required this.onDone,
+    this.onDone,
   });
 
   @override
