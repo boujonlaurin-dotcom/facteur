@@ -27,14 +27,20 @@ class GrilleResultView extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.facteurColors;
     final solved = today.isSolved;
+    final revealed = today.isRevealed;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        _Cachet(solved: solved),
+        _Cachet(solved: solved, revealed: revealed),
         const SizedBox(height: 16),
         Text(
-          solved ? 'Mot livré.' : 'Mot non distribué.',
+          revealed
+              ? 'Tu as donné ta langue au chat.'
+              : solved
+                  ? 'Mot livré.'
+                  : 'Mot non distribué.',
+          textAlign: TextAlign.center,
           style: GoogleFonts.fraunces(
             fontSize: 24,
             fontWeight: FontWeight.w700,
@@ -43,7 +49,7 @@ class GrilleResultView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 5),
-        _subtitle(context, solved),
+        _subtitle(context, solved, revealed),
         const SizedBox(height: 20),
         MotGrid(
           longueur: today.longueur,
@@ -53,6 +59,7 @@ class GrilleResultView extends StatelessWidget {
           variant: MotGridVariant.resultat,
           revealRow:
               animateReveal && solved ? today.essais.length - 1 : -1,
+          bounceRevealRow: animateReveal && solved,
         ),
         const SizedBox(height: 18),
         if (today.pourquoi != null) _pourquoi(context),
@@ -60,7 +67,7 @@ class GrilleResultView extends StatelessWidget {
     );
   }
 
-  Widget _subtitle(BuildContext context, bool solved) {
+  Widget _subtitle(BuildContext context, bool solved, bool revealed) {
     final c = context.facteurColors;
     final base = FacteurTypography.bodyMedium(c.textSecondary)
         .copyWith(fontSize: 14);
@@ -68,6 +75,19 @@ class GrilleResultView extends StatelessWidget {
       color: c.textPrimary,
       fontWeight: FontWeight.w700,
     );
+    if (revealed) {
+      return Text.rich(
+        TextSpan(
+          style: base,
+          children: [
+            const TextSpan(text: 'Pas de défaite — le mot du jour était '),
+            TextSpan(text: today.mot ?? '', style: bold),
+            const TextSpan(text: '. Cette grille ne compte pas au classement.'),
+          ],
+        ),
+        textAlign: TextAlign.center,
+      );
+    }
     if (solved) {
       final n = today.nbEssais;
       return Text.rich(
@@ -154,15 +174,31 @@ class GrilleResultView extends StatelessWidget {
   }
 }
 
-/// Cachet circulaire de verdict (`.mv-cachet`) — ✓ Livré / ✕ Manqué.
+/// Cachet circulaire de verdict (`.mv-cachet`) — ✓ Livré / ✕ Manqué /
+/// « ? » Révélé (langue au chat, ni gagné ni perdu).
 class _Cachet extends StatelessWidget {
-  const _Cachet({required this.solved});
+  const _Cachet({required this.solved, this.revealed = false});
   final bool solved;
+  final bool revealed;
 
   @override
   Widget build(BuildContext context) {
     final c = context.facteurColors;
-    final color = solved ? c.success : c.error;
+    final color = revealed
+        ? c.textStamp
+        : solved
+            ? c.success
+            : c.error;
+    final glyph = revealed
+        ? '?'
+        : solved
+            ? '✓'
+            : '✕';
+    final label = revealed
+        ? 'RÉVÉLÉ'
+        : solved
+            ? 'LIVRÉ'
+            : 'MANQUÉ';
     return Transform.rotate(
       angle: -9 * math.pi / 180,
       child: Container(
@@ -191,7 +227,7 @@ class _Cachet extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  solved ? '✓' : '✕',
+                  glyph,
                   style: TextStyle(
                     fontSize: 26,
                     height: 1,
@@ -201,7 +237,7 @@ class _Cachet extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  solved ? 'LIVRÉ' : 'MANQUÉ',
+                  label,
                   style: GoogleFonts.courierPrime(
                     fontSize: 9,
                     fontWeight: FontWeight.w700,

@@ -180,6 +180,7 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
                   'Tous les articles de tes sources triés par récence, à consulter à ton rythme',
               accent: Color(0xFF5D4037),
               illustrationAsset: 'assets/notifications/facteur_bike.png',
+              large: true,
             ),
           ),
           const SliverPersistentHeader(

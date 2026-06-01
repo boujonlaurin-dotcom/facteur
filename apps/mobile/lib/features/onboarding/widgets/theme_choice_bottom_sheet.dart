@@ -6,28 +6,45 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../config/theme.dart';
 import '../../settings/providers/theme_provider.dart';
 
-/// Shows a bottom sheet to let the user choose between light and dark mode
-/// after onboarding completion.
-Future<void> showThemeChoiceBottomSheet(BuildContext context, WidgetRef ref) {
-  return showModalBottomSheet<void>(
+/// Bottom sheet de choix de thème (3 options : Clair / Sombre / Encre Pure).
+///
+/// Comportement : prévisualisation live sur tap d'une option (le thème
+/// s'applique à toute l'app), choix entériné par le bouton « Confirmer ».
+/// Si l'utilisateur ferme la sheet sans confirmer (swipe down / tap barrière),
+/// le thème initial est restauré.
+Future<void> showThemeChoiceBottomSheet(
+    BuildContext context, WidgetRef ref) async {
+  final notifier = ref.read(themeNotifierProvider.notifier);
+  final initialTheme = ref.read(themeNotifierProvider);
+
+  final confirmed = await showModalBottomSheet<bool>(
     context: context,
     backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withOpacity(0.6),
     builder: (ctx) => ClipRect(
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: const _ThemeChoiceContent(),
+        child: _ThemeChoiceContent(initialTheme: initialTheme),
       ),
     ),
   );
+
+  // Dismiss sans confirmation : on restaure visuellement le thème d'avant,
+  // sans toucher à la persistance (qui n'a jamais bougé pendant la preview).
+  if (confirmed != true) {
+    notifier.previewThemeMode(initialTheme);
+  }
 }
 
 class _ThemeChoiceContent extends ConsumerWidget {
-  const _ThemeChoiceContent();
+  final AppThemeMode initialTheme;
+
+  const _ThemeChoiceContent({required this.initialTheme});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
+    final current = ref.watch(themeNotifierProvider);
 
     return Container(
       padding: const EdgeInsets.all(FacteurSpacing.space6),
@@ -40,7 +57,6 @@ class _ThemeChoiceContent extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Handle
           Container(
             width: 40,
             height: 4,
@@ -62,43 +78,58 @@ class _ThemeChoiceContent extends ConsumerWidget {
 
           Row(
             children: [
-              // Light mode
               Expanded(
                 child: _ThemeOption(
                   icon: Icons.wb_sunny_outlined,
                   label: 'Clair',
-                  isSelected:
-                      Theme.of(context).brightness == Brightness.light,
-                  onTap: () {
-                    ref
-                        .read(themeNotifierProvider.notifier)
-                        .setThemeMode(ThemeMode.light);
-                    Navigator.of(context).pop();
-                  },
+                  isSelected: current == AppThemeMode.light,
+                  onTap: () => ref
+                      .read(themeNotifierProvider.notifier)
+                      .previewThemeMode(AppThemeMode.light),
                 ),
               ),
-
-              const SizedBox(width: FacteurSpacing.space4),
-
-              // Dark mode
+              const SizedBox(width: FacteurSpacing.space2),
               Expanded(
                 child: _ThemeOption(
                   icon: Icons.dark_mode_outlined,
                   label: 'Sombre',
-                  isSelected:
-                      Theme.of(context).brightness == Brightness.dark,
-                  onTap: () {
-                    ref
-                        .read(themeNotifierProvider.notifier)
-                        .setThemeMode(ThemeMode.dark);
-                    Navigator.of(context).pop();
-                  },
+                  isSelected: current == AppThemeMode.dark,
+                  onTap: () => ref
+                      .read(themeNotifierProvider.notifier)
+                      .previewThemeMode(AppThemeMode.dark),
+                ),
+              ),
+              const SizedBox(width: FacteurSpacing.space2),
+              Expanded(
+                child: _ThemeOption(
+                  icon: Icons.contrast,
+                  label: 'Encre Pure',
+                  isSelected: current == AppThemeMode.oled,
+                  onTap: () => ref
+                      .read(themeNotifierProvider.notifier)
+                      .previewThemeMode(AppThemeMode.oled),
                 ),
               ),
             ],
           ),
 
           const SizedBox(height: FacteurSpacing.space6),
+
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                ref.read(themeNotifierProvider.notifier).commitThemeMode(
+                      initial: initialTheme,
+                      chosen: current,
+                    );
+                Navigator.of(context).pop(true);
+              },
+              child: const Text('Confirmer'),
+            ),
+          ),
+
+          const SizedBox(height: FacteurSpacing.space2),
         ],
       ),
     );
@@ -128,8 +159,8 @@ class _ThemeOption extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(
-          vertical: FacteurSpacing.space6,
-          horizontal: FacteurSpacing.space4,
+          vertical: FacteurSpacing.space4,
+          horizontal: FacteurSpacing.space2,
         ),
         decoration: BoxDecoration(
           color: isSelected
@@ -153,8 +184,9 @@ class _ThemeOption extends StatelessWidget {
             const SizedBox(height: FacteurSpacing.space2),
             Text(
               label,
+              textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: isSelected ? colors.primary : colors.textPrimary,
               ),

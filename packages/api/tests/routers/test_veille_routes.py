@@ -7,7 +7,7 @@ Couvre les endpoints refondus en filtre temps-réel :
 """
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -160,6 +160,52 @@ class TestConfigCRUD:
         assert len(data["sources"]) == 1
         assert len(data["keywords"]) == 2
         assert data["keywords"][0]["keyword"] == "intelligence artificielle"
+
+    async def test_post_config_persists_angle_keyword_clusters(
+        self, auth_user, curated_tech_source, db_session
+    ):
+        """Story curation : un angle `suggested` + sa grappe → VeilleKeyword liés."""
+        from app.models.veille import VeilleKeyword
+
+        payload = {
+            "theme_id": "tech",
+            "theme_label": "Tech",
+            "topics": [
+                {
+                    "topic_id": "ia-generative",
+                    "label": "IA générative",
+                    "kind": "suggested",
+                    "keywords": ["GPT-5", "Mistral", "gpt-5"],  # dédup attendu
+                }
+            ],
+            "keywords": [{"keyword": "souveraineté", "position": 0}],
+        }
+        async with _client() as c:
+            r = await c.post("/api/veille/config", json=payload)
+        assert r.status_code == 200, r.text
+        data = r.json()
+        # Round-trip : la grappe niche sous l'angle, le mot-clé global reste à plat.
+        assert len(data["topics"]) == 1
+        assert data["topics"][0]["keywords"] == ["gpt-5", "mistral"]
+        assert [k["keyword"] for k in data["keywords"]] == ["souveraineté"]
+
+        # En base : 2 keywords liés à l'angle + 1 global (veille_topic_id NULL).
+        rows = (
+            (
+                await db_session.execute(
+                    select(VeilleKeyword).where(
+                        VeilleKeyword.veille_config_id == UUID(data["id"])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        linked = [r for r in rows if r.veille_topic_id is not None]
+        globals_ = [r for r in rows if r.veille_topic_id is None]
+        assert len(linked) == 2
+        assert len(globals_) == 1
+        assert globals_[0].keyword == "souveraineté"
 
     async def test_post_config_requires_at_least_one_axis(self, auth_user):
         payload = {
@@ -333,9 +379,14 @@ class TestFeed:
         assert r.status_code == 200
         assert r.json()["items"] == []
 
-    async def test_feed_matches_theme(
+    async def test_feed_source_axis_returns_all_but_theme_not_qualifying(
         self, auth_user, curated_tech_source, tech_content
     ):
+        """La source est un axe fort → ses 3 articles entrent dans le pool.
+
+        Contrat inversé : le thème n'est plus un axe **qualifiant** —
+        `matched_on` n'expose plus "theme" même quand content.theme == config.theme.
+        """
         payload = {
             "theme_id": "tech",
             "theme_label": "Tech",
@@ -348,12 +399,33 @@ class TestFeed:
             r = await c.get("/api/veille/feed?limit=20")
         assert r.status_code == 200
         data = r.json()
-        # 3 articles, mais la source matche pour les 3 → tous reviennent (source axe)
         assert len(data["items"]) == 3
-        # GPT-5 matche aussi theme=tech
         gpt = next(it for it in data["items"] if "GPT-5" in it["title"])
-        assert "theme" in gpt["matched_on"]
         assert "source" in gpt["matched_on"]
+        assert "theme" not in gpt["matched_on"]
+
+    async def test_feed_theme_only_article_excluded(
+        self, auth_user, curated_tech_source, tech_content
+    ):
+        """Config sur un topic précis → un article « thème macro seul » est exclu.
+
+        Le thème étant retiré du prédicat, GPT-5 (topics=["ai","openai"]) entre
+        via le topic "ai" mais l'article Bourse (theme=economy, hors topic, hors
+        source suivie, hors keyword) n'entre jamais dans le pool.
+        """
+        payload = {
+            "theme_id": "tech",
+            "theme_label": "Tech",
+            "topics": [{"topic_id": "ai", "label": "IA", "kind": "preset"}],
+        }
+        async with _client() as c:
+            await c.post("/api/veille/config", json=payload)
+            r = await c.get("/api/veille/feed?limit=20")
+        items = r.json()["items"]
+        titles = [it["title"] for it in items]
+        assert any("GPT-5" in t for t in titles)
+        assert not any("Bourse" in t for t in titles)
+        assert not any("Vélo" in t for t in titles)
 
     async def test_feed_matches_keyword(
         self, auth_user, curated_tech_source, tech_content
@@ -367,10 +439,11 @@ class TestFeed:
             await c.post("/api/veille/config", json=payload)
             r = await c.get("/api/veille/feed")
         items = r.json()["items"]
-        # Le keyword "vélo" matche l'article Vélo électrique, mais l'axe theme
-        # matche aussi GPT-5 (theme=tech). Donc 2 résultats.
-        assert len(items) == 2
-        velo = next(it for it in items if "Vélo" in it["title"])
+        # Seul l'article "Vélo électrique" matche le keyword. GPT-5 n'entre plus
+        # via le thème (retiré du prédicat) → 1 seul résultat (contrat inversé).
+        assert len(items) == 1
+        velo = items[0]
+        assert "Vélo" in velo["title"]
         assert "keyword" in velo["matched_on"]
 
 

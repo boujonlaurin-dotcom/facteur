@@ -59,7 +59,7 @@ void main() {
 
     test('texte de partage : en-tête + score N/6 + lien, sans le mot', () {
       final text = buildGrilleShareText(today);
-      expect(text, contains('La Grille du jour N°143 · Ven. 30 mai · 2/6'));
+      expect(text, contains('Le mot du jour N°143 · Ven. 30 mai · 2/6'));
       expect(text, contains('🟩🟩🟩🟩🟩🟩'));
       expect(text, contains(buildGrilleShareLink(today)));
       expect(text.contains('CLIMAT'), isFalse, reason: 'le mot ne doit pas fuiter');

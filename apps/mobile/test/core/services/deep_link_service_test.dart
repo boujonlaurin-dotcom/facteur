@@ -90,6 +90,22 @@ void main() {
       expect(action.route, '/flaner');
     });
 
+    test('grille host → /grille (mot du jour partagé entre amis)', () {
+      final action = DeepLinkService.parse(
+        Uri.parse('io.supabase.facteur://grille'),
+      );
+      expect(action.target, WidgetDeepLinkTarget.grille);
+      expect(action.route, '/grille');
+    });
+
+    test('grille bare path (host vide) → /grille', () {
+      final action = DeepLinkService.parse(
+        Uri.parse('io.supabase.facteur:///grille'),
+      );
+      expect(action.target, WidgetDeepLinkTarget.grille);
+      expect(action.route, '/grille');
+    });
+
     test('login-callback URI is ignored (handled by Supabase SDK)', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://login-callback#access_token=xyz'),

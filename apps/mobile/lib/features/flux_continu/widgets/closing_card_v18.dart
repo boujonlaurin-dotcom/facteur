@@ -21,11 +21,17 @@ class ClosingCardV18 extends StatelessWidget {
   final VoidCallback? onContinue;
   final VoidCallback? onClose;
 
+  /// Phrase de fermeture affichée à la place du bouton « Refermer » quand
+  /// [onClose] est null (cas iOS : la fermeture programmatique est interdite
+  /// par l'App Store). Ignorée si [onClose] est fourni (cas Android).
+  final String? closeHint;
+
   const ClosingCardV18({
     super.key,
     required this.articleCount,
     this.onContinue,
     this.onClose,
+    this.closeHint,
   });
 
   @override
@@ -119,6 +125,17 @@ class ClosingCardV18 extends StatelessWidget {
                 child: TourneeGhostButton(
                   label: "Refermer pour aujourd'hui",
                   onTap: onClose,
+                ),
+              ),
+            ] else if (closeHint != null) ...[
+              const SizedBox(height: 14),
+              Text(
+                closeHint!,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.dmSans(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: colors.textTertiary,
                 ),
               ),
             ],

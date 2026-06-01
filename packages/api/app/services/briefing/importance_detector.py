@@ -14,6 +14,7 @@ bruts et produit des clusters/flags d'importance utilisés par TopicSelector et 
 
 from collections import Counter
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import structlog
@@ -35,6 +36,20 @@ from app.services.text_similarity import (
 # primaire ET un share Reddit du même sujet, on ne compte pas Reddit comme
 # une "couverture média" distincte. Cf. bug-digest-pipeline-fallbacks.md C4.
 _AGGREGATOR_SOURCE_TYPES: frozenset[SourceType] = frozenset({SourceType.REDDIT})
+
+
+def _extract_domain(url: str) -> str:
+    """Extrait le domaine canonique depuis une URL d'article.
+
+    Deux feeds du même site (ex: francetvinfo.fr/titres.rss et
+    francetvinfo.fr/vrai-ou-fake.rss) retournent le même domaine, évitant
+    qu'ils soient comptés comme deux sources distinctes dans le clustering.
+    """
+    try:
+        host = urlparse(str(url)).netloc
+        return (host or str(url)).removeprefix("www.")
+    except Exception:
+        return str(url)
 
 
 def _is_aggregator(content: Content) -> bool:
@@ -69,17 +84,18 @@ class TopicCluster:
     tokens: set[str]
     contents: list[Content] = field(default_factory=list)
     source_ids: set[UUID] = field(default_factory=set)
+    source_domains: set[str] = field(default_factory=set)
     theme: str | None = None  # Thème dominant du cluster
 
     @property
     def is_trending(self) -> bool:
-        """Cluster couvert par ≥3 sources distinctes."""
-        return len(self.source_ids) >= 3
+        """Cluster couvert par ≥3 domaines distincts."""
+        return len(self.source_domains) >= 3
 
     @property
     def is_multi_source(self) -> bool:
-        """Cluster couvert par ≥2 sources distinctes."""
-        return len(self.source_ids) >= 2
+        """Cluster couvert par ≥2 domaines distincts."""
+        return len(self.source_domains) >= 2
 
 
 class ImportanceDetector:
@@ -204,12 +220,18 @@ class ImportanceDetector:
             # repris uniquement par r/france mérite encore d'exister.
             primary_source_ids: set[UUID] = set()
             aggregator_source_ids: set[UUID] = set()
+            primary_source_domains: set[str] = set()
+            aggregator_source_domains: set[str] = set()
             for c in cluster_contents:
+                domain = _extract_domain(c.url)
                 if _is_aggregator(c):
                     aggregator_source_ids.add(c.source_id)
+                    aggregator_source_domains.add(domain)
                 else:
                     primary_source_ids.add(c.source_id)
+                    primary_source_domains.add(domain)
             source_ids = primary_source_ids or aggregator_source_ids
+            source_domains = primary_source_domains or aggregator_source_domains
 
             # Thème dominant : mode de content.theme, fallback source.theme
             themes: list[str] = []
@@ -228,6 +250,7 @@ class ImportanceDetector:
                     tokens=raw["tokens"],
                     contents=cluster_contents,
                     source_ids=source_ids,
+                    source_domains=source_domains,
                     theme=theme,
                 )
             )
@@ -270,7 +293,7 @@ class ImportanceDetector:
         trending_count = 0
 
         for cluster in clusters:
-            if len(cluster.source_ids) >= self.min_sources_for_trending:
+            if len(cluster.source_domains) >= self.min_sources_for_trending:
                 trending_count += 1
                 for content in cluster.contents:
                     trending_content_ids.add(content.id)

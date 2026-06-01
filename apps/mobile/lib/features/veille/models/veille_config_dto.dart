@@ -6,9 +6,12 @@ import 'package:flutter/foundation.dart';
 /// `last_delivered_at`/`next_scheduled_at` (scheduler async drop) et ajouté
 /// `keywords[]` (angles libres saisis par l'utilisateur).
 ///
-/// PR-4 (Story 23.3) : suggesters LLM (`VeilleSuggestAngles*`,
-/// `VeilleSuggestSources*`, `VeilleAngleSuggestionDto`,
-/// `VeilleSourceSuggestionDto`) retirés — backend `/suggest/*` répond 410 Gone.
+/// PR-4 (Story 23.3) : suggesters LLM (`VeilleSuggestSources*`,
+/// `VeilleSourceSuggestionDto`) retirés — `/suggest/sources` répond 410 Gone.
+///
+/// Veille C3 (PR-3) : `VeilleAngleSuggestionDto` / `VeilleSuggestAnglesResponse`
+/// ré-introduits — `POST /veille/suggest/angles` est actif (suggestion d'angles
+/// LLM = titre + grappe de mots-clés éditable au Step 2).
 
 @immutable
 class VeilleTopicDto {
@@ -19,6 +22,9 @@ class VeilleTopicDto {
   final String? reason;
   final int position;
 
+  /// Grappe de mots-clés de l'angle (round-trip avec le backend).
+  final List<String> keywords;
+
   const VeilleTopicDto({
     required this.id,
     required this.topicId,
@@ -26,6 +32,7 @@ class VeilleTopicDto {
     required this.kind,
     required this.reason,
     required this.position,
+    this.keywords = const [],
   });
 
   factory VeilleTopicDto.fromJson(Map<String, dynamic> json) {
@@ -36,6 +43,9 @@ class VeilleTopicDto {
       kind: json['kind'] as String,
       reason: json['reason'] as String?,
       position: (json['position'] as num?)?.toInt() ?? 0,
+      keywords: ((json['keywords'] as List?) ?? const [])
+          .map((e) => e as String)
+          .toList(),
     );
   }
 }
@@ -195,12 +205,16 @@ class VeilleTopicSelectionRequest {
   final String? reason;
   final int position;
 
+  /// Grappe de mots-clés de l'angle — pilote le scoring côté backend.
+  final List<String> keywords;
+
   const VeilleTopicSelectionRequest({
     required this.topicId,
     required this.label,
     required this.kind,
     this.reason,
     this.position = 0,
+    this.keywords = const [],
   });
 
   Map<String, dynamic> toJson() => {
@@ -209,6 +223,7 @@ class VeilleTopicSelectionRequest {
         'kind': kind,
         if (reason != null) 'reason': reason,
         'position': position,
+        'keywords': keywords,
       };
 }
 
@@ -304,4 +319,50 @@ class VeilleConfigUpsertRequest {
         'editorial_brief': editorialBrief,
         'preset_id': presetId,
       };
+}
+
+// ─── Suggestion d'angles LLM (POST /veille/suggest/angles) ──────────────────
+
+/// Un angle suggéré par le LLM : un titre éditorial + sa grappe de mots-clés
+/// (pilote le scoring) + une raison courte. Miroir de `VeilleAngleSuggestion`
+/// (`packages/api/app/schemas/veille.py`).
+@immutable
+class VeilleAngleSuggestionDto {
+  final String title;
+  final List<String> keywords;
+  final String? reason;
+
+  const VeilleAngleSuggestionDto({
+    required this.title,
+    this.keywords = const [],
+    this.reason,
+  });
+
+  factory VeilleAngleSuggestionDto.fromJson(Map<String, dynamic> json) {
+    return VeilleAngleSuggestionDto(
+      title: json['title'] as String,
+      keywords: ((json['keywords'] as List?) ?? const [])
+          .map((e) => e as String)
+          .toList(),
+      reason: json['reason'] as String?,
+    );
+  }
+}
+
+/// Réponse de `POST /veille/suggest/angles`. Miroir de
+/// `VeilleSuggestAnglesResponse` côté backend.
+@immutable
+class VeilleSuggestAnglesResponse {
+  final List<VeilleAngleSuggestionDto> angles;
+
+  const VeilleSuggestAnglesResponse({this.angles = const []});
+
+  factory VeilleSuggestAnglesResponse.fromJson(Map<String, dynamic> json) {
+    return VeilleSuggestAnglesResponse(
+      angles: ((json['angles'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(VeilleAngleSuggestionDto.fromJson)
+          .toList(),
+    );
+  }
 }

@@ -68,7 +68,7 @@ class MiniMotGrid extends StatelessWidget {
         case TileState.place:
           color = c.success;
         case TileState.present:
-          color = c.primary;
+          color = GrilleConstants.presentTile;
         default:
           color = GrilleConstants.absentGrille;
       }
@@ -156,7 +156,8 @@ class CarteCta extends StatelessWidget {
           if (!_deja) ...[
             const SizedBox(height: 14),
             Text(
-              'La Grille du jour',
+              'Trouve le mot du jour',
+              textAlign: TextAlign.center,
               style: GoogleFonts.fraunces(
                 fontSize: 23,
                 fontWeight: FontWeight.w700,
@@ -196,8 +197,8 @@ class CarteCta extends StatelessWidget {
       return '« Trouvé en $n essai${n > 1 ? 's' : ''} aujourd’hui — joli flair. '
           'Je te poste un mot tout neuf demain matin. »';
     }
-    return '« Ta tournée est faite. J’ai caché un mot dans l’actu d’aujourd’hui '
-        '— six lettres, six essais. »';
+    return '« Le mot du jour se cache dans tes actus d’aujourd’hui — '
+        'six lettres, six essais pour le débusquer. »';
   }
 
   Widget _stamp(BuildContext context) {

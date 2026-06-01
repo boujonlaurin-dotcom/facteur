@@ -55,12 +55,14 @@ def make_content(source=None, title=None, published_at=None, theme=None):
 def make_cluster(contents, theme=None, cluster_id=None):
     """Create a TopicCluster from a list of mock contents."""
     source_ids = set(c.source_id for c in contents)
+    source_domains = {f"source-{sid}.example.com" for sid in source_ids}
     return TopicCluster(
         cluster_id=cluster_id or str(uuid.uuid4()),
         label="",
         tokens={"test", "tokens"},
         contents=contents,
         source_ids=source_ids,
+        source_domains=source_domains,
         theme=theme,
     )
 

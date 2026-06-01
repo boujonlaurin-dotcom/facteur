@@ -24,6 +24,7 @@ class MotGrid extends StatelessWidget {
     this.draft = '',
     this.variant = MotGridVariant.jeu,
     this.revealRow = -1,
+    this.bounceRevealRow = false,
     this.shakeNonce = 0,
   });
 
@@ -38,6 +39,9 @@ class MotGrid extends StatelessWidget {
 
   /// Index de la ligne à révéler par flip (`-1` = aucune).
   final int revealRow;
+
+  /// Rebond de victoire sur la ligne révélée (mot trouvé).
+  final bool bounceRevealRow;
 
   /// Incrément de shake pour la ligne courante (essai refusé).
   final int shakeNonce;
@@ -84,11 +88,13 @@ class MotGrid extends StatelessWidget {
     for (var r = 0; r < _totalRows; r++) {
       List<MotCell> cells;
       var reveal = false;
+      var bounce = false;
       var shake = 0;
 
       if (r < essais.length) {
         cells = _revealedCells(essais[r]);
         reveal = r == revealRow;
+        bounce = reveal && bounceRevealRow;
       } else if (_isJeu && r == currentRowIndex) {
         cells = _currentCells();
         shake = shakeNonce;
@@ -103,6 +109,7 @@ class MotGrid extends StatelessWidget {
           size: _tileSize,
           gap: _gap,
           reveal: reveal,
+          bounce: bounce,
           shakeNonce: shake,
         ),
       );

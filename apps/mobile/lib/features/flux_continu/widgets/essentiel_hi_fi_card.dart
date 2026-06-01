@@ -244,10 +244,10 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
       );
     }
 
-    // Fixed slot: always 84×98 so the header never reflows when flipping.
+    // Fixed slot: always 94×108 so the header never reflows when flipping.
     return SizedBox(
-      width: 84,
-      height: 98,
+      width: 94,
+      height: 108,
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 320),
         switchInCurve: Curves.easeInOut,
@@ -293,13 +293,13 @@ class _WeatherBadge extends StatelessWidget {
       children: [
         SvgPicture.asset(
           'assets/images/weather/${snapshot.condition.assetName}.svg',
-          width: 84,
-          height: 84,
+          width: 94,
+          height: 94,
         ),
         RichText(
           text: TextSpan(
             style: GoogleFonts.courierPrime(
-              fontSize: 11,
+              fontSize: 13,
               fontWeight: FontWeight.w600,
               height: 1.0,
             ),
@@ -462,7 +462,7 @@ class _LeadTile extends StatelessWidget {
               const SizedBox(height: FacteurSpacing.space2),
               Text(
                 article.title,
-                maxLines: 4,
+                maxLines: 5,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.fraunces(
                   fontSize: 19,
@@ -522,7 +522,7 @@ class _MediumTile extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 article.title,
-                maxLines: 3,
+                maxLines: 4,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.fraunces(
                   fontSize: 16,
@@ -705,7 +705,7 @@ class _Footer extends StatelessWidget {
               foregroundColor: colors.textTertiary,
             ),
             child: Text(
-              'Tous mes articles ↓',
+              'Flâner →',
               style: FacteurTypography.labelLarge(colors.textTertiary),
             ),
           ),

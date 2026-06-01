@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.grille_game_state import (
     STATUS_FAILED,
     STATUS_IN_PROGRESS,
+    STATUS_REVEALED,
     STATUS_SOLVED,
     GrilleGameState,
 )
@@ -25,6 +26,7 @@ from app.schemas.grille import (
     GrilleGuessResponse,
     GrilleLeaderboardResponse,
     GrilleQuartierItem,
+    GrilleRevealResponse,
     GrilleTodayResponse,
 )
 from app.services.grille_dictionary import is_valid_word
@@ -190,6 +192,34 @@ class GrilleService:
             pourquoi=puzzle.pourquoi if finished else None,
         )
 
+    # ----- POST /today/reveal ----------------------------------------------
+
+    async def reveal_word(self, user_id: str) -> GrilleRevealResponse:
+        """« Donner sa langue au chat » : révèle le mot sans défaite.
+
+        La partie passe en `revealed` (≠ `failed`) : le streak est préservé
+        (toujours un jour joué) mais la partie est exclue du classement. Rejouer
+        ou re-révéler est interdit (`GameAlreadyFinished`).
+        """
+        puzzle_date = today_paris()
+        puzzle = await self._get_puzzle(puzzle_date)
+        if puzzle is None:
+            raise PuzzleNotFound(puzzle_date.isoformat())
+
+        game = await self._get_or_create_game(user_id, puzzle_date)
+        if game.status != STATUS_IN_PROGRESS:
+            raise GameAlreadyFinished()
+
+        game.status = STATUS_REVEALED
+        game.finished_at = datetime.utcnow()
+        await self.db.flush()
+
+        return GrilleRevealResponse(
+            statut=STATUS_REVEALED,
+            mot=puzzle.word,
+            pourquoi=puzzle.pourquoi,
+        )
+
     # ----- GET /today/leaderboard ------------------------------------------
 
     async def get_leaderboard(self, user_id: str) -> GrilleLeaderboardResponse:
@@ -199,14 +229,17 @@ class GrilleService:
             raise PuzzleNotFound(puzzle_date.isoformat())
 
         my_game = await self._get_game(user_id, puzzle_date)
-        if my_game is None or my_game.status == STATUS_IN_PROGRESS:
+        # Un joueur en cours OU ayant abandonné (`revealed`) n'est pas classé.
+        if my_game is None or my_game.status not in (STATUS_SOLVED, STATUS_FAILED):
             raise GameNotFinished()
 
+        # Champ de classement : uniquement les parties vraiment terminées
+        # (`solved`/`failed`) — les `revealed` (langue au chat) sont exclues.
         finished = (
             await self.db.scalars(
                 select(GrilleGameState).where(
                     GrilleGameState.puzzle_date == puzzle_date,
-                    GrilleGameState.status != STATUS_IN_PROGRESS,
+                    GrilleGameState.status.in_((STATUS_SOLVED, STATUS_FAILED)),
                 )
             )
         ).all()

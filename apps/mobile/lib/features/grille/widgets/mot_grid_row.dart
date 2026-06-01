@@ -30,6 +30,7 @@ class MotGridRow extends StatefulWidget {
     this.size = GrilleConstants.tileSize,
     this.gap = GrilleConstants.tileGap,
     this.reveal = false,
+    this.bounce = false,
     this.shakeNonce = 0,
   });
 
@@ -39,6 +40,9 @@ class MotGridRow extends StatefulWidget {
 
   /// Joue le flip de révélation une fois (ligne fraîchement validée).
   final bool reveal;
+
+  /// Joue un léger rebond de victoire en fin de flip (ligne gagnante).
+  final bool bounce;
 
   /// Incrémenté pour déclencher un shake (essai refusé).
   final int shakeNonce;
@@ -51,6 +55,7 @@ class _MotGridRowState extends State<MotGridRow>
     with TickerProviderStateMixin {
   late final AnimationController _flip;
   late final AnimationController _shake;
+  late final AnimationController _bounce;
 
   static const double _maxTiltDeg = 88;
   static const double _peakAt = 0.45; // 45 % de la durée
@@ -67,6 +72,10 @@ class _MotGridRowState extends State<MotGridRow>
     _shake = AnimationController(
       vsync: this,
       duration: GrilleConstants.shakeDuration,
+    );
+    _bounce = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 360),
     );
     if (widget.reveal) {
       // Joué après le 1er frame pour respecter disableAnimations du contexte.
@@ -94,9 +103,22 @@ class _MotGridRowState extends State<MotGridRow>
     if (!mounted) return;
     if (_reducedMotion) {
       _flip.value = 1; // révélation directe
+      if (widget.bounce) _bounce.value = 0; // pas de rebond en reduce-motion
       return;
     }
-    _flip.forward(from: 0);
+    _flip.forward(from: 0).then((_) {
+      // Rebond de victoire enchaîné en fin de flip.
+      if (mounted && widget.bounce && !_reducedMotion) {
+        _bounce.forward(from: 0);
+      }
+    });
+  }
+
+  /// Facteur d'échelle du rebond : 1 → ~1.10 → 1 (sinus amorti, une passe).
+  double get _bounceScale {
+    final t = _bounce.value;
+    if (t == 0) return 1.0;
+    return 1.0 + math.sin(t * math.pi) * 0.10;
   }
 
   void _maybeShake() {
@@ -108,6 +130,7 @@ class _MotGridRowState extends State<MotGridRow>
   void dispose() {
     _flip.dispose();
     _shake.dispose();
+    _bounce.dispose();
     super.dispose();
   }
 
@@ -155,7 +178,16 @@ class _MotGridRowState extends State<MotGridRow>
       }
     }
 
-    final row = Row(mainAxisSize: MainAxisSize.min, children: tiles);
+    Widget row = Row(mainAxisSize: MainAxisSize.min, children: tiles);
+
+    if (widget.bounce) {
+      row = AnimatedBuilder(
+        animation: _bounce,
+        builder: (context, child) =>
+            Transform.scale(scale: _bounceScale, child: child),
+        child: row,
+      );
+    }
 
     return AnimatedBuilder(
       animation: _shake,

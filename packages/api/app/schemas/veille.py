@@ -36,6 +36,8 @@ class VeilleTopicResponse(BaseModel):
     kind: Literal["preset", "suggested", "custom"]
     reason: str | None = None
     position: int = 0
+    # Grappe de mots-clés de l'angle (round-trip avec VeilleTopicSelection).
+    keywords: list[str] = Field(default_factory=list)
 
 
 class VeilleSourceLite(BaseModel):
@@ -95,6 +97,21 @@ class VeilleTopicSelection(BaseModel):
     kind: Literal["preset", "suggested", "custom"]
     reason: str | None = Field(default=None, max_length=500)
     position: int = Field(default=0, ge=0)
+    # Grappe de mots-clés de l'angle — normalisés lowercase, dédupliqués.
+    # Ces mots-clés pilotent le scoring (custom-topic) en plus du slug.
+    keywords: list[str] = Field(default_factory=list, max_length=10)
+
+    @field_validator("keywords")
+    @classmethod
+    def _normalize_cluster(cls, v: list[str]) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for raw in v:
+            kw = _normalize_keyword(raw)
+            if kw and 1 <= len(kw) <= 80 and kw not in seen:
+                seen.add(kw)
+                out.append(kw)
+        return out
 
 
 class VeilleNicheCandidate(BaseModel):

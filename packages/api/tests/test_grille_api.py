@@ -12,6 +12,7 @@ from app.main import app
 from app.models.grille_game_state import (
     STATUS_FAILED,
     STATUS_IN_PROGRESS,
+    STATUS_REVEALED,
     STATUS_SOLVED,
     GrilleGameState,
 )
@@ -215,6 +216,109 @@ async def test_exhaust_attempts_marks_failed(db_session):
     today = await service.get_today(user_id)
     assert today.statut == STATUS_FAILED
     assert today.nbEssais == 2
+
+
+# ----- reveal (« donner sa langue au chat ») --------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reveal_exposes_word_without_defeat(db_session):
+    await _make_puzzle(db_session)
+    service = GrilleService(db_session)
+    user_id = str(uuid4())
+
+    res = await service.reveal_word(user_id)
+    assert res.statut == STATUS_REVEALED
+    assert res.mot == "CLIMAT"
+    assert res.pourquoi is not None
+
+    today = await service.get_today(user_id)
+    assert today.statut == STATUS_REVEALED
+    assert today.mot == "CLIMAT"  # exposé après abandon
+
+
+@pytest.mark.asyncio
+async def test_reveal_twice_forbidden(db_session):
+    await _make_puzzle(db_session)
+    service = GrilleService(db_session)
+    user_id = str(uuid4())
+
+    await service.reveal_word(user_id)
+    with pytest.raises(GameAlreadyFinished):
+        await service.reveal_word(user_id)
+
+
+@pytest.mark.asyncio
+async def test_reveal_then_guess_forbidden(db_session):
+    await _make_puzzle(db_session)
+    service = GrilleService(db_session)
+    user_id = str(uuid4())
+
+    await service.reveal_word(user_id)
+    with pytest.raises(GameAlreadyFinished):
+        await service.submit_guess(user_id, "PLACER")
+
+
+@pytest.mark.asyncio
+async def test_reveal_excluded_from_leaderboard_and_not_ranked(db_session):
+    await _make_puzzle(db_session)
+    service = GrilleService(db_session)
+
+    # Un solveur réel + moi qui abandonne.
+    solver = uuid4()
+    await _add_game(db_session, solver, status=STATUS_SOLVED, attempts=2)
+    me = str(uuid4())
+    await service.reveal_word(me)
+
+    # Moi (revealed) → pas classé.
+    with pytest.raises(GameNotFinished):
+        await service.get_leaderboard(me)
+
+    # Le solveur voit un classement où l'abandon ne compte pas.
+    board = await service.get_leaderboard(str(solver))
+    assert board.joueurs == 1  # le revealed est exclu du champ
+
+
+@pytest.mark.asyncio
+async def test_reveal_preserves_streak(db_session):
+    await _make_puzzle(db_session)
+    service = GrilleService(db_session)
+    user_id = uuid4()
+    today = today_paris()
+    # Hier joué (résolu), aujourd'hui abandonné → série de 2 préservée.
+    await _add_game(
+        db_session,
+        user_id,
+        status=STATUS_SOLVED,
+        attempts=3,
+        on_date=today - timedelta(days=1),
+    )
+    await service.reveal_word(str(user_id))
+    assert await service._compute_streak(str(user_id)) == 2
+
+
+@pytest.mark.asyncio
+async def test_reveal_endpoint_returns_word(db_session):
+    await _make_puzzle(db_session)
+    user_id = uuid4()
+    app.dependency_overrides[get_current_user_id] = _override_user(str(user_id))
+    app.dependency_overrides[get_db] = _override_db(db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.post("/api/grille/today/reveal")
+            # Re-révéler → 409 deja_termine.
+            resp2 = await ac.post("/api/grille/today/reveal")
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+        app.dependency_overrides.pop(get_db, None)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["statut"] == "revealed"
+    assert body["mot"] == "CLIMAT"
+    assert resp2.status_code == 409
+    assert resp2.json()["detail"] == "deja_termine"
 
 
 # ----- leaderboard ----------------------------------------------------------

@@ -234,18 +234,90 @@ class TestVeilleKeyword:
         assert rows[0].keyword == "ia générative"
 
     @pytest.mark.asyncio
-    async def test_keyword_unique_per_config(self, db_session, cfg):
+    async def test_keyword_unique_per_topic(self, db_session, cfg):
+        """Unique = (config, topic_id, keyword) — collision sous un même angle."""
+        topic = VeilleTopic(
+            veille_config_id=cfg.id,
+            topic_id="climat",
+            label="Climat",
+            kind=VeilleTopicKind.PRESET,
+            position=0,
+        )
+        db_session.add(topic)
+        await db_session.commit()
+        await db_session.refresh(topic)
+
         db_session.add(
-            VeilleKeyword(veille_config_id=cfg.id, keyword="climat", position=0)
+            VeilleKeyword(
+                veille_config_id=cfg.id,
+                veille_topic_id=topic.id,
+                keyword="climat",
+                position=0,
+            )
         )
         await db_session.commit()
 
         db_session.add(
-            VeilleKeyword(veille_config_id=cfg.id, keyword="climat", position=1)
+            VeilleKeyword(
+                veille_config_id=cfg.id,
+                veille_topic_id=topic.id,
+                keyword="climat",
+                position=1,
+            )
         )
         with pytest.raises(IntegrityError):
             await db_session.commit()
         await db_session.rollback()
+
+    @pytest.mark.asyncio
+    async def test_same_keyword_allowed_under_two_angles(self, db_session, cfg):
+        """La même clé peut vivre sous deux angles distincts (triplet unique)."""
+        t1 = VeilleTopic(
+            veille_config_id=cfg.id,
+            topic_id="climat",
+            label="Climat",
+            kind=VeilleTopicKind.PRESET,
+            position=0,
+        )
+        t2 = VeilleTopic(
+            veille_config_id=cfg.id,
+            topic_id="energie",
+            label="Énergie",
+            kind=VeilleTopicKind.PRESET,
+            position=1,
+        )
+        db_session.add_all([t1, t2])
+        await db_session.commit()
+        await db_session.refresh(t1)
+        await db_session.refresh(t2)
+
+        db_session.add_all(
+            [
+                VeilleKeyword(
+                    veille_config_id=cfg.id, veille_topic_id=t1.id, keyword="co2"
+                ),
+                VeilleKeyword(
+                    veille_config_id=cfg.id, veille_topic_id=t2.id, keyword="co2"
+                ),
+                # + un mot-clé global (veille_topic_id NULL) identique : autorisé.
+                VeilleKeyword(veille_config_id=cfg.id, keyword="co2"),
+            ]
+        )
+        await db_session.commit()
+
+        rows = (
+            (
+                await db_session.execute(
+                    select(VeilleKeyword).where(
+                        VeilleKeyword.veille_config_id == cfg.id,
+                        VeilleKeyword.keyword == "co2",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 3
 
 
 class TestCascade:

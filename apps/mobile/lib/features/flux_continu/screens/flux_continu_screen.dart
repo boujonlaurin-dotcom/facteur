@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -33,7 +34,6 @@ import '../widgets/my_interests_intro.dart';
 import '../widgets/my_interests_sheet.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
-import '../widgets/tournee_folded_group_card.dart';
 import '../../grille/widgets/grille_cta_card.dart';
 
 /// Scroll offset at which the AppBar is swapped with the sticky tab bar.
@@ -63,17 +63,12 @@ class FluxContinuScreen extends ConsumerStatefulWidget {
   ConsumerState<FluxContinuScreen> createState() => _FluxContinuScreenState();
 }
 
-class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
-    with WidgetsBindingObserver {
+class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   final ScrollController _scroll = ScrollController();
   final ScrollController _tabsScroll = ScrollController();
   final ValueNotifier<bool> _stickyVisible = ValueNotifier(false);
   final ValueNotifier<double> _scrollProgress = ValueNotifier(0);
   final ValueNotifier<int> _activeIndex = ValueNotifier(0);
-
-  /// Controls whether the « Tournée du jour ✓ » group toggle is expanded.
-  /// Resets to [false] (collapsed) on app pause.
-  final ValueNotifier<bool> _tourneeGroupExpanded = ValueNotifier(false);
 
   final List<GlobalKey> _sectionKeys = [];
 
@@ -99,34 +94,18 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
-    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _tabsScroll.dispose();
     _stickyVisible.dispose();
     _scrollProgress.dispose();
     _activeIndex.dispose();
-    _tourneeGroupExpanded.dispose();
     _pullHintTimer?.cancel();
     super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-    // Collapse the « Tournée du jour ✓ » toggle when the app is backgrounded
-    // so the user always sees it grouped on return — per spec.
-    // `hidden` covers the moment the app becomes invisible on Android (Flutter
-    // 3.13+); `paused` is the fallback and the reliable signal on iOS.
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.hidden) {
-      _tourneeGroupExpanded.value = false;
-    }
   }
 
   void _onScroll() {
@@ -666,12 +645,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       0,
       (sum, s) => sum + s.totalCount,
     );
-
-    // When every editorial section is folded, the individual pile of
-    // FoldedSectionCards is replaced by a single « Tournée du jour ✓ » toggle.
-    final allFolded =
-        state.sections.isNotEmpty &&
-        state.sections.every((s) => state.isFolded(s));
+    // Android peut fermer l'app programmatiquement ; iOS l'interdit (App
+    // Store) → on y montre une phrase de clôture au lieu du bouton.
+    final isAndroid = defaultTargetPlatform == TargetPlatform.android;
 
     if (_sectionKeys.length != state.sections.length) {
       _sectionKeys
@@ -708,39 +684,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
           // first user-favorite theme section (`theme1` / `theme2`). The
           // computed index handles both ordering modes (normal / sereine) by
           // tracking the actual position of the first favorite kind.
-          // When all sections are folded, collapse the pile into a single
-          // « Tournée du jour ✓ » toggle. Tapping expands it back to the
-          // individual FoldedSectionCards (each still re-openable).
-          if (allFolded)
-            SliverToBoxAdapter(
-              child: ValueListenableBuilder<bool>(
-                valueListenable: _tourneeGroupExpanded,
-                builder: (_, expanded, __) {
-                  if (!expanded) {
-                    return TourneeFoldedGroupCard(
-                      onTap: () => _tourneeGroupExpanded.value = true,
-                    );
-                  }
-                  // Expanded: flatten the individual section slivers into a
-                  // Column so they sit inside the single SliverToBoxAdapter.
-                  final sectionWidgets = _buildSectionSlivers(
-                    context: context,
-                    state: state,
-                    notifier: notifier,
-                  ).map((s) => s.child!).toList();
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: sectionWidgets,
-                  );
-                },
-              ),
-            )
-          else
-            ..._buildSectionSlivers(
-              context: context,
-              state: state,
-              notifier: notifier,
-            ),
+          // Folded sections render as individual FoldedSectionCards directly,
+          // in place — no "Tournée du jour" grouping toggle.
+          ..._buildSectionSlivers(
+            context: context,
+            state: state,
+            notifier: notifier,
+          ),
           if (state.sections.isEmpty)
             SliverToBoxAdapter(
               child: _EmptySectionsHint(onRetry: notifier.refresh),
@@ -754,28 +704,33 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
             SliverToBoxAdapter(
               child: CitationDuJourCard(quote: state.quote!),
             ),
-          // La Grille du jour — récompense de fin de Tournée. Sliver additif
+          // « Le mot du jour » — récompense de fin de Tournée. Sliver additif
           // au-dessus de ClosingCardV18 (cette dernière n'est pas modifiée :
           // zéro régression, revert trivial). La carte se câble seule au
           // grilleProvider et ne rend rien tant que `GET today` n'a pas répondu.
-          if (!state.closingDismissed)
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
-                child: GrilleCtaCard(),
-              ),
+          // Hors gate `closingDismissed` : elle reste dans le feed même après
+          // fermeture de la tournée (en état « déjà jouée »), et se masque
+          // seule (SizedBox.shrink) s'il n'y a pas de mot du jour.
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
+              child: GrilleCtaCard(),
             ),
+          ),
+          // Carte « Fin de tournée » — toujours affichée (jamais masquée) : elle
+          // reste le repère de clôture même après être passé sur Flâner.
+          // « Continuer » navigue vers Flâner sans masquer la carte. « Refermer »
+          // ferme réellement l'app sur Android (SystemNavigator.pop) ; sur iOS,
+          // la fermeture programmatique est interdite → on masque le bouton et
+          // on affiche une phrase de clôture à la place.
           SliverToBoxAdapter(
-            child: state.closingDismissed
-                ? const SizedBox.shrink()
-                : ClosingCardV18(
-                    articleCount: totalArticles,
-                    onContinue: () async {
-                      await notifier.markClosingDismissed();
-                      if (context.mounted) context.go(RoutePaths.flaner);
-                    },
-                    onClose: () => notifier.markClosingDismissed(),
-                  ),
+            child: ClosingCardV18(
+              articleCount: totalArticles,
+              onContinue: () => context.go(RoutePaths.flaner),
+              onClose: isAndroid ? () => SystemNavigator.pop() : null,
+              closeHint:
+                  isAndroid ? null : 'Vous pouvez refermer l’app — à demain',
+            ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 92)),
         ],
@@ -856,53 +811,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
               onTapSeeAllDown: section is EssentielSection
                   ? () => _skipEssentielToExplorer(section)
                   : null,
-              isMarkedForNextSession: state.isMarkedForNextSession(section),
-              nextSectionAccent: i + 1 < state.sections.length
-                  ? state.sections[i + 1].accent
-                  : null,
-              nextSectionLabel: i + 1 < state.sections.length
-                  ? state.sections[i + 1].label
-                  : null,
-              onNextSection:
-                  (section is EssentielSection ||
-                      i >= state.sections.length - 1)
-                  ? null
-                  : () => _advanceToNextSection(section, i),
             ),
           ),
         ),
       );
     }
     return slivers;
-  }
-
-  /// "Sujet suivant" tap handler for in-Tournée progression. Marks the
-  /// current section as consumed for the next session (without folding it
-  /// visually) and smooth-scrolls to the next section banner. If the target
-  /// section is currently folded, unfolds it first so the user lands on an
-  /// expanded banner rather than a collapsed card.
-  Future<void> _advanceToNextSection(FluxSection section, int index) async {
-    unawaited(HapticFeedback.lightImpact());
-    unawaited(
-      ref
-          .read(fluxContinuProvider.notifier)
-          .markScrolledPastForNextSession(section),
-    );
-    final state = ref.read(fluxContinuProvider).valueOrNull;
-    final nextIdx = index + 1;
-    if (state != null && nextIdx < state.sections.length) {
-      final next = state.sections[nextIdx];
-      if (state.isFolded(next)) {
-        ref.read(fluxContinuProvider.notifier).unfoldLocally(next);
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        if (!mounted) return;
-      }
-    }
-    // Let the "Terminé" pop play before the scroll kicks in, so the user
-    // sees the green confirmation flash on its own frame.
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    if (!mounted) return;
-    await _scrollToSection(nextIdx);
   }
 }
 

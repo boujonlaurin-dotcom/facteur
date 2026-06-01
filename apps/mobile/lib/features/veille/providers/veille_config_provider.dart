@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../my_interests/providers/user_interests_provider.dart';
 import '../models/veille_config.dart';
 import '../models/veille_config_dto.dart';
 import '../repositories/veille_repository.dart';
@@ -77,6 +78,12 @@ class VeilleConfigState {
   /// backend.
   final Set<String> keywords;
 
+  /// Grappe de mots-clés par angle LLM sélectionné (slug `angle-…` →
+  /// liste éditable). Seedée depuis la suggestion LLM à la sélection, puis
+  /// éditable (add/remove chip). Injectée dans `VeilleTopicSelection.keywords`
+  /// au submit pour les angles `suggested`. Vide = aucun angle activé.
+  final Map<String, List<String>> angleKeywords;
+
   /// Toggle "Configuration avancée" sur step2/step3. Quand `true`, révèle les
   /// champs free-text (keywords + brief éditorial step2, source URL step3).
   final bool advancedMode;
@@ -115,6 +122,7 @@ class VeilleConfigState {
     required this.topicLabels,
     required this.sourcesMeta,
     required this.keywords,
+    required this.angleKeywords,
     required this.advancedMode,
     required this.skippedStep2,
     required this.purpose,
@@ -137,6 +145,7 @@ class VeilleConfigState {
         topicLabels: {},
         sourcesMeta: {},
         keywords: <String>{},
+        angleKeywords: {},
         advancedMode: false,
         skippedStep2: false,
         purpose: null,
@@ -165,6 +174,7 @@ class VeilleConfigState {
     Map<String, String>? topicLabels,
     Map<String, VeilleSourceMeta>? sourcesMeta,
     Set<String>? keywords,
+    Map<String, List<String>>? angleKeywords,
     bool? advancedMode,
     bool? skippedStep2,
     Object? purpose = _Sentinel.value,
@@ -190,6 +200,7 @@ class VeilleConfigState {
         topicLabels: topicLabels ?? this.topicLabels,
         sourcesMeta: sourcesMeta ?? this.sourcesMeta,
         keywords: keywords ?? this.keywords,
+        angleKeywords: angleKeywords ?? this.angleKeywords,
         advancedMode: advancedMode ?? this.advancedMode,
         skippedStep2: skippedStep2 ?? this.skippedStep2,
         purpose:
@@ -227,6 +238,9 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
   /// Limite backend (`MAX_KEYWORDS_PER_CONFIG` dans `schemas/veille.py`).
   static const int maxKeywords = 20;
+
+  /// Limite backend par angle (`VeilleTopicSelection.keywords` max_length=10).
+  static const int maxAngleKeywords = 10;
 
   void selectTheme(String id) {
     // Changer de thème reset les topics pré-sélectionnés (les preset topics
@@ -298,7 +312,9 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     state = state.copyWith(customTopics: next, selectedTopics: selection);
   }
 
-  static String _slugifyCustom(String input) {
+  /// Slug normalisé (sans préfixe) : lowercase, diacritiques → ASCII, capé à
+  /// 60 chars (confort backend, max 80). Vide → "sujet".
+  static String _slugifyBase(String input) {
     final lowered = input.toLowerCase().trim();
     final cleaned = lowered
         .replaceAll(RegExp(r'[àâä]'), 'a')
@@ -312,9 +328,32 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
         .replaceAll(RegExp(r'-+'), '-');
     final trimmed = cleaned.replaceAll(RegExp(r'^-|-$'), '');
     final base = trimmed.isEmpty ? 'sujet' : trimmed;
-    // Cap à 60 chars pour rester confortable côté backend (max 80).
-    final capped = base.length > 60 ? base.substring(0, 60) : base;
-    return 'custom-$capped';
+    return base.length > 60 ? base.substring(0, 60) : base;
+  }
+
+  static String _slugifyCustom(String input) => 'custom-${_slugifyBase(input)}';
+
+  /// Slug d'un angle LLM (préfixe dédié `angle-`) — distinct des sujets custom
+  /// (`custom-`) pour ne pas collisionner dans `topicLabels`/`angleKeywords`.
+  static String angleSlug(String title) => 'angle-${_slugifyBase(title)}';
+
+  /// Normalise un mot-clé : trim + lowercase, longueur 2..60 sinon `null`.
+  static String? _normalizeKeyword(String raw) {
+    final kw = raw.trim().toLowerCase();
+    if (kw.length < 2 || kw.length > 60) return null;
+    return kw;
+  }
+
+  /// Normalise/dédupe une grappe d'angle, capée à `maxAngleKeywords`.
+  static List<String> _normalizeAngleKeywords(Iterable<String> raw) {
+    final out = <String>[];
+    for (final r in raw) {
+      final kw = _normalizeKeyword(r);
+      if (kw == null || out.contains(kw)) continue;
+      out.add(kw);
+      if (out.length >= maxAngleKeywords) break;
+    }
+    return out;
   }
 
   void toggleTopic(String id) =>
@@ -324,6 +363,62 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
         selectedSuggestions: _toggle(state.selectedSuggestions, id),
       );
 
+  // ─── Angles LLM (Step 2) ────────────────────────────────────────────────
+
+  /// Active / désactive un angle suggéré par le LLM (sélection opt-in). À
+  /// l'activation : l'angle entre dans `selectedSuggestions` (kind `suggested`),
+  /// son label est enregistré, et sa grappe est seedée dans `angleKeywords`
+  /// (préservée si déjà éditée → re-toggle ne perd pas les edits). À la
+  /// désactivation : retiré de `selectedSuggestions` (la grappe éditée reste
+  /// mémorisée mais n'est plus envoyée au submit).
+  void toggleAngle(VeilleAngleSuggestionDto angle) {
+    final slug = angleSlug(angle.title);
+    if (state.selectedSuggestions.contains(slug)) {
+      final nextSel = Set<String>.from(state.selectedSuggestions)..remove(slug);
+      state = state.copyWith(selectedSuggestions: nextSel);
+      return;
+    }
+    final nextLabels = Map<String, String>.from(state.topicLabels)
+      ..[slug] = angle.title;
+    final nextAngleKw = Map<String, List<String>>.from(state.angleKeywords);
+    nextAngleKw.putIfAbsent(
+      slug,
+      () => _normalizeAngleKeywords(angle.keywords),
+    );
+    state = state.copyWith(
+      selectedSuggestions: {...state.selectedSuggestions, slug},
+      topicLabels: nextLabels,
+      angleKeywords: nextAngleKw,
+    );
+  }
+
+  /// Remplace la grappe d'un angle (normalisée + capée).
+  void setAngleKeywords(String slug, List<String> keywords) {
+    final next = Map<String, List<String>>.from(state.angleKeywords)
+      ..[slug] = _normalizeAngleKeywords(keywords);
+    state = state.copyWith(angleKeywords: next);
+  }
+
+  /// Ajoute un mot-clé à la grappe d'un angle (dédupe, cap `maxAngleKeywords`).
+  void addAngleKeyword(String slug, String raw) {
+    final kw = _normalizeKeyword(raw);
+    if (kw == null) return;
+    final current = state.angleKeywords[slug] ?? const <String>[];
+    if (current.contains(kw) || current.length >= maxAngleKeywords) return;
+    final next = Map<String, List<String>>.from(state.angleKeywords)
+      ..[slug] = [...current, kw];
+    state = state.copyWith(angleKeywords: next);
+  }
+
+  /// Retire un mot-clé de la grappe d'un angle.
+  void removeAngleKeyword(String slug, String kw) {
+    final current = state.angleKeywords[slug];
+    if (current == null || !current.contains(kw)) return;
+    final next = Map<String, List<String>>.from(state.angleKeywords)
+      ..[slug] = current.where((k) => k != kw).toList();
+    state = state.copyWith(angleKeywords: next);
+  }
+
   void toggleSource(String id) => state = state.copyWith(
         selectedSourceIds: _toggle(state.selectedSourceIds, id),
       );
@@ -331,8 +426,8 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
   /// Ajoute un mot-clé / angle libre (step2 advanced). Normalise lowercase,
   /// dédupe, respecte la cap backend (`maxKeywords`).
   void addKeyword(String raw) {
-    final kw = raw.trim().toLowerCase();
-    if (kw.length < 2 || kw.length > 60) return;
+    final kw = _normalizeKeyword(raw);
+    if (kw == null) return;
     if (state.keywords.contains(kw)) return;
     if (state.keywords.length >= maxKeywords) return;
     state = state.copyWith(keywords: {...state.keywords, kw});
@@ -362,6 +457,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       skippedStep2: true,
       selectedSuggestions: const {},
       keywords: const {},
+      angleKeywords: const {},
       editorialBrief: null,
     );
   }
@@ -513,6 +609,11 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       _ref
           .read(veilleActiveConfigProvider.notifier)
           .hydrateFromServer(cfg);
+      // La veille est un favori d'intérêt : sans invalidation, la liste des
+      // favoris reste périmée (sans VeilleFavoriteRef) et le CTA « Créer ma
+      // veille » reste affiché → clic → redirection feed (bug navigation).
+      // Le chemin archivage le fait déjà (my_interests_screen.dart).
+      _ref.invalidate(userInterestsProvider);
       state = state.copyWith(isSubmitting: false);
     } on VeilleApiException catch (e) {
       state = state.copyWith(
@@ -541,8 +642,10 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     final selectedSuggestions = <String>{};
     final customTopics = <VeilleTopic>[];
     final topicLabels = <String, String>{};
+    final angleKeywords = <String, List<String>>{};
     for (final t in cfg.topics) {
       topicLabels[t.topicId] = t.label;
+      if (t.keywords.isNotEmpty) angleKeywords[t.topicId] = t.keywords;
       switch (t.kind) {
         case 'custom':
           customTopics.add(
@@ -587,6 +690,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       selectedSourceIds: selectedSourceIds,
       sourcesMeta: sourcesMeta,
       keywords: keywords,
+      angleKeywords: angleKeywords,
       advancedMode: keywords.isNotEmpty || (cfg.editorialBrief?.isNotEmpty ?? false),
       purpose: cfg.purpose,
       editorialBrief: cfg.editorialBrief,
@@ -622,6 +726,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
           label: s.topicLabels[slug] ?? slug,
           kind: slug.startsWith('custom-') ? 'custom' : 'preset',
           position: pos++,
+          keywords: s.angleKeywords[slug] ?? const <String>[],
         ),
       );
     }
@@ -632,6 +737,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
           label: s.topicLabels[slug] ?? slug,
           kind: 'suggested',
           position: pos++,
+          keywords: s.angleKeywords[slug] ?? const <String>[],
         ),
       );
     }
