@@ -74,10 +74,7 @@ class EssentielHiFiCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _Header(
-              accent: accent,
-              onTapPersonalize: onTapPersonalize,
-            ),
+            _Header(accent: accent, onTapPersonalize: onTapPersonalize),
             const SizedBox(height: FacteurSpacing.space4),
             if (lead != null)
               _LeadTile(
@@ -108,10 +105,7 @@ class _Header extends StatelessWidget {
   final Color accent;
   final VoidCallback onTapPersonalize;
 
-  const _Header({
-    required this.accent,
-    required this.onTapPersonalize,
-  });
+  const _Header({required this.accent, required this.onTapPersonalize});
 
   @override
   Widget build(BuildContext context) {
@@ -126,6 +120,8 @@ class _Header extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _HeaderAccentDash(accent: accent),
+              const SizedBox(height: 7),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -149,15 +145,34 @@ class _Header extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 'Tes 5 articles du jour, basé sur tes préférences',
-                style:
-                    FacteurTypography.bodySmall(colors.textSecondary).copyWith(
-                  height: 1.35,
-                ),
+                style: FacteurTypography.bodySmall(
+                  colors.textSecondary,
+                ).copyWith(height: 1.35),
               ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+class _HeaderAccentDash extends StatelessWidget {
+  final Color accent;
+
+  const _HeaderAccentDash({required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: 30,
+        height: 3,
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: 0.82),
+          borderRadius: BorderRadius.circular(999),
+        ),
+      ),
     );
   }
 }
@@ -259,8 +274,10 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
           children: [...previous, if (current != null) current],
         ),
         transitionBuilder: (Widget child, Animation<double> animation) {
-          final rotate =
-              Tween<double>(begin: math.pi, end: 0.0).animate(animation);
+          final rotate = Tween<double>(
+            begin: math.pi,
+            end: 0.0,
+          ).animate(animation);
           return AnimatedBuilder(
             animation: rotate,
             builder: (context, c) {
@@ -577,10 +594,7 @@ class _SectionChip extends StatelessWidget {
             Container(
               width: 6,
               height: 6,
-              decoration: BoxDecoration(
-                color: accent,
-                shape: BoxShape.circle,
-              ),
+              decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
             ),
             const SizedBox(width: 5),
           ],
@@ -689,10 +703,7 @@ class _Hairline extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<FacteurColors>()!;
-    return Container(
-      height: 0.6,
-      color: colors.border.withValues(alpha: 0.20),
-    );
+    return Container(height: 0.6, color: colors.border.withValues(alpha: 0.20));
   }
 }
 

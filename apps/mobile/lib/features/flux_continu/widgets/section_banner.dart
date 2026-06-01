@@ -123,8 +123,12 @@ class SectionBanner extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      _AccentDash(accent: accent, large: large),
                       Padding(
-                        padding: EdgeInsets.only(top: 2, bottom: hasBlurb ? 4 : 0),
+                        padding: EdgeInsets.only(
+                          top: 2,
+                          bottom: hasBlurb ? 4 : 0,
+                        ),
                         child: Text.rich(
                           TextSpan(
                             text: title,
@@ -208,6 +212,28 @@ class SectionBanner extends StatelessWidget {
         splashColor: accent.withValues(alpha: 0.08),
         highlightColor: accent.withValues(alpha: 0.04),
         child: container,
+      ),
+    );
+  }
+}
+
+class _AccentDash extends StatelessWidget {
+  final Color accent;
+  final bool large;
+
+  const _AccentDash({required this.accent, required this.large});
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: large ? 34 : 28,
+        height: 3,
+        margin: const EdgeInsets.only(bottom: 7),
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: 0.78),
+          borderRadius: BorderRadius.circular(999),
+        ),
       ),
     );
   }
