@@ -20,6 +20,7 @@ import '../../../config/theme.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../feed/models/content_model.dart';
+import '../../sources/models/source_model.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
@@ -60,7 +61,40 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
   final String contentId;
   final Content? content; // Passed via extra from GoRouter
 
-  const ContentDetailScreen({super.key, required this.contentId, this.content});
+  // --- Mode "externe" (perspective) ---
+  // Quand `isExternal == true`, le reader ouvre une URL seule (une "autre
+  // source" de la sheet de comparaisons) sans Content backend : aucun fetch,
+  // aucune perspective, aucun tracking. Tout passe par le MÊME reader unique
+  // (`ContentDetailScreen`) pour ne jamais re-diverger d'un webview dupliqué.
+  final String? externalUrl;
+  final String? sourceName;
+  final String? sourceDomain;
+  final String? externalTitle;
+  final String biasStance;
+  final bool isExternal;
+
+  const ContentDetailScreen({super.key, required this.contentId, this.content})
+      : externalUrl = null,
+        sourceName = null,
+        sourceDomain = null,
+        externalTitle = null,
+        biasStance = 'unknown',
+        isExternal = false;
+
+  /// Ouvre une URL externe (perspective) dans le reader unique, en mode
+  /// webview du site (header/footer/scroll/anti-saccades partagés).
+  const ContentDetailScreen.external({
+    super.key,
+    required String url,
+    required this.sourceName,
+    this.sourceDomain,
+    String? title,
+    this.biasStance = 'unknown',
+  })  : contentId = '',
+        content = null,
+        externalUrl = url,
+        externalTitle = title,
+        isExternal = true;
 
   @override
   ConsumerState<ContentDetailScreen> createState() =>
@@ -180,20 +214,54 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Set<String> _perspectivesSelectedSegments = {};
   bool _perspectivesExpanded = false;
 
+  /// `true` lorsqu'on lit une "autre source" (perspective) : URL seule, pas de
+  /// Content backend ⇒ pas de fetch / perspectives / tracking.
+  bool get _isExternal => widget.isExternal;
+
+  /// Construit un [Content] synthétique pour le mode externe. Le levier qui
+  /// force la webview du site est `_showWebView = true` (initState), PAS
+  /// `hasInAppContent` — on ne bricole pas ce flag.
+  Content _buildExternalContent() {
+    return Content(
+      id: '',
+      title: widget.externalTitle ?? widget.sourceName ?? '',
+      url: widget.externalUrl!,
+      contentType: ContentType.article,
+      publishedAt: DateTime.now(),
+      source: Source(
+        id: widget.sourceDomain ?? '',
+        name: widget.sourceName ?? '',
+        type: SourceType.article,
+        biasStance: widget.biasStance,
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
-    _content = widget.content;
     _startTime = DateTime.now();
-    if (_content != null) {
-      _isConsumed = _content!.status == ContentStatus.consumed;
-    }
-    // Always fetch fresh content to accept latest metadata/status/theme
-    _fetchContent();
 
-    // Auto-fetch perspectives for articles
-    if (_content?.contentType == ContentType.article) {
-      _fetchPerspectives();
+    if (_isExternal) {
+      // Mode externe : pas de fetch (getContent('') renverrait null → pop()
+      // immédiat). On synthétise un Content depuis l'URL et on force la
+      // webview du site (même chemin anti-saccades que le reader normal).
+      _content = _buildExternalContent();
+      _contentResolved = true;
+      _isConsumed = false;
+      _showWebView = true;
+    } else {
+      _content = widget.content;
+      if (_content != null) {
+        _isConsumed = _content!.status == ContentStatus.consumed;
+      }
+      // Always fetch fresh content to accept latest metadata/status/theme
+      _fetchContent();
+
+      // Auto-fetch perspectives for articles
+      if (_content?.contentType == ContentType.article) {
+        _fetchPerspectives();
+      }
     }
 
     // Bookmark bounce animation (triggered on first note character)
@@ -286,9 +354,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }
     });
 
-    // Start timer if content is suitable for in-app reading/viewing and not already consumed
+    // Start timer if content is suitable for in-app reading/viewing and not already consumed.
+    // Mode externe : id synthétique vide ⇒ ne JAMAIS démarrer le timer (il
+    // appellerait updateContentStatus('') au bout de 30s).
     final isVideo = _content?.isVideo ?? false;
-    if ((_content?.hasInAppContent == true || isVideo) && !_isConsumed) {
+    if (!_isExternal &&
+        (_content?.hasInAppContent == true || isVideo) &&
+        !_isConsumed) {
       _startReadingTimer();
     }
 
@@ -919,6 +991,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   Future<void> _markAsConsumed() async {
+    // Mode externe : id synthétique vide ⇒ pas de statut backend.
+    if (_isExternal) return;
     setState(() => _isConsumed = true);
     final content = _content;
     if (content == null) return;
@@ -936,6 +1010,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   Future<void> _toggleBookmark() async {
+    // Mode externe : pas de Content backend à sauvegarder (id vide).
+    if (_isExternal) return;
     final content = _content;
     if (content == null) return;
 
@@ -978,6 +1054,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   Future<void> _toggleLike() async {
+    // Mode externe : pas de Content backend à recommander (id vide).
+    if (_isExternal) return;
     final content = _content;
     if (content == null) return;
 
@@ -1170,7 +1248,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Persist reading progress + analytics on close.
     // Must happen before super.dispose() — ref.read() requires active ConsumerState.
     try {
-      if (_content != null) {
+      // Mode externe : id synthétique vide ⇒ ne jamais polluer
+      // user_content_status ni les analytics (trackArticleRead).
+      if (_content != null && !_isExternal) {
         final duration = DateTime.now().difference(_startTime).inSeconds;
 
         final supabase = Supabase.instance.client;
