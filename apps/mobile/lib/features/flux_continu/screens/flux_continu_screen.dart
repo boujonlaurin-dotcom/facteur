@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -42,7 +43,7 @@ const double _kStickyThreshold = 60.0;
 /// Vertical offset the sticky bar consumes — used as a landing buffer
 /// when scrolling a section into view so its banner doesn't disappear
 /// behind the bar.
-const double _kStickyBarHeight = 100.0;
+const double _kStickyBarHeight = 90.0;
 
 /// Minimum delta (px) before the scroll-up FAB toggles, to avoid flicker
 /// on tiny inertia bounces. Matches the legacy FeedScreen behaviour.
@@ -571,9 +572,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     ref.listen(essentielScrollTriggerProvider, (_, __) => _scrollToTop());
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
-      // Header & footer vivent désormais dans le shell partagé (MainShell) :
+      // Header & footer vivent dans le scaffold de page partagé :
       // l'écran ne fournit plus de bottomNavigationBar ni de header, et son top
-      // inset est déjà consommé par le header fixe du shell.
+      // inset est déjà consommé par le header partagé.
       body: SafeArea(
         top: false,
         bottom: false,
@@ -662,8 +663,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         controller: _scroll,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          // NB : le header (logo · streak · réglages) vit dans le shell partagé
-          // (MainShell) — fixe, hors du scroll.
+          // NB : le header (logo · streak · réglages) vit dans le scaffold de
+          // page partagé — fixe, hors du scroll.
           SliverToBoxAdapter(
             child: impressionSlot == FirstImpressionSlot.renudgeBanner
                 ? const NotificationRenudgeBanner()
@@ -701,9 +702,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           // dessous : replier la tournée ne doit pas la masquer, c'est un
           // rituel de fin de tournée.
           if (state.quote != null && !state.closingDismissed)
-            SliverToBoxAdapter(
-              child: CitationDuJourCard(quote: state.quote!),
-            ),
+            SliverToBoxAdapter(child: CitationDuJourCard(quote: state.quote!)),
           // « Le mot du jour » — récompense de fin de Tournée. Sliver additif
           // au-dessus de ClosingCardV18 (cette dernière n'est pas modifiée :
           // zéro régression, revert trivial). La carte se câble seule au
@@ -728,8 +727,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
               articleCount: totalArticles,
               onContinue: () => context.go(RoutePaths.flaner),
               onClose: isAndroid ? () => SystemNavigator.pop() : null,
-              closeHint:
-                  isAndroid ? null : 'Vous pouvez refermer l’app — à demain',
+              closeHint: isAndroid
+                  ? null
+                  : 'Vous pouvez refermer l’app — à demain',
             ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 92)),

@@ -13,15 +13,37 @@ import 'main_bottom_nav.dart';
 
 /// Shell partagé des deux onglets principaux (L'Essentiel / Flâner).
 ///
-/// C'est le `builder` du `StatefulShellRoute` : il pose un header **fixe** et un
-/// footer **fixe** (`MainBottomNav`), et confie le contenu central à
-/// [navigationShell] (rendu par [BranchPageView] via le `navigatorContainerBuilder`).
-/// Seul ce contenu glisse au changement d'onglet — header et footer restent
-/// immobiles.
-class MainShell extends ConsumerWidget {
+/// C'est le `builder` du `StatefulShellRoute` : il ne garde que le conteneur
+/// de navigation entre branches. Le chrome partagé vit dans chaque page racine
+/// via [MainTabPageScaffold], afin que les routes modales ouvertes depuis une
+/// branche passent naturellement au-dessus du header et du footer.
+class MainShell extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
 
   const MainShell({super.key, required this.navigationShell});
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: context.facteurColors.backgroundPrimary,
+      child: navigationShell,
+    );
+  }
+}
+
+/// Chrome partagé des pages racines du shell principal.
+///
+/// Comme ce scaffold est rendu dans le navigator de branche, une bottom sheet
+/// ouverte depuis la page recouvre aussi le header et le footer.
+class MainTabPageScaffold extends ConsumerWidget {
+  final int currentIndex;
+  final Widget child;
+
+  const MainTabPageScaffold({
+    super.key,
+    required this.currentIndex,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -31,9 +53,9 @@ class MainShell extends ConsumerWidget {
       // les cartes qui défilent derrière (chaque écran réserve un padding bas).
       extendBody: true,
       bottomNavigationBar: MainBottomNav(
-        currentIndex: navigationShell.currentIndex,
+        currentIndex: currentIndex,
         onSelect: (index) {
-          if (index == navigationShell.currentIndex) {
+          if (index == currentIndex) {
             // Re-tap de l'onglet actif → scroll-to-top, sans navigation (donc
             // sans slide). L'écran concerné écoute son trigger.
             final trigger = index == 0
@@ -41,14 +63,14 @@ class MainShell extends ConsumerWidget {
                 : feedScrollTriggerProvider;
             ref.read(trigger.notifier).state++;
           } else {
-            navigationShell.goBranch(index);
+            context.go(index == 0 ? RoutePaths.fluxContinu : RoutePaths.flaner);
           }
         },
       ),
       body: Column(
         children: [
           const _SharedTopHeader(),
-          Expanded(child: navigationShell),
+          Expanded(child: child),
         ],
       ),
     );
@@ -59,7 +81,7 @@ class MainShell extends ConsumerWidget {
 /// (droite, avec pastille « mise à jour disponible »).
 ///
 /// Repris du header historique de `FluxContinuScreen` afin de garder l'apparence
-/// identique tout en le sortant du scroll (il ne défile plus ni ne glisse).
+/// identique sur les deux pages racines.
 class _SharedTopHeader extends StatelessWidget {
   const _SharedTopHeader();
 
@@ -85,7 +107,8 @@ class _SharedTopHeader extends StatelessWidget {
               alignment: Alignment.centerRight,
               child: Consumer(
                 builder: (context, ref, _) {
-                  final hasUpdate = ref
+                  final hasUpdate =
+                      ref
                           .watch(appUpdateProvider)
                           .valueOrNull
                           ?.updateAvailable ==
@@ -148,8 +171,9 @@ class BranchPageView extends StatefulWidget {
 }
 
 class _BranchPageViewState extends State<BranchPageView> {
-  late final PageController _controller =
-      PageController(initialPage: widget.navigationShell.currentIndex);
+  late final PageController _controller = PageController(
+    initialPage: widget.navigationShell.currentIndex,
+  );
 
   @override
   void didUpdateWidget(BranchPageView oldWidget) {
@@ -177,9 +201,7 @@ class _BranchPageViewState extends State<BranchPageView> {
     return PageView(
       controller: _controller,
       physics: const NeverScrollableScrollPhysics(),
-      children: [
-        for (final child in widget.children) _KeepAlive(child: child),
-      ],
+      children: [for (final child in widget.children) _KeepAlive(child: child)],
     );
   }
 }

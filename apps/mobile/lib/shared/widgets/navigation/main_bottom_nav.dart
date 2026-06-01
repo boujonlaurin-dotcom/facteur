@@ -7,9 +7,9 @@ import '../../../config/theme.dart';
 
 /// Bottom nav persistante des deux onglets principaux (Essentiel / Flâner).
 ///
-/// Posée dans le shell partagé (`MainShell`) — elle ne navigue pas elle-même :
-/// elle remonte les taps via [onSelect] et c'est le shell qui décide (changement
-/// d'onglet vs scroll-to-top sur re-tap de l'onglet actif).
+/// Posée dans le chrome partagé des pages racines — elle ne navigue pas
+/// elle-même : elle remonte les taps via [onSelect] et le parent décide
+/// (changement d'onglet vs scroll-to-top sur re-tap de l'onglet actif).
 ///
 /// Style « point » historique de l'app (repris de `sticky_tab_bar.dart` `_Tab`)
 /// posé sur une surface glassmorphique premium : coins supérieurs arrondis, flou
@@ -18,7 +18,7 @@ class MainBottomNav extends StatelessWidget {
   /// Index de l'onglet actif (0 = L'Essentiel, 1 = Flâner).
   final int currentIndex;
 
-  /// Appelé au tap d'un onglet (actif ou non). Le shell arbitre la suite.
+  /// Appelé au tap d'un onglet (actif ou non). Le parent arbitre la suite.
   final ValueChanged<int> onSelect;
 
   const MainBottomNav({

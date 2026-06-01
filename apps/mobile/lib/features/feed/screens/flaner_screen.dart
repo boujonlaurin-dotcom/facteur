@@ -79,13 +79,15 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
     final notifier = ref.read(feedProvider.notifier);
     if (!notifier.hasNext || notifier.isLoadingMore) return;
     setState(() => _loadingMore = true);
-    unawaited(notifier.loadMore().whenComplete(() {
-      if (mounted) {
-        setState(() => _loadingMore = false);
-      } else {
-        _loadingMore = false;
-      }
-    }));
+    unawaited(
+      notifier.loadMore().whenComplete(() {
+        if (mounted) {
+          setState(() => _loadingMore = false);
+        } else {
+          _loadingMore = false;
+        }
+      }),
+    );
   }
 
   Future<void> _refresh() async {
@@ -125,7 +127,7 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
     ref.listen(feedScrollTriggerProvider, (_, __) => _scrollToTop());
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
-      // Header & footer vivent désormais dans le shell partagé (MainShell).
+      // Header & footer vivent dans le scaffold de page partagé.
       body: SafeArea(
         top: false,
         bottom: false,
@@ -146,8 +148,9 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
                 child: AnimatedSlide(
                   duration: const Duration(milliseconds: 220),
                   curve: Curves.easeOutCubic,
-                  offset:
-                      _showScrollTopFab ? Offset.zero : const Offset(0, 1.6),
+                  offset: _showScrollTopFab
+                      ? Offset.zero
+                      : const Offset(0, 1.6),
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 220),
                     opacity: _showScrollTopFab ? 1.0 : 0.0,
@@ -172,8 +175,8 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
         controller: _scroll,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          // NB : le header (logo · streak · réglages) vit dans le shell partagé
-          // (MainShell) — fixe, hors du scroll.
+          // NB : le header (logo · streak · réglages) vit dans le scaffold de
+          // page partagé — fixe, hors du scroll.
           const SliverToBoxAdapter(
             child: SectionBanner(
               title: 'Flâner',
@@ -222,21 +225,20 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
       intercalations.add((
         position: carousel.position,
         builder: () => Padding(
-              key: ValueKey('flaner_carousel_${carousel.carouselType}'),
-              padding: const EdgeInsets.only(bottom: 12),
-              child: FeedCarousel(
-                data: carousel,
-                onArticleTap: _openArticle,
-                onLongPressStart: (c, _) =>
-                    ArticlePreviewOverlay.show(context, c),
-                onLongPressMoveUpdate: (details) =>
-                    ArticlePreviewOverlay.updateScroll(
+          key: ValueKey('flaner_carousel_${carousel.carouselType}'),
+          padding: const EdgeInsets.only(bottom: 12),
+          child: FeedCarousel(
+            data: carousel,
+            onArticleTap: _openArticle,
+            onLongPressStart: (c, _) => ArticlePreviewOverlay.show(context, c),
+            onLongPressMoveUpdate: (details) =>
+                ArticlePreviewOverlay.updateScroll(
                   details.localOffsetFromOrigin.dy,
                 ),
-                onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-                onItemVisible: _markVisible,
-              ),
-            ),
+            onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+            onItemVisible: _markVisible,
+          ),
+        ),
       ));
     }
 
