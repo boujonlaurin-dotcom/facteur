@@ -11,7 +11,7 @@ import 'compact_source_chip.dart';
 import 'compact_theme_chip.dart';
 import 'favorite_topic_tabs.dart';
 import 'filter_collapsible_panel.dart';
-import 'interest_filter_sheet.dart';
+import 'pin_subjects_sheet.dart';
 import 'search_filter_sheet.dart';
 
 /// Compact, self-contained version of `FeedScreen._buildFilterBar`, intended
@@ -26,12 +26,10 @@ import 'search_filter_sheet.dart';
 /// them here behind optional callbacks rather than duplicating the logic.
 class FeedFilterBar extends ConsumerStatefulWidget {
   final VoidCallback? onAfterChange;
-  final List<String> excludedThemeSlugs;
 
   const FeedFilterBar({
     super.key,
     this.onAfterChange,
-    this.excludedThemeSlugs = const [],
   });
 
   @override
@@ -63,7 +61,6 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
         selectedTopicSlug: selection.topic,
         selectedThemeSlug: selection.theme,
         selectedEntitySlug: selection.entity,
-        excludedThemeSlugs: widget.excludedThemeSlugs,
         onTabTap: (kind, slug) async {
           // Sheet owns this override ; clear it so the chip label rebuilds
           // from the tapped tab's name on next layout.
@@ -93,32 +90,11 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
           HapticFeedback.mediumImpact();
           widget.onAfterChange?.call();
         },
+        // Le « + » des onglets épingle des sujets précis (custom topics) —
+        // le filtrage par thème/source reste assuré par les chips ci-dessous.
         onAddFavorite: () {
           HapticFeedback.mediumImpact();
-          InterestFilterSheet.show(
-            context,
-            currentTopicSlug:
-                selection.topic ?? selection.theme ?? selection.entity,
-            currentIsTheme: selection.theme != null,
-            onInterestSelected: (
-              slug,
-              name, {
-              bool isTheme = false,
-              bool isEntity = false,
-            }) async {
-              setState(() {
-                _selectedInterestNameOverride = name;
-              });
-              if (isTheme) {
-                await notifier.setTheme(slug);
-              } else if (isEntity) {
-                await notifier.setEntity(slug);
-              } else {
-                await notifier.setTopic(slug);
-              }
-              widget.onAfterChange?.call();
-            },
-          );
+          showPinSubjectsSheet(context);
         },
       ),
       leadingTrigger: _SearchTrigger(

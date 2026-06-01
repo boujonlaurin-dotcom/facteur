@@ -41,7 +41,11 @@ class _MyInterestsContent extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     final interests = ref.watch(userInterestsProvider).valueOrNull;
-    final favorites = interests?.favorites ?? const <FavoriteRef>[];
+    // Cette modale ne gère que les thèmes/veille qui pilotent la Tournée.
+    // Les sujets précis (custom topics) se gèrent dans Flâner.
+    final favorites = (interests?.favorites ?? const <FavoriteRef>[])
+        .where((f) => f is! CustomTopicFavoriteRef)
+        .toList();
     final rows = <_FavoriteRow>[
       for (final fav in favorites)
         _FavoriteRow.fromRef(ref: fav, interests: interests),
@@ -105,11 +109,20 @@ class _MyInterestsContent extends ConsumerWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Les intérêts qui pilotent ta tournée du jour.',
+                  'Les thèmes et la veille qui pilotent ta tournée du jour.',
                   style: GoogleFonts.dmSans(
                     fontSize: 13,
                     height: 1.45,
                     color: colors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Tes sujets précis se gèrent dans Flâner.',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: colors.textTertiary,
                   ),
                 ),
                 const SizedBox(height: 14),

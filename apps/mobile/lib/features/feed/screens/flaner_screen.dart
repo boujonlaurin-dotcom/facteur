@@ -20,6 +20,7 @@ import '../providers/feed_provider.dart';
 import '../widgets/feed_carousel.dart';
 import '../widgets/feed_filter_bar.dart';
 import '../widgets/follow_keyword_suggestion_card.dart';
+import '../widgets/pin_subjects_sheet.dart';
 
 const double _kLoadMoreLeadingPx = 800.0;
 const double _kScrollDirThreshold = 12.0;
@@ -187,6 +188,7 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
             pinned: true,
             delegate: _FilterHeaderDelegate(child: _FilterSurface()),
           ),
+          const SliverToBoxAdapter(child: PinSubjectsBanner()),
           SliverToBoxAdapter(
             child: (keyword == null || keyword.trim().isEmpty)
                 ? const SizedBox.shrink()
@@ -284,7 +286,7 @@ class _FilterSurface extends ConsumerWidget {
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: FeedFilterBar(excludedThemeSlugs: <String>[]),
+            child: FeedFilterBar(),
           ),
           SizedBox(
             height: 2,

@@ -7,6 +7,8 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../core/ui/notification_service.dart';
+import '../../my_interests/models/user_interests_state.dart';
+import '../../my_interests/providers/user_interests_provider.dart';
 import '../models/topic_models.dart';
 import '../providers/custom_topics_provider.dart';
 import 'disambiguation_suggestion_tile.dart';
@@ -17,9 +19,29 @@ const Color _terracotta = Color(0xFFE07A5F);
 class EntityAddSheet extends ConsumerStatefulWidget {
   final String? themeSlug;
 
-  const EntityAddSheet({super.key, this.themeSlug});
+  /// Quand `true`, le sujet créé est immédiatement épinglé en favori
+  /// (`CustomTopicFavoriteRef` → favorite) → il apparaît comme onglet dans
+  /// Flâner. Utilisé par la modale d'épinglage. Défaut `false` : comportement
+  /// historique (simple suivi) inchangé pour les autres appelants.
+  final bool pinOnFollow;
 
-  static void show(BuildContext context, {String? themeSlug}) {
+  /// Pré-remplit le champ de saisie (ex : depuis la recherche de la modale
+  /// d'épinglage, quand aucun sujet existant ne matche → « Créer le sujet ... »).
+  final String? initialQuery;
+
+  const EntityAddSheet({
+    super.key,
+    this.themeSlug,
+    this.pinOnFollow = false,
+    this.initialQuery,
+  });
+
+  static void show(
+    BuildContext context, {
+    String? themeSlug,
+    bool pinOnFollow = false,
+    String? initialQuery,
+  }) {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -30,7 +52,11 @@ class EntityAddSheet extends ConsumerStatefulWidget {
         child: Padding(
           padding:
               EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-          child: EntityAddSheet(themeSlug: themeSlug),
+          child: EntityAddSheet(
+            themeSlug: themeSlug,
+            pinOnFollow: pinOnFollow,
+            initialQuery: initialQuery,
+          ),
         ),
       ),
     );
@@ -45,6 +71,17 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
   bool _loading = false;
   List<DisambiguationSuggestion>? _suggestions;
   int? _followingIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialQuery?.trim() ?? '';
+    if (initial.isNotEmpty) {
+      _controller.text = initial;
+      _controller.selection =
+          TextSelection.collapsed(offset: _controller.text.length);
+    }
+  }
 
   @override
   void dispose() {
@@ -72,9 +109,10 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
           await _followSuggestion(suggestions[0], 0);
         } else {
           // Fallback: follow as plain topic
-          await ref
+          final created = await ref
               .read(customTopicsProvider.notifier)
               .followTopic(name, slugParent: widget.themeSlug);
+          await _maybePin(created);
           if (mounted) {
             Navigator.of(context).pop();
             NotificationService.showInfo('"$name" ajouté à vos intérêts');
@@ -108,7 +146,9 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
   ) async {
     setState(() => _followingIndex = index);
     try {
-      await ref.read(customTopicsProvider.notifier).followSuggestion(s);
+      final created =
+          await ref.read(customTopicsProvider.notifier).followSuggestion(s);
+      await _maybePin(created);
       if (mounted) {
         Navigator.of(context).pop();
         NotificationService.showInfo(
@@ -127,6 +167,21 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
       }
     } finally {
       if (mounted) setState(() => _followingIndex = null);
+    }
+  }
+
+  /// Épingle le sujet fraîchement créé si la sheet a été ouverte en mode
+  /// [EntityAddSheet.pinOnFollow]. Best-effort : un échec d'épinglage ne doit
+  /// pas casser le flow de suivi (le sujet est déjà créé).
+  Future<void> _maybePin(UserTopicProfile? created) async {
+    if (!widget.pinOnFollow || created == null) return;
+    try {
+      await ref.read(userInterestsProvider.notifier).setInterestState(
+            CustomTopicFavoriteRef(id: created.id),
+            InterestState.favorite,
+          );
+    } catch (_) {
+      // Le suivi a réussi ; l'épinglage pourra être refait depuis la modale.
     }
   }
 
