@@ -46,7 +46,9 @@ from app.schemas.digest import (
     DigestTopicArticle,
     QuoteResponse,
 )
+from app.schemas.content import SourceMini
 from app.services.digest_selector import DigestSelector
+from app.services.digest_cache import CachedDigestContent, DIGEST_CONTENT_CACHE
 from app.services.editorial.schemas import EditorialPipelineResult
 from app.services.streak_service import StreakService
 from app.services.topic_selector import ScoredArticle, TopicGroup
@@ -2228,13 +2230,9 @@ class DigestService:
             )
         )
 
-        content_stmt = (
-            select(Content)
-            .options(selectinload(Content.source))
-            .where(Content.id.in_(all_content_ids))
+        content_map = await self._get_cached_digest_contents(
+            digest, user_id, all_content_ids
         )
-        content_result = await self.session.execute(content_stmt)
-        content_map = {c.id: c for c in content_result.scalars().all()}
 
         action_states_map = await self._get_batch_action_states(
             user_id, all_content_ids
@@ -2493,14 +2491,11 @@ class DigestService:
             )
         )
 
-        # Batch query: content + sources
-        content_stmt = (
-            select(Content)
-            .options(selectinload(Content.source))
-            .where(Content.id.in_(all_content_ids))
+        # Batch query: content + sources, cached briefly across /digest and
+        # /essentiel. User action state and completion are still fetched below.
+        content_map = await self._get_cached_digest_contents(
+            digest, user_id, all_content_ids
         )
-        content_result = await self.session.execute(content_stmt)
-        content_map = {c.id: c for c in content_result.scalars().all()}
 
         # Batch query: action states
         action_states_map = await self._get_batch_action_states(
@@ -2702,6 +2697,80 @@ class DigestService:
             }
             for status in statuses
         }
+
+    async def _get_cached_digest_contents(
+        self,
+        digest: DailyDigest,
+        user_id: UUID,
+        content_ids: list[UUID],
+    ) -> dict[UUID, CachedDigestContent]:
+        """Fetch content/source snapshots for a digest with a short TTL.
+
+        Cache key is user/date/variant/digest-id. The user component keeps
+        cloned/stale render paths isolated; the digest id prevents serving a
+        previous row if today's digest is regenerated inside the TTL window.
+        """
+        if not content_ids:
+            return {}
+
+        key = (user_id, digest.target_date, digest.is_serene, digest.id)
+        cached = DIGEST_CONTENT_CACHE.get(key)
+        if cached is not None:
+            logger.info(
+                "digest_content_cache_hit",
+                user_id=str(user_id),
+                digest_id=str(digest.id),
+                content_count=len(cached),
+            )
+            return cached
+
+        async with DIGEST_CONTENT_CACHE.lock(key):
+            cached = DIGEST_CONTENT_CACHE.get(key)
+            if cached is not None:
+                logger.info(
+                    "digest_content_cache_hit_after_lock",
+                    user_id=str(user_id),
+                    digest_id=str(digest.id),
+                    content_count=len(cached),
+                )
+                return cached
+
+            content_stmt = (
+                select(Content)
+                .options(selectinload(Content.source))
+                .where(Content.id.in_(content_ids))
+            )
+            content_result = await self.session.execute(content_stmt)
+            content_map: dict[UUID, CachedDigestContent] = {}
+            for content in content_result.scalars().all():
+                if content.source is None:
+                    continue
+                content_map[content.id] = CachedDigestContent(
+                    id=content.id,
+                    title=content.title,
+                    url=content.url,
+                    thumbnail_url=content.thumbnail_url,
+                    description=content.description,
+                    html_content=content.html_content,
+                    topics=list(content.topics or []),
+                    entities=list(content.entities or []),
+                    content_type=content.content_type,
+                    duration_seconds=content.duration_seconds,
+                    published_at=content.published_at,
+                    is_paid=content.is_paid,
+                    source_id=content.source_id,
+                    source=SourceMini.model_validate(content.source),
+                )
+
+            DIGEST_CONTENT_CACHE.put(key, content_map)
+            logger.info(
+                "digest_content_cache_miss_loaded",
+                user_id=str(user_id),
+                digest_id=str(digest.id),
+                content_found=len(content_map),
+                content_expected=len(set(content_ids)),
+            )
+            return content_map
 
     async def _get_or_create_content_status(
         self, user_id: UUID, content_id: UUID

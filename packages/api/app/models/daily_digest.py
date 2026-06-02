@@ -44,6 +44,7 @@ class DailyDigest(Base):
         ),
         Index("ix_daily_digest_user_id", "user_id"),
         Index("ix_daily_digest_target_date", "target_date"),
+        Index("ix_daily_digest_target_date_is_serene", "target_date", "is_serene"),
         Index("ix_daily_digest_generated_at", "generated_at"),
     )
 

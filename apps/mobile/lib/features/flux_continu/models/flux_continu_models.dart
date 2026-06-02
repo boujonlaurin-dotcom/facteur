@@ -37,8 +37,8 @@ String sectionKey(FluxSection section) {
       kind == SectionKind.veille
           ? 'veille'
           : customTopicId != null
-              ? 'topic:$customTopicId'
-              : 'theme:${themeSlug ?? "unknown"}',
+          ? 'topic:$customTopicId'
+          : 'theme:${themeSlug ?? "unknown"}',
   };
 }
 
@@ -122,6 +122,72 @@ class EssentielArticle {
     this.isFollowedTopic = false,
     this.isActuDuJour = false,
   });
+
+  factory EssentielArticle.fromJson(Map<String, dynamic> json) {
+    final source =
+        (json['source'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final sourceName = (source['name'] as String?) ?? '';
+    return EssentielArticle(
+      contentId: (json['content_id'] as String?) ?? '',
+      title: (json['title'] as String?) ?? '',
+      url: (json['url'] as String?) ?? '',
+      thumbnailUrl: json['thumbnail_url'] as String?,
+      publishedAt:
+          DateTime.tryParse(json['published_at'] as String? ?? '') ??
+          DateTime.now(),
+      sourceName: sourceName,
+      sourceLetter: (json['source_letter'] as String?) ?? _initial(sourceName),
+      kind: _parseKind(json['kind'] as String?),
+      theme: json['theme'] as String?,
+      sectionLabel: (json['section_label'] as String?) ?? '',
+      perspectiveCount: (json['perspective_count'] as num?)?.toInt() ?? 0,
+      rank: (json['rank'] as num?)?.toInt() ?? 0,
+      isRead: (json['is_read'] as bool?) ?? false,
+      isSaved: (json['is_saved'] as bool?) ?? false,
+      isLiked: (json['is_liked'] as bool?) ?? false,
+      isDismissed: (json['is_dismissed'] as bool?) ?? false,
+      isFollowedSource: (json['is_followed_source'] as bool?) ?? false,
+      isFollowedTopic: (json['is_followed_topic'] as bool?) ?? false,
+      isActuDuJour: (json['is_actu_du_jour'] as bool?) ?? false,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'content_id': contentId,
+    'title': title,
+    'url': url,
+    'thumbnail_url': thumbnailUrl,
+    'published_at': publishedAt.toIso8601String(),
+    'source': {'name': sourceName},
+    'source_letter': sourceLetter,
+    'kind': kind.name,
+    'theme': theme,
+    'section_label': sectionLabel,
+    'perspective_count': perspectiveCount,
+    'rank': rank,
+    'is_read': isRead,
+    'is_saved': isSaved,
+    'is_liked': isLiked,
+    'is_dismissed': isDismissed,
+    'is_followed_source': isFollowedSource,
+    'is_followed_topic': isFollowedTopic,
+    'is_actu_du_jour': isActuDuJour,
+  };
+
+  static String _initial(String name) {
+    for (final ch in name.trim().split('')) {
+      if (ch.trim().isNotEmpty) return ch.toUpperCase();
+    }
+    return '?';
+  }
+
+  static SectionKind _parseKind(String? raw) {
+    try {
+      return SectionKind.values.byName(raw ?? 'theme');
+    } catch (_) {
+      return SectionKind.theme;
+    }
+  }
 }
 
 /// Section v3 "L'Essentiel du jour" — single hi-fi card with 5 cross-topic
@@ -258,10 +324,13 @@ Set<String> renderedContentIds(List<FluxSection> sections) {
 /// last one — used by the theme/digest detail screens to decide whether to
 /// show the "Sujet suivant" CTA or fall back to "Retour à la Tournée".
 FluxSection? nextSectionAfter(List<FluxSection> sections, String currentKey) {
-  final ordered = sections.whereType<FluxSection>().where((s) {
-    if (s is EssentielSection) return false;
-    return true;
-  }).toList(growable: false);
+  final ordered = sections
+      .whereType<FluxSection>()
+      .where((s) {
+        if (s is EssentielSection) return false;
+        return true;
+      })
+      .toList(growable: false);
   final currentIndex = ordered.indexWhere((s) => sectionKey(s) == currentKey);
   if (currentIndex == -1) return null;
   if (currentIndex + 1 >= ordered.length) return null;
@@ -352,8 +421,7 @@ class FluxContinuState {
       folded: folded ?? this.folded,
       closingDismissed: closingDismissed ?? this.closingDismissed,
       dismissedIds: dismissedIds ?? this.dismissedIds,
-      markedForNextSession:
-          markedForNextSession ?? this.markedForNextSession,
+      markedForNextSession: markedForNextSession ?? this.markedForNextSession,
       quote: quote ?? this.quote,
       isLoading: isLoading ?? this.isLoading,
       error: clearError ? null : (error ?? this.error),

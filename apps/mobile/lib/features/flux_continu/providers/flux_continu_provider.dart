@@ -18,6 +18,7 @@ import '../../veille/providers/veille_active_config_provider.dart';
 import '../models/flux_continu_models.dart';
 import '../repositories/essentiel_repository.dart';
 import '../repositories/flux_continu_repository.dart';
+import '../services/flux_continu_cache_service.dart';
 import '../services/tournee_progress_service.dart';
 import '../utils/theme_color_mapping.dart';
 
@@ -79,6 +80,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   late FeedRepository _feedRepo;
   late FluxContinuRepository _fluxRepo;
   late EssentielRepository _essentielRepo;
+  late FluxContinuCacheService _cacheService;
 
   FluxSection? _essentiel;
   // Section "Actus du jour" : DigestTopicSection legacy (kind=essentiel)
@@ -122,6 +124,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     _feedRepo = ref.read(feedRepositoryProvider);
     _fluxRepo = ref.read(fluxContinuRepositoryProvider);
     _essentielRepo = ref.read(essentielRepositoryProvider);
+    _cacheService = FluxContinuCacheService();
 
     ref.listen<SereinToggleState>(sereinToggleProvider, (prev, next) {
       if (prev?.enabled != next.enabled && state.hasValue) {
@@ -141,6 +144,19 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       if (!state.hasValue) return;
       unawaited(_refetchThemesOnly(nextFavorites));
     });
+
+    final cached = await _cacheService.readToday();
+    if (cached != null) {
+      state = AsyncData(
+        await _buildStateFromPayload(
+          dual: cached.dual,
+          topThemes: cached.topThemes,
+          essentielArticles: cached.essentielArticles,
+          isSerene: ref.read(sereinToggleProvider).enabled,
+          fetchThemes: false,
+        ),
+      );
+    }
 
     return _fetchAll();
   }
@@ -169,6 +185,32 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final essentielArticles =
         (results[2] as List<EssentielArticle>?) ?? const <EssentielArticle>[];
 
+    final next = await _buildStateFromPayload(
+      dual: dual,
+      topThemes: topThemes,
+      essentielArticles: essentielArticles,
+      isSerene: isSerene,
+      fetchThemes: true,
+    );
+    if (dual != null) {
+      unawaited(
+        _cacheService.write(
+          dual: dual,
+          topThemes: topThemes,
+          essentielArticles: essentielArticles,
+        ),
+      );
+    }
+    return next;
+  }
+
+  Future<FluxContinuState> _buildStateFromPayload({
+    required DualDigestResponse? dual,
+    required List<TopTheme> topThemes,
+    required List<EssentielArticle> essentielArticles,
+    required bool isSerene,
+    required bool fetchThemes,
+  }) async {
     // PR2 — la section "Essentiel" du haut du feed est désormais alimentée
     // par GET /api/essentiel (5 articles transversaux). Si l'endpoint n'a
     // rien servi (preparing/erreur), on ne rend pas la section : le digest
@@ -204,7 +246,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
     final favorites = _pickFavorites(topThemes);
     _lastFavorites = favorites;
-    _themes = await _fetchThemeSections(favorites, isSerene);
+    _themes = fetchThemes
+        ? await _fetchThemeSections(favorites, isSerene)
+        : const <FeedThemeSection>[];
 
     _moreOpen = const {};
     _folded = await _loadFoldedForToday();
