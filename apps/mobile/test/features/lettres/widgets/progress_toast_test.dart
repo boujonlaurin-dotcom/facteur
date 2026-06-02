@@ -74,6 +74,38 @@ void main() {
     expect(opened, 1);
   });
 
+  testWidgets('accentColor teinte le cachet du niveau étape', (tester) async {
+    const accent = Color(0xFF445566);
+    await tester.pumpWidget(
+      _harness(
+        onReady: (ctx) => showProgressToast(
+          ctx,
+          level: ProgressToastLevel.step,
+          stepNum: '01',
+          stepTitle: 'Veille créée',
+          accentColor: accent,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.byWidgetPredicate((widget) {
+        if (widget is! Container || widget.decoration is! BoxDecoration) {
+          return false;
+        }
+        final decoration = widget.decoration! as BoxDecoration;
+        final border = decoration.border;
+        return decoration.shape == BoxShape.circle &&
+            border is Border &&
+            border.top.color == accent &&
+            border.top.width == 2;
+      }),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('niveau section affiche titre Fraunces + sous-titre 100%', (
     tester,
   ) async {

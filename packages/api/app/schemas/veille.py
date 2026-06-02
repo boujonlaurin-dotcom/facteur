@@ -21,6 +21,8 @@ VeilleThemeSlug = Literal[
 ]
 
 MAX_KEYWORDS_PER_CONFIG = 20
+MAX_SUGGEST_SOURCE_ANGLES = 20
+MAX_SUGGEST_SOURCE_KEYWORDS = 40
 
 
 def _normalize_keyword(raw: str) -> str:
@@ -281,8 +283,18 @@ class VeilleSuggestSourcesRequest(BaseModel):
     theme_id: str = Field(min_length=1, max_length=50)
     theme_label: str = Field(min_length=1, max_length=120)
     brief: str = Field(default="", max_length=500)
-    angles: list[str] = Field(default_factory=list, max_length=20)
-    keywords: list[str] = Field(default_factory=list, max_length=40)
+    angles: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+
+    @field_validator("angles", mode="after")
+    @classmethod
+    def truncate_angles(cls, v: list[str]) -> list[str]:
+        return v[:MAX_SUGGEST_SOURCE_ANGLES]
+
+    @field_validator("keywords", mode="after")
+    @classmethod
+    def truncate_keywords(cls, v: list[str]) -> list[str]:
+        return v[:MAX_SUGGEST_SOURCE_KEYWORDS]
 
 
 class VeilleSourceSuggestion(BaseModel):

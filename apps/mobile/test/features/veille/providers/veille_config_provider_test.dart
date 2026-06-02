@@ -6,6 +6,7 @@ import 'package:facteur/features/veille/providers/veille_config_provider.dart';
 import 'package:facteur/features/veille/providers/veille_repository_provider.dart';
 import 'package:facteur/features/veille/providers/veille_themes_provider.dart';
 import 'package:facteur/features/veille/repositories/veille_repository.dart';
+import 'package:facteur/features/veille/screens/steps/step3_sources_screen.dart';
 
 /// Repo factice qui capture le body d'`upsertConfig` (pour tester le mapping
 /// `_buildUpsertRequest`). Toute autre méthode throw → instrumentation à fixer.
@@ -40,8 +41,7 @@ class _CaptureRepo implements VeilleRepository {
     required String topic,
     String? themeId,
     String? themeLabel,
-  }) async =>
-      resolvedTopic;
+  }) async => resolvedTopic;
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
@@ -236,6 +236,50 @@ void main() {
     expect(source.nicheCandidate!.name, 'MACBA');
     expect(source.nicheCandidate!.url, 'https://www.macba.cat');
     expect(source.toJson()['niche_candidate'], isA<Map<String, dynamic>>());
+  });
+
+  test('addUrlSourceToVeille ajoute une source niche locale sélectionnée', () {
+    notifier.addUrlSourceToVeille(
+      name: 'Blog niche',
+      url: 'https://example.com/rss.xml',
+      why: 'Flux spécialisé',
+    );
+
+    final s = container.read(veilleConfigProvider);
+    final slug = VeilleConfigNotifier.sourceSuggestionSlug(
+      'Blog niche',
+      'https://example.com/rss.xml',
+    );
+    expect(s.selectedSourceIds, contains(slug));
+    expect(s.sourcesMeta[slug]!.kind, 'niche');
+    expect(s.sourcesMeta[slug]!.apiSourceId, isNull);
+    expect(s.sourcesMeta[slug]!.url, 'https://example.com/rss.xml');
+  });
+
+  test('buildSuggestionQuery borne angles et mots-clés au cap suggester', () {
+    notifier.selectTheme('tech');
+    notifier.selectMainTopic('ai', 'Intelligence artificielle');
+
+    for (var i = 0; i < VeilleConfigNotifier.maxKeywords; i++) {
+      notifier.addKeyword('global-$i');
+    }
+    for (var i = 0; i < 25; i++) {
+      notifier.toggleAngle(
+        VeilleAngleSuggestionDto(
+          title: 'Angle $i',
+          keywords: [for (var j = 0; j < 10; j++) 'kw-$i-$j'],
+        ),
+      );
+    }
+
+    final query = buildSuggestionQuery(container.read(veilleConfigProvider))!;
+    final angles = query.anglesKey.split('|');
+    final keywords = query.keywordsKey.split('|');
+
+    expect(angles.length, VeilleConfigNotifier.maxSuggestAngles);
+    expect(keywords.length, VeilleConfigNotifier.maxSuggestKeywords);
+    expect(angles.first, 'Intelligence artificielle');
+    expect(keywords.take(2), ['global-0', 'global-1']);
   });
 
   // ─── Angles LLM (PR-3) ──────────────────────────────────────────────────

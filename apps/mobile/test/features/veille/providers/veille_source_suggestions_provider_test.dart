@@ -8,10 +8,11 @@ import 'package:facteur/features/veille/repositories/veille_repository.dart';
 
 class _FakeRepo implements VeilleRepository {
   final List<VeilleSourceSuggestionDto> sources;
+  final Object? error;
   List<String>? capturedAngles;
   List<String>? capturedKeywords;
 
-  _FakeRepo(this.sources);
+  _FakeRepo(this.sources, {this.error});
 
   @override
   Future<List<VeilleSourceSuggestionDto>> suggestSources({
@@ -23,6 +24,8 @@ class _FakeRepo implements VeilleRepository {
   }) async {
     capturedAngles = angles;
     capturedKeywords = keywords;
+    final err = error;
+    if (err != null) throw err;
     return sources;
   }
 
@@ -74,5 +77,27 @@ void main() {
       veilleSourceSuggestionsProvider(query).future,
     );
     expect(sources, isEmpty);
+  });
+
+  test('erreur API repo : provider expose un AsyncError', () async {
+    final container = ProviderContainer(
+      overrides: [
+        veilleRepositoryProvider.overrideWithValue(
+          _FakeRepo(
+            const [],
+            error: const VeilleApiException(
+              'requête invalide',
+              statusCode: 422,
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await expectLater(
+      container.read(veilleSourceSuggestionsProvider(query).future),
+      throwsA(isA<VeilleApiException>()),
+    );
   });
 }

@@ -264,18 +264,41 @@ class _AnglesLoading extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 22),
-      child: Column(
-        children: [
-          const FacteurLoader(width: 64, height: 64),
-          const SizedBox(height: 8),
-          Text(
-            'Recherche d\'angles pour ton thème…',
-            style: GoogleFonts.dmSans(
-              fontSize: 12.5,
-              color: const Color(0xFF8B7E63),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFDFBF7),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: FacteurColors.veilleLineSoft),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const FacteurLoader(width: 56, height: 56),
+            const SizedBox(height: 12),
+            Text(
+              'Recherche des bons angles',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.fraunces(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF2C2A29),
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 6),
+            Text(
+              'Un angle est une facette précise de ton sujet. Les sélectionner '
+              'avec soin permet de cibler les aspects qui t\'intéressent le plus.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                height: 1.45,
+                color: const Color(0xFF5D5B5A),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -386,27 +409,101 @@ class _AngleCard extends StatelessWidget {
           if (showChips)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final kw in keywords)
-                    _KeywordChip(
-                      label: kw,
-                      onRemove: selected
-                          ? () => notifier.removeAngleKeyword(slug, kw)
-                          : null,
-                    ),
-                  if (selected &&
-                      keywords.length < VeilleConfigNotifier.maxAngleKeywords)
-                    _AddKeywordButton(
-                      enabled: true,
-                      onTap: () =>
-                          _openAddAngleKeywordSheet(context, notifier, slug),
-                    ),
-                ],
-              ),
+              child: selected
+                  ? _KeywordsSummaryChip(
+                      count: keywords.length,
+                      onTap: () => _openKeywordsManagerSheet(context, slug),
+                    )
+                  : _KeywordsPreviewChip(count: keywords.length),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KeywordsSummaryChip extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+  const _KeywordsSummaryChip({required this.count, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = count == 1 ? '1 mot clé tracké' : '$count mots clés trackés';
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: FacteurColors.veilleTint,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: FacteurColors.veille),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                PhosphorIcons.listBullets(),
+                size: 13,
+                color: FacteurColors.veille,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: GoogleFonts.dmSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: FacteurColors.veille,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
+                size: 12,
+                color: FacteurColors.veille,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _KeywordsPreviewChip extends StatelessWidget {
+  final int count;
+  const _KeywordsPreviewChip({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = count == 1 ? '1 mot clé' : '$count mots clés';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: FacteurColors.veilleLineSoft),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            PhosphorIcons.listBullets(),
+            size: 12,
+            color: const Color(0xFF8B7E63),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: GoogleFonts.dmSans(
+              fontSize: 12,
+              color: const Color(0xFF5D5B5A),
+            ),
+          ),
         ],
       ),
     );
@@ -612,6 +709,103 @@ Future<void> _openAddAngleKeywordSheet(
   hint: 'Ex : régulation',
   onAdd: (kw) => notifier.addAngleKeyword(slug, kw),
 );
+
+Future<void> _openKeywordsManagerSheet(
+  BuildContext context,
+  String slug,
+) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+    ),
+    builder: (ctx) {
+      final viewInsets = MediaQuery.of(ctx).viewInsets;
+      return Consumer(
+        builder: (context, ref, _) {
+          final state = ref.watch(veilleConfigProvider);
+          final notifier = ref.read(veilleConfigProvider.notifier);
+          final keywords = state.angleKeywords[slug] ?? const <String>[];
+          final canAdd =
+              keywords.length < VeilleConfigNotifier.maxAngleKeywords;
+          return SafeArea(
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + viewInsets.bottom),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Mots clés trackés',
+                          style: GoogleFonts.fraunces(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF2C2A29),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        icon: Icon(PhosphorIcons.x(), size: 18),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Ils filtrent les articles de cet angle dans le titre et '
+                    'la description.',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12.5,
+                      height: 1.4,
+                      color: const Color(0xFF5D5B5A),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  if (keywords.isEmpty) ...[
+                    Text(
+                      'Aucun mot clé pour cet angle.',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12.5,
+                        color: const Color(0xFF8B7E63),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ] else ...[
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final kw in keywords)
+                          _KeywordChip(
+                            label: kw,
+                            onRemove: () =>
+                                notifier.removeAngleKeyword(slug, kw),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                  _AddKeywordButton(
+                    enabled: canAdd,
+                    onTap: canAdd
+                        ? () => _openAddAngleKeywordSheet(ctx, notifier, slug)
+                        : () {},
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
 
 /// Bottom sheet partagé de saisie d'un mot-clé. `onAdd` reçoit le texte trimé
 /// non-vide ; la normalisation/dédupe est faite côté notifier.
