@@ -45,10 +45,13 @@ class Perspective {
   final String sourceDomain;
   final String biasStance;
   final String? publishedAt;
+
   /// Tokens divergents du titre vs. référence, colorisés par bias.
   final List<HighlightSpan> highlightSpans;
+
   /// Tokens partagés avec la référence (rendus en text_tertiary par DiffTitle).
   final List<TokenSpan> sharedTokens;
+
   /// Langue ISO du titre ("fr","en",...). Optionnel — exposé par PR 5.
   /// Réservé au regroupement "Couverture étrangère" (PR 6.1).
   final String? language;
@@ -249,9 +252,11 @@ class _PerspectivesBottomSheetState
 
   List<Perspective> get _sortedPerspectives {
     final sorted = [...widget.perspectives];
-    sorted.sort((a, b) => _groupOrder
-        .indexOf(a.biasGroup)
-        .compareTo(_groupOrder.indexOf(b.biasGroup)));
+    sorted.sort(
+      (a, b) => _groupOrder
+          .indexOf(a.biasGroup)
+          .compareTo(_groupOrder.indexOf(b.biasGroup)),
+    );
     return sorted;
   }
 
@@ -318,10 +323,7 @@ class _PerspectivesBottomSheetState
     Widget card(Perspective p, {bool dim = false}) {
       final w = Padding(
         padding: const EdgeInsets.only(bottom: 8),
-        child: _PerspectiveCard(
-          perspective: p,
-          onView: _onPerspectiveViewed,
-        ),
+        child: _PerspectiveCard(perspective: p, onView: _onPerspectiveViewed),
       );
       return dim ? Opacity(opacity: 0.92, child: w) : w;
     }
@@ -342,8 +344,9 @@ class _PerspectivesBottomSheetState
     final filtered = _filteredPerspectives;
 
     return Container(
-      constraints:
-          BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.92),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.92,
+      ),
       decoration: BoxDecoration(
         color: colors.backgroundPrimary,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
@@ -403,7 +406,8 @@ class _PerspectivesBottomSheetState
                                 padding: EdgeInsets.zero,
                                 visualDensity: VisualDensity.compact,
                                 icon: Icon(
-                                    PhosphorIcons.x(PhosphorIconsStyle.bold)),
+                                  PhosphorIcons.x(PhosphorIconsStyle.bold),
+                                ),
                                 onPressed: () => Navigator.pop(context),
                                 color: colors.textSecondary,
                               ),
@@ -411,11 +415,14 @@ class _PerspectivesBottomSheetState
                           ),
                           if (widget.comparisonQuality == 'low')
                             PerspectivesWarningBadge(
-                                colors: colors, textTheme: textTheme),
+                              colors: colors,
+                              textTheme: textTheme,
+                            ),
                           if (widget.divergenceLevel != null) ...[
                             const SizedBox(height: 8),
                             DivergenceInlineBadge(
-                                divergenceLevel: widget.divergenceLevel),
+                              divergenceLevel: widget.divergenceLevel,
+                            ),
                             const SizedBox(height: 4),
                           ],
                           const SizedBox(height: 12),
@@ -442,7 +449,8 @@ class _PerspectivesBottomSheetState
                                     alignment: Alignment.centerRight,
                                     child: GestureDetector(
                                       onTap: () => setState(
-                                          () => _selectedSegments = {}),
+                                        () => _selectedSegments = {},
+                                      ),
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
@@ -457,7 +465,8 @@ class _PerspectivesBottomSheetState
                                           const SizedBox(width: 4),
                                           Icon(
                                             PhosphorIcons.x(
-                                                PhosphorIconsStyle.bold),
+                                              PhosphorIconsStyle.bold,
+                                            ),
                                             size: 12,
                                             color: colors.primary,
                                           ),
@@ -511,8 +520,9 @@ class _PerspectivesBottomSheetState
                           IconButton(
                             padding: EdgeInsets.zero,
                             visualDensity: VisualDensity.compact,
-                            icon:
-                                Icon(PhosphorIcons.x(PhosphorIconsStyle.bold)),
+                            icon: Icon(
+                              PhosphorIcons.x(PhosphorIconsStyle.bold),
+                            ),
                             onPressed: () => Navigator.pop(context),
                             color: colors.textSecondary,
                           ),
@@ -521,7 +531,9 @@ class _PerspectivesBottomSheetState
                     ),
                     const SizedBox(height: 16),
                     PerspectivesEmptyState(
-                        colors: colors, textTheme: textTheme),
+                      colors: colors,
+                      textTheme: textTheme,
+                    ),
                   ],
                 ],
               ),
@@ -574,8 +586,9 @@ class _ShimmerLineState extends State<_ShimmerLine>
             height: 12,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(6),
-              color: widget.colors.textSecondary
-                  .withValues(alpha: 0.08 + 0.08 * _controller.value),
+              color: widget.colors.textSecondary.withValues(
+                alpha: 0.08 + 0.08 * _controller.value,
+              ),
             ),
           ),
         );
@@ -622,16 +635,13 @@ class _PerspectiveCard extends ConsumerWidget {
   Source? _findSource(List<Source> sources) {
     final domain = perspective.sourceDomain.toLowerCase();
     if (domain.isEmpty) return null;
-    return sources.cast<Source?>().firstWhere(
-      (s) {
-        if (s?.url == null) return false;
-        final uri = Uri.tryParse(s!.url!);
-        if (uri == null) return false;
-        final host = uri.host.toLowerCase().replaceFirst('www.', '');
-        return host == domain || host == 'www.$domain';
-      },
-      orElse: () => null,
-    );
+    return sources.cast<Source?>().firstWhere((s) {
+      if (s?.url == null) return false;
+      final uri = Uri.tryParse(s!.url!);
+      if (uri == null) return false;
+      final host = uri.host.toLowerCase().replaceFirst('www.', '');
+      return host == domain || host == 'www.$domain';
+    }, orElse: () => null);
   }
 
   void _showSourceDetail(BuildContext context, WidgetRef ref, Source source) {
@@ -751,7 +761,9 @@ class _PerspectiveCard extends ConsumerWidget {
                     // Bias badge
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: perspective
                             .getBiasColor(colors)
@@ -856,9 +868,7 @@ class PerspectivesWarningBadge extends StatelessWidget {
       padding: const EdgeInsets.only(top: 4),
       child: Text(
         'Comparaison limitée (sujet peu couvert)',
-        style: textTheme.labelSmall?.copyWith(
-          color: colors.textTertiary,
-        ),
+        style: textTheme.labelSmall?.copyWith(color: colors.textTertiary),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -947,7 +957,8 @@ class PerspectivesBiasBar extends StatelessWidget {
             return Expanded(
               flex: flexValues[i],
               child: GestureDetector(
-                onTap: count > 0 && !compact ? () => onSegmentTap(seg.$1) : null,
+                onTap:
+                    count > 0 && !compact ? () => onSegmentTap(seg.$1) : null,
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 200),
                   opacity: isActive ? 1.0 : 0.3,
@@ -963,10 +974,13 @@ class PerspectivesBiasBar extends StatelessWidget {
                                 child: Center(
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 2),
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: seg.$3.withValues(
-                                          alpha: count > 0 ? 0.15 : 0.05),
+                                        alpha: count > 0 ? 0.15 : 0.05,
+                                      ),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: FittedBox(
@@ -997,7 +1011,8 @@ class PerspectivesBiasBar extends StatelessWidget {
                               ? seg.$3.withValues(
                                   alpha: count == 1
                                       ? 0.55
-                                      : (count == 2 ? 0.8 : 1.0))
+                                      : (count == 2 ? 0.8 : 1.0),
+                                )
                               : seg.$3.withValues(alpha: 0.25),
                           borderRadius: BorderRadius.circular(6),
                           border: count > 0
@@ -1025,8 +1040,10 @@ class PerspectivesBiasBar extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 4),
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        final totalFlex =
-                            flexValues.fold<int>(0, (sum, f) => sum + f);
+                        final totalFlex = flexValues.fold<int>(
+                          0,
+                          (sum, f) => sum + f,
+                        );
                         double offsetFraction = 0;
                         for (int i = 0; i < sourceIndex; i++) {
                           offsetFraction += flexValues[i] / totalFlex;
@@ -1051,12 +1068,15 @@ class PerspectivesBiasBar extends StatelessWidget {
                                 child: CustomPaint(
                                   size: const Size(10, 6),
                                   painter: PerspectivesTrianglePainter(
-                                      color: sourceColor),
+                                    color: sourceColor,
+                                  ),
                                 ),
                               ),
                               Positioned(
-                                left: (markerX - 50)
-                                    .clamp(0.0, constraints.maxWidth - 100),
+                                left: (markerX - 50).clamp(
+                                  0.0,
+                                  constraints.maxWidth - 100,
+                                ),
                                 top: 10,
                                 child: SizedBox(
                                   width: 100,
@@ -1148,8 +1168,9 @@ class PerspectivesAnalysisZoneState extends State<PerspectivesAnalysisZone> {
         ),
         style: OutlinedButton.styleFrom(
           side: BorderSide(color: widget.colors.primary.withValues(alpha: 0.4)),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
         ),
       ),
@@ -1186,8 +1207,9 @@ class PerspectivesAnalysisZoneState extends State<PerspectivesAnalysisZone> {
       decoration: BoxDecoration(
         color: widget.colors.primary.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(12),
-        border:
-            Border.all(color: widget.colors.primary.withValues(alpha: 0.15)),
+        border: Border.all(
+          color: widget.colors.primary.withValues(alpha: 0.15),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1298,6 +1320,7 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
   final String sourceName;
   final String contentId;
   final String comparisonQuality;
+  final String? divergenceLevel;
 
   /// Controlled mode: when provided, the parent owns the filter state.
   /// Préservé pour compatibilité avec le call-site existant — non utilisé
@@ -1340,6 +1363,7 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
     this.sourceBiasStance = 'unknown',
     this.sourceName = '',
     this.comparisonQuality = 'low',
+    this.divergenceLevel,
     this.externalSelectedSegments,
     this.onSegmentTap,
     this.onClearSegments,
@@ -1389,9 +1413,11 @@ class _PerspectivesInlineSectionState
 
   List<Perspective> get _sortedPerspectives {
     final sorted = [...widget.perspectives];
-    sorted.sort((a, b) => _groupOrder
-        .indexOf(a.biasGroup)
-        .compareTo(_groupOrder.indexOf(b.biasGroup)));
+    sorted.sort(
+      (a, b) => _groupOrder
+          .indexOf(a.biasGroup)
+          .compareTo(_groupOrder.indexOf(b.biasGroup)),
+    );
     return sorted;
   }
 
@@ -1419,9 +1445,13 @@ class _PerspectivesInlineSectionState
             decoration: BoxDecoration(
               border: Border(
                 top: BorderSide(
-                    color: Colors.black.withValues(alpha: 0.08), width: 1),
+                  color: Colors.black.withValues(alpha: 0.08),
+                  width: 1,
+                ),
                 bottom: BorderSide(
-                    color: Colors.black.withValues(alpha: 0.08), width: 1),
+                  color: Colors.black.withValues(alpha: 0.08),
+                  width: 1,
+                ),
               ),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
@@ -1429,16 +1459,22 @@ class _PerspectivesInlineSectionState
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
-                  child: Text(
-                    'Couverture médiatique (${widget.perspectives.length})',
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.1,
-                      color: colors.textPrimary,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'Couverture médiatique (${widget.perspectives.length})',
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: colors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1480,37 +1516,30 @@ class _PerspectivesInlineSectionState
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            colors.primary.withValues(alpha: 0.045),
-            Colors.transparent,
-          ],
+          colors: [colors.primary.withValues(alpha: 0.045), Colors.transparent],
           stops: const [0.0, 0.5],
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (widget.referenceTitle.isNotEmpty) ...[
-            _RefBlock(
-              key: ValueKey('ref_$_animationGeneration'),
-              title: widget.referenceTitle,
-              pivot: widget.referencePivot,
-              sourceBiasStance: widget.sourceBiasStance,
-              sourceName: widget.sourceName,
+          if (_polarizationText != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+              child: Text(
+                _polarizationText!,
+                style: textTheme.bodySmall?.copyWith(
+                  color: colors.textSecondary,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
-            Container(
-              margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-              height: 1,
-              color: colors.textSecondary.withValues(alpha: 0.18),
-            ),
-          ],
           if (variants.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+              padding: EdgeInsets.fromLTRB(16, _polarizationText != null ? 0 : 10, 16, 6),
               child: Text(
                 kHighlightIntroText,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
                 style: textTheme.bodySmall?.copyWith(
                   color: colors.textSecondary,
                   height: 1.35,
@@ -1529,7 +1558,9 @@ class _PerspectivesInlineSectionState
               padding: const EdgeInsets.only(top: 8, bottom: 4),
               child: Center(
                 child: PerspectivesWarningBadge(
-                    colors: colors, textTheme: textTheme),
+                  colors: colors,
+                  textTheme: textTheme,
+                ),
               ),
             ),
           Padding(
@@ -1551,10 +1582,35 @@ class _PerspectivesInlineSectionState
                 zoneKey: widget.analysisZoneKey,
               ),
             ),
+          if (widget.referenceTitle.isNotEmpty) ...[
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              height: 1,
+              color: colors.textSecondary.withValues(alpha: 0.18),
+            ),
+            _RefBlock(
+              key: ValueKey('ref_$_animationGeneration'),
+              title: widget.referenceTitle,
+              pivot: widget.referencePivot,
+              sourceBiasStance: widget.sourceBiasStance,
+              sourceName: widget.sourceName,
+            ),
+          ],
           const SizedBox(height: 16),
         ],
       ),
     );
+  }
+
+  String? get _polarizationText {
+    switch (widget.divergenceLevel) {
+      case 'medium':
+        return 'Avis variés dans le traitement de ce sujet';
+      case 'high':
+        return 'Forte polarisation dans le traitement de ce sujet';
+      default:
+        return null;
+    }
   }
 }
 
@@ -1614,16 +1670,11 @@ class _RefBlock extends ConsumerWidget {
     final colors = context.facteurColors;
     return Container(
       decoration: BoxDecoration(
-        border: Border(
-          left: BorderSide(color: colors.primary, width: 3),
-        ),
+        border: Border(left: BorderSide(color: colors.primary, width: 3)),
         gradient: LinearGradient(
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
-          colors: [
-            colors.primary.withValues(alpha: 0.05),
-            Colors.transparent,
-          ],
+          colors: [colors.primary.withValues(alpha: 0.05), Colors.transparent],
           stops: const [0.0, 0.7],
         ),
       ),
@@ -1684,10 +1735,7 @@ class _PivotedRefTitle extends StatefulWidget {
   final String title;
   final TokenSpan? pivot;
 
-  const _PivotedRefTitle({
-    required this.title,
-    required this.pivot,
-  });
+  const _PivotedRefTitle({required this.title, required this.pivot});
 
   @override
   State<_PivotedRefTitle> createState() => _PivotedRefTitleState();
@@ -1743,7 +1791,7 @@ class _PivotedRefTitleState extends State<_PivotedRefTitle>
       animation: _controller,
       builder: (context, _) {
         final t = Curves.easeOut.transform(_controller.value);
-        final washColor = const Color(0xFF9E9E9E).withValues(alpha: 0.20 * t);
+        final washColor = const Color(0xFF9E9E9E).withValues(alpha: 0.14 * t);
         return RichText(
           text: TextSpan(
             style: fraunces,
@@ -1753,7 +1801,10 @@ class _PivotedRefTitleState extends State<_PivotedRefTitle>
                 alignment: PlaceholderAlignment.middle,
                 baseline: TextBaseline.alphabetic,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: washColor,
                     borderRadius: BorderRadius.circular(4),
@@ -1764,8 +1815,7 @@ class _PivotedRefTitleState extends State<_PivotedRefTitle>
                   ),
                 ),
               ),
-              if (end < titleLen)
-                TextSpan(text: widget.title.substring(end)),
+              if (end < titleLen) TextSpan(text: widget.title.substring(end)),
             ],
           ),
         );
@@ -1820,7 +1870,9 @@ class _VariantRow extends ConsumerWidget {
             bottom: isLast
                 ? BorderSide.none
                 : BorderSide(
-                    color: Colors.black.withValues(alpha: 0.08), width: 1),
+                    color: Colors.black.withValues(alpha: 0.08),
+                    width: 1,
+                  ),
           ),
         ),
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -1850,12 +1902,13 @@ class _VariantRow extends ConsumerWidget {
                       width: 20,
                       height: 20,
                       errorBuilder: (_, __, ___) => _SourceFallback(
-                          name: perspective.sourceName, colors: colors),
+                        name: perspective.sourceName,
+                        colors: colors,
+                      ),
                     ),
                   )
                 else
-                  _SourceFallback(
-                      name: perspective.sourceName, colors: colors),
+                  _SourceFallback(name: perspective.sourceName, colors: colors),
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
@@ -2015,8 +2068,11 @@ class _DashedBorderPainter extends CustomPainter {
     canvas.drawPath(dashed, paint);
   }
 
-  Path _dashPath(Path source,
-      {required double dashWidth, required double gapWidth}) {
+  Path _dashPath(
+    Path source, {
+    required double dashWidth,
+    required double gapWidth,
+  }) {
     final out = Path();
     for (final metric in source.computeMetrics()) {
       double distance = 0;

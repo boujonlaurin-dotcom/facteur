@@ -11,7 +11,8 @@ import '../features/onboarding/screens/onboarding_screen.dart';
 import '../features/onboarding/screens/conclusion_animation_screen.dart';
 import '../features/feed/models/content_model.dart';
 import '../features/feed/screens/flaner_screen.dart';
-import '../features/feed/widgets/perspectives_bottom_sheet.dart' show Perspective;
+import '../features/feed/widgets/perspectives_bottom_sheet.dart'
+    show Perspective;
 import '../features/flux_continu/screens/digest_section_screen.dart';
 import '../features/flux_continu/screens/flux_continu_screen.dart';
 import '../features/flux_continu/screens/theme_section_screen.dart';
@@ -53,8 +54,9 @@ import '../shared/widgets/navigation/modal_bottom_sheet_page.dart';
 /// navigator *root* reste `NotificationService.navigatorKey` (cf. `GoRouter`
 /// plus bas) — c'est lui que ciblent les sous-routes article via
 /// `parentNavigatorKey` pour s'afficher plein écran au-dessus du footer.
-final _essentielBranchKey =
-    GlobalKey<NavigatorState>(debugLabel: 'essentielBranch');
+final _essentielBranchKey = GlobalKey<NavigatorState>(
+  debugLabel: 'essentielBranch',
+);
 final _flanerBranchKey = GlobalKey<NavigatorState>(debugLabel: 'flanerBranch');
 
 /// Noms des routes
@@ -109,6 +111,7 @@ class RoutePaths {
   static const String flaner = '/flaner';
   static const String fluxContinu = '/flux-continu';
   static const String contentDetail = '/content/:id';
+  static const String contentExternal = '/content-external';
   static const String saved = '/saved';
   static const String sources = '/settings/sources'; // Moved to settings
   // static const String addSource = '/sources/add'; // Removed for V0
@@ -180,14 +183,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isOnLoginPage = matchedLocation == RoutePaths.login;
       final isOnEmailConfirmation =
           matchedLocation == RoutePaths.emailConfirmation;
-      final isOnOnboarding = matchedLocation == RoutePaths.onboarding ||
+      final isOnOnboarding =
+          matchedLocation == RoutePaths.onboarding ||
           matchedLocation == RoutePaths.onboardingConclusion;
       // Escape hatch: the onboarding "Personnaliser mon mode serein" CTA pushes
       // the interests screen with ?serein=1. Let that through so the user can
       // configure their exclusions before completing onboarding.
       final isOnInterestsFromOnboarding =
           matchedLocation == RoutePaths.myInterests &&
-              state.uri.queryParameters['serein'] == '1';
+          state.uri.queryParameters['serein'] == '1';
 
       // 1. Les utilisateurs non connectés
       if (!isLoggedIn) {
@@ -252,7 +256,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final authState = ref.read(authStateProvider);
           return EmailConfirmationScreen(
-            email: authState.user?.email ??
+            email:
+                authState.user?.email ??
                 authState.pendingEmailConfirmation ??
                 '',
           );
@@ -273,19 +278,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ConclusionAnimationScreen(),
       ),
 
-      // Shell principal des deux onglets (Essentiel / Flâner). Le shell pose un
-      // header + footer FIXES (MainShell) ; seul le body glisse au changement
-      // d'onglet (BranchPageView). Les sous-routes article s'échappent vers le
-      // navigator root via `parentNavigatorKey` pour s'afficher plein écran
-      // au-dessus du footer (swipe-back Cupertino conservé).
+      // Shell principal des deux onglets (Essentiel / Flâner). MainShell ne
+      // garde que le conteneur de branches (BranchPageView) ; le header/footer
+      // partagés sont rendus dans les pages racines de branche pour rester sous
+      // les modales ouvertes depuis ces pages. Les sous-routes article
+      // s'échappent vers le navigator root via `parentNavigatorKey` pour
+      // s'afficher plein écran (swipe-back Cupertino conservé).
       StatefulShellRoute(
         builder: (context, state, navigationShell) =>
             MainShell(navigationShell: navigationShell),
         navigatorContainerBuilder: (context, navigationShell, children) =>
             BranchPageView(
-          navigationShell: navigationShell,
-          children: children,
-        ),
+              navigationShell: navigationShell,
+              children: children,
+            ),
         branches: [
           // Branche 0 — L'Essentiel (Flux Continu, home post-auth Story 21.1).
           StatefulShellBranch(
@@ -294,8 +300,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: RoutePaths.fluxContinu,
                 name: RouteNames.fluxContinu,
-                builder: (context, state) =>
-                    const Stack(children: [FluxContinuScreen(), NudgeHost()]),
+                builder: (context, state) => const MainTabPageScaffold(
+                  currentIndex: 0,
+                  child: Stack(children: [FluxContinuScreen(), NudgeHost()]),
+                ),
                 routes: [
                   GoRoute(
                     path: 'content/:id',
@@ -353,8 +361,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: RoutePaths.flaner,
                 name: RouteNames.flaner,
-                builder: (context, state) =>
-                    const Stack(children: [FlanerScreen(), NudgeHost()]),
+                builder: (context, state) => const MainTabPageScaffold(
+                  currentIndex: 1,
+                  child: Stack(children: [FlanerScreen(), NudgeHost()]),
+                ),
                 routes: [
                   GoRoute(
                     path: 'content/:id',
@@ -423,7 +433,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       // du site. Top-level sur le root navigator + swipe-back iOS : la sheet de
       // comparaisons (elle-même sur le root navigator) reste vivante dessous.
       GoRoute(
-        path: 'content-external',
+        path: RoutePaths.contentExternal,
         name: RouteNames.contentExternal,
         parentNavigatorKey: NotificationService.navigatorKey,
         pageBuilder: (context, state) {

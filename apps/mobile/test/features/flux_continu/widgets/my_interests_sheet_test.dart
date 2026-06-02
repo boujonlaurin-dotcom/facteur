@@ -70,7 +70,8 @@ void main() {
   });
 
   group('showMyInterestsBottomSheet', () {
-    testWidgets('lists the favorite themes/topics and the primary CTA',
+    testWidgets(
+        'lists only theme/veille favorites (custom topics excluded) + CTA',
         (tester) async {
       await tester.pumpWidget(_openerHost(_stateWithFavorites()));
 
@@ -78,13 +79,16 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Mes intérêts'), findsOneWidget);
-      expect(find.text('2 FAVORIS'), findsOneWidget);
-      // Custom topic name resolved from interests.customTopics
-      expect(find.text('IA & éducation'), findsOneWidget);
+      // Le sujet précis (custom topic) est exclu : seul le thème compte.
+      expect(find.text('1 FAVORIS'), findsOneWidget);
+      expect(find.text('IA & éducation'), findsNothing);
       // Theme slug → canonical visual label
       expect(find.text('Environnement'), findsOneWidget);
       expect(find.text('01'), findsOneWidget);
-      expect(find.text('02'), findsOneWidget);
+      expect(find.text('02'), findsNothing);
+      // Copie clarifiant la séparation thèmes ↔ sujets.
+      expect(find.text('Tes sujets précis se gèrent dans Flâner.'),
+          findsOneWidget);
       expect(find.text('Gérer mes intérêts'), findsOneWidget);
       expect(find.text('Fermer'), findsOneWidget);
     });

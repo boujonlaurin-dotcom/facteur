@@ -129,8 +129,8 @@ class _FeedRefreshIndicatorStrip extends ConsumerWidget {
 }
 
 /// Top row of the sticky overlay — a Fraunces label naming the current zone.
-/// L'avatar profil vit désormais uniquement dans le header fixe du shell
-/// (`MainShell`) ; il a été retiré d'ici pour ne plus apparaître en double.
+/// L'avatar profil vit uniquement dans le header partagé de la page ; il a été
+/// retiré d'ici pour ne plus apparaître en double.
 class StickyHead extends ConsumerWidget {
   final String title;
 
@@ -140,7 +140,7 @@ class StickyHead extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 3),
       child: Row(
         children: [
           Text(
@@ -173,11 +173,11 @@ class _TabsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 56,
+      height: 48,
       child: ListView.separated(
         controller: controller,
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
         itemCount: tabs.length,
         separatorBuilder: (_, __) => const SizedBox(width: 2),
         itemBuilder: (context, i) {
@@ -226,7 +226,7 @@ class _Tab extends StatelessWidget {
       child: Stack(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 7, 12, 9),
+            padding: const EdgeInsets.fromLTRB(12, 5, 12, 7),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

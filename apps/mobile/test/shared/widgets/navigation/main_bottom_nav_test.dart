@@ -34,7 +34,7 @@ void main() {
     });
 
     testWidgets('tap onglet actif → onSelect(indexCourant) (scroll-to-top géré '
-        'par le shell)', (tester) async {
+        'par le parent)', (tester) async {
       final taps = <int>[];
       await tester.pumpWidget(
         wrap(currentIndex: 0, onSelect: taps.add),

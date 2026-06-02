@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -44,7 +45,7 @@ const double _kStickyThreshold = 60.0;
 /// Vertical offset the sticky bar consumes — used as a landing buffer
 /// when scrolling a section into view so its banner doesn't disappear
 /// behind the bar.
-const double _kStickyBarHeight = 100.0;
+const double _kStickyBarHeight = 90.0;
 
 /// Minimum delta (px) before the scroll-up FAB toggles, to avoid flicker
 /// on tiny inertia bounces. Matches the legacy FeedScreen behaviour.
@@ -207,8 +208,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // dominance flips the active tab as soon as the next section becomes
     // majority-visible, which matches what the user is actually reading.
     const viewportTop = _kStickyBarHeight;
-    final viewportBottom =
-        viewportTop +
+    final viewportBottom = viewportTop +
         (_scroll.hasClients ? _scroll.position.viewportDimension : 0.0);
     int activeAt = 0;
     double bestVisible = -1;
@@ -262,9 +262,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (ctx == null) return;
     final box = ctx.findRenderObject();
     if (box is! RenderBox) return;
-    final scrollBox =
-        _scroll.position.context.notificationContext?.findRenderObject()
-            as RenderBox?;
+    final scrollBox = _scroll.position.context.notificationContext
+        ?.findRenderObject() as RenderBox?;
     if (scrollBox == null) {
       await Scrollable.ensureVisible(
         ctx,
@@ -273,8 +272,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       );
       return;
     }
-    final delta =
-        box.localToGlobal(Offset.zero, ancestor: scrollBox).dy -
+    final delta = box.localToGlobal(Offset.zero, ancestor: scrollBox).dy -
         _kStickyBarHeight;
     final target = (_scroll.offset + delta).clamp(
       0.0,
@@ -388,9 +386,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     FluxSection? fromSection,
   }) async {
     _markSectionsAboveAsScrolledPast(fromSection);
-    final exceptKeys = fromSection == null
-        ? const <String>{}
-        : {sectionKey(fromSection)};
+    final exceptKeys =
+        fromSection == null ? const <String>{} : {sectionKey(fromSection)};
     final heightsBefore = _measureFoldCandidateHeights(exceptKeys);
     String? openedContentId;
     if (article is DigestItem) {
@@ -439,9 +436,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   double _measureFoldCandidateHeights(Set<String> exceptKeys) {
     final value = ref.read(fluxContinuProvider).valueOrNull;
     if (value == null) return 0.0;
-    final queued = ref
-        .read(fluxContinuProvider.notifier)
-        .persistQueuedSnapshot();
+    final queued =
+        ref.read(fluxContinuProvider.notifier).persistQueuedSnapshot();
     if (queued.isEmpty) return 0.0;
     final count = math.min(value.sections.length, _sectionKeys.length);
     double sum = 0.0;
@@ -502,9 +498,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
   void _trackFeedbackSubmit(String contentId, String feedbackType) {
     unawaited(
-      ref
-          .read(analyticsServiceProvider)
-          .trackArticleFeedbackSubmitted(
+      ref.read(analyticsServiceProvider).trackArticleFeedbackSubmitted(
             contentId: contentId,
             feedbackType: feedbackType,
             origin: 'flux_continu',
@@ -577,9 +571,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     ref.listen(essentielScrollTriggerProvider, (_, __) => _scrollToTop());
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
-      // Header & footer vivent désormais dans le shell partagé (MainShell) :
+      // Header & footer vivent dans le scaffold de page partagé :
       // l'écran ne fournit plus de bottomNavigationBar ni de header, et son top
-      // inset est déjà consommé par le header fixe du shell.
+      // inset est déjà consommé par le header partagé.
       body: SafeArea(
         top: false,
         bottom: false,
@@ -610,9 +604,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 child: AnimatedSlide(
                   duration: const Duration(milliseconds: 220),
                   curve: Curves.easeOutCubic,
-                  offset: _showScrollTopFab
-                      ? Offset.zero
-                      : const Offset(0, 1.6),
+                  offset:
+                      _showScrollTopFab ? Offset.zero : const Offset(0, 1.6),
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 220),
                     opacity: _showScrollTopFab ? 1.0 : 0.0,
@@ -668,8 +661,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         controller: _scroll,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          // NB : le header (logo · streak · réglages) vit dans le shell partagé
-          // (MainShell) — fixe, hors du scroll.
+          // NB : le header (logo · streak · réglages) vit dans le scaffold de
+          // page partagé — fixe, hors du scroll.
           SliverToBoxAdapter(
             child: impressionSlot == FirstImpressionSlot.renudgeBanner
                 ? const NotificationRenudgeBanner()
@@ -712,9 +705,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           // dessous : replier la tournée ne doit pas la masquer, c'est un
           // rituel de fin de tournée.
           if (state.quote != null && !state.closingDismissed)
-            SliverToBoxAdapter(
-              child: CitationDuJourCard(quote: state.quote!),
-            ),
+            SliverToBoxAdapter(child: CitationDuJourCard(quote: state.quote!)),
           // « Le mot du jour » — récompense de fin de Tournée. Sliver additif
           // au-dessus de ClosingCardV18 (cette dernière n'est pas modifiée :
           // zéro régression, revert trivial). La carte se câble seule au
@@ -763,8 +754,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // When the user has consumed every editorial section, the inline
     // "Mes intérêts" intro reads as residual chrome — hide it so the
     // folded stack collapses tightly into the closing card.
-    final allFolded =
-        state.sections.isNotEmpty &&
+    final allFolded = state.sections.isNotEmpty &&
         state.sections.every((s) => state.isFolded(s));
 
     final slivers = <SliverToBoxAdapter>[];
@@ -808,14 +798,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 await markSwipeLeftHintSeen();
                 if (mounted) ref.invalidate(swipeLeftHintSeenProvider);
               },
-              onTapFavorite: isFavorite
-                  ? () => showMyInterestsBottomSheet(context)
-                  : null,
+              onTapFavorite:
+                  isFavorite ? () => showMyInterestsBottomSheet(context) : null,
               onSeeAll: section is FeedThemeSection
                   ? () => _openThemeSection(context, section)
                   : section is DigestTopicSection
-                  ? () => _openDigestSection(context, section)
-                  : null,
+                      ? () => _openDigestSection(context, section)
+                      : null,
               onTapExploreAll: section is EssentielSection
                   ? () => _exploreAllEssentiel(section, i)
                   : null,
@@ -836,7 +825,7 @@ class _StickyHostOverlay extends ConsumerWidget {
   final ValueNotifier<double> scrollProgress;
   final ValueNotifier<int> activeIndex;
   final AsyncNotifierProvider<FluxContinuNotifier, FluxContinuState>
-  stateProvider;
+      stateProvider;
   final ValueChanged<int> onTapTab;
   final ScrollController tabsController;
 

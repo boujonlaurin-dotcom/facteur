@@ -66,8 +66,9 @@ void main() {
       expect(tabs.first.active, isTrue);
     });
 
-    test('2 sujets + 1 thème → 4 tabs sorted by count desc (alpha tie-break)',
-        () {
+    test(
+        '2 sujets + 1 thème favori → seuls les sujets sont des onglets '
+        '(le thème pilote la Tournée, pas un onglet Flâner)', () {
       final topics = [
         _topic(
           id: 't1',
@@ -93,19 +94,17 @@ void main() {
         items: const [],
       );
 
-      // All counts are 0 here, so the tie-break is alphabetical on label
-      // (lowercased): environnement < ia santé < trump.
+      // Le thème favori (environment) ne produit PLUS d'onglet : seuls
+      // « Tous » + les 2 sujets épinglés sont présents. Counts à 0 → tri
+      // alphabétique : ia santé < trump.
       expect(tabs.map((t) => t.kind).toList(), [
         FavoriteTabKind.tous,
-        FavoriteTabKind.theme,
         FavoriteTabKind.subjectTopic,
         FavoriteTabKind.subjectEntity,
       ]);
-      expect(tabs[1].label, 'Environnement');
-      expect(tabs[1].slug, 'environment');
-      expect(tabs[1].emoji, isNotEmpty);
-      expect(tabs[2].label, 'IA santé');
-      expect(tabs[3].label, 'Trump');
+      expect(tabs.any((t) => t.kind == FavoriteTabKind.theme), isFalse);
+      expect(tabs[1].label, 'IA santé');
+      expect(tabs[2].label, 'Trump');
     });
 
     test('topic not in favorites → excluded', () {

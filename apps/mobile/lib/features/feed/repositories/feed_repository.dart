@@ -140,7 +140,8 @@ class FeedRepository {
     // R5.1 — single-flight + dedupe gate for the default view only.
     // `personalized=true` opts out: theme/topic sections of the Tournée
     // are a different shape and must not share the default-view cache.
-    final bool isDefaultView = page == 1 &&
+    final bool isDefaultView =
+        page == 1 &&
         limit == 20 &&
         !serein &&
         !savedOnly &&
@@ -235,10 +236,7 @@ class FeedRepository {
       // et non une enveloppe { items: [], pagination: {} }
       final offset = (page - 1) * limit;
 
-      final queryParams = <String, dynamic>{
-        'limit': limit,
-        'offset': offset,
-      };
+      final queryParams = <String, dynamic>{'limit': limit, 'offset': offset};
 
       if (contentType != null) {
         queryParams['type'] = contentType;
@@ -299,7 +297,8 @@ class FeedRepository {
         final data = response.data;
         final responseSize = response.data.toString().length;
         print(
-            '[PERF] feed_repository GET /feed/: ${sw.elapsedMilliseconds}ms, response ~${(responseSize / 1024).toStringAsFixed(1)}KB');
+          '[PERF] feed_repository GET /feed/: ${sw.elapsedMilliseconds}ms, response ~${(responseSize / 1024).toStringAsFixed(1)}KB',
+        );
 
         final parsed = parseFeedData(data: data, page: page, limit: limit);
         return (feed: parsed, raw: data);
@@ -326,37 +325,37 @@ class FeedRepository {
 
     // Robustness: Handle both List (Legacy/Prod) and Map (New Backend) responses
     if (data is List) {
-          // Legacy format (List returned directly)
-          for (final e in data) {
-            try {
-              if (e is Map<String, dynamic>) {
-                itemsList.add(Content.fromJson(e));
-              }
-            } catch (err) {
-              print('FeedRepository: Skipping corrupt item in List: $err');
-            }
+      // Legacy format (List returned directly)
+      for (final e in data) {
+        try {
+          if (e is Map<String, dynamic>) {
+            itemsList.add(Content.fromJson(e));
           }
-        } else if (data is Map<String, dynamic>) {
-          // New format (FeedResponse object)
-          final itemsRaw = data['items'];
-          if (itemsRaw is List) {
-            for (final e in itemsRaw) {
-              try {
-                if (e is Map<String, dynamic>) {
-                  itemsList.add(Content.fromJson(e));
-                }
-              } catch (err) {
-                print('FeedRepository: Skipping corrupt item in items: $err');
-              }
+        } catch (err) {
+          print('FeedRepository: Skipping corrupt item in List: $err');
+        }
+      }
+    } else if (data is Map<String, dynamic>) {
+      // New format (FeedResponse object)
+      final itemsRaw = data['items'];
+      if (itemsRaw is List) {
+        for (final e in itemsRaw) {
+          try {
+            if (e is Map<String, dynamic>) {
+              itemsList.add(Content.fromJson(e));
             }
+          } catch (err) {
+            print('FeedRepository: Skipping corrupt item in items: $err');
           }
+        }
+      }
 
-          // Note: briefing is no longer parsed - digest moved to dedicated tab
-          // The briefing field in response is ignored
+      // Note: briefing is no longer parsed - digest moved to dedicated tab
+      // The briefing field in response is ignored
 
-          // Epic 11: Parse clusters if present
-          // DEADCODE: Feature "X autres articles" masquée.
-          /*
+      // Epic 11: Parse clusters if present
+      // DEADCODE: Feature "X autres articles" masquée.
+      /*
           final clustersRaw = data['clusters'];
           if (clustersRaw is List) {
             final clusters = <FeedCluster>[];
@@ -407,255 +406,256 @@ class FeedRepository {
           }
           */
 
-          // Epic 12: Parse source_overflow and annotate last card per source
-          final overflowRaw = data['source_overflow'];
-          if (overflowRaw is List) {
-            final overflowMap = <String, int>{};
-            for (final o in overflowRaw) {
-              if (o is Map<String, dynamic>) {
-                final sid = o['source_id'] as String?;
-                final count = o['hidden_count'] as int?;
-                if (sid != null && count != null && count > 0) {
-                  overflowMap[sid] = count;
-                }
-              }
-            }
-
-            if (overflowMap.isNotEmpty) {
-              // Find the LAST card per source and annotate with overflow count
-              // (only if no cluster chip already present — cluster takes priority)
-              final lastIndexBySource = <String, int>{};
-              for (var i = 0; i < itemsList.length; i++) {
-                final sid = itemsList[i].source.id;
-                if (overflowMap.containsKey(sid)) {
-                  lastIndexBySource[sid] = i;
-                }
-              }
-
-              for (final entry in lastIndexBySource.entries) {
-                final idx = entry.value;
-                final item = itemsList[idx];
-                // Don't annotate if cluster chip already present
-                // if (item.clusterHiddenCount == 0) {
-                  itemsList[idx] = item.copyWith(
-                    sourceOverflowCount: overflowMap[entry.key]!,
-                  );
-                // }
-              }
+      // Epic 12: Parse source_overflow and annotate last card per source
+      final overflowRaw = data['source_overflow'];
+      if (overflowRaw is List) {
+        final overflowMap = <String, int>{};
+        for (final o in overflowRaw) {
+          if (o is Map<String, dynamic>) {
+            final sid = o['source_id'] as String?;
+            final count = o['hidden_count'] as int?;
+            if (sid != null && count != null && count > 0) {
+              overflowMap[sid] = count;
             }
           }
-          // Topic overflow from topic-aware regroupement (Phase 2)
-          final topicOverflowRaw = data['topic_overflow'];
-          if (topicOverflowRaw is List) {
-            final topicOverflows = <TopicOverflow>[];
-            for (final t in topicOverflowRaw) {
-              try {
-                if (t is Map<String, dynamic>) {
-                  final tof = TopicOverflow.fromJson(t);
-                  print(
-                      '[DEBUG] TopicOverflow "${tof.groupLabel}": sources=${tof.sources.length}, raw_sources=${(t['sources'] as List?)?.length ?? 0}');
-                  topicOverflows.add(tof);
-                }
-              } catch (err) {
-                print('FeedRepository: Skipping corrupt topic_overflow: $err');
-              }
-            }
-
-            if (topicOverflows.isNotEmpty) {
-              // For each topic overflow group, find the last article matching
-              // that group and annotate it with overflow metadata.
-              // Priority: cluster > topic_overflow > source_overflow
-              for (final overflow in topicOverflows) {
-                int? lastMatchIdx;
-                for (var i = 0; i < itemsList.length; i++) {
-                  final item = itemsList[i];
-                  bool matches = false;
-                  if (overflow.groupType == 'topic') {
-                    matches = item.topics
-                        .any((t) => t.toLowerCase() == overflow.groupKey);
-                  } else {
-                    // theme match via source.theme
-                    matches = (item.source.theme?.toLowerCase() ?? '') ==
-                        overflow.groupKey;
-                  }
-                  if (matches) {
-                    lastMatchIdx = i;
-                  }
-                }
-
-                if (lastMatchIdx != null) {
-                  final item = itemsList[lastMatchIdx];
-                  // Don't overwrite cluster chip (highest priority)
-                  // if (item.clusterHiddenCount == 0) {
-                    // Fallback: if backend sends empty sources, use article's own source
-                    final sources = overflow.sources.isNotEmpty
-                        ? overflow.sources
-                        : [
-                            KeywordOverflowSource(
-                              sourceId: item.source.id,
-                              sourceName: item.source.name,
-                              sourceLogoUrl: item.source.logoUrl,
-                              articleCount: 1,
-                            )
-                          ];
-                    itemsList[lastMatchIdx] = item.copyWith(
-                      topicOverflowCount: overflow.hiddenCount,
-                      topicOverflowLabel: overflow.groupLabel,
-                      topicOverflowKey: overflow.groupKey,
-                      topicOverflowType: overflow.groupType,
-                      topicOverflowHiddenIds: overflow.hiddenIds,
-                      topicOverflowSources: sources,
-                    );
-                  // }
-                }
-              }
-            }
-          }
-          // Entity overflow from entity regroupement
-          final entityOverflowRaw = data['entity_overflow'];
-          if (entityOverflowRaw is List) {
-            final entityOverflows = <EntityOverflow>[];
-            for (final e in entityOverflowRaw) {
-              try {
-                if (e is Map<String, dynamic>) {
-                  entityOverflows.add(EntityOverflow.fromJson(e));
-                }
-              } catch (err) {
-                print('FeedRepository: Skipping corrupt entity_overflow: $err');
-              }
-            }
-
-            if (entityOverflows.isNotEmpty) {
-              // For each entity overflow group, find the last article whose
-              // entities contain the entity name and annotate it.
-              // Priority: cluster > entity_overflow > keyword_overflow > topic_overflow > source_overflow
-              for (final overflow in entityOverflows) {
-                final entityLower = overflow.entityName.toLowerCase();
-                int? lastMatchIdx;
-                for (var i = 0; i < itemsList.length; i++) {
-                  final item = itemsList[i];
-                  final matches = item.entities.any(
-                    (e) => e.text.toLowerCase() == entityLower,
-                  );
-                  if (matches) {
-                    lastMatchIdx = i;
-                  }
-                }
-
-                if (lastMatchIdx != null) {
-                  final item = itemsList[lastMatchIdx];
-                  // Don't overwrite cluster chip (highest priority)
-                  // if (item.clusterHiddenCount == 0) {
-                    final sources = overflow.sources.isNotEmpty
-                        ? overflow.sources
-                        : [
-                            KeywordOverflowSource(
-                              sourceId: item.source.id,
-                              sourceName: item.source.name,
-                              sourceLogoUrl: item.source.logoUrl,
-                              articleCount: 1,
-                            )
-                          ];
-                    itemsList[lastMatchIdx] = item.copyWith(
-                      entityOverflowCount: overflow.hiddenCount,
-                      entityOverflowLabel: overflow.displayLabel,
-                      entityOverflowKey: overflow.entityName,
-                      entityOverflowHiddenIds: overflow.hiddenIds,
-                      entityOverflowSources: sources,
-                    );
-                  // }
-                }
-              }
-            }
-          }
-          // Keyword overflow from keyword mining regroupement
-          final keywordOverflowRaw = data['keyword_overflow'];
-          if (keywordOverflowRaw is List) {
-            final keywordOverflows = <KeywordOverflow>[];
-            for (final k in keywordOverflowRaw) {
-              try {
-                if (k is Map<String, dynamic>) {
-                  keywordOverflows.add(KeywordOverflow.fromJson(k));
-                }
-              } catch (err) {
-                print(
-                    'FeedRepository: Skipping corrupt keyword_overflow: $err');
-              }
-            }
-
-            if (keywordOverflows.isNotEmpty) {
-              // For each keyword overflow group, find the last article whose
-              // title contains the keyword and annotate it.
-              // Priority: cluster > keyword_overflow > topic_overflow > source_overflow
-              for (final overflow in keywordOverflows) {
-                int? lastMatchIdx;
-                final kwLower = overflow.filterKeyword.toLowerCase();
-                for (var i = 0; i < itemsList.length; i++) {
-                  if (itemsList[i].title.toLowerCase().contains(kwLower)) {
-                    lastMatchIdx = i;
-                  }
-                }
-
-                if (lastMatchIdx != null) {
-                  final item = itemsList[lastMatchIdx];
-                  // Don't overwrite cluster chip (highest priority)
-                  // if (item.clusterHiddenCount == 0) {
-                    final sources = overflow.sources.isNotEmpty
-                        ? overflow.sources
-                        : [
-                            KeywordOverflowSource(
-                              sourceId: item.source.id,
-                              sourceName: item.source.name,
-                              sourceLogoUrl: item.source.logoUrl,
-                              articleCount: 1,
-                            )
-                          ];
-                    itemsList[lastMatchIdx] = item.copyWith(
-                      keywordOverflowCount: overflow.hiddenCount,
-                      keywordOverflowLabel: overflow.displayLabel,
-                      keywordOverflowKey: overflow.filterKeyword,
-                      keywordOverflowHiddenIds: overflow.hiddenIds,
-                      keywordOverflowSources: sources,
-                      keywordOverflowIsCustomTopic: overflow.isCustomTopic,
-                    );
-                  // }
-                }
-              }
-            }
-          }
-          // Carousels from overflow group promotion
-          final carouselsRaw = data['carousels'];
-          if (carouselsRaw is List) {
-            for (final c in carouselsRaw) {
-              try {
-                if (c is Map<String, dynamic>) {
-                  carousels.add(FeedCarouselData.fromJson(c));
-                }
-              } catch (err) {
-                print('FeedRepository: Skipping corrupt carousel: $err');
-              }
-            }
-            if (carousels.isNotEmpty) {
-              print(
-                  '[DEBUG] FeedRepository: ${carousels.length} carousels parsed');
-            }
-          }
-        } else if (data == null) {
-          // Empty response
-          itemsList = [];
         }
 
-        // Pagination: parsePagination handles both the legacy List shape
-        // (fallback: hasNext = itemsCount > 0) and the new Map shape with a
-        // `pagination` block emitted by the backend. The provider combines
-        // this with `items.isNotEmpty` via a hybrid check — see
-        // feed_provider.dart.
-        final pagination = FeedRepository.parsePagination(
-          data: data,
-          page: page,
-          limit: limit,
-          itemsCount: itemsList.length,
-        );
+        if (overflowMap.isNotEmpty) {
+          // Find the LAST card per source and annotate with overflow count
+          // (only if no cluster chip already present — cluster takes priority)
+          final lastIndexBySource = <String, int>{};
+          for (var i = 0; i < itemsList.length; i++) {
+            final sid = itemsList[i].source.id;
+            if (overflowMap.containsKey(sid)) {
+              lastIndexBySource[sid] = i;
+            }
+          }
+
+          for (final entry in lastIndexBySource.entries) {
+            final idx = entry.value;
+            final item = itemsList[idx];
+            // Don't annotate if cluster chip already present
+            // if (item.clusterHiddenCount == 0) {
+            itemsList[idx] = item.copyWith(
+              sourceOverflowCount: overflowMap[entry.key]!,
+            );
+            // }
+          }
+        }
+      }
+      // Topic overflow from topic-aware regroupement (Phase 2)
+      final topicOverflowRaw = data['topic_overflow'];
+      if (topicOverflowRaw is List) {
+        final topicOverflows = <TopicOverflow>[];
+        for (final t in topicOverflowRaw) {
+          try {
+            if (t is Map<String, dynamic>) {
+              final tof = TopicOverflow.fromJson(t);
+              print(
+                '[DEBUG] TopicOverflow "${tof.groupLabel}": sources=${tof.sources.length}, raw_sources=${(t['sources'] as List?)?.length ?? 0}',
+              );
+              topicOverflows.add(tof);
+            }
+          } catch (err) {
+            print('FeedRepository: Skipping corrupt topic_overflow: $err');
+          }
+        }
+
+        if (topicOverflows.isNotEmpty) {
+          // For each topic overflow group, find the last article matching
+          // that group and annotate it with overflow metadata.
+          // Priority: cluster > topic_overflow > source_overflow
+          for (final overflow in topicOverflows) {
+            int? lastMatchIdx;
+            for (var i = 0; i < itemsList.length; i++) {
+              final item = itemsList[i];
+              bool matches = false;
+              if (overflow.groupType == 'topic') {
+                matches = item.topics.any(
+                  (t) => t.toLowerCase() == overflow.groupKey,
+                );
+              } else {
+                // theme match via source.theme
+                matches =
+                    (item.source.theme?.toLowerCase() ?? '') ==
+                    overflow.groupKey;
+              }
+              if (matches) {
+                lastMatchIdx = i;
+              }
+            }
+
+            if (lastMatchIdx != null) {
+              final item = itemsList[lastMatchIdx];
+              // Don't overwrite cluster chip (highest priority)
+              // if (item.clusterHiddenCount == 0) {
+              // Fallback: if backend sends empty sources, use article's own source
+              final sources = overflow.sources.isNotEmpty
+                  ? overflow.sources
+                  : [
+                      KeywordOverflowSource(
+                        sourceId: item.source.id,
+                        sourceName: item.source.name,
+                        sourceLogoUrl: item.source.logoUrl,
+                        articleCount: 1,
+                      ),
+                    ];
+              itemsList[lastMatchIdx] = item.copyWith(
+                topicOverflowCount: overflow.hiddenCount,
+                topicOverflowLabel: overflow.groupLabel,
+                topicOverflowKey: overflow.groupKey,
+                topicOverflowType: overflow.groupType,
+                topicOverflowHiddenIds: overflow.hiddenIds,
+                topicOverflowSources: sources,
+              );
+              // }
+            }
+          }
+        }
+      }
+      // Entity overflow from entity regroupement
+      final entityOverflowRaw = data['entity_overflow'];
+      if (entityOverflowRaw is List) {
+        final entityOverflows = <EntityOverflow>[];
+        for (final e in entityOverflowRaw) {
+          try {
+            if (e is Map<String, dynamic>) {
+              entityOverflows.add(EntityOverflow.fromJson(e));
+            }
+          } catch (err) {
+            print('FeedRepository: Skipping corrupt entity_overflow: $err');
+          }
+        }
+
+        if (entityOverflows.isNotEmpty) {
+          // For each entity overflow group, find the last article whose
+          // entities contain the entity name and annotate it.
+          // Priority: cluster > entity_overflow > keyword_overflow > topic_overflow > source_overflow
+          for (final overflow in entityOverflows) {
+            final entityLower = overflow.entityName.toLowerCase();
+            int? lastMatchIdx;
+            for (var i = 0; i < itemsList.length; i++) {
+              final item = itemsList[i];
+              final matches = item.entities.any(
+                (e) => e.text.toLowerCase() == entityLower,
+              );
+              if (matches) {
+                lastMatchIdx = i;
+              }
+            }
+
+            if (lastMatchIdx != null) {
+              final item = itemsList[lastMatchIdx];
+              // Don't overwrite cluster chip (highest priority)
+              // if (item.clusterHiddenCount == 0) {
+              final sources = overflow.sources.isNotEmpty
+                  ? overflow.sources
+                  : [
+                      KeywordOverflowSource(
+                        sourceId: item.source.id,
+                        sourceName: item.source.name,
+                        sourceLogoUrl: item.source.logoUrl,
+                        articleCount: 1,
+                      ),
+                    ];
+              itemsList[lastMatchIdx] = item.copyWith(
+                entityOverflowCount: overflow.hiddenCount,
+                entityOverflowLabel: overflow.displayLabel,
+                entityOverflowKey: overflow.entityName,
+                entityOverflowHiddenIds: overflow.hiddenIds,
+                entityOverflowSources: sources,
+              );
+              // }
+            }
+          }
+        }
+      }
+      // Keyword overflow from keyword mining regroupement
+      final keywordOverflowRaw = data['keyword_overflow'];
+      if (keywordOverflowRaw is List) {
+        final keywordOverflows = <KeywordOverflow>[];
+        for (final k in keywordOverflowRaw) {
+          try {
+            if (k is Map<String, dynamic>) {
+              keywordOverflows.add(KeywordOverflow.fromJson(k));
+            }
+          } catch (err) {
+            print('FeedRepository: Skipping corrupt keyword_overflow: $err');
+          }
+        }
+
+        if (keywordOverflows.isNotEmpty) {
+          // For each keyword overflow group, find the last article whose
+          // title contains the keyword and annotate it.
+          // Priority: cluster > keyword_overflow > topic_overflow > source_overflow
+          for (final overflow in keywordOverflows) {
+            int? lastMatchIdx;
+            final kwLower = overflow.filterKeyword.toLowerCase();
+            for (var i = 0; i < itemsList.length; i++) {
+              if (itemsList[i].title.toLowerCase().contains(kwLower)) {
+                lastMatchIdx = i;
+              }
+            }
+
+            if (lastMatchIdx != null) {
+              final item = itemsList[lastMatchIdx];
+              // Don't overwrite cluster chip (highest priority)
+              // if (item.clusterHiddenCount == 0) {
+              final sources = overflow.sources.isNotEmpty
+                  ? overflow.sources
+                  : [
+                      KeywordOverflowSource(
+                        sourceId: item.source.id,
+                        sourceName: item.source.name,
+                        sourceLogoUrl: item.source.logoUrl,
+                        articleCount: 1,
+                      ),
+                    ];
+              itemsList[lastMatchIdx] = item.copyWith(
+                keywordOverflowCount: overflow.hiddenCount,
+                keywordOverflowLabel: overflow.displayLabel,
+                keywordOverflowKey: overflow.filterKeyword,
+                keywordOverflowHiddenIds: overflow.hiddenIds,
+                keywordOverflowSources: sources,
+                keywordOverflowIsCustomTopic: overflow.isCustomTopic,
+              );
+              // }
+            }
+          }
+        }
+      }
+      // Carousels from overflow group promotion
+      final carouselsRaw = data['carousels'];
+      if (carouselsRaw is List) {
+        for (final c in carouselsRaw) {
+          try {
+            if (c is Map<String, dynamic>) {
+              carousels.add(FeedCarouselData.fromJson(c));
+            }
+          } catch (err) {
+            print('FeedRepository: Skipping corrupt carousel: $err');
+          }
+        }
+        if (carousels.isNotEmpty) {
+          print('[DEBUG] FeedRepository: ${carousels.length} carousels parsed');
+        }
+      }
+    } else if (data == null) {
+      // Empty response
+      itemsList = [];
+    }
+
+    // Pagination: parsePagination handles both the legacy List shape
+    // (fallback: hasNext = itemsCount > 0) and the new Map shape with a
+    // `pagination` block emitted by the backend. The provider combines
+    // this with `items.isNotEmpty` via a hybrid check — see
+    // feed_provider.dart.
+    final pagination = FeedRepository.parsePagination(
+      data: data,
+      page: page,
+      limit: limit,
+      itemsCount: itemsList.length,
+    );
 
     return FeedResponse(
       items: itemsList,
@@ -784,9 +784,7 @@ class FeedRepository {
     try {
       await _apiClient.dio.post<void>(
         'feed/refresh/undo',
-        data: {
-          'previous_impressions': backups.map((b) => b.toJson()).toList(),
-        },
+        data: {'previous_impressions': backups.map((b) => b.toJson()).toList()},
       );
     } catch (e) {
       print('FeedRepository: [ERROR] undoRefresh: $e');
@@ -828,7 +826,9 @@ class FeedRepository {
 
   /// Fire-and-forget: persist reading progress on article close.
   Future<void> updateContentStatusWithProgress(
-      String contentId, int readingProgress) async {
+    String contentId,
+    int readingProgress,
+  ) async {
     try {
       await _apiClient.dio.post<void>(
         'contents/$contentId/status',
@@ -843,7 +843,9 @@ class FeedRepository {
   /// Backend accumulates across sessions (see ContentService.update_content_status).
   /// Cap client-side at 1800s to guard against forgotten background tabs.
   Future<void> updateContentStatusWithTimeSpent(
-      String contentId, int timeSpentSeconds) async {
+    String contentId,
+    int timeSpentSeconds,
+  ) async {
     if (timeSpentSeconds <= 0) return;
     final capped = timeSpentSeconds > 1800 ? 1800 : timeSpentSeconds;
     try {
@@ -857,7 +859,9 @@ class FeedRepository {
   }
 
   Future<void> updateContentStatus(
-      String contentId, ContentStatus status) async {
+    String contentId,
+    ContentStatus status,
+  ) async {
     try {
       await _apiClient.dio.post<void>(
         'contents/$contentId/status',
@@ -910,7 +914,10 @@ class FeedRepository {
       print('FeedRepository: [ERROR] getPerspectives: $e');
       // Return empty response instead of throwing to not break UX
       return PerspectivesResponse(
-          perspectives: [], keywords: [], biasDistribution: {});
+        perspectives: [],
+        keywords: [],
+        biasDistribution: {},
+      );
     }
   }
 }
@@ -958,6 +965,9 @@ class PerspectivesResponse {
   final bool shouldDisplay;
   final String? analysis;
   final bool analysisCached;
+  final bool partial;
+  final String? divergenceLevel;
+
   /// Verbe-pivot du titre de l'article lu — wash gris dans `cm-ref-inline`.
   /// `null` si le back n'a trouvé aucun verbe ou si déploiement back en retard.
   final TokenSpan? referencePivot;
@@ -971,16 +981,20 @@ class PerspectivesResponse {
     this.shouldDisplay = false,
     this.analysis,
     this.analysisCached = false,
+    this.partial = false,
+    this.divergenceLevel,
     this.referencePivot,
   });
 
   factory PerspectivesResponse.fromJson(Map<String, dynamic> json) {
-    final perspectivesList = (json['perspectives'] as List<dynamic>?)
+    final perspectivesList =
+        (json['perspectives'] as List<dynamic>?)
             ?.map((e) => PerspectiveData.fromJson(e as Map<String, dynamic>))
             .toList() ??
         [];
 
-    final keywordsList = (json['keywords'] as List<dynamic>?)
+    final keywordsList =
+        (json['keywords'] as List<dynamic>?)
             ?.map((e) => e.toString())
             .toList() ??
         [];
@@ -1002,6 +1016,8 @@ class PerspectivesResponse {
       shouldDisplay: (json['should_display'] as bool?) ?? false,
       analysis: json['analysis'] as String?,
       analysisCached: (json['analysis_cached'] as bool?) ?? false,
+      partial: (json['partial'] as bool?) ?? false,
+      divergenceLevel: json['divergence_level'] as String?,
       referencePivot: TokenSpan.fromJsonOrNull(json['reference_pivot']),
     );
   }
@@ -1051,11 +1067,7 @@ class TokenSpan {
   final int end;
   final String text;
 
-  const TokenSpan({
-    required this.start,
-    required this.end,
-    required this.text,
-  });
+  const TokenSpan({required this.start, required this.end, required this.text});
 
   factory TokenSpan.fromJson(Map<String, dynamic> json) {
     return TokenSpan(
@@ -1079,12 +1091,15 @@ class PerspectiveData {
   final String sourceDomain;
   final String biasStance;
   final String? publishedAt;
+
   /// Spans divergents du titre variant vs. référence (colorisés par bias).
   /// Liste vide si la chaîne back n'a pas pu calculer (cluster manquant, etc.).
   final List<HighlightSpan> highlightSpans;
+
   /// Spans partagés avec la référence — rendus en `text_tertiary` côté front
   /// pour faire ressortir les divergences. Liste vide en mode dégradé Mode 2.
   final List<TokenSpan> sharedTokens;
+
   /// Langue ISO du titre ("fr","en",...). Optionnel — exposé par PR 5
   /// (API enriched contract). Sert au regroupement "Couverture étrangère"
   /// (PR 6.1) côté front.
@@ -1115,13 +1130,13 @@ class PerspectiveData {
       highlightSpans: rawHighlights == null
           ? const []
           : rawHighlights
-              .map((e) => HighlightSpan.fromJson(e as Map<String, dynamic>))
-              .toList(),
+                .map((e) => HighlightSpan.fromJson(e as Map<String, dynamic>))
+                .toList(),
       sharedTokens: rawShared == null
           ? const []
           : rawShared
-              .map((e) => TokenSpan.fromJson(e as Map<String, dynamic>))
-              .toList(),
+                .map((e) => TokenSpan.fromJson(e as Map<String, dynamic>))
+                .toList(),
       language: json['language'] as String?,
     );
   }

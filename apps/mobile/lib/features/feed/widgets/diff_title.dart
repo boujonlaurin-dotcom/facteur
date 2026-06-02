@@ -63,10 +63,7 @@ class _DiffTitleState extends State<DiffTitle>
   void initState() {
     super.initState();
     _rebuildChunks();
-    _controller = AnimationController(
-      vsync: this,
-      duration: _totalDuration(),
-    );
+    _controller = AnimationController(vsync: this, duration: _totalDuration());
     if (widget.animateIn && _animatedSpanCount > 0) {
       Future.delayed(DiffTitle.kStartDelay, () {
         if (mounted) _controller.forward();
@@ -79,7 +76,8 @@ class _DiffTitleState extends State<DiffTitle>
   @override
   void didUpdateWidget(DiffTitle oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final needsRebuild = oldWidget.title != widget.title ||
+    final needsRebuild =
+        oldWidget.title != widget.title ||
         oldWidget.highlightSpans != widget.highlightSpans ||
         oldWidget.sharedTokens != widget.sharedTokens;
     if (needsRebuild) {
@@ -102,7 +100,8 @@ class _DiffTitleState extends State<DiffTitle>
 
   Duration _totalDuration() {
     if (_animatedSpanCount == 0) return Duration.zero;
-    final ms = (_animatedSpanCount - 1) * DiffTitle.kSpanGap.inMilliseconds +
+    final ms =
+        (_animatedSpanCount - 1) * DiffTitle.kSpanGap.inMilliseconds +
         DiffTitle.kPerSpan.inMilliseconds;
     return Duration(milliseconds: ms);
   }
@@ -140,17 +139,21 @@ class _DiffTitleState extends State<DiffTitle>
     for (final span in spans) {
       if (span.start < cursor) continue;
       if (span.start > cursor) {
-        chunks.add(_Chunk(
-          text: title.substring(cursor, span.start),
-          type: _ChunkType.plain,
-        ));
+        chunks.add(
+          _Chunk(
+            text: title.substring(cursor, span.start),
+            type: _ChunkType.plain,
+          ),
+        );
       }
-      chunks.add(_Chunk(
-        text: title.substring(span.start, span.end),
-        type: span.type,
-        animIndex: animIndex,
-        weight: span.weight,
-      ));
+      chunks.add(
+        _Chunk(
+          text: title.substring(span.start, span.end),
+          type: span.type,
+          animIndex: animIndex,
+          weight: span.weight,
+        ),
+      );
       animIndex++;
       cursor = span.end;
     }
@@ -175,7 +178,10 @@ class _DiffTitleState extends State<DiffTitle>
     if (!useSharedAsTertiary && _animatedSpanCount > 0) {
       for (var i = 0; i < _chunks.length; i++) {
         if (_chunks[i].type == _ChunkType.plain) {
-          _chunks[i] = _Chunk(text: _chunks[i].text, type: _ChunkType.dimmedFallback);
+          _chunks[i] = _Chunk(
+            text: _chunks[i].text,
+            type: _ChunkType.dimmedFallback,
+          );
         }
       }
     }
@@ -223,7 +229,10 @@ class _DiffTitleState extends State<DiffTitle>
         // seul le surlignage de fond (key) différencie visuellement.
         return TextSpan(
           text: chunk.text,
-          style: TextStyle(color: colors.textPrimary, fontWeight: FontWeight.w400),
+          style: TextStyle(
+            color: colors.textPrimary,
+            fontWeight: FontWeight.w400,
+          ),
         );
       case _ChunkType.key:
         final t = _easedProgressFor(chunk.animIndex);
@@ -233,8 +242,9 @@ class _DiffTitleState extends State<DiffTitle>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
             decoration: BoxDecoration(
-              color: widget.biasColor
-                  .withValues(alpha: _washAlpha(t, chunk.weight)),
+              color: widget.biasColor.withValues(
+                alpha: _washAlpha(t, chunk.weight),
+              ),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -251,13 +261,13 @@ class _DiffTitleState extends State<DiffTitle>
     }
   }
 
-  // weight=null (fallback spaCy hors digest) reste à 0.22 pour rétrocompat.
+  // Calibration 2026-06: keep hierarchy visible while reducing wash intensity.
   static double _washAlpha(double t, double? weight) {
-    if (weight == null) return 0.22 * t;
+    if (weight == null) return 0.16 * t;
     final base = switch (weight) {
-      >= 0.75 => 0.30,
-      >= 0.40 => 0.20,
-      _ => 0.12,
+      >= 0.75 => 0.24,
+      >= 0.40 => 0.16,
+      _ => 0.10,
     };
     return base * t;
   }
@@ -269,6 +279,7 @@ class _Chunk {
   final String text;
   final _ChunkType type;
   final int animIndex;
+
   /// LLM bias weight ∈ {0.25, 0.5, 1.0} ou null (fallback spaCy).
   /// Module l'opacité du surlignage pour les chunks de type `key`.
   /// null → traité comme 1.0 (comportement actuel).
