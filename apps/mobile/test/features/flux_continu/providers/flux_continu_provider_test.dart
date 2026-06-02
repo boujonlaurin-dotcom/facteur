@@ -1,6 +1,7 @@
 import 'package:facteur/features/digest/models/digest_models.dart';
 import 'package:facteur/features/digest/models/dual_digest_response.dart';
 import 'package:facteur/features/digest/providers/digest_provider.dart';
+import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
 import 'package:facteur/features/digest/repositories/digest_repository.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/providers/feed_provider.dart';
@@ -883,6 +884,7 @@ void main() {
           userInterestsProvider.overrideWith(
             () => _StubUserInterestsNotifier(_interestsState()),
           ),
+          sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
         ],
       );
       addTearDown(container.dispose);
@@ -908,6 +910,123 @@ void main() {
         state.sections.indexOf(essentielV3.single),
         lessThan(state.sections.indexOf(actusDuJour.single)),
         reason: 'Hi-fi card renders above the legacy "Actus du jour"',
+      );
+    });
+  });
+
+  group('FluxContinuNotifier — dedup inter-sections', () {
+    /// Builds a container whose Essentiel hi-fi card surfaces a single article
+    /// with [hiFiContentId], coexisting with the digest [topics] that feed the
+    /// legacy "Actus du jour" section.
+    ProviderContainer makeDedupContainer({
+      required String hiFiContentId,
+      required List<DigestTopic> topics,
+    }) {
+      final hiFi = EssentielArticle(
+        contentId: hiFiContentId,
+        title: 'Hi-fi $hiFiContentId',
+        url: 'https://x.test/$hiFiContentId',
+        publishedAt: DateTime(2026, 1, 1),
+        sourceName: 'Source',
+        sourceLetter: 'S',
+        sectionLabel: 'Tech',
+        rank: 1,
+      );
+      final digest = DigestResponse(
+        digestId: 'd1',
+        userId: 'u1',
+        targetDate: DateTime(2026, 5, 23),
+        generatedAt: DateTime(2026, 5, 23),
+        topics: topics,
+      );
+      when(() => digestRepo.fetchBothDigests()).thenAnswer(
+        (_) async => DualDigestResponse(normal: digest, sereinEnabled: false),
+      );
+      return ProviderContainer(
+        overrides: [
+          digestRepositoryProvider.overrideWithValue(digestRepo),
+          feedRepositoryProvider.overrideWithValue(feedRepo),
+          fluxContinuRepositoryProvider.overrideWithValue(fluxRepo),
+          essentielRepositoryProvider
+              .overrideWithValue(_OneArticleEssentielRepository(hiFi)),
+          userInterestsProvider.overrideWith(
+            () => _StubUserInterestsNotifier(_interestsState()),
+          ),
+          // The real serein toggle watches authStateProvider → Supabase.instance
+          // (uninitialized in unit tests). Override with a notifier that skips
+          // the auth watch so the provider build doesn't blow up.
+          sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+        ],
+      );
+    }
+
+    test(
+        'a topic whose lead is already in Essentiel is dropped from Actus '
+        'du jour (Option A), the rest survives', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      // Topic A's lead shares the hi-fi card's contentId → it must be dropped.
+      // Topic B is untouched → "Actus du jour" survives with one topic.
+      final container = makeDedupContainer(
+        hiFiContentId: 'shared-1',
+        topics: const [
+          DigestTopic(
+            topicId: 't1',
+            label: 'Topic A',
+            articles: [DigestItem(contentId: 'shared-1', title: 'A')],
+          ),
+          DigestTopic(
+            topicId: 't2',
+            label: 'Topic B',
+            articles: [DigestItem(contentId: 'b1', title: 'B')],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final state = await container.read(fluxContinuProvider.future);
+
+      // Essentiel keeps the shared article.
+      final essentiel = state.sections.whereType<EssentielSection>().single;
+      expect(essentiel.articles.map((a) => a.contentId), contains('shared-1'));
+
+      // Actus du jour survives but no longer carries the duplicated topic.
+      final actus = state.sections
+          .whereType<DigestTopicSection>()
+          .where((s) => s.kind == SectionKind.essentiel)
+          .single;
+      final actusLeadIds =
+          actus.topics.map((t) => pickTopicLead(t).contentId).toList();
+      expect(actusLeadIds, isNot(contains('shared-1')));
+      expect(actusLeadIds, contains('b1'));
+    });
+
+    test('Actus du jour disappears entirely when fully deduped', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      // The only topic's lead is the hi-fi article → Actus becomes empty and
+      // must be removed (no orphan banner).
+      final container = makeDedupContainer(
+        hiFiContentId: 'shared-1',
+        topics: const [
+          DigestTopic(
+            topicId: 't1',
+            label: 'Topic A',
+            articles: [DigestItem(contentId: 'shared-1', title: 'A')],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final state = await container.read(fluxContinuProvider.future);
+
+      expect(state.sections.whereType<EssentielSection>(), hasLength(1));
+      expect(
+        state.sections
+            .whereType<DigestTopicSection>()
+            .where((s) => s.kind == SectionKind.essentiel),
+        isEmpty,
+        reason: 'A fully-deduped "Actus du jour" must be dropped, not orphaned',
       );
     });
   });

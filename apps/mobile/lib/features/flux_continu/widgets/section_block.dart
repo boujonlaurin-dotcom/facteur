@@ -34,17 +34,6 @@ class SectionBlock extends StatelessWidget {
   /// for [DigestTopicSection] which keeps its in-place fold/expand button.
   final VoidCallback? onSeeAll;
 
-  /// "Tout l'essentiel" action of the [EssentielSection] hi-fi card. Wired
-  /// by the flux_continu screen to fold the Essentiel card AND scroll to the
-  /// next section ("Actus du jour"). Ignored for other section types.
-  final VoidCallback? onTapExploreAll;
-
-  /// "Tous mes articles ↓" action of the [EssentielSection] hi-fi card.
-  /// Wired by the flux_continu screen to fold the Essentiel card AND scroll
-  /// all the way down to the "Explorer" banner. Ignored for other section
-  /// types.
-  final VoidCallback? onTapSeeAllDown;
-
   /// IDs of articles currently in the inline-feedback pending state. When
   /// non-empty, the matching cards are swapped for a [FeedbackInline] at the
   /// same position.
@@ -87,8 +76,6 @@ class SectionBlock extends StatelessWidget {
     this.onTapFavorite,
     this.onTapSettings,
     this.onSeeAll,
-    this.onTapExploreAll,
-    this.onTapSeeAllDown,
   });
 
   @override
@@ -122,8 +109,6 @@ class SectionBlock extends StatelessWidget {
               articles: section.articles,
               onTapArticle: (a) => onTapArticle(a, section),
               onTapPersonalize: () => EssentielPersonalizeSheet.show(context),
-              onTapSeeAllDown: onTapSeeAllDown,
-              onTapExploreAll: onTapExploreAll,
             ),
             const SizedBox(height: 16),
           ],

@@ -23,16 +23,12 @@ class EssentielHiFiCard extends StatelessWidget {
   final List<EssentielArticle> articles;
   final void Function(EssentielArticle article) onTapArticle;
   final VoidCallback onTapPersonalize;
-  final VoidCallback? onTapSeeAllDown;
-  final VoidCallback? onTapExploreAll;
 
   const EssentielHiFiCard({
     super.key,
     required this.articles,
     required this.onTapArticle,
     required this.onTapPersonalize,
-    this.onTapSeeAllDown,
-    this.onTapExploreAll,
   });
 
   @override
@@ -88,12 +84,6 @@ class EssentielHiFiCard extends StatelessWidget {
               const SizedBox(height: FacteurSpacing.space2),
               _MediumTile(article: a, onTap: () => onTapArticle(a)),
             ],
-            const SizedBox(height: FacteurSpacing.space4),
-            _Footer(
-              accent: accent,
-              onSeeAllDown: onTapSeeAllDown,
-              onExploreAll: onTapExploreAll,
-            ),
           ],
         ),
       ),
@@ -704,62 +694,6 @@ class _Hairline extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<FacteurColors>()!;
     return Container(height: 0.6, color: colors.border.withValues(alpha: 0.20));
-  }
-}
-
-class _Footer extends StatelessWidget {
-  final Color accent;
-  final VoidCallback? onSeeAllDown;
-  final VoidCallback? onExploreAll;
-
-  const _Footer({required this.accent, this.onSeeAllDown, this.onExploreAll});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).extension<FacteurColors>()!;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        if (onSeeAllDown != null) ...[
-          TextButton(
-            onPressed: onSeeAllDown,
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              minimumSize: const Size(0, 32),
-              foregroundColor: colors.textTertiary,
-            ),
-            child: Text(
-              'Flâner →',
-              style: FacteurTypography.labelLarge(colors.textTertiary),
-            ),
-          ),
-          const SizedBox(width: FacteurSpacing.space2),
-        ],
-        if (onExploreAll != null)
-          Material(
-            color: accent,
-            borderRadius: BorderRadius.circular(FacteurRadius.pill),
-            child: InkWell(
-              onTap: onExploreAll,
-              borderRadius: BorderRadius.circular(FacteurRadius.pill),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: FacteurSpacing.space4,
-                  vertical: 8,
-                ),
-                child: Text(
-                  'Tout l’essentiel',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
   }
 }
 

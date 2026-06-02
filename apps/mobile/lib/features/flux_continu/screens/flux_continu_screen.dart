@@ -301,39 +301,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     );
   }
 
-  /// Folds the Essentiel card then scrolls to [targetIndex]. The 50ms delay
-  /// lets the fold settle so the scroll target's measured position is the
-  /// post-fold one. Used by both "Tout l'essentiel" (scroll to Actus du
-  /// jour) and "Tous mes articles ↓".
-  Future<void> _foldEssentielAndScroll(
-    EssentielSection essentiel,
-    int targetIndex,
-  ) async {
-    ref.read(fluxContinuProvider.notifier).foldLocally(essentiel);
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    if (!mounted) return;
-    await _scrollToSection(targetIndex);
-  }
-
-  Future<void> _exploreAllEssentiel(
-    EssentielSection essentiel,
-    int essentielIndex,
-  ) async {
-    final next = essentielIndex + 1;
-    if (next >= _sectionKeys.length) return;
-    await _foldEssentielAndScroll(essentiel, next);
-  }
-
-  /// "Tous mes articles ↓" action of the Essentiel hi-fi card: folds the
-  /// card then opens Flâner.
-  Future<void> _skipEssentielToExplorer(EssentielSection essentiel) async {
-    final notifier = ref.read(fluxContinuProvider.notifier);
-    notifier.foldLocally(essentiel);
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    if (!mounted) return;
-    context.go(RoutePaths.flaner);
-  }
-
   Future<void> _scrollToTop() async {
     if (!_scroll.hasClients) return;
     unawaited(HapticFeedback.lightImpact());
@@ -909,12 +876,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                   : section is DigestTopicSection
                       ? () => _openDigestSection(context, section)
                       : null,
-              onTapExploreAll: section is EssentielSection
-                  ? () => _exploreAllEssentiel(section, i)
-                  : null,
-              onTapSeeAllDown: section is EssentielSection
-                  ? () => _skipEssentielToExplorer(section)
-                  : null,
             ),
           ),
         ),
