@@ -11,15 +11,23 @@ import '../onboarding_strings.dart';
 
 /// Bottom sheet for indicating press subscriptions during onboarding.
 ///
-/// Shows all curated sources so the user can mark which ones they have
-/// a paid subscription to. Returns the set of subscribed source IDs via [onDone].
+/// Shows the sources the user just validated ([selectedSourceIds]) so they can
+/// mark which ones they pay for. During onboarding these aren't persisted yet
+/// (`hasSubscription=false`) and may have no premium connector — gating on
+/// `premiumConnection` left the list empty, so we base it on the validated
+/// selection instead. Returns the set of subscribed source IDs via [onDone].
 class PremiumSourcesSheet extends ConsumerStatefulWidget {
   final List<Source> allSources;
+
+  /// Sources the user validated at the previous step. The sheet lists these
+  /// (plus any already-subscribed) so the toggle reflects what they own.
+  final Set<String> selectedSourceIds;
   final ValueChanged<Set<String>>? onDone;
 
   const PremiumSourcesSheet({
     super.key,
     required this.allSources,
+    required this.selectedSourceIds,
     this.onDone,
   });
 
@@ -56,7 +64,8 @@ class _PremiumSourcesSheetState extends ConsumerState<PremiumSourcesSheet> {
     var sources = widget.allSources
         .where((s) =>
             s.isCurated &&
-            (s.premiumConnection != null || _subscribed.contains(s.id)))
+            (widget.selectedSourceIds.contains(s.id) ||
+                _subscribed.contains(s.id)))
         .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
 
@@ -161,7 +170,9 @@ class _PremiumSourcesSheetState extends ConsumerState<PremiumSourcesSheet> {
                     ),
                     child: Center(
                       child: Text(
-                        'Aucun média premium connectable pour le moment.',
+                        widget.selectedSourceIds.isEmpty
+                            ? "Vous n'avez pas encore validé de source."
+                            : 'Aucune source à afficher pour le moment.',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: colors.textSecondary,
@@ -280,10 +291,21 @@ class _PremiumSourcesSheetState extends ConsumerState<PremiumSourcesSheet> {
   }
 
   Future<void> _connectSource(BuildContext context, Source source) async {
-    if (source.premiumConnection == null) return;
-    final navigator = Navigator.of(context);
     await HapticFeedback.lightImpact();
+    // Source validée sans connecteur premium : un simple toggle « abonné »
+    // suffit (persisté via updateSourceSubscription), sans ouvrir l'écran de
+    // connexion premium qui n'aurait rien à connecter.
+    if (source.premiumConnection == null) {
+      await ref
+          .read(userSourcesProvider.notifier)
+          .connectSubscription(source.id);
+      if (mounted) {
+        setState(() => _subscribed.add(source.id));
+      }
+      return;
+    }
     if (!mounted) return;
+    final navigator = Navigator.of(context);
     await navigator.push<void>(
       MaterialPageRoute(
         builder: (_) => PremiumSourceConnection(

@@ -24,8 +24,11 @@ import '../../feed/models/content_model.dart';
 import '../../feed/providers/swipe_hint_provider.dart';
 import '../../feed/widgets/feedback_inline.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
+import '../../notifications/widgets/notification_activation_modal.dart';
 import '../../notifications/widgets/notification_renudge_banner.dart';
+import '../../onboarding/widgets/theme_choice_bottom_sheet.dart';
 import '../../well_informed/widgets/well_informed_prompt.dart';
+import '../../../shared/strings/loader_error_strings.dart';
 import '../../../shared/widgets/loaders/loading_view.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
@@ -83,6 +86,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
   bool _showScrollTopFab = false;
   double _lastScrollPos = 0;
+
+  /// Garde-fou : le flow post-onboarding (dialog customs échoués + modales
+  /// thème & notifications) ne doit se jouer qu'une seule fois par montage,
+  /// jamais sur un refetch/scroll/rebuild.
+  bool _postOnboardingFlowRan = false;
 
   // Pull-to-refresh discoverability pill. Shown briefly when the user
   // scrolls back to the top after having browsed deep enough (>=
@@ -564,11 +572,94 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     return null;
   }
 
+  // ---------------------------------------------------------------------------
+  // Flow post-onboarding (présenté sur Essentiel chargé, cf.
+  // postOnboardingFlowPendingProvider)
+  // ---------------------------------------------------------------------------
+
+  /// Planifie le flow post-onboarding pour le prochain post-frame, une seule
+  /// fois par montage. Le garde-fou est armé immédiatement pour qu'aucun
+  /// rebuild concurrent n'empile de second callback.
+  void _schedulePostOnboardingFlow() {
+    if (_postOnboardingFlowRan) return;
+    _postOnboardingFlowRan = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_runPostOnboardingFlow());
+    });
+  }
+
+  /// Joue, dans l'ordre, sur le `context`/`ref` stables d'Essentiel chargé :
+  /// 1. le dialog des sujets personnalisés échoués (si non vide),
+  /// 2. la modal de choix de thème,
+  /// 3. la modal d'activation des notifications.
+  /// La page Essentiel chargée sert de fond aux modales : à leur fermeture elle
+  /// est révélée intacte (plus d'écran gris ni de contexte démonté).
+  Future<void> _runPostOnboardingFlow() async {
+    if (!mounted) return;
+    final failedCustomTopics = ref.read(postOnboardingFlowPendingProvider);
+    if (failedCustomTopics == null) return;
+    // Consomme le flag immédiatement : un refetch/rebuild ne doit pas rejouer.
+    ref.read(postOnboardingFlowPendingProvider.notifier).state = null;
+
+    if (mounted && failedCustomTopics.isNotEmpty) {
+      // Dialog bloquant : les bottom sheets suivants poseraient un barrier qui
+      // masquerait une SnackBar. Le dialog garantit que l'utilisateur voit
+      // l'info ("tu pourras les réajouter").
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          content: Text(
+            OnboardingFallbackStrings.failedCustomTopicsMessage(
+              failedCustomTopics,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (mounted) {
+      await showThemeChoiceBottomSheet(context, ref);
+    }
+
+    if (mounted) {
+      await showNotificationActivationModal(
+        context,
+        ref,
+        trigger: ActivationTrigger.onboarding,
+      );
+      // Marque la modal notif comme consommée pour la session : l'arbitre
+      // first-impression ne la reproposera pas et laisse passer les nudges.
+      if (mounted) {
+        ref.read(notifModalConsumedThisSessionProvider.notifier).state = true;
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(fluxContinuProvider);
     // Re-tap de l'onglet actif (depuis le shell) → remonter en haut.
     ref.listen(essentielScrollTriggerProvider, (_, __) => _scrollToTop());
+    // Flow post-onboarding : joué une seule fois quand Essentiel a chargé ses
+    // données (derrière les modales thème & notifications). Couvre la
+    // transition loading→data (via le listen) et le cas où l'état est déjà
+    // `data` au montage (check direct planifié en post-frame).
+    ref.listen<AsyncValue<FluxContinuState>>(fluxContinuProvider, (_, next) {
+      if (next is AsyncData<FluxContinuState> &&
+          ref.read(postOnboardingFlowPendingProvider) != null) {
+        _schedulePostOnboardingFlow();
+      }
+    });
+    if (state is AsyncData<FluxContinuState> &&
+        ref.read(postOnboardingFlowPendingProvider) != null) {
+      _schedulePostOnboardingFlow();
+    }
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
       // Header & footer vivent dans le scaffold de page partagé :
