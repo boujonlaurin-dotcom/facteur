@@ -9,10 +9,15 @@ import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../models/onboarding_result.dart';
 import '../../../models/user_profile.dart';
-import '../../../features/sources/providers/sources_providers.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../custom_topics/providers/personalization_provider.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
+import '../../feed/providers/feed_provider.dart';
+import '../../feed/repositories/feed_repository.dart';
+import '../../flux_continu/providers/flux_continu_provider.dart';
+import '../../my_interests/providers/user_interests_provider.dart';
+import '../../my_interests/providers/user_sources_state_provider.dart';
+import '../../sources/providers/sources_providers.dart';
 import 'onboarding_provider.dart';
 
 /// État de l'animation de conclusion
@@ -43,10 +48,7 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
   bool _animationCompleted = false;
 
   static const _maxRetries = 2;
-  static const _retryDelays = [
-    Duration(seconds: 1),
-    Duration(seconds: 2),
-  ];
+  static const _retryDelays = [Duration(seconds: 1), Duration(seconds: 2)];
 
   /// Démarre le processus de conclusion (animation + sauvegarde API)
   Future<void> startConclusion() async {
@@ -106,7 +108,9 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
     for (var attempt = 0; attempt <= _maxRetries; attempt++) {
       if (attempt > 0) {
         final delay = _retryDelays[attempt - 1];
-        debugPrint('Onboarding: retry $attempt/$_maxRetries après ${delay.inSeconds}s...');
+        debugPrint(
+          'Onboarding: retry $attempt/$_maxRetries après ${delay.inSeconds}s...',
+        );
         await Future<void>.delayed(delay);
       }
 
@@ -135,12 +139,8 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
         if (answers.digestMode == 'serein') {
           _ref.read(sereinToggleProvider.notifier).setEnabledLocal(true);
         }
-        // Trust sources en parallèle avec timeout (important pour le digest)
-        await _trustSelectedSourcesWithTimeout(answers.preferredSources);
         await _ref.read(onboardingProvider.notifier).clearSavedData();
-        _ref.invalidate(customTopicsProvider);
-        _ref.invalidate(userSourcesProvider);
-        _ref.invalidate(personalizationProvider);
+        await _invalidatePostOnboardingState();
 
         debugPrint(
           'Onboarding sauvegardé avec succès ! '
@@ -157,7 +157,9 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
         if (requestedSources > 0) {
           final created = result.sourcesCreated ?? 0;
           unawaited(
-            _ref.read(analyticsServiceProvider).trackOnboardingSourcesRegistered(
+            _ref
+                .read(analyticsServiceProvider)
+                .trackOnboardingSourcesRegistered(
                   requested: requestedSources,
                   created: created,
                 ),
@@ -186,14 +188,16 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
     }
 
     // Tous les retries ont échoué
-    debugPrint('Erreur sauvegarde onboarding après retries: ${lastResult?.errorMessage}');
+    debugPrint(
+      'Erreur sauvegarde onboarding après retries: ${lastResult?.errorMessage}',
+    );
     throw Exception(lastResult?.friendlyErrorMessage ?? 'Erreur inconnue');
   }
 
   /// Sauvegarde le profil localement après succès API
   Future<void> _saveProfileLocally(UserProfile profile) async {
     try {
-      final box = await Hive.openBox('user_profile');
+      final box = await Hive.openBox<dynamic>('user_profile');
       await box.put('profile', profile.toJson());
       await box.put('onboarding_completed', true);
       await box.put('pending_sync', false); // Synchronisé avec succès
@@ -204,29 +208,21 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
     }
   }
 
-  /// Marque les sources sélectionnées comme "de confiance" (avec timeout)
-  /// Awaité pour que les UserSource existent avant la génération du digest
-  Future<void> _trustSelectedSourcesWithTimeout(List<String>? sourceIds) async {
-    if (sourceIds == null || sourceIds.isEmpty) return;
-
-    final repository = _ref.read(sourcesRepositoryProvider);
-
-    try {
-      await Future.wait(
-        sourceIds.map((sourceId) async {
-          try {
-            await repository.trustSource(sourceId);
-            debugPrint('Source $sourceId marquée comme de confiance');
-          } catch (e) {
-            debugPrint('Erreur trust source $sourceId: $e');
-          }
-        }),
-      ).timeout(const Duration(seconds: 5));
-    } on TimeoutException {
-      debugPrint('Trust sources timeout (5s) — digest utilisera le fallback');
-    } catch (e) {
-      debugPrint('Erreur globale trust sources: $e');
+  Future<void> _invalidatePostOnboardingState() async {
+    FeedRepository.clearDefaultViewCache();
+    final userId = _ref.read(authStateProvider).user?.id;
+    if (userId != null) {
+      await _ref.read(feedCacheServiceProvider)?.clearForUser(userId);
     }
+
+    _ref.invalidate(userInterestsProvider);
+    _ref.invalidate(userSourcesStateProvider);
+    _ref.invalidate(userSourcesProvider);
+    _ref.invalidate(feedProvider);
+    _ref.invalidate(fluxContinuProvider);
+    _ref.invalidate(pepitesProvider);
+    _ref.invalidate(customTopicsProvider);
+    _ref.invalidate(personalizationProvider);
   }
 
   /// Réessayer après une erreur
@@ -240,13 +236,15 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
   Future<void> _saveProfileLocallyDegraded() async {
     try {
       final answers = _ref.read(onboardingProvider).answers;
-      final box = await Hive.openBox('user_profile');
+      final box = await Hive.openBox<dynamic>('user_profile');
 
       await box.put('onboarding_completed', true);
       await box.put('pending_sync', true); // Flag pour sync future
       await box.put('answers_backup', answers.toJson());
 
-      debugPrint('Mode dégradé : données sauvegardées localement pour sync future');
+      debugPrint(
+        'Mode dégradé : données sauvegardées localement pour sync future',
+      );
     } catch (e) {
       debugPrint('Erreur sauvegarde locale mode dégradé: $e');
     }

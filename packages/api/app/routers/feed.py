@@ -528,6 +528,7 @@ async def get_tab_counts(
     from sqlalchemy import exists, or_, select
 
     from app.models.content import Content
+    from app.models.enums import InterestState
     from app.models.source import UserSource
     from app.models.user_topic_profile import UserTopicProfile
     from app.schemas.feed import TabCountsResponse
@@ -536,7 +537,10 @@ async def get_tab_counts(
     user_uuid = UUID(current_user_id)
     cutoff = datetime.now(UTC) - timedelta(hours=48)
 
-    followed_stmt = select(UserSource.source_id).where(UserSource.user_id == user_uuid)
+    followed_stmt = select(UserSource.source_id).where(
+        UserSource.user_id == user_uuid,
+        UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+    )
     favorites_stmt = select(UserTopicProfile).where(
         UserTopicProfile.user_id == user_uuid,
         UserTopicProfile.priority_multiplier == 2.0,

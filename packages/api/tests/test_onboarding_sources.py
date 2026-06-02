@@ -1,12 +1,16 @@
 """Tests for onboarding source saving and theme muting."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4, UUID
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
+import pytest
+
+from app.models.enums import InterestState
+from app.models.source import UserSource
+from app.models.user import UserInterest
+from app.models.user_favorites import UserFavoriteInterest
 from app.schemas.user import OnboardingAnswers
 from app.services.user_service import UserService
-from app.models.source import UserSource
 
 
 class TestOnboardingAnswersParsing:
@@ -99,7 +103,10 @@ async def test_save_onboarding_creates_user_sources():
 
     # Mock: sources exist and are active in DB
     mock_sources_result = MagicMock()
-    mock_sources_result.scalars.return_value.all.return_value = [source_id_1, source_id_2]
+    mock_sources_result.scalars.return_value.all.return_value = [
+        source_id_1,
+        source_id_2,
+    ]
 
     # Mock: no existing UserSource for this user
     mock_already_result = MagicMock()
@@ -126,13 +133,12 @@ async def test_save_onboarding_creates_user_sources():
         # 5. select Source.id (existing sources check)
         # 6. select UserSource.source_id (already trusted check)
         # 7. select UserSource (cleanup query)
-        if execute_call_count == 5:
-            return mock_sources_result
-        elif execute_call_count == 6:
-            return mock_already_result
-        elif execute_call_count == 7:
-            return mock_all_user_sources_result
-        return MagicMock()
+        responses_by_call = {
+            5: mock_sources_result,
+            6: mock_already_result,
+            7: mock_all_user_sources_result,
+        }
+        return responses_by_call.get(execute_call_count, MagicMock())
 
     mock_db.execute = AsyncMock(side_effect=mock_execute)
 
@@ -159,6 +165,101 @@ async def test_save_onboarding_creates_user_sources():
     # Curated sources should have is_custom=False
     for us in user_sources:
         assert us.is_custom is False
+        assert us.state == InterestState.FOLLOWED
+
+
+@pytest.mark.asyncio
+async def test_save_onboarding_marks_existing_source_followed():
+    """Existing hidden/unfollowed source rows are restored to followed."""
+    mock_db = AsyncMock()
+    mock_db.add = MagicMock()
+    mock_db.scalar = AsyncMock(return_value=None)
+
+    service = UserService(mock_db)
+    mock_profile = MagicMock()
+    service.get_or_create_profile = AsyncMock(return_value=mock_profile)
+
+    source_id = uuid4()
+    existing_user_source = UserSource(
+        user_id=uuid4(),
+        source_id=source_id,
+        is_custom=False,
+        state=InterestState.HIDDEN,
+    )
+
+    mock_sources_result = MagicMock()
+    mock_sources_result.scalars.return_value.all.return_value = [source_id]
+    mock_already_result = MagicMock()
+    mock_already_result.scalars.return_value.all.return_value = [existing_user_source]
+    mock_all_user_sources_result = MagicMock()
+    mock_all_user_sources_result.scalars.return_value.all.return_value = [
+        existing_user_source
+    ]
+
+    execute_call_count = 0
+
+    async def mock_execute(stmt):
+        nonlocal execute_call_count
+        execute_call_count += 1
+        responses_by_call = {
+            5: mock_sources_result,
+            6: mock_already_result,
+            7: mock_all_user_sources_result,
+        }
+        return responses_by_call.get(execute_call_count, MagicMock())
+
+    mock_db.execute = AsyncMock(side_effect=mock_execute)
+
+    answers = OnboardingAnswers(
+        objective="noise",
+        approach="direct",
+        response_style="decisive",
+        themes=["tech"],
+        preferred_sources=[str(source_id)],
+    )
+
+    result = await service.save_onboarding(str(uuid4()), answers)
+
+    assert result["sources_created"] == 0
+    assert existing_user_source.state == InterestState.FOLLOWED
+
+
+@pytest.mark.asyncio
+async def test_save_onboarding_seeds_theme_favorites_when_empty():
+    """First onboarding seeds up to three favorite theme slots."""
+    mock_db = AsyncMock()
+    mock_db.add = MagicMock()
+    mock_db.scalar = AsyncMock(return_value=None)
+    mock_db.execute = AsyncMock(return_value=MagicMock())
+
+    service = UserService(mock_db)
+    mock_profile = MagicMock()
+    service.get_or_create_profile = AsyncMock(return_value=mock_profile)
+
+    answers = OnboardingAnswers(
+        objective="noise",
+        approach="direct",
+        response_style="decisive",
+        themes=["tech", "science", "culture", "economy"],
+    )
+
+    await service.save_onboarding(str(uuid4()), answers)
+
+    added_objects = [call.args[0] for call in mock_db.add.call_args_list]
+    favorites = [obj for obj in added_objects if isinstance(obj, UserFavoriteInterest)]
+    interests = [obj for obj in added_objects if isinstance(obj, UserInterest)]
+
+    assert [(f.interest_slug, f.position) for f in favorites] == [
+        ("tech", 0),
+        ("science", 1),
+        ("culture", 2),
+    ]
+    favorite_interest_states = {
+        i.interest_slug: i.state
+        for i in interests
+        if i.interest_slug in {"tech", "science", "culture"}
+    }
+    assert set(favorite_interest_states.values()) == {InterestState.FAVORITE}
 
 
 @pytest.mark.asyncio

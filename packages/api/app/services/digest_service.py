@@ -33,7 +33,7 @@ from sqlalchemy.orm import selectinload
 from app.models.content import Content, UserContentStatus
 from app.models.daily_digest import DailyDigest
 from app.models.digest_completion import DigestCompletion
-from app.models.enums import ContentStatus
+from app.models.enums import ContentStatus, InterestState
 from app.models.user import UserStreak
 from app.models.user_personalization import UserPersonalization
 from app.schemas.digest import (
@@ -1076,7 +1076,10 @@ class DigestService:
         from app.models.source import UserSource
 
         followed_result = await self.session.execute(
-            select(UserSource.source_id).where(UserSource.user_id == user_id)
+            select(UserSource.source_id).where(
+                UserSource.user_id == user_id,
+                UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+            )
         )
         followed_source_ids = set(followed_result.scalars().all())
 
@@ -2197,7 +2200,10 @@ class DigestService:
         # The editorial digest is generated globally (match_global) and hard-
         # codes that flag to False, so the cached value is per-user wrong.
         followed_result = await self.session.execute(
-            select(UserSource.source_id).where(UserSource.user_id == user_id)
+            select(UserSource.source_id).where(
+                UserSource.user_id == user_id,
+                UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+            )
         )
         followed_source_ids: set[UUID] = set(followed_result.scalars().all())
 
@@ -2464,7 +2470,10 @@ class DigestService:
         # users in some paths). Always recompute against the current
         # UserSource table so the badge in mobile reflects reality.
         followed_result = await self.session.execute(
-            select(UserSource.source_id).where(UserSource.user_id == user_id)
+            select(UserSource.source_id).where(
+                UserSource.user_id == user_id,
+                UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+            )
         )
         followed_source_ids: set[UUID] = set(followed_result.scalars().all())
 

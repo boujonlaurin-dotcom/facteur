@@ -4,11 +4,12 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import InterestState
 from app.models.source import Source, UserSource
+from app.models.user_favorites import UserFavoriteSource
 from app.models.user_personalization import UserPersonalization
 from app.schemas.source import (
     PremiumConnectionResponse,
@@ -20,6 +21,7 @@ from app.services.language_user_filter import recompute_auto_pref
 from app.services.rss_parser import RSSParser
 
 logger = structlog.get_logger()
+FOLLOWED_SOURCE_STATES = (InterestState.FOLLOWED, InterestState.FAVORITE)
 
 
 class PremiumConnectionNotEnabled(Exception):
@@ -54,7 +56,10 @@ class SourceService:
                 UserSource.source_id,
                 UserSource.priority_multiplier,
                 UserSource.has_subscription,
-            ).where(UserSource.user_id == user_id)
+            ).where(
+                UserSource.user_id == user_id,
+                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+            )
         )
         rows = result.all()
         trusted_ids = {row.source_id for row in rows}
@@ -158,6 +163,7 @@ class SourceService:
             .join(UserSource)
             .where(
                 UserSource.user_id == user_uuid,
+                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
                 ~Source.is_curated,
             )
             .distinct()
@@ -231,6 +237,7 @@ class SourceService:
         result = await self.db.execute(
             select(Source, count_col)
             .join(UserSource)
+            .where(UserSource.state.in_(FOLLOWED_SOURCE_STATES))
             .where(Source.is_active)
             .where(~Source.is_curated)
             .group_by(Source.id)
@@ -434,6 +441,14 @@ class SourceService:
         existing = existing_result.scalar_one_or_none()
 
         if existing:
+            if existing.state not in FOLLOWED_SOURCE_STATES:
+                existing.state = InterestState.FOLLOWED
+                await self.db.execute(
+                    delete(UserFavoriteSource).where(
+                        UserFavoriteSource.user_id == UUID(user_id),
+                        UserFavoriteSource.source_id == UUID(source_id),
+                    )
+                )
             return True
 
         # Ajouter
@@ -568,6 +583,12 @@ class SourceService:
         if not user_source:
             return False
 
+        await self.db.execute(
+            delete(UserFavoriteSource).where(
+                UserFavoriteSource.user_id == UUID(user_id),
+                UserFavoriteSource.source_id == UUID(source_id),
+            )
+        )
         await self.db.delete(user_source)
         await self.db.flush()
         await recompute_auto_pref(self.db, UUID(user_id))

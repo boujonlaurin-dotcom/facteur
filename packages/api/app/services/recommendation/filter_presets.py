@@ -17,7 +17,7 @@ from sqlalchemy import and_, exists, func, literal_column, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.content import Content
-from app.models.enums import BiasStance
+from app.models.enums import BiasStance, InterestState
 from app.models.source import Source, UserSource
 from app.models.user import UserPreference
 from app.models.user_topic_profile import UserTopicProfile
@@ -697,7 +697,12 @@ async def calculate_user_bias(session: AsyncSession, user_id: UUID) -> BiasStanc
     Fallback CENTER si aucune source suivie.
     """
     result = await session.execute(
-        select(Source.bias_stance).join(UserSource).where(UserSource.user_id == user_id)
+        select(Source.bias_stance)
+        .join(UserSource)
+        .where(
+            UserSource.user_id == user_id,
+            UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+        )
     )
     biases = result.scalars().all()
 

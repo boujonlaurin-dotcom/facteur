@@ -19,6 +19,7 @@ from app.models.source import Source, UserSource
 from app.models.user import UserProfile, UserSubtopic
 
 logger = structlog.get_logger()
+FOLLOWED_SOURCE_STATES = (InterestState.FOLLOWED, InterestState.FAVORITE)
 
 # Upper bound on the two-phase followed-sources query in the default feed
 # view. Above this, we rollback and fall back to a curated-only query so the
@@ -264,7 +265,10 @@ class RecommendationService:
         )
         sources_stmt = select(
             UserSource.source_id, UserSource.is_custom, UserSource.has_subscription
-        ).where(UserSource.user_id == user_id)
+        ).where(
+            UserSource.user_id == user_id,
+            UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+        )
         subtopics_stmt = select(UserSubtopic).where(UserSubtopic.user_id == user_id)
         personalization_stmt = select(UserPersonalization).where(
             UserPersonalization.user_id == user_id
@@ -582,7 +586,8 @@ class RecommendationService:
         source_weight_rows = (
             await self.session.execute(
                 select(UserSource.source_id, UserSource.priority_multiplier).where(
-                    UserSource.user_id == user_id
+                    UserSource.user_id == user_id,
+                    UserSource.state.in_(FOLLOWED_SOURCE_STATES),
                 )
             )
         ).all()
@@ -1509,6 +1514,7 @@ class RecommendationService:
                         .join(Source, Source.id == UserSource.source_id)
                         .where(
                             UserSource.user_id == user_id,
+                            UserSource.state.in_(FOLLOWED_SOURCE_STATES),
                             UserSource.added_at > seven_days_ago,
                         )
                         .order_by(UserSource.added_at.desc())  # T3A: most recent first
