@@ -47,8 +47,10 @@ const double _kStickyThreshold = 60.0;
 
 /// Vertical offset the sticky bar consumes — used as a landing buffer
 /// when scrolling a section into view so its banner doesn't disappear
-/// behind the bar.
-const double _kStickyBarHeight = 90.0;
+/// behind the bar. Trimmed from 90 → 54 after the head title (~36px) was
+/// dropped from the sticky overlay: tabs row (48) + progress track (4) + a
+/// couple px of slack.
+const double _kStickyBarHeight = 54.0;
 
 /// Minimum delta (px) before the scroll-up FAB toggles, to avoid flicker
 /// on tiny inertia bounces. Matches the legacy FeedScreen behaviour.
@@ -236,6 +238,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       }
     }
     if (_activeIndex.value != activeAt) {
+      // Discrete "selection" tick when the active tab flips section under the
+      // sticky bar. Gated on visibility so we don't buzz during the initial
+      // layout / top-of-page scroll, before the sticky is even revealed.
+      if (_stickyVisible.value) {
+        unawaited(HapticFeedback.selectionClick());
+      }
       _activeIndex.value = activeAt;
       _alignTabsToActive(activeAt);
     }
@@ -963,7 +971,6 @@ class _StickyHostOverlay extends ConsumerWidget {
                 progress: progress,
                 onTapTab: onTapTab,
                 tabsController: tabsController,
-                title: 'Tournée du jour',
                 showFilterBar: false,
               ),
             ),

@@ -22,11 +22,12 @@ class StickyTab {
 ///
 /// Layout per V6 maquette :
 /// - parchment-tinted backdrop with a 14px blur (saturate 140%),
-/// - "sticky-head" row : zone title ("Tournée du jour" or "Explorer"),
 /// - horizontal tabs with section dot, label, a check icon when the tab is
 ///   done (replaces the legacy strike-through, per PO feedback hotfix
-///   2026-05-23 — "lu = checked, pas barré"), and an underline tinted with
-///   the active section's accent,
+///   2026-05-23 — "lu = checked, pas barré"), and a soft accent wash behind
+///   the active tab (replaces the legacy 3px underline — the wash mirrors the
+///   "Couverture médiatique" highlight and lightens the bar above the
+///   progress track),
 /// - 4-px progress track with a 4-stop gradient fill (essentiel → bonnes
 ///   → veille1 → veille2) and a soft accent glow,
 /// - when [showFilterBar] is true (Explorer mode), [FeedFilterBar] is
@@ -38,7 +39,6 @@ class StickyTabBar extends StatelessWidget {
   final double progress;
   final ValueChanged<int> onTapTab;
   final ScrollController? tabsController;
-  final String title;
   final bool showFilterBar;
 
   const StickyTabBar({
@@ -48,7 +48,6 @@ class StickyTabBar extends StatelessWidget {
     required this.progress,
     required this.onTapTab,
     this.tabsController,
-    this.title = 'Tournée du jour',
     this.showFilterBar = false,
   });
 
@@ -63,7 +62,6 @@ class StickyTabBar extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          StickyHead(title: title),
           _TabsRow(
             tabs: tabs,
             activeIndex: activeIndex,
@@ -124,35 +122,6 @@ class _FeedRefreshIndicatorStrip extends ConsumerWidget {
               color: colors.primary,
             )
           : const SizedBox.shrink(),
-    );
-  }
-}
-
-/// Top row of the sticky overlay — a Fraunces label naming the current zone.
-/// L'avatar profil vit uniquement dans le header partagé de la page ; il a été
-/// retiré d'ici pour ne plus apparaître en double.
-class StickyHead extends ConsumerWidget {
-  final String title;
-
-  const StickyHead({super.key, this.title = 'Tournée du jour'});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.facteurColors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 3),
-      child: Row(
-        children: [
-          Text(
-            title,
-            style: GoogleFonts.fraunces(
-              fontSize: 21,
-              fontWeight: FontWeight.w700,
-              color: colors.textPrimary,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -220,61 +189,56 @@ class _Tab extends StatelessWidget {
     final dotColor = isActive
         ? tab.accent
         : (isDone ? colors.textTertiary : colors.textSecondary);
+    // Active tab is signaled by a soft accent wash (style "Couverture
+    // médiatique" — cf. DiffTitle), replacing the legacy 3px underline that
+    // doubled up visually with the progress track just below. The wash tint
+    // derives from the tab's own accent so each thematic section keeps its
+    // hue; the dot + textPrimary label still carry the active state.
+    const radius = BorderRadius.all(Radius.circular(FacteurRadius.small));
     return InkWell(
       onTap: onTap,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-      child: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 5, 12, 7),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 9,
-                  height: 9,
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: dotColor,
-                  ),
-                ),
-                Text(
-                  tab.label,
-                  style: GoogleFonts.dmSans(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: labelColor,
-                  ),
-                ),
-                if (isDone) ...[
-                  const SizedBox(width: 4),
-                  Icon(
-                    Icons.check_rounded,
-                    size: 18,
-                    color: labelColor,
-                    semanticLabel: 'lu',
-                  ),
-                ],
-              ],
-            ),
-          ),
-          if (isActive)
-            Positioned(
-              left: 10,
-              right: 10,
-              bottom: 0,
-              height: 3,
-              child: Container(
+      borderRadius: radius,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: isActive
+              ? tab.accent.withValues(alpha: 0.14)
+              : Colors.transparent,
+          borderRadius: radius,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 5, 12, 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 9,
+                height: 9,
+                margin: const EdgeInsets.only(right: 8),
                 decoration: BoxDecoration(
-                  color: tab.accent,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(2),
-                  ),
+                  shape: BoxShape.circle,
+                  color: dotColor,
                 ),
               ),
-            ),
-        ],
+              Text(
+                tab.label,
+                style: GoogleFonts.dmSans(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: labelColor,
+                ),
+              ),
+              if (isDone) ...[
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.check_rounded,
+                  size: 18,
+                  color: labelColor,
+                  semanticLabel: 'lu',
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
