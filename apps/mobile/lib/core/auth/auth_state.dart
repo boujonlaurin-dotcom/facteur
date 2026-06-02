@@ -334,6 +334,9 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     if (Hive.isBoxOpen('feed_cache')) {
       await Hive.box<String>('feed_cache').clear();
     }
+    if (Hive.isBoxOpen('flux_continu_cache')) {
+      await Hive.box<String>('flux_continu_cache').clear();
+    }
 
     // Wipe the home-screen widget so the next account on the same device
     // never briefly sees the previous user's digest.

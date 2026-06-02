@@ -29,6 +29,12 @@ class TopTheme {
       articleCount: (json['article_count'] as num?)?.toInt() ?? 0,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'interest_slug': interestSlug,
+    'weight': weight,
+    'article_count': articleCount,
+  };
 }
 
 /// Repository scoped to the Flux Continu V1.8 feature.
@@ -86,7 +92,12 @@ class FluxContinuRepository {
       if (response.statusCode != 200 || response.data is! Map) {
         return FeedResponse(
           items: const [],
-          pagination: Pagination(page: 1, perPage: limit, total: 0, hasNext: false),
+          pagination: Pagination(
+            page: 1,
+            perPage: limit,
+            total: 0,
+            hasNext: false,
+          ),
         );
       }
       final data = response.data as Map<String, dynamic>;
@@ -110,7 +121,12 @@ class FluxContinuRepository {
       print('FluxContinuRepository: getVeilleFeedItems failed: ${e.message}');
       return FeedResponse(
         items: const [],
-        pagination: Pagination(page: 1, perPage: limit, total: 0, hasNext: false),
+        pagination: Pagination(
+          page: 1,
+          perPage: limit,
+          total: 0,
+          hasNext: false,
+        ),
       );
     }
   }
@@ -129,7 +145,7 @@ class FluxContinuRepository {
       'published_at': article['published_at'],
       'thumbnail_url': article['thumbnail_url'],
       'source': article['source'],
-      'topics': article['topics'] ?? const [],
+      'topics': article['topics'] ?? const <String>[],
       // Content.fromJson tolère ces champs absents — fallback to defaults.
     };
   }

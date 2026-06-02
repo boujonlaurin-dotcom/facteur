@@ -34,17 +34,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import ContentType, InterestState, SourceType
-from app.models.source import UserSource
-from app.models.user import UserInterest, UserSubtopic
-from app.models.user_personalization import UserPersonalization
 from app.schemas.digest import DigestResponse, DigestTopic, DigestTopicArticle
 from app.schemas.essentiel import EssentielArticle, EssentielKind, EssentielResponse
 from app.services.language_user_filter import (
-    get_hide_non_fr_pref,
     is_foreign_source,
 )
 from app.services.recommendation.filter_presets import (
@@ -116,67 +112,115 @@ async def fetch_user_essentiel_context(
 ) -> EssentielUserContext:
     """Charge en read-only les signaux user utiles à l'Essentiel.
 
-    Aucune écriture, aucun pipeline LLM. 2 SELECTs courts, indexés sur
+    Aucune écriture, aucun pipeline LLM. 1 SELECT court, indexé sur
     `user_id`. Sans hit (utilisateur sans prefs) : retourne un contexte vide.
     """
-    src_rows = (
-        await db.execute(
-            select(UserSource.source_id, UserSource.priority_multiplier).where(
-                UserSource.user_id == user_id,
-                UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+    row = (
+        (
+            await db.execute(
+                text(
+                    """
+                SELECT
+                    COALESCE(
+                        (
+                            SELECT jsonb_agg(
+                                jsonb_build_object(
+                                    'source_id', source_id::text,
+                                    'priority_multiplier', COALESCE(priority_multiplier, 1.0)
+                                )
+                            )
+                            FROM user_sources
+                            WHERE user_id = :user_id
+                              AND state IN (:followed_state, :favorite_state)
+                        ),
+                        '[]'::jsonb
+                    ) AS sources,
+                    COALESCE(
+                        (
+                            SELECT jsonb_agg(
+                                jsonb_build_object(
+                                    'slug', interest_slug,
+                                    'weight', COALESCE(weight, 1.0)
+                                )
+                            )
+                            FROM user_interests
+                            WHERE user_id = :user_id
+                        ),
+                        '[]'::jsonb
+                    ) AS interests,
+                    COALESCE(
+                        (
+                            SELECT jsonb_agg(
+                                jsonb_build_object(
+                                    'slug', topic_slug,
+                                    'weight', COALESCE(weight, 1.0)
+                                )
+                            )
+                            FROM user_subtopics
+                            WHERE user_id = :user_id
+                        ),
+                        '[]'::jsonb
+                    ) AS subtopics,
+                    COALESCE(
+                        (
+                            SELECT jsonb_build_object(
+                                'hide_non_fr_sources', COALESCE(hide_non_fr_sources, true),
+                                'muted_themes', COALESCE(to_jsonb(muted_themes), '[]'::jsonb),
+                                'muted_topics', COALESCE(to_jsonb(muted_topics), '[]'::jsonb),
+                                'muted_sources', COALESCE(to_jsonb(muted_sources), '[]'::jsonb)
+                            )
+                            FROM user_personalization
+                            WHERE user_id = :user_id
+                        ),
+                        jsonb_build_object(
+                            'hide_non_fr_sources', true,
+                            'muted_themes', '[]'::jsonb,
+                            'muted_topics', '[]'::jsonb,
+                            'muted_sources', '[]'::jsonb
+                        )
+                    ) AS personalization
+                """
+                ),
+                {
+                    "user_id": user_id,
+                    "followed_state": InterestState.FOLLOWED.value,
+                    "favorite_state": InterestState.FAVORITE.value,
+                },
             )
         )
-    ).all()
-    followed_source_ids = frozenset(row.source_id for row in src_rows)
+        .mappings()
+        .one()
+    )
+
+    src_rows = row["sources"] or []
+    followed_source_ids = frozenset(UUID(src["source_id"]) for src in src_rows)
     source_priority_multipliers = {
-        row.source_id: float(row.priority_multiplier or 1.0) for row in src_rows
+        UUID(src["source_id"]): float(src.get("priority_multiplier") or 1.0)
+        for src in src_rows
     }
 
     topic_weights: dict[str, float] = {}
 
-    interest_rows = (
-        await db.execute(
-            select(UserInterest.interest_slug, UserInterest.weight).where(
-                UserInterest.user_id == user_id
-            )
-        )
-    ).all()
-    for row in interest_rows:
-        if row.interest_slug:
-            topic_weights[row.interest_slug] = max(
-                topic_weights.get(row.interest_slug, 0.0), float(row.weight or 1.0)
+    for interest in row["interests"] or []:
+        slug = interest.get("slug")
+        if slug:
+            topic_weights[slug] = max(
+                topic_weights.get(slug, 0.0), float(interest.get("weight") or 1.0)
             )
 
-    subtopic_rows = (
-        await db.execute(
-            select(UserSubtopic.topic_slug, UserSubtopic.weight).where(
-                UserSubtopic.user_id == user_id
-            )
-        )
-    ).all()
-    for row in subtopic_rows:
-        if row.topic_slug:
-            topic_weights[row.topic_slug] = max(
-                topic_weights.get(row.topic_slug, 0.0), float(row.weight or 1.0)
+    for subtopic in row["subtopics"] or []:
+        slug = subtopic.get("slug")
+        if slug:
+            topic_weights[slug] = max(
+                topic_weights.get(slug, 0.0), float(subtopic.get("weight") or 1.0)
             )
 
-    hide_non_fr_sources = await get_hide_non_fr_pref(db, user_id)
-
-    perso_row = (
-        await db.execute(
-            select(
-                UserPersonalization.muted_themes,
-                UserPersonalization.muted_topics,
-                UserPersonalization.muted_sources,
-            ).where(UserPersonalization.user_id == user_id)
-        )
-    ).first()
-    muted_themes = frozenset(perso_row.muted_themes or ()) if perso_row else frozenset()
-    muted_topic_slugs = (
-        frozenset(perso_row.muted_topics or ()) if perso_row else frozenset()
-    )
-    muted_source_ids = (
-        frozenset(perso_row.muted_sources or ()) if perso_row else frozenset()
+    personalization = row["personalization"] or {}
+    hide_non_fr_sources = bool(personalization.get("hide_non_fr_sources", True))
+    muted_themes = frozenset(personalization.get("muted_themes") or ())
+    muted_topic_slugs = frozenset(personalization.get("muted_topics") or ())
+    muted_source_ids = frozenset(
+        UUID(source_id) for source_id in (personalization.get("muted_sources") or ())
     )
 
     return EssentielUserContext(
