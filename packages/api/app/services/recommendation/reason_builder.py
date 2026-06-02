@@ -4,7 +4,7 @@ Centralise la construction des labels pour "Pourquoi cet article ?".
 Utilisé par le Feed et le Digest pour une cohérence des labels.
 """
 
-from typing import Callable, TypeVar
+from collections.abc import Callable
 
 from app.schemas.content import RecommendationReason, ScoreContribution
 from app.schemas.digest import DigestRecommendationReason, DigestScoreBreakdown
@@ -13,13 +13,11 @@ from app.services.recommendation.scoring_engine import PillarScoreResult
 # Maximum de raisons affichées dans le breakdown
 MAX_BREAKDOWN_ITEMS = 6
 
-_BreakdownItem = TypeVar("_BreakdownItem", ScoreContribution, DigestScoreBreakdown)
 
-
-def _build_breakdown(
+def _build_breakdown[T: (ScoreContribution, DigestScoreBreakdown)](
     result: PillarScoreResult,
-    item_cls: Callable[..., _BreakdownItem],
-) -> list[_BreakdownItem]:
+    item_cls: Callable[..., T],
+) -> list[T]:
     """Map pillar contributions to breakdown items, sorted by |points| then capped.
 
     Shared by the feed (:class:`ScoreContribution`) and digest
