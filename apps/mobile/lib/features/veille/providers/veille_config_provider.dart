@@ -12,9 +12,8 @@ import 'veille_themes_provider.dart';
 
 /// Métadonnées attachées à une source dans le state du flow.
 ///
-/// Permet de distinguer les sources catalogue (UUID API) des sources mock-only ;
-/// au submit on filtre les mock-only et on envoie un `source_id` (UUID) ou un
-/// `niche_candidate{name, url}` selon ce qui est dispo.
+/// Permet de distinguer les sources catalogue (UUID API) des candidats niche ;
+/// au submit on envoie un `source_id` ou un `niche_candidate{name, url}`.
 @immutable
 class VeilleSourceMeta {
   final String slug;
@@ -146,35 +145,37 @@ class VeilleConfigState {
   });
 
   factory VeilleConfigState.initial() => const VeilleConfigState(
-        step: 1,
-        introCompleted: false,
-        previewPresetId: null,
-        selectedTheme: null,
-        mainTopicSlug: null,
-        mainTopicLabel: null,
-        selectedTopics: <String>{},
-        selectedSuggestions: <String>{},
-        selectedSourceIds: <String>{},
-        customTopics: [],
-        topicLabels: {},
-        sourcesMeta: {},
-        keywords: <String>{},
-        angleKeywords: {},
-        advancedMode: false,
-        skippedStep2: false,
-        purpose: null,
-        editorialBrief: null,
-        presetId: null,
-        isSubmitting: false,
-        lastError: null,
-        customThemeLabel: null,
-      );
+    step: 1,
+    introCompleted: false,
+    previewPresetId: null,
+    selectedTheme: null,
+    mainTopicSlug: null,
+    mainTopicLabel: null,
+    selectedTopics: <String>{},
+    selectedSuggestions: <String>{},
+    selectedSourceIds: <String>{},
+    customTopics: [],
+    topicLabels: {},
+    sourcesMeta: {},
+    keywords: <String>{},
+    angleKeywords: {},
+    advancedMode: false,
+    skippedStep2: false,
+    purpose: null,
+    editorialBrief: null,
+    presetId: null,
+    isSubmitting: false,
+    lastError: null,
+    customThemeLabel: null,
+  );
 
-  /// Nombre de sources réellement persistables (avec `apiSourceId`).
-  /// Une source mock sans `apiSourceId` est filtrée par `_buildUpsertRequest`,
-  /// donc elle ne compte pas pour autoriser le passage à step suivant.
-  int get realSelectedSourceCount =>
-      selectedSourceIds.where((id) => sourcesMeta[id]?.apiSourceId != null).length;
+  /// Nombre de sources réellement persistables : source catalogue avec
+  /// `apiSourceId`, ou candidat niche avec URL valide.
+  int get realSelectedSourceCount => selectedSourceIds.where((id) {
+    final meta = sourcesMeta[id];
+    if (meta == null) return false;
+    return meta.apiSourceId != null || _isValidHttpUrl(meta.url);
+  }).length;
 
   VeilleConfigState copyWith({
     int? step,
@@ -199,46 +200,44 @@ class VeilleConfigState {
     bool? isSubmitting,
     Object? lastError = _Sentinel.value,
     Object? customThemeLabel = _Sentinel.value,
-  }) =>
-      VeilleConfigState(
-        step: step ?? this.step,
-        introCompleted: introCompleted ?? this.introCompleted,
-        previewPresetId: previewPresetId == _Sentinel.value
-            ? this.previewPresetId
-            : previewPresetId as String?,
-        selectedTheme: selectedTheme == _Sentinel.value
-            ? this.selectedTheme
-            : selectedTheme as String?,
-        mainTopicSlug: mainTopicSlug == _Sentinel.value
-            ? this.mainTopicSlug
-            : mainTopicSlug as String?,
-        mainTopicLabel: mainTopicLabel == _Sentinel.value
-            ? this.mainTopicLabel
-            : mainTopicLabel as String?,
-        selectedTopics: selectedTopics ?? this.selectedTopics,
-        selectedSuggestions: selectedSuggestions ?? this.selectedSuggestions,
-        selectedSourceIds: selectedSourceIds ?? this.selectedSourceIds,
-        customTopics: customTopics ?? this.customTopics,
-        topicLabels: topicLabels ?? this.topicLabels,
-        sourcesMeta: sourcesMeta ?? this.sourcesMeta,
-        keywords: keywords ?? this.keywords,
-        angleKeywords: angleKeywords ?? this.angleKeywords,
-        advancedMode: advancedMode ?? this.advancedMode,
-        skippedStep2: skippedStep2 ?? this.skippedStep2,
-        purpose:
-            purpose == _Sentinel.value ? this.purpose : purpose as String?,
-        editorialBrief: editorialBrief == _Sentinel.value
-            ? this.editorialBrief
-            : editorialBrief as String?,
-        presetId:
-            presetId == _Sentinel.value ? this.presetId : presetId as String?,
-        isSubmitting: isSubmitting ?? this.isSubmitting,
-        lastError:
-            lastError == _Sentinel.value ? this.lastError : lastError as String?,
-        customThemeLabel: customThemeLabel == _Sentinel.value
-            ? this.customThemeLabel
-            : customThemeLabel as String?,
-      );
+  }) => VeilleConfigState(
+    step: step ?? this.step,
+    introCompleted: introCompleted ?? this.introCompleted,
+    previewPresetId: previewPresetId == _Sentinel.value
+        ? this.previewPresetId
+        : previewPresetId as String?,
+    selectedTheme: selectedTheme == _Sentinel.value
+        ? this.selectedTheme
+        : selectedTheme as String?,
+    mainTopicSlug: mainTopicSlug == _Sentinel.value
+        ? this.mainTopicSlug
+        : mainTopicSlug as String?,
+    mainTopicLabel: mainTopicLabel == _Sentinel.value
+        ? this.mainTopicLabel
+        : mainTopicLabel as String?,
+    selectedTopics: selectedTopics ?? this.selectedTopics,
+    selectedSuggestions: selectedSuggestions ?? this.selectedSuggestions,
+    selectedSourceIds: selectedSourceIds ?? this.selectedSourceIds,
+    customTopics: customTopics ?? this.customTopics,
+    topicLabels: topicLabels ?? this.topicLabels,
+    sourcesMeta: sourcesMeta ?? this.sourcesMeta,
+    keywords: keywords ?? this.keywords,
+    angleKeywords: angleKeywords ?? this.angleKeywords,
+    advancedMode: advancedMode ?? this.advancedMode,
+    skippedStep2: skippedStep2 ?? this.skippedStep2,
+    purpose: purpose == _Sentinel.value ? this.purpose : purpose as String?,
+    editorialBrief: editorialBrief == _Sentinel.value
+        ? this.editorialBrief
+        : editorialBrief as String?,
+    presetId: presetId == _Sentinel.value ? this.presetId : presetId as String?,
+    isSubmitting: isSubmitting ?? this.isSubmitting,
+    lastError: lastError == _Sentinel.value
+        ? this.lastError
+        : lastError as String?,
+    customThemeLabel: customThemeLabel == _Sentinel.value
+        ? this.customThemeLabel
+        : customThemeLabel as String?,
+  );
 
   /// `theme_label` final pour le backend — utilise `customThemeLabel` quand
   /// le thème est "other", sinon le label canonique du slug.
@@ -275,7 +274,9 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       mainTopicLabel: null,
       selectedTopics: const {},
       // Reset customThemeLabel quand on quitte 'other'.
-      customThemeLabel: id == kVeilleOtherThemeSlug ? state.customThemeLabel : null,
+      customThemeLabel: id == kVeilleOtherThemeSlug
+          ? state.customThemeLabel
+          : null,
     );
   }
 
@@ -331,9 +332,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     if (state.customTopics.any((t) => t.id == id)) {
       // Déjà présent → s'assurer juste qu'il est coché.
       if (!state.selectedTopics.contains(id)) {
-        state = state.copyWith(
-          selectedTopics: {...state.selectedTopics, id},
-        );
+        state = state.copyWith(selectedTopics: {...state.selectedTopics, id});
       }
       return;
     }
@@ -388,6 +387,12 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
   /// (`custom-`) pour ne pas collisionner dans `topicLabels`/`angleKeywords`.
   static String angleSlug(String title) => 'angle-${_slugifyBase(title)}';
 
+  static String sourceSuggestionSlug(String name, String url) {
+    final uri = Uri.tryParse(url);
+    final host = (uri?.host.isNotEmpty ?? false) ? uri!.host : url;
+    return 'niche-${_slugifyBase('$host-$name')}';
+  }
+
   /// Normalise un mot-clé : trim + lowercase, longueur 2..60 sinon `null`.
   static String? _normalizeKeyword(String raw) {
     final kw = raw.trim().toLowerCase();
@@ -411,8 +416,8 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       state = state.copyWith(selectedTopics: _toggle(state.selectedTopics, id));
 
   void toggleSuggestion(String id) => state = state.copyWith(
-        selectedSuggestions: _toggle(state.selectedSuggestions, id),
-      );
+    selectedSuggestions: _toggle(state.selectedSuggestions, id),
+  );
 
   // ─── Angles LLM (Step 2) ────────────────────────────────────────────────
 
@@ -471,8 +476,30 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
   }
 
   void toggleSource(String id) => state = state.copyWith(
-        selectedSourceIds: _toggle(state.selectedSourceIds, id),
+    selectedSourceIds: _toggle(state.selectedSourceIds, id),
+  );
+
+  /// Enregistre les candidats LLM Step 3 sans les sélectionner. Ils restent
+  /// locaux au flow et seront ingérés seulement si le user les coche.
+  void registerSuggestedSources(List<VeilleSourceSuggestionDto> suggestions) {
+    if (suggestions.isEmpty) return;
+    final nextMeta = Map<String, VeilleSourceMeta>.from(state.sourcesMeta);
+    var changed = false;
+    for (final s in suggestions) {
+      if (!_isValidHttpUrl(s.url)) continue;
+      final slug = sourceSuggestionSlug(s.name, s.url);
+      if (nextMeta.containsKey(slug)) continue;
+      nextMeta[slug] = VeilleSourceMeta(
+        slug: slug,
+        name: s.name,
+        kind: 'niche',
+        url: s.url,
+        why: s.why,
       );
+      changed = true;
+    }
+    if (changed) state = state.copyWith(sourcesMeta: nextMeta);
+  }
 
   /// Ajoute un mot-clé / angle libre (step2 advanced). Normalise lowercase,
   /// dédupe, respecte la cap backend (`maxKeywords`).
@@ -543,7 +570,10 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
   /// "Passer aux sources" → goToStep(3) avec skippedStep2=true).
   void goToStep(int step, {bool skipStep2 = false}) {
     final clamped = step.clamp(1, 3);
-    state = state.copyWith(step: clamped, skippedStep2: skipStep2 || state.skippedStep2);
+    state = state.copyWith(
+      step: clamped,
+      skippedStep2: skipStep2 || state.skippedStep2,
+    );
   }
 
   /// Recul instantané.
@@ -573,6 +603,46 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     state = state.copyWith(
       sourcesMeta: nextMeta,
       selectedSourceIds: {...state.selectedSourceIds, sourceId},
+    );
+  }
+
+  /// Résout un sujet libre saisi via la tuile "Autre" de Step 1. Le sujet
+  /// devient le sujet principal de la veille, sans création d'intérêt global.
+  Future<void> resolveCustomMainTopic(String rawLabel) async {
+    final label = rawLabel.trim();
+    if (label.length < 2) return;
+    final repo = _ref.read(veilleRepositoryProvider);
+    final theme = state.selectedTheme;
+    final themeLabel = theme == null
+        ? null
+        : state.resolvedThemeLabel(veilleThemeLabelForSlug(theme));
+    final resolved = await repo.resolveTopic(
+      topic: label,
+      themeId: theme,
+      themeLabel: themeLabel,
+    );
+    final slug = resolved.topicId.isEmpty
+        ? _slugifyCustom(resolved.label)
+        : resolved.topicId;
+    final topic = VeilleTopic(
+      id: slug,
+      label: resolved.label,
+      reason: resolved.description.isEmpty
+          ? 'sujet ajouté'
+          : resolved.description,
+    );
+    final nextLabels = Map<String, String>.from(state.topicLabels)
+      ..[slug] = resolved.label;
+    final nextAngleKw = Map<String, List<String>>.from(state.angleKeywords);
+    final normalizedKeywords = _normalizeAngleKeywords(resolved.keywords);
+    if (normalizedKeywords.isNotEmpty) nextAngleKw[slug] = normalizedKeywords;
+    final existing = state.customTopics.where((t) => t.id != slug);
+    state = state.copyWith(
+      mainTopicSlug: slug,
+      mainTopicLabel: resolved.label,
+      customTopics: [...existing, topic],
+      topicLabels: nextLabels,
+      angleKeywords: nextAngleKw,
     );
   }
 
@@ -609,7 +679,11 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       nextLabels[slug] = label;
       if (!state.customTopics.any((t) => t.id == slug)) {
         newCustomTopics.add(
-          VeilleTopic(id: slug, label: label, reason: 'depuis « ${preset.label} »'),
+          VeilleTopic(
+            id: slug,
+            label: label,
+            reason: 'depuis « ${preset.label} »',
+          ),
         );
       }
     }
@@ -639,7 +713,9 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       selectedSourceIds: followed,
       sourcesMeta: nextMeta,
       purpose: preset.purposes.isNotEmpty ? preset.purposes.first : null,
-      editorialBrief: preset.editorialBrief.isEmpty ? null : preset.editorialBrief,
+      editorialBrief: preset.editorialBrief.isEmpty
+          ? null
+          : preset.editorialBrief,
       presetId: preset.slug,
     );
   }
@@ -657,9 +733,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       final repo = _ref.read(veilleRepositoryProvider);
       final cfg = await repo.upsertConfig(body);
 
-      _ref
-          .read(veilleActiveConfigProvider.notifier)
-          .hydrateFromServer(cfg);
+      _ref.read(veilleActiveConfigProvider.notifier).hydrateFromServer(cfg);
       // La veille est un favori d'intérêt : sans invalidation, la liste des
       // favoris reste périmée (sans VeilleFavoriteRef) et le CTA « Créer ma
       // veille » reste affiché → clic → redirection feed (bug navigation).
@@ -667,16 +741,10 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       _ref.invalidate(userInterestsProvider);
       state = state.copyWith(isSubmitting: false);
     } on VeilleApiException catch (e) {
-      state = state.copyWith(
-        isSubmitting: false,
-        lastError: e.message,
-      );
+      state = state.copyWith(isSubmitting: false, lastError: e.message);
       rethrow;
     } catch (e) {
-      state = state.copyWith(
-        isSubmitting: false,
-        lastError: e.toString(),
-      );
+      state = state.copyWith(isSubmitting: false, lastError: e.toString());
       rethrow;
     }
   }
@@ -703,9 +771,20 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       final t = cfg.topics[i];
       topicLabels[t.topicId] = t.label;
       if (t.keywords.isNotEmpty) angleKeywords[t.topicId] = t.keywords;
-      if (i == 0 && t.kind == 'preset' && mainSlug == null) {
+      if (i == 0 &&
+          (t.kind == 'preset' || t.kind == 'custom') &&
+          mainSlug == null) {
         mainSlug = t.topicId;
         mainLabel = t.label;
+        if (t.kind == 'custom') {
+          customTopics.add(
+            VeilleTopic(
+              id: t.topicId,
+              label: t.label,
+              reason: t.reason ?? 'sujet ajouté',
+            ),
+          );
+        }
         continue;
       }
       switch (t.kind) {
@@ -729,7 +808,8 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     // ce n'est pas un macro canonique (legacy).
     final macro = AvailableSubtopics.byTheme.containsKey(cfg.themeId)
         ? cfg.themeId
-        : (mainSlug != null ? _macroForSubtopic(mainSlug) : null) ?? cfg.themeId;
+        : (mainSlug != null ? _macroForSubtopic(mainSlug) : null) ??
+              cfg.themeId;
 
     final selectedSourceIds = <String>{};
     final sourcesMeta = <String, VeilleSourceMeta>{};
@@ -761,7 +841,8 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       sourcesMeta: sourcesMeta,
       keywords: keywords,
       angleKeywords: angleKeywords,
-      advancedMode: keywords.isNotEmpty || (cfg.editorialBrief?.isNotEmpty ?? false),
+      advancedMode:
+          keywords.isNotEmpty || (cfg.editorialBrief?.isNotEmpty ?? false),
       purpose: cfg.purpose,
       editorialBrief: cfg.editorialBrief,
       presetId: cfg.presetId,
@@ -799,7 +880,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
         VeilleTopicSelectionRequest(
           topicId: mainSlug,
           label: s.mainTopicLabel ?? s.topicLabels[mainSlug] ?? mainSlug,
-          kind: 'preset',
+          kind: mainSlug.startsWith('custom-') ? 'custom' : 'preset',
           position: pos++,
           keywords: s.angleKeywords[mainSlug] ?? const <String>[],
         ),
@@ -834,11 +915,28 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     var spos = 0;
     for (final slug in s.selectedSourceIds) {
       final meta = s.sourcesMeta[slug];
-      if (meta?.apiSourceId == null) continue; // mock-only — drop
+      if (meta == null) continue;
+      final apiSourceId = meta.apiSourceId;
+      if (apiSourceId != null) {
+        sourceSelections.add(
+          VeilleSourceSelectionRequest(
+            kind: meta.kind, // 'followed' | 'niche'
+            sourceId: apiSourceId,
+            why: meta.why,
+            position: spos++,
+          ),
+        );
+        continue;
+      }
+      if (!_isValidHttpUrl(meta.url)) continue;
       sourceSelections.add(
         VeilleSourceSelectionRequest(
-          kind: meta!.kind, // 'followed' | 'niche'
-          sourceId: meta.apiSourceId,
+          kind: meta.kind,
+          nicheCandidate: VeilleNicheCandidateRequest(
+            name: meta.name,
+            url: meta.url!,
+            why: meta.why,
+          ),
           why: meta.why,
           position: spos++,
         ),
@@ -868,5 +966,13 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
 final veilleConfigProvider =
     StateNotifierProvider.autoDispose<VeilleConfigNotifier, VeilleConfigState>(
-  (ref) => VeilleConfigNotifier(ref),
-);
+      (ref) => VeilleConfigNotifier(ref),
+    );
+
+bool _isValidHttpUrl(String? value) {
+  if (value == null || value.trim().isEmpty) return false;
+  final uri = Uri.tryParse(value.trim());
+  return uri != null &&
+      (uri.scheme == 'https' || uri.scheme == 'http') &&
+      uri.host.isNotEmpty;
+}

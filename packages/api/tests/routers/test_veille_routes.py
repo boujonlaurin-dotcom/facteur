@@ -477,6 +477,61 @@ class TestFeed:
 class TestSuggestEndpoints:
     """POST /api/veille/suggest/{angles,sources} (Story 23.3)."""
 
+    async def test_resolve_topic_enriches_without_creating_profile(
+        self, auth_user, monkeypatch, db_session
+    ):
+        from app.models.user_topic_profile import UserTopicProfile
+        from app.services.ml import topic_enrichment_service as mod
+        from app.services.ml.topic_enrichment_service import TopicEnrichmentResult
+
+        async def _fake_enrich(self, topic_name):
+            return TopicEnrichmentResult(
+                slug_parent="culture",
+                keywords=["macba", "exposition", "art contemporain"],
+                intent_description="Suivi des expositions à Barcelone",
+                entity_type="LOCATION",
+                canonical_name="Musées contemporains de Barcelone",
+            )
+
+        monkeypatch.setattr(mod.TopicEnrichmentService, "enrich", _fake_enrich)
+        monkeypatch.setattr(mod, "_topic_enrichment_service", None)
+
+        async with _client() as c:
+            r = await c.post(
+                "/api/veille/resolve/topic",
+                json={
+                    "topic": "musées barcelone",
+                    "theme_id": "culture",
+                    "theme_label": "Culture",
+                },
+            )
+
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["label"] == "Musées contemporains de Barcelone"
+        assert data["topic_id"] == "custom-musees-contemporains-de-barcelone"
+        assert data["keywords"] == ["macba", "exposition", "art contemporain"]
+        assert data["description"] == "Suivi des expositions à Barcelone"
+        assert data["metadata"]["slug_parent"] == "culture"
+
+        rows = (
+            (
+                await db_session.execute(
+                    select(UserTopicProfile).where(
+                        UserTopicProfile.user_id == auth_user
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows == []
+
+    async def test_resolve_topic_validates_input(self, auth_user):
+        async with _client() as c:
+            r = await c.post("/api/veille/resolve/topic", json={"topic": ""})
+        assert r.status_code == 422
+
     async def test_suggest_angles_returns_llm_response(self, auth_user, monkeypatch):
         from app.services.veille.llm import angle_suggester as mod
         from app.services.veille.llm.angle_suggester import AngleSuggestion

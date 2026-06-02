@@ -140,9 +140,7 @@ class SourceSuggester:
 
         if not self._llm.is_ready:
             logger.warning("source_suggester.llm_unavailable", theme_id=theme_id)
-            result = _fallback_sources()
-            self._cache[cache_key] = result
-            return result
+            return _fallback_sources()
 
         angles_block = "\n".join(f"  - {a}" for a in angles) if angles else "  (aucun)"
         keywords_str = ", ".join(keywords) if keywords else "(aucun)"
@@ -169,14 +167,15 @@ class SourceSuggester:
                 theme_id=theme_id,
                 model=self._model,
             )
-            sources = _fallback_sources()
+            return _fallback_sources()
 
         # Dédoublonne par domaine racine (keep highest score)
         sources = self._dedupe_by_domain(sources)
         # Trie desc par relevance_score
         sources.sort(key=lambda s: s.relevance_score, reverse=True)
 
-        self._cache[cache_key] = sources
+        if sources:
+            self._cache[cache_key] = sources
         return sources
 
     @staticmethod

@@ -19,8 +19,9 @@ void main() {
     });
 
     test('keywords absents → liste vide ; reason absent → null', () {
-      final dto =
-          VeilleAngleSuggestionDto.fromJson(const {'title': 'Sans grappe'});
+      final dto = VeilleAngleSuggestionDto.fromJson(const {
+        'title': 'Sans grappe',
+      });
       expect(dto.keywords, isEmpty);
       expect(dto.reason, isNull);
     });
@@ -45,8 +46,7 @@ void main() {
     });
 
     test('clé angles absente → liste vide (pas de crash)', () {
-      expect(
-          VeilleSuggestAnglesResponse.fromJson(const {}).angles, isEmpty);
+      expect(VeilleSuggestAnglesResponse.fromJson(const {}).angles, isEmpty);
     });
   });
 
@@ -83,6 +83,47 @@ void main() {
         keywords: ['ia', 'llm'],
       );
       expect(req.toJson()['keywords'], ['ia', 'llm']);
+    });
+  });
+
+  group('VeilleResolvedTopicDto.fromJson', () {
+    test('mappe label, topic_id, keywords, description et metadata', () {
+      final dto = VeilleResolvedTopicDto.fromJson(const {
+        'label': 'Musées contemporains de Barcelone',
+        'topic_id': 'custom-musees-contemporains-de-barcelone',
+        'keywords': ['macba', 'exposition'],
+        'description': 'Suivi des expositions',
+        'metadata': {'slug_parent': 'culture', 'entity_type': 'LOCATION'},
+      });
+      expect(dto.label, 'Musées contemporains de Barcelone');
+      expect(dto.topicId, 'custom-musees-contemporains-de-barcelone');
+      expect(dto.keywords, ['macba', 'exposition']);
+      expect(dto.description, 'Suivi des expositions');
+      expect(dto.metadata['slug_parent'], 'culture');
+    });
+  });
+
+  group('VeilleSuggestSourcesResponse.fromJson', () {
+    test('mappe les candidats sources', () {
+      final res = VeilleSuggestSourcesResponse.fromJson(const {
+        'sources': [
+          {
+            'name': 'MACBA',
+            'url': 'https://www.macba.cat',
+            'why': 'Musée officiel',
+            'relevance_score': 1.0,
+          },
+        ],
+      });
+      expect(res.sources.length, 1);
+      expect(res.sources.first.name, 'MACBA');
+      expect(res.sources.first.url, 'https://www.macba.cat');
+      expect(res.sources.first.why, 'Musée officiel');
+      expect(res.sources.first.relevanceScore, 1.0);
+    });
+
+    test('clé sources absente → liste vide', () {
+      expect(VeilleSuggestSourcesResponse.fromJson(const {}).sources, isEmpty);
     });
   });
 }

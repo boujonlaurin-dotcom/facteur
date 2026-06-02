@@ -26,6 +26,9 @@ const List<({String slug, String label, String emoji})> kVeilleFacteurThemes = [
 /// vers `"custom"` à l'ingestion source pour respecter `ck_source_theme_valid`.
 const String kVeilleOtherThemeSlug = 'other';
 
+/// Slug de la tuile "Autre" dans la grille de sous-thèmes de Step 1.
+const String kVeilleOtherTopicSlug = 'other-topic';
+
 /// Borne de l'affichage Step 1 : 9 thèmes Facteur + 1 tuile "Autre" = 10 max.
 /// Les 2 premières (les plus pertinentes pour le user) sont marquées `hot`
 /// pour le badge visuel.

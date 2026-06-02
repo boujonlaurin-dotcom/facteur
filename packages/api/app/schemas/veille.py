@@ -237,6 +237,24 @@ class VeilleFeedResponse(BaseModel):
 # ─── Suggesters LLM (Story 23.3) ─────────────────────────────────────────────
 
 
+class VeilleResolveTopicRequest(BaseModel):
+    """Input du POST /api/veille/resolve/topic."""
+
+    topic: str = Field(min_length=2, max_length=200)
+    theme_id: str | None = Field(default=None, max_length=50)
+    theme_label: str | None = Field(default=None, max_length=120)
+
+
+class VeilleResolveTopicResponse(BaseModel):
+    """Sujet libre enrichi pour une veille, sans création de UserTopicProfile."""
+
+    label: str = Field(min_length=1, max_length=200)
+    topic_id: str = Field(min_length=1, max_length=80)
+    keywords: list[str] = Field(default_factory=list, max_length=10)
+    description: str = ""
+    metadata: dict[str, str | None] = Field(default_factory=dict)
+
+
 class VeilleSuggestAnglesRequest(BaseModel):
     """Input du POST /api/veille/suggest/angles."""
 

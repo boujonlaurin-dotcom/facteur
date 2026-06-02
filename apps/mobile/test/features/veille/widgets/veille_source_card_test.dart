@@ -28,7 +28,7 @@ class _FakeRepo implements VeilleRepository {
   }
 
   @override
-  noSuchMethod(Invocation invocation) =>
+  dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('${invocation.memberName} non mocké');
 }
 

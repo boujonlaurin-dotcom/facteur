@@ -22,7 +22,7 @@ class _FakeRepo implements VeilleRepository {
       angles;
 
   @override
-  noSuchMethod(Invocation invocation) =>
+  dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('${invocation.memberName} non mocké');
 }
 
@@ -42,10 +42,13 @@ void main() {
     expect(angles.single.title, 'IA');
   });
 
-  test('LLM KO (repo → []) : provider renvoie une liste vide (fallback presets)',
+  test(
+      'LLM KO (repo → []) : provider renvoie une liste vide (fallback presets)',
       () async {
     final container = ProviderContainer(
-      overrides: [veilleRepositoryProvider.overrideWithValue(_FakeRepo(const []))],
+      overrides: [
+        veilleRepositoryProvider.overrideWithValue(_FakeRepo(const []))
+      ],
     );
     addTearDown(container.dispose);
 

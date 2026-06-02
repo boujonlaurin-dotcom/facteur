@@ -22,6 +22,7 @@ class VeilleSourceCard extends ConsumerStatefulWidget {
   final bool inVeille;
   final bool isAlreadyFollowed;
   final VoidCallback onToggle;
+  final bool showExamples;
 
   const VeilleSourceCard({
     super.key,
@@ -29,6 +30,7 @@ class VeilleSourceCard extends ConsumerStatefulWidget {
     required this.inVeille,
     required this.isAlreadyFollowed,
     required this.onToggle,
+    this.showExamples = true,
   });
 
   @override
@@ -56,10 +58,8 @@ class _VeilleSourceCardState extends ConsumerState<VeilleSourceCard> {
           context: context,
           isScrollControlled: true,
           backgroundColor: Colors.transparent,
-          builder: (_) => SourceDetailModal(
-            source: catalogSource,
-            onToggleTrust: () {},
-          ),
+          builder: (_) =>
+              SourceDetailModal(source: catalogSource, onToggleTrust: () {}),
         ),
         borderRadius: BorderRadius.circular(12),
         child: Container(
@@ -70,8 +70,8 @@ class _VeilleSourceCardState extends ConsumerState<VeilleSourceCard> {
               color: widget.inVeille
                   ? FacteurColors.veille
                   : (widget.isAlreadyFollowed
-                      ? FacteurColors.veilleLineSoft
-                      : FacteurColors.veilleLine),
+                        ? FacteurColors.veilleLineSoft
+                        : FacteurColors.veilleLine),
               width: 1.5,
             ),
           ),
@@ -81,11 +81,7 @@ class _VeilleSourceCardState extends ConsumerState<VeilleSourceCard> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SourceLogoAvatar(
-                    source: catalogSource,
-                    size: 36,
-                    radius: 8,
-                  ),
+                  SourceLogoAvatar(source: catalogSource, size: 36, radius: 8),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -174,22 +170,21 @@ class _VeilleSourceCardState extends ConsumerState<VeilleSourceCard> {
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              _ExamplesToggle(
-                expanded: _expanded,
-                onTap: _toggleExpanded,
-              ),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOut,
-                alignment: Alignment.topCenter,
-                child: _expanded
-                    ? Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: _ExamplesPanel(sourceId: source.id),
-                      )
-                    : const SizedBox.shrink(),
-              ),
+              if (widget.showExamples) ...[
+                const SizedBox(height: 10),
+                _ExamplesToggle(expanded: _expanded, onTap: _toggleExpanded),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOut,
+                  alignment: Alignment.topCenter,
+                  child: _expanded
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: _ExamplesPanel(sourceId: source.id),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
             ],
           ),
         ),
@@ -228,9 +223,7 @@ class _ExamplesToggle extends StatelessWidget {
             ),
             const Spacer(),
             Icon(
-              expanded
-                  ? PhosphorIcons.caretUp()
-                  : PhosphorIcons.caretDown(),
+              expanded ? PhosphorIcons.caretUp() : PhosphorIcons.caretDown(),
               size: 12,
               color: const Color(0xFF5D5B5A),
             ),
@@ -250,11 +243,7 @@ class _ExamplesPanel extends ConsumerWidget {
     final async = ref.watch(veilleSourceExamplesProvider(sourceId));
     return async.when(
       loading: () => const Column(
-        children: [
-          _ExampleSkeleton(),
-          SizedBox(height: 6),
-          _ExampleSkeleton(),
-        ],
+        children: [_ExampleSkeleton(), SizedBox(height: 6), _ExampleSkeleton()],
       ),
       error: (_, __) => const _ExamplesEmpty(),
       data: (items) {
