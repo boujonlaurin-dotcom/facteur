@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import InterestState, SourceType
 from app.models.source import Source, UserSource
+from app.models.user import UserProfile
 from app.models.user_favorites import UserFavoriteSource
 from app.schemas.source import SourceDetectResponse
 from app.services.source_service import SourceService
@@ -122,6 +123,7 @@ async def test_legacy_trust_source_forces_existing_row_followed(
         is_curated=True,
     )
     db_session.add(source)
+    db_session.add(UserProfile(user_id=user_id))
     db_session.add(
         UserSource(
             user_id=user_id,
