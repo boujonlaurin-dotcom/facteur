@@ -156,9 +156,11 @@ class SectionBlock extends StatelessWidget {
   /// Returns the "Voir tout" / "Plus de…" button for this section, or null
   /// when no overflow CTA applies.
   Widget? _buildVoirPlusButton(FluxSection section, int hiddenCount) {
-    if (section is FeedThemeSection &&
-        onSeeAll != null &&
-        (hiddenCount > 0 || section.hasMore)) {
+    // Filet de sécurité : le bouton est TOUJOURS rendu pour une section thème
+    // (indépendant de la taille du pool). Le deep-dive est la seule route vers
+    // carrousels / « Explorer plus » / CTA « Sujet suivant », donc on ne le
+    // masque jamais — même quand la section tient en entier à l'écran.
+    if (section is FeedThemeSection && onSeeAll != null) {
       return SeeAllSectionButton(
         hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
         onTap: onSeeAll!,

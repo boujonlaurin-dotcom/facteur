@@ -178,10 +178,16 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
     final scrollExhausted = !section.hasMore;
     final themeSlug = section.themeSlug;
 
+    // Carrousels + « Explorer plus » + footer (CTA « Sujet suivant ») sont
+    // rendus SOUS la liste chargée, indépendamment de l'exhaustion du scroll
+    // (aligné sur DigestSectionScreen). L'infinite-scroll continue d'ajouter des
+    // pages d'articles AU-DESSUS ; le bloc de clôture reste en bas, toujours
+    // accessible — c'est la seule route fiable vers le deep-dive.
+    //
     // Pré-calcul des carrousels : permet de passer `hasThemeCarousels` à
     // _buildDiscoverySection pour qu'elle décide si la carte "Vous êtes à
     // jour" doit s'afficher (aucun carrousel ET aucun article de découverte).
-    final themeCarousels = (scrollExhausted && themeSlug != null)
+    final themeCarousels = themeSlug != null
         ? _buildThemeCarousels(section, themeSlug)
         : const <Widget>[];
 
@@ -214,13 +220,14 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
             child: _LoadingMoreIndicator(visible: section.isLoadingMore),
           ),
         ...themeCarousels,
-        if (scrollExhausted && themeSlug != null)
+        if (themeSlug != null)
           ..._buildDiscoverySection(
             section,
             themeSlug,
             hasThemeCarousels: themeCarousels.isNotEmpty,
+            scrollExhausted: scrollExhausted,
           ),
-        if (scrollExhausted) _buildFooterSliver(section),
+        _buildFooterSliver(section),
         const SliverToBoxAdapter(child: SizedBox(height: 40)),
       ],
     );
@@ -262,6 +269,7 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
     FeedThemeSection section,
     String themeSlug, {
     bool hasThemeCarousels = false,
+    bool scrollExhausted = false,
   }) {
     final async = ref.watch(themeDiscoveryProvider(themeSlug));
     return async.when(
@@ -295,7 +303,9 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
 
         // Rien à montrer après les articles personnalisés : ni carrousel
         // éditorial, ni article de découverte → carte "Vous êtes à jour".
-        if (!hasThemeCarousels) {
+        // Gardée sur scrollExhausted pour ne pas annoncer "à jour" alors que
+        // d'autres pages d'articles peuvent encore charger.
+        if (scrollExhausted && !hasThemeCarousels) {
           return [
             SliverToBoxAdapter(
               child: _ThemeClosingCard(label: section.label),

@@ -281,6 +281,15 @@ void main() {
       expect(result, same(b));
     });
 
+    test('returns the next digest section after a theme section', () {
+      // La section suivante peut être une section digest (Bonnes Nouvelles /
+      // Actus du jour) — le footer route alors vers /section/ et non /theme/.
+      final a = themeSection(slug: 'tech');
+      final b = digestSection(kind: SectionKind.bonnes);
+      final result = nextSectionAfter([a, b], sectionKey(a));
+      expect(result, same(b));
+    });
+
     test('returns null when current section is the last one', () {
       final a = themeSection(slug: 'tech');
       final b = themeSection(slug: 'climat');

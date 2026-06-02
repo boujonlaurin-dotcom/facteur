@@ -45,6 +45,32 @@ def _make_service():
     return RecommendationService(session), session
 
 
+def _mock_content():
+    """Minimal Content stub: only `.id` (dedup) + `.source` (logging) used."""
+    c = MagicMock()
+    c.id = uuid4()
+    return c
+
+
+def _stub_scalars_two_pools(captured: list, followed: list, backfill: list):
+    """`session.scalars` returning the followed pool for the two-phase query and
+    the backfill pool for the curated `NOT IN` query (distinguished by SQL)."""
+
+    def _result(items):
+        r = MagicMock()
+        r.all.return_value = items
+        return r
+
+    async def _scalars(stmt):
+        sql = str(stmt.compile(compile_kwargs={"literal_binds": False}))
+        captured.append(sql)
+        if " not in " in sql.lower():
+            return _result(backfill)
+        return _result(followed)
+
+    return _scalars
+
+
 @pytest.mark.asyncio
 async def test_personalized_theme_filters_to_followed_sources():
     """personalized=True + theme + followed → SQL restricts to followed sources."""
@@ -237,6 +263,134 @@ async def test_personalized_theme_relaxes_seen_consumed_filter():
     assert "manually_impressed" not in sql, (
         "personalized_theme_mode ne doit pas filtrer manually_impressed.\n"
         f"SQL:\n{captured[0]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Backfill curé NON-suivi : garantit ≥ THEMATIC_HARD_FLOOR articles par section
+# thématique quand le pool des sources suivies est trop maigre (même au palier
+# 72h). On complète avec des sources curées non-suivies (comme Flâner), marquées
+# « Suivre + » côté client. Décisions PO : compléter par du curé non-suivi,
+# profondeur 72h, pas de palier 7 jours.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_thematic_backfill_reaches_floor():
+    """Pool suivi = 3 (< plancher 5) → une requête curée non-suivie est émise et
+    le résultat fusionné a ≥5, les articles suivis d'abord."""
+    from app.services.recommendation.scoring_config import ScoringWeights
+
+    service, session = _make_service()
+    captured: list[str] = []
+    followed = [_mock_content() for _ in range(3)]
+    backfill = [_mock_content() for _ in range(5)]
+    session.scalars = _stub_scalars_two_pools(captured, followed, backfill)
+
+    result = await asyncio.wait_for(
+        service._get_candidates(
+            user_id=uuid4(),
+            limit_candidates=500,
+            theme="science",
+            personalized=True,
+            followed_source_ids={uuid4(), uuid4()},
+        ),
+        timeout=5.0,
+    )
+
+    # Plancher atteint, suivies d'abord puis backfill.
+    assert len(result) >= ScoringWeights.THEMATIC_HARD_FLOOR
+    assert result[: len(followed)] == followed, "followed sources must come first"
+    assert result[len(followed) :] == backfill, "backfill appended after followed"
+
+    # La requête de backfill : curée, fenêtre 72h, exclut les sources suivies.
+    backfill_sql = next((s for s in captured if " not in " in s.lower()), None)
+    assert backfill_sql is not None, "expected a curated NOT IN backfill query"
+    low = backfill_sql.lower()
+    assert "is_curated" in low
+    assert "published_at" in low and ">=" in low
+    # Filtre thème hérité du `query` (chemin (1) ou (2) du theme focus filter).
+    assert "contents.theme = " in low or "sources.theme = " in low
+
+
+@pytest.mark.asyncio
+async def test_thematic_backfill_carries_serein_filter():
+    """En mode serein, le backfill réutilise le `query` déjà filtré serein →
+    la requête curée porte la condition is_serene."""
+    service, session = _make_service()
+    captured: list[str] = []
+    followed = [_mock_content() for _ in range(2)]
+    backfill = [_mock_content() for _ in range(5)]
+    session.scalars = _stub_scalars_two_pools(captured, followed, backfill)
+
+    await asyncio.wait_for(
+        service._get_candidates(
+            user_id=uuid4(),
+            limit_candidates=500,
+            theme="science",
+            personalized=True,
+            followed_source_ids={uuid4()},
+            serein=True,
+        ),
+        timeout=5.0,
+    )
+
+    backfill_sql = next((s for s in captured if " not in " in s.lower()), None)
+    assert backfill_sql is not None
+    assert "is_serene" in backfill_sql.lower(), (
+        "serein backfill must carry the is_serene filter inherited from query"
+    )
+
+
+@pytest.mark.asyncio
+async def test_thematic_backfill_skipped_when_followed_pool_sufficient():
+    """Pool suivi ≥ plancher → aucune requête de backfill (pas de NOT IN)."""
+    service, session = _make_service()
+    captured: list[str] = []
+    # 6 ≥ THEMATIC_HARD_FLOOR (5) mais < THEMATIC_MIN_POOL_SIZE (8) : la fenêtre
+    # adaptative tourne, mais le plancher est dépassé → pas de backfill.
+    followed = [_mock_content() for _ in range(6)]
+    session.scalars = _stub_scalars_two_pools(captured, followed, [])
+
+    await asyncio.wait_for(
+        service._get_candidates(
+            user_id=uuid4(),
+            limit_candidates=500,
+            theme="tech",
+            personalized=True,
+            followed_source_ids={uuid4()},
+        ),
+        timeout=5.0,
+    )
+
+    assert not any(" not in " in s.lower() for s in captured), (
+        "no curated backfill query should be issued when the followed pool "
+        "already meets the floor"
+    )
+
+
+@pytest.mark.asyncio
+async def test_thematic_backfill_skipped_zero_followed():
+    """Zéro source suivie → branche curée directe, pas de backfill (pas de
+    NOT IN sur les sources suivies)."""
+    service, session = _make_service()
+    captured: list[str] = []
+    followed = [_mock_content() for _ in range(2)]
+    session.scalars = _stub_scalars_two_pools(captured, followed, [])
+
+    await asyncio.wait_for(
+        service._get_candidates(
+            user_id=uuid4(),
+            limit_candidates=500,
+            theme="tech",
+            personalized=True,
+            followed_source_ids=set(),
+        ),
+        timeout=5.0,
+    )
+
+    assert not any(" not in " in s.lower() for s in captured), (
+        "zero-followed case is already curated-only; no backfill expected"
     )
 
 
