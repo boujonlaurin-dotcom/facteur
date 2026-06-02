@@ -205,6 +205,38 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _perspectivesLoading = false;
   Timer? _perspectivesRefetchTimer;
 
+  bool get _showPerspectivesBand =>
+      _content?.contentType == ContentType.article;
+
+  PerspectivesSectionStatus get _perspectivesStatus {
+    final response = _perspectivesResponse;
+    if (response != null) {
+      return response.perspectives.isEmpty
+          ? PerspectivesSectionStatus.empty
+          : PerspectivesSectionStatus.ready;
+    }
+    return PerspectivesSectionStatus.loading;
+  }
+
+  List<Perspective> get _inlinePerspectives {
+    final response = _perspectivesResponse;
+    if (response == null) return const <Perspective>[];
+    return response.perspectives
+        .map(
+          (PerspectiveData p) => Perspective(
+            title: p.title,
+            url: p.url,
+            sourceName: p.sourceName,
+            sourceDomain: p.sourceDomain,
+            biasStance: p.biasStance,
+            publishedAt: p.publishedAt,
+            highlightSpans: p.highlightSpans,
+            sharedTokens: p.sharedTokens,
+          ),
+        )
+        .toList();
+  }
+
   // Perspectives analysis state (lifted from inline section)
   PerspectivesAnalysisState _perspectivesAnalysisState =
       PerspectivesAnalysisState.idle;
@@ -1411,7 +1443,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     } catch (e) {
       debugPrint('Error pre-fetching perspectives: $e');
       if (mounted) {
-        setState(() => _perspectivesLoading = false);
+        setState(() {
+          _perspectivesResponse = PerspectivesResponse(
+            perspectives: const [],
+            keywords: const [],
+            biasDistribution: const {},
+          );
+          _perspectivesLoading = false;
+          _perspectivesExpanded = false;
+        });
       }
     }
   }
@@ -2764,8 +2804,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ),
 
                         // ZONE 1b: Perspectives section, framed by dividers.
-                        if (_perspectivesResponse != null &&
-                            _perspectivesResponse!.perspectives.isNotEmpty) ...[
+                        if (_showPerspectivesBand) ...[
                           Container(
                             color: colors.backgroundPrimary,
                             padding: const EdgeInsets.symmetric(
@@ -2781,31 +2820,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             color: colors.backgroundPrimary,
                             child: PerspectivesInlineSection(
                               key: _perspectivesKey,
-                              perspectives: _perspectivesResponse!.perspectives
-                                  .map(
-                                    (PerspectiveData p) => Perspective(
-                                      title: p.title,
-                                      url: p.url,
-                                      sourceName: p.sourceName,
-                                      sourceDomain: p.sourceDomain,
-                                      biasStance: p.biasStance,
-                                      publishedAt: p.publishedAt,
-                                      highlightSpans: p.highlightSpans,
-                                      sharedTokens: p.sharedTokens,
-                                    ),
-                                  )
-                                  .toList(),
+                              status: _perspectivesStatus,
+                              perspectives: _inlinePerspectives,
                               biasDistribution:
-                                  _perspectivesResponse!.biasDistribution,
-                              keywords: _perspectivesResponse!.keywords,
+                                  _perspectivesResponse?.biasDistribution ??
+                                  const {},
+                              keywords:
+                                  _perspectivesResponse?.keywords ?? const [],
                               sourceBiasStance:
-                                  _perspectivesResponse!.sourceBiasStance,
+                                  _perspectivesResponse?.sourceBiasStance ??
+                                  'unknown',
                               sourceName: _content?.source.name ?? '',
                               contentId: widget.contentId,
                               comparisonQuality:
-                                  _perspectivesResponse!.comparisonQuality,
+                                  _perspectivesResponse?.comparisonQuality ??
+                                  'low',
                               divergenceLevel:
-                                  _perspectivesResponse!.divergenceLevel,
+                                  _perspectivesResponse?.divergenceLevel,
                               externalSelectedSegments:
                                   _perspectivesSelectedSegments,
                               onSegmentTap: _onPerspectivesSegmentTap,
@@ -2822,7 +2853,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               onToggle: _onPerspectivesToggle,
                               referenceTitle: _content?.title ?? '',
                               referencePivot:
-                                  _perspectivesResponse!.referencePivot,
+                                  _perspectivesResponse?.referencePivot,
                             ),
                           ),
                           Container(
@@ -3352,8 +3383,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 ),
 
                 // ── Perspectives section (avant l'article) ─────────────────
-                if (_perspectivesResponse != null &&
-                    _perspectivesResponse!.perspectives.isNotEmpty) ...[
+                if (_showPerspectivesBand) ...[
                   const SizedBox(height: FacteurSpacing.space4),
                   Padding(
                     padding: const EdgeInsets.symmetric(
@@ -3367,27 +3397,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ),
                   PerspectivesInlineSection(
                     key: _perspectivesKey,
-                    perspectives: _perspectivesResponse!.perspectives
-                        .map(
-                          (PerspectiveData p) => Perspective(
-                            title: p.title,
-                            url: p.url,
-                            sourceName: p.sourceName,
-                            sourceDomain: p.sourceDomain,
-                            biasStance: p.biasStance,
-                            publishedAt: p.publishedAt,
-                            highlightSpans: p.highlightSpans,
-                            sharedTokens: p.sharedTokens,
-                          ),
-                        )
-                        .toList(),
-                    biasDistribution: _perspectivesResponse!.biasDistribution,
-                    keywords: _perspectivesResponse!.keywords,
-                    sourceBiasStance: _perspectivesResponse!.sourceBiasStance,
+                    status: _perspectivesStatus,
+                    perspectives: _inlinePerspectives,
+                    biasDistribution:
+                        _perspectivesResponse?.biasDistribution ?? const {},
+                    keywords: _perspectivesResponse?.keywords ?? const [],
+                    sourceBiasStance:
+                        _perspectivesResponse?.sourceBiasStance ?? 'unknown',
                     sourceName: _content?.source.name ?? '',
                     contentId: widget.contentId,
-                    comparisonQuality: _perspectivesResponse!.comparisonQuality,
-                    divergenceLevel: _perspectivesResponse!.divergenceLevel,
+                    comparisonQuality:
+                        _perspectivesResponse?.comparisonQuality ?? 'low',
+                    divergenceLevel: _perspectivesResponse?.divergenceLevel,
                     externalSelectedSegments: _perspectivesSelectedSegments,
                     onSegmentTap: _onPerspectivesSegmentTap,
                     onClearSegments: () {
@@ -3400,7 +3421,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     isExpanded: _perspectivesExpanded,
                     onToggle: _onPerspectivesToggle,
                     referenceTitle: _content?.title ?? '',
-                    referencePivot: _perspectivesResponse!.referencePivot,
+                    referencePivot: _perspectivesResponse?.referencePivot,
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(
