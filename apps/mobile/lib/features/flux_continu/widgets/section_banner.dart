@@ -132,9 +132,15 @@ class SectionBanner extends StatelessWidget {
               ),
             ),
           Padding(
+            // With a blurb the content fills `minHeight` exactly, so the
+            // centered column has no slack and the accent dash sticks to the
+            // fixed top inset — making the section feel cramped vs the
+            // thematic (blurb-less) banners, whose slack lets the dash drift
+            // down. Add a few px of top inset on the blurb variant to match
+            // the thematic dash's apparent inset.
             padding: large
                 ? const EdgeInsets.fromLTRB(22, 16, 16, 16)
-                : const EdgeInsets.fromLTRB(20, 8, 14, 9),
+                : EdgeInsets.fromLTRB(20, hasBlurb ? 14 : 8, 14, hasBlurb ? 12 : 9),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [

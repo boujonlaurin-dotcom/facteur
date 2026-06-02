@@ -1,10 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/flux_continu/widgets/sticky_tab_bar.dart';
@@ -36,25 +33,12 @@ const _tabs = [
 ];
 
 void main() {
-  late Directory tempDir;
-
-  setUpAll(() async {
+  setUpAll(() {
     GoogleFonts.config.allowRuntimeFetching = false;
-    // StickyHead renders a ProfileAvatarButton, which reads providers backed
-    // by Hive (user profile cache). Initialize Hive against a temp dir so the
-    // avatar can build; Supabase stays uninitialized and is handled gracefully
-    // by the providers (auth-less → default/empty state).
-    tempDir = await Directory.systemTemp.createTemp('sticky_tab_bar_test_');
-    Hive.init(tempDir.path);
-  });
-
-  tearDownAll(() async {
-    await Hive.close();
-    await tempDir.delete(recursive: true);
   });
 
   group('StickyTabBar', () {
-    testWidgets('renders the head title + every tab label', (tester) async {
+    testWidgets('renders every tab label (no head title)', (tester) async {
       await tester.pumpWidget(_wrap(
         StickyTabBar(
           tabs: _tabs,
@@ -63,7 +47,8 @@ void main() {
           onTapTab: (_) {},
         ),
       ));
-      expect(find.text('Tournée du jour'), findsOneWidget);
+      // The sticky no longer carries a zone title — only the tab labels.
+      expect(find.text('Tournée du jour'), findsNothing);
       expect(find.text('Essentiel'), findsOneWidget);
       expect(find.text('Tech'), findsOneWidget);
       expect(find.text('Flâner'), findsOneWidget);
@@ -103,22 +88,27 @@ void main() {
       expect(lastTapped, 1);
     });
 
-    testWidgets('switches head title to "Flâner" in Explorer mode',
+    testWidgets('active tab carries an accent wash, others stay transparent',
         (tester) async {
-      // `showFilterBar: false` here — we only assert on the head title
-      // swap. The full filter-bar variant pulls in Riverpod-backed feed
-      // providers, which is covered by the integration tests instead.
       await tester.pumpWidget(_wrap(
         StickyTabBar(
           tabs: _tabs,
-          activeIndex: 2,
-          progress: 1.0,
+          activeIndex: 0,
+          progress: 0.2,
           onTapTab: (_) {},
-          title: 'Flâner',
         ),
       ));
-      // Head title becomes Flâner and the last tab keeps the same label.
-      expect(find.text('Flâner'), findsNWidgets(2));
+      // The active tab (index 0) is highlighted by a DecoratedBox tinted with
+      // its own accent — the legacy 3px underline is gone. Exactly one tab
+      // should carry that wash.
+      final expectedWash = const Color(0xFFB0470A).withValues(alpha: 0.14);
+      final washed = tester
+          .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+          .where((d) {
+        final deco = d.decoration;
+        return deco is BoxDecoration && deco.color == expectedWash;
+      });
+      expect(washed, hasLength(1));
     });
   });
 }
