@@ -316,6 +316,12 @@ class TestInitialState:
         assert l1["progress"] == 0.0
         assert l1["started_at"] is not None
         assert len(l1["actions"]) == 4
+        assert [action["target_route"] for action in l1["actions"]] == [
+            "/settings/interests",
+            "/settings/sources",
+            "/settings/sources/add",
+            "/flaner",
+        ]
 
         assert l2["id"] == "letter_2"
         assert l2["status"] == "upcoming"
@@ -728,6 +734,14 @@ class TestLetter2Shape:
         assert isinstance(l2.get("intro_palier"), str) and l2["intro_palier"]
         assert isinstance(l2.get("completion_voeu"), str) and l2["completion_voeu"]
         assert len(l2["actions"]) == 5
+        assert l2["actions"][0]["label"] == "Lire Actu du jour"
+        assert [action["target_route"] for action in l2["actions"]] == [
+            "/flux-continu/section/essentiel",
+            "/flux-continu/section/bonnes",
+            "/flaner",
+            "/flaner",
+            "/flaner",
+        ]
         for action in l2["actions"]:
             assert isinstance(action.get("completion_palier"), str)
             assert action["completion_palier"]
