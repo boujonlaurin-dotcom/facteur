@@ -565,7 +565,7 @@ class _SourceFavoritesSection extends StatelessWidget {
       items: favorites,
       keyOf: (r) => ValueKey('source:${r.sourceId}'),
       emptyStateText:
-          'Aucune source favorite — étoile une source pour la retrouver ici.',
+          'Aucune source favorite — marquez-en une pour l\'épingler dans Flâner.',
       padding: EdgeInsets.zero,
       itemBuilder: (context, refItem) {
         final source = byId[refItem.sourceId];
@@ -809,7 +809,7 @@ class _IntroBlock extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Réglez les fréquences d\'apparitions de vos sources de 1 (occasionnellement) à 3 (tout voir), masquez celles qui ne vous parlent pas, et ajoutez plus de sources pour enrichir votre flux.',
+            'Passez une source en Favori pour l\'épingler dans Flâner et booster ses articles partout dans l\'app. Les 3 premiers favoris alimentent aussi votre Tournée du jour.',
             style: textTheme.bodySmall?.copyWith(
               color: colors.textSecondary,
               height: 1.45,

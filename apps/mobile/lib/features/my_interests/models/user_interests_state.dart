@@ -45,7 +45,7 @@ extension InterestStateVisuals on InterestState {
   String get description {
     switch (this) {
       case InterestState.favorite:
-        return 'En haut de votre flux. Les 3 premiers sont dans la Tournée du jour.';
+        return 'Épingle dans Flâner + boostée dans toute l\'app.';
       case InterestState.followed:
         return 'Présent dans votre flux';
       case InterestState.unfollowed:

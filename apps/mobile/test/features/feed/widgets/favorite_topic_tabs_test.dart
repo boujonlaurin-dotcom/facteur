@@ -8,8 +8,12 @@ import 'package:facteur/features/custom_topics/providers/custom_topics_provider.
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/widgets/favorite_topic_tabs.dart';
 import 'package:facteur/features/my_interests/models/user_interests_state.dart';
+import 'package:facteur/features/my_interests/models/user_sources_state.dart';
 import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
+
+Source _source({required String id, required String name}) =>
+    Source.fallback().copyWith(id: id, name: name);
 
 UserTopicProfile _topic({
   required String id,
@@ -186,6 +190,96 @@ void main() {
         tabs.firstWhere((t) => t.kind == FavoriteTabKind.tous).active,
         isFalse,
       );
+    });
+
+    test('source favorite → produces a source tab carrying its Source', () {
+      final src = _source(id: 's1', name: 'Le Monde');
+
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: const [],
+        favorites: const [],
+        items: const [],
+        sourceFavorites: const [SourceFavoriteRef(sourceId: 's1', position: 0)],
+        sourceById: {'s1': src},
+      );
+
+      expect(tabs.map((t) => t.kind).toList(), [
+        FavoriteTabKind.tous,
+        FavoriteTabKind.source,
+      ]);
+      final sourceTab =
+          tabs.firstWhere((t) => t.kind == FavoriteTabKind.source);
+      expect(sourceTab.label, 'Le Monde');
+      expect(sourceTab.slug, 's1');
+      expect(sourceTab.source, isNotNull);
+    });
+
+    test('source favorite absent from catalog → skipped', () {
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: const [],
+        favorites: const [],
+        items: const [],
+        sourceFavorites: const [
+          SourceFavoriteRef(sourceId: 'ghost', position: 0),
+        ],
+        sourceById: const {},
+      );
+
+      expect(tabs, hasLength(1));
+      expect(tabs.first.kind, FavoriteTabKind.tous);
+    });
+
+    test('selectedSourceId marks the matching source tab as active', () {
+      final src = _source(id: 's1', name: 'Le Monde');
+
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: const [],
+        favorites: const [],
+        items: const [],
+        sourceFavorites: const [SourceFavoriteRef(sourceId: 's1', position: 0)],
+        sourceById: {'s1': src},
+        selectedSourceId: 's1',
+      );
+
+      expect(
+        tabs.firstWhere((t) => t.kind == FavoriteTabKind.source).active,
+        isTrue,
+      );
+    });
+
+    test('unified order interleaves topic and source tabs', () {
+      final topics = [_topic(id: 't1', name: 'IA', slugParent: 'ai')];
+      final src = _source(id: 's1', name: 'Le Monde');
+
+      // Sans ordre custom : tri par count (0) puis alpha → 'ia' < 'le monde'
+      // donc le sujet d'abord.
+      final defaultTabs = buildFavoriteTabModelsForTest(
+        topics: topics,
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
+        items: const [],
+        sourceFavorites: const [SourceFavoriteRef(sourceId: 's1', position: 0)],
+        sourceById: {'s1': src},
+      );
+      expect(defaultTabs.map((t) => t.kind).toList(), [
+        FavoriteTabKind.tous,
+        FavoriteTabKind.subjectTopic,
+        FavoriteTabKind.source,
+      ]);
+
+      // Avec ordre custom plaçant la source avant le sujet.
+      final orderedTabs = buildFavoriteTabModelsForTest(
+        topics: topics,
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
+        items: const [],
+        sourceFavorites: const [SourceFavoriteRef(sourceId: 's1', position: 0)],
+        sourceById: {'s1': src},
+        order: const ['source:s1', 'topic:t1'],
+      );
+      expect(orderedTabs.map((t) => t.kind).toList(), [
+        FavoriteTabKind.tous,
+        FavoriteTabKind.source,
+        FavoriteTabKind.subjectTopic,
+      ]);
     });
   });
 

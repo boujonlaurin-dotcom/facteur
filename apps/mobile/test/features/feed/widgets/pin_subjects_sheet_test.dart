@@ -105,7 +105,10 @@ void main() {
       await tester.pumpWidget(_host(st, const PinSubjectsBanner()));
       await tester.pumpAndSettle();
 
-      expect(find.text('Épingle tes sujets'), findsOneWidget);
+      expect(
+        find.text('Épinglez des sources ou sujets précis'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('hidden when 3 or more subjects are pinned', (tester) async {
@@ -146,7 +149,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Le sujet suivi est proposé à l'épinglage.
-      expect(find.text('ÉPINGLER UN SUJET SUIVI'), findsOneWidget);
+      expect(find.text('SUJETS À ÉPINGLER'), findsOneWidget);
       expect(find.text('Climat'), findsOneWidget);
 
       await tester.tap(find.text('Climat'));
@@ -155,8 +158,8 @@ void main() {
       expect(notifier.calls, hasLength(1));
       expect(notifier.calls.first.$1, const CustomTopicFavoriteRef(id: 't1'));
       expect(notifier.calls.first.$2, InterestState.favorite);
-      // Après épinglage il bascule dans la section « SUJETS ÉPINGLÉS ».
-      expect(find.text('SUJETS ÉPINGLÉS'), findsOneWidget);
+      // Après épinglage il bascule dans la section « ÉPINGLÉS ».
+      expect(find.text('ÉPINGLÉS'), findsOneWidget);
     });
 
     testWidgets('search filters the followed subjects', (tester) async {
