@@ -11,6 +11,12 @@ import 'package:facteur/features/veille/repositories/veille_repository.dart';
 /// `_buildUpsertRequest`). Toute autre méthode throw → instrumentation à fixer.
 class _CaptureRepo implements VeilleRepository {
   VeilleConfigUpsertRequest? captured;
+  VeilleResolvedTopicDto resolvedTopic = const VeilleResolvedTopicDto(
+    label: 'Musées contemporains de Barcelone',
+    topicId: 'custom-musees-contemporains-de-barcelone',
+    keywords: ['macba', 'exposition'],
+    description: 'Suivi des expositions',
+  );
 
   @override
   Future<VeilleConfigDto> upsertConfig(VeilleConfigUpsertRequest body) async {
@@ -30,7 +36,15 @@ class _CaptureRepo implements VeilleRepository {
   }
 
   @override
-  noSuchMethod(Invocation invocation) =>
+  Future<VeilleResolvedTopicDto> resolveTopic({
+    required String topic,
+    String? themeId,
+    String? themeLabel,
+  }) async =>
+      resolvedTopic;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('${invocation.memberName} non mocké');
 }
 
@@ -51,8 +65,10 @@ void main() {
   test('selectTheme reset customThemeLabel quand on quitte "other"', () {
     notifier.selectTheme(kVeilleOtherThemeSlug);
     notifier.setCustomThemeLabel('Musées contemporains');
-    expect(container.read(veilleConfigProvider).customThemeLabel,
-        'Musées contemporains');
+    expect(
+      container.read(veilleConfigProvider).customThemeLabel,
+      'Musées contemporains',
+    );
 
     notifier.selectTheme('tech');
     expect(container.read(veilleConfigProvider).customThemeLabel, isNull);
@@ -66,8 +82,10 @@ void main() {
     expect(keywords.length, VeilleConfigNotifier.maxKeywords);
 
     notifier.addKeyword('  KW-0  '); // doublon normalisé
-    expect(container.read(veilleConfigProvider).keywords.length,
-        VeilleConfigNotifier.maxKeywords);
+    expect(
+      container.read(veilleConfigProvider).keywords.length,
+      VeilleConfigNotifier.maxKeywords,
+    );
   });
 
   test('addKeyword rejette les inputs trop courts ou trop longs', () {
@@ -134,16 +152,22 @@ void main() {
   test('resolvedThemeLabel utilise customThemeLabel quand thème = other', () {
     notifier.selectTheme(kVeilleOtherThemeSlug);
     notifier.setCustomThemeLabel('Musées');
-    expect(container.read(veilleConfigProvider).resolvedThemeLabel('Autre'),
-        'Musées');
+    expect(
+      container.read(veilleConfigProvider).resolvedThemeLabel('Autre'),
+      'Musées',
+    );
   });
 
-  test('resolvedThemeLabel fallback quand customThemeLabel vide en mode other',
-      () {
-    notifier.selectTheme(kVeilleOtherThemeSlug);
-    expect(container.read(veilleConfigProvider).resolvedThemeLabel('Autre'),
-        'Autre');
-  });
+  test(
+    'resolvedThemeLabel fallback quand customThemeLabel vide en mode other',
+    () {
+      notifier.selectTheme(kVeilleOtherThemeSlug);
+      expect(
+        container.read(veilleConfigProvider).resolvedThemeLabel('Autre'),
+        'Autre',
+      );
+    },
+  );
 
   test('goNext cap à step 3 / goBack cap à step 1', () {
     expect(container.read(veilleConfigProvider).step, 1);
@@ -158,13 +182,60 @@ void main() {
     expect(container.read(veilleConfigProvider).step, 1);
   });
 
-  test('realSelectedSourceCount ignore les sources sans apiSourceId', () {
+  test('realSelectedSourceCount compte catalogue et candidat niche valide', () {
     notifier.addCustomSourceToVeille(
       sourceId: 'src-1',
       name: 'Le Monde',
       url: 'https://lemonde.fr',
     );
-    expect(container.read(veilleConfigProvider).realSelectedSourceCount, 1);
+    notifier.registerSuggestedSources(const [
+      VeilleSourceSuggestionDto(
+        name: 'MACBA',
+        url: 'https://www.macba.cat',
+        why: 'Musée officiel',
+        relevanceScore: 1,
+      ),
+    ]);
+    final slug = VeilleConfigNotifier.sourceSuggestionSlug(
+      'MACBA',
+      'https://www.macba.cat',
+    );
+    notifier.toggleSource(slug);
+
+    expect(container.read(veilleConfigProvider).realSelectedSourceCount, 2);
+  });
+
+  test('submit sérialise un candidat niche en niche_candidate', () async {
+    final repo = _CaptureRepo();
+    final c = ProviderContainer(
+      overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+    );
+    addTearDown(c.dispose);
+    final n = c.read(veilleConfigProvider.notifier);
+
+    n.selectTheme('culture');
+    n.selectMainTopic('museums', 'Musées');
+    n.registerSuggestedSources(const [
+      VeilleSourceSuggestionDto(
+        name: 'MACBA',
+        url: 'https://www.macba.cat',
+        why: 'Musée officiel',
+        relevanceScore: 1,
+      ),
+    ]);
+    final slug = VeilleConfigNotifier.sourceSuggestionSlug(
+      'MACBA',
+      'https://www.macba.cat',
+    );
+    n.toggleSource(slug);
+    await n.submit();
+
+    final source = repo.captured!.sourceSelections.single;
+    expect(source.kind, 'niche');
+    expect(source.sourceId, isNull);
+    expect(source.nicheCandidate!.name, 'MACBA');
+    expect(source.nicheCandidate!.url, 'https://www.macba.cat');
+    expect(source.toJson()['niche_candidate'], isA<Map<String, dynamic>>());
   });
 
   // ─── Angles LLM (PR-3) ──────────────────────────────────────────────────
@@ -175,36 +246,46 @@ void main() {
     reason: 'Impact sur les workflows',
   );
 
-  test('toggleAngle sélectionne (slug angle-, label, grappe normalisée seedée)',
-      () {
-    notifier.toggleAngle(angle);
-    final s = container.read(veilleConfigProvider);
-    final slug = VeilleConfigNotifier.angleSlug('IA générative');
+  test(
+    'toggleAngle sélectionne (slug angle-, label, grappe normalisée seedée)',
+    () {
+      notifier.toggleAngle(angle);
+      final s = container.read(veilleConfigProvider);
+      final slug = VeilleConfigNotifier.angleSlug('IA générative');
 
-    expect(slug, 'angle-ia-generative');
-    expect(s.selectedSuggestions, {slug});
-    expect(s.topicLabels[slug], 'IA générative');
-    // Grappe normalisée : lowercase + dédupe (accents conservés, comme
-    // `addKeyword` — seul le slug strippe les diacritiques).
-    expect(s.angleKeywords[slug], ['ia générative', 'llm', 'chatgpt']);
-  });
+      expect(slug, 'angle-ia-generative');
+      expect(s.selectedSuggestions, {slug});
+      expect(s.topicLabels[slug], 'IA générative');
+      // Grappe normalisée : lowercase + dédupe (accents conservés, comme
+      // `addKeyword` — seul le slug strippe les diacritiques).
+      expect(s.angleKeywords[slug], ['ia générative', 'llm', 'chatgpt']);
+    },
+  );
 
-  test('toggleAngle re-toggle désélectionne mais conserve la grappe éditée', () {
-    notifier.toggleAngle(angle);
-    final slug = VeilleConfigNotifier.angleSlug(angle.title);
-    notifier.addAngleKeyword(slug, 'gpt-5');
+  test(
+    'toggleAngle re-toggle désélectionne mais conserve la grappe éditée',
+    () {
+      notifier.toggleAngle(angle);
+      final slug = VeilleConfigNotifier.angleSlug(angle.title);
+      notifier.addAngleKeyword(slug, 'gpt-5');
 
-    notifier.toggleAngle(angle); // désélection
-    final s = container.read(veilleConfigProvider);
-    expect(s.selectedSuggestions, isEmpty);
-    expect(s.angleKeywords[slug], contains('gpt-5'),
-        reason: 'edits préservés pour un re-toggle');
+      notifier.toggleAngle(angle); // désélection
+      final s = container.read(veilleConfigProvider);
+      expect(s.selectedSuggestions, isEmpty);
+      expect(
+        s.angleKeywords[slug],
+        contains('gpt-5'),
+        reason: 'edits préservés pour un re-toggle',
+      );
 
-    // Re-sélection : la grappe éditée n'est PAS écrasée par le seed initial.
-    notifier.toggleAngle(angle);
-    expect(container.read(veilleConfigProvider).angleKeywords[slug],
-        contains('gpt-5'));
-  });
+      // Re-sélection : la grappe éditée n'est PAS écrasée par le seed initial.
+      notifier.toggleAngle(angle);
+      expect(
+        container.read(veilleConfigProvider).angleKeywords[slug],
+        contains('gpt-5'),
+      );
+    },
+  );
 
   test('addAngleKeyword dédupe + cap maxAngleKeywords, removeAngleKeyword', () {
     notifier.toggleAngle(
@@ -215,64 +296,77 @@ void main() {
     for (var i = 0; i < VeilleConfigNotifier.maxAngleKeywords + 5; i++) {
       notifier.addAngleKeyword(slug, 'kw-$i');
     }
-    expect(container.read(veilleConfigProvider).angleKeywords[slug]!.length,
-        VeilleConfigNotifier.maxAngleKeywords);
+    expect(
+      container.read(veilleConfigProvider).angleKeywords[slug]!.length,
+      VeilleConfigNotifier.maxAngleKeywords,
+    );
 
     notifier.addAngleKeyword(slug, '  KW-0 '); // doublon normalisé
-    expect(container.read(veilleConfigProvider).angleKeywords[slug]!.length,
-        VeilleConfigNotifier.maxAngleKeywords);
+    expect(
+      container.read(veilleConfigProvider).angleKeywords[slug]!.length,
+      VeilleConfigNotifier.maxAngleKeywords,
+    );
 
     notifier.removeAngleKeyword(slug, 'kw-0');
-    expect(container.read(veilleConfigProvider).angleKeywords[slug],
-        isNot(contains('kw-0')));
-  });
-
-  test('_buildUpsertRequest peuple keywords sur le topic suggested de l\'angle',
-      () async {
-    final repo = _CaptureRepo();
-    final c = ProviderContainer(
-      overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+    expect(
+      container.read(veilleConfigProvider).angleKeywords[slug],
+      isNot(contains('kw-0')),
     );
-    addTearDown(c.dispose);
-    final n = c.read(veilleConfigProvider.notifier);
-
-    n.selectTheme('tech');
-    n.toggleAngle(angle);
-    await n.submit();
-
-    final slug = VeilleConfigNotifier.angleSlug(angle.title);
-    final topic =
-        repo.captured!.topics.firstWhere((t) => t.topicId == slug);
-    expect(topic.kind, 'suggested');
-    expect(topic.keywords, ['ia générative', 'llm', 'chatgpt']);
-    final json = topic.toJson();
-    expect(json['keywords'], ['ia générative', 'llm', 'chatgpt']);
   });
+
+  test(
+    '_buildUpsertRequest peuple keywords sur le topic suggested de l\'angle',
+    () async {
+      final repo = _CaptureRepo();
+      final c = ProviderContainer(
+        overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+      );
+      addTearDown(c.dispose);
+      final n = c.read(veilleConfigProvider.notifier);
+
+      n.selectTheme('tech');
+      n.toggleAngle(angle);
+      await n.submit();
+
+      final slug = VeilleConfigNotifier.angleSlug(angle.title);
+      final topic = repo.captured!.topics.firstWhere((t) => t.topicId == slug);
+      expect(topic.kind, 'suggested');
+      expect(topic.keywords, ['ia générative', 'llm', 'chatgpt']);
+      final json = topic.toJson();
+      expect(json['keywords'], ['ia générative', 'llm', 'chatgpt']);
+    },
+  );
 
   // ─── Sujet principal granulaire (Story 23.4) ────────────────────────────
 
-  test('selectMainTopic émet le sujet principal en position 0 (kind preset)',
-      () async {
-    final repo = _CaptureRepo();
-    final c = ProviderContainer(
-      overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
-    );
-    addTearDown(c.dispose);
-    final n = c.read(veilleConfigProvider.notifier);
+  test(
+    'selectMainTopic émet le sujet principal en position 0 (kind preset)',
+    () async {
+      final repo = _CaptureRepo();
+      final c = ProviderContainer(
+        overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+      );
+      addTearDown(c.dispose);
+      final n = c.read(veilleConfigProvider.notifier);
 
-    n.selectTheme('tech');
-    n.selectMainTopic('ai', 'Intelligence artificielle');
-    // Un angle optionnel à côté, pour vérifier que le main reste en tête.
-    n.toggleAngle(angle);
-    await n.submit();
+      n.selectTheme('tech');
+      n.selectMainTopic('ai', 'Intelligence artificielle');
+      // Un angle optionnel à côté, pour vérifier que le main reste en tête.
+      n.toggleAngle(angle);
+      await n.submit();
 
-    final topics = repo.captured!.topics;
-    expect(topics.first.topicId, 'ai');
-    expect(topics.first.kind, 'preset', reason: 'slug canonique → Content.topics');
-    expect(topics.first.position, 0);
-    // Pas de doublon du main dans les angles.
-    expect(topics.where((t) => t.topicId == 'ai').length, 1);
-  });
+      final topics = repo.captured!.topics;
+      expect(topics.first.topicId, 'ai');
+      expect(
+        topics.first.kind,
+        'preset',
+        reason: 'slug canonique → Content.topics',
+      );
+      expect(topics.first.position, 0);
+      // Pas de doublon du main dans les angles.
+      expect(topics.where((t) => t.topicId == 'ai').length, 1);
+    },
+  );
 
   test('selectTheme reset le sujet principal au changement de macro', () {
     notifier.selectTheme('tech');
@@ -292,47 +386,70 @@ void main() {
     expect(container.read(veilleConfigProvider).mainTopicSlug, isNull);
   });
 
-  test('hydrateFromActiveConfig restaure macro + sujet principal (position 0)',
-      () {
-    final cfg = VeilleConfigDto(
-      id: 'cfg-1',
-      userId: 'user-1',
-      themeId: 'tech',
-      themeLabel: 'Tech',
-      status: 'active',
-      createdAt: DateTime(2024),
-      updatedAt: DateTime(2024),
-      topics: const [
-        VeilleTopicDto(
-          id: 't0',
-          topicId: 'ai',
-          label: 'IA',
-          kind: 'preset',
-          reason: null,
-          position: 0,
-          keywords: [],
-        ),
-        VeilleTopicDto(
-          id: 't1',
-          topicId: 'angle-x',
-          label: 'Angle X',
-          kind: 'suggested',
-          reason: null,
-          position: 1,
-          keywords: ['gpt'],
-        ),
-      ],
-      sources: const [],
-      keywords: const [],
-    );
+  test(
+    'resolveCustomMainTopic enrichit un sujet local veille en main custom',
+    () async {
+      final repo = _CaptureRepo();
+      final c = ProviderContainer(
+        overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+      );
+      addTearDown(c.dispose);
+      final n = c.read(veilleConfigProvider.notifier);
 
-    notifier.hydrateFromActiveConfig(cfg);
-    final s = container.read(veilleConfigProvider);
-    expect(s.selectedTheme, 'tech', reason: 'macro restauré');
-    expect(s.mainTopicSlug, 'ai', reason: 'granulaire = topic position 0');
-    expect(s.mainTopicLabel, 'IA');
-    // Le sujet principal n'est PAS rejoué comme topic optionnel (sinon doublon).
-    expect(s.selectedTopics, isNot(contains('ai')));
-    expect(s.selectedSuggestions, contains('angle-x'));
-  });
+      n.selectTheme('culture');
+      await n.resolveCustomMainTopic('musées barcelone');
+
+      final s = c.read(veilleConfigProvider);
+      expect(s.mainTopicSlug, 'custom-musees-contemporains-de-barcelone');
+      expect(s.mainTopicLabel, 'Musées contemporains de Barcelone');
+      expect(s.angleKeywords[s.mainTopicSlug], ['macba', 'exposition']);
+      expect(s.customTopics.single.id, s.mainTopicSlug);
+    },
+  );
+
+  test(
+    'hydrateFromActiveConfig restaure macro + sujet principal (position 0)',
+    () {
+      final cfg = VeilleConfigDto(
+        id: 'cfg-1',
+        userId: 'user-1',
+        themeId: 'tech',
+        themeLabel: 'Tech',
+        status: 'active',
+        createdAt: DateTime(2024),
+        updatedAt: DateTime(2024),
+        topics: const [
+          VeilleTopicDto(
+            id: 't0',
+            topicId: 'ai',
+            label: 'IA',
+            kind: 'preset',
+            reason: null,
+            position: 0,
+            keywords: [],
+          ),
+          VeilleTopicDto(
+            id: 't1',
+            topicId: 'angle-x',
+            label: 'Angle X',
+            kind: 'suggested',
+            reason: null,
+            position: 1,
+            keywords: ['gpt'],
+          ),
+        ],
+        sources: const [],
+        keywords: const [],
+      );
+
+      notifier.hydrateFromActiveConfig(cfg);
+      final s = container.read(veilleConfigProvider);
+      expect(s.selectedTheme, 'tech', reason: 'macro restauré');
+      expect(s.mainTopicSlug, 'ai', reason: 'granulaire = topic position 0');
+      expect(s.mainTopicLabel, 'IA');
+      // Le sujet principal n'est PAS rejoué comme topic optionnel (sinon doublon).
+      expect(s.selectedTopics, isNot(contains('ai')));
+      expect(s.selectedSuggestions, contains('angle-x'));
+    },
+  );
 }

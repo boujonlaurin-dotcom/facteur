@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -34,6 +36,8 @@ from app.schemas.veille import (
     VeilleFeedResponse,
     VeilleKeywordResponse,
     VeillePresetResponse,
+    VeilleResolveTopicRequest,
+    VeilleResolveTopicResponse,
     VeilleSourceExample,
     VeilleSourceLite,
     VeilleSourceResponse,
@@ -44,6 +48,7 @@ from app.schemas.veille import (
     VeilleSuggestSourcesResponse,
     VeilleTopicResponse,
 )
+from app.services.ml.topic_enrichment_service import get_topic_enrichment_service
 from app.services.rss_parser import RSSParser
 from app.services.source_service import SourceService
 from app.services.user_interests_service import ensure_veille_favorite
@@ -60,6 +65,17 @@ _SOURCE_EXAMPLES_CACHE: TTLCache = TTLCache(maxsize=512, ttl=86400)
 _SOURCE_EXAMPLES_LIMIT = 2
 _SOURCE_EXAMPLES_LOOKBACK_DAYS = 30
 _SOURCE_EXAMPLES_EXCERPT_MAX = 120
+
+
+def _slugify_topic_id(raw: str) -> str:
+    """Slug court compatible `VeilleTopicSelection.topic_id`."""
+    normalized = unicodedata.normalize("NFKD", raw.strip().lower())
+    ascii_only = "".join(c for c in normalized if not unicodedata.combining(c))
+    cleaned = re.sub(r"[^a-z0-9\s-]", "", ascii_only)
+    cleaned = re.sub(r"\s+", "-", cleaned)
+    cleaned = re.sub(r"-+", "-", cleaned).strip("-")
+    base = cleaned or "sujet"
+    return f"custom-{base[:60]}"
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -627,6 +643,35 @@ async def get_source_examples(
 
 
 # ─── Suggesters LLM (Story 23.3) ─────────────────────────────────────────────
+
+
+@router.post("/resolve/topic", response_model=VeilleResolveTopicResponse)
+async def resolve_topic(
+    body: VeilleResolveTopicRequest,
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Enrichit un sujet libre pour le flow Veille, sans écrire d'intérêt global."""
+    UUID(current_user_id)
+    service = get_topic_enrichment_service()
+    try:
+        result = await service.enrich(body.topic)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    label = result.canonical_name or body.topic.strip()
+    return VeilleResolveTopicResponse(
+        label=label,
+        topic_id=_slugify_topic_id(label),
+        keywords=result.keywords[:10],
+        description=result.intent_description,
+        metadata={
+            "slug_parent": result.slug_parent,
+            "entity_type": result.entity_type,
+            "canonical_name": result.canonical_name,
+            "theme_id": body.theme_id,
+            "theme_label": body.theme_label,
+        },
+    )
 
 
 @router.post("/suggest/angles", response_model=VeilleSuggestAnglesResponse)

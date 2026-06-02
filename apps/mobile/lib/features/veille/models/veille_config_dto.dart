@@ -6,8 +6,8 @@ import 'package:flutter/foundation.dart';
 /// `last_delivered_at`/`next_scheduled_at` (scheduler async drop) et ajouté
 /// `keywords[]` (angles libres saisis par l'utilisateur).
 ///
-/// PR-4 (Story 23.3) : suggesters LLM (`VeilleSuggestSources*`,
-/// `VeilleSourceSuggestionDto`) retirés — `/suggest/sources` répond 410 Gone.
+/// Veille micro-ajustements : `POST /veille/suggest/sources` est reconnecté
+/// pour proposer des candidats niche non ingérés avant submit.
 ///
 /// Veille C3 (PR-3) : `VeilleAngleSuggestionDto` / `VeilleSuggestAnglesResponse`
 /// ré-introduits — `POST /veille/suggest/angles` est actif (suggestion d'angles
@@ -105,8 +105,9 @@ class VeilleSourceDto {
   factory VeilleSourceDto.fromJson(Map<String, dynamic> json) {
     return VeilleSourceDto(
       id: json['id'] as String,
-      source:
-          VeilleSourceLiteDto.fromJson(json['source'] as Map<String, dynamic>),
+      source: VeilleSourceLiteDto.fromJson(
+        json['source'] as Map<String, dynamic>,
+      ),
       kind: json['kind'] as String,
       why: json['why'] as String?,
       position: (json['position'] as num?)?.toInt() ?? 0,
@@ -218,13 +219,13 @@ class VeilleTopicSelectionRequest {
   });
 
   Map<String, dynamic> toJson() => {
-        'topic_id': topicId,
-        'label': label,
-        'kind': kind,
-        if (reason != null) 'reason': reason,
-        'position': position,
-        'keywords': keywords,
-      };
+    'topic_id': topicId,
+    'label': label,
+    'kind': kind,
+    if (reason != null) 'reason': reason,
+    'position': position,
+    'keywords': keywords,
+  };
 }
 
 @immutable
@@ -240,10 +241,10 @@ class VeilleNicheCandidateRequest {
   });
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'url': url,
-        if (why != null) 'why': why,
-      };
+    'name': name,
+    'url': url,
+    if (why != null) 'why': why,
+  };
 }
 
 @immutable
@@ -263,12 +264,12 @@ class VeilleSourceSelectionRequest {
   });
 
   Map<String, dynamic> toJson() => {
-        'kind': kind,
-        if (sourceId != null) 'source_id': sourceId,
-        if (nicheCandidate != null) 'niche_candidate': nicheCandidate!.toJson(),
-        if (why != null) 'why': why,
-        'position': position,
-      };
+    'kind': kind,
+    if (sourceId != null) 'source_id': sourceId,
+    if (nicheCandidate != null) 'niche_candidate': nicheCandidate!.toJson(),
+    if (why != null) 'why': why,
+    'position': position,
+  };
 }
 
 @immutable
@@ -281,10 +282,7 @@ class VeilleKeywordSelectionRequest {
     this.position = 0,
   });
 
-  Map<String, dynamic> toJson() => {
-        'keyword': keyword,
-        'position': position,
-      };
+  Map<String, dynamic> toJson() => {'keyword': keyword, 'position': position};
 }
 
 @immutable
@@ -310,15 +308,15 @@ class VeilleConfigUpsertRequest {
   });
 
   Map<String, dynamic> toJson() => {
-        'theme_id': themeId,
-        'theme_label': themeLabel,
-        'topics': topics.map((t) => t.toJson()).toList(),
-        'source_selections': sourceSelections.map((s) => s.toJson()).toList(),
-        'keywords': keywords.map((k) => k.toJson()).toList(),
-        'purpose': purpose,
-        'editorial_brief': editorialBrief,
-        'preset_id': presetId,
-      };
+    'theme_id': themeId,
+    'theme_label': themeLabel,
+    'topics': topics.map((t) => t.toJson()).toList(),
+    'source_selections': sourceSelections.map((s) => s.toJson()).toList(),
+    'keywords': keywords.map((k) => k.toJson()).toList(),
+    'purpose': purpose,
+    'editorial_brief': editorialBrief,
+    'preset_id': presetId,
+  };
 }
 
 // ─── Suggestion d'angles LLM (POST /veille/suggest/angles) ──────────────────
@@ -362,6 +360,84 @@ class VeilleSuggestAnglesResponse {
       angles: ((json['angles'] as List?) ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(VeilleAngleSuggestionDto.fromJson)
+          .toList(),
+    );
+  }
+}
+
+// ─── Résolution sujet local Veille (POST /veille/resolve/topic) ─────────────
+
+@immutable
+class VeilleResolvedTopicDto {
+  final String label;
+  final String topicId;
+  final List<String> keywords;
+  final String description;
+  final Map<String, String?> metadata;
+
+  const VeilleResolvedTopicDto({
+    required this.label,
+    required this.topicId,
+    this.keywords = const [],
+    this.description = '',
+    this.metadata = const {},
+  });
+
+  factory VeilleResolvedTopicDto.fromJson(Map<String, dynamic> json) {
+    final rawMeta = json['metadata'];
+    return VeilleResolvedTopicDto(
+      label: json['label'] as String,
+      topicId: json['topic_id'] as String,
+      keywords: ((json['keywords'] as List?) ?? const [])
+          .map((e) => e as String)
+          .toList(),
+      description: (json['description'] as String?) ?? '',
+      metadata: rawMeta is Map
+          ? rawMeta.map(
+              (key, value) => MapEntry(key.toString(), value?.toString()),
+            )
+          : const {},
+    );
+  }
+}
+
+// ─── Suggestion sources LLM (POST /veille/suggest/sources) ──────────────────
+
+@immutable
+class VeilleSourceSuggestionDto {
+  final String name;
+  final String url;
+  final String? why;
+  final double relevanceScore;
+
+  const VeilleSourceSuggestionDto({
+    required this.name,
+    required this.url,
+    this.why,
+    required this.relevanceScore,
+  });
+
+  factory VeilleSourceSuggestionDto.fromJson(Map<String, dynamic> json) {
+    return VeilleSourceSuggestionDto(
+      name: json['name'] as String,
+      url: json['url'] as String,
+      why: json['why'] as String?,
+      relevanceScore: (json['relevance_score'] as num?)?.toDouble() ?? 0,
+    );
+  }
+}
+
+@immutable
+class VeilleSuggestSourcesResponse {
+  final List<VeilleSourceSuggestionDto> sources;
+
+  const VeilleSuggestSourcesResponse({this.sources = const []});
+
+  factory VeilleSuggestSourcesResponse.fromJson(Map<String, dynamic> json) {
+    return VeilleSuggestSourcesResponse(
+      sources: ((json['sources'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(VeilleSourceSuggestionDto.fromJson)
           .toList(),
     );
   }

@@ -25,8 +25,18 @@ class Step1ThemeScreen extends ConsumerStatefulWidget {
 
 class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
   final GlobalKey _briefSectionKey = GlobalKey();
+  final GlobalKey _subtopicSectionKey = GlobalKey();
+  final TextEditingController _customTopicCtrl = TextEditingController();
   int _openSection = 1;
-  bool _didAutoOpenSection2 = false;
+  bool _showCustomTopicCard = false;
+  bool _resolvingCustomTopic = false;
+  String? _customTopicError;
+
+  @override
+  void dispose() {
+    _customTopicCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +44,8 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
     final notifier = ref.read(veilleConfigProvider.notifier);
     final hasTheme = state.selectedTheme != null;
     final isOther = state.selectedTheme == kVeilleOtherThemeSlug;
-    final customLabelOk = !isOther || (state.customThemeLabel ?? '').trim().isNotEmpty;
+    final customLabelOk =
+        !isOther || (state.customThemeLabel ?? '').trim().isNotEmpty;
     // Story 23.4 — sujets granulaires du macro choisi (drill macro→topic).
     final subtopics = (hasTheme && !isOther)
         ? (AvailableSubtopics.byTheme[state.selectedTheme] ?? const [])
@@ -43,7 +54,8 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
     // "Autre" (chemin free-text) et macro sans sous-thèmes connus (rare) — dans
     // ces cas le user peut continuer sans granulaire.
     final needsMainTopic = hasTheme && !isOther && subtopics.isNotEmpty;
-    final hasMainTopic = state.mainTopicSlug != null ||
+    final hasMainTopic =
+        state.mainTopicSlug != null ||
         state.selectedTopics.isNotEmpty; // presets : topics déjà choisis
     final canContinue =
         hasTheme && customLabelOk && (!needsMainTopic || hasMainTopic);
@@ -51,40 +63,41 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
     final selectedThemeLabel = state.selectedTheme == null
         ? ''
         : (isOther
-            ? (state.customThemeLabel ?? 'Autre')
-            : veilleThemeLabelForSlug(state.selectedTheme!));
+              ? (state.customThemeLabel ?? 'Autre')
+              : veilleThemeLabelForSlug(state.selectedTheme!));
 
     final themesAsync = ref.watch(veilleThemesProvider);
 
-    // Auto-ouvre la section 2 (brief) dès qu'un thème est choisi.
-    ref.listen<String?>(
-      veilleConfigProvider.select((s) => s.selectedTheme),
-      (prev, next) {
-        if (!_didAutoOpenSection2 && prev == null && next != null) {
-          _didAutoOpenSection2 = true;
-          setState(() => _openSection = 2);
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            final ctx = _briefSectionKey.currentContext;
-            if (ctx != null) {
-              Scrollable.ensureVisible(
-                ctx,
-                duration: const Duration(milliseconds: 380),
-                curve: Curves.easeOutCubic,
-                alignment: 0.05,
-              );
-            }
-          });
-        }
-      },
-    );
+    // Après choix du thème, scroll vers la section immédiatement suivante :
+    // la grille de sujets précis en priorité, le brief seulement en fallback.
+    ref.listen<String?>(veilleConfigProvider.select((s) => s.selectedTheme), (
+      prev,
+      next,
+    ) {
+      if (prev != next && next != null) {
+        final hasSubtopics =
+            next != kVeilleOtherThemeSlug &&
+            (AvailableSubtopics.byTheme[next] ?? const []).isNotEmpty;
+        setState(() => _openSection = hasSubtopics ? 1 : 2);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final ctx = hasSubtopics
+              ? _subtopicSectionKey.currentContext
+              : _briefSectionKey.currentContext;
+          if (ctx != null) {
+            Scrollable.ensureVisible(
+              ctx,
+              duration: const Duration(milliseconds: 380),
+              curve: Curves.easeOutCubic,
+              alignment: 0.08,
+            );
+          }
+        });
+      }
+    });
 
     return Column(
       children: [
-        VeilleStepHeader(
-          step: 1,
-          canGoBack: false,
-          onClose: widget.onClose,
-        ),
+        VeilleStepHeader(step: 1, canGoBack: false, onClose: widget.onClose),
         _PresetTeaserLink(onTap: () => _openPresetSheet(context)),
         Expanded(
           child: SingleChildScrollView(
@@ -97,8 +110,9 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
                   title:
                       'Sur quel thème aimerais-tu recevoir un condensé des '
                       'meilleurs articles récents ?',
-                  subtitleWhenCollapsed:
-                      hasTheme ? selectedThemeLabel.toUpperCase() : null,
+                  subtitleWhenCollapsed: hasTheme
+                      ? selectedThemeLabel.toUpperCase()
+                      : null,
                   expanded: _openSection == 1,
                   onToggle: () => setState(() => _openSection = 1),
                   child: themesAsync.when(
@@ -125,10 +139,39 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
                 ],
                 if (subtopics.isNotEmpty) ...[
                   const SizedBox(height: 18),
-                  _SubtopicGrid(
-                    subtopics: subtopics,
-                    selected: state.mainTopicSlug,
-                    onSelect: (o) => notifier.selectMainTopic(o.slug, o.label),
+                  Column(
+                    key: _subtopicSectionKey,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _SubtopicGrid(
+                        subtopics: subtopics,
+                        selected: state.mainTopicSlug,
+                        customSelected:
+                            state.mainTopicSlug?.startsWith('custom-') ?? false,
+                        onSelect: (o) {
+                          setState(() {
+                            _showCustomTopicCard = false;
+                            _customTopicError = null;
+                          });
+                          notifier.selectMainTopic(o.slug, o.label);
+                        },
+                        onOther: () {
+                          setState(() {
+                            _showCustomTopicCard = true;
+                            _customTopicError = null;
+                          });
+                        },
+                      ),
+                      if (_showCustomTopicCard) ...[
+                        const SizedBox(height: 10),
+                        _CustomTopicCard(
+                          controller: _customTopicCtrl,
+                          loading: _resolvingCustomTopic,
+                          error: _customTopicError,
+                          onSubmit: () => _submitCustomTopic(notifier),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
                 const SizedBox(height: 18),
@@ -139,8 +182,8 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
                   expanded: _openSection == 2 && hasTheme,
                   subtitleWhenCollapsed:
                       (state.editorialBrief ?? '').trim().isEmpty
-                          ? null
-                          : 'BRIEF RENSEIGNÉ',
+                      ? null
+                      : 'BRIEF RENSEIGNÉ',
                   onToggle: () {
                     if (!hasTheme) return;
                     setState(() => _openSection = 2);
@@ -188,6 +231,30 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _submitCustomTopic(VeilleConfigNotifier notifier) async {
+    final raw = _customTopicCtrl.text.trim();
+    if (raw.length < 2 || _resolvingCustomTopic) return;
+    setState(() {
+      _resolvingCustomTopic = true;
+      _customTopicError = null;
+    });
+    try {
+      await notifier.resolveCustomMainTopic(raw);
+      if (!mounted) return;
+      setState(() {
+        _showCustomTopicCard = false;
+        _resolvingCustomTopic = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _resolvingCustomTopic = false;
+        _customTopicError =
+            'Impossible d\'enrichir ce sujet pour l\'instant. Réessaie.';
+      });
+    }
   }
 }
 
@@ -241,11 +308,15 @@ class _ThemeGrid extends StatelessWidget {
 class _SubtopicGrid extends StatelessWidget {
   final List<SubtopicOption> subtopics;
   final String? selected;
+  final bool customSelected;
   final ValueChanged<SubtopicOption> onSelect;
+  final VoidCallback onOther;
   const _SubtopicGrid({
     required this.subtopics,
     required this.selected,
+    required this.customSelected,
     required this.onSelect,
+    required this.onOther,
   });
 
   @override
@@ -294,9 +365,119 @@ class _SubtopicGrid extends StatelessWidget {
                 selected: selected == o.slug,
                 onTap: () => onSelect(o),
               ),
+            ThemeCard(
+              theme: const VeilleTheme(
+                id: kVeilleOtherTopicSlug,
+                label: 'Autre',
+                meta: '',
+                iconKey: '',
+                emoji: '✎',
+              ),
+              selected: customSelected,
+              onTap: onOther,
+            ),
           ],
         ),
       ],
+    );
+  }
+}
+
+class _CustomTopicCard extends StatelessWidget {
+  final TextEditingController controller;
+  final bool loading;
+  final String? error;
+  final VoidCallback onSubmit;
+
+  const _CustomTopicCard({
+    required this.controller,
+    required this.loading,
+    required this.error,
+    required this.onSubmit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: FacteurColors.veilleTint,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: FacteurColors.veilleLineSoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Sujet sur-mesure',
+            style: GoogleFonts.dmSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF2C2A29),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  enabled: !loading,
+                  maxLength: 200,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    hintText: 'Ex : Musées contemporains à Barcelone',
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(
+                        color: FacteurColors.veilleLineSoft,
+                      ),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    counterText: '',
+                  ),
+                  onSubmitted: (_) => onSubmit(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filled(
+                onPressed: loading ? null : onSubmit,
+                style: IconButton.styleFrom(
+                  backgroundColor: FacteurColors.veille,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: const Color(0xFFD2C9BB),
+                ),
+                icon: loading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Icon(PhosphorIcons.check()),
+              ),
+            ],
+          ),
+          if (error != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              error!,
+              style: GoogleFonts.dmSans(
+                fontSize: 12,
+                color: const Color(0xFF9B3D2E),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -392,7 +573,9 @@ class _OtherThemeLabelFieldState extends State<_OtherThemeLabelField> {
               fillColor: Colors.white,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: FacteurColors.veilleLineSoft),
+                borderSide: const BorderSide(
+                  color: FacteurColors.veilleLineSoft,
+                ),
               ),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
@@ -609,9 +792,7 @@ class _Footer extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       decoration: const BoxDecoration(
-        border: Border(
-          top: BorderSide(color: Color(0xFFE6E1D6), width: 1),
-        ),
+        border: Border(top: BorderSide(color: Color(0xFFE6E1D6), width: 1)),
       ),
       child: VeilleCtaButton(
         label: 'Continuer',

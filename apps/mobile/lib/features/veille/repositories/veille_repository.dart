@@ -52,8 +52,10 @@ class VeilleRepository {
 
   Future<VeilleConfigDto> upsertConfig(VeilleConfigUpsertRequest body) async {
     try {
-      final response =
-          await _dio.post<dynamic>('veille/config', data: body.toJson());
+      final response = await _dio.post<dynamic>(
+        'veille/config',
+        data: body.toJson(),
+      );
       return VeilleConfigDto.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw _wrap(e);
@@ -101,11 +103,7 @@ class VeilleRepository {
     try {
       final response = await _dio.post<dynamic>(
         'veille/suggest/angles',
-        data: {
-          'theme_id': themeId,
-          'theme_label': themeLabel,
-          'brief': brief,
-        },
+        data: {'theme_id': themeId, 'theme_label': themeLabel, 'brief': brief},
       );
       return VeilleSuggestAnglesResponse.fromJson(
         response.data as Map<String, dynamic>,
@@ -113,6 +111,62 @@ class VeilleRepository {
     } catch (_) {
       // Erreur réseau/timeout (DioException) ou réponse inattendue/parsing :
       // on dégrade en silence vers les preset topics statiques.
+      return const [];
+    }
+  }
+
+  // ─── Résolution sujet local Veille (Step 1) ─────────────────────────────
+
+  /// `POST /api/veille/resolve/topic` — enrichit un sujet libre pour la veille
+  /// sans créer d'intérêt global. Erreur → exception visible par l'UI Step 1.
+  Future<VeilleResolvedTopicDto> resolveTopic({
+    required String topic,
+    String? themeId,
+    String? themeLabel,
+  }) async {
+    try {
+      final response = await _dio.post<dynamic>(
+        'veille/resolve/topic',
+        data: {
+          'topic': topic,
+          if (themeId != null) 'theme_id': themeId,
+          if (themeLabel != null) 'theme_label': themeLabel,
+        },
+      );
+      return VeilleResolvedTopicDto.fromJson(
+        response.data as Map<String, dynamic>,
+      );
+    } on DioException catch (e) {
+      throw _wrap(e);
+    }
+  }
+
+  // ─── Suggestion sources LLM (Step 3) ───────────────────────────────────
+
+  /// `POST /api/veille/suggest/sources` — candidats niche non ingérés.
+  /// Toute erreur/timeout/parsing inattendu → `[]` pour afficher le retry.
+  Future<List<VeilleSourceSuggestionDto>> suggestSources({
+    required String themeId,
+    required String themeLabel,
+    String brief = '',
+    List<String> angles = const [],
+    List<String> keywords = const [],
+  }) async {
+    try {
+      final response = await _dio.post<dynamic>(
+        'veille/suggest/sources',
+        data: {
+          'theme_id': themeId,
+          'theme_label': themeLabel,
+          'brief': brief,
+          'angles': angles,
+          'keywords': keywords,
+        },
+      );
+      return VeilleSuggestSourcesResponse.fromJson(
+        response.data as Map<String, dynamic>,
+      ).sources;
+    } catch (_) {
       return const [];
     }
   }
