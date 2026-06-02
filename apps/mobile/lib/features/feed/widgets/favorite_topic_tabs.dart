@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,7 +18,12 @@ import '../models/content_model.dart';
 import '../providers/tab_order_prefs_provider.dart';
 import '../repositories/feed_repository.dart';
 
-enum FavoriteTabKind { tous, subjectTopic, subjectEntity, theme, source }
+enum FavoriteTabKind { subjectTopic, subjectEntity, theme, source }
+
+/// Nombre maximum d'onglets épinglés rendus dans la barre Flâner. Au-delà, on
+/// garde les [kMaxFavoriteTabs] premiers dans l'ordre validé par l'utilisateur
+/// (drag de la modal) ; le surplus reste gérable dans la modal d'épinglage.
+const int kMaxFavoriteTabs = 10;
 
 @immutable
 class FavoriteTabModel {
@@ -52,7 +58,6 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
   final String? selectedSourceId;
   final void Function(FavoriteTabKind kind, String? slug) onTabTap;
   final VoidCallback onTapActiveTab;
-  final VoidCallback onTapActiveTabRefresh;
   final VoidCallback onAddFavorite;
 
   const FavoriteTopicTabs({
@@ -65,7 +70,6 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
     this.selectedSourceId,
     required this.onTabTap,
     required this.onTapActiveTab,
-    required this.onTapActiveTabRefresh,
     required this.onAddFavorite,
   });
 
@@ -151,6 +155,9 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
     );
 
     _activeKey = null;
+    // > 4 onglets épinglés → l'affordance d'ajout devient un engrenage
+    // (« gérer ») plutôt qu'un « + ». Même action (ouvre la modal).
+    final showGear = tabs.length > 4;
 
     return SizedBox(
       height: 38,
@@ -173,6 +180,7 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
           itemBuilder: (ctx, i) {
             if (i == tabs.length) {
               return _AddFavoritePill(
+                showGear: showGear,
                 onTap: () {
                   HapticFeedback.mediumImpact();
                   widget.onAddFavorite();
@@ -186,12 +194,10 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
               tab: tab,
               colors: colors,
               onTap: () {
+                // Taper l'onglet actif = vider la sélection (feed non filtré) ;
+                // le refresh est assuré par le pull-to-refresh de la page.
                 if (tab.active) {
-                  if (tab.count >= 3) {
-                    widget.onTapActiveTabRefresh();
-                  } else {
-                    widget.onTapActiveTab();
-                  }
+                  widget.onTapActiveTab();
                 } else {
                   HapticFeedback.selectionClick();
                   widget.onTabTap(tab.kind, tab.slug);
@@ -258,6 +264,21 @@ List<FavoriteTabModel> _buildTabModels({
       if (f is CustomTopicFavoriteRef) f.id,
   };
 
+  // Diagnostic : un sujet favori sans `UserTopicProfile` correspondant dans
+  // `topics` ne produira aucun onglet (hypothèse : `customTopicsProvider`
+  // incomplet vs `userInterestsProvider.favorites`).
+  if (kDebugMode) {
+    final knownTopicIds = {for (final t in topics) t.id};
+    final orphanFavorites =
+        favoriteCustomIds.where((id) => !knownTopicIds.contains(id)).toList();
+    if (orphanFavorites.isNotEmpty) {
+      debugPrint(
+        '[FavoriteTabs] ${orphanFavorites.length} sujet(s) favori(s) sans '
+        'UserTopicProfile (customTopicsProvider incomplet ?) : $orphanFavorites',
+      );
+    }
+  }
+
   final entitySubjects = topics
       .where((t) => t.entityType != null && favoriteCustomIds.contains(t.id))
       .toList()
@@ -272,24 +293,11 @@ List<FavoriteTabModel> _buildTabModels({
   final cutoff = DateTime.now().subtract(const Duration(hours: 48));
   final tabs = <FavoriteTabModel>[];
 
-  // 1. Tous (always first).
-  tabs.add(FavoriteTabModel(
-    kind: FavoriteTabKind.tous,
-    slug: null,
-    label: 'Tous',
-    emoji: '',
-    count: useServer
-        ? serverCounts.total
-        : _countUnreadRecent(items,
-            cutoff: cutoff, kind: FavoriteTabKind.tous, slug: null),
-    active: selectedTopicSlug == null &&
-        selectedThemeSlug == null &&
-        selectedEntitySlug == null,
-  ));
-
-  // 2. Onglets favoris (sujets + sources épinglés). On garde la clé d'ordre
-  // unifié (`topic:<id>` / `source:<id>`) à côté de chaque modèle pour pouvoir
-  // appliquer [order] ensuite.
+  // Onglets favoris (sujets + sources épinglés). On garde la clé d'ordre unifié
+  // (`topic:<id>` / `source:<id>`) à côté de chaque modèle pour pouvoir
+  // appliquer [order] ensuite. L'ordre d'insertion (entités, sujets, sources)
+  // reflète celui de la section « ÉPINGLÉS » de la modal : barre et modal
+  // passent ensuite par le même [applyOrder] avec les mêmes prefs.
   final favoriteTabs = <({FavoriteTabModel tab, String key})>[];
 
   for (final entity in entitySubjects) {
@@ -354,18 +362,25 @@ List<FavoriteTabModel> _buildTabModels({
     ));
   }
 
-  // Ordre par défaut (avant ordre custom) : par count décroissant puis alpha —
-  // conserve le comportement historique pour les items pas encore réordonnés.
-  favoriteTabs.sort((a, b) {
-    final byCount = b.tab.count.compareTo(a.tab.count);
-    if (byCount != 0) return byCount;
-    return a.tab.label.toLowerCase().compareTo(b.tab.label.toLowerCase());
-  });
-
-  // Ordre unifié voulu par l'utilisateur (drag dans la modal d'épinglage).
+  // Ordre unifié voulu par l'utilisateur (drag dans la modal d'épinglage). Plus
+  // de tri par count : il reléguait les sources (count: 0 codé en dur) derrière
+  // tout sujet ayant des non-lus → elles finissaient en fin de liste, cachées
+  // derrière le fade (« sujets/sources disparus »). On conserve l'ordre
+  // d'insertion comme base, puis on applique l'ordre custom.
   final ordered = applyOrder(favoriteTabs, order, (e) => e.key);
 
-  tabs.addAll(ordered.map((e) => e.tab));
+  // Cap : garder les [kMaxFavoriteTabs] premiers dans l'ordre utilisateur. Pas
+  // de troncature silencieuse — on logge les clés du surplus en debug.
+  final capped = ordered.take(kMaxFavoriteTabs).toList();
+  if (kDebugMode && ordered.length > kMaxFavoriteTabs) {
+    final dropped = ordered.skip(kMaxFavoriteTabs).map((e) => e.key).toList();
+    debugPrint(
+      '[FavoriteTabs] cap $kMaxFavoriteTabs atteint — '
+      '${dropped.length} onglet(s) tronqué(s) : $dropped',
+    );
+  }
+
+  tabs.addAll(capped.map((e) => e.tab));
   return tabs;
 }
 
@@ -377,8 +392,6 @@ int _countUnreadRecent(
 }) {
   bool matches(Content c) {
     switch (kind) {
-      case FavoriteTabKind.tous:
-        return true;
       case FavoriteTabKind.subjectTopic:
         return slug != null && c.topics.contains(slug);
       case FavoriteTabKind.subjectEntity:
@@ -499,10 +512,12 @@ class _FavoriteTabItem extends StatelessWidget {
 }
 
 class _AddFavoritePill extends StatelessWidget {
+  final bool showGear;
   final VoidCallback onTap;
   final FacteurColors colors;
 
   const _AddFavoritePill({
+    required this.showGear,
     required this.onTap,
     required this.colors,
   });
@@ -517,7 +532,9 @@ class _AddFavoritePill extends StatelessWidget {
         height: 38,
         child: Center(
           child: Icon(
-            PhosphorIcons.plus(PhosphorIconsStyle.regular),
+            showGear
+                ? PhosphorIcons.gear(PhosphorIconsStyle.regular)
+                : PhosphorIcons.plus(PhosphorIconsStyle.regular),
             size: 18,
             color: colors.textSecondary,
           ),

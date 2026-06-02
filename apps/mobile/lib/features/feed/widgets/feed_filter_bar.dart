@@ -69,11 +69,6 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
             setState(() => _selectedInterestNameOverride = null);
           }
           switch (kind) {
-            case FavoriteTabKind.tous:
-              await notifier.setTopic(null);
-              await notifier.setTheme(null);
-              await notifier.setEntity(null);
-              break;
             case FavoriteTabKind.subjectTopic:
               await notifier.setTopic(slug);
               break;
@@ -89,9 +84,15 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
           }
           widget.onAfterChange?.call();
         },
-        onTapActiveTab: () => widget.onAfterChange?.call(),
-        onTapActiveTabRefresh: () {
-          HapticFeedback.mediumImpact();
+        // Taper l'onglet actif vide toute la sélection (feed non filtré). On
+        // remet aussi `setSource(null)` — oublié historiquement — pour bien
+        // désélectionner un onglet source actif.
+        onTapActiveTab: () async {
+          await HapticFeedback.selectionClick();
+          await notifier.setTopic(null);
+          await notifier.setTheme(null);
+          await notifier.setEntity(null);
+          await notifier.setSource(null);
           widget.onAfterChange?.call();
         },
         // Le « + » des onglets épingle des sujets précis (custom topics) —
@@ -202,7 +203,7 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
 
 /// Minimal search trigger — magnifier icon when idle, keyword pill with clear
 /// button when a search is active. Visually aligned with `FilterCollapsiblePanel`
-/// (32 px tall, primary accent when active).
+/// (34 px tall, primary accent when active).
 class _SearchTrigger extends StatelessWidget {
   final bool active;
   final String? keyword;
@@ -225,8 +226,8 @@ class _SearchTrigger extends StatelessWidget {
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
         child: Container(
-          height: 38,
-          padding: const EdgeInsets.only(left: 12, right: 4),
+          height: 34,
+          padding: const EdgeInsets.only(left: 10, right: 4),
           decoration: BoxDecoration(
             color: primary.withValues(alpha: 0.12),
             border: Border.all(color: primary),
@@ -237,7 +238,7 @@ class _SearchTrigger extends StatelessWidget {
             children: [
               Icon(
                 PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold),
-                size: 15,
+                size: 14,
                 color: primary,
               ),
               const SizedBox(width: 5),
@@ -260,11 +261,11 @@ class _SearchTrigger extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 6,
-                    vertical: 8,
+                    vertical: 7,
                   ),
                   child: Icon(
                     PhosphorIcons.x(PhosphorIconsStyle.bold),
-                    size: 13,
+                    size: 12,
                     color: primary,
                   ),
                 ),
@@ -278,11 +279,11 @@ class _SearchTrigger extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
-        height: 38,
-        width: 38,
+        height: 34,
+        width: 34,
         child: Icon(
           PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
-          size: 18,
+          size: 16,
           color: colors.textSecondary,
         ),
       ),

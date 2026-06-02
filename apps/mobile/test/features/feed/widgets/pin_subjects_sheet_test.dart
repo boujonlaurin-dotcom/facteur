@@ -89,7 +89,13 @@ Widget _host(
       ),
     ],
     child: MaterialApp(
-      theme: ThemeData(extensions: [FacteurPalettes.light]),
+      // splashFactory NoSplash : évite le shader Material 3 `ink_sparkle.frag`,
+      // absent du bundle `flutter test` (le tap d'une ligne sujet déclenche
+      // sinon « Asset 'shaders/ink_sparkle.frag' not found »). Test-only.
+      theme: ThemeData(
+        extensions: [FacteurPalettes.light],
+        splashFactory: NoSplash.splashFactory,
+      ),
       home: Scaffold(body: child),
     ),
   );
@@ -148,8 +154,11 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      // Le sujet suivi est proposé à l'épinglage.
-      expect(find.text('SUJETS À ÉPINGLER'), findsOneWidget);
+      // La zone « SUIVIS » expose 2 onglets. Le sujet suivi est sous « Sujets ».
+      expect(find.text('Sources'), findsOneWidget);
+      expect(find.text('Sujets'), findsOneWidget);
+      await tester.tap(find.text('Sujets'));
+      await tester.pumpAndSettle();
       expect(find.text('Climat'), findsOneWidget);
 
       await tester.tap(find.text('Climat'));
@@ -181,6 +190,10 @@ void main() {
       ));
       await tester.pumpAndSettle();
       await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // Les sujets suivis sont sous l'onglet « Sujets ».
+      await tester.tap(find.text('Sujets'));
       await tester.pumpAndSettle();
 
       // Recherche insensible aux accents/casse.
@@ -219,7 +232,8 @@ void main() {
       expect(find.textContaining('Créer le sujet « Zélande »'), findsOneWidget);
     });
 
-    testWidgets('groups followed subjects by theme', (tester) async {
+    testWidgets('lists followed subjects flat (no theme group headers)',
+        (tester) async {
       final st = _state(topics: [
         _topic('t1', 'Climat', InterestState.followed,
             slugParent: 'environment'),
@@ -241,9 +255,47 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      // En-têtes de groupe par thématique (labels canoniques Facteur).
-      expect(find.text('Technologie'), findsOneWidget);
-      expect(find.text('Environnement'), findsOneWidget);
+      await tester.tap(find.text('Sujets'));
+      await tester.pumpAndSettle();
+
+      // Liste à plat : les sujets sont là, mais plus d'en-têtes de thème.
+      expect(find.text('Climat'), findsOneWidget);
+      expect(find.text('IA'), findsOneWidget);
+      expect(find.text('Technologie'), findsNothing);
+      expect(find.text('Environnement'), findsNothing);
+    });
+
+    testWidgets('followed lists are split into 2 segments (Sources / Sujets)',
+        (tester) async {
+      final st = _state(topics: [
+        _topic('t1', 'Climat', InterestState.followed),
+      ]);
+
+      await tester.pumpWidget(_host(
+        st,
+        Builder(
+          builder: (ctx) => Center(
+            child: ElevatedButton(
+              onPressed: () => showPinSubjectsSheet(ctx),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // Les 2 segments sont présents ; par défaut l'onglet Sources (vide ici).
+      expect(find.byType(SegmentedButton<int>), findsOneWidget);
+      expect(find.text('Sources'), findsOneWidget);
+      expect(find.text('Sujets'), findsOneWidget);
+      expect(find.text('Aucune source suivie'), findsOneWidget);
+      // Le sujet suivi n'est visible qu'après bascule sur « Sujets ».
+      expect(find.text('Climat'), findsNothing);
+      await tester.tap(find.text('Sujets'));
+      await tester.pumpAndSettle();
+      expect(find.text('Climat'), findsOneWidget);
     });
   });
 }
