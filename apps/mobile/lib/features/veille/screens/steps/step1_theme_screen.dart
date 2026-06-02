@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
+import '../../../onboarding/data/available_subtopics.dart';
 import '../../models/veille_config.dart';
 import '../../providers/veille_config_provider.dart';
 import '../../providers/veille_presets_provider.dart';
@@ -34,7 +35,18 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
     final hasTheme = state.selectedTheme != null;
     final isOther = state.selectedTheme == kVeilleOtherThemeSlug;
     final customLabelOk = !isOther || (state.customThemeLabel ?? '').trim().isNotEmpty;
-    final canContinue = hasTheme && customLabelOk;
+    // Story 23.4 — sujets granulaires du macro choisi (drill macro→topic).
+    final subtopics = (hasTheme && !isOther)
+        ? (AvailableSubtopics.byTheme[state.selectedTheme] ?? const [])
+        : const <SubtopicOption>[];
+    // Le sujet principal granulaire est le gate obligatoire. Exceptions : thème
+    // "Autre" (chemin free-text) et macro sans sous-thèmes connus (rare) — dans
+    // ces cas le user peut continuer sans granulaire.
+    final needsMainTopic = hasTheme && !isOther && subtopics.isNotEmpty;
+    final hasMainTopic = state.mainTopicSlug != null ||
+        state.selectedTopics.isNotEmpty; // presets : topics déjà choisis
+    final canContinue =
+        hasTheme && customLabelOk && (!needsMainTopic || hasMainTopic);
 
     final selectedThemeLabel = state.selectedTheme == null
         ? ''
@@ -109,6 +121,14 @@ class _Step1ThemeScreenState extends ConsumerState<Step1ThemeScreen> {
                   _OtherThemeLabelField(
                     initial: state.customThemeLabel ?? '',
                     onChanged: notifier.setCustomThemeLabel,
+                  ),
+                ],
+                if (subtopics.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  _SubtopicGrid(
+                    subtopics: subtopics,
+                    selected: state.mainTopicSlug,
+                    onSelect: (o) => notifier.selectMainTopic(o.slug, o.label),
                   ),
                 ],
                 const SizedBox(height: 18),
@@ -210,6 +230,72 @@ class _ThemeGrid extends StatelessWidget {
             selected: selected == t.id,
             onTap: () => onSelect(t.id),
           ),
+      ],
+    );
+  }
+}
+
+/// Story 23.4 — 2ᵉ grille (granulaire) révélée après le choix du macro :
+/// l'utilisateur fixe le **sujet principal** qui gate la curation (slug
+/// canonique). Réutilise le visuel `ThemeCard`.
+class _SubtopicGrid extends StatelessWidget {
+  final List<SubtopicOption> subtopics;
+  final String? selected;
+  final ValueChanged<SubtopicOption> onSelect;
+  const _SubtopicGrid({
+    required this.subtopics,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Quel sujet précis veux-tu suivre ?',
+          style: GoogleFonts.dmSans(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            height: 1.3,
+            color: const Color(0xFF2C2A29),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'On cible ta veille sur ce sujet — tu pourras ajouter des angles à '
+          'l\'étape suivante.',
+          style: GoogleFonts.dmSans(
+            fontSize: 13,
+            height: 1.45,
+            color: const Color(0xFF5D5B5A),
+          ),
+        ),
+        const SizedBox(height: 12),
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 1.55,
+          children: [
+            for (final o in subtopics)
+              ThemeCard(
+                theme: VeilleTheme(
+                  id: o.slug,
+                  label: o.label,
+                  meta: '',
+                  iconKey: '',
+                  emoji: o.emoji,
+                  hot: o.isPopular,
+                ),
+                selected: selected == o.slug,
+                onTap: () => onSelect(o),
+              ),
+          ],
+        ),
       ],
     );
   }

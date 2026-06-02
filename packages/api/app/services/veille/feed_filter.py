@@ -213,22 +213,62 @@ def _score_and_rank(
     context,
     filters: VeilleFilters,
 ) -> list[tuple[Content, float, list[str]]]:
-    """Score chaque candidat, garde ≥ seuil, trie par (score, récence) desc."""
+    """Score chaque candidat, applique le floor + le seuil, trie par score.
+
+    Pipeline (Story 23.4) :
+
+    1. **Floor** — « la source est un boost, pas un free-pass » : tout candidat
+       dont les axes qualifiants ⊆ ``{source}`` (ni topic ni mot-clé) est écarté
+       *avant* le seuil. Plus chirurgical qu'un narrow-predicate : on préserve
+       l'UX ``matched_on`` et les articles on-topic venant d'une source suivie.
+       Le floor **ne s'active que si la config définit un axe topic/keyword** à
+       gater : une config *source-seule* (aucun topic, aucun mot-clé) garde son
+       comportement historique — ses sources **sont** le filtre, leurs articles
+       passent.
+    2. **Seuil** — parmi les candidats on-axis, on garde ceux dont le score
+       final ≥ ``VEILLE_RELEVANCE_THRESHOLD``.
+    3. **Anti-starvation** — si moins de ``VEILLE_MIN_FEED_SIZE`` passent ET que
+       des candidats on-axis ont été coupés par le *seuil* (jamais par le floor),
+       on relâche le seuil d'un cran (``max(threshold-8, 40)``) et on réadmet
+       ceux qui repassent — sans jamais réadmettre un article floor-pruned.
+    """
     engine = PillarScoringEngine()
     # Pré-calcul hors boucle : ces dérivations sont stables sur tout le fetch.
     topic_slugs = set(filters.topic_slugs)
     source_ids = set(filters.source_ids)
     keywords = filters.all_keywords
+    threshold = ScoringWeights.VEILLE_RELEVANCE_THRESHOLD
+    # Le floor n'a de sens que s'il existe un axe topic/keyword à côté de la
+    # source. Sans cela (config source-seule), la source est l'unique filtre.
+    floor_active = bool(topic_slugs or keywords)
+
     passing: list[tuple[Content, float, list[str]]] = []
+    # Candidats on-axis sous le seuil — réservés à l'anti-starvation.
+    below_threshold: list[tuple[Content, float, list[str]]] = []
     max_score = 0.0
+    floor_pruned_count = 0
     for content in candidates:
+        axes = _matched_axes(content, topic_slugs, source_ids, keywords)
+        if floor_active and "topic" not in axes and "keyword" not in axes:
+            # Floor : axes ⊆ {source} (ou vide) → source-seul, écarté.
+            floor_pruned_count += 1
+            continue
         result = engine.compute_score(content, context)
         score = result.final_score
         if score > max_score:
             max_score = score
-        if score >= ScoringWeights.VEILLE_RELEVANCE_THRESHOLD:
-            axes = _matched_axes(content, topic_slugs, source_ids, keywords)
+        if score >= threshold:
             passing.append((content, score, axes))
+        else:
+            below_threshold.append((content, score, axes))
+
+    threshold_pruned_count = len(below_threshold)
+    if len(passing) < ScoringWeights.VEILLE_MIN_FEED_SIZE and below_threshold:
+        relaxed = max(threshold - 8.0, 40.0)
+        if relaxed < threshold:
+            readmitted = [item for item in below_threshold if item[1] >= relaxed]
+            passing.extend(readmitted)
+            threshold_pruned_count -= len(readmitted)
 
     _epoch = datetime.min.replace(tzinfo=UTC)
     passing.sort(
@@ -240,6 +280,8 @@ def _score_and_rank(
         candidate_count=len(candidates),
         pass_count=len(passing),
         max_score=round(max_score, 1),
+        floor_pruned_count=floor_pruned_count,
+        threshold_pruned_count=threshold_pruned_count,
     )
     return passing
 

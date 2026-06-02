@@ -248,4 +248,91 @@ void main() {
     final json = topic.toJson();
     expect(json['keywords'], ['ia générative', 'llm', 'chatgpt']);
   });
+
+  // ─── Sujet principal granulaire (Story 23.4) ────────────────────────────
+
+  test('selectMainTopic émet le sujet principal en position 0 (kind preset)',
+      () async {
+    final repo = _CaptureRepo();
+    final c = ProviderContainer(
+      overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+    );
+    addTearDown(c.dispose);
+    final n = c.read(veilleConfigProvider.notifier);
+
+    n.selectTheme('tech');
+    n.selectMainTopic('ai', 'Intelligence artificielle');
+    // Un angle optionnel à côté, pour vérifier que le main reste en tête.
+    n.toggleAngle(angle);
+    await n.submit();
+
+    final topics = repo.captured!.topics;
+    expect(topics.first.topicId, 'ai');
+    expect(topics.first.kind, 'preset', reason: 'slug canonique → Content.topics');
+    expect(topics.first.position, 0);
+    // Pas de doublon du main dans les angles.
+    expect(topics.where((t) => t.topicId == 'ai').length, 1);
+  });
+
+  test('selectTheme reset le sujet principal au changement de macro', () {
+    notifier.selectTheme('tech');
+    notifier.selectMainTopic('ai', 'IA');
+    expect(container.read(veilleConfigProvider).mainTopicSlug, 'ai');
+
+    notifier.selectTheme('science');
+    final s = container.read(veilleConfigProvider);
+    expect(s.mainTopicSlug, isNull);
+    expect(s.mainTopicLabel, isNull);
+  });
+
+  test('selectMainTopic re-tap désélectionne', () {
+    notifier.selectTheme('tech');
+    notifier.selectMainTopic('ai', 'IA');
+    notifier.selectMainTopic('ai', 'IA');
+    expect(container.read(veilleConfigProvider).mainTopicSlug, isNull);
+  });
+
+  test('hydrateFromActiveConfig restaure macro + sujet principal (position 0)',
+      () {
+    final cfg = VeilleConfigDto(
+      id: 'cfg-1',
+      userId: 'user-1',
+      themeId: 'tech',
+      themeLabel: 'Tech',
+      status: 'active',
+      createdAt: DateTime(2024),
+      updatedAt: DateTime(2024),
+      topics: const [
+        VeilleTopicDto(
+          id: 't0',
+          topicId: 'ai',
+          label: 'IA',
+          kind: 'preset',
+          reason: null,
+          position: 0,
+          keywords: [],
+        ),
+        VeilleTopicDto(
+          id: 't1',
+          topicId: 'angle-x',
+          label: 'Angle X',
+          kind: 'suggested',
+          reason: null,
+          position: 1,
+          keywords: ['gpt'],
+        ),
+      ],
+      sources: const [],
+      keywords: const [],
+    );
+
+    notifier.hydrateFromActiveConfig(cfg);
+    final s = container.read(veilleConfigProvider);
+    expect(s.selectedTheme, 'tech', reason: 'macro restauré');
+    expect(s.mainTopicSlug, 'ai', reason: 'granulaire = topic position 0');
+    expect(s.mainTopicLabel, 'IA');
+    // Le sujet principal n'est PAS rejoué comme topic optionnel (sinon doublon).
+    expect(s.selectedTopics, isNot(contains('ai')));
+    expect(s.selectedSuggestions, contains('angle-x'));
+  });
 }

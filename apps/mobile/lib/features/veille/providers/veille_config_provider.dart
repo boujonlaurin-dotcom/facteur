@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../onboarding/data/available_subtopics.dart';
 import '../../my_interests/providers/user_interests_provider.dart';
 import '../models/veille_config.dart';
 import '../models/veille_config_dto.dart';
@@ -55,6 +56,15 @@ class VeilleConfigState {
   final String? previewPresetId;
 
   final String? selectedTheme;
+
+  /// Story 23.4 — sujet principal **obligatoire** (drill macro→granulaire en
+  /// Step 1). Slug canonique (`AvailableSubtopics`, ex. `ai`) qui matche
+  /// `Content.topics` côté scoring. Émis en position 0 (`kind:'preset'`) à
+  /// l'upsert ; devient le gate principal de la curation. Null pour le thème
+  /// "Autre" (chemin free-text/mots-clés).
+  final String? mainTopicSlug;
+  final String? mainTopicLabel;
+
   final Set<String> selectedTopics;
   final Set<String> selectedSuggestions;
 
@@ -115,6 +125,8 @@ class VeilleConfigState {
     required this.introCompleted,
     required this.previewPresetId,
     required this.selectedTheme,
+    required this.mainTopicSlug,
+    required this.mainTopicLabel,
     required this.selectedTopics,
     required this.selectedSuggestions,
     required this.selectedSourceIds,
@@ -138,6 +150,8 @@ class VeilleConfigState {
         introCompleted: false,
         previewPresetId: null,
         selectedTheme: null,
+        mainTopicSlug: null,
+        mainTopicLabel: null,
         selectedTopics: <String>{},
         selectedSuggestions: <String>{},
         selectedSourceIds: <String>{},
@@ -167,6 +181,8 @@ class VeilleConfigState {
     bool? introCompleted,
     Object? previewPresetId = _Sentinel.value,
     Object? selectedTheme = _Sentinel.value,
+    Object? mainTopicSlug = _Sentinel.value,
+    Object? mainTopicLabel = _Sentinel.value,
     Set<String>? selectedTopics,
     Set<String>? selectedSuggestions,
     Set<String>? selectedSourceIds,
@@ -193,6 +209,12 @@ class VeilleConfigState {
         selectedTheme: selectedTheme == _Sentinel.value
             ? this.selectedTheme
             : selectedTheme as String?,
+        mainTopicSlug: mainTopicSlug == _Sentinel.value
+            ? this.mainTopicSlug
+            : mainTopicSlug as String?,
+        mainTopicLabel: mainTopicLabel == _Sentinel.value
+            ? this.mainTopicLabel
+            : mainTopicLabel as String?,
         selectedTopics: selectedTopics ?? this.selectedTopics,
         selectedSuggestions: selectedSuggestions ?? this.selectedSuggestions,
         selectedSourceIds: selectedSourceIds ?? this.selectedSourceIds,
@@ -244,14 +266,33 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
   void selectTheme(String id) {
     // Changer de thème reset les topics pré-sélectionnés (les preset topics
-    // dépendent du thème). Les customTopics, eux, persistent (le user les
-    // a saisis manuellement).
+    // dépendent du thème) ET le sujet principal granulaire (Story 23.4 — la
+    // grille granulaire dépend du macro). Les customTopics persistent.
     if (state.selectedTheme == id) return;
     state = state.copyWith(
       selectedTheme: id,
+      mainTopicSlug: null,
+      mainTopicLabel: null,
       selectedTopics: const {},
       // Reset customThemeLabel quand on quitte 'other'.
       customThemeLabel: id == kVeilleOtherThemeSlug ? state.customThemeLabel : null,
+    );
+  }
+
+  /// Story 23.4 — sélectionne le sujet principal granulaire (gate obligatoire).
+  /// `slug` est canonique (`AvailableSubtopics`, ex. `ai`) → matche
+  /// `Content.topics`. Re-tap sur le même sujet le désélectionne.
+  void selectMainTopic(String slug, String label) {
+    if (state.mainTopicSlug == slug) {
+      state = state.copyWith(mainTopicSlug: null, mainTopicLabel: null);
+      return;
+    }
+    final nextLabels = Map<String, String>.from(state.topicLabels)
+      ..[slug] = label;
+    state = state.copyWith(
+      mainTopicSlug: slug,
+      mainTopicLabel: label,
+      topicLabels: nextLabels,
     );
   }
 
@@ -332,6 +373,16 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
   }
 
   static String _slugifyCustom(String input) => 'custom-${_slugifyBase(input)}';
+
+  /// Mapping inverse granulaire→macro (Story 23.4). Le macro est stocké dans
+  /// `VeilleConfig.theme_id`, mais en fallback (configs legacy / theme_id non
+  /// canonique) on retrouve le macro qui contient ce sujet granulaire.
+  static String? _macroForSubtopic(String slug) {
+    for (final entry in AvailableSubtopics.byTheme.entries) {
+      if (entry.value.any((o) => o.slug == slug)) return entry.key;
+    }
+    return null;
+  }
 
   /// Slug d'un angle LLM (préfixe dédié `angle-`) — distinct des sujets custom
   /// (`custom-`) pour ne pas collisionner dans `topicLabels`/`angleKeywords`.
@@ -643,9 +694,20 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     final customTopics = <VeilleTopic>[];
     final topicLabels = <String, String>{};
     final angleKeywords = <String, List<String>>{};
-    for (final t in cfg.topics) {
+    // Story 23.4 — le topic position-0 'preset' est le sujet principal :
+    // restauré séparément (gate Step 1, grille granulaire), jamais comme
+    // topic optionnel (sinon doublon à l'upsert).
+    String? mainSlug;
+    String? mainLabel;
+    for (var i = 0; i < cfg.topics.length; i++) {
+      final t = cfg.topics[i];
       topicLabels[t.topicId] = t.label;
       if (t.keywords.isNotEmpty) angleKeywords[t.topicId] = t.keywords;
+      if (i == 0 && t.kind == 'preset' && mainSlug == null) {
+        mainSlug = t.topicId;
+        mainLabel = t.label;
+        continue;
+      }
       switch (t.kind) {
         case 'custom':
           customTopics.add(
@@ -662,6 +724,12 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
           selectedTopics.add(t.topicId);
       }
     }
+
+    // Macro : on privilégie le `theme_id` stocké ; fallback inverse-map si
+    // ce n'est pas un macro canonique (legacy).
+    final macro = AvailableSubtopics.byTheme.containsKey(cfg.themeId)
+        ? cfg.themeId
+        : (mainSlug != null ? _macroForSubtopic(mainSlug) : null) ?? cfg.themeId;
 
     final selectedSourceIds = <String>{};
     final sourcesMeta = <String, VeilleSourceMeta>{};
@@ -682,7 +750,9 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     state = state.copyWith(
       step: 1,
       introCompleted: true,
-      selectedTheme: cfg.themeId,
+      selectedTheme: macro,
+      mainTopicSlug: mainSlug,
+      mainTopicLabel: mainLabel,
       selectedTopics: selectedTopics,
       selectedSuggestions: selectedSuggestions,
       customTopics: customTopics,
@@ -719,7 +789,24 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
     final topics = <VeilleTopicSelectionRequest>[];
     var pos = 0;
+    // Story 23.4 — le sujet principal granulaire est émis en **position 0**
+    // (`kind:'preset'`, slug canonique → matche `Content.topics`, gate
+    // principal de la curation). Garantit ≥1 topic à l'upsert.
+    final mainSlug = s.mainTopicSlug;
+    final hasMain = mainSlug != null && mainSlug.isNotEmpty;
+    if (hasMain) {
+      topics.add(
+        VeilleTopicSelectionRequest(
+          topicId: mainSlug,
+          label: s.mainTopicLabel ?? s.topicLabels[mainSlug] ?? mainSlug,
+          kind: 'preset',
+          position: pos++,
+          keywords: s.angleKeywords[mainSlug] ?? const <String>[],
+        ),
+      );
+    }
     for (final slug in s.selectedTopics) {
+      if (hasMain && slug == mainSlug) continue; // déjà émis en position 0
       topics.add(
         VeilleTopicSelectionRequest(
           topicId: slug,
@@ -731,6 +818,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       );
     }
     for (final slug in s.selectedSuggestions) {
+      if (hasMain && slug == mainSlug) continue;
       topics.add(
         VeilleTopicSelectionRequest(
           topicId: slug,

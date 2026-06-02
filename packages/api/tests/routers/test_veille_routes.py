@@ -371,6 +371,33 @@ class TestFavoriteIntegration:
         favs = await self._favorites(db_session, auth_user)
         assert favs == []
 
+    async def test_get_config_self_heals_missing_favorite(
+        self, auth_user, db_session
+    ):
+        """Story 23.4 : une config active orpheline (sans favori — cas proton) est
+        réparée au `GET /config` (self-heal idempotent, commit dédié)."""
+        cfg = VeilleConfig(
+            id=uuid4(),
+            user_id=auth_user,
+            theme_id="tech",
+            theme_label="Tech",
+            status=VeilleStatus.ACTIVE.value,
+        )
+        db_session.add(cfg)
+        await db_session.commit()
+
+        # Orphelin : config active, aucun VeilleFavoriteRef.
+        assert await self._favorites(db_session, auth_user) == []
+
+        async with _client() as c:
+            r = await c.get("/api/veille/config")
+        assert r.status_code == 200
+
+        favs = await self._favorites(db_session, auth_user)
+        assert len(favs) == 1
+        assert favs[0].veille_config_id == cfg.id
+        assert favs[0].interest_slug is None
+
 
 class TestFeed:
     async def test_feed_empty_when_no_config(self, auth_user):

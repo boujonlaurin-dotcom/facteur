@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../providers/veille_active_config_provider.dart';
 import '../providers/veille_config_provider.dart';
 import '../repositories/veille_repository.dart';
+import '../widgets/veille_widgets.dart';
 import 'steps/step1_5_preset_preview_screen.dart';
 import 'steps/step1_theme_screen.dart';
 import 'steps/step2_suggestions_screen.dart';
@@ -42,10 +44,12 @@ class VeilleConfigScreen extends ConsumerWidget {
         if (context.mounted) context.go(RoutePaths.fluxContinu);
       });
     } else if (editMode &&
+        !activeConfig.isLoading &&
         activeCfgValue != null &&
         state.selectedTheme == null) {
-      // Mode édition : hydrate l'état une fois depuis la config active.
-      // Idempotent côté notifier (no-op si selectedTheme déjà set).
+      // Mode édition : hydrate l'état une fois depuis la config active, mais
+      // seulement quand le chargement est terminé (Story 23.4 — sinon flash
+      // d'un Step 1 vide). Idempotent côté notifier (no-op si selectedTheme set).
       WidgetsBinding.instance.addPostFrameCallback((_) {
         notifier.hydrateFromActiveConfig(activeCfgValue);
       });
@@ -91,7 +95,26 @@ class VeilleConfigScreen extends ConsumerWidget {
 
     Widget body;
     String key;
-    if (!editMode &&
+    if (editMode && state.selectedTheme == null && activeConfig.isLoading) {
+      // Mode édition : on charge la config active — scaffold de chargement au
+      // lieu d'un flash de Step 1 vide (Story 23.4).
+      body = Column(
+        children: [
+          VeilleStepHeader(step: 1, canGoBack: false, onClose: close),
+          const Expanded(child: VeilleStepSkeleton()),
+        ],
+      );
+      key = 'edit-loading';
+    } else if (editMode &&
+        state.selectedTheme == null &&
+        activeConfig.hasError) {
+      // GET /config a échoué en édition → écran erreur + retry.
+      body = _EditLoadError(
+        onClose: close,
+        onRetry: () => ref.invalidate(veilleActiveConfigProvider),
+      );
+      key = 'edit-error';
+    } else if (!editMode &&
         !state.introCompleted &&
         activeCfgValue == null &&
         !activeConfig.isLoading) {
@@ -137,6 +160,60 @@ class VeilleConfigScreen extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Story 23.4 — écran d'erreur (mode édition) quand `GET /config` échoue.
+class _EditLoadError extends StatelessWidget {
+  final VoidCallback onClose;
+  final VoidCallback onRetry;
+  const _EditLoadError({required this.onClose, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        VeilleStepHeader(step: 1, canGoBack: false, onClose: onClose),
+        Expanded(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.cloud_off_rounded,
+                      size: 40, color: Color(0xFF8B7E63)),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Impossible de charger ta veille',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.fraunces(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF2C2A29),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Vérifie ta connexion et réessaie.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13,
+                      color: const Color(0xFF5D5B5A),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  VeilleCtaButton(
+                    label: 'Réessayer',
+                    onPressed: onRetry,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -248,6 +248,17 @@ async def get_config(
         raise HTTPException(
             status_code=404, detail="Aucune veille active pour cet utilisateur."
         )
+
+    # Self-heal (Story 23.4) : répare les configs actives orphelines (config
+    # active mais aucun VeilleFavoriteRef → section veille invisible dans la
+    # Tournée). Idempotent, commit dédié, best-effort : ne bloque jamais le GET.
+    try:
+        await ensure_veille_favorite(db, user_uuid, cfg.id)
+        await db.commit()
+    except Exception:  # noqa: BLE001 — self-heal best-effort
+        await db.rollback()
+        logger.warning("veille.favorite_self_heal_failed", exc_info=True)
+
     return await _hydrate_response(db, cfg)
 
 

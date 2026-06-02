@@ -361,7 +361,14 @@ class PertinencePillar(BasePillar):
     def _score_custom_topics(
         self, content: Content, context: ScoringContext
     ) -> tuple[float, list[PillarContribution]]:
-        """Custom topics from Epic 11."""
+        """Custom topics (Epic 11) + branche veille (Story 23.4).
+
+        Les angles veille sont marqués `is_veille=True` (`VeilleAngleTopic`) et
+        empruntent un barème escaladant veille-spécifique ; les vrais custom
+        topics Epic 11 (`is_veille` absent) gardent le chemin plat `+25`
+        inchangé. On ne retient qu'un seul angle (le meilleur) — pas
+        d'empilement non borné.
+        """
         if not context.user_custom_topics:
             return 0.0, []
 
@@ -380,6 +387,15 @@ class PertinencePillar(BasePillar):
             # favorite floor le multiplier appliqué au bonus de base.
             tp_state = getattr(tp, "state", InterestState.FOLLOWED)
             if tp_state == InterestState.HIDDEN:
+                continue
+
+            if getattr(tp, "is_veille", False):
+                topic_score = self._score_veille_angle(
+                    tp, content, context, content_topics, title_lower, desc_lower
+                )
+                if topic_score > best_score:
+                    best_score = topic_score
+                    best_topic_name = tp.topic_name
                 continue
 
             matched = False
@@ -406,6 +422,62 @@ class PertinencePillar(BasePillar):
             return best_score, [PillarContribution(label=label, points=best_score)]
 
         return 0.0, []
+
+    def _score_veille_angle(
+        self,
+        tp,
+        content: Content,
+        context: ScoringContext,
+        content_topics: set[str],
+        title_lower: str,
+        desc_lower: str,
+    ) -> float:
+        """Barème veille (Story 23.4) pour un angle = topic canonique + grappe.
+
+        `bonus = composante_kw_escaladante + (50 si topic) + (15 si combo)
+                 + (12 si source suivie ET bonus > 0)`.
+
+        La composante mots-clés vaut `min(BASE + INC*(N-1), CAP)` où N = nombre
+        de mots-clés **distincts** de l'angle matchés (titre/description).
+        Renvoie 0.0 si ni topic ni mot-clé ne matche (source-seul = pas de
+        contribution de pertinence : « la source est un boost, pas un
+        free-pass »).
+        """
+        slug = (tp.slug_parent or "").lower().strip()
+        topic_hit = bool(slug) and slug in content_topics
+
+        kw_hits = 0
+        seen: set[str] = set()
+        for kw in tp.keywords or ():
+            kw_lower = kw.lower().strip()
+            if not kw_lower or kw_lower in seen:
+                continue
+            if kw_lower in title_lower or kw_lower in desc_lower:
+                seen.add(kw_lower)
+                kw_hits += 1
+
+        if not topic_hit and kw_hits == 0:
+            return 0.0
+
+        bonus = 0.0
+        if kw_hits > 0:
+            bonus += min(
+                ScoringWeights.VEILLE_KEYWORD_BASE_BONUS
+                + ScoringWeights.VEILLE_KEYWORD_INCREMENT * (kw_hits - 1),
+                ScoringWeights.VEILLE_KEYWORD_CAP,
+            )
+        if topic_hit:
+            bonus += ScoringWeights.VEILLE_TOPIC_MATCH_BONUS
+        if topic_hit and kw_hits > 0:
+            bonus += ScoringWeights.VEILLE_TOPIC_KEYWORD_COMBO_BONUS
+
+        # Source conditionnée : appliquée seulement quand l'article a déjà un
+        # topic ou un mot-clé (bonus > 0). Source-seul n'atteint jamais cette
+        # branche (early-return ci-dessus).
+        if bonus > 0 and content.source_id in context.followed_source_ids:
+            bonus += ScoringWeights.VEILLE_SOURCE_ON_TOPIC_BONUS
+
+        return bonus
 
     def _score_format(
         self, content: Content, context: ScoringContext

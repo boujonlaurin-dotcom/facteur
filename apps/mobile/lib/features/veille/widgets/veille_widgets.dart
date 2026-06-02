@@ -726,3 +726,54 @@ class _VeilleStyledTextFieldState extends State<_VeilleStyledTextField> {
     );
   }
 }
+
+/// ===== Step skeleton (loading) =====
+/// Story 23.4 — placeholder de chargement affiché en mode édition pendant que
+/// `veilleActiveConfigProvider` charge (évite le flash d'un Step 1 vide).
+/// Extrait du `_ThemeGridSkeleton` de Step 1, généralisé pour servir de
+/// scaffold de chargement plein écran.
+class VeilleStepSkeleton extends StatelessWidget {
+  const VeilleStepSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget bar(double w, double h) => Container(
+          width: w,
+          height: h,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF5F0E5),
+            borderRadius: BorderRadius.circular(8),
+          ),
+        );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          bar(180, 14),
+          const SizedBox(height: 10),
+          bar(240, 14),
+          const SizedBox(height: 28),
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 1.55,
+            children: List.generate(
+              6,
+              (_) => DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F0E5),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -48,10 +48,12 @@ class Step2SuggestionsScreen extends ConsumerWidget {
             )),
           );
 
-    // Un angle LLM sélectionné suffit à passer à l'étape suivante (les angles
-    // vivent dans `selectedSuggestions`, distincts des preset topics).
-    final hasSelection =
-        state.selectedTopics.isNotEmpty || state.selectedSuggestions.isNotEmpty;
+    // Story 23.4 — le sujet principal du Step 1 satisfait déjà l'upsert (≥1
+    // topic garanti), donc la CTA n'est plus gatée par une sélection
+    // supplémentaire : angles et preset topics deviennent optionnels.
+    final hasSelection = state.mainTopicSlug != null ||
+        state.selectedTopics.isNotEmpty ||
+        state.selectedSuggestions.isNotEmpty;
 
     return Column(
       children: [
@@ -67,17 +69,28 @@ class Step2SuggestionsScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const VeilleFlowH1('Quels sujets veux-tu suivre ?'),
+                const VeilleFlowH1('Affine ta veille'),
                 const SizedBox(height: 8),
                 Text(
-                  'Coche les sujets qui t\'intéressent dans ce thème. Tu peux '
-                  'aussi en ajouter un sur-mesure, ou passer cette étape.',
+                  state.mainTopicSlug != null
+                      ? 'Ton sujet principal est fixé. Ajoute des angles ou des '
+                          'sujets pour préciser — ou passe directement à la suite.'
+                      : 'Coche les sujets qui t\'intéressent dans ce thème. Tu '
+                          'peux aussi en ajouter un sur-mesure, ou passer cette étape.',
                   style: GoogleFonts.dmSans(
                     fontSize: 13,
                     color: const Color(0xFF5D5B5A),
                     height: 1.45,
                   ),
                 ),
+                if (state.mainTopicSlug != null) ...[
+                  const SizedBox(height: 16),
+                  _MainTopicChip(
+                    label: state.mainTopicLabel ??
+                        state.topicLabels[state.mainTopicSlug!] ??
+                        state.mainTopicSlug!,
+                  ),
+                ],
                 const SizedBox(height: 22),
                 _AnglesSection(
                   anglesAsync: anglesAsync,
@@ -142,6 +155,57 @@ class _SkipButton extends StatelessWidget {
           fontWeight: FontWeight.w600,
           color: FacteurColors.veille,
         ),
+      ),
+    );
+  }
+}
+
+/// Story 23.4 — chip non-supprimable du sujet principal (fixé en Step 1).
+/// Évite le double-ask et signale que ce sujet gate déjà la veille.
+class _MainTopicChip extends StatelessWidget {
+  final String label;
+  const _MainTopicChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+      decoration: BoxDecoration(
+        color: FacteurColors.veilleTint,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: FacteurColors.veille, width: 1.2),
+      ),
+      child: Row(
+        children: [
+          Icon(PhosphorIcons.pushPin(PhosphorIconsStyle.fill),
+              size: 16, color: FacteurColors.veille),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'SUJET PRINCIPAL',
+                  style: GoogleFonts.courierPrime(
+                    fontSize: 9,
+                    letterSpacing: 0.4,
+                    fontWeight: FontWeight.w700,
+                    color: FacteurColors.veille,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF2C2A29),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
