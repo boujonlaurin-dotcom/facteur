@@ -61,6 +61,7 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
         selectedTopicSlug: selection.topic,
         selectedThemeSlug: selection.theme,
         selectedEntitySlug: selection.entity,
+        selectedSourceId: selection.sourceId,
         onTabTap: (kind, slug) async {
           // Sheet owns this override ; clear it so the chip label rebuilds
           // from the tapped tab's name on next layout.
@@ -81,6 +82,9 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
               break;
             case FavoriteTabKind.theme:
               await notifier.setTheme(slug);
+              break;
+            case FavoriteTabKind.source:
+              await notifier.setSource(slug);
               break;
           }
           widget.onAfterChange?.call();

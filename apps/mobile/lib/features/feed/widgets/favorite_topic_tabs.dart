@@ -7,11 +7,17 @@ import '../../../config/theme.dart';
 import '../../custom_topics/models/topic_models.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../my_interests/models/user_interests_state.dart';
+import '../../my_interests/models/user_sources_state.dart';
 import '../../my_interests/providers/user_interests_provider.dart';
+import '../../my_interests/providers/user_sources_state_provider.dart';
+import '../../sources/models/source_model.dart';
+import '../../sources/providers/sources_providers.dart';
+import '../../sources/widgets/source_logo_avatar.dart';
 import '../models/content_model.dart';
+import '../providers/tab_order_prefs_provider.dart';
 import '../repositories/feed_repository.dart';
 
-enum FavoriteTabKind { tous, subjectTopic, subjectEntity, theme }
+enum FavoriteTabKind { tous, subjectTopic, subjectEntity, theme, source }
 
 @immutable
 class FavoriteTabModel {
@@ -22,6 +28,10 @@ class FavoriteTabModel {
   final int count;
   final bool active;
 
+  /// Renseigné uniquement pour [FavoriteTabKind.source] : sert à rendre le logo
+  /// (avec fallback initiales) via [SourceLogoAvatar].
+  final Source? source;
+
   const FavoriteTabModel({
     required this.kind,
     required this.slug,
@@ -29,6 +39,7 @@ class FavoriteTabModel {
     required this.emoji,
     required this.count,
     required this.active,
+    this.source,
   });
 }
 
@@ -38,6 +49,7 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
   final String? selectedTopicSlug;
   final String? selectedThemeSlug;
   final String? selectedEntitySlug;
+  final String? selectedSourceId;
   final void Function(FavoriteTabKind kind, String? slug) onTabTap;
   final VoidCallback onTapActiveTab;
   final VoidCallback onTapActiveTabRefresh;
@@ -50,6 +62,7 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
     this.selectedTopicSlug,
     this.selectedThemeSlug,
     this.selectedEntitySlug,
+    this.selectedSourceId,
     required this.onTabTap,
     required this.onTapActiveTab,
     required this.onTapActiveTabRefresh,
@@ -71,7 +84,8 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
     final selectionChanged =
         old.selectedTopicSlug != widget.selectedTopicSlug ||
             old.selectedThemeSlug != widget.selectedThemeSlug ||
-            old.selectedEntitySlug != widget.selectedEntitySlug;
+            old.selectedEntitySlug != widget.selectedEntitySlug ||
+            old.selectedSourceId != widget.selectedSourceId;
     if (selectionChanged) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scrollActiveIntoView();
@@ -109,19 +123,31 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
     final colors = context.facteurColors;
     final topicsAsync = ref.watch(customTopicsProvider);
     final interestsAsync = ref.watch(userInterestsProvider);
+    final sourcesStateAsync = ref.watch(userSourcesStateProvider);
+    final sourcesAsync = ref.watch(userSourcesProvider);
+    final order = ref.watch(tabOrderPrefsProvider);
 
     final topics = topicsAsync.valueOrNull ?? const <UserTopicProfile>[];
     final favorites =
         interestsAsync.valueOrNull?.favorites ?? const <FavoriteRef>[];
+    final sourceFavorites =
+        sourcesStateAsync.valueOrNull?.favorites ?? const <SourceFavoriteRef>[];
+    final sourceById = <String, Source>{
+      for (final s in sourcesAsync.valueOrNull ?? const <Source>[]) s.id: s,
+    };
 
     final tabs = _buildTabModels(
       topics: topics,
       favorites: favorites,
+      sourceFavorites: sourceFavorites,
+      sourceById: sourceById,
+      order: order,
       items: widget.items,
       serverCounts: widget.serverCounts,
       selectedTopicSlug: widget.selectedTopicSlug,
       selectedThemeSlug: widget.selectedThemeSlug,
       selectedEntitySlug: widget.selectedEntitySlug,
+      selectedSourceId: widget.selectedSourceId,
     );
 
     _activeKey = null;
@@ -184,32 +210,46 @@ List<FavoriteTabModel> buildFavoriteTabModelsForTest({
   required List<UserTopicProfile> topics,
   required List<FavoriteRef> favorites,
   required List<Content> items,
+  List<SourceFavoriteRef> sourceFavorites = const [],
+  Map<String, Source> sourceById = const {},
+  List<String> order = const [],
   TabCounts? serverCounts,
   String? selectedTopicSlug,
   String? selectedThemeSlug,
   String? selectedEntitySlug,
+  String? selectedSourceId,
 }) =>
     _buildTabModels(
       topics: topics,
       favorites: favorites,
+      sourceFavorites: sourceFavorites,
+      sourceById: sourceById,
+      order: order,
       items: items,
       serverCounts: serverCounts,
       selectedTopicSlug: selectedTopicSlug,
       selectedThemeSlug: selectedThemeSlug,
       selectedEntitySlug: selectedEntitySlug,
+      selectedSourceId: selectedSourceId,
     );
 
-/// Onglets Flâner = uniquement les *sujets épinglés* (custom topics + entités
-/// favoris). Les *thèmes/veille* pilotent la Tournée du jour et ne sont donc
-/// pas rendus en onglet ici — ils restent filtrables via la chip thème.
+/// Onglets Flâner = *sujets épinglés* (custom topics + entités favoris) **et**
+/// *sources épinglées* (favoris sources), mélangés selon l'ordre unifié
+/// [order] (cf. [tabOrderPrefsProvider]). Les *thèmes/veille* pilotent la
+/// Tournée du jour et ne sont donc pas rendus en onglet ici — ils restent
+/// filtrables via la chip thème.
 List<FavoriteTabModel> _buildTabModels({
   required List<UserTopicProfile> topics,
   required List<FavoriteRef> favorites,
+  required List<SourceFavoriteRef> sourceFavorites,
+  required Map<String, Source> sourceById,
+  required List<String> order,
   required List<Content> items,
   TabCounts? serverCounts,
   String? selectedTopicSlug,
   String? selectedThemeSlug,
   String? selectedEntitySlug,
+  String? selectedSourceId,
 }) {
   final useServer = serverCounts != null && serverCounts.total > 0;
 
@@ -247,47 +287,85 @@ List<FavoriteTabModel> _buildTabModels({
         selectedEntitySlug == null,
   ));
 
-  // 2. Onglets favoris (entités + sujets épinglés) triés par nombre
-  // d'articles disponibles décroissant.
-  final favoriteTabs = <FavoriteTabModel>[];
+  // 2. Onglets favoris (sujets + sources épinglés). On garde la clé d'ordre
+  // unifié (`topic:<id>` / `source:<id>`) à côté de chaque modèle pour pouvoir
+  // appliquer [order] ensuite.
+  final favoriteTabs = <({FavoriteTabModel tab, String key})>[];
 
   for (final entity in entitySubjects) {
     final slug = entity.canonicalName ?? entity.name;
-    favoriteTabs.add(FavoriteTabModel(
-      kind: FavoriteTabKind.subjectEntity,
-      slug: slug,
-      label: entity.name,
-      emoji: '',
-      count: useServer
-          ? (serverCounts.entities[slug.toLowerCase()] ?? 0)
-          : _countUnreadRecent(items,
-              cutoff: cutoff, kind: FavoriteTabKind.subjectEntity, slug: slug),
-      active: selectedEntitySlug != null && selectedEntitySlug == slug,
+    favoriteTabs.add((
+      key: tabOrderTopicKey(entity.id),
+      tab: FavoriteTabModel(
+        kind: FavoriteTabKind.subjectEntity,
+        slug: slug,
+        label: entity.name,
+        emoji: '',
+        count: useServer
+            ? (serverCounts.entities[slug.toLowerCase()] ?? 0)
+            : _countUnreadRecent(items,
+                cutoff: cutoff,
+                kind: FavoriteTabKind.subjectEntity,
+                slug: slug),
+        active: selectedEntitySlug != null && selectedEntitySlug == slug,
+      ),
     ));
   }
 
   for (final topic in topicSubjects) {
     final slug = topic.slugParent ?? topic.id;
-    favoriteTabs.add(FavoriteTabModel(
-      kind: FavoriteTabKind.subjectTopic,
-      slug: slug,
-      label: topic.name,
-      emoji: '',
-      count: useServer
-          ? (serverCounts.topics[slug] ?? 0)
-          : _countUnreadRecent(items,
-              cutoff: cutoff, kind: FavoriteTabKind.subjectTopic, slug: slug),
-      active: selectedTopicSlug != null && selectedTopicSlug == slug,
+    favoriteTabs.add((
+      key: tabOrderTopicKey(topic.id),
+      tab: FavoriteTabModel(
+        kind: FavoriteTabKind.subjectTopic,
+        slug: slug,
+        label: topic.name,
+        emoji: '',
+        count: useServer
+            ? (serverCounts.topics[slug] ?? 0)
+            : _countUnreadRecent(items,
+                cutoff: cutoff,
+                kind: FavoriteTabKind.subjectTopic,
+                slug: slug),
+        active: selectedTopicSlug != null && selectedTopicSlug == slug,
+      ),
     ));
   }
 
+  // Sources épinglées (favoris sources). Pas de count serveur par source pour
+  // l'instant → count 0 (pas de badge). On skippe les sources inconnues du
+  // catalogue (logo/nom non résolus).
+  final sortedSourceFavorites = [...sourceFavorites]
+    ..sort((a, b) => a.position.compareTo(b.position));
+  for (final ref in sortedSourceFavorites) {
+    final source = sourceById[ref.sourceId];
+    if (source == null) continue;
+    favoriteTabs.add((
+      key: tabOrderSourceKey(ref.sourceId),
+      tab: FavoriteTabModel(
+        kind: FavoriteTabKind.source,
+        slug: ref.sourceId,
+        label: source.name,
+        emoji: '',
+        count: 0,
+        active: selectedSourceId != null && selectedSourceId == ref.sourceId,
+        source: source,
+      ),
+    ));
+  }
+
+  // Ordre par défaut (avant ordre custom) : par count décroissant puis alpha —
+  // conserve le comportement historique pour les items pas encore réordonnés.
   favoriteTabs.sort((a, b) {
-    final byCount = b.count.compareTo(a.count);
+    final byCount = b.tab.count.compareTo(a.tab.count);
     if (byCount != 0) return byCount;
-    return a.label.toLowerCase().compareTo(b.label.toLowerCase());
+    return a.tab.label.toLowerCase().compareTo(b.tab.label.toLowerCase());
   });
 
-  tabs.addAll(favoriteTabs);
+  // Ordre unifié voulu par l'utilisateur (drag dans la modal d'épinglage).
+  final ordered = applyOrder(favoriteTabs, order, (e) => e.key);
+
+  tabs.addAll(ordered.map((e) => e.tab));
   return tabs;
 }
 
@@ -310,6 +388,9 @@ int _countUnreadRecent(
       case FavoriteTabKind.theme:
         // Les thèmes ne sont plus rendus en onglet Flâner (ils pilotent la
         // Tournée). Valeur conservée dans l'enum pour la chip thème.
+        return false;
+      case FavoriteTabKind.source:
+        // Pas de count local par source — les onglets source affichent 0.
         return false;
     }
   }
@@ -342,6 +423,10 @@ class _FavoriteTabItem extends StatelessWidget {
     final showBadge = tab.count >= 3;
     final showLabel =
         tab.emoji.isNotEmpty ? '${tab.emoji} ${tab.label}' : tab.label;
+    final sourceAvatar =
+        tab.kind == FavoriteTabKind.source && tab.source != null
+            ? tab.source
+            : null;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -352,6 +437,10 @@ class _FavoriteTabItem extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            if (sourceAvatar != null) ...[
+              SourceLogoAvatar(source: sourceAvatar, size: 20, radius: 5),
+              const SizedBox(width: 6),
+            ],
             IntrinsicWidth(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
