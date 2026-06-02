@@ -120,7 +120,8 @@ class CurationService:
         return SelectedTopic(
             topic_id=cluster.cluster_id,
             label=cluster.label[:80],
-            selection_reason=reason or f"Traité par {len(cluster.source_domains)} sources",
+            selection_reason=reason
+            or f"Traité par {len(cluster.source_domains)} sources",
             deep_angle=deep_angle,
             source_count=len(cluster.source_domains),
             theme=cluster.theme,
@@ -192,7 +193,8 @@ class CurationService:
         return SelectedTopic(
             topic_id=cluster.cluster_id,
             label=cluster.label[:80],
-            selection_reason=reason or f"Traité par {len(cluster.source_domains)} sources",
+            selection_reason=reason
+            or f"Traité par {len(cluster.source_domains)} sources",
             deep_angle=deep_angle,
             source_count=len(cluster.source_domains),
             theme=cluster.theme,

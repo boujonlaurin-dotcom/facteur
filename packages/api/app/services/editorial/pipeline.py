@@ -425,9 +425,7 @@ class EditorialPipelineService:
         # `source_count` reflète les MÉDIAS distincts (domaines), pas les
         # feeds : 2 flux radiofrance.fr = 1 média. Aligné sur curation.py et le
         # fix `source_domains` (commit 2667003b). Cf. bug-actus-du-jour-ranking.md.
-        cluster_map_counts = {
-            c.cluster_id: len(c.source_domains) for c in clusters
-        }
+        cluster_map_counts = {c.cluster_id: len(c.source_domains) for c in clusters}
         subjects = [
             EditorialSubject(
                 rank=i + 1,
