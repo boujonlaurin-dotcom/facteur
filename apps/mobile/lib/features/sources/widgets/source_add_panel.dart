@@ -489,7 +489,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         ),
         const SizedBox(height: FacteurSpacing.space2),
         Text(
-          'Tape un nom de média ou colle son URL.\nOn l\'amène dans ton app.',
+          'Tape un nom de média ou colle son URL.\nOn l\'ajoute à ton app.',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: colors.textSecondary,

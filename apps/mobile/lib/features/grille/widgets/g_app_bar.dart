@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
@@ -69,10 +70,10 @@ class GAppBar extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 if (streak > 0) ...[
-                  Icon(
-                    PhosphorIcons.fire(PhosphorIconsStyle.fill),
-                    size: 16,
-                    color: c.primary,
+                  SvgPicture.asset(
+                    'assets/icons/streak_flame.svg',
+                    width: 16,
+                    height: 16,
                   ),
                   const SizedBox(width: 4),
                   Text(

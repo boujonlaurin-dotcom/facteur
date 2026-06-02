@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
@@ -60,8 +61,11 @@ class _CommunityGemsStripState extends ConsumerState<CommunityGemsStrip> {
           padding: const EdgeInsets.all(14),
           child: Row(
             children: [
-              Icon(PhosphorIcons.fire(PhosphorIconsStyle.regular),
-                  size: 20, color: colors.primary),
+              SvgPicture.asset(
+                'assets/icons/streak_flame.svg',
+                width: 20,
+                height: 20,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -76,7 +80,7 @@ class _CommunityGemsStripState extends ConsumerState<CommunityGemsStrip> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Les sources favorites de la communauté Facteur',
+                      'Les sources les plus ajoutées par la communauté de Facteur',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: colors.textTertiary,
                           ),

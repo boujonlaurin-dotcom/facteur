@@ -809,7 +809,7 @@ class _IntroBlock extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Passez une source en Favori pour l\'épingler dans Flâner et booster ses articles partout dans l\'app. Les 3 premiers favoris alimentent aussi votre Tournée du jour.',
+            'Gérez vos préférences par sources. Ajoutez certaines en favoris pour les voir apparaitre plus souvent. Masquez celles que vous souhaitez filtrer de vos flux.',
             style: textTheme.bodySmall?.copyWith(
               color: colors.textSecondary,
               height: 1.45,
@@ -871,7 +871,7 @@ class _HidePaidToggleCard extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Masquer les articles payants',
+                        'Masquer les articles payants*',
                         style: Theme.of(context)
                             .textTheme
                             .bodyMedium
@@ -879,7 +879,7 @@ class _HidePaidToggleCard extends ConsumerWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Cache les articles derrière un paywall.',
+                        '*: Sauf abonnements connectés.',
                         style: Theme.of(context)
                             .textTheme
                             .bodySmall

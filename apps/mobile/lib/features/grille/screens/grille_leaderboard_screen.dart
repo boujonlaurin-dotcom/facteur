@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
@@ -145,10 +146,10 @@ class _StreakStrip extends StatelessWidget {
               shape: BoxShape.circle,
               color: c.primary.withValues(alpha: 0.10),
             ),
-            child: Icon(
-              PhosphorIcons.fire(PhosphorIconsStyle.fill),
-              size: 24,
-              color: c.primary,
+            child: SvgPicture.asset(
+              'assets/icons/streak_flame.svg',
+              width: 24,
+              height: 24,
             ),
           ),
           const SizedBox(width: 14),
