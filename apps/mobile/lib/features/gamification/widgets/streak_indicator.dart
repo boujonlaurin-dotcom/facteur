@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../providers/gamification_preference_provider.dart';
@@ -76,9 +75,6 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
         return streakAsync.when(
           data: (streak) {
             final isActive = streak.currentStreak > 0;
-            final flameColor = colors.primary.withValues(
-              alpha: isActive ? 0.78 : 0.38,
-            );
             final textColor = isActive
                 ? colors.textPrimary
                 : colors.textSecondary.withValues(alpha: 0.55);
@@ -112,8 +108,8 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         SizedBox(
-                          width: 16,
-                          height: 16,
+                          width: 22,
+                          height: 22,
                           child: AnimatedBuilder(
                             animation: _controller,
                             builder: (context, child) {
@@ -133,8 +129,8 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
                                   scale: _scale.value,
                                   child: SvgPicture.asset(
                                     'assets/icons/streak_flame.svg',
-                                    width: 16,
-                                    height: 16,
+                                    width: 22,
+                                    height: 22,
                                     colorFilter: isActive
                                         ? null
                                         : ColorFilter.mode(
@@ -168,8 +164,8 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             child: SvgPicture.asset(
               'assets/icons/streak_flame.svg',
-              width: 16,
-              height: 16,
+              width: 22,
+              height: 22,
               colorFilter: ColorFilter.mode(
                 colors.primary.withValues(alpha: 0.3),
                 BlendMode.srcIn,

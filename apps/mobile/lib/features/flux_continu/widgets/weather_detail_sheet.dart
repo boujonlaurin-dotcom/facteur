@@ -349,11 +349,30 @@ class _DayRow extends StatelessWidget {
           const SizedBox(width: FacteurSpacing.space2),
           SvgPicture.asset(
             'assets/images/weather/${day.condition.assetName}.svg',
-            width: 40,
-            height: 40,
+            width: 52,
+            height: 52,
           ),
           const Spacer(),
-          _TempRange(minC: day.minC, maxC: day.maxC, fontSize: 16),
+          // Max en gros (WeatherDay n'expose pas de temp « actuelle »), avec la
+          // plage min/max conservée dessous (décision PO : « quitte à dupliquer
+          // le max »). Calque du « 40° » de la carte du jour, en plus petit.
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${day.maxC}°',
+                style: GoogleFonts.fraunces(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w700,
+                  height: 1.0,
+                  color: colors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              _TempRange(minC: day.minC, maxC: day.maxC, fontSize: 14),
+            ],
+          ),
         ],
       ),
     );

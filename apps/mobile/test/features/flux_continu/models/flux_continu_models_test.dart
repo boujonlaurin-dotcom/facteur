@@ -301,4 +301,215 @@ void main() {
       expect(nextSectionAfter([a], 'theme:nope'), isNull);
     });
   });
+
+  group('allPreviewArticlesRead', () {
+    EssentielArticle essentielArticle(String id, {bool read = false}) =>
+        EssentielArticle(
+          contentId: id,
+          title: 't$id',
+          url: 'https://x.test/$id',
+          publishedAt: DateTime(2026, 1, 1),
+          sourceName: 'S',
+          sourceLetter: 'S',
+          sectionLabel: 'Essentiel',
+          rank: 1,
+          isRead: read,
+        );
+
+    DigestItem digestItem(
+      String id, {
+      bool read = false,
+      bool followed = false,
+    }) =>
+        DigestItem(
+          contentId: id,
+          title: 't$id',
+          isRead: read,
+          isFollowedSource: followed,
+        );
+
+    DigestTopicSection digestWith(
+      List<DigestTopic> topics, {
+      int core = 3,
+    }) =>
+        DigestTopicSection(
+          kind: SectionKind.essentiel,
+          label: 'Actus du jour',
+          accent: const Color(0xFFB0470A),
+          coreVisibleCount: core,
+          topics: topics,
+        );
+
+    Content contentItem(String id, {bool consumed = false}) => Content(
+          id: id,
+          title: 't$id',
+          url: 'https://x.test/$id',
+          contentType: ContentType.article,
+          publishedAt: DateTime(2026, 1, 1),
+          source: Source(id: 's', name: 'S', type: SourceType.article),
+          status: consumed ? ContentStatus.consumed : ContentStatus.unseen,
+        );
+
+    FeedThemeSection feedWith(List<Content> items, {int core = 2}) =>
+        FeedThemeSection(
+          kind: SectionKind.theme,
+          label: 'tech',
+          accent: const Color(0xFF2C3E50),
+          coreVisibleCount: core,
+          themeSlug: 'tech',
+          items: items,
+        );
+
+    // --- EssentielSection (coreVisibleCount fixed at 5) ---------------------
+    test('EssentielSection: all 5 preview read → true', () {
+      final section = EssentielSection(
+        articles: List.generate(5, (i) => essentielArticle('c$i', read: true)),
+      );
+      expect(allPreviewArticlesRead(section), isTrue);
+    });
+
+    test('EssentielSection: 4/5 read → false', () {
+      final section = EssentielSection(
+        articles: [
+          for (var i = 0; i < 4; i++) essentielArticle('c$i', read: true),
+          essentielArticle('c4', read: false),
+        ],
+      );
+      expect(allPreviewArticlesRead(section), isFalse);
+    });
+
+    test('EssentielSection: empty → false (no vacuous fold)', () {
+      const section = EssentielSection(articles: []);
+      expect(allPreviewArticlesRead(section), isFalse);
+    });
+
+    // --- DigestTopicSection -------------------------------------------------
+    test('DigestTopicSection: all leads read → true', () {
+      final section = digestWith([
+        for (var i = 0; i < 3; i++)
+          DigestTopic(
+            topicId: 't$i',
+            label: 't$i',
+            articles: [digestItem('c$i', read: true)],
+          ),
+      ]);
+      expect(allPreviewArticlesRead(section), isTrue);
+    });
+
+    test('DigestTopicSection: one lead unread → false', () {
+      final section = digestWith([
+        DigestTopic(
+            topicId: 't0', label: 't0', articles: [digestItem('c0', read: true)]),
+        DigestTopic(
+            topicId: 't1',
+            label: 't1',
+            articles: [digestItem('c1', read: false)]),
+        DigestTopic(
+            topicId: 't2', label: 't2', articles: [digestItem('c2', read: true)]),
+      ]);
+      expect(allPreviewArticlesRead(section), isFalse);
+    });
+
+    test('DigestTopicSection: empty topic in preview → false without throwing',
+        () {
+      final section = digestWith([
+        DigestTopic(
+            topicId: 't0', label: 't0', articles: [digestItem('c0', read: true)]),
+        // Empty topic — pickTopicLead would throw if reached; the
+        // `topic.articles.isNotEmpty` guard must short-circuit to false.
+        const DigestTopic(topicId: 't1', label: 't1', articles: []),
+      ]);
+      expect(allPreviewArticlesRead(section), isFalse);
+    });
+
+    test('DigestTopicSection: fewer topics than core, all read → true', () {
+      final section = digestWith(
+        [
+          DigestTopic(
+              topicId: 't0',
+              label: 't0',
+              articles: [digestItem('c0', read: true)]),
+          DigestTopic(
+              topicId: 't1',
+              label: 't1',
+              articles: [digestItem('c1', read: true)]),
+        ],
+        core: 5,
+      );
+      expect(allPreviewArticlesRead(section), isTrue);
+    });
+
+    test('DigestTopicSection: gate reads pickTopicLead (followed), not first',
+        () {
+      // The followed-source article is the lead even though it isn't first.
+      // First is unread, lead is read → gate must follow the lead → true.
+      final section = digestWith(
+        [
+          DigestTopic(
+            topicId: 't0',
+            label: 't0',
+            articles: [
+              digestItem('first', read: false),
+              digestItem('lead', read: true, followed: true),
+            ],
+          ),
+        ],
+        core: 1,
+      );
+      expect(allPreviewArticlesRead(section), isTrue);
+    });
+
+    test('DigestTopicSection: followed lead unread → false even if first read',
+        () {
+      final section = digestWith(
+        [
+          DigestTopic(
+            topicId: 't0',
+            label: 't0',
+            articles: [
+              digestItem('first', read: true),
+              digestItem('lead', read: false, followed: true),
+            ],
+          ),
+        ],
+        core: 1,
+      );
+      expect(allPreviewArticlesRead(section), isFalse);
+    });
+
+    // --- FeedThemeSection ---------------------------------------------------
+    test('FeedThemeSection: all preview consumed → true', () {
+      final section = feedWith([
+        contentItem('c0', consumed: true),
+        contentItem('c1', consumed: true),
+      ]);
+      expect(allPreviewArticlesRead(section), isTrue);
+    });
+
+    test('FeedThemeSection: one not consumed → false', () {
+      final section = feedWith([
+        contentItem('c0', consumed: true),
+        contentItem('c1', consumed: false),
+      ]);
+      expect(allPreviewArticlesRead(section), isFalse);
+    });
+
+    test('FeedThemeSection: empty → false', () {
+      final section = feedWith(const <Content>[]);
+      expect(allPreviewArticlesRead(section), isFalse);
+    });
+
+    test('FeedThemeSection: only the preview cards gate (overflow ignored)', () {
+      // core=2: the third (unconsumed) item sits behind "Plus de…" → ignored.
+      final section = feedWith(
+        [
+          contentItem('c0', consumed: true),
+          contentItem('c1', consumed: true),
+          contentItem('c2', consumed: false),
+        ],
+        core: 2,
+      );
+      expect(allPreviewArticlesRead(section), isTrue);
+    });
+  });
 }

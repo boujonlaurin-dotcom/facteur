@@ -281,6 +281,30 @@ DigestItem pickTopicLead(DigestTopic topic) {
   return topic.articles.first;
 }
 
+/// Vrai si toutes les cartes visibles en preview (les `coreVisibleCount`
+/// premières, avant « Plus de… ») de la section sont marquées lues. Gate du
+/// fold scroll-past : une section ne se replie automatiquement que lorsque
+/// l'utilisateur a réellement consommé ses cartes visibles.
+///
+/// Une preview vide ⇒ `false` (évite un fold vacuously-true sur une section
+/// sans contenu visible). Le repli manuel (caret/CTA) reste non gaté ailleurs.
+bool allPreviewArticlesRead(FluxSection section) {
+  final core = section.coreVisibleCount;
+  // Une preview non vide dont chaque carte visible passe le prédicat de lecture.
+  bool allRead<T>(Iterable<T> items, bool Function(T) isRead) {
+    final preview = items.take(core);
+    return preview.isNotEmpty && preview.every(isRead);
+  }
+
+  return switch (section) {
+    EssentielSection(:final articles) => allRead(articles, (a) => a.isRead),
+    DigestTopicSection(:final topics) => allRead(
+        topics, (t) => t.articles.isNotEmpty && pickTopicLead(t).isRead),
+    FeedThemeSection(:final items) =>
+      allRead(items, (c) => c.status == ContentStatus.consumed),
+  };
+}
+
 /// Snapshot of the Flux Continu screen state.
 ///
 /// `sections` is the **ordered** list to render (already accounting for the

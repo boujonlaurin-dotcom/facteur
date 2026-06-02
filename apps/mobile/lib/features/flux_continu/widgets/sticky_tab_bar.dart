@@ -22,12 +22,11 @@ class StickyTab {
 ///
 /// Layout per V6 maquette :
 /// - parchment-tinted backdrop with a 14px blur (saturate 140%),
-/// - horizontal tabs with section dot, label, a check icon when the tab is
-///   done (replaces the legacy strike-through, per PO feedback hotfix
-///   2026-05-23 — "lu = checked, pas barré"), and a soft accent wash behind
-///   the active tab (replaces the legacy 3px underline — the wash mirrors the
-///   "Couverture médiatique" highlight and lightens the bar above the
-///   progress track),
+/// - horizontal tabs with a label, a check icon when the tab is done
+///   (replaces the legacy strike-through, per PO feedback hotfix 2026-05-23 —
+///   "lu = checked, pas barré"), and a marker-style highlight on the active
+///   tab's label text (calque du highlight "Couverture médiatique" — cf.
+///   DiffTitle ; remplace l'ancien wash pleine-chip + le point),
 /// - 4-px progress track with a 4-stop gradient fill (essentiel → bonnes
 ///   → veille1 → veille2) and a soft accent glow,
 /// - when [showFilterBar] is true (Explorer mode), [FeedFilterBar] is
@@ -186,58 +185,48 @@ class _Tab extends StatelessWidget {
     } else {
       labelColor = colors.textSecondary;
     }
-    final dotColor = isActive
-        ? tab.accent
-        : (isDone ? colors.textTertiary : colors.textSecondary);
-    // Active tab is signaled by a soft accent wash (style "Couverture
-    // médiatique" — cf. DiffTitle), replacing the legacy 3px underline that
-    // doubled up visually with the progress track just below. The wash tint
-    // derives from the tab's own accent so each thematic section keeps its
-    // hue; the dot + textPrimary label still carry the active state.
+    // Active tab is signaled by a marker-style highlight on the **label text
+    // only** (calque du highlight "Couverture médiatique" — cf. DiffTitle),
+    // replacing the legacy full-chip wash + leading dot. The marker tint
+    // derives from the tab's own accent so each thematic section keeps its hue.
     const radius = BorderRadius.all(Radius.circular(FacteurRadius.small));
+    final label = Text(
+      tab.label,
+      style: GoogleFonts.dmSans(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        color: labelColor,
+      ),
+    );
     return InkWell(
       onTap: onTap,
       borderRadius: radius,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: isActive
-              ? tab.accent.withValues(alpha: 0.14)
-              : Colors.transparent,
-          borderRadius: radius,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 5, 12, 7),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 5, 12, 7),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isActive)
               Container(
-                width: 9,
-                height: 9,
-                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: dotColor,
+                  color: tab.accent.withValues(alpha: 0.22),
+                  borderRadius: BorderRadius.circular(4),
                 ),
+                child: label,
+              )
+            else
+              label,
+            if (isDone) ...[
+              const SizedBox(width: 4),
+              Icon(
+                Icons.check_rounded,
+                size: 18,
+                color: labelColor,
+                semanticLabel: 'lu',
               ),
-              Text(
-                tab.label,
-                style: GoogleFonts.dmSans(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: labelColor,
-                ),
-              ),
-              if (isDone) ...[
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.check_rounded,
-                  size: 18,
-                  color: labelColor,
-                  semanticLabel: 'lu',
-                ),
-              ],
             ],
-          ),
+          ],
         ),
       ),
     );
