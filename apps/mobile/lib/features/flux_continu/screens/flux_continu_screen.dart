@@ -40,6 +40,8 @@ import '../widgets/my_interests_sheet.dart';
 import '../widgets/geoloc_prompt_banner.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
+import '../../grille/grille_constants.dart';
+import '../../grille/providers/grille_provider.dart';
 import '../../grille/widgets/grille_cta_card.dart';
 
 /// Scroll offset at which the AppBar is swapped with the sticky tab bar.
@@ -64,15 +66,13 @@ const double _kFabHideAboveScroll = 380.0;
 /// pull-to-refresh hint pill — avoids nudging after a tiny inertia scroll.
 const double _kPullHintMinDepthPx = 800.0;
 
-/// Sliver « Grille du jour » (carte d'entrée de La Grille). Padding maquette
-/// partagé par ses deux sites de rendu : juste après « Actus du jour » (cas
-/// nominal) et le fallback bas quand le digest est absent.
-const _grilleSliver = SliverToBoxAdapter(
-  child: Padding(
-    padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
-    child: GrilleCtaCard(),
-  ),
-);
+/// Onglets sticky des deux cartes virtuelles. Accents repris tels quels de
+/// chaque carte : ocre/ambre signature de La Grille pour « Mot du jour », brun
+/// chaud du tampon de [CitationDuJourCard] pour « Citation du jour ».
+const _motDuJourTab =
+    StickyTab(label: 'Mot du jour', accent: GrilleConstants.presentTile);
+const _citationTab =
+    StickyTab(label: 'Citation du jour', accent: CitationDuJourCard.stampColor);
 
 class FluxContinuScreen extends ConsumerStatefulWidget {
   const FluxContinuScreen({super.key});
@@ -89,6 +89,32 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   final ValueNotifier<int> _activeIndex = ValueNotifier(0);
 
   final List<GlobalKey> _sectionKeys = [];
+
+  // Clés dédiées aux deux cartes virtuelles qui ont désormais un onglet sticky.
+  // La Grille n'est montée qu'à un seul endroit à la fois (après Actus, ou en
+  // fallback bas) → une seule clé suffit. Disjointes de [_sectionKeys] : la
+  // logique de fold (qui itère _sectionKeys) reste inchangée.
+  final GlobalKey _grilleKey = GlobalKey();
+  final GlobalKey _citationKey = GlobalKey();
+
+  // Clés des « entrées sticky » dans l'ordre exact des slivers : sections +
+  // Mot du jour + Citation. Source unique pour le suivi de section active et le
+  // scroll-to-section (les onglets en dérivent via [_syncStickyEntries]).
+  final List<GlobalKey> _stickyEntryKeys = [];
+
+  /// Sliver « Grille du jour » (carte d'entrée de La Grille). Padding maquette
+  /// partagé par ses deux sites de rendu : juste après « Actus du jour » (cas
+  /// nominal) et le fallback bas quand le digest est absent. Wrappé dans un
+  /// `KeyedSubtree(_grilleKey)` pour exposer la carte au suivi sticky.
+  SliverToBoxAdapter get _grilleSliver => SliverToBoxAdapter(
+        child: KeyedSubtree(
+          key: _grilleKey,
+          child: const Padding(
+            padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
+            child: GrilleCtaCard(),
+          ),
+        ),
+      );
 
   /// Articles swipe-dismissed and replaced by a [FeedbackInline] banner at
   /// the same position. The hide API has already fired (via
@@ -223,20 +249,21 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   }
 
   void _updateActiveSection() {
-    if (_sectionKeys.isEmpty) return;
-    // Active = section that occupies the most visible area below the sticky
-    // bar. The previous heuristic ("last section whose top has crossed
+    if (_stickyEntryKeys.isEmpty) return;
+    // Active = sticky entry that occupies the most visible area below the
+    // sticky bar. The previous heuristic ("last section whose top has crossed
     // stickyBar + 200px lookahead") switched late on long sections because it
     // ignored how much of the upcoming section was already on screen. Viewport
-    // dominance flips the active tab as soon as the next section becomes
-    // majority-visible, which matches what the user is actually reading.
+    // dominance flips the active tab as soon as the next entry becomes
+    // majority-visible, which matches what the user is actually reading. Itère
+    // la liste combinée (sections + Mot du jour + Citation).
     const viewportTop = _kStickyBarHeight;
     final viewportBottom = viewportTop +
         (_scroll.hasClients ? _scroll.position.viewportDimension : 0.0);
     int activeAt = 0;
     double bestVisible = -1;
-    for (var i = 0; i < _sectionKeys.length; i++) {
-      final ctx = _sectionKeys[i].currentContext;
+    for (var i = 0; i < _stickyEntryKeys.length; i++) {
+      final ctx = _stickyEntryKeys[i].currentContext;
       if (ctx == null) continue;
       final box = ctx.findRenderObject();
       if (box is! RenderBox) continue;
@@ -285,8 +312,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
   Future<void> _scrollToSection(int index) async {
     if (index < 0) return;
-    if (index >= _sectionKeys.length) return;
-    final targetKey = _sectionKeys[index];
+    if (index >= _stickyEntryKeys.length) return;
+    final targetKey = _stickyEntryKeys[index];
     final ctx = targetKey.currentContext;
     if (ctx == null) return;
     final box = ctx.findRenderObject();
@@ -651,6 +678,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         ref.read(postOnboardingFlowPendingProvider) != null) {
       _schedulePostOnboardingFlow();
     }
+    // Mot du jour présent ⇔ la Grille a un mot du jour (sinon GrilleCtaCard se
+    // masque). `.select` ne reconstruit que lorsque la présence bascule.
+    final grillePresent = ref.watch(
+      grilleProvider.select((v) => v.valueOrNull?.today != null),
+    );
+    // Source unique : aligne [_sectionKeys] + [_stickyEntryKeys] sur les slivers
+    // et dérive les descripteurs d'onglets (label+accent), dans le même ordre.
+    final stickyTabs = _syncStickyEntries(state.valueOrNull, grillePresent);
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
       // Header & footer vivent dans le scaffold de page partagé :
@@ -673,7 +708,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
               stickyVisible: _stickyVisible,
               scrollProgress: _scrollProgress,
               activeIndex: _activeIndex,
-              stateProvider: fluxContinuProvider,
+              tabs: stickyTabs,
               onTapTab: _scrollToSection,
               tabsController: _tabsScroll,
             ),
@@ -718,6 +753,69 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     );
   }
 
+  /// Construit la liste ordonnée d'« entrées sticky » (sections + cartes
+  /// virtuelles Mot du jour / Citation) reflétant l'ordre exact des slivers de
+  /// [_buildContent]. Synchronise [_sectionKeys] (1 clé/section) et
+  /// [_stickyEntryKeys] (clés combinées pour le suivi actif + le scroll), puis
+  /// retourne les descripteurs d'onglets (label+accent) dans le même ordre.
+  ///
+  /// Ne touche PAS à la logique de fold (`_maybeFoldSections`,
+  /// `_measureFoldCandidateHeights`, `_markSectionsAboveAsScrolledPast`) qui
+  /// continue d'itérer `_sectionKeys` / `state.sections`.
+  List<StickyTab> _syncStickyEntries(
+    FluxContinuState? state,
+    bool grillePresent,
+  ) {
+    if (state == null) {
+      _stickyEntryKeys.clear();
+      return const [];
+    }
+    if (_sectionKeys.length != state.sections.length) {
+      _sectionKeys
+        ..clear()
+        ..addAll(List.generate(state.sections.length, (_) => GlobalKey()));
+    }
+    // « Actus du jour » = DigestTopicSection kind essentiel : la Grille est
+    // rendue juste après elle (sinon en fallback bas, après la Citation).
+    final hasActus = state.sections.any(
+      (s) => s is DigestTopicSection && s.kind == SectionKind.essentiel,
+    );
+    final citationPresent = state.quote != null && !state.closingDismissed;
+
+    final keys = <GlobalKey>[];
+    final tabs = <StickyTab>[];
+    void add(GlobalKey key, StickyTab tab) {
+      keys.add(key);
+      tabs.add(tab);
+    }
+
+    for (var i = 0; i < state.sections.length; i++) {
+      final section = state.sections[i];
+      add(
+        _sectionKeys[i],
+        StickyTab(label: section.label, accent: section.accent),
+      );
+      if (grillePresent &&
+          section is DigestTopicSection &&
+          section.kind == SectionKind.essentiel) {
+        add(_grilleKey, _motDuJourTab);
+      }
+    }
+    if (citationPresent) {
+      add(_citationKey, _citationTab);
+    }
+    // Fallback bas : Grille rendue après la Citation quand il n'y a pas d'Actus
+    // (cf. `if (!hasActus) _grilleSliver` dans _buildContent).
+    if (!hasActus && grillePresent) {
+      add(_grilleKey, _motDuJourTab);
+    }
+
+    _stickyEntryKeys
+      ..clear()
+      ..addAll(keys);
+    return tabs;
+  }
+
   Widget _buildContent(BuildContext context, FluxContinuState state) {
     final notifier = ref.read(fluxContinuProvider.notifier);
     final colors = context.facteurColors;
@@ -736,12 +834,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final hasActus = state.sections.any(
       (s) => s is DigestTopicSection && s.kind == SectionKind.essentiel,
     );
-
-    if (_sectionKeys.length != state.sections.length) {
-      _sectionKeys
-        ..clear()
-        ..addAll(List.generate(state.sections.length, (_) => GlobalKey()));
-    }
+    // NB : [_sectionKeys] est synchronisé en amont par [_syncStickyEntries]
+    // (appelé dans build) → on s'appuie sur cet alignement ici.
 
     return RefreshIndicator(
       onRefresh: _handleRefresh,
@@ -793,7 +887,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           // (`closingDismissed`) : replier la tournée ne doit pas la masquer,
           // c'est un rituel de fin de tournée.
           if (state.quote != null && !state.closingDismissed)
-            SliverToBoxAdapter(child: CitationDuJourCard(quote: state.quote!)),
+            SliverToBoxAdapter(
+              child: KeyedSubtree(
+                key: _citationKey,
+                child: CitationDuJourCard(quote: state.quote!),
+              ),
+            ),
           // « Le mot du jour » — récompense de fin de Tournée. Sliver additif
           // au-dessus de ClosingCardV18 (cette dernière n'est pas modifiée :
           // zéro régression, revert trivial). La carte se câble seule au
@@ -915,12 +1014,15 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   }
 }
 
-class _StickyHostOverlay extends ConsumerWidget {
+class _StickyHostOverlay extends StatelessWidget {
   final ValueNotifier<bool> stickyVisible;
   final ValueNotifier<double> scrollProgress;
   final ValueNotifier<int> activeIndex;
-  final AsyncNotifierProvider<FluxContinuNotifier, FluxContinuState>
-      stateProvider;
+
+  /// Descripteurs d'onglets (label+accent) dans l'ordre des slivers, calculés
+  /// par [_FluxContinuScreenState._syncStickyEntries] — source unique partagée
+  /// avec les clés du suivi actif, pour éviter tout recalcul divergent ici.
+  final List<StickyTab> tabs;
   final ValueChanged<int> onTapTab;
   final ScrollController tabsController;
 
@@ -928,15 +1030,13 @@ class _StickyHostOverlay extends ConsumerWidget {
     required this.stickyVisible,
     required this.scrollProgress,
     required this.activeIndex,
-    required this.stateProvider,
+    required this.tabs,
     required this.onTapTab,
     required this.tabsController,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final sections =
-        ref.watch(stateProvider).valueOrNull?.sections ?? const <FluxSection>[];
+  Widget build(BuildContext context) {
     return Positioned(
       top: 0,
       left: 0,
@@ -944,14 +1044,10 @@ class _StickyHostOverlay extends ConsumerWidget {
       child: ValueListenableBuilder<bool>(
         valueListenable: stickyVisible,
         builder: (context, visible, _) {
-          final showSticky = visible && sections.isNotEmpty;
+          final showSticky = visible && tabs.isNotEmpty;
           if (!showSticky) {
             return const SizedBox.shrink();
           }
-          final tabs = <StickyTab>[
-            for (final s in sections)
-              StickyTab(label: s.label, accent: s.accent),
-          ];
           return ValueListenableBuilder<int>(
             valueListenable: activeIndex,
             builder: (context, idx, _) => ValueListenableBuilder<double>(

@@ -14,6 +14,10 @@ import '../../digest/models/digest_models.dart';
 /// mais nettement plus sobre : tampon brun chaud distinct du vert "fin de
 /// tournée", pas de CTA, pas d'illustration.
 class CitationDuJourCard extends StatelessWidget {
+  /// Brun chaud du tampon « CITATION DU JOUR ». Exposé pour que l'onglet sticky
+  /// « Citation du jour » réutilise exactement l'accent de la carte.
+  static const Color stampColor = Color(0xFF8D6E63);
+
   final QuoteResponse quote;
 
   const CitationDuJourCard({super.key, required this.quote});
@@ -21,7 +25,6 @@ class CitationDuJourCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    const stampColor = Color(0xFF8D6E63);
     return Container(
       margin: const EdgeInsets.fromLTRB(18, 24, 18, 8),
       clipBehavior: Clip.antiAlias,

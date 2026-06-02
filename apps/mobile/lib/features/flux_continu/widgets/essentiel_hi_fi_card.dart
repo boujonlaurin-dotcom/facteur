@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../models/flux_continu_models.dart';
@@ -446,52 +447,68 @@ class _LeadTile extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.medium),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(
-            FacteurSpacing.space3,
-            FacteurSpacing.space3,
-            FacteurSpacing.space3,
-            FacteurSpacing.space3,
-          ),
-          decoration: BoxDecoration(
-            color: accent.withValues(alpha: 0.06),
-            borderRadius: BorderRadius.circular(FacteurRadius.medium),
-            border: Border(left: BorderSide(color: accent, width: 3)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        // Lu : grise la tuile (0.6) + coche verte, comme les autres sections
+        // (cf. flux_continu_article_card.dart). Le badge est inclus dans
+        // l'Opacity pour s'estomper de concert avec le contenu.
+        child: Opacity(
+          opacity: article.isRead ? 0.6 : 1.0,
+          child: Stack(
             children: [
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  if (article.isActuDuJour)
-                    _ActuBadge(
-                      accent: chipAccent,
-                      overrideBackground: colors.sectionEssentiel,
+              Container(
+                padding: const EdgeInsets.fromLTRB(
+                  FacteurSpacing.space3,
+                  FacteurSpacing.space3,
+                  FacteurSpacing.space3,
+                  FacteurSpacing.space3,
+                ),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(FacteurRadius.medium),
+                  border: Border(left: BorderSide(color: accent, width: 3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (article.isActuDuJour)
+                          _ActuBadge(
+                            accent: chipAccent,
+                            overrideBackground: colors.sectionEssentiel,
+                          ),
+                        _SectionChip(
+                          label: _sectionLabelFor(article),
+                          accent: chipAccent,
+                          showFollowed: article.isFollowedTopic,
+                        ),
+                      ],
                     ),
-                  _SectionChip(
-                    label: _sectionLabelFor(article),
-                    accent: chipAccent,
-                    showFollowed: article.isFollowedTopic,
-                  ),
-                ],
-              ),
-              const SizedBox(height: FacteurSpacing.space2),
-              Text(
-                article.title,
-                maxLines: 5,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.fraunces(
-                  fontSize: 19,
-                  fontWeight: FontWeight.w700,
-                  height: 1.3,
-                  color: colors.textPrimary,
+                    const SizedBox(height: FacteurSpacing.space2),
+                    Text(
+                      article.title,
+                      maxLines: 5,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.fraunces(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w700,
+                        height: 1.3,
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: FacteurSpacing.space2),
+                    _SourceRow(article: article, accent: chipAccent),
+                  ],
                 ),
               ),
-              const SizedBox(height: FacteurSpacing.space2),
-              _SourceRow(article: article, accent: chipAccent),
+              if (article.isRead)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: _ReadCheckBadge(color: colors.success),
+                ),
             ],
           ),
         ),
@@ -515,41 +532,59 @@ class _MediumTile extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.small),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        // Lu : grise la tuile (0.6) + petite coche verte (cf. _LeadTile).
+        child: Opacity(
+          opacity: article.isRead ? 0.6 : 1.0,
+          child: Stack(
             children: [
-              Row(
-                children: [
-                  _SectionChip(
-                    label: _sectionLabelFor(article),
-                    accent: themeAccent,
-                    showFollowed: article.isFollowedTopic,
-                  ),
-                  const SizedBox(width: FacteurSpacing.space2),
-                  Flexible(
-                    child: Text(
-                      article.sourceName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: FacteurTypography.labelSmall(colors.textTertiary),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        _SectionChip(
+                          label: _sectionLabelFor(article),
+                          accent: themeAccent,
+                          showFollowed: article.isFollowedTopic,
+                        ),
+                        const SizedBox(width: FacteurSpacing.space2),
+                        Flexible(
+                          child: Text(
+                            article.sourceName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                FacteurTypography.labelSmall(colors.textTertiary),
+                          ),
+                        ),
+                        // Réserve l'espace de la coche pour qu'elle ne
+                        // chevauche pas la source ellipsée.
+                        if (article.isRead) const SizedBox(width: 22),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                article.title,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.fraunces(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  height: 1.3,
-                  color: colors.textPrimary,
+                    const SizedBox(height: 4),
+                    Text(
+                      article.title,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.fraunces(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        height: 1.3,
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
+              if (article.isRead)
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: _ReadCheckBadge(color: colors.success, size: 18),
+                ),
             ],
           ),
         ),
@@ -683,6 +718,42 @@ class _SourceRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Coche « lu » verte, reproduite à l'identique du motif de
+/// `flux_continu_article_card.dart` pour une cohérence visuelle entre la carte
+/// Essentiel et les cartes des autres sections. [size] permet une coche plus
+/// compacte sur les tuiles médiums.
+class _ReadCheckBadge extends StatelessWidget {
+  final Color color;
+  final double size;
+
+  const _ReadCheckBadge({required this.color, this.size = 22});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      alignment: Alignment.center,
+      child: Icon(
+        PhosphorIcons.check(PhosphorIconsStyle.bold),
+        size: size * 0.55,
+        color: Colors.white,
+      ),
     );
   }
 }

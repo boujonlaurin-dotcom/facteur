@@ -88,7 +88,7 @@ void main() {
       expect(lastTapped, 1);
     });
 
-    testWidgets('active tab highlights its label text with an accent marker',
+    testWidgets('active tab paints a felt-tip marker behind its label',
         (tester) async {
       await tester.pumpWidget(_wrap(
         StickyTabBar(
@@ -98,17 +98,17 @@ void main() {
           onTapTab: (_) {},
         ),
       ));
-      // The active tab (index 0) highlights its **label text** with a
-      // marker-style Container tinted with its own accent (calque du highlight
-      // "Couverture médiatique" — cf. DiffTitle). The legacy full-chip wash and
-      // the leading dot are gone. Exactly one marker should be present.
-      final expectedMarker = const Color(0xFFB0470A).withValues(alpha: 0.22);
-      final markers =
-          tester.widgetList<Container>(find.byType(Container)).where((c) {
-        final deco = c.decoration;
-        return deco is BoxDecoration && deco.color == expectedMarker;
+      // The active tab (index 0) paints a felt-tip "surligneur" stroke behind
+      // its **label text** via a dedicated CustomPainter (remplace l'ancien chip
+      // plat + le wash pleine-chip + le point). Exactly one such marker painter
+      // should be present (one active tab).
+      final markerPainters =
+          tester.widgetList<CustomPaint>(find.byType(CustomPaint)).where((cp) {
+        final painter = cp.painter;
+        return painter != null &&
+            painter.runtimeType.toString().contains('MarkerHighlight');
       });
-      expect(markers, hasLength(1));
+      expect(markerPainters, hasLength(1));
     });
 
     testWidgets('no leading dot before tab labels (removed in marker redesign)',

@@ -14,7 +14,7 @@ import 'tournee_cta_buttons.dart';
 /// - Heading "Vous êtes à jour" Fraunces 700 24px.
 /// - Description (DM Sans 13, line-height 1.5, max-w 280, centered) — "X
 ///   étape(s) parcourue(s)" or "Tournée terminée" when empty.
-/// - Primary CTA "Continuer sur Flâner" (background #D35400) + ghost CTA
+/// - Primary CTA "Continuer à Flâner" (background #D35400) + ghost CTA
 ///   "Refermer pour aujourd'hui" (border 1.5px rgba(0,0,0,0.1)).
 class ClosingCardV18 extends StatelessWidget {
   final int articleCount;
@@ -114,7 +114,7 @@ class ClosingCardV18 extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: TourneePrimaryButton(
-                label: 'Continuer sur Flâner',
+                label: 'Continuer à Flâner',
                 onTap: onContinue,
               ),
             ),
