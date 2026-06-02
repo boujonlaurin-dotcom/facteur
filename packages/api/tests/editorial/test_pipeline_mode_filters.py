@@ -265,3 +265,83 @@ class TestLowPrioritySportCap:
         sport_kept = [c for c in captured_ids if c.startswith("sport")]
         # Cap skipped because pruning would leave < 5 clusters
         assert len(sport_kept) >= 2
+
+
+class TestNonActuClusterGuard:
+    """Clusters dont tous les contenus sont bulletins/séries sont écartés.
+
+    Régression bug-actus-du-jour-ranking.md (Partie B) : une série éditoriale
+    (« Philippe Jaenada, l'art de la contre-enquête ») ne doit pas atteindre la
+    curation, même si elle a passé le clustering.
+    """
+
+    @pytest.mark.asyncio
+    async def test_series_only_cluster_excluded_from_curation(self, mock_deps):
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        clusters = [
+            _make_cluster(
+                "serie",
+                ["Philippe Jaenada, l'art de la contre-enquête"],
+                theme="culture",
+                source_count=2,
+            ),
+            _make_cluster("pol", ["Macron annonce réforme"], theme="politics", source_count=4),
+            _make_cluster("eco", ["Inflation en hausse"], theme="economy", source_count=3),
+        ]
+
+        captured_ids: list[str] = []
+
+        async def _capture_select_topics(
+            available, subjects_count=None, excluded_cluster_ids=None
+        ):
+            captured_ids.extend(c.cluster_id for c in available)
+            return []
+
+        mock_deps["curation"].select_topics.side_effect = _capture_select_topics
+
+        svc = EditorialPipelineService(AsyncMock())
+        with patch(
+            "app.services.editorial.pipeline.ImportanceDetector"
+        ) as mock_detector_cls:
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = clusters
+            mock_detector_cls.return_value = mock_detector
+            await svc.compute_global_context(
+                [_make_content("x") for _ in range(5)], mode="pour_vous"
+            )
+
+        assert "serie" not in captured_ids
+        assert "pol" in captured_ids
+        assert "eco" in captured_ids
+
+    def test_helper_all_bulletin_cluster_flagged(self):
+        from app.services.editorial.pipeline import _is_non_actu_cluster
+
+        cluster = _make_cluster(
+            "serie",
+            [
+                "Philippe Jaenada, l'art de la contre-enquête",
+                "Chronique du matin",
+            ],
+        )
+        assert _is_non_actu_cluster(cluster) is True
+
+    def test_helper_mixed_cluster_not_flagged(self):
+        """Un cluster avec AU MOINS un contenu d'actu chaude reste éligible."""
+        from app.services.editorial.pipeline import _is_non_actu_cluster
+
+        cluster = _make_cluster(
+            "mixed",
+            [
+                "Chronique du matin",  # bulletin
+                "Réforme des retraites : le détail du texte",  # actu chaude
+            ],
+        )
+        assert _is_non_actu_cluster(cluster) is False
+
+    def test_helper_empty_cluster_not_flagged(self):
+        from app.services.editorial.pipeline import _is_non_actu_cluster
+
+        cluster = _make_cluster("empty", [])
+        assert _is_non_actu_cluster(cluster) is False

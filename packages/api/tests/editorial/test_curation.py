@@ -17,12 +17,22 @@ def _make_cluster(
     source_count: int = 3,
     theme: str | None = "politique",
     is_trending: bool = False,
+    domain_count: int | None = None,
 ):
-    """Create a mock TopicCluster."""
+    """Create a mock TopicCluster.
+
+    `source_count` = nombre de feeds (source_ids) ; `domain_count` = nombre de
+    médias distincts (source_domains, défaut = source_count). Pour simuler le
+    cas France Culture (2 feeds, même domaine `radiofrance.fr`), passer
+    `source_count=2, domain_count=1` : la curation, qui dédoublonne par domaine,
+    doit le traiter comme un cluster mono-source.
+    """
     cluster = MagicMock()
     cluster.cluster_id = cluster_id
     cluster.label = label
     cluster.source_ids = set(uuid4() for _ in range(source_count))
+    domains = domain_count if domain_count is not None else source_count
+    cluster.source_domains = {f"media-{cluster_id}-{i}.fr" for i in range(domains)}
     cluster.theme = theme
     cluster.is_trending = is_trending
 
@@ -230,6 +240,56 @@ class TestSelectTopics:
 
         # Sans fallback, on n'aurait que 2 sujets ; avec fallback, on a les 5.
         assert len(result) == 5
+
+    @pytest.mark.asyncio
+    async def test_france_culture_two_feeds_one_domain_excluded_from_multi_source(
+        self,
+    ):
+        """Régression bug-actus-du-jour-ranking.md (Partie A) : 2 feeds d'un même
+        domaine (`radiofrance.fr`) = 1 média → échoue la porte ≥2 domaines et
+        n'entre PAS dans le pool multi-source quand de vrais multi-sources
+        existent."""
+        clusters = [
+            _make_cluster("c1", "Retraites", source_count=3, theme="politique"),
+            _make_cluster("c2", "Inflation", source_count=3, theme="economie"),
+            _make_cluster("c3", "Canicule", source_count=2, theme="environnement"),
+            _make_cluster("c4", "Logement", source_count=2, theme="societe"),
+            _make_cluster("c5", "Climat", source_count=2, theme="sciences"),
+            # France Culture : 2 feeds, 1 seul domaine → mono-source effectif.
+            _make_cluster(
+                "fc", "Jaenada", source_count=2, domain_count=1, theme="culture"
+            ),
+        ]
+
+        llm = MagicMock()
+        llm.is_ready = False  # déterministe : on capture le pool multi-source
+
+        svc = CurationService(llm, _make_config(subjects_count=5))
+        result = await svc.select_topics(clusters)
+
+        assert len(result) == 5
+        topic_ids = {t.topic_id for t in result}
+        # 5 vrais multi-sources disponibles → le cluster France Culture (1 domaine)
+        # ne doit pas remonter.
+        assert "fc" not in topic_ids
+
+    @pytest.mark.asyncio
+    async def test_source_count_reflects_domains_not_feeds(self):
+        """`source_count` exposé reflète les médias distincts (domaines), pas le
+        nombre de feeds. France Culture 2 feeds / 1 domaine → source_count=1."""
+        clusters = [
+            _make_cluster(
+                "fc", "Jaenada", source_count=2, domain_count=1, theme="culture"
+            ),
+        ]
+        llm = MagicMock()
+        llm.is_ready = False
+
+        svc = CurationService(llm, _make_config(subjects_count=1))
+        result = await svc.select_topics(clusters)
+
+        assert len(result) == 1
+        assert result[0].source_count == 1
 
 
 class TestDeterministicSelect:

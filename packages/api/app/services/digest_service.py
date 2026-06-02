@@ -330,16 +330,21 @@ def _select_daily_quote(user_id: str, target_date: str) -> dict | None:
 
 
 # Version courante du format editorial. Bumpée editorial_v1 -> editorial_v2 avec
-# la projection per-user (P2) : la FORME JSON est inchangée (toujours
-# `subjects[]`), mais la SÉMANTIQUE de sélection change (représentant source
-# suivie + re-ranking intérêts + sujets solo). Le bump force la régénération des
-# digests cachés `editorial_v1` (le cron les voit "stale") et évite de servir un
-# mix de sémantiques. Clé d'idempotence (user_id, target_date, is_serene)
-# inchangée.
-EDITORIAL_FORMAT_VERSION = "editorial_v2"
-# Tous les formats editorial rendus/clonables pendant la transition v1 -> v2.
+# la projection per-user (P2), puis editorial_v2 -> editorial_v3 avec le
+# classement par importance éditoriale (couverture + récence + polarisation,
+# perso en départage ; solos relégués) — cf. bug-actus-du-jour-ranking.md. La
+# FORME JSON est inchangée (toujours `subjects[]`), mais la SÉMANTIQUE D'ORDRE
+# change → le bump force la régénération des digests cachés `editorial_v2`
+# (le cron les voit "stale") et évite de servir un mix de sémantiques. Clé
+# d'idempotence (user_id, target_date, is_serene) inchangée.
+EDITORIAL_FORMAT_VERSION = "editorial_v3"
+# Tous les formats editorial rendus/clonables pendant les transitions.
 # Même forme JSON → `_build_editorial_response` les traite identiquement.
-_EDITORIAL_FORMATS: tuple[str, ...] = ("editorial_v1", "editorial_v2")
+_EDITORIAL_FORMATS: tuple[str, ...] = (
+    "editorial_v1",
+    "editorial_v2",
+    "editorial_v3",
+)
 
 # Format versions that the read-only hot path is willing to render. flat_v1
 # is legacy/expendable — never served from /digest or /digest/both.

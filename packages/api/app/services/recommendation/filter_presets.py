@@ -496,6 +496,17 @@ NEWS_BULLETIN_PATTERNS = [
     # « L'humeur du jour », « L'idée du jour » — chronique matinale type
     # France Culture / France Inter.
     r"^\s*l[''’][a-zéèêàâîôûç]+ du jour\b",
+    # --- Séries / feuilletons éditoriaux nommés (France Culture & co.) ---
+    # Épisodes d'une série récurrente : pas de l'actu chaude, ils saturent les
+    # top slots malgré le dédoublonnage par domaine (cf.
+    # bug-actus-du-jour-ranking.md, Partie B). Deux marqueurs robustes :
+    #  - sous-titre de série après virgule : « Philippe Jaenada, l'art de la
+    #    contre-enquête », « …, l'art du roman ».
+    r",\s*l[''’]art (de|du|des|d[''’])\b",
+    #  - compteur d'épisode parenthésé en fin de titre : « (1/4) », « (2 / 5) ».
+    #    Forme canonique des feuilletons ; parenthèses requises pour ne pas
+    #    attraper une date « 15/05 » en fin de titre.
+    r"\(\s*\d{1,2}\s?/\s?\d{1,2}\s*\)\s*$",
 ]
 
 _BULLETIN_RE = re.compile("|".join(NEWS_BULLETIN_PATTERNS), re.IGNORECASE)

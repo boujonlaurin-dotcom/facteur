@@ -46,6 +46,11 @@ from app.services.recommendation.filter_presets import (
     apply_good_news_filter,
     is_sport_content,
 )
+from app.services.recommendation.helpers.coverage_score import compute_coverage_score
+from app.services.recommendation.helpers.editorial_ranking import (
+    polarization_bonus,
+    recency_bonus,
+)
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import ScoringContext
 from app.services.recommendation_service import RecommendationService
@@ -1225,12 +1230,39 @@ class DigestSelector:
                     user_id=str(context.user_id),
                 )
 
-        def subject_score(s: EditorialSubject) -> float:
+        def subject_perso(s: EditorialSubject) -> float:
+            """Score de personnalisation du représentant — départage uniquement."""
             if s.actu_article is None:
                 return float("-inf")
             return score_map.get(s.actu_article.content_id, 0.0)
 
-        # 3. Sujets solo au-dessus du seuil.
+        def subject_importance(s: EditorialSubject) -> float:
+            """Importance éditoriale = couverture + récence + polarisation.
+
+            Critère primaire du rang 2+. Réutilise `compute_coverage_score`
+            (source de vérité couverture) et les helpers partagés de récence /
+            polarisation. La personnalisation ne sert plus qu'à départager.
+            """
+            published = s.actu_article.published_at if s.actu_article else None
+            return (
+                compute_coverage_score(s.source_count)
+                + recency_bonus(published)
+                + polarization_bonus(s.divergence_level)
+            )
+
+        def subject_rank_key(s: EditorialSubject) -> tuple[bool, float, float]:
+            """Clé de tri reverse=True : importance éditoriale d'abord, perso en
+            départage, et les sujets solo (1 source) toujours sous les
+            multi-sources. Un sujet sans actu est relégué en dernier.
+            """
+            if s.actu_article is None:
+                return (False, float("-inf"), float("-inf"))
+            is_multi = s.source_count >= 2
+            return (is_multi, subject_importance(s), subject_perso(s))
+
+        # 3. Sujets solo au-dessus du seuil. Conservés mais RELÉGUÉS sous les
+        # sujets multi-sources par `subject_rank_key` (is_multi=False) — décision
+        # PO : un solo n'est jamais au-dessus d'un multi-sources.
         threshold = _read_solo_subject_min_score()
         solo_subjects: list[EditorialSubject] = []
         for c in solo_candidates:
@@ -1258,10 +1290,12 @@ class DigestSelector:
                 )
             )
 
-        # Re-ranking : « À la Une » reste rang 1 ; le reste trié par score desc.
+        # Re-ranking : « À la Une » reste rang 1 ; le reste trié par importance
+        # éditoriale (couverture + récence + polarisation), perso en départage,
+        # solos relégués sous les multi-sources. Cf. bug-actus-du-jour-ranking.md.
         une = [s for s in subjects if s.is_a_la_une]
         rest = [s for s in subjects if not s.is_a_la_une] + solo_subjects
-        rest_sorted = sorted(rest, key=subject_score, reverse=True)
+        rest_sorted = sorted(rest, key=subject_rank_key, reverse=True)
         ordered = (une + rest_sorted)[:target]
 
         renumbered: list[EditorialSubject] = []

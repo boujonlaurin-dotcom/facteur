@@ -176,6 +176,15 @@ class ScoringWeights:
     ESSENTIEL_PERSPECTIVE_BASE = COVERAGE_BASE
     ESSENTIEL_PERSPECTIVE_CAP = COVERAGE_CAP
 
+    # --- DIGEST POLARISATION (importance éditoriale — Actus du jour) ---
+    # Bonus d'importance pour un sujet où les médias divergent (gauche ET
+    # droite représentées). Signal tertiaire derrière couverture (cap 30) et
+    # récence (max 30) : il départage les sujets très couverts du jour sans
+    # jamais dominer la couverture. `divergence_level` "low"/"none" = 0 (pas
+    # de polarisation notable). Cf. bug-actus-du-jour-ranking.md (Partie C).
+    POLARIZATION_MEDIUM_BONUS = 6.0
+    POLARIZATION_HIGH_BONUS = 12.0
+
     # --- DIGEST TRENDING/IMPORTANCE (Pour vous hybride) ---
 
     # Bonus pour article trending (couvert par ≥3 sources distinctes).

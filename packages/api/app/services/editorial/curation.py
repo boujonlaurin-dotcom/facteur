@@ -39,9 +39,9 @@ def _cluster_to_une_topic(cluster: TopicCluster) -> SelectedTopic:
     return SelectedTopic(
         topic_id=cluster.cluster_id,
         label=cluster.label[:80],
-        selection_reason=f"Traité par {len(cluster.source_ids)} sources",
+        selection_reason=f"Traité par {len(cluster.source_domains)} sources",
         deep_angle=deep_angle,
-        source_count=len(cluster.source_ids),
+        source_count=len(cluster.source_domains),
         theme=cluster.theme,
         is_a_la_une=True,
     )
@@ -113,16 +113,16 @@ class CurationService:
         logger.info(
             "curation.a_la_une_selected",
             topic_id=selected_id,
-            source_count=len(cluster.source_ids),
+            source_count=len(cluster.source_domains),
             reason=reason,
         )
 
         return SelectedTopic(
             topic_id=cluster.cluster_id,
             label=cluster.label[:80],
-            selection_reason=reason or f"Traité par {len(cluster.source_ids)} sources",
+            selection_reason=reason or f"Traité par {len(cluster.source_domains)} sources",
             deep_angle=deep_angle,
-            source_count=len(cluster.source_ids),
+            source_count=len(cluster.source_domains),
             theme=cluster.theme,
             is_a_la_une=True,
         )
@@ -185,16 +185,16 @@ class CurationService:
         logger.info(
             "curation.bonne_nouvelle_selected",
             topic_id=selected_id,
-            source_count=len(cluster.source_ids),
+            source_count=len(cluster.source_domains),
             reason=reason,
         )
 
         return SelectedTopic(
             topic_id=cluster.cluster_id,
             label=cluster.label[:80],
-            selection_reason=reason or f"Traité par {len(cluster.source_ids)} sources",
+            selection_reason=reason or f"Traité par {len(cluster.source_domains)} sources",
             deep_angle=deep_angle,
-            source_count=len(cluster.source_ids),
+            source_count=len(cluster.source_domains),
             theme=cluster.theme,
             is_a_la_une=True,
         )
@@ -230,7 +230,7 @@ class CurationService:
         # singletons si le pool multi-source est insuffisant (week-end,
         # jours fériés). Symétrique de `a_la_une_pool` (pipeline.py:176-179).
         # Cf. bug-essentiel-pipeline.md.
-        multi_source = [c for c in available if len(c.source_ids) >= 2]
+        multi_source = [c for c in available if len(c.source_domains) >= 2]
         pool = multi_source if len(multi_source) >= count else available
         if pool is available and multi_source:
             logger.info(
@@ -241,7 +241,7 @@ class CurationService:
             )
 
         # Take top clusters by source count
-        top_clusters = sorted(pool, key=lambda c: len(c.source_ids), reverse=True)[
+        top_clusters = sorted(pool, key=lambda c: len(c.source_domains), reverse=True)[
             :limit
         ]
 
@@ -304,7 +304,7 @@ class CurationService:
         # Validate and parse
         valid_topic_ids = {c.cluster_id for c in clusters}
         # Build source_count and theme lookups from cluster data
-        cluster_source_counts = {c.cluster_id: len(c.source_ids) for c in clusters}
+        cluster_source_counts = {c.cluster_id: len(c.source_domains) for c in clusters}
         cluster_themes = {c.cluster_id: c.theme for c in clusters}
         selected: list[SelectedTopic] = []
 
@@ -356,7 +356,7 @@ class CurationService:
 
         # Sort by source_count desc
         sorted_clusters = sorted(
-            clusters, key=lambda c: len(c.source_ids), reverse=True
+            clusters, key=lambda c: len(c.source_domains), reverse=True
         )
 
         for cluster in sorted_clusters:
@@ -372,9 +372,9 @@ class CurationService:
                 SelectedTopic(
                     topic_id=cluster.cluster_id,
                     label=cluster.label[:80],
-                    selection_reason=f"Couvert par {len(cluster.source_ids)} sources",
+                    selection_reason=f"Couvert par {len(cluster.source_domains)} sources",
                     deep_angle=deep_angle,
-                    source_count=len(cluster.source_ids),
+                    source_count=len(cluster.source_domains),
                     theme=cluster.theme,
                 )
             )
@@ -395,9 +395,9 @@ class CurationService:
                     SelectedTopic(
                         topic_id=cluster.cluster_id,
                         label=cluster.label[:80],
-                        selection_reason=f"Couvert par {len(cluster.source_ids)} sources",
+                        selection_reason=f"Couvert par {len(cluster.source_domains)} sources",
                         deep_angle=deep_angle,
-                        source_count=len(cluster.source_ids),
+                        source_count=len(cluster.source_domains),
                         theme=cluster.theme,
                     )
                 )
@@ -411,7 +411,7 @@ class CurationService:
             topic_id=cluster.cluster_id,
             label=cluster.label,
             article_titles=[c.title for c in cluster.contents[:10]],
-            source_count=len(cluster.source_ids),
+            source_count=len(cluster.source_domains),
             is_trending=cluster.is_trending,
             theme=cluster.theme,
         )
