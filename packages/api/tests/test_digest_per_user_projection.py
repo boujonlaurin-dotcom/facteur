@@ -58,7 +58,15 @@ def _make_topic_cluster(cluster_id, contents):
     )
 
 
-def _make_subject(topic_id, content, *, rank=1, is_a_la_une=False):
+def _make_subject(
+    topic_id,
+    content,
+    *,
+    rank=1,
+    is_a_la_une=False,
+    source_count=0,
+    divergence_level=None,
+):
     return EditorialSubject(
         rank=rank,
         topic_id=topic_id,
@@ -66,6 +74,8 @@ def _make_subject(topic_id, content, *, rank=1, is_a_la_une=False):
         selection_reason="trending",
         deep_angle=None,
         is_a_la_une=is_a_la_une,
+        source_count=source_count,
+        divergence_level=divergence_level,
         actu_article=MatchedActuArticle(
             content_id=content.id,
             title=content.title,
@@ -298,3 +308,151 @@ async def test_solo_subject_created_for_follower_only(monkeypatch):
     )
     other_solo = [s for s in res_other.subjects if s.topic_id.startswith("solo-")]
     assert other_solo == [], "pas de fuite cross-user : aucun solo pour le non-suiveur"
+
+
+# ─── Tests: classement par importance éditoriale (bug-actus-du-jour-ranking) ──
+
+
+@pytest.mark.asyncio
+async def test_multi_source_ranks_above_personalized_single_source():
+    """Partie C : un sujet multi-sources passe devant un sujet mono-source
+    même quand ce dernier est porté par une source SUIVIE (perso fort). La
+    couverture éditoriale prime, la perso ne fait que départager."""
+    srcMulti, srcFollowed = uuid4(), uuid4()
+    now = datetime.now(UTC)
+    a_multi = _make_content(srcMulti, published_at=now, title="Sujet très couvert")
+    a_solo = _make_content(srcFollowed, published_at=now, title="Sujet d'une source suivie")
+
+    c_multi = _make_topic_cluster("multi", [a_multi])
+    c_solo = _make_topic_cluster("solo", [a_solo])
+    clusters = [c_multi, c_solo]
+
+    subjects = [
+        _make_subject("multi", a_multi, rank=1, source_count=5),
+        _make_subject("solo", a_solo, rank=2, source_count=1),
+    ]
+    global_ctx = types.SimpleNamespace(subjects=subjects, cluster_data=[])
+
+    selector = _make_selector()
+    pipeline = _StubPipeline()
+
+    # L'utilisateur SUIT la source du sujet mono-source → perso boost dessus.
+    ctx = _make_context(uuid4(), {srcFollowed})
+    res = await selector._project_editorial_for_user(
+        pipeline=pipeline,
+        global_ctx=global_ctx,
+        clusters=clusters,
+        context=ctx,
+        mode="pour_vous",
+    )
+    order = [s.topic_id for s in res.subjects]
+    # Le multi-sources est en tête malgré la perso favorable au mono-source.
+    assert order[0] == "multi"
+    assert order.index("multi") < order.index("solo")
+
+
+@pytest.mark.asyncio
+async def test_solo_subject_never_above_multi_source(monkeypatch):
+    """Partie C : un sujet solo (source suivie, créé per-user) est relégué sous
+    tout sujet multi-sources, même si son score perso est élevé."""
+    monkeypatch.setenv("EDITORIAL_SOLO_SUBJECT_MIN_SCORE", "0")
+
+    srcMulti, srcFollowed = uuid4(), uuid4()
+    now = datetime.now(UTC)
+    a_multi = _make_content(srcMulti, published_at=now, title="Multi")
+    # Source suivie, non représentée → deviendra un sujet solo per-user.
+    a_leftover = _make_content(srcFollowed, published_at=now, title="Leftover suivi")
+
+    c_multi = _make_topic_cluster("multi", [a_multi])
+    c_followed = _make_topic_cluster("followed", [a_leftover])
+    clusters = [c_multi, c_followed]
+
+    # Seul le sujet multi est dans le contexte global ; a_leftover devient solo.
+    subjects = [_make_subject("multi", a_multi, rank=1, source_count=4)]
+    global_ctx = types.SimpleNamespace(subjects=subjects, cluster_data=[])
+
+    selector = _make_selector()
+    pipeline = _StubPipeline()
+
+    ctx = _make_context(uuid4(), {srcFollowed})
+    res = await selector._project_editorial_for_user(
+        pipeline=pipeline,
+        global_ctx=global_ctx,
+        clusters=clusters,
+        context=ctx,
+        mode="pour_vous",
+    )
+    order = [s.topic_id for s in res.subjects]
+    solo_ids = [t for t in order if t.startswith("solo-")]
+    assert solo_ids, "le sujet solo doit exister"
+    # Aucun solo ne précède le sujet multi-sources.
+    assert order[0] == "multi"
+    assert order.index("multi") < order.index(solo_ids[0])
+
+
+@pytest.mark.asyncio
+async def test_a_la_une_stays_rank_1_despite_higher_importance_elsewhere():
+    """Partie C : « À la Une » reste rang 1 même si un autre sujet a une
+    importance éditoriale supérieure (couverture/récence)."""
+    srcUne, srcBig = uuid4(), uuid4()
+    now = datetime.now(UTC)
+    a_une = _make_content(srcUne, published_at=now, title="À la Une")
+    a_big = _make_content(srcBig, published_at=now, title="Énorme couverture")
+
+    c_une = _make_topic_cluster("une", [a_une])
+    c_big = _make_topic_cluster("big", [a_big])
+    clusters = [c_une, c_big]
+
+    subjects = [
+        _make_subject("une", a_une, rank=1, is_a_la_une=True, source_count=2),
+        _make_subject("big", a_big, rank=2, source_count=10),
+    ]
+    global_ctx = types.SimpleNamespace(subjects=subjects, cluster_data=[])
+
+    selector = _make_selector()
+    pipeline = _StubPipeline()
+
+    ctx = _make_context(uuid4(), set())
+    res = await selector._project_editorial_for_user(
+        pipeline=pipeline,
+        global_ctx=global_ctx,
+        clusters=clusters,
+        context=ctx,
+        mode="pour_vous",
+    )
+    assert res.subjects[0].topic_id == "une"
+    assert res.subjects[0].is_a_la_une is True
+
+
+@pytest.mark.asyncio
+async def test_polarization_breaks_tie_between_multi_sources():
+    """Partie C : à couverture et récence égales, le sujet le plus polarisé
+    (divergence_level high) passe devant."""
+    srcA, srcB = uuid4(), uuid4()
+    now = datetime.now(UTC)
+    a_plain = _make_content(srcA, published_at=now, title="Consensus")
+    a_polar = _make_content(srcB, published_at=now, title="Polarisé")
+
+    clusters = [
+        _make_topic_cluster("plain", [a_plain]),
+        _make_topic_cluster("polar", [a_polar]),
+    ]
+    subjects = [
+        _make_subject("plain", a_plain, rank=1, source_count=4, divergence_level="low"),
+        _make_subject("polar", a_polar, rank=2, source_count=4, divergence_level="high"),
+    ]
+    global_ctx = types.SimpleNamespace(subjects=subjects, cluster_data=[])
+
+    selector = _make_selector()
+    pipeline = _StubPipeline()
+
+    ctx = _make_context(uuid4(), set())
+    res = await selector._project_editorial_for_user(
+        pipeline=pipeline,
+        global_ctx=global_ctx,
+        clusters=clusters,
+        context=ctx,
+        mode="pour_vous",
+    )
+    order = [s.topic_id for s in res.subjects]
+    assert order.index("polar") < order.index("plain")

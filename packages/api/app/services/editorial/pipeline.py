@@ -72,6 +72,29 @@ def _is_singleton_podcast(cluster: TopicCluster) -> bool:
         return False
 
 
+def _is_non_actu_cluster(cluster: TopicCluster) -> bool:
+    """Vrai si TOUS les contenus du cluster sont des bulletins/séries/denylist.
+
+    Empêche un sujet « série éditoriale » (ex. « Philippe Jaenada, l'art de la
+    contre-enquête ») ou une source denylistée d'entrer dans le pool même s'il
+    a passé la curation. Réutilise les prédicats partagés avec l'actu_matcher.
+    Un cluster mixte (au moins un contenu d'actu chaude) reste éligible.
+    Cf. bug-actus-du-jour-ranking.md (Partie B).
+    """
+    from app.services.recommendation.filter_presets import (
+        is_denylisted_editorial_source,
+        is_news_bulletin_title,
+    )
+
+    if not cluster.contents:
+        return False
+    return all(
+        is_news_bulletin_title(getattr(c, "title", None))
+        or is_denylisted_editorial_source(c)
+        for c in cluster.contents
+    )
+
+
 # Curation oversample : on demande +buffer sujets de plus que la cible pour
 # absorber les échecs d'actu/deep matching. EDITORIAL_TARGET_SUBJECT_COUNT=5
 # permet un rollback safe au comportement pré-passage 5→10.
@@ -223,6 +246,19 @@ class EditorialPipelineService:
                 remaining=len(filtered),
             )
         clusters = filtered
+
+        # Garde d'éligibilité : écarte les clusters dont TOUS les contenus sont
+        # des bulletins/séries (« …, l'art de la contre-enquête ») ou des
+        # sources denylistées — pas de l'actu chaude. Empêche un sujet série
+        # d'entrer dans le pool même s'il a passé la curation.
+        actu_eligible = [c for c in clusters if not _is_non_actu_cluster(c)]
+        if dropped := len(clusters) - len(actu_eligible):
+            logger.info(
+                "editorial_pipeline.non_actu_cluster_filtered",
+                dropped=dropped,
+                remaining=len(actu_eligible),
+            )
+        clusters = actu_eligible
 
         # ÉTAPE 1B: Pré-sélection "À la Une" — cluster le plus couvert.
         # Cas standard : on prend parmi les clusters "trending" (≥3 sources).
@@ -386,7 +422,10 @@ class EditorialPipelineService:
             **llm_bias_stats,
         )
 
-        cluster_map_counts = {c.cluster_id: len(c.source_ids) for c in clusters}
+        # `source_count` reflète les MÉDIAS distincts (domaines), pas les
+        # feeds : 2 flux radiofrance.fr = 1 média. Aligné sur curation.py et le
+        # fix `source_domains` (commit 2667003b). Cf. bug-actus-du-jour-ranking.md.
+        cluster_map_counts = {c.cluster_id: len(c.source_domains) for c in clusters}
         subjects = [
             EditorialSubject(
                 rank=i + 1,
