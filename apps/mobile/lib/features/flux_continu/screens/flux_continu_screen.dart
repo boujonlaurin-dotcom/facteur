@@ -800,6 +800,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
               },
               onTapFavorite:
                   isFavorite ? () => showMyInterestsBottomSheet(context) : null,
+              // Story 23.4 — bouton réglages (tune) sur la section veille →
+              // ouvre la config en édition. Réutilisé par le CTA d'état vide.
+              onTapSettings: section.kind == SectionKind.veille
+                  ? () => context.push('${RoutePaths.veilleConfig}?mode=edit')
+                  : null,
               onSeeAll: section is FeedThemeSection
                   ? () => _openThemeSection(context, section)
                   : section is DigestTopicSection

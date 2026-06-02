@@ -26,6 +26,12 @@ class SectionBanner extends StatelessWidget {
   /// sections (theme1 / theme2) wire this up.
   final VoidCallback? onTapFavorite;
 
+  /// Story 23.4 — optional settings affordance (top-right tune button). Only
+  /// wired for the veille section → opens the veille config in edit mode. As
+  /// an independent hit target it sits **outside** the `IgnorePointer`s so it
+  /// captures taps before the banner's fold InkWell.
+  final VoidCallback? onTapSettings;
+
   /// When true, the banner renders in a larger "page hero" variant (bigger
   /// title / blurb / illustration and a taller floor). Used by the dedicated
   /// Flâner page to distinguish it from the inline thematic banners. Default
@@ -40,6 +46,7 @@ class SectionBanner extends StatelessWidget {
     this.illustrationAsset,
     this.onTapFold,
     this.onTapFavorite,
+    this.onTapSettings,
     this.large = false,
   });
 
@@ -102,13 +109,26 @@ class SectionBanner extends StatelessWidget {
           if (onTapFold != null)
             Positioned(
               top: 12,
-              right: 12,
+              // Décalé à gauche du bouton réglages quand celui-ci est présent.
+              right: onTapSettings != null ? 46 : 12,
               child: IgnorePointer(
                 child: Icon(
                   Icons.expand_less,
                   size: 16,
                   color: colors.textPrimary.withValues(alpha: 0.45),
                 ),
+              ),
+            ),
+          // Bouton réglages (veille) — hors IgnorePointer pour rester tappable
+          // indépendamment du fold de la bannière.
+          if (onTapSettings != null)
+            Positioned(
+              top: 8,
+              right: 10,
+              child: _SettingsButton(
+                color: colors.textSecondary,
+                border: colors.border,
+                onTap: onTapSettings!,
               ),
             ),
           Padding(
@@ -212,6 +232,46 @@ class SectionBanner extends StatelessWidget {
         splashColor: accent.withValues(alpha: 0.08),
         highlightColor: accent.withValues(alpha: 0.04),
         child: container,
+      ),
+    );
+  }
+}
+
+/// Story 23.4 — bouton réglages 26×26 (tune), calqué sur le `_PersonalizeButton`
+/// de l'Essentiel. Ouvre la config veille en édition.
+class _SettingsButton extends StatelessWidget {
+  final Color color;
+  final Color border;
+  final VoidCallback onTap;
+  const _SettingsButton({
+    required this.color,
+    required this.border,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(FacteurRadius.full),
+        child: Container(
+          width: 26,
+          height: 26,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.6),
+            shape: BoxShape.circle,
+            border: Border.all(color: border, width: 0.8),
+          ),
+          child: Icon(
+            Icons.tune_rounded,
+            size: 13,
+            color: color,
+            semanticLabel: 'Réglages de ma veille',
+          ),
+        ),
       ),
     );
   }

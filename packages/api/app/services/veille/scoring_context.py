@@ -36,9 +36,12 @@ class VeilleAngleTopic:
     """Adaptateur angle veille → custom-topic (duck-typing de `_score_custom_topics`).
 
     `_score_custom_topics` (pertinence.py) attend `slug_parent`, `keywords`,
-    `priority_multiplier`, `state`, `topic_name`. Un angle matche si son
-    `slug_parent` est dans `content.topics` **ou** si l'un de ses `keywords`
-    apparaît dans le titre/description → +CUSTOM_TOPIC_BASE_BONUS (25).
+    `priority_multiplier`, `state`, `topic_name`. Le flag `is_veille=True`
+    aiguille le pilier Pertinence vers sa **branche veille** (Story 23.4) :
+    bonus mots-clés escaladant + bonus topic canonique (+50) + combo (+15) +
+    source suivie conditionnée (+12 si bonus angle > 0). Hors veille (vrais
+    custom topics Epic 11), `getattr(tp, "is_veille", False)` reste `False` et
+    le chemin plat `+25` est inchangé.
     """
 
     slug_parent: str
@@ -46,6 +49,7 @@ class VeilleAngleTopic:
     topic_name: str
     priority_multiplier: float = 1.0
     state: InterestState = InterestState.FOLLOWED
+    is_veille: bool = True
 
 
 async def build_veille_scoring_context(

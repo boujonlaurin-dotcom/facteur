@@ -64,6 +64,10 @@ class SectionBlock extends StatelessWidget {
   /// null on system sections (`essentiel` / `bonnes`).
   final VoidCallback? onTapFavorite;
 
+  /// Story 23.4 — settings affordance (tune button + empty-state CTA). Only
+  /// wired for the veille section → opens the veille config in edit mode.
+  final VoidCallback? onTapSettings;
+
   const SectionBlock({
     super.key,
     required this.section,
@@ -81,6 +85,7 @@ class SectionBlock extends StatelessWidget {
     this.enableSwipeHintOnFirstCard = false,
     this.onSwipeHintComplete,
     this.onTapFavorite,
+    this.onTapSettings,
     this.onSeeAll,
     this.onTapExploreAll,
     this.onTapSeeAllDown,
@@ -137,6 +142,7 @@ class SectionBlock extends StatelessWidget {
           illustrationAsset: section.illustrationAsset,
           onTapFold: onFold,
           onTapFavorite: onTapFavorite,
+          onTapSettings: onTapSettings,
         ),
         ...cards,
         _SectionFooterRow(
@@ -230,6 +236,11 @@ class SectionBlock extends StatelessWidget {
               ),
         ];
       case FeedThemeSection(:final items, :final coreVisibleCount):
+        // Story 23.4 — la section veille reste visible même vide : on rend un
+        // placeholder + CTA réglages au lieu de cartes.
+        if (items.isEmpty && section.kind == SectionKind.veille) {
+          return [_VeilleEmptyState(onTapSettings: onTapSettings)];
+        }
         final visible = items.take(coreVisibleCount).toList();
         return [
           for (var i = 0; i < visible.length; i++)
@@ -250,6 +261,55 @@ class SectionBlock extends StatelessWidget {
               ),
         ];
     }
+  }
+}
+
+/// Story 23.4 — état vide de la section veille (config active mais 0 article).
+/// Garde la section visible et propose un CTA réglages.
+class _VeilleEmptyState extends StatelessWidget {
+  final VoidCallback? onTapSettings;
+  const _VeilleEmptyState({this.onTapSettings});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE6E1D6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Aucun nouvel article pour ta veille pour l\'instant.',
+            style: TextStyle(
+              fontSize: 14,
+              height: 1.4,
+              color: Color(0xFF5D5B5A),
+            ),
+          ),
+          if (onTapSettings != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: onTapSettings,
+                icon: const Icon(Icons.tune_rounded, size: 16),
+                label: const Text('Régler ma veille'),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF2C3E50),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 36),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 

@@ -297,14 +297,40 @@ class ScoringWeights:
 
     # --- VEILLE (feed temps-réel curé par score) ---
 
+    # Bonus mots-clés **escaladant** (Story 23.4) : un angle dont N mots-clés
+    # distincts matchent (titre/description) rapporte
+    # `min(BASE + INCREMENT*(N-1), CAP)`. Remplace l'ancien `+25` plat de
+    # `_score_custom_topics` quand l'angle est marqué `is_veille`. Le cap (45)
+    # protège `MAX_PERTINENCE_RAW=130` d'un empilement non borné.
+    VEILLE_KEYWORD_BASE_BONUS = 18.0
+    VEILLE_KEYWORD_INCREMENT = 9.0
+    VEILLE_KEYWORD_CAP = 45.0
+
+    # Bonus quand l'article porte le `topic_id` de l'angle dans `Content.topics`
+    # (« article labellisé IA ») — le signal canonique le plus fort.
+    VEILLE_TOPIC_MATCH_BONUS = 50.0
+
+    # Bonus de combo : topic canonique **ET** ≥1 mot-clé matché (signal on-angle
+    # le plus net).
+    VEILLE_TOPIC_KEYWORD_COMBO_BONUS = 15.0
+
+    # Bonus source suivie appliqué **dans la pertinence** uniquement si l'article
+    # a déjà un topic ou un mot-clé (bonus angle > 0). « La source est un boost,
+    # pas un free-pass » : source-seul = 0 contribution de pertinence.
+    VEILLE_SOURCE_ON_TOPIC_BONUS = 12.0
+
     # Seuil de pertinence (score final piliers, échelle ~0-100) en-deçà duquel
-    # un article candidat est élagué du feed veille. Dérivé analytiquement :
-    # un article "thème seul" score ~47 (mais ne peut de toute façon pas entrer
-    # car le thème est absent du prédicat SQL), "thème + topic" ~66,
-    # "thème + mot-clé d'angle" ~55, "source suivie seule" ~37-45.
-    # 40 passe topic/mot-clé largement ; la source-seule reste limite.
-    # Point de calibration à figer via les logs de prod (max_score/pass_count).
-    VEILLE_RELEVANCE_THRESHOLD = 40.0
+    # un article candidat est élagué du feed veille. Relevé 40→48 (Story 23.4)
+    # avec la curation v2 : source-seul frais+riche ≈ 44 (< 48, écarté en plus
+    # par le floor) ; 1 mot-clé+source ≈ 52-58 ; topic+source ≈ 62-70 ;
+    # topic+2kw+source ≈ 75-82. Point de calibration tunable via les logs prod
+    # (max_score / pass_count / floor_pruned_count / threshold_pruned_count).
+    VEILLE_RELEVANCE_THRESHOLD = 48.0
+
+    # Anti-starvation : si après scoring moins de N articles passent ET que des
+    # candidats on-axis ont été coupés par le *seuil* (jamais par le floor), on
+    # relâche le seuil d'un cran (max -8, plancher 40).
+    VEILLE_MIN_FEED_SIZE = 5
 
     # Plafond du pool de candidats scorés par fetch (borne le coût ILIKE +
     # scoring sur un feed curé ; offsets au-delà renvoient vide — acceptable).

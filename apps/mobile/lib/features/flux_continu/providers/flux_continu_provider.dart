@@ -815,30 +815,54 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   List<FavoriteRef> _pickFavorites(List<TopTheme> topFallback) {
     final favorites =
         ref.read(userInterestsProvider).valueOrNull?.favorites ?? const [];
-    if (favorites.isNotEmpty) {
-      return favorites.take(_kMaxFavoriteSections).toList(growable: false);
+
+    // Story 23.4 — la veille a un **slot dédié hors cap** : on la sépare des
+    // favoris thème/sujet (cap = [_kMaxFavoriteSections]) puis on l'ajoute en
+    // plus, pour qu'elle ne soit jamais coupée par le `.take(3)` (bug : favori
+    // veille en position 3 → invisible).
+    VeilleFavoriteRef? veilleRef;
+    final nonVeille = <FavoriteRef>[];
+    for (final f in favorites) {
+      if (f is VeilleFavoriteRef) {
+        veilleRef ??= f;
+      } else {
+        nonVeille.add(f);
+      }
     }
-    final valid = topFallback
-        .where((t) => themeMap.containsKey(t.interestSlug))
-        .map<FavoriteRef>((t) => ThemeFavoriteRef(slug: t.interestSlug))
-        .toList();
-    if (valid.length >= _kMaxFavoriteSections) {
-      return valid.take(_kMaxFavoriteSections).toList(growable: false);
+    // Toujours rendre la veille quand une config est active, même si le favori
+    // n'est pas (encore) dans la liste (favori orphelin / self-heal en cours).
+    final activeCfg = ref.read(veilleActiveConfigProvider).valueOrNull;
+    if (veilleRef == null && activeCfg != null) {
+      veilleRef = VeilleFavoriteRef(id: activeCfg.id);
     }
-    // Pad with canonical macro themes the user is missing — order: tech,
-    // environment, science (matches the backend backfill list).
-    const canonical = [fallbackTheme1, fallbackTheme2, 'science'];
-    final present = valid
-        .whereType<ThemeFavoriteRef>()
-        .map((r) => r.slug)
-        .toSet();
-    for (final slug in canonical) {
-      if (valid.length >= _kMaxFavoriteSections) break;
-      if (present.contains(slug)) continue;
-      valid.add(ThemeFavoriteRef(slug: slug));
-      present.add(slug);
+
+    final List<FavoriteRef> themeRefs;
+    if (nonVeille.isNotEmpty) {
+      themeRefs = nonVeille.take(_kMaxFavoriteSections).toList(growable: false);
+    } else {
+      // Fallback fresh accounts : top-themes pondérés puis macro canoniques.
+      final valid = topFallback
+          .where((t) => themeMap.containsKey(t.interestSlug))
+          .map<FavoriteRef>((t) => ThemeFavoriteRef(slug: t.interestSlug))
+          .toList();
+      // Pad with canonical macro themes the user is missing — order: tech,
+      // environment, science (matches the backend backfill list).
+      const canonical = [fallbackTheme1, fallbackTheme2, 'science'];
+      final present =
+          valid.whereType<ThemeFavoriteRef>().map((r) => r.slug).toSet();
+      for (final slug in canonical) {
+        if (valid.length >= _kMaxFavoriteSections) break;
+        if (present.contains(slug)) continue;
+        valid.add(ThemeFavoriteRef(slug: slug));
+        present.add(slug);
+      }
+      themeRefs = valid.take(_kMaxFavoriteSections).toList(growable: false);
     }
-    return valid.take(_kMaxFavoriteSections).toList(growable: false);
+
+    return [
+      ...themeRefs,
+      if (veilleRef != null) veilleRef,
+    ];
   }
 
   /// Fetches one FeedResponse per favorite ref in parallel and turns them
@@ -923,15 +947,15 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// dérivé du `theme_label` de la `VeilleConfig` active (résolu via
   /// `veilleActiveConfigProvider`). Story 23.2 PR-4.
   FeedThemeSection? _buildVeilleSection(FeedResponse? feed) {
-    final items = feed?.items ?? const <Content>[];
-    if (items.length < 2) return null;
     final activeCfg = ref.read(veilleActiveConfigProvider).valueOrNull;
-    final label = activeCfg == null
-        ? 'Ma veille'
-        : 'Ma veille — ${activeCfg.themeLabel}';
+    // Story 23.4 — section veille **toujours visible** quand une config est
+    // active, même avec 0/1 article (état vide rendu par SectionBlock). On ne
+    // la coupe plus sur un seuil min d'items ; `null` seulement sans config.
+    if (activeCfg == null) return null;
+    final items = feed?.items ?? const <Content>[];
     return FeedThemeSection(
       kind: SectionKind.veille,
-      label: label,
+      label: 'Ma veille — ${activeCfg.themeLabel}',
       blurb: 'Les derniers articles de ta veille personnalisée.',
       accent: _kVeilleAccent,
       illustrationAsset: _kVeilleIllustration,
