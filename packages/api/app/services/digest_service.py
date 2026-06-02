@@ -36,6 +36,7 @@ from app.models.digest_completion import DigestCompletion
 from app.models.enums import ContentStatus, InterestState
 from app.models.user import UserStreak
 from app.models.user_personalization import UserPersonalization
+from app.schemas.content import SourceMini
 from app.schemas.digest import (
     DigestAction,
     DigestItem,
@@ -46,9 +47,8 @@ from app.schemas.digest import (
     DigestTopicArticle,
     QuoteResponse,
 )
-from app.schemas.content import SourceMini
+from app.services.digest_cache import DIGEST_CONTENT_CACHE, CachedDigestContent
 from app.services.digest_selector import DigestSelector
-from app.services.digest_cache import CachedDigestContent, DIGEST_CONTENT_CACHE
 from app.services.editorial.schemas import EditorialPipelineResult
 from app.services.streak_service import StreakService
 from app.services.topic_selector import ScoredArticle, TopicGroup

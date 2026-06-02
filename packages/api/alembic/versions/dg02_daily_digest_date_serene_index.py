@@ -5,7 +5,7 @@ from __future__ import annotations
 from alembic import op
 
 
-revision: str = "dg02_daily_digest_date_serene_index"
+revision: str = "dg02_digest_serene_idx"
 down_revision: str | None = "pc01_premium_source_connection"
 branch_labels = None
 depends_on = None
