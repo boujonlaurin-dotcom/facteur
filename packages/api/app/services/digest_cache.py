@@ -49,9 +49,7 @@ class DigestContentCache:
         self._entries = TTLCache(maxsize=maxsize, ttl=ttl_seconds)
         self._locks: dict[DigestContentCacheKey, asyncio.Lock] = {}
 
-    def get(
-        self, key: DigestContentCacheKey
-    ) -> dict[UUID, CachedDigestContent] | None:
+    def get(self, key: DigestContentCacheKey) -> dict[UUID, CachedDigestContent] | None:
         return self._entries.get(key)
 
     def put(

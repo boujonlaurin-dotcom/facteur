@@ -116,9 +116,10 @@ async def fetch_user_essentiel_context(
     `user_id`. Sans hit (utilisateur sans prefs) : retourne un contexte vide.
     """
     row = (
-        await db.execute(
-            text(
-                """
+        (
+            await db.execute(
+                text(
+                    """
                 SELECT
                     COALESCE(
                         (
@@ -179,14 +180,17 @@ async def fetch_user_essentiel_context(
                         )
                     ) AS personalization
                 """
-            ),
-            {
-                "user_id": user_id,
-                "followed_state": InterestState.FOLLOWED.value,
-                "favorite_state": InterestState.FAVORITE.value,
-            },
+                ),
+                {
+                    "user_id": user_id,
+                    "followed_state": InterestState.FOLLOWED.value,
+                    "favorite_state": InterestState.FAVORITE.value,
+                },
+            )
         )
-    ).mappings().one()
+        .mappings()
+        .one()
+    )
 
     src_rows = row["sources"] or []
     followed_source_ids = frozenset(UUID(src["source_id"]) for src in src_rows)
@@ -216,8 +220,7 @@ async def fetch_user_essentiel_context(
     muted_themes = frozenset(personalization.get("muted_themes") or ())
     muted_topic_slugs = frozenset(personalization.get("muted_topics") or ())
     muted_source_ids = frozenset(
-        UUID(source_id)
-        for source_id in (personalization.get("muted_sources") or ())
+        UUID(source_id) for source_id in (personalization.get("muted_sources") or ())
     )
 
     return EssentielUserContext(
