@@ -136,57 +136,19 @@ void main() {
       }
     });
 
-    testWidgets('"Tout l\'essentiel" button fires onTapExploreAll when wired',
-        (tester) async {
-      var exploreTaps = 0;
-      await tester.pumpWidget(_wrap(
-        EssentielHiFiCard(
-          articles: [_article(rank: 1)],
-          onTapArticle: (_) {},
-          onTapPersonalize: () {},
-          onTapSeeAllDown: () {},
-          onTapExploreAll: () => exploreTaps++,
-        ),
-      ));
-
-      expect(find.text('Tout l’essentiel'), findsOneWidget);
-      await tester.tap(find.text('Tout l’essentiel'));
-      await tester.pumpAndSettle();
-      expect(exploreTaps, 1);
-    });
-
     testWidgets(
-        '"Tout l\'essentiel" button is omitted when onTapExploreAll is null',
+        'no footer CTAs: the card is a standalone section, not a teaser',
         (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
-          articles: [_article(rank: 1)],
+          articles: List.generate(5, (i) => _article(rank: i + 1)),
           onTapArticle: (_) {},
           onTapPersonalize: () {},
-          onTapSeeAllDown: () {},
         ),
       ));
 
       expect(find.text('Tout l’essentiel'), findsNothing);
-    });
-
-    testWidgets('"Flâner →" button fires onTapSeeAllDown when wired',
-        (tester) async {
-      var seeAllDownTaps = 0;
-      await tester.pumpWidget(_wrap(
-        EssentielHiFiCard(
-          articles: [_article(rank: 1)],
-          onTapArticle: (_) {},
-          onTapPersonalize: () {},
-          onTapSeeAllDown: () => seeAllDownTaps++,
-          onTapExploreAll: () {},
-        ),
-      ));
-
-      expect(find.text('Flâner →'), findsOneWidget);
-      await tester.tap(find.text('Flâner →'));
-      await tester.pumpAndSettle();
-      expect(seeAllDownTaps, 1);
+      expect(find.text('Flâner →'), findsNothing);
     });
 
     testWidgets('"Ton Essentiel" header is rendered', (tester) async {

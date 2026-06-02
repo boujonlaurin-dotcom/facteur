@@ -262,7 +262,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     }
 
     return FluxContinuState(
-      sections: _filterSections(ordered),
+      sections: _dedupeSectionsInOrder(_filterSections(ordered)),
       isSerene: isSerene,
       moreOpen: _moreOpen,
       folded: _folded,
@@ -373,6 +373,66 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
             ),
         },
     ];
+  }
+
+  /// Dedup inter-sections ordonné : parcourt les sections dans l'ordre de
+  /// rendu et retire de chaque section les articles déjà vus plus haut. La
+  /// première section qui contient un article « gagne » — en mode normal
+  /// Essentiel est premier, donc il prive Actus du jour / thèmes de ses
+  /// doublons (Option A : pour un sujet digest, la tête déjà vue retire le
+  /// sujet entier).
+  ///
+  /// Identité par type, cohérente avec [renderedContentIds] / [_filterSections] :
+  ///   - [EssentielSection] → `article.contentId`
+  ///   - [DigestTopicSection] → `pickTopicLead(t).contentId`
+  ///   - [FeedThemeSection] → `content.id`
+  ///
+  /// Tourne à chaque [_compose] (contrairement à [_filterSections] qui ne
+  /// tourne que si des articles ont été dismissed), donc les champs de
+  /// pagination de [FeedThemeSection] sont préservés via [FeedThemeSection.copyWith]
+  /// — sinon « Voir +10 » serait réinitialisé à chaque recompose.
+  List<FluxSection> _dedupeSectionsInOrder(List<FluxSection> sections) {
+    final seen = <String>{};
+    final result = <FluxSection>[];
+    for (final s in sections) {
+      switch (s) {
+        case EssentielSection(:final articles):
+          result.add(
+            EssentielSection(
+              articles: articles
+                  .where((a) => seen.add(a.contentId))
+                  .toList(growable: false),
+              blurb: s.blurb,
+              illustrationAsset: s.illustrationAsset,
+            ),
+          );
+        case DigestTopicSection(:final topics):
+          final kept = topics
+              .where((t) => seen.add(pickTopicLead(t).contentId))
+              .toList(growable: false);
+          // Post-filtre : une section Actus du jour vidée par le dedup ne doit
+          // pas laisser un bandeau orphelin → on la retire.
+          if (kept.isEmpty) continue;
+          result.add(
+            DigestTopicSection(
+              kind: s.kind,
+              label: s.label,
+              accent: s.accent,
+              coreVisibleCount: s.coreVisibleCount,
+              blurb: s.blurb,
+              illustrationAsset: s.illustrationAsset,
+              topics: kept,
+            ),
+          );
+        case FeedThemeSection(:final items):
+          result.add(
+            s.copyWith(
+              items: items.where((c) => seen.add(c.id)).toList(growable: false),
+            ),
+          );
+      }
+    }
+    return result;
   }
 
   /// Marks a single article as read in-memory (same-session visual feedback).
