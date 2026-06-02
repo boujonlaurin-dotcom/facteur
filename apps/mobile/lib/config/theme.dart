@@ -38,6 +38,10 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
   final Color biasUnknown;
   final Color border;
 
+  // Voile des modales (bottom sheets, dialogs) — aligné design-system, nettement
+  // plus doux que `black 0.6` qui virait l'écran de fond au gris/sombre.
+  final Color scrim;
+
   // Flux Continu V1.8 — accents par section éditoriale (Story 21.1)
   final Color sectionEssentiel;
   final Color sectionBonnes;
@@ -68,6 +72,7 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
     required this.biasRight,
     required this.biasUnknown,
     required this.border,
+    required this.scrim,
     required this.sectionEssentiel,
     required this.sectionBonnes,
     required this.sectionVeille1,
@@ -99,6 +104,7 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
     Color? biasRight,
     Color? biasUnknown,
     Color? border,
+    Color? scrim,
     Color? sectionEssentiel,
     Color? sectionBonnes,
     Color? sectionVeille1,
@@ -128,6 +134,7 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
       biasRight: biasRight ?? this.biasRight,
       biasUnknown: biasUnknown ?? this.biasUnknown,
       border: border ?? this.border,
+      scrim: scrim ?? this.scrim,
       sectionEssentiel: sectionEssentiel ?? this.sectionEssentiel,
       sectionBonnes: sectionBonnes ?? this.sectionBonnes,
       sectionVeille1: sectionVeille1 ?? this.sectionVeille1,
@@ -172,6 +179,7 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
       biasRight: Color.lerp(biasRight, other.biasRight, t)!,
       biasUnknown: Color.lerp(biasUnknown, other.biasUnknown, t)!,
       border: Color.lerp(border, other.border, t)!,
+      scrim: Color.lerp(scrim, other.scrim, t)!,
       sectionEssentiel:
           Color.lerp(sectionEssentiel, other.sectionEssentiel, t)!,
       sectionBonnes: Color.lerp(sectionBonnes, other.sectionBonnes, t)!,
@@ -221,6 +229,7 @@ class FacteurPalettes {
     biasRight: const Color(0xFF0D47A1), // Blue 900
     biasUnknown: const Color(0xFFD7CCC8), // Blue Grey 100
     border: const Color(0xFFD2C7B3),
+    scrim: const Color(0x59000000), // ~0.35 — voile doux sur fond clair
     sectionEssentiel: const Color(0xFFB0470A),
     sectionBonnes: const Color(0xFF2E7D32),
     sectionVeille1: const Color(0xFF2C3E50),
@@ -251,6 +260,7 @@ class FacteurPalettes {
     biasRight: const Color(0xFF1E88E5), // Blue 600
     biasUnknown: const Color(0xFF616161), // Grey 700
     border: const Color(0xFF333333),
+    scrim: const Color(0x59000000), // ~0.35 — voile doux sur fond sombre
     sectionEssentiel: const Color(0xFFD16A2C),
     sectionBonnes: const Color(0xFF4CAF50),
     sectionVeille1: const Color(0xFF5B7187),
@@ -282,6 +292,7 @@ class FacteurPalettes {
     biasRight: const Color(0xFF448AFF),
     biasUnknown: const Color(0xFF5A5A5A),
     border: const Color(0xFF1F1F1F),
+    scrim: const Color(0x59000000), // ~0.35 — voile doux sur fond true black
     sectionEssentiel: const Color(0xFFE07B3D),
     sectionBonnes: const Color(0xFF66BB6A),
     sectionVeille1: const Color(0xFF6E8AA3),

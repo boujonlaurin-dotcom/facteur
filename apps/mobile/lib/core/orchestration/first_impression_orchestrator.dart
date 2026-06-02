@@ -26,6 +26,19 @@ enum FirstImpressionSlot {
 /// nudge (re-nudge, well-informed) avant le prochain cold start.
 final notifModalConsumedThisSessionProvider = StateProvider<bool>((_) => false);
 
+/// Flow post-onboarding en attente d'être joué sur l'écran Essentiel chargé.
+///
+/// Positionné par l'écran de conclusion **juste avant** de basculer
+/// `needsOnboarding=false` (et donc avant la redirection router → Essentiel).
+/// Consommé une seule fois par `FluxContinuScreen` quand son état passe en
+/// `data` : la page Essentiel chargée sert alors de fond aux modales (thème
+/// puis notifications), au lieu d'un Essentiel encore en chargement masqué par
+/// un voile gris. La valeur porte la liste `failedCustomTopics` à résumer
+/// (liste vide = flow à jouer sans dialog de customs échoués ; `null` = aucun
+/// flow en attente).
+final postOnboardingFlowPendingProvider =
+    StateProvider<List<String>?>((_) => null);
+
 /// Une fois un nudge consommé, on n'en affiche pas un second avant cold start.
 final nudgeConsumedThisSessionProvider = StateProvider<bool>((_) => false);
 

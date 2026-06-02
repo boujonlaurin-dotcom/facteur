@@ -42,7 +42,7 @@ Future<void> showNotificationActivationModal(
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
-    barrierColor: Colors.black.withOpacity(0.6),
+    barrierColor: context.facteurColors.scrim,
     useRootNavigator: true,
     builder: (_) => Dialog(
       insetPadding: const EdgeInsets.symmetric(

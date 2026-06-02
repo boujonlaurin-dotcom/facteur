@@ -20,7 +20,7 @@ Future<void> showThemeChoiceBottomSheet(
   final confirmed = await showModalBottomSheet<bool>(
     context: context,
     backgroundColor: Colors.transparent,
-    barrierColor: Colors.black.withOpacity(0.6),
+    barrierColor: context.facteurColors.scrim,
     builder: (ctx) => ClipRect(
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
