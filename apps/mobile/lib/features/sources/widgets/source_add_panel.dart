@@ -30,6 +30,7 @@ class SourceAddPanel extends ConsumerStatefulWidget {
   final bool showCommunityGems;
   final bool showAddedNudge;
   final bool autoFocusSearch;
+  final bool veilleMode;
 
   /// Appelé après un ajout réussi, une fois la modale détail fermée.
   /// Le hôte décide de fermer le sheet, naviguer ailleurs, etc.
@@ -47,6 +48,7 @@ class SourceAddPanel extends ConsumerStatefulWidget {
     this.showCommunityGems = true,
     this.showAddedNudge = true,
     this.autoFocusSearch = false,
+    this.veilleMode = false,
     this.onSourceAdded,
   });
 
@@ -107,10 +109,10 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   }
 
   SmartSearchQuery get _searchParams => (
-        query: _currentQuery,
-        contentType: _selectedContentType,
-        expand: _expanded,
-      );
+    query: _currentQuery,
+    contentType: _selectedContentType,
+    expand: _expanded,
+  );
 
   void _runSearch([String? query]) {
     final value = (query ?? _searchController.text).trim();
@@ -154,10 +156,22 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
 
   Future<void> _addSource(SmartSearchResult result) async {
     try {
-      final repository = ref.read(sourcesRepositoryProvider);
       final sourceId = result.sourceId;
       final hasCatalogId =
           sourceId != null && sourceId.isNotEmpty && sourceId != 'null';
+
+      if (widget.veilleMode) {
+        setState(() {
+          if (hasCatalogId) _addedSourceIds.add(sourceId);
+          _sourceAdded = true;
+          _lastAddedName = result.name;
+        });
+        _resetForNextAdd();
+        widget.onSourceAdded?.call(result);
+        return;
+      }
+
+      final repository = ref.read(sourcesRepositoryProvider);
 
       if (hasCatalogId) {
         await repository.trustSource(sourceId);
@@ -202,7 +216,8 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         if (!mounted) return;
       } else {
         NotificationService.showSuccess(
-            'Source ajoutee ! Ses contenus apparaitront dans ton feed.');
+          'Source ajoutee ! Ses contenus apparaitront dans ton feed.',
+        );
       }
       _resetForNextAdd();
       widget.onSourceAdded?.call(result);
@@ -250,7 +265,8 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         await repository.trustSource(source.id);
         if (mounted) {
           NotificationService.showSuccess(
-              'Source ajoutee ! Ses contenus apparaitront dans ton feed.');
+            'Source ajoutee ! Ses contenus apparaitront dans ton feed.',
+          );
         }
       }
       ref.invalidate(trendingSourcesProvider);
@@ -282,7 +298,8 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
                 await Clipboard.setData(ClipboardData(text: source.url!));
                 if (mounted) {
                   NotificationService.showSuccess(
-                      'URL du flux copiee dans le presse-papiers !');
+                    'URL du flux copiee dans le presse-papiers !',
+                  );
                 }
               }
             : null,
@@ -306,9 +323,10 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
           ],
           _buildBreathingSearch(colors),
           SizedBox(
-              height: _currentQuery.isEmpty
-                  ? FacteurSpacing.space8
-                  : FacteurSpacing.space4),
+            height: _currentQuery.isEmpty
+                ? FacteurSpacing.space8
+                : FacteurSpacing.space4,
+          ),
           _buildContent(),
         ],
       ),
@@ -355,7 +373,8 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
     }
 
     final searchAsync = ref.watch(smartSearchProvider(_searchParams));
-    final followedIds = ref
+    final followedIds =
+        ref
             .watch(userSourcesProvider)
             .valueOrNull
             ?.where((s) => s.isTrusted)
@@ -373,7 +392,8 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
           error: (error, _) => _buildErrorState(),
           data: (response) {
             if (response.results.isEmpty) return _buildNoResults();
-            final canExpand = !_expanded &&
+            final canExpand =
+                !_expanded &&
                 response.layersCalled.length == 1 &&
                 response.layersCalled.first == 'catalog';
             return _buildResults(
@@ -441,8 +461,11 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
           ),
           child: Row(
             children: [
-              Icon(PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
-                  size: 22, color: colors.primary),
+              Icon(
+                PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+                size: 22,
+                color: colors.primary,
+              ),
               const SizedBox(width: FacteurSpacing.space3),
               Expanded(
                 child: Column(
@@ -451,9 +474,9 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
                     Text(
                       name != null ? '« $name » ajoutée' : 'Source ajoutée',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: colors.textPrimary,
-                          ),
+                        fontWeight: FontWeight.w600,
+                        color: colors.textPrimary,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -461,15 +484,18 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
                     Text(
                       'Une autre à ajouter ?',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.textSecondary,
-                          ),
+                        color: colors.textSecondary,
+                      ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: FacteurSpacing.space2),
-              Icon(PhosphorIcons.arrowRight(PhosphorIconsStyle.regular),
-                  size: 18, color: colors.primary),
+              Icon(
+                PhosphorIcons.arrowRight(PhosphorIconsStyle.regular),
+                size: 18,
+                color: colors.primary,
+              ),
             ],
           ),
         ),
@@ -484,17 +510,18 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         Text(
           'Que veux-tu suivre ?',
           textAlign: TextAlign.center,
-          style: FacteurTypography.serifTitle(colors.textPrimary)
-              .copyWith(fontSize: 28, height: 1.15),
+          style: FacteurTypography.serifTitle(
+            colors.textPrimary,
+          ).copyWith(fontSize: 28, height: 1.15),
         ),
         const SizedBox(height: FacteurSpacing.space2),
         Text(
           'Tape un nom de média ou colle son URL.\nOn l\'ajoute à ton app.',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: colors.textSecondary,
-                height: 1.45,
-              ),
+            color: colors.textSecondary,
+            height: 1.45,
+          ),
         ),
         const SizedBox(height: FacteurSpacing.space4),
         _buildSupportedTypesInfo(colors),
@@ -526,9 +553,9 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
             const SizedBox(width: 4),
             Text(
               it.label,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: colors.textTertiary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: colors.textTertiary),
             ),
           ],
         );
@@ -552,7 +579,8 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         const SizedBox(height: 12),
         ...results.map((result) {
           final id = result.sourceId;
-          final isAdded = _addedSourceIds.contains(id) ||
+          final isAdded =
+              _addedSourceIds.contains(id) ||
               (id != null && followedIds.contains(id));
           return SourceResultCard(
             result: result,
@@ -575,9 +603,9 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
           const SizedBox(height: 4),
           Text(
             'Cherche aussi sur YouTube, Reddit et le web.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colors.textTertiary,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: colors.textTertiary),
             textAlign: TextAlign.center,
           ),
         ],
@@ -592,22 +620,25 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         padding: const EdgeInsets.all(32.0),
         child: Column(
           children: [
-            Icon(PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
-                size: 48, color: colors.textTertiary),
+            Icon(
+              PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
+              size: 48,
+              color: colors.textTertiary,
+            ),
             const SizedBox(height: 16),
             Text(
               'Aucun resultat pour "$_currentQuery"',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.textSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               'Essayez avec une URL directe ou d\'autres mots-cles.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colors.textTertiary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: colors.textTertiary),
               textAlign: TextAlign.center,
             ),
           ],
@@ -623,14 +654,17 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         padding: const EdgeInsets.all(32.0),
         child: Column(
           children: [
-            Icon(PhosphorIcons.warning(PhosphorIconsStyle.regular),
-                size: 48, color: colors.error),
+            Icon(
+              PhosphorIcons.warning(PhosphorIconsStyle.regular),
+              size: 48,
+              color: colors.error,
+            ),
             const SizedBox(height: 16),
             Text(
               'Impossible de rechercher pour le moment.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.textSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
@@ -647,12 +681,12 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
 
   static const _contentTypeOptions =
       <({String label, String apiValue, int iconIndex})>[
-    (label: 'Médias', apiValue: 'article', iconIndex: 0),
-    (label: 'Newsletters', apiValue: 'article', iconIndex: 1),
-    (label: 'YouTube', apiValue: 'youtube', iconIndex: 2),
-    (label: 'Reddit', apiValue: 'reddit', iconIndex: 3),
-    (label: 'Podcasts', apiValue: 'podcast', iconIndex: 4),
-  ];
+        (label: 'Médias', apiValue: 'article', iconIndex: 0),
+        (label: 'Newsletters', apiValue: 'article', iconIndex: 1),
+        (label: 'YouTube', apiValue: 'youtube', iconIndex: 2),
+        (label: 'Reddit', apiValue: 'reddit', iconIndex: 3),
+        (label: 'Podcasts', apiValue: 'podcast', iconIndex: 4),
+      ];
 
   IconData _iconForContentType(int idx) {
     switch (idx) {

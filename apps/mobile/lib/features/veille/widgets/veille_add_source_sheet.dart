@@ -27,9 +27,7 @@ class VeilleAddSourceSheet extends ConsumerWidget {
         return Container(
           decoration: BoxDecoration(
             color: colors.backgroundPrimary,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(20),
-            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Column(
             children: [
@@ -66,8 +64,8 @@ class VeilleAddSourceSheet extends ConsumerWidget {
                 child: Text(
                   'Ajouter une source à ta veille',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -80,6 +78,7 @@ class VeilleAddSourceSheet extends ConsumerWidget {
                     showCommunityGems: false,
                     showAddedNudge: false,
                     autoFocusSearch: true,
+                    veilleMode: true,
                     onSourceAdded: onSourceAdded,
                   ),
                 ),

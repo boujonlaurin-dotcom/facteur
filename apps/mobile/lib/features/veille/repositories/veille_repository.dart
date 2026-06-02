@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../../core/api/api_client.dart';
 import '../models/veille_config_dto.dart';
@@ -144,7 +147,9 @@ class VeilleRepository {
   // ─── Suggestion sources LLM (Step 3) ───────────────────────────────────
 
   /// `POST /api/veille/suggest/sources` — candidats niche non ingérés.
-  /// Toute erreur/timeout/parsing inattendu → `[]` pour afficher le retry.
+  /// Les erreurs transport/API remontent en `VeilleApiException` pour que l'UI
+  /// affiche un état retry. Une réponse 200 vide reste un vide légitime ;
+  /// une réponse 200 malformée se dégrade en `[]`.
   Future<List<VeilleSourceSuggestionDto>> suggestSources({
     required String themeId,
     required String themeLabel,
@@ -166,7 +171,35 @@ class VeilleRepository {
       return VeilleSuggestSourcesResponse.fromJson(
         response.data as Map<String, dynamic>,
       ).sources;
-    } catch (_) {
+    } on DioException catch (e, st) {
+      unawaited(
+        Sentry.captureException(
+          e,
+          stackTrace: st,
+          withScope: (scope) {
+            scope.setTag('endpoint', 'veille_suggest_sources');
+            final code = e.response?.statusCode;
+            scope.setContexts('veille_suggest_sources', {
+              'path': e.requestOptions.path,
+              if (code != null) 'statusCode': code,
+            });
+          },
+        ),
+      );
+      throw _wrap(e);
+    } catch (e) {
+      unawaited(
+        Sentry.captureMessage(
+          'veille_suggest_sources_malformed_response',
+          level: SentryLevel.warning,
+          withScope: (scope) {
+            scope.setTag('endpoint', 'veille_suggest_sources');
+            scope.setContexts('veille_suggest_sources', {
+              'error': e.toString(),
+            });
+          },
+        ),
+      );
       return const [];
     }
   }

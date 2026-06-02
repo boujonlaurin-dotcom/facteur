@@ -629,6 +629,38 @@ class TestSuggestEndpoints:
         assert r.status_code == 200
         assert r.json() == {"sources": []}
 
+    async def test_suggest_sources_truncates_overflow_instead_of_422(
+        self, auth_user, monkeypatch
+    ):
+        from app.services.veille.llm import source_suggester as mod
+
+        captured = {}
+
+        async def _fake_empty(self, **kwargs):
+            captured.update(kwargs)
+            return []
+
+        monkeypatch.setattr(mod.SourceSuggester, "suggest_sources", _fake_empty)
+        monkeypatch.setattr(mod, "_source_suggester", None)
+
+        async with _client() as c:
+            r = await c.post(
+                "/api/veille/suggest/sources",
+                json={
+                    "theme_id": "other",
+                    "theme_label": "Niche super pointue",
+                    "brief": "",
+                    "angles": [f"angle-{i}" for i in range(30)],
+                    "keywords": [f"kw-{i}" for i in range(60)],
+                },
+            )
+        assert r.status_code == 200, r.text
+        assert r.json() == {"sources": []}
+        assert len(captured["angles"]) == 20
+        assert len(captured["keywords"]) == 40
+        assert captured["angles"] == [f"angle-{i}" for i in range(20)]
+        assert captured["keywords"] == [f"kw-{i}" for i in range(40)]
+
 
 class TestOtherThemeIngestion:
     """theme_id='other' (tuile Autre) doit mapper vers theme='custom' à l'ingestion."""

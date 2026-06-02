@@ -263,6 +263,12 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
   /// Limite backend par angle (`VeilleTopicSelection.keywords` max_length=10).
   static const int maxAngleKeywords = 10;
 
+  /// Limite backend des angles envoyés au suggester de sources.
+  static const int maxSuggestAngles = 20;
+
+  /// Limite backend des mots-clés envoyés au suggester de sources.
+  static const int maxSuggestKeywords = 40;
+
   void selectTheme(String id) {
     // Changer de thème reset les topics pré-sélectionnés (les preset topics
     // dépendent du thème) ET le sujet principal granulaire (Story 23.4 — la
@@ -604,6 +610,43 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       sourcesMeta: nextMeta,
       selectedSourceIds: {...state.selectedSourceIds, sourceId},
     );
+  }
+
+  /// Ajoute une URL libre localement à la veille, sans trust global.
+  ///
+  /// Utilisé par le sheet Step 3 pour les flux niche hors catalogue. Le submit
+  /// les sérialise ensuite en `niche_candidate`.
+  void addUrlSourceToVeille({
+    required String name,
+    required String url,
+    String? why,
+  }) {
+    final normalizedUrl = url.trim();
+    if (!_isValidHttpUrl(normalizedUrl)) return;
+    final trimmedName = name.trim();
+    final sourceName = trimmedName.isEmpty
+        ? _sourceNameFallback(normalizedUrl)
+        : trimmedName;
+    final slug = sourceSuggestionSlug(sourceName, normalizedUrl);
+    final nextMeta = Map<String, VeilleSourceMeta>.from(state.sourcesMeta);
+    nextMeta[slug] = VeilleSourceMeta(
+      slug: slug,
+      name: sourceName,
+      kind: 'niche',
+      url: normalizedUrl,
+      why: _emptyToNull(why),
+    );
+    state = state.copyWith(
+      sourcesMeta: nextMeta,
+      selectedSourceIds: {...state.selectedSourceIds, slug},
+    );
+  }
+
+  static String _sourceNameFallback(String url) {
+    final uri = Uri.tryParse(url);
+    final host = uri?.host;
+    if (host != null && host.isNotEmpty) return host;
+    return 'Source ajoutée';
   }
 
   /// Résout un sujet libre saisi via la tuile "Autre" de Step 1. Le sujet

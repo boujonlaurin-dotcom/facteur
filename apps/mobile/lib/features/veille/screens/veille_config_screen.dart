@@ -8,6 +8,7 @@ import '../../../config/theme.dart';
 import '../providers/veille_active_config_provider.dart';
 import '../providers/veille_config_provider.dart';
 import '../repositories/veille_repository.dart';
+import '../../lettres/widgets/progress_toast.dart';
 import '../widgets/veille_widgets.dart';
 import 'steps/step1_5_preset_preview_screen.dart';
 import 'steps/step1_theme_screen.dart';
@@ -67,10 +68,12 @@ class VeilleConfigScreen extends ConsumerWidget {
       try {
         await notifier.submit();
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(editMode ? 'Veille mise à jour' : 'Veille créée'),
-          ),
+        showProgressToast(
+          context,
+          level: ProgressToastLevel.step,
+          stepNum: '01',
+          stepTitle: editMode ? 'Veille mise à jour' : 'Veille créée',
+          accentColor: FacteurColors.veille,
         );
         context.go(RoutePaths.fluxContinu);
       } on VeilleApiException catch (e) {
@@ -78,16 +81,14 @@ class VeilleConfigScreen extends ConsumerWidget {
         final message = e.statusCode == 422
             ? 'Sélectionne au moins un sujet, une source ou un angle pour ta veille.'
             : 'Impossible d\'enregistrer ta veille (${e.statusCode ?? '?'}). Réessaie.';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
       } catch (_) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              'Erreur réseau. Vérifie ta connexion et réessaie.',
-            ),
+            content: Text('Erreur réseau. Vérifie ta connexion et réessaie.'),
           ),
         );
       }
@@ -119,10 +120,7 @@ class VeilleConfigScreen extends ConsumerWidget {
         activeCfgValue == null &&
         !activeConfig.isLoading) {
       // Premier accès sans config : on cadre via l'intro avant Step1.
-      body = VeilleIntroScreen(
-        onClose: close,
-        onStart: notifier.completeIntro,
-      );
+      body = VeilleIntroScreen(onClose: close, onStart: notifier.completeIntro);
       key = 'intro';
     } else if (state.previewPresetId != null) {
       body = Step15PresetPreviewScreen(
@@ -154,10 +152,7 @@ class VeilleConfigScreen extends ConsumerWidget {
           duration: FacteurDurations.medium,
           switchInCurve: Curves.easeOut,
           switchOutCurve: Curves.easeIn,
-          child: KeyedSubtree(
-            key: ValueKey(key),
-            child: body,
-          ),
+          child: KeyedSubtree(key: ValueKey(key), child: body),
         ),
       ),
     );
@@ -182,8 +177,11 @@ class _EditLoadError extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.cloud_off_rounded,
-                      size: 40, color: Color(0xFF8B7E63)),
+                  const Icon(
+                    Icons.cloud_off_rounded,
+                    size: 40,
+                    color: Color(0xFF8B7E63),
+                  ),
                   const SizedBox(height: 16),
                   Text(
                     'Impossible de charger ta veille',
@@ -204,10 +202,7 @@ class _EditLoadError extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  VeilleCtaButton(
-                    label: 'Réessayer',
-                    onPressed: onRetry,
-                  ),
+                  VeilleCtaButton(label: 'Réessayer', onPressed: onRetry),
                 ],
               ),
             ),

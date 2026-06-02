@@ -34,7 +34,7 @@ class Step3SourcesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(veilleConfigProvider);
     final notifier = ref.read(veilleConfigProvider.notifier);
-    final query = _buildSuggestionQuery(state);
+    final query = buildSuggestionQuery(state);
     final VoidCallback? onRetry = query == null
         ? null
         : () => ref.invalidate(veilleSourceSuggestionsProvider(query));
@@ -109,7 +109,8 @@ class Step3SourcesScreen extends ConsumerWidget {
                 ],
                 suggestionsAsync.when(
                   loading: () => const _SourceSuggestionsLoading(),
-                  error: (_, __) => _SourceSuggestionsEmpty(onRetry: onRetry),
+                  error: (_, __) =>
+                      _SourceSuggestionsEmpty(onRetry: onRetry, isError: true),
                   data: (suggestions) {
                     if (suggestions.isEmpty) {
                       return _SourceSuggestionsEmpty(onRetry: onRetry);
@@ -189,7 +190,18 @@ class Step3SourcesScreen extends ConsumerWidget {
               sourceId: id,
               name: result.name,
               url: result.url,
+              why: result.description,
             );
+          } else {
+            final url =
+                result.feedUrl.trim().isNotEmpty ? result.feedUrl : result.url;
+            if (_isValidHttpUrl(url)) {
+              notifier.addUrlSourceToVeille(
+                name: result.name,
+                url: url,
+                why: result.description,
+              );
+            }
           }
           Navigator.of(sheetContext).pop();
         },
@@ -210,43 +222,44 @@ class Step3SourcesScreen extends ConsumerWidget {
           : 'https://www.google.com/s2/favicons?sz=128&domain=${_domain(meta.url!)}',
     );
   }
+}
 
-  static VeilleSourceSuggestionsQuery? _buildSuggestionQuery(
-    VeilleConfigState state,
-  ) {
-    final theme = state.selectedTheme;
-    if (theme == null) return null;
-    final themeLabel = state.resolvedThemeLabel(veilleThemeLabelForSlug(theme));
-    final angleLabels = <String>[];
-    if (state.mainTopicSlug != null) {
-      angleLabels.add(
-        state.mainTopicLabel ??
-            state.topicLabels[state.mainTopicSlug!] ??
-            state.mainTopicSlug!,
-      );
-    }
-    for (final slug in state.selectedSuggestions) {
-      final label = state.topicLabels[slug];
-      if (label != null && label.trim().isNotEmpty) angleLabels.add(label);
-    }
-
-    final keywords = <String>{...state.keywords};
-    final selectedTopicSlugs = <String>{
-      if (state.mainTopicSlug != null) state.mainTopicSlug!,
-      ...state.selectedSuggestions,
-    };
-    for (final slug in selectedTopicSlugs) {
-      keywords.addAll(state.angleKeywords[slug] ?? const <String>[]);
-    }
-
-    return (
-      themeId: theme,
-      themeLabel: themeLabel,
-      brief: state.editorialBrief ?? '',
-      anglesKey: angleLabels.join('|'),
-      keywordsKey: keywords.join('|'),
+@visibleForTesting
+VeilleSourceSuggestionsQuery? buildSuggestionQuery(VeilleConfigState state) {
+  final theme = state.selectedTheme;
+  if (theme == null) return null;
+  final themeLabel = state.resolvedThemeLabel(veilleThemeLabelForSlug(theme));
+  final angleLabels = <String>[];
+  if (state.mainTopicSlug != null) {
+    angleLabels.add(
+      state.mainTopicLabel ??
+          state.topicLabels[state.mainTopicSlug!] ??
+          state.mainTopicSlug!,
     );
   }
+  for (final slug in state.selectedSuggestions) {
+    final label = state.topicLabels[slug];
+    if (label != null && label.trim().isNotEmpty) angleLabels.add(label);
+  }
+
+  final keywords = <String>{...state.keywords};
+  final selectedTopicSlugs = <String>{
+    if (state.mainTopicSlug != null) state.mainTopicSlug!,
+    ...state.selectedSuggestions,
+  };
+  for (final slug in selectedTopicSlugs) {
+    keywords.addAll(state.angleKeywords[slug] ?? const <String>[]);
+  }
+
+  return (
+    themeId: theme,
+    themeLabel: themeLabel,
+    brief: state.editorialBrief ?? '',
+    anglesKey:
+        angleLabels.take(VeilleConfigNotifier.maxSuggestAngles).join('|'),
+    keywordsKey:
+        keywords.take(VeilleConfigNotifier.maxSuggestKeywords).join('|'),
+  );
 }
 
 class _SuggestedSourcesList extends StatelessWidget {
@@ -320,20 +333,25 @@ class _SourceSuggestionsLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 18),
-      child: Column(
-        children: [
-          const FacteurLoader(width: 64, height: 64),
-          const SizedBox(height: 8),
-          Text(
-            'Recherche de sources pour ta veille…',
-            style: GoogleFonts.dmSans(
-              fontSize: 12.5,
-              color: const Color(0xFF8B7E63),
+    return SizedBox(
+      width: double.infinity,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const FacteurLoader(width: 64, height: 64),
+            const SizedBox(height: 8),
+            Text(
+              'Recherche de sources pour ta veille…',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.dmSans(
+                fontSize: 12.5,
+                color: const Color(0xFF8B7E63),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -341,7 +359,8 @@ class _SourceSuggestionsLoading extends StatelessWidget {
 
 class _SourceSuggestionsEmpty extends StatelessWidget {
   final VoidCallback? onRetry;
-  const _SourceSuggestionsEmpty({required this.onRetry});
+  final bool isError;
+  const _SourceSuggestionsEmpty({required this.onRetry, this.isError = false});
 
   @override
   Widget build(BuildContext context) {
@@ -357,7 +376,9 @@ class _SourceSuggestionsEmpty extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Aucune source proposée pour l\'instant.',
+            isError
+                ? 'Impossible de proposer des sources pour l\'instant.'
+                : 'Aucune source proposée pour l\'instant.',
             style: GoogleFonts.dmSans(
               fontSize: 13,
               fontWeight: FontWeight.w600,
@@ -368,7 +389,7 @@ class _SourceSuggestionsEmpty extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: onRetry,
             icon: Icon(PhosphorIcons.arrowsClockwise(), size: 15),
-            label: const Text('Proposer plus de sources'),
+            label: Text(isError ? 'Réessayer' : 'Proposer plus de sources'),
           ),
         ],
       ),

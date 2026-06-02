@@ -13,8 +13,9 @@ typedef VeilleSourceSuggestionsQuery = ({
 
 /// Suggestions de sources niche pour le Step 3.
 ///
-/// Le repo renvoie `[]` en cas d'erreur/timeout ; l'UI affiche alors un état
-/// vide avec un bouton qui invalide ce provider pour relancer la pipeline.
+/// Une réponse 200 vide est un vide légitime. Les erreurs transport/API
+/// remontent en `AsyncError`, ce qui permet à l'UI d'afficher un retry
+/// distinct de l'état "aucune source".
 final veilleSourceSuggestionsProvider = FutureProvider.autoDispose
     .family<List<VeilleSourceSuggestionDto>, VeilleSourceSuggestionsQuery>((
       ref,
