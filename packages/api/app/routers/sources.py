@@ -8,14 +8,15 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
+from app.models.enums import InterestState
 from app.models.failed_source_attempt import FailedSourceAttempt
-from app.models.source import Source
+from app.models.source import Source, UserSource
 from app.models.user import UserInterest
 from app.schemas.source import (
     PremiumConnectionResponse,
@@ -47,6 +48,7 @@ from app.services.sources_cache import SOURCES_CACHE
 from app.utils.db_retry import retry_db_op
 
 logger = structlog.get_logger()
+FOLLOWED_SOURCE_STATES = (InterestState.FOLLOWED, InterestState.FAVORITE)
 
 router = APIRouter()
 
@@ -360,10 +362,11 @@ async def get_sources_by_theme(
     db: AsyncSession = Depends(get_db),
 ) -> ThemeSourcesResponse:
     """Sources par thème : Curées → Candidates → Communauté."""
-    from app.models.source import UserSource
-
     # Sources déjà suivies par l'utilisateur (pour flag is_trusted dans la réponse)
-    trusted_stmt = select(UserSource.source_id).where(UserSource.user_id == user_id)
+    trusted_stmt = select(UserSource.source_id).where(
+        UserSource.user_id == UUID(user_id),
+        UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+    )
     trusted_result = await db.execute(trusted_stmt)
     trusted_ids: set[UUID] = {row[0] for row in trusted_result.all()}
 
@@ -421,7 +424,13 @@ async def get_sources_by_theme(
 
             stmt_community = (
                 select(Source, func.count(UserSource.user_id).label("followers"))
-                .join(UserSource, UserSource.source_id == Source.id)
+                .join(
+                    UserSource,
+                    and_(
+                        UserSource.source_id == Source.id,
+                        UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+                    ),
+                )
                 .where(Source.is_active.is_(True))
             )
             if exclude_ids:
@@ -452,10 +461,9 @@ async def get_themes_followed(
     db: AsyncSession = Depends(get_db),
 ) -> ThemesFollowedResponse:
     """Thèmes suivis par l'utilisateur avec count de sources."""
-    from app.models.source import UserSource
-
     # Get user interests
-    stmt = select(UserInterest.interest_slug).where(UserInterest.user_id == user_id)
+    user_uuid = UUID(user_id)
+    stmt = select(UserInterest.interest_slug).where(UserInterest.user_id == user_uuid)
     result = await db.execute(stmt)
     slugs = [row[0] for row in result.fetchall()]
 
@@ -465,7 +473,8 @@ async def get_themes_followed(
             select(func.count())
             .select_from(Source)
             .join(UserSource, UserSource.source_id == Source.id)
-            .where(UserSource.user_id == user_id)
+            .where(UserSource.user_id == user_uuid)
+            .where(UserSource.state.in_(FOLLOWED_SOURCE_STATES))
             .where(Source.is_active.is_(True))
             .where((Source.theme == slug) | (Source.secondary_themes.any(slug)))
         )

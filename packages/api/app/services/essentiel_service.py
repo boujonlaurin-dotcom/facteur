@@ -37,7 +37,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import ContentType, SourceType
+from app.models.enums import ContentType, InterestState, SourceType
 from app.models.source import UserSource
 from app.models.user import UserInterest, UserSubtopic
 from app.models.user_personalization import UserPersonalization
@@ -122,7 +122,8 @@ async def fetch_user_essentiel_context(
     src_rows = (
         await db.execute(
             select(UserSource.source_id, UserSource.priority_multiplier).where(
-                UserSource.user_id == user_id
+                UserSource.user_id == user_id,
+                UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
             )
         )
     ).all()

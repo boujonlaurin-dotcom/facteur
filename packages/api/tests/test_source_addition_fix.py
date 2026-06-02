@@ -27,8 +27,9 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.enums import InterestState, SourceType
 from app.models.source import Source, UserSource
-from app.models.enums import SourceType
+from app.models.user_favorites import UserFavoriteSource
 from app.schemas.source import SourceDetectResponse
 from app.services.source_service import SourceService
 
@@ -103,3 +104,49 @@ async def test_add_custom_source_idempotent(db_session: AsyncSession, fake_detec
     )
     rows = result.scalars().all()
     assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_legacy_trust_source_forces_existing_row_followed(
+    db_session: AsyncSession,
+):
+    user_id = uuid4()
+    source = Source(
+        id=uuid4(),
+        name="Existing Source",
+        url="https://existing.example.com",
+        feed_url="https://existing.example.com/feed.xml",
+        type=SourceType.ARTICLE,
+        theme="tech",
+        is_active=True,
+        is_curated=True,
+    )
+    db_session.add(source)
+    db_session.add(
+        UserSource(
+            user_id=user_id,
+            source_id=source.id,
+            state=InterestState.HIDDEN,
+        )
+    )
+    db_session.add(UserFavoriteSource(user_id=user_id, source_id=source.id, position=0))
+    await db_session.commit()
+
+    assert await SourceService(db_session).trust_source(str(user_id), str(source.id))
+    await db_session.commit()
+
+    user_source = await db_session.scalar(
+        select(UserSource).where(
+            UserSource.user_id == user_id,
+            UserSource.source_id == source.id,
+        )
+    )
+    favorite = await db_session.scalar(
+        select(UserFavoriteSource).where(
+            UserFavoriteSource.user_id == user_id,
+            UserFavoriteSource.source_id == source.id,
+        )
+    )
+    assert user_source is not None
+    assert user_source.state == InterestState.FOLLOWED
+    assert favorite is None

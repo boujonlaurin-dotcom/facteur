@@ -4,6 +4,12 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../feed/providers/feed_provider.dart';
+import '../../feed/repositories/feed_repository.dart';
+import '../../flux_continu/providers/flux_continu_provider.dart';
+import '../../my_interests/providers/user_interests_provider.dart';
+import '../../my_interests/providers/user_sources_state_provider.dart';
+import '../../sources/providers/sources_providers.dart';
 import 'onboarding_provider.dart';
 
 /// Re-sync onboarding answers saved locally when the previous attempt failed.
@@ -34,7 +40,7 @@ class OnboardingSyncNotifier extends StateNotifier<void> {
     if (_inFlight) return;
     _inFlight = true;
     try {
-      final box = await Hive.openBox(_boxName);
+      final box = await Hive.openBox<dynamic>(_boxName);
       final pending = box.get(_pendingSyncKey) as bool? ?? false;
       if (!pending) return;
 
@@ -48,9 +54,7 @@ class OnboardingSyncNotifier extends StateNotifier<void> {
         Map<String, dynamic>.from(rawBackup as Map),
       );
 
-      debugPrint(
-        '[ONBOARDING_TELEMETRY] event=resync_start pending=true',
-      );
+      debugPrint('[ONBOARDING_TELEMETRY] event=resync_start pending=true');
 
       final userService = _ref.read(userApiServiceProvider);
       final result = await userService.saveOnboarding(answers);
@@ -66,9 +70,8 @@ class OnboardingSyncNotifier extends StateNotifier<void> {
         // `authStateProvider` pour que `needsOnboarding` ne reste pas bloqué
         // à `true` (décision prise par `_checkOnboardingStatus` lancé avant
         // que le resync ne termine).
-        await _ref
-            .read(authStateProvider.notifier)
-            .refreshOnboardingStatus();
+        await _ref.read(authStateProvider.notifier).refreshOnboardingStatus();
+        await _invalidatePostOnboardingState();
         debugPrint('[ONBOARDING_TELEMETRY] event=resync_success');
       } else {
         debugPrint(
@@ -81,6 +84,21 @@ class OnboardingSyncNotifier extends StateNotifier<void> {
     } finally {
       _inFlight = false;
     }
+  }
+
+  Future<void> _invalidatePostOnboardingState() async {
+    FeedRepository.clearDefaultViewCache();
+    final userId = _ref.read(authStateProvider).user?.id;
+    if (userId != null) {
+      await _ref.read(feedCacheServiceProvider)?.clearForUser(userId);
+    }
+
+    _ref.invalidate(userInterestsProvider);
+    _ref.invalidate(userSourcesStateProvider);
+    _ref.invalidate(userSourcesProvider);
+    _ref.invalidate(feedProvider);
+    _ref.invalidate(fluxContinuProvider);
+    _ref.invalidate(pepitesProvider);
   }
 }
 

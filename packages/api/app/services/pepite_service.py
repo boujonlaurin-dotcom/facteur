@@ -9,9 +9,10 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.enums import InterestState
 from app.models.source import Source, UserSource
 from app.models.user import UserInterest
 from app.models.user_personalization import UserPersonalization
@@ -21,6 +22,7 @@ logger = structlog.get_logger()
 
 DISMISS_COOL_DOWN_DAYS = 7
 RATE_LIMIT_HOURS = 24
+FOLLOWED_SOURCE_STATES = (InterestState.FOLLOWED, InterestState.FAVORITE)
 
 
 def _now() -> datetime:
@@ -80,7 +82,10 @@ class PepiteService:
 
     async def _user_followed_source_ids(self, user_uuid: UUID) -> set[UUID]:
         result = await self.db.execute(
-            select(UserSource.source_id).where(UserSource.user_id == user_uuid)
+            select(UserSource.source_id).where(
+                UserSource.user_id == user_uuid,
+                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+            )
         )
         return set(result.scalars().all())
 
@@ -119,7 +124,13 @@ class PepiteService:
         count_col = func.count(UserSource.user_id).label("follower_count")
         query = (
             select(Source, count_col)
-            .outerjoin(UserSource, UserSource.source_id == Source.id)
+            .outerjoin(
+                UserSource,
+                and_(
+                    UserSource.source_id == Source.id,
+                    UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+                ),
+            )
             .where(Source.is_pepite_recommendation)
             .where(Source.is_active)
             .group_by(Source.id)
