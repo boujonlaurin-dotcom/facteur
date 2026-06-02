@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../navigation/letter_action_route_resolver.dart';
 import '../models/letter.dart';
 import '../models/letter_progress.dart';
 import '../providers/letters_provider.dart';
@@ -95,10 +96,8 @@ class _OpenLetterScreenState extends ConsumerState<OpenLetterScreen>
               opaque: true,
               fullscreenDialog: true,
               transitionDuration: const Duration(milliseconds: 280),
-              pageBuilder: (_, __, ___) => LetterCompletionOverlay(
-                letter: letter,
-                onDismiss: () {},
-              ),
+              pageBuilder: (_, __, ___) =>
+                  LetterCompletionOverlay(letter: letter, onDismiss: () {}),
             ),
           );
         },
@@ -123,8 +122,9 @@ class _OpenLetterScreenState extends ConsumerState<OpenLetterScreen>
       return;
     }
 
-    final newlyDone =
-        doneActions.where((a) => !_seenDoneActionIds.contains(a.id)).toList();
+    final newlyDone = doneActions
+        .where((a) => !_seenDoneActionIds.contains(a.id))
+        .toList();
     if (newlyDone.isEmpty) return;
     _seenDoneActionIds.addAll(newlyDone.map((a) => a.id));
 
@@ -162,9 +162,8 @@ class _OpenLetterScreenState extends ConsumerState<OpenLetterScreen>
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
       body: state.when(
-        loading: () => Center(
-          child: CircularProgressIndicator(color: colors.primary),
-        ),
+        loading: () =>
+            Center(child: CircularProgressIndicator(color: colors.primary)),
         error: (e, _) => _ErrorView(
           onRetry: () => ref.read(lettersProvider.notifier).refresh(),
         ),
@@ -197,8 +196,10 @@ class _NotFound extends StatelessWidget {
             Align(
               alignment: Alignment.centerLeft,
               child: IconButton(
-                icon:
-                    Icon(PhosphorIcons.arrowLeft(), color: colors.textPrimary),
+                icon: Icon(
+                  PhosphorIcons.arrowLeft(),
+                  color: colors.textPrimary,
+                ),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ),
@@ -262,8 +263,9 @@ class _Body extends ConsumerWidget {
         .where((p) => p.trim().isNotEmpty)
         .toList(growable: false);
 
-    final doneCount =
-        letter.actions.where((a) => a.status == LetterActionStatus.done).length;
+    final doneCount = letter.actions
+        .where((a) => a.status == LetterActionStatus.done)
+        .length;
     final total = letter.actions.length;
 
     return SafeArea(
@@ -275,8 +277,10 @@ class _Body extends ConsumerWidget {
               child: Row(
                 children: [
                   IconButton(
-                    icon: Icon(PhosphorIcons.arrowLeft(),
-                        color: colors.textPrimary),
+                    icon: Icon(
+                      PhosphorIcons.arrowLeft(),
+                      color: colors.textPrimary,
+                    ),
                     onPressed: () => Navigator.of(context).pop(),
                     tooltip: 'Retour',
                   ),
@@ -294,8 +298,10 @@ class _Body extends ConsumerWidget {
                     ),
                   ),
                   IconButton(
-                    icon: Icon(PhosphorIcons.dotsThreeVertical(),
-                        color: colors.textTertiary),
+                    icon: Icon(
+                      PhosphorIcons.dotsThreeVertical(),
+                      color: colors.textTertiary,
+                    ),
                     onPressed: () {},
                     tooltip: 'Plus',
                   ),
@@ -303,9 +309,7 @@ class _Body extends ConsumerWidget {
               ),
             ),
           ),
-          SliverToBoxAdapter(
-            child: _Illustration(colors: colors),
-          ),
+          SliverToBoxAdapter(child: _Illustration(colors: colors)),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 22),
             sliver: SliverList(
@@ -344,7 +348,8 @@ class _Body extends ConsumerWidget {
                     const SizedBox(height: 12),
                   ],
                 ),
-                if (letter.introPalier != null && letter.introPalier!.isNotEmpty) ...[
+                if (letter.introPalier != null &&
+                    letter.introPalier!.isNotEmpty) ...[
                   Text(
                     letter.introPalier!,
                     style: GoogleFonts.fraunces(
@@ -389,7 +394,7 @@ class _Body extends ConsumerWidget {
                   (a) => LetterActionTile(
                     action: a,
                     onTap: () async {
-                      final route = a.targetRoute;
+                      final route = resolveLetterActionRoute(a);
                       if (route != null && route.isNotEmpty) {
                         await context.push<void>(route);
                       }
@@ -446,10 +451,7 @@ class _IllustrationState extends State<_Illustration>
         gradient: RadialGradient(
           center: const Alignment(0.4, -0.4),
           radius: 1.0,
-          colors: [
-            widget.colors.primary.withOpacity(0.06),
-            Colors.transparent,
-          ],
+          colors: [widget.colors.primary.withOpacity(0.06), Colors.transparent],
           stops: const [0, 0.6],
         ),
       ),

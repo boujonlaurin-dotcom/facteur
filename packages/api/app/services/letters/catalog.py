@@ -48,7 +48,7 @@ LETTER_1: dict = {
             "id": "first_perspectives_open",
             "label": "Lancer ta première analyse de comparaison",
             "help": "Compare deux angles sur le même sujet.",
-            "target_route": "/feed",
+            "target_route": "/flaner",
         },
     ],
     "message": (
@@ -70,10 +70,10 @@ LETTER_2: dict = {
     "actions": [
         {
             "id": "read_first_essentiel",
-            "label": "Lire L'essentiel du jour",
+            "label": "Lire Actu du jour",
             "help": "Cinq articles, choisis pour toi. C'est le rendez-vous quotidien.",
             "completion_palier": "Premier rendez-vous tenu. Ça commence ici.",
-            "target_route": "/digest",
+            "target_route": "/flux-continu/section/essentiel",
         },
         {
             "id": "read_first_bonnes_nouvelles",
@@ -82,7 +82,7 @@ LETTER_2: dict = {
             "completion_palier": (
                 "Tu sais maintenant que la lecture peut aussi faire du bien."
             ),
-            "target_route": "/digest?serein=1",
+            "target_route": "/flux-continu/section/bonnes",
         },
         {
             "id": "read_3_long_articles",
@@ -91,7 +91,7 @@ LETTER_2: dict = {
             "completion_palier": (
                 "Dix articles parcourus. Tu prends maintenant le rythme."
             ),
-            "target_route": "/feed",
+            "target_route": "/flaner",
         },
         {
             "id": "read_first_video_podcast",
@@ -103,7 +103,7 @@ LETTER_2: dict = {
             "completion_palier": (
                 "Trois articles mis de côté. Tu commences à te constituer un fonds."
             ),
-            "target_route": "/feed",
+            "target_route": "/flaner",
         },
         {
             "id": "recommend_first_article",
@@ -112,7 +112,7 @@ LETTER_2: dict = {
                 "Un like (🌻), c'est un signal. Il oriente ta sélection et celle des autres."
             ),
             "completion_palier": "Un signal envoyé. Le Facteur écoute.",
-            "target_route": "/feed",
+            "target_route": "/flaner",
         },
     ],
     "message": (
