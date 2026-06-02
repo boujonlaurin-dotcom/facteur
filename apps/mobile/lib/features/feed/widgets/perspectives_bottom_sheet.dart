@@ -164,6 +164,8 @@ String _toBarGroup(String stance) {
 /// Analysis workflow state
 enum PerspectivesAnalysisState { idle, loading, done, error }
 
+enum PerspectivesSectionStatus { loading, empty, ready }
+
 /// Bottom sheet to display alternative perspectives
 class PerspectivesBottomSheet extends ConsumerStatefulWidget {
   final List<Perspective> perspectives;
@@ -1354,11 +1356,13 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
   /// si non-null. Renvoyé par le back via `reference_pivot`.
   final TokenSpan? referencePivot;
 
+  final PerspectivesSectionStatus status;
+
   const PerspectivesInlineSection({
     super.key,
-    required this.perspectives,
-    required this.biasDistribution,
-    required this.keywords,
+    this.perspectives = const [],
+    this.biasDistribution = const {},
+    this.keywords = const [],
     required this.contentId,
     this.sourceBiasStance = 'unknown',
     this.sourceName = '',
@@ -1376,6 +1380,7 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
     required this.onToggle,
     this.referenceTitle = '',
     this.referencePivot,
+    this.status = PerspectivesSectionStatus.ready,
   });
 
   @override
@@ -1433,13 +1438,21 @@ class _PerspectivesInlineSectionState
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final variants = _filteredPerspectives.take(8).toList();
+    final isReady = widget.status == PerspectivesSectionStatus.ready;
+    final label = widget.status == PerspectivesSectionStatus.loading
+        ? 'Couverture médiatique'
+        : 'Couverture médiatique (${widget.perspectives.length})';
+    final labelColor = widget.status == PerspectivesSectionStatus.empty
+        ? colors.textTertiary
+        : colors.textPrimary;
+    final shouldShowBody = isReady && widget.isExpanded;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // ── Bandeau cm-panel-inline : hairlines + label + spectrum + count + caret ──
         GestureDetector(
-          onTap: widget.onToggle,
+          onTap: isReady ? widget.onToggle : null,
           behavior: HitTestBehavior.opaque,
           child: Container(
             decoration: BoxDecoration(
@@ -1464,32 +1477,39 @@ class _PerspectivesInlineSectionState
                     children: [
                       Flexible(
                         child: Text(
-                          'Couverture médiatique (${widget.perspectives.length})',
+                          label,
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1,
                           style: GoogleFonts.dmSans(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color: colors.textPrimary,
+                            color: labelColor,
                           ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                CoverageSpectrumBar(distribution: widget.biasDistribution),
-                const SizedBox(width: 10),
-                AnimatedRotation(
-                  turns: _rotationTurns,
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeInOut,
-                  child: Icon(
-                    PhosphorIcons.caretDown(PhosphorIconsStyle.regular),
-                    size: 14,
-                    color: colors.textSecondary,
+                if (widget.status != PerspectivesSectionStatus.empty) ...[
+                  const SizedBox(width: 12),
+                  if (widget.status == PerspectivesSectionStatus.loading)
+                    const CoverageSpectrumBarShimmer()
+                  else
+                    CoverageSpectrumBar(distribution: widget.biasDistribution),
+                ],
+                if (isReady) ...[
+                  const SizedBox(width: 10),
+                  AnimatedRotation(
+                    turns: _rotationTurns,
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOut,
+                    child: Icon(
+                      PhosphorIcons.caretDown(PhosphorIconsStyle.regular),
+                      size: 14,
+                      color: colors.textSecondary,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -1498,7 +1518,7 @@ class _PerspectivesInlineSectionState
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeInOut,
           alignment: Alignment.topCenter,
-          child: widget.isExpanded
+          child: shouldShowBody
               ? _buildExpandedBody(colors, textTheme, variants)
               : const SizedBox.shrink(),
         ),
