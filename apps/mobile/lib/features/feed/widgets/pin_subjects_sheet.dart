@@ -181,6 +181,9 @@ class _PinSubjectsContentState extends ConsumerState<_PinSubjectsContent> {
   final _searchController = TextEditingController();
   String _query = '';
 
+  /// Onglet actif de la zone « SUIVIS » : 0 = Sources, 1 = Sujets.
+  int _followedTab = 0;
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -276,34 +279,6 @@ class _PinSubjectsContentState extends ConsumerState<_PinSubjectsContent> {
     return _normalize(text).contains(normalizedQuery);
   }
 
-  /// Groupe les sujets par thème parent, dans l'ordre canonique des thèmes
-  /// Facteur (les thèmes inconnus en dernier), sujets triés alpha dans chaque
-  /// groupe.
-  List<MapEntry<String, List<CustomTopicInterest>>> _groupByTheme(
-    List<CustomTopicInterest> subjects,
-  ) {
-    final groups = <String, List<CustomTopicInterest>>{};
-    for (final t in subjects) {
-      groups.putIfAbsent(t.slugParent, () => []).add(t);
-    }
-    for (final list in groups.values) {
-      list.sort((a, b) =>
-          a.topicName.toLowerCase().compareTo(b.topicName.toLowerCase()));
-    }
-    final order = {
-      for (var i = 0; i < kVeilleFacteurThemes.length; i++)
-        kVeilleFacteurThemes[i].slug: i,
-    };
-    final entries = groups.entries.toList()
-      ..sort((a, b) {
-        final ia = order[a.key] ?? kVeilleFacteurThemes.length;
-        final ib = order[b.key] ?? kVeilleFacteurThemes.length;
-        if (ia != ib) return ia.compareTo(ib);
-        return a.key.compareTo(b.key);
-      });
-    return entries;
-  }
-
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
@@ -363,13 +338,14 @@ class _PinSubjectsContentState extends ConsumerState<_PinSubjectsContent> {
           s,
     ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
-    // ── Section SUJETS À ÉPINGLER (suivis non favoris, groupés) ───────
+    // ── Onglet SUJETS (suivis non épinglés, liste à plat triée alpha) ─
     final pinnableTopics = topics
         .where((t) =>
             t.state != InterestState.favorite &&
             _matchesText(t.topicName, normalizedQuery))
-        .toList();
-    final pinnableGroups = _groupByTheme(pinnableTopics);
+        .toList()
+      ..sort((a, b) =>
+          a.topicName.toLowerCase().compareTo(b.topicName.toLowerCase()));
 
     final hasAnything = topics.isNotEmpty || catalog.isNotEmpty;
     final noMatch = orderedPinned.isEmpty &&
@@ -463,52 +439,72 @@ class _PinSubjectsContentState extends ConsumerState<_PinSubjectsContent> {
                   const SizedBox(height: FacteurSpacing.space4),
                 ],
 
-                // Sources suivies non épinglées → 1 tap pour épingler.
-                if (followedSources.isNotEmpty) ...[
-                  _SectionLabel(label: 'SOURCES SUIVIES', colors: colors),
+                // Listes suivies non épinglées → 2 onglets (Sources / Sujets).
+                // La recherche filtre naturellement l'onglet actif. 1 tap sur
+                // une ligne l'épingle (bascule dans « ÉPINGLÉS »).
+                if (followedSources.isNotEmpty ||
+                    pinnableTopics.isNotEmpty) ...[
+                  _SectionLabel(label: 'SUIVIS', colors: colors),
                   const SizedBox(height: 8),
-                  for (final s in followedSources)
-                    _InterestRow(
-                      key: ValueKey('followed_${s.id}'),
-                      leading:
-                          SourceLogoAvatar(source: s, size: 28, radius: 6),
-                      label: s.name,
-                      colors: colors,
-                      onTap: () =>
-                          _setSourceState(s.id, InterestState.favorite),
-                    ),
-                  const SizedBox(height: FacteurSpacing.space4),
-                ],
-
-                // Sujets suivis non épinglés → groupés par thématique.
-                if (pinnableTopics.isNotEmpty) ...[
-                  _SectionLabel(
-                    label: 'SUJETS À ÉPINGLER',
-                    colors: colors,
-                  ),
-                  const SizedBox(height: 8),
-                  for (final group in pinnableGroups) ...[
-                    _ThemeGroupHeader(
-                      emoji: _themeEmoji(group.key),
-                      label: veilleThemeLabelForSlug(group.key),
-                      colors: colors,
-                    ),
-                    const SizedBox(height: 6),
-                    for (final t in group.value)
-                      _InterestRow(
-                        key: ValueKey('pinnable_${t.id}'),
-                        leading: Text(
-                          _themeEmoji(t.slugParent),
-                          style: const TextStyle(fontSize: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<int>(
+                      style: SegmentedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        textStyle: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
                         ),
-                        label: t.topicName,
-                        colors: colors,
-                        onTap: () =>
-                            _setTopicState(t.id, InterestState.favorite),
                       ),
-                    const SizedBox(height: 10),
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment(value: 0, label: Text('Sources')),
+                        ButtonSegment(value: 1, label: Text('Sujets')),
+                      ],
+                      selected: {_followedTab},
+                      onSelectionChanged: (selection) =>
+                          setState(() => _followedTab = selection.first),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (_followedTab == 0) ...[
+                    if (followedSources.isEmpty)
+                      _EmptyFollowedHint(
+                        label: 'Aucune source suivie',
+                        colors: colors,
+                      )
+                    else
+                      for (final s in followedSources)
+                        _InterestRow(
+                          key: ValueKey('followed_${s.id}'),
+                          leading:
+                              SourceLogoAvatar(source: s, size: 28, radius: 6),
+                          label: s.name,
+                          colors: colors,
+                          onTap: () =>
+                              _setSourceState(s.id, InterestState.favorite),
+                        ),
+                  ] else ...[
+                    if (pinnableTopics.isEmpty)
+                      _EmptyFollowedHint(
+                        label: 'Aucun sujet',
+                        colors: colors,
+                      )
+                    else
+                      for (final t in pinnableTopics)
+                        _InterestRow(
+                          key: ValueKey('pinnable_${t.id}'),
+                          leading: Text(
+                            _themeEmoji(t.slugParent),
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          label: t.topicName,
+                          colors: colors,
+                          onTap: () =>
+                              _setTopicState(t.id, InterestState.favorite),
+                        ),
                   ],
-                  const SizedBox(height: FacteurSpacing.space2),
+                  const SizedBox(height: FacteurSpacing.space4),
                 ],
 
                 // Aucun élément ne matche la recherche → proposer de créer.
@@ -728,33 +724,21 @@ class _SearchField extends StatelessWidget {
   }
 }
 
-class _ThemeGroupHeader extends StatelessWidget {
-  final String emoji;
+/// Placeholder muet quand l'onglet actif de la zone « SUIVIS » (Sources /
+/// Sujets) n'a aucun élément à proposer.
+class _EmptyFollowedHint extends StatelessWidget {
   final String label;
   final FacteurColors colors;
 
-  const _ThemeGroupHeader({
-    required this.emoji,
-    required this.label,
-    required this.colors,
-  });
+  const _EmptyFollowedHint({required this.label, required this.colors});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(left: 2, bottom: 2),
-      child: Row(
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 13)),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-        ],
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Text(
+        label,
+        style: TextStyle(color: colors.textTertiary, fontSize: 13),
       ),
     );
   }

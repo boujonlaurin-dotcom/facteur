@@ -1,84 +1,85 @@
-# QA Handoff — « Le mot du jour » : refonte UX & ajustements (Story 24.3)
+# QA Handoff — Flâner : onglets épinglés fiabilisés + modal simplifiée (v2)
 
-> Rempli par l'agent dev. Input de /validate-feature (Chrome 390×844).
+> Itération v2 de la modal d'épinglage (suite PR #748). 1 bug + 3 évolutions UX
+> + réduction des boutons filtre/recherche. Input de /validate-feature (Chrome 390×844).
 
 ## Feature développée
-Refonte UX du module « Le mot du jour » (ex-« La Grille du jour ») : renommage,
-validation par « Entrée » (fin de l'auto-validation), animation de victoire
-(confettis + rebond), option « Donner sa langue au chat », lien explicite avec
-les Actus du jour, fix couleur dark mode (tuile « présent »), carte persistante
-dans le feed, lien de partage qui ouvre l'app, et graphique de classement
-recalibré.
+Fiabilise la barre d'onglets Flâner (les sujets/sources épinglés ne « disparaissent »
+plus), supprime l'onglet « Tous », transforme le `+` en engrenage au-delà de 4 onglets,
+et remplace les 2 listes « suivies » de la modal par 2 onglets (Sources / Sujets) avec
+sujets à plat.
 
 ## PR associée
-À créer (cf. `/go`).
+<!-- À compléter après /go : gh pr view --web -->
 
 ## Écrans impactés
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Jeu / Résultat / Déjà-joué | `/grille` | Modifié |
-| Classement | `/grille/leaderboard` | Modifié (graphique) |
-| Partage | `/grille/share` | Modifié (titre + lien) |
-| Feed / fin de tournée | `/flux-continu` | Modifié (carte CTA persistante) |
+| Flâner (feed principal) | onglet Flâner | Modifié (barre d'onglets + boutons filtre/recherche) |
+| Modal d'épinglage | `showPinSubjectsSheet` (bottom sheet) | Modifié (zone SUIVIS à 2 onglets) |
 
 ## Scénarios de test
 
-### Scénario 1 : Validation par Entrée + clavier
-1. Ouvrir `/grille`, saisir un mot complet (6 lettres).
-2. **Attendu** : PAS d'auto-validation ; la touche `↵` (à droite, `⌫` à gauche)
-   se remplit en ocre primaire et pulse ; l'essai ne part qu'au tap sur `↵`.
+### Scénario 1 : Happy path — épingler sources + sujets, tout reste visible
+**Parcours** :
+1. Ouvrir Flâner, taper l'engrenage/`+` pour ouvrir la modal.
+2. Épingler 2-3 sources (onglet **Sources**) et 2-3 sujets (onglet **Sujets**).
+3. Fermer la modal, observer la barre d'onglets.
+**Résultat attendu** : tous les onglets épinglés (sources **et** sujets) sont visibles et
+intercalés dans l'ordre, aucun ne « disparaît » derrière le fade de droite.
 
-### Scénario 2 : Victoire
-1. Trouver le mot.
-2. **Attendu** : burst de confettis + rebond de la ligne gagnante sur l'écran
-   Résultat ; bouton « Lire les actus du jour » présent ; console sans erreurs.
+### Scénario 2 : Cap à 10 onglets
+**Parcours** :
+1. Épingler plus de 10 éléments au total (sources + sujets).
+**Résultat attendu** : exactement 10 onglets dans la barre (les 10 premiers de l'ordre
+utilisateur) ; le reste reste gérable dans la modal. Pas de crash.
 
-### Scénario 3 : Dark mode (couleur « présent »)
-1. Passer l'app en thème sombre, jouer un mot avec une bonne lettre mal placée.
-2. **Attendu** : tuile/touche « présent » = **jaune/ocre** (plus rouge) ;
-   « placé » = vert.
+### Scénario 3 : Tap onglet actif = retour non filtré
+**Parcours** :
+1. Taper un onglet **sujet** → le feed se filtre, l'onglet devient actif.
+2. Re-taper l'onglet actif.
+3. Idem avec un onglet **source**.
+**Résultat attendu** : le feed redevient non filtré, aucun onglet n'est actif. La source
+se désélectionne bien (régression historique `setSource(null)` corrigée).
 
-### Scénario 4 : Donner sa langue au chat
-1. En cours de jeu, menu `⋯` (app bar) → « Donner sa langue au chat » → confirmer.
-2. **Attendu** : mot révélé, écran Résultat mode « révélé » (cachet « ? RÉVÉLÉ »,
-   copie « Tu as donné ta langue au chat. »), **bouton classement masqué**,
-   streak préservé.
+### Scénario 4 : Affordance + / engrenage
+**Parcours** :
+1. Avec ≤ 4 onglets épinglés → observer l'icône en fin de barre.
+2. Épingler jusqu'à > 4 onglets → ré-observer.
+**Résultat attendu** : `+` quand ≤ 4 ; engrenage quand > 4. Dans les deux cas, le tap
+ouvre la même modal d'épinglage.
 
-### Scénario 5 : Lien Actus + mini-CTA
-1. Sur l'écran Résultat → « Lire les actus du jour » → navigue vers `/flux-continu`.
-2. En jeu, après 2 essais non gagnants → mini-CTA « le mot est dans l'actu du
-   jour — aller lire » s'affiche.
+### Scénario 5 : Modal — 2 onglets Sources / Sujets
+**Parcours** :
+1. Ouvrir la modal avec des sources suivies non épinglées **et** des sujets suivis.
+2. Basculer entre les segments **Sources** et **Sujets**.
+3. Taper une ligne pour l'épingler ; vérifier qu'elle remonte dans « ÉPINGLÉS ».
+4. Tester la recherche (filtre l'onglet actif) et un onglet vide.
+**Résultat attendu** : 2 segments fonctionnels ; sujets en liste à plat (emoji par ligne,
+**plus d'en-têtes de thème**) ; épingler/dé-épingler + drag dans « ÉPINGLÉS » OK ;
+placeholder muet (« Aucune source suivie » / « Aucun sujet ») si l'onglet actif est vide.
 
-### Scénario 6 : Carte persistante
-1. Compléter la grille, puis fermer la tournée (ClosingCard).
-2. **Attendu** : la carte « Le mot du jour » reste dans le feed (état « déjà
-   jouée »).
-
-### Scénario 7 : Partage → ouvre l'app
-1. Écran Partage / Classement → « Défier un·e ami·e » (copie le lien).
-2. **Attendu** : lien = `io.supabase.facteur://grille` (ouvre `/grille` dans
-   l'app via deep-link, plus le site facteur.app).
-
-### Scénario 8 : Classement
-1. Terminer la partie, ouvrir le classement.
-2. **Attendu** : barres de distribution proportionnelles (la plus fréquente =
-   pleine largeur), compactes ; ligne « toi » surlignée.
+### Scénario 6 : Boutons filtre + recherche réduits
+**Résultat attendu** : la loupe (recherche) et le bouton filtre sont légèrement plus petits
+(34 px, icônes 16) ; l'espace horizontal libéré profite à la liste d'onglets. Aucun
+chevauchement, alignement vertical correct.
 
 ## Critères d'acceptation
-- [ ] « Le mot du jour » partout / « Trouve le mot du jour » sur la carte feed
-- [ ] Validation uniquement via « Entrée », touche en avant + pulse
-- [ ] Confettis + rebond à la victoire (reduce-motion safe)
-- [ ] « Langue au chat » : mot révélé, non classé, streak conservé
-- [ ] Tuile « présent » jaune/ocre en dark mode
-- [ ] Carte reste dans le feed après fermeture
-- [ ] Lien de partage ouvre la grille dans l'app
-- [ ] Barres de classement aux bons ordres de grandeur
+- [ ] N sources + M sujets (N+M ≤ 10) → tous visibles et intercalés dans l'ordre unifié.
+- [ ] > 10 épinglés → exactement 10 onglets, surplus non perdu (modal).
+- [ ] Aucun onglet « Tous ».
+- [ ] Tap onglet actif (sujet ET source) → feed non filtré, aucun onglet actif.
+- [ ] ≤ 4 onglets → `+` ; > 4 → engrenage (même action).
+- [ ] Modal : 2 segments Sources/Sujets, sujets à plat, drag « ÉPINGLÉS » non régressé.
+- [ ] Boutons filtre/recherche visiblement réduits, sans casser le layout.
 
 ## Zones de risque
-- Reduce-motion (`MediaQuery.disableAnimations`) : pas de pulse/confetti/rebond.
-- Cold-load d'une partie « révélée » : retombe sur l'écran Déjà-joué standard.
+- Cohérence **barre ↔ modal** : l'ordre des onglets doit suivre l'ordre validé par drag
+  (prefs `pinned_tabs_order_v1`). Drag dans la modal → la barre reflète le même ordre.
+- Réseau : `onTapActiveTab` enchaîne 4 `set*(null)` → potentiellement plusieurs refresh
+  (trade-off connu, follow-up hors scope).
 
 ## Dépendances
-- Backend : nouvel endpoint `POST /api/grille/today/reveal` (aucune migration).
-- Le deep-link entrant `io.supabase.facteur://grille` est géré par
-  `DeepLinkService` + redirect GoRouter.
+- `tab_counts_provider`, `userInterestsProvider`, `userSourcesStateProvider`,
+  `userSourcesProvider`, `tabOrderPrefsProvider` (SharedPreferences `pinned_tabs_order_v1`).
+- Aucune modif backend / migration.

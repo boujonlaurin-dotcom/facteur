@@ -106,9 +106,9 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
             behavior: HitTestBehavior.opaque,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              height: 38,
+              height: 34,
               padding: EdgeInsets.symmetric(
-                horizontal: hasActive && !_expanded ? 14 : 10,
+                horizontal: hasActive && !_expanded ? 12 : 9,
               ),
               decoration: BoxDecoration(
                 color: (_expanded || hasActive)
@@ -126,7 +126,7 @@ class _FilterCollapsiblePanelState extends State<FilterCollapsiblePanel> {
                     _expanded
                         ? PhosphorIcons.x(PhosphorIconsStyle.bold)
                         : PhosphorIcons.funnel(PhosphorIconsStyle.regular),
-                    size: 18,
+                    size: 16,
                     color: (_expanded || hasActive)
                         ? colors.primary
                         : colors.textSecondary,

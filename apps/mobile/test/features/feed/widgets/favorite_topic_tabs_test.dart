@@ -57,17 +57,14 @@ Content _content({
 
 void main() {
   group('buildFavoriteTabModelsForTest', () {
-    test('0 favoris → only "Tous" tab', () {
+    test('0 favoris → aucun onglet (« Tous » supprimé)', () {
       final tabs = buildFavoriteTabModelsForTest(
         topics: const [],
         favorites: const [],
         items: const [],
       );
 
-      expect(tabs, hasLength(1));
-      expect(tabs.first.kind, FavoriteTabKind.tous);
-      expect(tabs.first.label, 'Tous');
-      expect(tabs.first.active, isTrue);
+      expect(tabs, isEmpty);
     });
 
     test(
@@ -98,17 +95,16 @@ void main() {
         items: const [],
       );
 
-      // Le thème favori (environment) ne produit PLUS d'onglet : seuls
-      // « Tous » + les 2 sujets épinglés sont présents. Counts à 0 → tri
-      // alphabétique : ia santé < trump.
+      // Le thème favori (environment) ne produit PAS d'onglet, et « Tous » est
+      // supprimé : seuls les 2 sujets épinglés sont présents. Plus de tri par
+      // count → ordre d'insertion : entités d'abord, puis sujets.
       expect(tabs.map((t) => t.kind).toList(), [
-        FavoriteTabKind.tous,
-        FavoriteTabKind.subjectTopic,
         FavoriteTabKind.subjectEntity,
+        FavoriteTabKind.subjectTopic,
       ]);
       expect(tabs.any((t) => t.kind == FavoriteTabKind.theme), isFalse);
+      expect(tabs[0].label, 'Trump');
       expect(tabs[1].label, 'IA santé');
-      expect(tabs[2].label, 'Trump');
     });
 
     test('topic not in favorites → excluded', () {
@@ -127,8 +123,7 @@ void main() {
         items: const [],
       );
 
-      expect(tabs, hasLength(1));
-      expect(tabs.first.kind, FavoriteTabKind.tous);
+      expect(tabs, isEmpty);
     });
 
     test('count = unseen items < 48h matching slug', () {
@@ -160,10 +155,6 @@ void main() {
       final iaTab =
           tabs.firstWhere((t) => t.kind == FavoriteTabKind.subjectTopic);
       expect(iaTab.count, 1);
-
-      final tousTab =
-          tabs.firstWhere((t) => t.kind == FavoriteTabKind.tous);
-      expect(tousTab.count, 2);
     });
 
     test('selected slug marks the matching tab as active', () {
@@ -186,10 +177,6 @@ void main() {
         tabs.firstWhere((t) => t.slug == 'ai').active,
         isTrue,
       );
-      expect(
-        tabs.firstWhere((t) => t.kind == FavoriteTabKind.tous).active,
-        isFalse,
-      );
     });
 
     test('source favorite → produces a source tab carrying its Source', () {
@@ -204,7 +191,6 @@ void main() {
       );
 
       expect(tabs.map((t) => t.kind).toList(), [
-        FavoriteTabKind.tous,
         FavoriteTabKind.source,
       ]);
       final sourceTab =
@@ -225,8 +211,7 @@ void main() {
         sourceById: const {},
       );
 
-      expect(tabs, hasLength(1));
-      expect(tabs.first.kind, FavoriteTabKind.tous);
+      expect(tabs, isEmpty);
     });
 
     test('selectedSourceId marks the matching source tab as active', () {
@@ -251,8 +236,8 @@ void main() {
       final topics = [_topic(id: 't1', name: 'IA', slugParent: 'ai')];
       final src = _source(id: 's1', name: 'Le Monde');
 
-      // Sans ordre custom : tri par count (0) puis alpha → 'ia' < 'le monde'
-      // donc le sujet d'abord.
+      // Sans ordre custom : ordre d'insertion = sujets puis sources (plus de
+      // tri par count, qui reléguait les sources en fin de liste).
       final defaultTabs = buildFavoriteTabModelsForTest(
         topics: topics,
         favorites: const [CustomTopicFavoriteRef(id: 't1')],
@@ -261,7 +246,6 @@ void main() {
         sourceById: {'s1': src},
       );
       expect(defaultTabs.map((t) => t.kind).toList(), [
-        FavoriteTabKind.tous,
         FavoriteTabKind.subjectTopic,
         FavoriteTabKind.source,
       ]);
@@ -276,10 +260,115 @@ void main() {
         order: const ['source:s1', 'topic:t1'],
       );
       expect(orderedTabs.map((t) => t.kind).toList(), [
-        FavoriteTabKind.tous,
         FavoriteTabKind.source,
         FavoriteTabKind.subjectTopic,
       ]);
+    });
+
+    test('cappe à 10 onglets, en gardant les 10 premiers dans l\'ordre user',
+        () {
+      final topics = [
+        for (var i = 0; i < 6; i++)
+          _topic(id: 't$i', name: 'Sujet $i', slugParent: 'p$i'),
+      ];
+      final favorites = [
+        for (var i = 0; i < 6; i++) CustomTopicFavoriteRef(id: 't$i'),
+      ];
+      final sourceById = {
+        for (var i = 0; i < 6; i++) 's$i': _source(id: 's$i', name: 'Source $i'),
+      };
+      final sourceFavorites = [
+        for (var i = 0; i < 6; i++)
+          SourceFavoriteRef(sourceId: 's$i', position: i),
+      ];
+      // Ordre utilisateur : alterne sujet/source (12 clés).
+      final order = <String>[
+        for (var i = 0; i < 6; i++) ...['topic:t$i', 'source:s$i'],
+      ];
+
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: topics,
+        favorites: favorites,
+        items: const [],
+        sourceFavorites: sourceFavorites,
+        sourceById: sourceById,
+        order: order,
+      );
+
+      // Exactement 10 onglets = les 10 premières clés de `order`.
+      expect(tabs, hasLength(10));
+      expect(tabs.map((t) => t.label).toList(), const [
+        'Sujet 0',
+        'Source 0',
+        'Sujet 1',
+        'Source 1',
+        'Sujet 2',
+        'Source 2',
+        'Sujet 3',
+        'Source 3',
+        'Sujet 4',
+        'Source 4',
+      ]);
+      // Le surplus (11e/12e clés) est tronqué.
+      expect(tabs.any((t) => t.label == 'Sujet 5'), isFalse);
+      expect(tabs.any((t) => t.label == 'Source 5'), isFalse);
+    });
+
+    test('3 sujets + 3 sources en ordre alterné → les 6 présents, intercalés',
+        () {
+      final topics = [
+        for (var i = 0; i < 3; i++)
+          _topic(id: 't$i', name: 'Sujet $i', slugParent: 'p$i'),
+      ];
+      final favorites = [
+        for (var i = 0; i < 3; i++) CustomTopicFavoriteRef(id: 't$i'),
+      ];
+      final sourceById = {
+        for (var i = 0; i < 3; i++) 's$i': _source(id: 's$i', name: 'Source $i'),
+      };
+      final sourceFavorites = [
+        for (var i = 0; i < 3; i++)
+          SourceFavoriteRef(sourceId: 's$i', position: i),
+      ];
+      final order = const [
+        'topic:t0',
+        'source:s0',
+        'topic:t1',
+        'source:s1',
+        'topic:t2',
+        'source:s2',
+      ];
+
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: topics,
+        favorites: favorites,
+        items: const [],
+        sourceFavorites: sourceFavorites,
+        sourceById: sourceById,
+        order: order,
+      );
+
+      expect(tabs, hasLength(6));
+      expect(tabs.map((t) => t.label).toList(), const [
+        'Sujet 0',
+        'Source 0',
+        'Sujet 1',
+        'Source 1',
+        'Sujet 2',
+        'Source 2',
+      ]);
+    });
+
+    test('aucune sélection → aucun onglet actif', () {
+      final topics = [_topic(id: 't1', name: 'IA', slugParent: 'ai')];
+
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: topics,
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
+        items: const [],
+      );
+
+      expect(tabs.any((t) => t.active), isFalse);
     });
   });
 
@@ -311,17 +400,20 @@ void main() {
       var tabTapCalls = 0;
 
       await tester.pumpWidget(host(
+        topics: [_topic(id: 't1', name: 'IA', slugParent: 'ai')],
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
         child: FavoriteTopicTabs(
           items: const [],
+          selectedTopicSlug: 'ai',
           onTabTap: (_, __) => tabTapCalls++,
           onTapActiveTab: () => tapActiveCalls++,
-          onTapActiveTabRefresh: () => tapActiveCalls++,
           onAddFavorite: () {},
         ),
       ));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Tous'));
+      // L'onglet « IA » est actif (selectedTopicSlug) → tap = onTapActiveTab.
+      await tester.tap(find.text('IA'));
       await tester.pump();
 
       expect(tapActiveCalls, 1);
@@ -336,7 +428,6 @@ void main() {
           items: const [],
           onTabTap: (_, __) {},
           onTapActiveTab: () {},
-          onTapActiveTabRefresh: () {},
           onAddFavorite: () => addCalls++,
         ),
       ));
