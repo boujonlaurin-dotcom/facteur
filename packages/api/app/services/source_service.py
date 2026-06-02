@@ -441,14 +441,14 @@ class SourceService:
         existing = existing_result.scalar_one_or_none()
 
         if existing:
-            existing.state = InterestState.FOLLOWED
-            await self.db.execute(
-                delete(UserFavoriteSource).where(
-                    UserFavoriteSource.user_id == UUID(user_id),
-                    UserFavoriteSource.source_id == UUID(source_id),
+            if existing.state not in FOLLOWED_SOURCE_STATES:
+                existing.state = InterestState.FOLLOWED
+                await self.db.execute(
+                    delete(UserFavoriteSource).where(
+                        UserFavoriteSource.user_id == UUID(user_id),
+                        UserFavoriteSource.source_id == UUID(source_id),
+                    )
                 )
-            )
-            await self.db.flush()
             return True
 
         # Ajouter

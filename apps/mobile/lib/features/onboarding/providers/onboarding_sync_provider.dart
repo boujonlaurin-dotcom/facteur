@@ -4,6 +4,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../custom_topics/providers/custom_topics_provider.dart';
+import '../../custom_topics/providers/personalization_provider.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../flux_continu/providers/flux_continu_provider.dart';
@@ -99,6 +101,8 @@ class OnboardingSyncNotifier extends StateNotifier<void> {
     _ref.invalidate(feedProvider);
     _ref.invalidate(fluxContinuProvider);
     _ref.invalidate(pepitesProvider);
+    _ref.invalidate(customTopicsProvider);
+    _ref.invalidate(personalizationProvider);
   }
 }
 
