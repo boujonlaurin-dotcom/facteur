@@ -524,7 +524,7 @@ class TestErrors:
         assert resp.status_code == 404
 
 
-# ─── Lettre 2 — Tes premières lectures ─────────────────────────────────────
+# ─── Lettre 2 — Premières lectures ─────────────────────────────────────
 
 
 class TestLetter2Detection:

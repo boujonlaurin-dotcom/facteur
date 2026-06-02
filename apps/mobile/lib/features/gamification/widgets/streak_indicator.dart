@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
@@ -130,10 +131,17 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
                                 ),
                                 child: Transform.scale(
                                   scale: _scale.value,
-                                  child: Icon(
-                                    PhosphorIcons.fire(PhosphorIconsStyle.fill),
-                                    color: flameColor,
-                                    size: 16,
+                                  child: SvgPicture.asset(
+                                    'assets/icons/streak_flame.svg',
+                                    width: 16,
+                                    height: 16,
+                                    colorFilter: isActive
+                                        ? null
+                                        : ColorFilter.mode(
+                                            colors.textSecondary
+                                                .withValues(alpha: 0.45),
+                                            BlendMode.srcIn,
+                                          ),
                                   ),
                                 ),
                               );
@@ -158,10 +166,14 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
           loading: () => Container(
             constraints: const BoxConstraints(minHeight: 36, minWidth: 36),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: Icon(
-              PhosphorIcons.fire(PhosphorIconsStyle.regular),
-              size: 16,
-              color: colors.primary.withValues(alpha: 0.3),
+            child: SvgPicture.asset(
+              'assets/icons/streak_flame.svg',
+              width: 16,
+              height: 16,
+              colorFilter: ColorFilter.mode(
+                colors.primary.withValues(alpha: 0.3),
+                BlendMode.srcIn,
+              ),
             ),
           ),
           error: (e, s) {

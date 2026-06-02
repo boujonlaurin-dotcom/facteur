@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
@@ -152,7 +153,7 @@ class _StreakStatsLine extends StatelessWidget {
           children: [
             Expanded(
               child: _InlineMetric(
-                icon: PhosphorIcons.fire(PhosphorIconsStyle.fill),
+                svgAsset: 'assets/icons/streak_flame.svg',
                 label: 'Actuelle',
                 value: '$currentStreak j',
               ),
@@ -184,12 +185,14 @@ class _StreakStatsLine extends StatelessWidget {
 
 class _InlineMetric extends StatelessWidget {
   const _InlineMetric({
-    required this.icon,
+    this.icon,
+    this.svgAsset,
     required this.label,
     required this.value,
   });
 
-  final IconData icon;
+  final IconData? icon;
+  final String? svgAsset;
   final String label;
   final String value;
 
@@ -204,11 +207,18 @@ class _InlineMetric extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 15,
-              color: colors.primary.withValues(alpha: 0.82),
-            ),
+            if (svgAsset != null)
+              SvgPicture.asset(
+                svgAsset!,
+                width: 15,
+                height: 15,
+              )
+            else if (icon != null)
+              Icon(
+                icon!,
+                size: 15,
+                color: colors.primary.withValues(alpha: 0.82),
+              ),
             const SizedBox(width: 5),
             Flexible(
               child: Text(
@@ -359,15 +369,17 @@ class _DayTile extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             Center(
-              child: Icon(
-                opened
-                    ? PhosphorIcons.fire(PhosphorIconsStyle.fill)
-                    : PhosphorIcons.minus(PhosphorIconsStyle.bold),
-                size: 14,
-                color: opened
-                    ? colors.primary.withValues(alpha: 0.86)
-                    : colors.textTertiary,
-              ),
+              child: opened
+                  ? SvgPicture.asset(
+                      'assets/icons/streak_flame.svg',
+                      width: 14,
+                      height: 14,
+                    )
+                  : Icon(
+                      PhosphorIcons.minus(PhosphorIconsStyle.bold),
+                      size: 14,
+                      color: colors.textTertiary,
+                    ),
             ),
             Align(
               alignment: Alignment.bottomCenter,
@@ -507,10 +519,10 @@ class _AnimatedFlameBadgeState extends State<_AnimatedFlameBadge>
                 ),
                 child: Transform.scale(
                   scale: _scale.value,
-                  child: Icon(
-                    PhosphorIcons.fire(PhosphorIconsStyle.fill),
-                    color: colors.primary,
-                    size: 40,
+                  child: SvgPicture.asset(
+                    'assets/icons/streak_flame.svg',
+                    width: 40,
+                    height: 40,
                   ),
                 ),
               ),

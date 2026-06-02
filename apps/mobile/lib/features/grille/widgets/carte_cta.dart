@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
@@ -139,7 +140,8 @@ class CarteCta extends StatelessWidget {
         color: c.surface,
         borderRadius: BorderRadius.circular(FacteurRadius.large),
         boxShadow: const [
-          BoxShadow(color: Color(0x1A000000), blurRadius: 4, offset: Offset(0, 2)),
+          BoxShadow(
+              color: Color(0x1A000000), blurRadius: 4, offset: Offset(0, 2)),
         ],
       ),
       padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
@@ -194,11 +196,11 @@ class CarteCta extends StatelessWidget {
   String _intro() {
     if (_deja) {
       final n = today.nbEssais;
-      return '« Trouvé en $n essai${n > 1 ? 's' : ''} aujourd’hui — joli flair. '
-          'Je te poste un mot tout neuf demain matin. »';
+      return '« Trouvé en $n essai${n > 1 ? 's' : ''} — bien joué !. '
+          'Un nouveau mot arrivera demain matin. »';
     }
-    return '« Le mot du jour se cache dans tes actus d’aujourd’hui — '
-        'six lettres, six essais pour le débusquer. »';
+    return '« Le mot du jour se cache dans tes Actus du jour — '
+        'six lettres, six essais pour le retrouver. »';
   }
 
   Widget _stamp(BuildContext context) {
@@ -228,8 +230,8 @@ class CarteCta extends StatelessWidget {
 
   Widget _meta(BuildContext context) {
     final c = context.facteurColors;
-    final base = FacteurTypography.bodySmall(c.textTertiary)
-        .copyWith(fontSize: 12.5);
+    final base =
+        FacteurTypography.bodySmall(c.textTertiary).copyWith(fontSize: 12.5);
     final bold = base.copyWith(
       color: c.textSecondary,
       fontWeight: FontWeight.w700,
@@ -247,7 +249,11 @@ class CarteCta extends StatelessWidget {
           const TextSpan(text: ' min'),
         ])),
         _dot(c),
-        Icon(PhosphorIcons.fire(PhosphorIconsStyle.fill), size: 13, color: c.primary),
+        SvgPicture.asset(
+          'assets/icons/streak_flame.svg',
+          width: 13,
+          height: 13,
+        ),
         const SizedBox(width: 4),
         Text.rich(TextSpan(style: base, children: [
           TextSpan(text: '${today.streak}', style: bold),
@@ -270,7 +276,11 @@ class CarteCta extends StatelessWidget {
           ),
         ),
         _dot(c),
-        Icon(PhosphorIcons.fire(PhosphorIconsStyle.fill), size: 13, color: c.primary),
+        SvgPicture.asset(
+          'assets/icons/streak_flame.svg',
+          width: 13,
+          height: 13,
+        ),
         const SizedBox(width: 4),
         Text(
           '${today.streak} jours',

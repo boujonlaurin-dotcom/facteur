@@ -148,9 +148,8 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
                 child: AnimatedSlide(
                   duration: const Duration(milliseconds: 220),
                   curve: Curves.easeOutCubic,
-                  offset: _showScrollTopFab
-                      ? Offset.zero
-                      : const Offset(0, 1.6),
+                  offset:
+                      _showScrollTopFab ? Offset.zero : const Offset(0, 1.6),
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 220),
                     opacity: _showScrollTopFab ? 1.0 : 0.0,
@@ -180,8 +179,7 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
           const SliverToBoxAdapter(
             child: SectionBanner(
               title: 'Flâner',
-              blurb:
-                  'Tous les articles de tes sources triés par récence, à consulter à ton rythme',
+              blurb: 'Tous les articles de tes sources, triés par récence.',
               accent: Color(0xFF5D4037),
               illustrationAsset: 'assets/notifications/facteur_bike.png',
               large: true,
@@ -225,20 +223,21 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
       intercalations.add((
         position: carousel.position,
         builder: () => Padding(
-          key: ValueKey('flaner_carousel_${carousel.carouselType}'),
-          padding: const EdgeInsets.only(bottom: 12),
-          child: FeedCarousel(
-            data: carousel,
-            onArticleTap: _openArticle,
-            onLongPressStart: (c, _) => ArticlePreviewOverlay.show(context, c),
-            onLongPressMoveUpdate: (details) =>
-                ArticlePreviewOverlay.updateScroll(
+              key: ValueKey('flaner_carousel_${carousel.carouselType}'),
+              padding: const EdgeInsets.only(bottom: 12),
+              child: FeedCarousel(
+                data: carousel,
+                onArticleTap: _openArticle,
+                onLongPressStart: (c, _) =>
+                    ArticlePreviewOverlay.show(context, c),
+                onLongPressMoveUpdate: (details) =>
+                    ArticlePreviewOverlay.updateScroll(
                   details.localOffsetFromOrigin.dy,
                 ),
-            onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-            onItemVisible: _markVisible,
-          ),
-        ),
+                onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+                onItemVisible: _markVisible,
+              ),
+            ),
       ));
     }
 

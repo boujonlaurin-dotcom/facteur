@@ -62,7 +62,7 @@ LETTER_1: dict = {
 LETTER_2: dict = {
     "id": "letter_2",
     "num": "02",
-    "title": "Tes premières lectures",
+    "title": "Premières lectures",
     "default_status": "upcoming",
     "intro_palier": (
         "Ta sélection est posée. Voyons maintenant si tu sais en faire bon usage."
