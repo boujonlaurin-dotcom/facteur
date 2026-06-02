@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/feed/widgets/perspectives_bottom_sheet.dart';
@@ -35,7 +36,6 @@ Future<void> _pumpInline(
                 sourceBiasStance: 'center',
                 sourceName: 'Test',
                 divergenceLevel: divergenceLevel,
-                referenceTitle: 'Titre référence',
                 isExpanded: isExpanded,
                 onToggle: () {},
               ),
@@ -52,7 +52,7 @@ void main() {
   const introSnippet = "marquent l'angle éditorial";
 
   testWidgets(
-    'inline expanded + perspectives non vides → intro rendue en haut du groupe',
+    'inline expanded + perspectives non vides → intro derrière le bouton info',
     (tester) async {
       await _pumpInline(
         tester,
@@ -61,6 +61,13 @@ void main() {
           _p('B', bias: 'left'),
         ],
       );
+
+      expect(find.textContaining(introSnippet), findsNothing);
+
+      await tester.tap(
+        find.byIcon(PhosphorIcons.info(PhosphorIconsStyle.regular)).first,
+      );
+      await tester.pumpAndSettle();
 
       expect(find.textContaining(introSnippet), findsOneWidget);
     },
@@ -83,7 +90,7 @@ void main() {
     expect(find.textContaining(introSnippet), findsNothing);
   });
 
-  testWidgets('inline high divergence → phrase polarisation rendue', (
+  testWidgets('inline high divergence → badge polarisation rendu', (
     tester,
   ) async {
     await _pumpInline(
@@ -95,9 +102,7 @@ void main() {
       divergenceLevel: 'high',
     );
 
-    expect(
-      find.text('Forte polarisation dans le traitement de ce sujet'),
-      findsOneWidget,
-    );
+    expect(find.text('POLARISÉ'), findsOneWidget);
+    expect(find.textContaining('Forte polarisation'), findsNothing);
   });
 }

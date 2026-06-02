@@ -9,16 +9,16 @@ import 'package:facteur/features/feed/widgets/diff_title.dart';
 import 'package:facteur/features/feed/widgets/perspectives_bottom_sheet.dart';
 
 Perspective _persp(String name, String bias) => Perspective(
-      title: 'Titre court avec mot fort',
-      url: 'https://example.com/$name',
-      sourceName: name,
-      sourceDomain: '',
-      biasStance: bias,
-      highlightSpans: const [
-        HighlightSpan(start: 18, end: 22, text: 'fort', bias: 'left'),
-      ],
-      sharedTokens: const [TokenSpan(start: 0, end: 5, text: 'Titre')],
-    );
+  title: 'Titre court avec mot fort',
+  url: 'https://example.com/$name',
+  sourceName: name,
+  sourceDomain: '',
+  biasStance: bias,
+  highlightSpans: const [
+    HighlightSpan(start: 18, end: 22, text: 'fort', bias: 'left'),
+  ],
+  sharedTokens: const [TokenSpan(start: 0, end: 5, text: 'Titre')],
+);
 
 class _Harness extends StatefulWidget {
   final bool initialExpanded;
@@ -57,7 +57,6 @@ class _HarnessState extends State<_Harness> {
             onClearSegments: () {},
             onToggle: toggle,
             isExpanded: _expanded,
-            referenceTitle: 'Titre référence',
           ),
         ),
       ),
@@ -82,29 +81,32 @@ Future<void> _pumpHarness(
 
 void main() {
   test(
-      'kStartDelay must outlast PerspectivesInlineSection AnimatedSize (250 ms)',
-      () {
-    // The bug the PO reported: when the panel expands, the AnimatedSize
-    // takes 250 ms to grow. If DiffTitle starts its cascade before then,
-    // the highlights finalize while still hidden behind the growing
-    // container and the user perceives them as already there.
-    expect(
-      DiffTitle.kStartDelay.inMilliseconds,
-      greaterThan(250),
-      reason:
-          'kStartDelay must exceed the 250 ms AnimatedSize duration so the '
-          'cascade is visible after the panel finishes expanding.',
-    );
-  });
+    'kStartDelay must outlast PerspectivesInlineSection AnimatedSize (250 ms)',
+    () {
+      // The bug the PO reported: when the panel expands, the AnimatedSize
+      // takes 250 ms to grow. If DiffTitle starts its cascade before then,
+      // the highlights finalize while still hidden behind the growing
+      // container and the user perceives them as already there.
+      expect(
+        DiffTitle.kStartDelay.inMilliseconds,
+        greaterThan(250),
+        reason:
+            'kStartDelay must exceed the 250 ms AnimatedSize duration so the '
+            'cascade is visible after the panel finishes expanding.',
+      );
+    },
+  );
 
-  testWidgets('section starts collapsed → no DiffTitle in the tree',
-      (tester) async {
+  testWidgets('section starts collapsed → no DiffTitle in the tree', (
+    tester,
+  ) async {
     await _pumpHarness(tester, initialExpanded: false);
     expect(find.byType(DiffTitle), findsNothing);
   });
 
-  testWidgets('tap toggle → DiffTitle mounts and is still pending its anim',
-      (tester) async {
+  testWidgets('tap toggle → DiffTitle mounts and is still pending its anim', (
+    tester,
+  ) async {
     await _pumpHarness(tester, initialExpanded: false);
     expect(find.byType(DiffTitle), findsNothing);
 

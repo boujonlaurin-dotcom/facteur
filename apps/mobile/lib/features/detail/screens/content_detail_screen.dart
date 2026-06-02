@@ -2770,11 +2770,21 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 ),
                                 const SizedBox(height: FacteurSpacing.space4),
                               ],
-                              Text(
-                                content.title,
-                                style: textTheme.displayLarge?.copyWith(
+                              PivotWashTitle(
+                                key: ValueKey(
+                                  'article-title-wash-'
+                                  '$_perspectivesExpanded-'
+                                  '${_perspectivesResponse?.referencePivot?.start}-'
+                                  '${_perspectivesResponse?.referencePivot?.end}',
+                                ),
+                                title: content.title,
+                                pivot: _perspectivesExpanded
+                                    ? _perspectivesResponse?.referencePivot
+                                    : null,
+                                textStyle: textTheme.displayLarge?.copyWith(
                                   fontSize: 24,
                                 ),
+                                animate: _perspectivesExpanded,
                               ),
                               const SizedBox(height: FacteurSpacing.space2),
                               if (readingTime != null) ...[
@@ -2805,17 +2815,21 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                         // ZONE 1b: Perspectives section, framed by dividers.
                         if (_showPerspectivesBand) ...[
-                          Container(
-                            color: colors.backgroundPrimary,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: FacteurSpacing.space4,
+                          if (_perspectivesStatus !=
+                              PerspectivesSectionStatus.empty)
+                            Container(
+                              color: colors.backgroundPrimary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: FacteurSpacing.space4,
+                              ),
+                              child: Divider(
+                                color: colors.textTertiary.withValues(
+                                  alpha: 0.3,
+                                ),
+                                height: 1,
+                                thickness: 1,
+                              ),
                             ),
-                            child: Divider(
-                              color: colors.textTertiary.withValues(alpha: 0.3),
-                              height: 1,
-                              thickness: 1,
-                            ),
-                          ),
                           Container(
                             color: colors.backgroundPrimary,
                             child: PerspectivesInlineSection(
@@ -2851,22 +2865,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               analysisZoneKey: _analysisZoneKey,
                               isExpanded: _perspectivesExpanded,
                               onToggle: _onPerspectivesToggle,
-                              referenceTitle: _content?.title ?? '',
-                              referencePivot:
-                                  _perspectivesResponse?.referencePivot,
                             ),
                           ),
-                          Container(
-                            color: colors.backgroundPrimary,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: FacteurSpacing.space4,
+                          if (_perspectivesStatus !=
+                              PerspectivesSectionStatus.empty)
+                            Container(
+                              color: colors.backgroundPrimary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: FacteurSpacing.space4,
+                              ),
+                              child: Divider(
+                                color: colors.textTertiary.withValues(
+                                  alpha: 0.3,
+                                ),
+                                height: 1,
+                                thickness: 1,
+                              ),
                             ),
-                            child: Divider(
-                              color: colors.textTertiary.withValues(alpha: 0.3),
-                              height: 1,
-                              thickness: 1,
-                            ),
-                          ),
                           const SizedBox(height: FacteurSpacing.space4),
                         ],
 
@@ -3357,9 +3372,21 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           content.entities.isNotEmpty ||
                           content.topics.isNotEmpty)
                         _buildTagsWrap(context, content, isPartial: isPartial),
-                      Text(
-                        content.title,
-                        style: textTheme.displayLarge?.copyWith(fontSize: 24),
+                      PivotWashTitle(
+                        key: ValueKey(
+                          'article-title-wash-alt-'
+                          '$_perspectivesExpanded-'
+                          '${_perspectivesResponse?.referencePivot?.start}-'
+                          '${_perspectivesResponse?.referencePivot?.end}',
+                        ),
+                        title: content.title,
+                        pivot: _perspectivesExpanded
+                            ? _perspectivesResponse?.referencePivot
+                            : null,
+                        textStyle: textTheme.displayLarge?.copyWith(
+                          fontSize: 24,
+                        ),
+                        animate: _perspectivesExpanded,
                       ),
                       if (readingTime != null)
                         Row(
@@ -3385,16 +3412,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 // ── Perspectives section (avant l'article) ─────────────────
                 if (_showPerspectivesBand) ...[
                   const SizedBox(height: FacteurSpacing.space4),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: FacteurSpacing.space4,
+                  if (_perspectivesStatus != PerspectivesSectionStatus.empty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space4,
+                      ),
+                      child: Divider(
+                        color: colors.textTertiary.withValues(alpha: 0.3),
+                        height: 1,
+                        thickness: 1,
+                      ),
                     ),
-                    child: Divider(
-                      color: colors.textTertiary.withValues(alpha: 0.3),
-                      height: 1,
-                      thickness: 1,
-                    ),
-                  ),
                   PerspectivesInlineSection(
                     key: _perspectivesKey,
                     status: _perspectivesStatus,
@@ -3420,19 +3448,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     analysisZoneKey: _analysisZoneKey,
                     isExpanded: _perspectivesExpanded,
                     onToggle: _onPerspectivesToggle,
-                    referenceTitle: _content?.title ?? '',
-                    referencePivot: _perspectivesResponse?.referencePivot,
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: FacteurSpacing.space4,
+                  if (_perspectivesStatus != PerspectivesSectionStatus.empty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space4,
+                      ),
+                      child: Divider(
+                        color: colors.textTertiary.withValues(alpha: 0.3),
+                        height: 1,
+                        thickness: 1,
+                      ),
                     ),
-                    child: Divider(
-                      color: colors.textTertiary.withValues(alpha: 0.3),
-                      height: 1,
-                      thickness: 1,
-                    ),
-                  ),
                 ],
 
                 const SizedBox(height: FacteurSpacing.space4),

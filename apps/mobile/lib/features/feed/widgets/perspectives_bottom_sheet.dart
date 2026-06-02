@@ -20,8 +20,8 @@ import 'coverage_spectrum_bar.dart';
 import 'diff_title.dart';
 
 /// Texte d'introduction expliquant le surlignage. Affiché dans le bottom-sheet
-/// modal ET en tête du groupe inline de la section « Couverture médiatique »
-/// du reader d'article — single source of truth pour les deux vues.
+/// modal ET derrière le bouton info de la section inline du reader d'article
+/// — single source of truth pour les deux vues.
 const String kHighlightIntroText =
     'Le surlignage met en évidence les termes qui '
     'marquent l\'angle éditorial : plus le surlignage '
@@ -81,13 +81,13 @@ class Perspective {
       highlightSpans: rawHighlights == null
           ? const []
           : rawHighlights
-              .map((e) => HighlightSpan.fromJson(e as Map<String, dynamic>))
-              .toList(),
+                .map((e) => HighlightSpan.fromJson(e as Map<String, dynamic>))
+                .toList(),
       sharedTokens: rawShared == null
           ? const []
           : rawShared
-              .map((e) => TokenSpan.fromJson(e as Map<String, dynamic>))
-              .toList(),
+                .map((e) => TokenSpan.fromJson(e as Map<String, dynamic>))
+                .toList(),
       language: json['language'] as String?,
     );
   }
@@ -211,7 +211,9 @@ class _PerspectivesBottomSheetState
     _openedAt = DateTime.now();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(analyticsServiceProvider).trackPerspectiveComparisonOpened(
+      ref
+          .read(analyticsServiceProvider)
+          .trackPerspectiveComparisonOpened(
             contentId: widget.contentId,
             sourcesCount: widget.perspectives.length,
           );
@@ -221,12 +223,15 @@ class _PerspectivesBottomSheetState
   @override
   void dispose() {
     final opened = _openedAt;
-    final elapsed =
-        opened != null ? DateTime.now().difference(opened).inSeconds : 0;
+    final elapsed = opened != null
+        ? DateTime.now().difference(opened).inSeconds
+        : 0;
     // En tests / teardown rapide, le ProviderScope peut être disposé avant
     // ce widget — on ne veut pas crasher pour un event analytics.
     try {
-      ref.read(analyticsServiceProvider).trackPerspectiveComparisonClosed(
+      ref
+          .read(analyticsServiceProvider)
+          .trackPerspectiveComparisonClosed(
             contentId: widget.contentId,
             viewedArticles: _viewedPerspectiveIds.length,
             openedSeconds: elapsed,
@@ -237,7 +242,9 @@ class _PerspectivesBottomSheetState
 
   void _onPerspectiveViewed(String perspectiveId) {
     if (!_viewedPerspectiveIds.add(perspectiveId)) return;
-    ref.read(analyticsServiceProvider).trackPerspectiveArticleViewed(
+    ref
+        .read(analyticsServiceProvider)
+        .trackPerspectiveArticleViewed(
           contentId: widget.contentId,
           perspectiveArticleId: perspectiveId,
         );
@@ -399,8 +406,8 @@ class _PerspectivesBottomSheetState
                                     color: colors.textPrimary,
                                     fontSize:
                                         (textTheme.titleMedium?.fontSize ??
-                                                16) +
-                                            1,
+                                            16) +
+                                        1,
                                   ),
                                 ),
                               ),
@@ -458,11 +465,11 @@ class _PerspectivesBottomSheetState
                                         children: [
                                           Text(
                                             'Tout afficher',
-                                            style:
-                                                textTheme.labelSmall?.copyWith(
-                                              color: colors.primary,
-                                              fontWeight: FontWeight.w600,
-                                            ),
+                                            style: textTheme.labelSmall
+                                                ?.copyWith(
+                                                  color: colors.primary,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
                                           ),
                                           const SizedBox(width: 4),
                                           Icon(
@@ -700,7 +707,8 @@ class _PerspectiveCard extends ConsumerWidget {
                           highlightSpans: perspective.highlightSpans,
                           sharedTokens: perspective.sharedTokens,
                           biasColor: perspective.getBiasColor(colors),
-                          baseStyle: textTheme.bodyMedium?.copyWith(
+                          baseStyle:
+                              textTheme.bodyMedium?.copyWith(
                                 color: colors.textPrimary,
                                 fontSize:
                                     (textTheme.bodyMedium?.fontSize ?? 14) + 2,
@@ -959,8 +967,9 @@ class PerspectivesBiasBar extends StatelessWidget {
             return Expanded(
               flex: flexValues[i],
               child: GestureDetector(
-                onTap:
-                    count > 0 && !compact ? () => onSegmentTap(seg.$1) : null,
+                onTap: count > 0 && !compact
+                    ? () => onSegmentTap(seg.$1)
+                    : null,
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 200),
                   opacity: isActive ? 1.0 : 0.3,
@@ -1261,7 +1270,7 @@ class PerspectivesAnalysisZoneState extends State<PerspectivesAnalysisZone> {
             Align(
               alignment: Alignment.centerRight,
               child: Text(
-                'Analyse Facteur',
+                'Analyse générée par Mistral Large · l\'IA peut faire des erreurs.',
                 style: widget.textTheme.bodySmall?.copyWith(
                   fontSize: 10,
                   fontStyle: FontStyle.italic,
@@ -1349,13 +1358,6 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
   /// Called when the user taps the header to toggle collapse/expand.
   final VoidCallback onToggle;
 
-  /// Titre de l'article lu — rendu dans le bloc référence en mode ouvert.
-  final String referenceTitle;
-
-  /// Verbe-pivot du titre référence — washé en gris dans le bloc référence
-  /// si non-null. Renvoyé par le back via `reference_pivot`.
-  final TokenSpan? referencePivot;
-
   final PerspectivesSectionStatus status;
 
   const PerspectivesInlineSection({
@@ -1378,8 +1380,6 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
     this.firstCardKey,
     this.isExpanded = true,
     required this.onToggle,
-    this.referenceTitle = '',
-    this.referencePivot,
     this.status = PerspectivesSectionStatus.ready,
   });
 
@@ -1439,11 +1439,12 @@ class _PerspectivesInlineSectionState
     final textTheme = Theme.of(context).textTheme;
     final variants = _filteredPerspectives.take(8).toList();
     final isReady = widget.status == PerspectivesSectionStatus.ready;
+    final isEmpty = widget.status == PerspectivesSectionStatus.empty;
     final label = widget.status == PerspectivesSectionStatus.loading
         ? 'Couverture médiatique'
         : 'Couverture médiatique (${widget.perspectives.length})';
-    final labelColor = widget.status == PerspectivesSectionStatus.empty
-        ? colors.textTertiary
+    final labelColor = isEmpty
+        ? colors.textTertiary.withValues(alpha: 0.62)
         : colors.textPrimary;
     final shouldShowBody = isReady && widget.isExpanded;
 
@@ -1458,16 +1459,19 @@ class _PerspectivesInlineSectionState
             decoration: BoxDecoration(
               border: Border(
                 top: BorderSide(
-                  color: Colors.black.withValues(alpha: 0.08),
+                  color: Colors.black.withValues(alpha: isEmpty ? 0.025 : 0.08),
                   width: 1,
                 ),
                 bottom: BorderSide(
-                  color: Colors.black.withValues(alpha: 0.08),
+                  color: Colors.black.withValues(alpha: isEmpty ? 0.025 : 0.08),
                   width: 1,
                 ),
               ),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+            padding: EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: isEmpty ? 8 : 13,
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -1481,8 +1485,10 @@ class _PerspectivesInlineSectionState
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1,
                           style: GoogleFonts.dmSans(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
+                            fontSize: isEmpty ? 11 : 13,
+                            fontWeight: isEmpty
+                                ? FontWeight.w600
+                                : FontWeight.w700,
                             color: labelColor,
                           ),
                         ),
@@ -1531,6 +1537,11 @@ class _PerspectivesInlineSectionState
     TextTheme textTheme,
     List<Perspective> variants,
   ) {
+    final hasDivergenceBadge =
+        widget.divergenceLevel == 'medium' || widget.divergenceLevel == 'high';
+    final shouldShowIntroInfo = variants.isNotEmpty;
+    final shouldShowToolsRow = hasDivergenceBadge || shouldShowIntroInfo;
+
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -1543,27 +1554,44 @@ class _PerspectivesInlineSectionState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (_polarizationText != null)
+          if (shouldShowToolsRow)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-              child: Text(
-                _polarizationText!,
-                style: textTheme.bodySmall?.copyWith(
-                  color: colors.textSecondary,
-                  height: 1.35,
-                  fontWeight: FontWeight.w600,
-                ),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+              child: Row(
+                children: [
+                  if (hasDivergenceBadge)
+                    _DivergenceChip(
+                      divergenceLevel: widget.divergenceLevel,
+                      colors: colors,
+                    ),
+                  const Spacer(),
+                  if (shouldShowIntroInfo)
+                    _HighlightInfoButton(
+                      colors: colors,
+                      onTap: () =>
+                          _showHighlightInfo(context, colors, textTheme),
+                    ),
+                ],
               ),
             ),
-          if (variants.isNotEmpty)
+          if (widget.analysisState == PerspectivesAnalysisState.idle)
             Padding(
-              padding: EdgeInsets.fromLTRB(16, _polarizationText != null ? 0 : 10, 16, 6),
-              child: Text(
-                kHighlightIntroText,
-                style: textTheme.bodySmall?.copyWith(
-                  color: colors.textSecondary,
-                  height: 1.35,
-                ),
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
+              child: _AnalysisCtaCard(
+                onTap: widget.onRequestAnalysis,
+                state: widget.analysisState,
+              ),
+            ),
+          if (widget.analysisState != PerspectivesAnalysisState.idle)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+              child: PerspectivesAnalysisZone(
+                state: widget.analysisState,
+                text: widget.analysisText,
+                onRequestAnalysis: widget.onRequestAnalysis,
+                colors: colors,
+                textTheme: textTheme,
+                zoneKey: widget.analysisZoneKey,
               ),
             ),
           for (var i = 0; i < variants.length; i++)
@@ -1583,185 +1611,153 @@ class _PerspectivesInlineSectionState
                 ),
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
-            child: _AnalysisCtaCard(
-              onTap: widget.onRequestAnalysis,
-              state: widget.analysisState,
-            ),
-          ),
-          if (widget.analysisState != PerspectivesAnalysisState.idle)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-              child: PerspectivesAnalysisZone(
-                state: widget.analysisState,
-                text: widget.analysisText,
-                onRequestAnalysis: widget.onRequestAnalysis,
-                colors: colors,
-                textTheme: textTheme,
-                zoneKey: widget.analysisZoneKey,
-              ),
-            ),
-          if (widget.referenceTitle.isNotEmpty) ...[
-            Container(
-              margin: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-              height: 1,
-              color: colors.textSecondary.withValues(alpha: 0.18),
-            ),
-            _RefBlock(
-              key: ValueKey('ref_$_animationGeneration'),
-              title: widget.referenceTitle,
-              pivot: widget.referencePivot,
-              sourceBiasStance: widget.sourceBiasStance,
-              sourceName: widget.sourceName,
-            ),
-          ],
           const SizedBox(height: 16),
         ],
       ),
     );
   }
 
-  String? get _polarizationText {
-    switch (widget.divergenceLevel) {
-      case 'medium':
-        return 'Avis variés dans le traitement de ce sujet';
-      case 'high':
-        return 'Forte polarisation dans le traitement de ce sujet';
-      default:
-        return null;
-    }
-  }
-}
-
-/// Bloc référence (cm-ref-inline) — visible en mode ouvert seulement.
-/// Border-left ocre, wash gradient ocre 5%, titre Fraunces avec wash gris
-/// sur le verbe-pivot si fourni, footer source.
-class _RefBlock extends ConsumerWidget {
-  final String title;
-  final TokenSpan? pivot;
-  final String sourceBiasStance;
-  final String sourceName;
-
-  const _RefBlock({
-    super.key,
-    required this.title,
-    required this.pivot,
-    required this.sourceBiasStance,
-    required this.sourceName,
-  });
-
-  Color _biasColor(FacteurColors colors) {
-    switch (sourceBiasStance) {
-      case 'left':
-        return colors.biasLeft;
-      case 'center-left':
-        return colors.biasCenterLeft;
-      case 'center':
-        return colors.biasCenter;
-      case 'center-right':
-        return colors.biasCenterRight;
-      case 'right':
-        return colors.biasRight;
-      default:
-        return colors.biasUnknown;
-    }
-  }
-
-  String _biasLabel() {
-    switch (sourceBiasStance) {
-      case 'left':
-        return 'GAUCHE';
-      case 'center-left':
-        return 'CENTRE-G';
-      case 'center':
-        return 'CENTRE';
-      case 'center-right':
-        return 'CENTRE-D';
-      case 'right':
-        return 'DROITE';
-      default:
-        return 'SOURCE';
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.facteurColors;
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(left: BorderSide(color: colors.primary, width: 3)),
-        gradient: LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [colors.primary.withValues(alpha: 0.05), Colors.transparent],
-          stops: const [0.0, 0.7],
+  void _showHighlightInfo(
+    BuildContext context,
+    FacteurColors colors,
+    TextTheme textTheme,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => Container(
+        decoration: BoxDecoration(
+          color: colors.backgroundPrimary,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'CET ARTICLE',
-            style: GoogleFonts.dmSans(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.4,
-              color: colors.primary,
+        padding: EdgeInsets.fromLTRB(
+          20,
+          12,
+          20,
+          24 + MediaQuery.of(sheetContext).padding.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: colors.textSecondary.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 6),
-          _PivotedRefTitle(title: title, pivot: pivot),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(
-                PhosphorIcons.user(PhosphorIconsStyle.fill),
-                size: 12,
-                color: colors.textTertiary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                sourceName.isNotEmpty ? sourceName : 'Source',
-                style: GoogleFonts.dmSans(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  color: colors.textSecondary,
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Icon(
+                  PhosphorIcons.info(PhosphorIconsStyle.regular),
+                  size: 18,
+                  color: colors.primary,
                 ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                _biasLabel(),
-                style: GoogleFonts.courierPrime(
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w700,
-                  color: _biasColor(colors),
-                  letterSpacing: 0.5,
+                const SizedBox(width: 8),
+                Text(
+                  'Surlignage',
+                  style: textTheme.titleSmall?.copyWith(
+                    color: colors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              kHighlightIntroText,
+              style: textTheme.bodyMedium?.copyWith(
+                color: colors.textSecondary,
+                height: 1.45,
               ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// Titre référence : RichText avec wash gris autour du pivot (si fourni),
-/// fade-in du wash 300 ms easeOut au moment de l'expand. Si pivot null,
-/// titre plein sans animation.
-class _PivotedRefTitle extends StatefulWidget {
-  final String title;
-  final TokenSpan? pivot;
+class _DivergenceChip extends StatelessWidget {
+  final String? divergenceLevel;
+  final FacteurColors colors;
 
-  const _PivotedRefTitle({required this.title, required this.pivot});
+  const _DivergenceChip({required this.divergenceLevel, required this.colors});
 
   @override
-  State<_PivotedRefTitle> createState() => _PivotedRefTitleState();
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: colors.primary.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: DivergenceInlineBadge(divergenceLevel: divergenceLevel),
+    );
+  }
 }
 
-class _PivotedRefTitleState extends State<_PivotedRefTitle>
+class _HighlightInfoButton extends StatelessWidget {
+  final FacteurColors colors;
+  final VoidCallback onTap;
+
+  const _HighlightInfoButton({required this.colors, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onTap,
+      tooltip: 'Surlignage',
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+      icon: Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: colors.textSecondary.withValues(alpha: 0.08),
+          shape: BoxShape.circle,
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          PhosphorIcons.info(PhosphorIconsStyle.regular),
+          size: 15,
+          color: colors.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
+/// RichText avec wash gris autour du pivot (si fourni). Utilisé pour signaler
+/// le token-pivot du titre de référence dans le reader.
+class PivotWashTitle extends StatefulWidget {
+  final String title;
+  final TokenSpan? pivot;
+  final TextStyle? textStyle;
+  final bool animate;
+  final int? maxLines;
+
+  const PivotWashTitle({
+    super.key,
+    required this.title,
+    required this.pivot,
+    this.textStyle,
+    this.animate = true,
+    this.maxLines,
+  });
+
+  @override
+  State<PivotWashTitle> createState() => _PivotWashTitleState();
+}
+
+class _PivotWashTitleState extends State<PivotWashTitle>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
 
@@ -1772,12 +1768,29 @@ class _PivotedRefTitleState extends State<_PivotedRefTitle>
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
-    if (widget.pivot != null) {
+    if (widget.pivot != null && widget.animate) {
       Future.delayed(DiffTitle.kStartDelay, () {
         if (mounted) _controller.forward();
       });
     } else {
       _controller.value = 1.0;
+    }
+  }
+
+  @override
+  void didUpdateWidget(PivotWashTitle oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.title != widget.title ||
+        oldWidget.pivot != widget.pivot ||
+        oldWidget.animate != widget.animate) {
+      if (widget.pivot != null && widget.animate) {
+        _controller.value = 0;
+        Future.delayed(DiffTitle.kStartDelay, () {
+          if (mounted) _controller.forward();
+        });
+      } else {
+        _controller.value = 1.0;
+      }
     }
   }
 
@@ -1790,22 +1803,23 @@ class _PivotedRefTitleState extends State<_PivotedRefTitle>
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final fraunces = GoogleFonts.fraunces(
-      fontSize: 16.5,
-      fontWeight: FontWeight.w600,
-      letterSpacing: -0.2,
-      color: colors.textPrimary,
-      height: 1.3,
-    );
+    final titleStyle =
+        widget.textStyle ??
+        GoogleFonts.fraunces(
+          fontSize: 16.5,
+          fontWeight: FontWeight.w600,
+          color: colors.textPrimary,
+          height: 1.3,
+        );
     final pivot = widget.pivot;
     if (pivot == null) {
-      return Text(widget.title, style: fraunces);
+      return Text(widget.title, style: titleStyle, maxLines: widget.maxLines);
     }
     final titleLen = widget.title.length;
     final start = pivot.start.clamp(0, titleLen);
     final end = pivot.end.clamp(start, titleLen);
     if (end == start) {
-      return Text(widget.title, style: fraunces);
+      return Text(widget.title, style: titleStyle, maxLines: widget.maxLines);
     }
     return AnimatedBuilder(
       animation: _controller,
@@ -1813,8 +1827,9 @@ class _PivotedRefTitleState extends State<_PivotedRefTitle>
         final t = Curves.easeOut.transform(_controller.value);
         final washColor = const Color(0xFF9E9E9E).withValues(alpha: 0.14 * t);
         return RichText(
+          maxLines: widget.maxLines,
           text: TextSpan(
-            style: fraunces,
+            style: titleStyle,
             children: [
               if (start > 0) TextSpan(text: widget.title.substring(0, start)),
               WidgetSpan(
@@ -1831,7 +1846,7 @@ class _PivotedRefTitleState extends State<_PivotedRefTitle>
                   ),
                   child: Text(
                     widget.title.substring(start, end),
-                    style: fraunces,
+                    style: titleStyle,
                   ),
                 ),
               ),
@@ -1904,7 +1919,8 @@ class _VariantRow extends ConsumerWidget {
               highlightSpans: perspective.highlightSpans,
               sharedTokens: perspective.sharedTokens,
               biasColor: biasColor,
-              baseStyle: textTheme.bodyMedium?.copyWith(
+              baseStyle:
+                  textTheme.bodyMedium?.copyWith(
                     fontSize: 15.5,
                     height: 1.35,
                     color: colors.textPrimary,
