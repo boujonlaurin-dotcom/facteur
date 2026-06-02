@@ -339,9 +339,7 @@ class DigestGenerationJob:
             select(UserSource.source_id)
             .where(
                 UserSource.user_id.in_(user_ids),
-                UserSource.state.in_(
-                    [InterestState.FOLLOWED, InterestState.FAVORITE]
-                ),
+                UserSource.state.in_([InterestState.FOLLOWED, InterestState.FAVORITE]),
             )
             .distinct()
         )
@@ -416,9 +414,7 @@ class DigestGenerationJob:
                 stmt = apply_ad_filter(stmt)
             return stmt.where(Content.published_at >= cutoff)
 
-        recency_stmt = (
-            _base_stmt().order_by(Content.published_at.desc()).limit(200)
-        )
+        recency_stmt = _base_stmt().order_by(Content.published_at.desc()).limit(200)
         try:
             result = await session.execute(recency_stmt)
             candidates = list(result.scalars().all())
@@ -445,9 +441,7 @@ class DigestGenerationJob:
         try:
             followed_result = await session.execute(followed_stmt)
             followed_articles = [
-                c
-                for c in followed_result.scalars().all()
-                if c.id not in seen_ids
+                c for c in followed_result.scalars().all() if c.id not in seen_ids
             ]
         except Exception as e:
             logger.error(

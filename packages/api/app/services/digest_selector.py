@@ -409,9 +409,7 @@ class DigestSelector:
                             # dérive un digest personnalisé (représentant source
                             # suivie + re-ranking intérêts + sujets solo) sans
                             # re-clustering ni LLM. Cf. _project_editorial_for_user.
-                            clusters = _get_cached_editorial_clusters(
-                                _cache_date, mode
-                            )
+                            clusters = _get_cached_editorial_clusters(_cache_date, mode)
                             if clusters is None:
                                 clusters = await self._rehydrate_editorial_clusters(
                                     global_ctx
@@ -1218,9 +1216,7 @@ class DigestSelector:
         score_inputs = rep_contents + solo_candidates
         if score_inputs:
             try:
-                scored = await self._score_candidates(
-                    score_inputs, context, mode=mode
-                )
+                scored = await self._score_candidates(score_inputs, context, mode=mode)
                 score_map = {c.id: sc for c, sc, _bd in scored}
             except Exception:
                 # Dégradation sûre : sans scoring on garde l'ordre run_for_user.
