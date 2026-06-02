@@ -246,7 +246,9 @@ class ImportanceDetector:
             topic_clusters.append(
                 TopicCluster(
                     cluster_id=str(uuid4()),
-                    label="",  # Set par TopicSelector après scoring
+                    # Label initialisé avec le titre du meilleur article du cluster :
+                    # sert de référence au LLM et garantit un fallback déterministe non vide.
+                    label=cluster_contents[0].title[:80] if cluster_contents else "",
                     tokens=raw["tokens"],
                     contents=cluster_contents,
                     source_ids=source_ids,

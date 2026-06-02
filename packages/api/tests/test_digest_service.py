@@ -1108,3 +1108,91 @@ class TestCloneGlobalEditorialDigest:
                 await service.get_or_create_digest(user_id=user_id, target_date=today)
 
         service.selector.select_for_user.assert_awaited()
+
+
+# ─── Tests: _build_editorial_response — fallback label (régression notif) ──────
+
+
+def _make_editorial_content(*, content_id, title):
+    """Mock Content suffisant pour _build_editorial_response."""
+    from app.models.enums import ContentType
+    from app.schemas.content import SourceMini
+
+    content = Mock()
+    content.id = content_id
+    content.title = title
+    content.url = "https://example.com/x"
+    content.thumbnail_url = None
+    content.description = None
+    content.html_content = None
+    content.topics = []
+    content.entities = []
+    content.content_type = ContentType.ARTICLE
+    content.duration_seconds = None
+    content.published_at = datetime(2026, 6, 1, 8, 0, 0)
+    content.is_paid = False
+    content.source_id = uuid4()
+    content.source = SourceMini(
+        id=content.source_id, name="Le Monde", logo_url=None, type="rss", theme=None
+    )
+    return content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "stored_label, expected_label",
+    [
+        # Régression bug 21 mai : label persisté vide → on récupère le titre de
+        # l'actu_article pour réactiver la notification personnalisée (variante B).
+        ("", "Conflit au Liban"),
+        # Label déjà présent → on ne l'écrase pas.
+        ("À la une : Liban", "À la une : Liban"),
+    ],
+)
+async def test_editorial_label_falls_back_to_actu_title(
+    service, mock_session, stored_label, expected_label
+):
+    cid = uuid4()
+    content = _make_editorial_content(content_id=cid, title="Conflit au Liban")
+
+    digest = Mock()
+    digest.id = uuid4()
+    digest.user_id = uuid4()
+    digest.target_date = date(2026, 6, 1)
+    digest.generated_at = datetime(2026, 6, 1, 7, 30, 0)
+    digest.mode = "pour_vous"
+    digest.is_serene = False
+    digest.format_version = "editorial_v1"
+    digest.items = {
+        "subjects": [
+            {
+                "topic_id": "t1",
+                "label": stored_label,
+                "rank": 1,
+                "actu_article": {
+                    "content_id": str(cid),
+                    "title": "Conflit au Liban",
+                },
+            }
+        ]
+    }
+
+    # 1er execute() = sources suivies (aucune), 2e = contenus du digest.
+    followed_result = Mock()
+    followed_result.scalars.return_value.all.return_value = []
+    content_result = Mock()
+    content_result.scalars.return_value.all.return_value = [content]
+    mock_session.execute.side_effect = [followed_result, content_result]
+
+    with (
+        patch.object(
+            service, "_get_batch_action_states", new=AsyncMock(return_value={})
+        ),
+        patch.object(
+            service, "_compute_target_size", new=AsyncMock(return_value=5)
+        ),
+    ):
+        response = await service._build_editorial_response(digest, digest.user_id)
+
+    assert len(response.topics) == 1
+    assert response.topics[0].label == expected_label
