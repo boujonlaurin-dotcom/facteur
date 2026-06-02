@@ -2351,10 +2351,17 @@ class DigestService:
                     _divergence_str = str(_divergence_raw)
                 else:
                     _divergence_str = _divergence_raw
+                # Fallback label : les digests editorial_v1/globaux persistés
+                # avant le fix write-side ont `label=""`, ce qui désactive la
+                # notification personnalisée (variante B). On répare au read en
+                # reprenant le titre de l'actu_article. Pas de regénération requise.
+                _label = subject.get("label") or ""
+                if not _label and subject.get("actu_article"):
+                    _label = (subject["actu_article"].get("title") or "")[:80]
                 response_topics.append(
                     DigestTopic(
                         topic_id=subject.get("topic_id", ""),
-                        label=subject.get("label", ""),
+                        label=_label,
                         rank=subject.get("rank", 0),
                         reason=subject.get("selection_reason", ""),
                         # `is_trending` = signal "≥3 sources couvrent le topic"
