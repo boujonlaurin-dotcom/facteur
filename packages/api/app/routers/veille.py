@@ -48,8 +48,8 @@ from app.schemas.veille import (
     VeilleSuggestSourcesResponse,
     VeilleTopicResponse,
 )
-from app.services.rss_parser import RSSParser
 from app.services.ml.topic_enrichment_service import get_topic_enrichment_service
+from app.services.rss_parser import RSSParser
 from app.services.source_service import SourceService
 from app.services.user_interests_service import ensure_veille_favorite
 from app.services.veille.feed_filter import fetch_veille_feed, load_veille_filters
