@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -185,10 +187,12 @@ class _Tab extends StatelessWidget {
     } else {
       labelColor = colors.textSecondary;
     }
-    // Active tab is signaled by a marker-style highlight on the **label text
-    // only** (calque du highlight "Couverture médiatique" — cf. DiffTitle),
-    // replacing the legacy full-chip wash + leading dot. The marker tint
-    // derives from the tab's own accent so each thematic section keeps its hue.
+    // Active tab is signaled by a felt-tip marker stroke painted **behind the
+    // label text only** (calque du highlight "Couverture médiatique" — cf.
+    // DiffTitle), replacing the legacy full-chip wash + leading dot. The marker
+    // tint derives from the tab's own accent so each thematic section keeps its
+    // hue ; le trait est légèrement incliné, à extrémités inégales et opacité
+    // douce pour lire comme un tracé manuel (cf. [_MarkerHighlight]).
     const radius = BorderRadius.all(Radius.circular(FacteurRadius.small));
     final label = Text(
       tab.label,
@@ -207,13 +211,12 @@ class _Tab extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (isActive)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(
-                  color: tab.accent.withValues(alpha: 0.22),
-                  borderRadius: BorderRadius.circular(4),
+              CustomPaint(
+                painter: _MarkerHighlight(color: tab.accent),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: label,
                 ),
-                child: label,
               )
             else
               label,
@@ -231,6 +234,61 @@ class _Tab extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Felt-tip "surligneur" stroke painted behind a tab label. Reads as a
+/// hand-drawn highlighter pass rather than a flat rounded chip :
+/// - a band covering only the lower ~66 % of the text height, anchored to the
+///   baseline so ascenders/descenders peek out,
+/// - a slight ~-2° tilt,
+/// - uneven rounded caps (leading tighter, trailing longer) for the
+///   "movement / manual trace" feel,
+/// - reduced opacity (0.16) with a second translucent pass (0.10) layered near
+///   the baseline to build up the felt density.
+class _MarkerHighlight extends CustomPainter {
+  final Color color;
+
+  const _MarkerHighlight({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+    final bandHeight = size.height * 0.66;
+    final top = size.height - bandHeight; // anchored to the baseline
+    final rect = Rect.fromLTWH(0, top, size.width, bandHeight);
+
+    canvas.save();
+    // Tilt around the band centre so the whole stroke leans slightly.
+    canvas.translate(size.width / 2, size.height / 2);
+    canvas.rotate(-2 * math.pi / 180);
+    canvas.translate(-size.width / 2, -size.height / 2);
+
+    // Uneven caps: leading (left) tighter, trailing (right) longer/rounder.
+    final base = RRect.fromRectAndCorners(
+      rect,
+      topLeft: Radius.circular(bandHeight * 0.32),
+      bottomLeft: Radius.circular(bandHeight * 0.28),
+      topRight: Radius.circular(bandHeight * 0.55),
+      bottomRight: Radius.circular(bandHeight * 0.62),
+    );
+    canvas.drawRRect(base, Paint()..color = color.withValues(alpha: 0.16));
+
+    // Second pass, inset toward the baseline, adds the denser felt core.
+    final core = Rect.fromLTWH(
+      rect.left + size.width * 0.05,
+      rect.top + bandHeight * 0.30,
+      size.width * 0.90,
+      bandHeight * 0.70,
+    );
+    final coreRRect =
+        RRect.fromRectAndRadius(core, Radius.circular(bandHeight * 0.4));
+    canvas.drawRRect(coreRRect, Paint()..color = color.withValues(alpha: 0.10));
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_MarkerHighlight old) => old.color != color;
 }
 
 class _ProgressPainter extends CustomPainter {

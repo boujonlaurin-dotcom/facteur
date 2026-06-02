@@ -108,8 +108,8 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         SizedBox(
-                          width: 22,
-                          height: 22,
+                          width: 29,
+                          height: 29,
                           child: AnimatedBuilder(
                             animation: _controller,
                             builder: (context, child) {
@@ -129,8 +129,8 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
                                   scale: _scale.value,
                                   child: SvgPicture.asset(
                                     'assets/icons/streak_flame.svg',
-                                    width: 22,
-                                    height: 22,
+                                    width: 29,
+                                    height: 29,
                                     colorFilter: isActive
                                         ? null
                                         : ColorFilter.mode(
@@ -164,8 +164,8 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             child: SvgPicture.asset(
               'assets/icons/streak_flame.svg',
-              width: 22,
-              height: 22,
+              width: 29,
+              height: 29,
               colorFilter: ColorFilter.mode(
                 colors.primary.withValues(alpha: 0.3),
                 BlendMode.srcIn,

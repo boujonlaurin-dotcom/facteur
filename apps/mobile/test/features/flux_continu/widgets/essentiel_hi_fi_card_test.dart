@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
@@ -41,6 +42,7 @@ EssentielArticle _article({
   String? theme = 'tech',
   String source = 'Le Monde',
   bool isActuDuJour = false,
+  bool isRead = false,
 }) {
   return EssentielArticle(
     contentId: 'c-$rank',
@@ -54,6 +56,7 @@ EssentielArticle _article({
     rank: rank,
     perspectiveCount: 3,
     isActuDuJour: isActuDuJour,
+    isRead: isRead,
   );
 }
 
@@ -280,6 +283,48 @@ void main() {
       expect(find.text('Prévisions'), findsOneWidget,
           reason: 'Tapping the weather badge opens the detail sheet.');
       expect(find.text("Aujourd'hui"), findsOneWidget);
+    });
+
+    testWidgets('read article dims its tile to 0.6 and shows a check badge',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1, isRead: true)],
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+        ),
+      ));
+
+      // Read tiles dim to 0.6 (même valeur que les autres sections) — un
+      // Opacity à 0.6 est propre au wrapper d'état Lu.
+      final dimmed = tester
+          .widgetList<Opacity>(find.byType(Opacity))
+          .where((o) => o.opacity == 0.6);
+      expect(dimmed, isNotEmpty);
+      // Green check badge (same Phosphor glyph as the other sections).
+      expect(
+        find.byIcon(PhosphorIcons.check(PhosphorIconsStyle.bold)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('unread article is not dimmed (no read badge)', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+        ),
+      ));
+
+      final dimmed = tester
+          .widgetList<Opacity>(find.byType(Opacity))
+          .where((o) => o.opacity == 0.6);
+      expect(dimmed, isEmpty);
+      expect(
+        find.byIcon(PhosphorIcons.check(PhosphorIconsStyle.bold)),
+        findsNothing,
+      );
     });
 
     testWidgets('slots 2-5 all use the medium layout (no dotted divider)',

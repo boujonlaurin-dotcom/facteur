@@ -170,7 +170,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   double _webScrollY = 0.0;
   bool _isConsumed = false;
   bool _hasOpenedNote = false;
-  static const int _consumptionThreshold = 30; // seconds
+  // Marquage Lu unifié (décision PO) : « ouvrir un article = Lu ». Micro-délai
+  // de 1 s avant d'écrire le statut consumed — laisse le loader s'afficher et
+  // évite de marquer Lu un clic immédiatement annulé.
+  static const int _consumptionThreshold = 1; // seconds
   static const int _noteNudgeDelay = 20; // seconds
 
   // Reading progress tracking (0.0 - 1.0)
@@ -388,13 +391,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }
     });
 
-    // Start timer if content is suitable for in-app reading/viewing and not already consumed.
-    // Mode externe : id synthétique vide ⇒ ne JAMAIS démarrer le timer (il
-    // appellerait updateContentStatus('') au bout de 30s).
-    final isVideo = _content?.isVideo ?? false;
-    if (!_isExternal &&
-        (_content?.hasInAppContent == true || isVideo) &&
-        !_isConsumed) {
+    // « Ouvrir = Lu » : on démarre le timer (1 s) pour TOUT contenu non externe,
+    // y compris les articles à lien externe portant un vrai content_id — la
+    // condition hasInAppContent/isVideo a été retirée pour que le statut Lu
+    // soit universel. Le garde _isExternal exclut l'id synthétique vide (il
+    // appellerait sinon updateContentStatus('')).
+    if (!_isExternal && !_isConsumed) {
       _startReadingTimer();
     }
 
@@ -967,9 +969,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             _contentResolved = true;
             _isConsumed = _content!.status == ContentStatus.consumed;
           });
-          final isVideoFetched = _content!.isVideo;
-          if ((_content!.hasInAppContent == true || isVideoFetched) &&
-              !_isConsumed) {
+          // « Ouvrir = Lu » : redémarre le timer dès que le contenu est résolu
+          // si on ne l'a pas encore marqué Lu (cas où _content était null au
+          // montage, ou fetch plus long que le micro-délai initial). Même
+          // contrat universel que l'initState (plus de garde in-app/vidéo).
+          if (!_isConsumed) {
             _startReadingTimer();
           }
           // Re-check short article + measure article extent after content
@@ -1029,9 +1033,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Future<void> _markAsConsumed() async {
     // Mode externe : id synthétique vide ⇒ pas de statut backend.
     if (_isExternal) return;
-    setState(() => _isConsumed = true);
     final content = _content;
+    // Ne latch PAS _isConsumed tant que le contenu n'est pas résolu : sinon un
+    // fetch plus lent que le micro-délai laisserait l'article « consommé » en
+    // local sans jamais écrire le statut backend (le re-start de _fetchContent
+    // est gardé par !_isConsumed).
     if (content == null) return;
+    setState(() => _isConsumed = true);
 
     try {
       final supabase = Supabase.instance.client;
