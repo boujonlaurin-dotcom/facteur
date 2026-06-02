@@ -83,6 +83,12 @@ class ScoringWeights:
     # scoring Fraîcheur continue de privilégier « le plus frais d'abord ».
     THEMATIC_WINDOW_TIERS_HOURS = (24, 48, 72)  # paliers d'élargissement successifs
     THEMATIC_MIN_POOL_SIZE = 8  # sous ce seuil → on tente le palier suivant
+    # Plancher absolu de candidats par section thématique. Si le pool des sources
+    # suivies reste en dessous (même au palier 72h), on complète avec des sources
+    # curées NON-suivies (comme Flâner), marquées « Suivre + » à l'affichage. Le
+    # deep-dive (carrousels / Explorer plus / CTA Sujet suivant) reste toujours
+    # accessible.
+    THEMATIC_HARD_FLOOR = 5
 
     # --- QUALITY LAYER (FQS - Facteur Quality Score) ---
 

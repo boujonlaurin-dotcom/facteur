@@ -2685,6 +2685,56 @@ class RecommendationService:
                 candidates=len(candidates_list),
                 threshold=ScoringWeights.THEMATIC_MIN_POOL_SIZE,
             )
+
+            # Backfill curé NON-suivi : quand l'utilisateur suit ≥1 source
+            # (_use_two_phase) mais que le pool suivi reste sous le plancher
+            # absolu, on complète avec des sources curées non-suivies (comme
+            # Flâner) pour garantir un deep-dive exploitable. `is_followed_source`
+            # (calculé plus bas) marquera ces articles à false → chip « Suivre + »
+            # côté client. On NE backfill PAS quand l'utilisateur ne suit aucune
+            # source (le `query` est déjà restreint aux sources curées non-deep).
+            if (
+                _use_two_phase
+                and len(candidates_list) < ScoringWeights.THEMATIC_HARD_FLOOR
+            ):
+                followed_pool = len(candidates_list)
+                since_backfill = now_window - datetime.timedelta(
+                    hours=ScoringWeights.THEMATIC_WINDOW_TIERS_HOURS[-1]
+                )
+                # `query` hérite déjà des filtres thème/topic, mutes, serein,
+                # paywall, langue. On ajoute la restriction curée non-suivie et la
+                # fenêtre la plus large autorisée (72h). Requête simple sur le plan
+                # `is_curated` (rapide) — pas besoin du garde-fou timeout réservé à
+                # la branche followed-only.
+                backfill_query = (
+                    query.where(
+                        Content.published_at >= since_backfill,
+                        Source.is_curated,
+                        Source.source_tier != "deep",
+                        Source.id.notin_(list(followed_source_ids)),
+                    )
+                    .order_by(Content.published_at.desc())
+                    .limit(limit_candidates)
+                )
+                backfill_result = await self.session.scalars(backfill_query)
+                backfill_list = list(backfill_result.all())
+
+                # Ordre suivies-d'abord : concaténer le backfill APRÈS le pool
+                # suivi, dédupe par id (1ʳᵉ occurrence gardée), tronquer.
+                seen_ids: set = {c.id for c in candidates_list}
+                for c in backfill_list:
+                    if c.id not in seen_ids:
+                        candidates_list.append(c)
+                        seen_ids.add(c.id)
+                candidates_list = candidates_list[:limit_candidates]
+
+                logger.info(
+                    "feed_thematic_backfill",
+                    user_id=str(user_id),
+                    followed_pool=followed_pool,
+                    backfilled=len(candidates_list) - followed_pool,
+                    final=len(candidates_list),
+                )
         else:
             candidates_list = await _fetch_candidates(query)
 

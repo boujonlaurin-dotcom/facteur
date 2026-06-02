@@ -141,6 +141,90 @@ async def test_adaptive_window_stays_24h_when_pool_sufficient(
     assert not (older & ids), "le pool 24h suffit, pas d'élargissement à 48h"
 
 
+def test_thematic_window_tiers_and_floor_config():
+    """Paliers (24,48,72) — plafond 72h, pas de palier 7j (décision PO) — et
+    le plancher absolu THEMATIC_HARD_FLOOR=5 existe."""
+    assert ScoringWeights.THEMATIC_WINDOW_TIERS_HOURS == (24, 48, 72)
+    assert max(ScoringWeights.THEMATIC_WINDOW_TIERS_HOURS) == 72  # pas de 168h
+    assert ScoringWeights.THEMATIC_HARD_FLOOR == 5
+
+
+@pytest.fixture
+async def curated_unfollowed_tech_source(db_session):
+    """Source curée tech NON suivie par l'utilisateur (alimente le backfill)."""
+    source = Source(
+        id=uuid4(),
+        name="Tech Curated Unfollowed",
+        url="https://tech-curated.com",
+        feed_url=f"https://tech-curated.com/feed-{uuid4()}.xml",
+        type=SourceType.ARTICLE,
+        theme="tech",
+        is_active=True,
+        is_curated=True,
+    )
+    db_session.add(source)
+    await db_session.commit()
+    return source
+
+
+async def test_backfill_reaches_floor_with_curated_unfollowed(
+    db_session, followed_tech_source, curated_unfollowed_tech_source, user_id
+):
+    """Pool suivi sous le plancher (3) → complété par des sources curées NON
+    suivies pour atteindre ≥5 ; les articles suivis restent en tête."""
+    followed = await _add_tech_contents(
+        db_session, followed_tech_source.id, count=3, hours_ago=10
+    )
+    unfollowed = await _add_tech_contents(
+        db_session, curated_unfollowed_tech_source.id, count=6, hours_ago=20
+    )
+
+    service = RecommendationService(db_session)
+    candidates = await service._get_candidates(
+        user_id=user_id,
+        limit_candidates=100,
+        theme="tech",
+        personalized=True,
+        followed_source_ids={followed_tech_source.id},
+    )
+
+    ids = [c.id for c in candidates]
+    id_set = set(ids)
+    assert len(candidates) >= ScoringWeights.THEMATIC_HARD_FLOOR
+    assert followed <= id_set, "les articles suivis doivent être présents"
+    assert unfollowed & id_set, "le backfill curé non-suivi doit compléter le pool"
+    # Suivies d'abord : tous les articles suivis précèdent le 1er article backfill.
+    last_followed = max(i for i, cid in enumerate(ids) if cid in followed)
+    first_backfill = min(i for i, cid in enumerate(ids) if cid in unfollowed)
+    assert last_followed < first_backfill, "followed sources must precede backfill"
+
+
+async def test_no_backfill_when_followed_pool_sufficient_db(
+    db_session, followed_tech_source, curated_unfollowed_tech_source, user_id
+):
+    """Pool suivi ≥ plancher → aucun article de source non-suivie n'est ajouté."""
+    await _add_tech_contents(
+        db_session, followed_tech_source.id, count=6, hours_ago=10
+    )
+    unfollowed = await _add_tech_contents(
+        db_session, curated_unfollowed_tech_source.id, count=6, hours_ago=20
+    )
+
+    service = RecommendationService(db_session)
+    candidates = await service._get_candidates(
+        user_id=user_id,
+        limit_candidates=100,
+        theme="tech",
+        personalized=True,
+        followed_source_ids={followed_tech_source.id},
+    )
+
+    id_set = {c.id for c in candidates}
+    assert not (unfollowed & id_set), (
+        "pool suivi suffisant (≥ plancher) → pas de backfill non-suivi"
+    )
+
+
 # --------------------------------------------------------------------------
 # Fix #1 — le PillarScoringEngine privilégie la qualité (article riche > teaser)
 # --------------------------------------------------------------------------

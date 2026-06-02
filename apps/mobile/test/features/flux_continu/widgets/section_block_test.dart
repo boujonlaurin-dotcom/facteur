@@ -105,8 +105,9 @@ void main() {
     });
 
     testWidgets(
-        'SeeAllSectionButton hidden when nothing left to show (no overflow, '
-        'no hasMore)', (tester) async {
+        'SeeAllSectionButton ALWAYS shown for FeedThemeSection even when the '
+        'section fits (no overflow, no hasMore) — deep-dive is the only route '
+        'to carousels/Explorer/next-CTA', (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
           section: _themeSection(items: 2, coreVisibleCount: 3),
@@ -117,7 +118,9 @@ void main() {
         ),
       ));
 
-      expect(find.byType(SeeAllSectionButton), findsNothing);
+      // hiddenCount = 2 - 3 = -1 → clamped to 0 → label "Tout lire" (no suffix).
+      expect(find.byType(SeeAllSectionButton), findsOneWidget);
+      expect(find.text('Tout lire'), findsOneWidget);
     });
 
     testWidgets(
