@@ -169,7 +169,7 @@ def _schedule_background_regen(
                         user_id, target_date, is_serene=is_serene
                     )
                     if existing and existing.format_version in (
-                        "editorial_v1",
+                        EDITORIAL_FORMAT_VERSION,
                         "topics_v1",
                     ):
                         logger.info(
@@ -329,9 +329,21 @@ def _select_daily_quote(user_id: str, target_date: str) -> dict | None:
     return rng.choice(quotes)
 
 
+# Version courante du format editorial. Bumpée editorial_v1 -> editorial_v2 avec
+# la projection per-user (P2) : la FORME JSON est inchangée (toujours
+# `subjects[]`), mais la SÉMANTIQUE de sélection change (représentant source
+# suivie + re-ranking intérêts + sujets solo). Le bump force la régénération des
+# digests cachés `editorial_v1` (le cron les voit "stale") et évite de servir un
+# mix de sémantiques. Clé d'idempotence (user_id, target_date, is_serene)
+# inchangée.
+EDITORIAL_FORMAT_VERSION = "editorial_v2"
+# Tous les formats editorial rendus/clonables pendant la transition v1 -> v2.
+# Même forme JSON → `_build_editorial_response` les traite identiquement.
+_EDITORIAL_FORMATS: tuple[str, ...] = ("editorial_v1", "editorial_v2")
+
 # Format versions that the read-only hot path is willing to render. flat_v1
 # is legacy/expendable — never served from /digest or /digest/both.
-_READABLE_FORMATS: tuple[str, ...] = ("editorial_v1", "topics_v1")
+_READABLE_FORMATS: tuple[str, ...] = (*_EDITORIAL_FORMATS, "topics_v1")
 _HOTPATH_FALLBACK_DAYS = 7
 
 
@@ -443,7 +455,7 @@ async def read_digest_or_fallback(
                 DailyDigest.user_id != user_id,
                 DailyDigest.target_date == yesterday,
                 DailyDigest.is_serene == is_serene,
-                DailyDigest.format_version == "editorial_v1",
+                DailyDigest.format_version.in_(_EDITORIAL_FORMATS),
             )
         )
         .order_by(DailyDigest.generated_at.desc())
@@ -637,10 +649,10 @@ class DigestService:
         # 1a. Check format_version mismatch — stale cache from pre-editorial era
         expected_format = await self._get_user_digest_format(user_id)
         expected_version = {
-            "editorial": "editorial_v1",
+            "editorial": EDITORIAL_FORMAT_VERSION,
             "topics": "topics_v1",
             "flat": "flat_v1",
-        }.get(expected_format, "editorial_v1")
+        }.get(expected_format, EDITORIAL_FORMAT_VERSION)
 
         # Defer deletion of stale-format digest until AFTER the new digest is
         # successfully generated. This avoids a hole where we delete a valid
@@ -700,10 +712,7 @@ class DigestService:
                         digest_id=str(existing_digest.id),
                         format_version=existing_digest.format_version,
                     )
-                    if existing_digest.format_version in (
-                        "editorial_v1",
-                        "topics_v1",
-                    ):
+                    if existing_digest.format_version in _READABLE_FORMATS:
                         # Defer deletion, fall through to regeneration.
                         stale_format_digest = existing_digest
                         existing_digest = None
@@ -725,7 +734,13 @@ class DigestService:
             # pipeline (3-5 min), which exceeds both the /digest timeouts
             # and the mobile retry budget — the classic "spinner forever
             # after onboarding" symptom.
-            if expected_version == "editorial_v1":
+            # Cold-start fallback : depuis P2 le digest editorial est per-user,
+            # donc cloner la ligne d'un autre user n'est plus strictement
+            # "user-agnostic". On le garde quand même pour les nouveaux users
+            # arrivés après le batch : un digest frais et valide vaut mieux que
+            # le spinner cold-path LLM (3-5 min). La ligne clonée sera regénérée
+            # proprement (per-user) au prochain batch.
+            if expected_version == EDITORIAL_FORMAT_VERSION:
                 cloned = await self._try_clone_global_editorial_digest(
                     user_id=user_id,
                     target_date=target_date,
@@ -1610,7 +1625,7 @@ class DigestService:
                         DailyDigest.user_id != user_id,
                         DailyDigest.target_date == target_date,
                         DailyDigest.is_serene == is_serene,
-                        DailyDigest.format_version == "editorial_v1",
+                        DailyDigest.format_version.in_(_EDITORIAL_FORMATS),
                     )
                 )
                 .order_by(DailyDigest.generated_at.desc())
@@ -1645,7 +1660,9 @@ class DigestService:
             items=source.items,
             mode=source.mode or ("serein" if is_serene else "pour_vous"),
             is_serene=is_serene,
-            format_version="editorial_v1",
+            # Préserve la version de la source (le `items` JSONB embarque sa
+            # propre `format_version` — garder la ligne cohérente avec lui).
+            format_version=source.format_version,
             generated_at=source.generated_at,
         )
         self.session.add(cloned)
@@ -1848,7 +1865,7 @@ class DigestService:
         mode: str | None = None,
         is_serene: bool = False,
     ) -> DailyDigest | None:
-        """Create a new DailyDigest in editorial_v1 format."""
+        """Create a new DailyDigest in the current editorial format (editorial_v2)."""
         # Garde-fou: la pipeline trim déjà les sujets sans article (cf.
         # pipeline.py "ÉTAPE 3A-bis"). Ici on est défensif : si quelque chose
         # passe au travers, on logge en error (ce ne devrait plus arriver).
@@ -1868,7 +1885,7 @@ class DigestService:
         result = result.model_copy(update={"subjects": valid_subjects})
 
         items_json = {
-            "format_version": "editorial_v1",
+            "format_version": EDITORIAL_FORMAT_VERSION,
             "mode": mode or "pour_vous",
             "subjects": [
                 {
@@ -1929,7 +1946,7 @@ class DigestService:
             items=items_json,
             mode=mode or "pour_vous",
             is_serene=is_serene,
-            format_version="editorial_v1",
+            format_version=EDITORIAL_FORMAT_VERSION,
             generated_at=datetime.now(UTC),
         )
 
@@ -2015,7 +2032,7 @@ class DigestService:
         - topics_v1: grouped topics + flat items fallback
         - flat_v1 / None: legacy flat list
         """
-        if digest.format_version == "editorial_v1":
+        if digest.format_version in _EDITORIAL_FORMATS:
             return await self._build_editorial_response(digest, user_id)
         if digest.format_version == "topics_v1":
             return await self._build_topics_response(digest, user_id)
@@ -2403,7 +2420,8 @@ class DigestService:
             generated_at=digest.generated_at,
             mode=digest.mode or "pour_vous",
             is_serene=digest.is_serene,
-            format_version="editorial_v1",
+            # Reflète la version réelle de la ligne (v1 legacy ou v2 courant).
+            format_version=digest.format_version or EDITORIAL_FORMAT_VERSION,
             items=flat_items,
             topics=response_topics,
             completion_threshold=editorial_completion_threshold,

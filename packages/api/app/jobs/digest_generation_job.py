@@ -172,7 +172,18 @@ class DigestGenerationJob:
                     session, session_maker=safe_async_session
                 )
                 if pipeline.llm.is_ready and user_ids:
-                    global_candidates = await self._get_global_candidates(session)
+                    # P1 : union des sources réellement suivies du batch, pour
+                    # élargir le pool de clustering au-delà du top-200 récence.
+                    batch_followed_source_ids = (
+                        await self._get_batch_followed_source_ids(session, user_ids)
+                    )
+                    logger.info(
+                        "digest_generation_batch_followed_sources",
+                        count=len(batch_followed_source_ids),
+                    )
+                    global_candidates = await self._get_global_candidates(
+                        session, followed_source_ids=batch_followed_source_ids
+                    )
                     if global_candidates:
                         for mode in ("pour_vous", "serein"):
                             try:
@@ -184,7 +195,9 @@ class DigestGenerationJob:
                                     global_candidates
                                     if mode == "pour_vous"
                                     else await self._get_global_candidates(
-                                        session, mode="serein"
+                                        session,
+                                        mode="serein",
+                                        followed_source_ids=batch_followed_source_ids,
                                     )
                                 )
                                 if not mode_candidates:
@@ -299,10 +312,52 @@ class DigestGenerationJob:
             )
             raise
 
+    # Borne explicite sur la tranche "sources suivies" ajoutée au pool de
+    # clustering. Même ordre de grandeur que la tranche récence (200) pour
+    # garder un coût mémoire/LLM borné même si beaucoup de sources de niche
+    # sont suivies par le batch.
+    FOLLOWED_SLICE_LIMIT = 200
+
+    async def _get_batch_followed_source_ids(
+        self,
+        session: AsyncSession,
+        user_ids: list[UUID],
+    ) -> set[UUID]:
+        """Union des sources réellement suivies (followed/favorite) du batch.
+
+        Sert à élargir le pool de clustering éditorial pour que les sujets
+        adossés à des sources de niche suivies aient une chance d'être
+        clusterisés/sélectionnés (P1). Exclut HIDDEN/UNFOLLOWED.
+        """
+        if not user_ids:
+            return set()
+
+        from app.models.enums import InterestState
+        from app.models.source import UserSource
+
+        stmt = (
+            select(UserSource.source_id)
+            .where(
+                UserSource.user_id.in_(user_ids),
+                UserSource.state.in_([InterestState.FOLLOWED, InterestState.FAVORITE]),
+            )
+            .distinct()
+        )
+        try:
+            result = await session.execute(stmt)
+            return {row[0] for row in result.all()}
+        except Exception as e:
+            logger.error(
+                "digest_generation_batch_followed_sources_failed",
+                error=str(e),
+            )
+            return set()
+
     async def _get_global_candidates(
         self,
         session: AsyncSession,
         mode: str = "pour_vous",
+        followed_source_ids: set[UUID] | None = None,
     ) -> list[Any]:
         """Fetch a user-agnostic global candidate pool for editorial context.
 
@@ -311,11 +366,19 @@ class DigestGenerationJob:
         Falls back to a broad recent-content query so the pipeline never
         cold-paths because of one unlucky user.
 
+        En plus de la tranche "top-200 par récence" (user-agnostique), on
+        unionne une tranche bornée d'articles récents des sources suivies du
+        batch (P1) : sans elle, les sources de niche sont systématiquement
+        évincées par les gros volumes mainstream et n'entrent jamais dans le
+        clustering. Les deux tranches passent les mêmes filtres ad/good-news.
+
         Args:
             session: Async SQLAlchemy session.
             mode: "pour_vous" (default, no filter) or "serein" (apply
-                ``apply_serein_filter`` so anxious articles are excluded
+                ``apply_good_news_filter`` so anxious articles are excluded
                 from the clustering pool).
+            followed_source_ids: Sources suivies du batch (P1). Si fourni et
+                non vide, leurs articles récents sont unionnés au pool.
         """
         from datetime import UTC, timedelta
 
@@ -327,34 +390,34 @@ class DigestGenerationJob:
         # Content.published_at is stored as tz-aware, so the comparison
         # value must also be tz-aware (and utcnow() is deprecated in 3.12).
         cutoff = datetime.datetime.now(UTC) - timedelta(hours=self.hours_lookback)
-        # Serein filter references Source.theme so we need an explicit join.
-        # The join is harmless for pour_vous (every Content has a Source) but
-        # we keep it behind the mode branch to match existing behaviour.
-        stmt = select(Content).options(selectinload(Content.source))
-        if mode == "serein":
-            # Mode "Bonnes nouvelles" : hard-filter is_good_news=True. Pool
-            # potentiellement plus restreint que l'ancien serein, c'est voulu.
-            from app.services.recommendation.filter_presets import (
-                apply_good_news_filter,
-            )
 
-            stmt = stmt.join(Source, Content.source_id == Source.id)
-            stmt = apply_good_news_filter(stmt)
-        else:
-            # Mode pour_vous : apply_good_news_filter inclut déjà apply_ad_filter,
-            # mais pour_vous n'y passe pas — sans ce filtre, les pubs Frandroid
-            # (is_ad=True) remontent dans le clustering éditorial.
-            from app.services.recommendation.filter_presets import apply_ad_filter
+        def _base_stmt():
+            # Serein filter references Source.theme so we need an explicit join.
+            # The join is harmless for pour_vous (every Content has a Source) but
+            # we keep it behind the mode branch to match existing behaviour.
+            stmt = select(Content).options(selectinload(Content.source))
+            if mode == "serein":
+                # Mode "Bonnes nouvelles" : hard-filter is_good_news=True. Pool
+                # potentiellement plus restreint que l'ancien serein, c'est voulu.
+                from app.services.recommendation.filter_presets import (
+                    apply_good_news_filter,
+                )
 
-            stmt = apply_ad_filter(stmt)
-        stmt = (
-            stmt.where(Content.published_at >= cutoff)
-            .order_by(Content.published_at.desc())
-            .limit(200)
-        )
+                stmt = stmt.join(Source, Content.source_id == Source.id)
+                stmt = apply_good_news_filter(stmt)
+            else:
+                # Mode pour_vous : apply_good_news_filter inclut déjà apply_ad_filter,
+                # mais pour_vous n'y passe pas — sans ce filtre, les pubs Frandroid
+                # (is_ad=True) remontent dans le clustering éditorial.
+                from app.services.recommendation.filter_presets import apply_ad_filter
+
+                stmt = apply_ad_filter(stmt)
+            return stmt.where(Content.published_at >= cutoff)
+
+        recency_stmt = _base_stmt().order_by(Content.published_at.desc()).limit(200)
         try:
-            result = await session.execute(stmt)
-            return list(result.scalars().all())
+            result = await session.execute(recency_stmt)
+            candidates = list(result.scalars().all())
         except Exception as e:
             logger.error(
                 "digest_generation_global_candidates_failed",
@@ -362,6 +425,40 @@ class DigestGenerationJob:
                 error=str(e),
             )
             return []
+
+        if not followed_source_ids:
+            return candidates
+
+        # Tranche "sources suivies" : mêmes filtres + cutoff, bornée, puis
+        # dédupliquée contre la tranche récence (un article peut déjà y figurer).
+        seen_ids = {c.id for c in candidates}
+        followed_stmt = (
+            _base_stmt()
+            .where(Content.source_id.in_(followed_source_ids))
+            .order_by(Content.published_at.desc())
+            .limit(self.FOLLOWED_SLICE_LIMIT)
+        )
+        try:
+            followed_result = await session.execute(followed_stmt)
+            followed_articles = [
+                c for c in followed_result.scalars().all() if c.id not in seen_ids
+            ]
+        except Exception as e:
+            logger.error(
+                "digest_generation_followed_slice_failed",
+                mode=mode,
+                error=str(e),
+            )
+            followed_articles = []
+
+        if followed_articles:
+            logger.info(
+                "digest_generation_followed_slice_added",
+                mode=mode,
+                recency_count=len(candidates),
+                followed_added=len(followed_articles),
+            )
+        return candidates + followed_articles
 
     async def _prune_old_highlights(
         self,
@@ -583,8 +680,12 @@ class DigestGenerationJob:
                         )
                     )
 
-                    # All users get editorial format — no per-user branching
-                    expected_version = "editorial_v1"
+                    # All users get editorial format — no per-user branching.
+                    # editorial_v2 = projection per-user (P2). Un digest caché
+                    # editorial_v1 est considéré stale et régénéré ci-dessous.
+                    from app.services.digest_service import EDITORIAL_FORMAT_VERSION
+
+                    expected_version = EDITORIAL_FORMAT_VERSION
 
                     stale_digest = None
                     if existing and existing.format_version != expected_version:

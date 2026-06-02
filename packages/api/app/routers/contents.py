@@ -679,7 +679,7 @@ async def _load_cluster_articles_for_representative(
         select(DailyDigest)
         .where(
             DailyDigest.user_id == user_id,
-            DailyDigest.format_version == "editorial_v1",
+            DailyDigest.format_version.in_(("editorial_v1", "editorial_v2")),
         )
         .order_by(desc(DailyDigest.generated_at))
         .limit(4)  # up to 2 per day * 2 days (normal + serene)
@@ -777,7 +777,7 @@ async def _load_stored_perspectives_for_representative(
         select(DailyDigest)
         .where(
             DailyDigest.user_id == user_id,
-            DailyDigest.format_version == "editorial_v1",
+            DailyDigest.format_version.in_(("editorial_v1", "editorial_v2")),
         )
         .order_by(desc(DailyDigest.generated_at))
         .limit(4)
