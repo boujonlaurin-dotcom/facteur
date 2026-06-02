@@ -1,85 +1,73 @@
-# QA Handoff — Flâner : onglets épinglés fiabilisés + modal simplifiée (v2)
-
-> Itération v2 de la modal d'épinglage (suite PR #748). 1 bug + 3 évolutions UX
-> + réduction des boutons filtre/recherche. Input de /validate-feature (Chrome 390×844).
+# QA Handoff — Allègement Couverture médiatique
 
 ## Feature développée
-Fiabilise la barre d'onglets Flâner (les sujets/sources épinglés ne « disparaissent »
-plus), supprime l'onglet « Tous », transforme le `+` en engrenage au-delà de 4 onglets,
-et remplace les 2 listes « suivies » de la modal par 2 onglets (Sources / Sujets) avec
-sujets à plat.
+
+Allègement visuel de la section inline « Couverture médiatique » dans le reader
+article : état vide plus discret, badge de polarisation, explication du
+surlignage derrière un bouton info, analyse remontée, disclaimer Mistral Large,
+suppression du bloc « CET ARTICLE », et wash du pivot sur le titre de l'article.
 
 ## PR associée
-<!-- À compléter après /go : gh pr view --web -->
+
+Non créée.
 
 ## Écrans impactés
+
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Flâner (feed principal) | onglet Flâner | Modifié (barre d'onglets + boutons filtre/recherche) |
-| Modal d'épinglage | `showPinSubjectsSheet` (bottom sheet) | Modifié (zone SUIVIS à 2 onglets) |
+| Reader article | Détail contenu interne | Modifié |
+| Reader article alternatif | Second path de rendu détail contenu | Modifié |
+| Bottom sheet perspectives | Couverture médiatique | Modifié via zone analyse partagée |
 
 ## Scénarios de test
 
-### Scénario 1 : Happy path — épingler sources + sujets, tout reste visible
+### Scénario 1 : État vide
 **Parcours** :
-1. Ouvrir Flâner, taper l'engrenage/`+` pour ouvrir la modal.
-2. Épingler 2-3 sources (onglet **Sources**) et 2-3 sujets (onglet **Sujets**).
-3. Fermer la modal, observer la barre d'onglets.
-**Résultat attendu** : tous les onglets épinglés (sources **et** sujets) sont visibles et
-intercalés dans l'ordre, aucun ne « disparaît » derrière le fade de droite.
+1. Ouvrir un article dont l'API perspectives ne renvoie aucune autre source.
+2. Observer la section « Couverture médiatique (0) ».
+**Résultat attendu** : le placeholder est discret, sans dividers pleine largeur
+au-dessus/en dessous, avec texte plus petit et atténué, sans caret ni spectrum.
 
-### Scénario 2 : Cap à 10 onglets
+### Scénario 2 : Section ouverte avec perspectives
 **Parcours** :
-1. Épingler plus de 10 éléments au total (sources + sujets).
-**Résultat attendu** : exactement 10 onglets dans la barre (les 10 premiers de l'ordre
-utilisateur) ; le reste reste gérable dans la modal. Pas de crash.
+1. Ouvrir un article avec plusieurs perspectives.
+2. Déplier « Couverture médiatique ».
+3. Observer le haut de la section.
+**Résultat attendu** : la balise polarisation apparaît si niveau `medium` ou
+`high`, le bouton info ouvre le texte de surlignage, l'analyse est au-dessus des
+titres variants, et le bloc « CET ARTICLE » n'apparaît plus.
 
-### Scénario 3 : Tap onglet actif = retour non filtré
+### Scénario 3 : Analyse Facteur
 **Parcours** :
-1. Taper un onglet **sujet** → le feed se filtre, l'onglet devient actif.
-2. Re-taper l'onglet actif.
-3. Idem avec un onglet **source**.
-**Résultat attendu** : le feed redevient non filtré, aucun onglet n'est actif. La source
-se désélectionne bien (régression historique `setSource(null)` corrigée).
+1. Dans une section ouverte, lancer ou afficher l'analyse Facteur.
+2. Lire la mention sous l'analyse.
+**Résultat attendu** : la mention affiche « Analyse générée par Mistral Large ·
+l'IA peut faire des erreurs. ».
 
-### Scénario 4 : Affordance + / engrenage
+### Scénario 4 : Wash pivot titre reader
 **Parcours** :
-1. Avec ≤ 4 onglets épinglés → observer l'icône en fin de barre.
-2. Épingler jusqu'à > 4 onglets → ré-observer.
-**Résultat attendu** : `+` quand ≤ 4 ; engrenage quand > 4. Dans les deux cas, le tap
-ouvre la même modal d'épinglage.
-
-### Scénario 5 : Modal — 2 onglets Sources / Sujets
-**Parcours** :
-1. Ouvrir la modal avec des sources suivies non épinglées **et** des sujets suivis.
-2. Basculer entre les segments **Sources** et **Sujets**.
-3. Taper une ligne pour l'épingler ; vérifier qu'elle remonte dans « ÉPINGLÉS ».
-4. Tester la recherche (filtre l'onglet actif) et un onglet vide.
-**Résultat attendu** : 2 segments fonctionnels ; sujets en liste à plat (emoji par ligne,
-**plus d'en-têtes de thème**) ; épingler/dé-épingler + drag dans « ÉPINGLÉS » OK ;
-placeholder muet (« Aucune source suivie » / « Aucun sujet ») si l'onglet actif est vide.
-
-### Scénario 6 : Boutons filtre + recherche réduits
-**Résultat attendu** : la loupe (recherche) et le bouton filtre sont légèrement plus petits
-(34 px, icônes 16) ; l'espace horizontal libéré profite à la liste d'onglets. Aucun
-chevauchement, alignement vertical correct.
+1. Ouvrir un article avec `reference_pivot`.
+2. Déplier la section « Couverture médiatique ».
+**Résultat attendu** : le pivot du titre de l'article reçoit un wash gris léger à
+l'ouverture, sans ajouter de bloc référence dans la section.
 
 ## Critères d'acceptation
-- [ ] N sources + M sujets (N+M ≤ 10) → tous visibles et intercalés dans l'ordre unifié.
-- [ ] > 10 épinglés → exactement 10 onglets, surplus non perdu (modal).
-- [ ] Aucun onglet « Tous ».
-- [ ] Tap onglet actif (sujet ET source) → feed non filtré, aucun onglet actif.
-- [ ] ≤ 4 onglets → `+` ; > 4 → engrenage (même action).
-- [ ] Modal : 2 segments Sources/Sujets, sujets à plat, drag « ÉPINGLÉS » non régressé.
-- [ ] Boutons filtre/recherche visiblement réduits, sans casser le layout.
+
+- [ ] État vide nettement moins chargé.
+- [ ] Section ouverte hiérarchisée : badge/info puis analyse puis variantes.
+- [ ] Disclaimer IA visible sous l'analyse.
+- [ ] Aucun rendu « CET ARTICLE ».
+- [ ] Wash pivot visible sur le titre du reader à l'ouverture.
+- [ ] Console sans erreur et pas de 4xx/5xx perspectives inattendus.
 
 ## Zones de risque
-- Cohérence **barre ↔ modal** : l'ordre des onglets doit suivre l'ordre validé par drag
-  (prefs `pinned_tabs_order_v1`). Drag dans la modal → la barre reflète le même ordre.
-- Réseau : `onTapActiveTab` enchaîne 4 `set*(null)` → potentiellement plusieurs refresh
-  (trade-off connu, follow-up hors scope).
+
+- Les deux chemins de rendu du reader doivent rester cohérents.
+- Le bouton info doit rester tappable en viewport mobile 390x844.
+- Le titre reader ne doit pas changer de hauteur de façon visible au moment du
+  wash.
 
 ## Dépendances
-- `tab_counts_provider`, `userInterestsProvider`, `userSourcesStateProvider`,
-  `userSourcesProvider`, `tabOrderPrefsProvider` (SharedPreferences `pinned_tabs_order_v1`).
-- Aucune modif backend / migration.
+
+Pas de changement backend. Le wash dépend du champ API existant
+`reference_pivot`.

@@ -4,22 +4,26 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/features/feed/repositories/feed_repository.dart'
+    show TokenSpan;
 import 'package:facteur/features/feed/widgets/coverage_spectrum_bar.dart';
 import 'package:facteur/features/feed/widgets/perspectives_bottom_sheet.dart';
 
 Perspective _p(String name, {String bias = 'center'}) => Perspective(
-  title: 'Titre $name',
-  url: 'https://example.com/$name',
-  sourceName: name,
-  sourceDomain: '',
-  biasStance: bias,
-);
+      title: 'Titre $name',
+      url: 'https://example.com/$name',
+      sourceName: name,
+      sourceDomain: '',
+      biasStance: bias,
+    );
 
 Future<void> _pumpInline(
   WidgetTester tester, {
   required PerspectivesSectionStatus status,
   List<Perspective> perspectives = const [],
   bool isExpanded = false,
+  PerspectivesAnalysisState analysisState = PerspectivesAnalysisState.idle,
+  String? analysisText,
   required VoidCallback onToggle,
 }) async {
   await tester.pumpWidget(
@@ -35,7 +39,8 @@ Future<void> _pumpInline(
               biasDistribution: const {'left': 1, 'center': 1, 'right': 1},
               contentId: 'test-content-id',
               sourceName: 'Test',
-              referenceTitle: 'Titre référence',
+              analysisState: analysisState,
+              analysisText: analysisText,
               isExpanded: isExpanded,
               onToggle: onToggle,
             ),
@@ -66,6 +71,7 @@ void main() {
     expect(find.byType(CoverageSpectrumBarShimmer), findsOneWidget);
     expect(find.byIcon(caret), findsNothing);
     expect(find.textContaining("marquent l'angle éditorial"), findsNothing);
+    expect(find.text('CET ARTICLE'), findsNothing);
 
     await tester.tap(find.text('Couverture médiatique'));
     expect(toggleCount, 0);
@@ -106,5 +112,63 @@ void main() {
 
     await tester.tap(find.text('Couverture médiatique (1)'));
     expect(toggleCount, 1);
+  });
+
+  testWidgets(
+    'expanded ready puts analysis above variants and removes ref block',
+    (tester) async {
+      await _pumpInline(
+        tester,
+        status: PerspectivesSectionStatus.ready,
+        perspectives: [
+          _p('A'),
+          _p('B', bias: 'left'),
+        ],
+        isExpanded: true,
+        analysisState: PerspectivesAnalysisState.done,
+        analysisText: 'Synthèse test',
+        onToggle: () {},
+      );
+
+      final analysisTop =
+          tester.getTopLeft(find.text('Analyse Facteur').first).dy;
+      final firstVariantTop =
+          tester.getTopLeft(find.text('Titre A', findRichText: true)).dy;
+
+      expect(analysisTop, lessThan(firstVariantTop));
+      expect(find.text('CET ARTICLE'), findsNothing);
+      expect(
+        find.text(
+          'Analyse générée par Mistral Large · l\'IA peut faire des erreurs.',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('PivotWashTitle washes the reader title pivot when expanded', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: FacteurTheme.lightTheme,
+        home: const Scaffold(
+          body: PivotWashTitle(
+            title: 'Le gouvernement annonce une réforme',
+            pivot: TokenSpan(start: 3, end: 15, text: 'gouvernement'),
+            animate: false,
+          ),
+        ),
+      ),
+    );
+
+    final pivotText = find.text('gouvernement');
+    expect(pivotText, findsOneWidget);
+
+    final pivotContainer = tester.widget<Container>(
+      find.ancestor(of: pivotText, matching: find.byType(Container)).first,
+    );
+    final decoration = pivotContainer.decoration! as BoxDecoration;
+    expect(decoration.color, const Color(0xFF9E9E9E).withValues(alpha: 0.14));
   });
 }

@@ -13,16 +13,16 @@ import 'package:facteur/features/feed/widgets/perspectives_bottom_sheet.dart';
 /// (favicon + source + bias label + arrow) doit passer SOUS le DiffTitle.
 /// Vérifie l'ordre vertical via les positions absolues des deux widgets.
 Perspective _persp(String name, String bias) => Perspective(
-      title: 'Titre court avec mot fort',
-      url: 'https://example.com/$name',
-      sourceName: name,
-      sourceDomain: '',
-      biasStance: bias,
-      highlightSpans: const [
-        HighlightSpan(start: 18, end: 22, text: 'fort', bias: 'left'),
-      ],
-      sharedTokens: const [TokenSpan(start: 0, end: 5, text: 'Titre')],
-    );
+  title: 'Titre court avec mot fort',
+  url: 'https://example.com/$name',
+  sourceName: name,
+  sourceDomain: '',
+  biasStance: bias,
+  highlightSpans: const [
+    HighlightSpan(start: 18, end: 22, text: 'fort', bias: 'left'),
+  ],
+  sharedTokens: const [TokenSpan(start: 0, end: 5, text: 'Titre')],
+);
 
 Widget _harness() {
   return ProviderScope(
@@ -45,7 +45,6 @@ Widget _harness() {
               onClearSegments: () {},
               onToggle: () {},
               isExpanded: true,
-              referenceTitle: '',
             ),
           ),
         ),
@@ -56,32 +55,44 @@ Widget _harness() {
 
 void main() {
   testWidgets(
-      '_VariantRow : DiffTitle est placé AU-DESSUS de la head row (favicon + arrow)',
-      (tester) async {
-    await tester.pumpWidget(_harness());
-    await tester.pumpAndSettle(const Duration(seconds: 2));
+    '_VariantRow : DiffTitle est placé AU-DESSUS de la head row (favicon + arrow)',
+    (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle(const Duration(seconds: 2));
 
-    final diffTitles = find.byType(DiffTitle);
-    expect(diffTitles, findsWidgets,
-        reason: 'Au moins un DiffTitle doit être présent dans les variants.');
+      final diffTitles = find.byType(DiffTitle);
+      expect(
+        diffTitles,
+        findsWidgets,
+        reason: 'Au moins un DiffTitle doit être présent dans les variants.',
+      );
 
-    // L'icône arrowRight ne se trouve que dans la head row du _VariantRow.
-    final arrowIcons = find.byWidgetPredicate((w) =>
-        w is Icon &&
-        w.icon == PhosphorIcons.arrowRight(PhosphorIconsStyle.regular));
-    expect(arrowIcons, findsWidgets,
+      // L'icône arrowRight ne se trouve que dans la head row du _VariantRow.
+      final arrowIcons = find.byWidgetPredicate(
+        (w) =>
+            w is Icon &&
+            w.icon == PhosphorIcons.arrowRight(PhosphorIconsStyle.regular),
+      );
+      expect(
+        arrowIcons,
+        findsWidgets,
         reason:
-            'L\'icône arrow-right est l\'ancre de la head row dans _VariantRow.');
+            'L\'icône arrow-right est l\'ancre de la head row dans _VariantRow.',
+      );
 
-    // Compare la position verticale du premier DiffTitle vs le premier arrow :
-    // après PR 6, le DiffTitle doit être au-dessus (dy plus petit).
-    final firstDiffTitleY = tester.getTopLeft(diffTitles.first).dy;
-    final firstArrowY = tester.getTopLeft(arrowIcons.first).dy;
+      // Compare la position verticale du premier DiffTitle vs le premier arrow :
+      // après PR 6, le DiffTitle doit être au-dessus (dy plus petit).
+      final firstDiffTitleY = tester.getTopLeft(diffTitles.first).dy;
+      final firstArrowY = tester.getTopLeft(arrowIcons.first).dy;
 
-    expect(firstDiffTitleY, lessThan(firstArrowY),
+      expect(
+        firstDiffTitleY,
+        lessThan(firstArrowY),
         reason:
             'Le DiffTitle doit être placé AU-DESSUS de la head row (favicon + '
             'source + arrow). Position DiffTitle.dy=$firstDiffTitleY doit être '
-            '< position arrow.dy=$firstArrowY.');
-  });
+            '< position arrow.dy=$firstArrowY.',
+      );
+    },
+  );
 }

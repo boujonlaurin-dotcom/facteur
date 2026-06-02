@@ -20,16 +20,16 @@ import 'package:facteur/widgets/design/facteur_card.dart';
 /// `MissingPluginException` de `url_launcher` en widget test) serait une
 /// régression directe.
 Perspective _persp(String name, String bias) => Perspective(
-      title: 'Titre court avec mot fort',
-      url: 'https://example.com/$name',
-      sourceName: name,
-      sourceDomain: '$name.example.com',
-      biasStance: bias,
-      highlightSpans: const [
-        HighlightSpan(start: 18, end: 22, text: 'fort', bias: 'left'),
-      ],
-      sharedTokens: const [TokenSpan(start: 0, end: 5, text: 'Titre')],
-    );
+  title: 'Titre court avec mot fort',
+  url: 'https://example.com/$name',
+  sourceName: name,
+  sourceDomain: '$name.example.com',
+  biasStance: bias,
+  highlightSpans: const [
+    HighlightSpan(start: 18, end: 22, text: 'fort', bias: 'left'),
+  ],
+  sharedTokens: const [TokenSpan(start: 0, end: 5, text: 'Titre')],
+);
 
 /// Capture la `Perspective` reçue par la route `content-external` (au lieu
 /// d'instancier le vrai `ContentDetailScreen`, qui dépend de Supabase/Hive et
@@ -56,9 +56,7 @@ GoRouter _router(Widget home) {
         name: RouteNames.contentExternal,
         builder: (_, state) {
           _routedPerspective = state.extra as Perspective?;
-          return const Scaffold(
-            body: SizedBox(key: _kExternalReaderMarker),
-          );
+          return const Scaffold(body: SizedBox(key: _kExternalReaderMarker));
         },
       ),
     ],
@@ -80,7 +78,6 @@ Widget _variantRowHome() {
           onClearSegments: () {},
           onToggle: () {},
           isExpanded: true,
-          referenceTitle: '',
         ),
       ),
     ),
@@ -124,8 +121,11 @@ void main() {
   // /content-external" : une GoRoute top-level DOIT avoir un path absolu
   // (commençant par '/'), sinon go_router ne sait pas résoudre la route nommée.
   test('content-external : route top-level avec path absolu résolvable', () {
-    expect(RoutePaths.contentExternal.startsWith('/'), isTrue,
-        reason: 'Une GoRoute top-level doit avoir un path absolu.');
+    expect(
+      RoutePaths.contentExternal.startsWith('/'),
+      isTrue,
+      reason: 'Une GoRoute top-level doit avoir un path absolu.',
+    );
     final router = GoRouter(
       routes: [
         GoRoute(path: '/', builder: (_, __) => const SizedBox()),
@@ -136,8 +136,10 @@ void main() {
         ),
       ],
     );
-    expect(router.namedLocation(RouteNames.contentExternal),
-        RoutePaths.contentExternal);
+    expect(
+      router.namedLocation(RouteNames.contentExternal),
+      RoutePaths.contentExternal,
+    );
   });
 
   setUp(() {
@@ -147,7 +149,10 @@ void main() {
     // jamais en widget test et la navigation ne se déclenche pas.
     TestWidgetsFlutterBinding.ensureInitialized();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(SystemChannels.platform, (call) async => null);
+        .setMockMethodCallHandler(
+          SystemChannels.platform,
+          (call) async => null,
+        );
   });
 
   tearDown(() {
@@ -156,53 +161,68 @@ void main() {
   });
 
   testWidgets(
-      '_VariantRow tap → route vers content-external (pas de launchUrl)',
-      (tester) async {
-    await tester.pumpWidget(_app(_variantRowHome()));
-    await tester.pumpAndSettle(const Duration(seconds: 1));
+    '_VariantRow tap → route vers content-external (pas de launchUrl)',
+    (tester) async {
+      await tester.pumpWidget(_app(_variantRowHome()));
+      await tester.pumpAndSettle(const Duration(seconds: 1));
 
-    expect(find.byKey(_kExternalReaderMarker), findsNothing,
-        reason: 'Le reader ne doit pas être présent avant le tap.');
+      expect(
+        find.byKey(_kExternalReaderMarker),
+        findsNothing,
+        reason: 'Le reader ne doit pas être présent avant le tap.',
+      );
 
-    // Tape sur le DiffTitle (le titre est rendu via RichText, pas Text).
-    final tappable = find.byType(DiffTitle);
-    expect(tappable, findsWidgets);
-    await tester.tap(tappable.first, warnIfMissed: false);
-    await tester.pumpAndSettle(const Duration(milliseconds: 400));
+      // Tape sur le DiffTitle (le titre est rendu via RichText, pas Text).
+      final tappable = find.byType(DiffTitle);
+      expect(tappable, findsWidgets);
+      await tester.tap(tappable.first, warnIfMissed: false);
+      await tester.pumpAndSettle(const Duration(milliseconds: 400));
 
-    expect(find.byKey(_kExternalReaderMarker), findsOneWidget,
+      expect(
+        find.byKey(_kExternalReaderMarker),
+        findsOneWidget,
         reason:
             'Le tap doit router vers ContentDetailScreen (mode externe) via '
-            'pushNamed(RouteNames.contentExternal) — pas launchUrl.');
-    expect(_routedPerspective?.url, 'https://example.com/Source-Gauche',
-        reason: 'La Perspective tapée doit être transmise via extra.');
-  });
+            'pushNamed(RouteNames.contentExternal) — pas launchUrl.',
+      );
+      expect(
+        _routedPerspective?.url,
+        'https://example.com/Source-Gauche',
+        reason: 'La Perspective tapée doit être transmise via extra.',
+      );
+    },
+  );
 
   testWidgets(
-      '_PerspectiveCard tap → route vers content-external (pas de launchUrl)',
-      (tester) async {
-    await tester.pumpWidget(_app(_bottomSheetHome()));
-    await tester.pumpAndSettle();
+    '_PerspectiveCard tap → route vers content-external (pas de launchUrl)',
+    (tester) async {
+      await tester.pumpWidget(_app(_bottomSheetHome()));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('open sheet'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('open sheet'));
+      await tester.pumpAndSettle();
 
-    expect(find.byType(PerspectivesBottomSheet), findsOneWidget);
-    expect(find.byKey(_kExternalReaderMarker), findsNothing);
+      expect(find.byType(PerspectivesBottomSheet), findsOneWidget);
+      expect(find.byKey(_kExternalReaderMarker), findsNothing);
 
-    // Tape sur la zone titre de la FacteurCard. Le footer interne a un
-    // `GestureDetector` opaque (pour le source detail modal) qui absorbe les
-    // taps même quand son onTap est null — donc on cible une position en
-    // haut de la carte, dans la région du DiffTitle.
-    final card = find.byType(FacteurCard);
-    expect(card, findsOneWidget);
-    final cardRect = tester.getRect(card);
-    await tester.tapAt(Offset(cardRect.center.dx, cardRect.top + 24));
-    await tester.pumpAndSettle(const Duration(milliseconds: 600));
+      // Tape sur la zone titre de la FacteurCard. Le footer interne a un
+      // `GestureDetector` opaque (pour le source detail modal) qui absorbe les
+      // taps même quand son onTap est null — donc on cible une position en
+      // haut de la carte, dans la région du DiffTitle.
+      final card = find.byType(FacteurCard);
+      expect(card, findsOneWidget);
+      final cardRect = tester.getRect(card);
+      await tester.tapAt(Offset(cardRect.center.dx, cardRect.top + 24));
+      await tester.pumpAndSettle(const Duration(milliseconds: 600));
 
-    expect(find.byKey(_kExternalReaderMarker), findsOneWidget,
-        reason: 'Le tap sur _PerspectiveCard doit router vers '
-            'ContentDetailScreen (mode externe) via pushNamed.');
-    expect(_routedPerspective?.url, 'https://example.com/Source-Gauche');
-  });
+      expect(
+        find.byKey(_kExternalReaderMarker),
+        findsOneWidget,
+        reason:
+            'Le tap sur _PerspectiveCard doit router vers '
+            'ContentDetailScreen (mode externe) via pushNamed.',
+      );
+      expect(_routedPerspective?.url, 'https://example.com/Source-Gauche');
+    },
+  );
 }
