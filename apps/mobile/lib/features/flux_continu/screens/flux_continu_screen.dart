@@ -64,6 +64,16 @@ const double _kFabHideAboveScroll = 380.0;
 /// pull-to-refresh hint pill — avoids nudging after a tiny inertia scroll.
 const double _kPullHintMinDepthPx = 800.0;
 
+/// Sliver « Grille du jour » (carte d'entrée de La Grille). Padding maquette
+/// partagé par ses deux sites de rendu : juste après « Actus du jour » (cas
+/// nominal) et le fallback bas quand le digest est absent.
+const _grilleSliver = SliverToBoxAdapter(
+  child: Padding(
+    padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
+    child: GrilleCtaCard(),
+  ),
+);
+
 class FluxContinuScreen extends ConsumerStatefulWidget {
   const FluxContinuScreen({super.key});
 
@@ -197,6 +207,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     for (var i = 0; i < count; i++) {
       final section = value.sections[i];
       if (value.isFolded(section)) continue;
+      // Gate lecture : ne queue le repli scroll-past que si toutes les cartes
+      // visibles en preview de la section sont lues (décision PO).
+      if (!allPreviewArticlesRead(section)) continue;
       final key = _sectionKeys[i];
       final ctx = key.currentContext;
       if (ctx == null) continue;
@@ -478,12 +491,15 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final fromKey = fromSection == null ? null : sectionKey(fromSection);
     if (fromKey == null) {
       for (final s in value.sections) {
+        // Gate lecture : même contrat que _maybeFoldSections (décision PO).
+        if (!allPreviewArticlesRead(s)) continue;
         unawaited(notifier.markScrolledPastForNextSession(s));
       }
       return;
     }
     for (final s in value.sections) {
       if (sectionKey(s) == fromKey) break;
+      if (!allPreviewArticlesRead(s)) continue;
       unawaited(notifier.markScrolledPastForNextSession(s));
     }
   }
@@ -747,6 +763,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // Store) → on y montre une phrase de clôture au lieu du bouton.
     final isAndroid = defaultTargetPlatform == TargetPlatform.android;
 
+    // « Actus du jour » = DigestTopicSection kind essentiel (identité robuste,
+    // cf. _buildSectionSlivers). Quand elle existe, la Grille est rendue juste
+    // après elle ; sinon on garde la Grille en fallback bas (digest absent).
+    final hasActus = state.sections.any(
+      (s) => s is DigestTopicSection && s.kind == SectionKind.essentiel,
+    );
+
     if (_sectionKeys.length != state.sections.length) {
       _sectionKeys
         ..clear()
@@ -798,11 +821,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             SliverToBoxAdapter(
               child: _EmptySectionsHint(onRetry: notifier.refresh),
             ),
-          // Citation du jour — clôture éditoriale juste avant la Grille.
-          // Affichée dès qu'une citation existe et que la tournée n'est pas
-          // clôturée (`closingDismissed`), exactement comme la Grille en
-          // dessous : replier la tournée ne doit pas la masquer, c'est un
-          // rituel de fin de tournée.
+          // Citation du jour — clôture éditoriale en fin de tournée. Affichée
+          // dès qu'une citation existe et que la tournée n'est pas clôturée
+          // (`closingDismissed`) : replier la tournée ne doit pas la masquer,
+          // c'est un rituel de fin de tournée.
           if (state.quote != null && !state.closingDismissed)
             SliverToBoxAdapter(child: CitationDuJourCard(quote: state.quote!)),
           // « Le mot du jour » — récompense de fin de Tournée. Sliver additif
@@ -812,12 +834,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           // Hors gate `closingDismissed` : elle reste dans le feed même après
           // fermeture de la tournée (en état « déjà jouée »), et se masque
           // seule (SizedBox.shrink) s'il n'y a pas de mot du jour.
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
-              child: GrilleCtaCard(),
-            ),
-          ),
+          // Grille — rendue juste après « Actus du jour » (cf.
+          // _buildSectionSlivers) quand cette section existe. Fallback bas
+          // ici uniquement si le digest est absent / la liste vide, pour ne
+          // jamais perdre la Grille. Hors gate `closingDismissed`.
+          if (!hasActus) _grilleSliver,
           // Carte « Fin de tournée » — toujours affichée (jamais masquée) : elle
           // reste le repère de clôture même après être passé sur Flâner.
           // « Continuer » navigue vers Flâner sans masquer la carte. « Refermer »
@@ -919,6 +940,15 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           ),
         ),
       );
+      // Grille rendue immédiatement après « Actus du jour » (identité robuste :
+      // DigestTopicSection kind essentiel). Sliver séparé, hors du KeyedSubtree
+      // — pas de GlobalKey, n'altère pas l'indexation _sectionKeys. Le check
+      // porte sur l'identité de la section (pas son état fold) → la Grille suit
+      // même la carte repliée.
+      if (section is DigestTopicSection &&
+          section.kind == SectionKind.essentiel) {
+        slivers.add(_grilleSliver);
+      }
     }
     return slivers;
   }

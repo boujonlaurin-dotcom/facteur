@@ -88,7 +88,7 @@ void main() {
       expect(lastTapped, 1);
     });
 
-    testWidgets('active tab carries an accent wash, others stay transparent',
+    testWidgets('active tab highlights its label text with an accent marker',
         (tester) async {
       await tester.pumpWidget(_wrap(
         StickyTabBar(
@@ -98,17 +98,37 @@ void main() {
           onTapTab: (_) {},
         ),
       ));
-      // The active tab (index 0) is highlighted by a DecoratedBox tinted with
-      // its own accent — the legacy 3px underline is gone. Exactly one tab
-      // should carry that wash.
-      final expectedWash = const Color(0xFFB0470A).withValues(alpha: 0.14);
-      final washed = tester
-          .widgetList<DecoratedBox>(find.byType(DecoratedBox))
-          .where((d) {
-        final deco = d.decoration;
-        return deco is BoxDecoration && deco.color == expectedWash;
+      // The active tab (index 0) highlights its **label text** with a
+      // marker-style Container tinted with its own accent (calque du highlight
+      // "Couverture médiatique" — cf. DiffTitle). The legacy full-chip wash and
+      // the leading dot are gone. Exactly one marker should be present.
+      final expectedMarker = const Color(0xFFB0470A).withValues(alpha: 0.22);
+      final markers =
+          tester.widgetList<Container>(find.byType(Container)).where((c) {
+        final deco = c.decoration;
+        return deco is BoxDecoration && deco.color == expectedMarker;
       });
-      expect(washed, hasLength(1));
+      expect(markers, hasLength(1));
+    });
+
+    testWidgets('no leading dot before tab labels (removed in marker redesign)',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        StickyTabBar(
+          tabs: _tabs,
+          activeIndex: 0,
+          progress: 0.2,
+          onTapTab: (_) {},
+        ),
+      ));
+      // The legacy 9×9 circle dot is gone — no BoxShape.circle decorations
+      // should remain in the tab row.
+      final dots =
+          tester.widgetList<Container>(find.byType(Container)).where((c) {
+        final deco = c.decoration;
+        return deco is BoxDecoration && deco.shape == BoxShape.circle;
+      });
+      expect(dots, isEmpty);
     });
   });
 }
