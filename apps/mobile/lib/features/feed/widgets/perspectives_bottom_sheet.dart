@@ -1391,9 +1391,9 @@ enum _EmptyStage { none, fading, collapsed }
 
 // ── Timing de la séquence "aucune source trouvée" ──────────────────────────
 // Ajuster ces 4 valeurs pour calibrer l'animation :
-const _kEmptyReadDelay   = Duration(milliseconds: 1500); // pause avant le fade
-const _kEmptyFadeDuration = Duration(milliseconds: 800);  // fade 0.28 → 0
-const _kEmptySlideDuration = Duration(milliseconds: 960); // glissement vers la droite
+const _kEmptyReadDelay   = Duration(milliseconds: 2000); // pause avant le fade
+const _kEmptyFadeDuration = Duration(milliseconds: 2000);  // fade 0.28 → 0
+const _kEmptySlideDuration = Duration(milliseconds: 650); // glissement vers la droite
 const _kEmptyInitialOpacity = 0.28;                       // opacité pendant la pause
 // ──────────────────────────────────────────────────────────────────────────
 
