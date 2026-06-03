@@ -1499,7 +1499,7 @@ class _PerspectivesInlineSectionState
               // droite hors écran avant que l'`AnimatedSize` ne replie la
               // hauteur — sortie franche plutôt qu'un simple collapse vertical.
               ? AnimatedSlide(
-                  duration: const Duration(milliseconds: 350),
+                  duration: const Duration(milliseconds: 480),
                   curve: Curves.easeOutCubic,
                   offset: isEmpty && _emptyStage != _EmptyStage.none
                       ? const Offset(1.1, 0)
@@ -1510,7 +1510,7 @@ class _PerspectivesInlineSectionState
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 180),
                     curve: Curves.easeOut,
-                    opacity: isEmpty ? (_emptyStage != _EmptyStage.none ? 0 : 0.5) : 1,
+                    opacity: isEmpty ? (_emptyStage != _EmptyStage.none ? 0 : 0.28) : 1,
                     child: GestureDetector(
                       onTap: isReady ? widget.onToggle : null,
                       behavior: HitTestBehavior.opaque,

@@ -141,7 +141,7 @@ void main() {
     expect(find.byIcon(caret), findsNothing);
     expect(
       tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
-      0.5,
+      0.28,
     );
 
     await tester.tap(find.text('Couverture médiatique (0)'));
