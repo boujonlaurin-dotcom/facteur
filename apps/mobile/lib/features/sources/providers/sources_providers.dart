@@ -18,19 +18,21 @@ final sourcesRepositoryProvider = Provider<SourcesRepository>((ref) {
 typedef SmartSearchQuery = ({String query, String? contentType, bool expand});
 
 final smartSearchProvider =
-    FutureProvider.family<SmartSearchResponse, SmartSearchQuery>(
-        (ref, params) async {
-  final trimmed = params.query.trim();
-  if (trimmed.isEmpty) {
-    return const SmartSearchResponse(queryNormalized: '', results: []);
-  }
-  final repository = ref.watch(sourcesRepositoryProvider);
-  return repository.smartSearch(
-    trimmed,
-    contentType: params.contentType,
-    expand: params.expand,
-  );
-});
+    FutureProvider.family<SmartSearchResponse, SmartSearchQuery>((
+      ref,
+      params,
+    ) async {
+      final trimmed = params.query.trim();
+      if (trimmed.isEmpty) {
+        return const SmartSearchResponse(queryNormalized: '', results: []);
+      }
+      final repository = ref.watch(sourcesRepositoryProvider);
+      return repository.smartSearch(
+        trimmed,
+        contentType: params.contentType,
+        expand: params.expand,
+      );
+    });
 
 final trendingSourcesProvider = FutureProvider<List<Source>>((ref) async {
   final repository = ref.watch(sourcesRepositoryProvider);
@@ -44,20 +46,26 @@ final themesFollowedProvider = FutureProvider<List<FollowedTheme>>((ref) async {
 
 final sourcesByThemeProvider =
     FutureProvider.family<ThemeSourcesResponse, String>((ref, slug) async {
-  final repository = ref.watch(sourcesRepositoryProvider);
-  return repository.getSourcesByTheme(slug);
-});
+      final repository = ref.watch(sourcesRepositoryProvider);
+      return repository.getSourcesByTheme(slug);
+    });
 
 final userSourcesProvider =
     AsyncNotifierProvider<UserSourcesNotifier, List<Source>>(() {
-  return UserSourcesNotifier();
-});
+      return UserSourcesNotifier();
+    });
 
 /// Pépites — sources curées poussées dans le feed.
 /// Liste vide si aucun trigger actif, rate-limit, ou cool-down côté backend.
-final pepitesProvider =
-    AsyncNotifierProvider<PepitesNotifier, List<Source>>(() {
-  return PepitesNotifier();
+final pepitesProvider = AsyncNotifierProvider<PepitesNotifier, List<Source>>(
+  () {
+    return PepitesNotifier();
+  },
+);
+
+final pepitesAlwaysProvider = FutureProvider<List<Source>>((ref) async {
+  final repository = ref.watch(sourcesRepositoryProvider);
+  return repository.getPepites(forceShow: true);
 });
 
 class PepitesNotifier extends AsyncNotifier<List<Source>> {
@@ -98,14 +106,15 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
           if (source.id == sourceId)
             source.copyWith(isTrusted: !currentlyTrusted)
           else
-            source
+            source,
       ]);
     }
 
     try {
       // ignore: avoid_print
       print(
-          'UserSourcesNotifier: Calling repository.trust/untrust for $sourceId...');
+        'UserSourcesNotifier: Calling repository.trust/untrust for $sourceId...',
+      );
 
       if (currentlyTrusted) {
         await repository.untrustSource(sourceId);
@@ -117,9 +126,7 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
       print('UserSourcesNotifier: Toggle success (persisted to DB)');
       // Le backend peut basculer auto `hide_non_fr_sources` tant que
       // `language_filter_user_set = false` — on resync sans bloquer l'UI.
-      unawaited(
-        ref.read(languagePreferenceProvider.notifier).refresh(),
-      );
+      unawaited(ref.read(languagePreferenceProvider.notifier).refresh());
       // No need to re-fetch entire list: optimistic update is sufficient and avoids race conditions
     } catch (e, stack) {
       // ignore: avoid_print
@@ -155,7 +162,7 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
               isTrusted: hasSubscription ? true : source.isTrusted,
             )
           else
-            source
+            source,
       ]);
     }
 
@@ -165,8 +172,7 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
       unawaited(ref.read(lettersProvider.notifier).silentRefresh());
     } catch (e, stack) {
       // ignore: avoid_print
-      print(
-          'UserSourcesNotifier: [ERROR] setSubscription failed: $e\n$stack');
+      print('UserSourcesNotifier: [ERROR] setSubscription failed: $e\n$stack');
       state = previousState;
       if (rethrowOnError) rethrow;
     }
@@ -187,7 +193,7 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
               isTrusted: !currentlyMuted ? false : source.isTrusted,
             )
           else
-            source
+            source,
       ]);
     }
 

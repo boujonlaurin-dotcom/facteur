@@ -14,12 +14,16 @@ import 'source_detail_modal.dart';
 /// le feed pour aider à découvrir des sources de qualité. Visibilité gérée
 /// côté backend (rate-limit + cool-down) : liste vide → SizedBox.shrink.
 class PepitesCarousel extends ConsumerWidget {
-  const PepitesCarousel({super.key});
+  final bool alwaysVisible;
+
+  const PepitesCarousel({super.key, this.alwaysVisible = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
-    final asyncPepites = ref.watch(pepitesProvider);
+    final asyncPepites = alwaysVisible
+        ? ref.watch(pepitesAlwaysProvider)
+        : ref.watch(pepitesProvider);
 
     return asyncPepites.when(
       data: (sources) {
@@ -66,9 +70,11 @@ class PepitesCarousel extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                _DismissButton(
-                  onPressed: () => ref.read(pepitesProvider.notifier).dismiss(),
-                ),
+                if (!alwaysVisible)
+                  _DismissButton(
+                    onPressed: () =>
+                        ref.read(pepitesProvider.notifier).dismiss(),
+                  ),
               ],
             ),
           ),

@@ -190,6 +190,7 @@ async def get_trending_sources(
 @router.get("/pepites", response_model=list[SourceResponse])
 async def get_pepites(
     limit: int = 4,
+    force_show: bool = False,
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> list[SourceResponse]:
@@ -199,8 +200,10 @@ async def get_pepites(
     (rate-limité ou dismiss récent).
     """
     service = PepiteService(db)
-    sources = await service.get_pepites_for_user(user_id, limit=limit)
-    if sources:
+    sources = await service.get_pepites_for_user(
+        user_id, limit=limit, force_show=force_show
+    )
+    if sources and not force_show:
         await db.commit()
     return sources
 
