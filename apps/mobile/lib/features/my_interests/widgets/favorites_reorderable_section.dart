@@ -107,6 +107,7 @@ class FavoritesReorderableSection<T> extends StatelessWidget {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 buildDefaultDragHandles: false,
+                proxyDecorator: (child, index, animation) => child,
                 itemCount: items.length,
                 padding: const EdgeInsets.only(bottom: FacteurSpacing.space2),
                 itemBuilder: (context, index) {

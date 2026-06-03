@@ -664,7 +664,7 @@ class _SourceFavoritesSection extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Divider(
-                              color: colors.surfaceElevated,
+                              color: colors.border,
                               height: 1,
                             ),
                           ),
@@ -679,7 +679,7 @@ class _SourceFavoritesSection extends StatelessWidget {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Divider(
-                              color: colors.surfaceElevated,
+                              color: colors.border,
                               height: 1,
                             ),
                           ),
