@@ -92,6 +92,20 @@ def test_keyword_bonus_escalates_with_distinct_matches():
     assert two > one
 
 
+def test_keyword_matching_is_word_boundary():
+    """Mot-entier : « agent » matche « un agent » mais pas « agentic » (Pb 3).
+
+    Avant le fix, le matching en sous-chaîne laissait passer des articles
+    hors-sujet dont le titre contenait juste le mot-clé en fragment.
+    """
+    whole = _angle_score(_Content(topics=["tech"], title="Un agent autonome débarque"))
+    substring = _angle_score(
+        _Content(topics=["tech"], title="Les agentic workflows expliqués")
+    )
+    assert whole == pytest.approx(ScoringWeights.VEILLE_KEYWORD_BASE_BONUS)
+    assert substring == 0.0
+
+
 def test_keyword_bonus_is_capped():
     """Le bonus mots-clés ne dépasse jamais le cap, même avec beaucoup de hits."""
     many = VeilleAngleTopic(

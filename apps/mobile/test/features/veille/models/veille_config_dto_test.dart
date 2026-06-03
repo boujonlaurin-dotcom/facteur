@@ -126,4 +126,35 @@ void main() {
       expect(VeilleSuggestSourcesResponse.fromJson(const {}).sources, isEmpty);
     });
   });
+
+  group('VeilleConfigDto.fromJson — unconnected_sources', () {
+    Map<String, dynamic> baseConfig() => {
+      'id': 'cfg-1',
+      'user_id': 'user-1',
+      'theme_id': 'tech',
+      'theme_label': 'Tech',
+      'status': 'active',
+      'created_at': '2026-06-04T00:00:00Z',
+      'updated_at': '2026-06-04T00:00:00Z',
+      'topics': const [],
+      'sources': const [],
+      'keywords': const [],
+    };
+
+    test('mappe url + reason des sources non connectées', () {
+      final dto = VeilleConfigDto.fromJson({
+        ...baseConfig(),
+        'unconnected_sources': const [
+          {'url': 'https://exemple.test', 'reason': 'Aucun flux RSS.'},
+        ],
+      });
+      expect(dto.unconnectedSources, hasLength(1));
+      expect(dto.unconnectedSources.first.url, 'https://exemple.test');
+      expect(dto.unconnectedSources.first.reason, 'Aucun flux RSS.');
+    });
+
+    test('clé absente → liste vide (rétro-compat backend non déployé)', () {
+      expect(VeilleConfigDto.fromJson(baseConfig()).unconnectedSources, isEmpty);
+    });
+  });
 }

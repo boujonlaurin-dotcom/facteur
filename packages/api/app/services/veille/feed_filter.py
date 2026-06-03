@@ -9,6 +9,7 @@ les sources suivies et les mots-clés (globaux + grappes d'angles).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -161,11 +162,16 @@ async def load_veille_filters(
 
 
 def build_strong_predicate(filters: VeilleFilters):
-    """Clause `OR` SQL sur les axes **forts uniquement** (jamais le thème).
+    r"""Clause `OR` SQL sur les axes **forts uniquement** (jamais le thème).
 
     - `topic` : Content.topics && topic_slugs — index GIN ix_contents_topics
     - `source` : Content.source_id IN (source_ids) — index ix_contents_source_id
-    - `keyword` : title ILIKE OR description ILIKE (globaux + grappes d'angles)
+    - `keyword` : title ~* OR description ~* en **mot-entier** (globaux + grappes)
+
+    Le matching mots-clés est en mot-entier (regex POSIX `\m…\M`) et non en
+    sous-chaîne : sans ça des mots-clés d'angle génériques (« titre », « finale »,
+    « draft »…) ramènent des articles hors-sujet (plan veille V0, Problème 3).
+    Aligné sur `layers/user_custom_topics.py` (regex `\b…\b`).
 
     Renvoie `None` si aucun axe fort (p.ex. thème seul) → exclusion voulue.
     """
@@ -175,9 +181,10 @@ def build_strong_predicate(filters: VeilleFilters):
     if filters.source_ids:
         clauses.append(Content.source_id.in_(filters.source_ids))
     for kw in filters.all_keywords:
-        pattern = f"%{kw}%"
-        clauses.append(Content.title.ilike(pattern))
-        clauses.append(Content.description.ilike(pattern))
+        # `\m` / `\M` = bornes de mot Postgres (équivalent SQL de `\b…\b`).
+        pattern = r"\m" + re.escape(kw) + r"\M"
+        clauses.append(Content.title.op("~*")(pattern))
+        clauses.append(Content.description.op("~*")(pattern))
     return or_(*clauses) if clauses else None
 
 

@@ -7,5 +7,6 @@ Centralise les primitives qui étaient dupliquées avec valeurs divergentes :
 
 from app.services.recommendation.helpers.coverage_score import compute_coverage_score
 from app.services.recommendation.helpers.diversification import diversify
+from app.services.recommendation.helpers.keyword_match import matches_word_boundary
 
-__all__ = ["compute_coverage_score", "diversify"]
+__all__ = ["compute_coverage_score", "diversify", "matches_word_boundary"]

@@ -767,8 +767,12 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
   /// POST /api/veille/config — succès → hydrate `veilleActiveConfigProvider`
   /// pour que la home (Mes intérêts / Tournée) voie la veille immédiatement.
-  Future<void> submit() async {
-    if (state.isSubmitting) return;
+  ///
+  /// Renvoie la config persistée : son champ `unconnectedSources` permet à
+  /// l'UI d'avertir « X sources n'ont pas pu être connectées » + proposer une
+  /// CTA de recherche (plan veille V0, Problème 1). Null si submit déjà en vol.
+  Future<VeilleConfigDto?> submit() async {
+    if (state.isSubmitting) return null;
     state = state.copyWith(isSubmitting: true, lastError: null);
 
     try {
@@ -783,6 +787,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       // Le chemin archivage le fait déjà (my_interests_screen.dart).
       _ref.invalidate(userInterestsProvider);
       state = state.copyWith(isSubmitting: false);
+      return cfg;
     } on VeilleApiException catch (e) {
       state = state.copyWith(isSubmitting: false, lastError: e.message);
       rethrow;
