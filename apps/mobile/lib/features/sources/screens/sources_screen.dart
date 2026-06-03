@@ -640,6 +640,7 @@ class _SourceFavoritesSection extends StatelessWidget {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             buildDefaultDragHandles: false,
+            proxyDecorator: (child, index, animation) => child,
             itemCount: favorites.length,
             padding: EdgeInsets.zero,
             itemBuilder: (context, index) {
@@ -1033,53 +1034,59 @@ class _HidePaidToggleCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     final hidePaid = ref.watch(hidePaidContentProvider);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: colors.primary.withValues(alpha: 0.10),
-            ),
-            alignment: Alignment.center,
-            child: Icon(
-              PhosphorIcons.lock(PhosphorIconsStyle.regular),
-              color: colors.primary,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: FacteurSpacing.space3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Masquer les articles payants*',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Divider(height: 1, color: colors.surfaceElevated),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colors.primary.withValues(alpha: 0.10),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '*: Sauf abonnements connectés.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.textSecondary,
-                      ),
+                alignment: Alignment.center,
+                child: Icon(
+                  PhosphorIcons.lock(PhosphorIconsStyle.regular),
+                  color: colors.primary,
+                  size: 18,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: FacteurSpacing.space3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Masquer les articles payants*',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    Text(
+                      '*: Sauf abonnements connectés.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textSecondary,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch.adaptive(
+                value: hidePaid,
+                activeThumbColor: colors.primary,
+                onChanged: (v) =>
+                    ref.read(hidePaidContentProvider.notifier).toggle(v),
+              ),
+            ],
           ),
-          Switch.adaptive(
-            value: hidePaid,
-            activeThumbColor: colors.primary,
-            onChanged: (v) =>
-                ref.read(hidePaidContentProvider.notifier).toggle(v),
-          ),
-        ],
-      ),
+        ),
+        Divider(height: 1, color: colors.surfaceElevated),
+      ],
     );
   }
 }
