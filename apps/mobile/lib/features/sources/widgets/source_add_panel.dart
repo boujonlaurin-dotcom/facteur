@@ -11,6 +11,7 @@ import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
+import 'catalog_sources_strip.dart';
 import 'community_gems_strip.dart';
 import 'example_chips.dart';
 import 'smart_search_field.dart';
@@ -427,13 +428,16 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         ],
         ExampleChips(onTap: _onExampleTap),
         const SizedBox(height: FacteurSpacing.space8),
-        if (widget.showCommunityGems)
+        if (widget.showCommunityGems) ...[
           CommunityGemsStrip(
             onSourceTap: _showSourceModal,
             onGemTap: (sourceId) {
               ref.read(analyticsServiceProvider).trackAddSourceGemTap(sourceId);
             },
           ),
+          const SizedBox(height: FacteurSpacing.space4),
+          CatalogSourcesStrip(onSourceTap: _showSourceModal),
+        ],
       ],
     );
   }

@@ -16,7 +16,9 @@ import '../../my_interests/widgets/favorites_reorderable_section.dart';
 import '../../my_interests/widgets/interest_state_picker_sheet.dart';
 import '../../settings/providers/paid_content_provider.dart';
 import '../models/source_model.dart';
+import '../models/source_theme_filters.dart';
 import '../providers/sources_providers.dart';
+import '../widgets/pepites_carousel.dart';
 import '../widgets/source_list_item.dart';
 
 class SourcesScreen extends ConsumerStatefulWidget {
@@ -34,25 +36,12 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   bool _isSearching = false;
   // Collapsible section state (open by default)
   bool _premiumExpanded = true;
-  bool _customExpanded = true;
-  bool _curatedExpanded = true;
+  bool _followedExpanded = true;
   bool _mutedExpanded = true;
 
   // Compteur d'échecs consécutifs : bascule entre FriendlyErrorView et
   // LaurinFallbackView après 2 échecs (pattern de feed_screen.dart).
   int _consecutiveErrorCount = 0;
-
-  static const _themeFilters = <({String? key, String label})>[
-    (key: null, label: 'Toutes'),
-    (key: 'tech', label: 'Tech'),
-    (key: 'society', label: 'Société'),
-    (key: 'environment', label: 'Environnement'),
-    (key: 'economy', label: 'Economie'),
-    (key: 'politics', label: 'Politique'),
-    (key: 'culture', label: 'Culture'),
-    (key: 'science', label: 'Sciences'),
-    (key: 'international', label: 'International'),
-  ];
 
   static const _typeFilters = <({SourceType? key, String label})>[
     (key: null, label: 'Tous'),
@@ -163,15 +152,17 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
               title: const Text('Sources de confiance'),
               actions: [
                 IconButton(
-                  icon: Icon(PhosphorIcons.magnifyingGlass(
-                      PhosphorIconsStyle.regular)),
+                  icon: Icon(
+                    PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
+                  ),
                   onPressed: () => setState(() => _isSearching = true),
                 ),
                 Stack(
                   children: [
                     IconButton(
                       icon: Icon(
-                          PhosphorIcons.funnel(PhosphorIconsStyle.regular)),
+                        PhosphorIcons.funnel(PhosphorIconsStyle.regular),
+                      ),
                       onPressed: () => _showFilterSheet(colors),
                     ),
                     if (_hasActiveFilter)
@@ -212,32 +203,18 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                   ),
           ),
           data: (sources) {
-            // Sort alphabetically
-            var allSources = sources.toList()
-              ..sort((a, b) =>
-                  a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+            final sourcesState = sourcesStateAsync.value;
 
-            // Apply search filter
+            var filteredSources = sources.toList();
             if (_searchQuery.isNotEmpty) {
-              allSources = allSources
-                  .where((s) =>
-                      s.name.toLowerCase().contains(_searchQuery.toLowerCase()))
+              filteredSources = filteredSources
+                  .where(
+                    (s) => s.name.toLowerCase().contains(
+                          _searchQuery.toLowerCase(),
+                        ),
+                  )
                   .toList();
             }
-
-            if (allSources.isEmpty && _searchQuery.isEmpty) {
-              return _scrollableCenter(
-                Text(
-                  'Aucune source disponible',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: colors.textSecondary,
-                      ),
-                ),
-              );
-            }
-
-            // Apply theme + type filters for display
-            var filteredSources = allSources.toList();
             if (_selectedTheme != null) {
               filteredSources = filteredSources
                   .where((s) => s.theme?.toLowerCase() == _selectedTheme)
@@ -248,53 +225,59 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                   .where((s) => s.type == _selectedType)
                   .toList();
             }
-            // Split into 4 groups: premium, custom (non-muted), curated (non-muted), muted
-            final premiumSources = filteredSources
-                .where((s) => s.hasSubscription && !s.isMuted)
-                .toList();
-            final customSources =
-                filteredSources.where((s) => s.isCustom && !s.isMuted).toList();
-            final curatedSources = filteredSources
-                .where((s) => s.isCurated && !s.isMuted)
-                .toList();
-            final mutedSources =
-                filteredSources.where((s) => s.isMuted).toList();
+            filteredSources.sort(_compareByThemeThenName);
 
-            final noResults = filteredSources.isEmpty && _hasActiveFilter;
-
-            if (noResults) {
+            if (sources.isEmpty && _searchQuery.isEmpty) {
               return _scrollableCenter(
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      PhosphorIcons.funnel(PhosphorIconsStyle.regular),
-                      size: 40,
-                      color: colors.textTertiary,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Aucune source pour ces filtres',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(color: colors.textSecondary),
-                    ),
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: () {
-                        setState(() {
-                          _selectedTheme = null;
-                          _selectedType = null;
-                        });
-                      },
-                      child: const Text('Réinitialiser les filtres'),
-                    ),
-                    ...mutedSources.map((source) => _buildSourceItem(source)),
-                  ],
+                Text(
+                  'Aucune source disponible',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(color: colors.textSecondary),
                 ),
               );
             }
+
+            final followedNonMuted = filteredSources
+                .where(
+                  (s) => !s.isMuted && _isFollowedSource(s, sourcesState),
+                )
+                .map((s) => s.copyWith(isTrusted: true))
+                .toList();
+
+            final visibleFavoriteIds = followedNonMuted
+                .where((s) => _isFavoriteSource(s, sourcesState))
+                .map((s) => s.id)
+                .toSet();
+            final allFavorites = sourcesState?.favorites ?? const [];
+            final visibleFavorites = allFavorites
+                .where((f) => visibleFavoriteIds.contains(f.sourceId))
+                .toList();
+            final premiumSources = filteredSources
+                .where(
+                  (s) =>
+                      !s.isMuted &&
+                      s.hasSubscription &&
+                      _isFollowedSource(s, sourcesState) &&
+                      !_isFavoriteSource(s, sourcesState),
+                )
+                .map((s) => s.copyWith(isTrusted: true))
+                .toList();
+            final followedSources = followedNonMuted
+                .where(
+                  (s) =>
+                      !s.hasSubscription && !_isFavoriteSource(s, sourcesState),
+                )
+                .toList();
+            final mutedSources = filteredSources
+                .where((s) => s.isMuted)
+                .toList();
+
+            final noFollowedSources =
+                !sources.any((s) => !s.isMuted && _isFollowedSource(s, sourcesState));
+            final noResults = followedNonMuted.isEmpty &&
+                mutedSources.isEmpty &&
+                (_hasActiveFilter || _searchQuery.isNotEmpty);
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -303,70 +286,93 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                 _IntroBlock(colors: colors),
                 const SizedBox(height: 12),
                 // Story 22.1 — section Favoris (drag-reorderable, cap 3).
-                _SourceFavoritesSection(
-                  favorites: sourcesStateAsync.value?.favorites ?? const [],
-                  allSources: allSources,
-                  onReorder: (reordered) async {
-                    try {
-                      await ref
-                          .read(userSourcesStateProvider.notifier)
-                          .reorderFavorites(reordered);
-                    } catch (_) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content:
-                              Text('Impossible de réordonner les favoris.'),
-                          duration: Duration(seconds: 3),
-                        ),
-                      );
-                    }
-                  },
-                ),
+                if (!noFollowedSources || visibleFavorites.isNotEmpty)
+                  _SourceFavoritesSection(
+                    favorites: visibleFavorites,
+                    allSources: followedNonMuted,
+                    onReorder: (reordered) async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      final reorderedIds =
+                          reordered.map((f) => f.sourceId).toSet();
+                      var reorderedIndex = 0;
+                      final mergedFavorites = [
+                        for (final favorite in allFavorites)
+                          if (reorderedIds.contains(favorite.sourceId))
+                            reordered[reorderedIndex++]
+                          else
+                            favorite,
+                      ];
+                      try {
+                        await ref
+                            .read(userSourcesStateProvider.notifier)
+                            .reorderFavorites(mergedFavorites);
+                      } catch (_) {
+                        if (!mounted) return;
+                        messenger.showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Impossible de réordonner les favoris.',
+                            ),
+                            duration: Duration(seconds: 3),
+                          ),
+                        );
+                      }
+                    },
+                  ),
                 const SizedBox(height: 8),
                 if (premiumSources.isNotEmpty)
                   _buildCollapsibleSection(
-                    title: 'Mes abonnements Premium',
+                    title: 'Abonnements premium',
                     count: premiumSources.length,
                     isExpanded: _premiumExpanded,
                     onToggle: () =>
                         setState(() => _premiumExpanded = !_premiumExpanded),
                     sources: premiumSources,
                     colors: colors,
+                    sourcesState: sourcesState,
                     icon: PhosphorIcons.star(PhosphorIconsStyle.fill),
                   ),
                 const _HidePaidToggleCard(),
                 const SizedBox(height: 8),
-                if (customSources.isNotEmpty)
+                if (noResults)
+                  _NoSourcesMatchBlock(
+                    hasActiveFilter: _hasActiveFilter,
+                    hasSearchQuery: _searchQuery.isNotEmpty,
+                    onReset: () {
+                      setState(() {
+                        _selectedTheme = null;
+                        _selectedType = null;
+                        _searchController.clear();
+                        _searchQuery = '';
+                      });
+                    },
+                  )
+                else if (noFollowedSources)
+                  const _NoFollowedSourcesBlock()
+                else if (followedSources.isNotEmpty)
                   _buildCollapsibleSection(
-                    title: 'Mes sources personnalisees',
-                    count: customSources.length,
-                    isExpanded: _customExpanded,
+                    title: 'Sources suivies',
+                    count: followedSources.length,
+                    isExpanded: _followedExpanded,
                     onToggle: () =>
-                        setState(() => _customExpanded = !_customExpanded),
-                    sources: customSources,
+                        setState(() => _followedExpanded = !_followedExpanded),
+                    sources: followedSources,
                     colors: colors,
+                    sourcesState: sourcesState,
                   ),
-                if (curatedSources.isNotEmpty)
-                  _buildCollapsibleSection(
-                    title: 'Sources suggerees',
-                    count: curatedSources.length,
-                    isExpanded: _curatedExpanded,
-                    onToggle: () =>
-                        setState(() => _curatedExpanded = !_curatedExpanded),
-                    sources: curatedSources,
-                    colors: colors,
-                  ),
+                const SizedBox(height: 8),
+                const PepitesCarousel(alwaysVisible: true),
                 if (mutedSources.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   _buildCollapsibleSection(
-                    title: 'Sources masquees',
+                    title: 'Sources masquées',
                     count: mutedSources.length,
                     isExpanded: _mutedExpanded,
                     onToggle: () =>
                         setState(() => _mutedExpanded = !_mutedExpanded),
                     sources: mutedSources,
                     colors: colors,
+                    sourcesState: sourcesState,
                     icon: PhosphorIcons.eyeSlash(PhosphorIconsStyle.bold),
                     isMuted: true,
                   ),
@@ -414,6 +420,24 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     );
   }
 
+  bool _isFollowedSource(Source source, UserSourcesState? state) {
+    final sourceState = state?.stateOf(source.id);
+    return source.isTrusted ||
+        sourceState == InterestState.followed ||
+        sourceState == InterestState.favorite;
+  }
+
+  bool _isFavoriteSource(Source source, UserSourcesState? state) {
+    return state?.stateOf(source.id) == InterestState.favorite ||
+        (state?.favorites.any((f) => f.sourceId == source.id) ?? false);
+  }
+
+  static int _compareByThemeThenName(Source a, Source b) {
+    final themeCompare = a.getThemeLabel().compareTo(b.getThemeLabel());
+    if (themeCompare != 0) return themeCompare;
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  }
+
   // ─── Filter bottom sheet ───────────────────────────────────
 
   void _showFilterSheet(FacteurColors colors) {
@@ -424,7 +448,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
       builder: (_) => _FilterSheetContent(
         selectedTheme: _selectedTheme,
         selectedType: _selectedType,
-        themeFilters: _themeFilters,
+        themeFilters: sourceThemeFilters,
         typeFilters: _typeFilters,
         hasActiveFilter: _hasActiveFilter,
         onThemeChanged: (v) => setState(() => _selectedTheme = v),
@@ -446,6 +470,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     required VoidCallback onToggle,
     required List<Source> sources,
     required FacteurColors colors,
+    required UserSourcesState? sourcesState,
     IconData? icon,
     bool isMuted = false,
   }) {
@@ -454,60 +479,55 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        GestureDetector(
-          onTap: onToggle,
-          behavior: HitTestBehavior.opaque,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Row(
-              children: [
-                if (icon != null) ...[
-                  Icon(icon, size: 16, color: titleColor),
-                  const SizedBox(width: 8),
-                ],
-                Expanded(
-                  child: Text(
-                    title,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onToggle,
+            borderRadius: BorderRadius.circular(FacteurRadius.small),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(2, 12, 2, 10),
+              child: Row(
+                children: [
+                  if (icon != null) ...[
+                    Icon(icon, size: 17, color: titleColor),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: titleColor,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
+                  Text(
+                    '$count',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
                           color: titleColor,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w700,
                         ),
                   ),
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: titleColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '$count',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                  const SizedBox(width: 8),
+                  AnimatedRotation(
+                    turns: isExpanded ? 0.0 : -0.25,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
+                      size: 15,
                       color: titleColor,
                     ),
                   ),
-                ),
-                const SizedBox(width: 6),
-                AnimatedRotation(
-                  turns: isExpanded ? 0.0 : -0.25,
-                  duration: const Duration(milliseconds: 200),
-                  child: Icon(
-                    PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
-                    size: 14,
-                    color: titleColor,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
         AnimatedCrossFade(
           firstChild: Column(
-            children:
-                sources.map((source) => _buildSourceItem(source)).toList(),
+            children: sources
+                .map((source) => _buildSourceItem(source, sourcesState))
+                .toList(),
           ),
           secondChild: const SizedBox.shrink(),
           crossFadeState:
@@ -519,26 +539,27 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     );
   }
 
-  Widget _buildSourceItem(Source source) {
-    final isFavorite = ref
-            .watch(userSourcesStateProvider)
-            .value
-            ?.favorites
-            .any((f) => f.sourceId == source.id) ??
-        false;
+  Widget _buildSourceItem(Source source, UserSourcesState? sourcesState) {
+    final isFavorite =
+        sourcesState?.favorites.any((f) => f.sourceId == source.id) ?? false;
+    final displaySource = source.copyWith(
+      isTrusted: source.isMuted
+          ? source.isTrusted
+          : _isFollowedSource(source, sourcesState),
+    );
     return SourceListItem(
-      source: source,
+      source: displaySource,
       isFavorite: isFavorite,
-      onPickInterestState: () => _pickSourceState(source),
+      onPickInterestState: () => _pickSourceState(displaySource),
       onTap: () {
         ref
             .read(userSourcesProvider.notifier)
-            .toggleTrust(source.id, source.isTrusted);
+            .toggleTrust(displaySource.id, displaySource.isTrusted);
       },
       onToggleMute: () {
         ref
             .read(userSourcesProvider.notifier)
-            .toggleMute(source.id, source.isMuted);
+            .toggleMute(displaySource.id, displaySource.isMuted);
       },
     );
   }
@@ -599,6 +620,92 @@ class _SourceFavoritesSection extends StatelessWidget {
   }
 }
 
+class _NoFollowedSourcesBlock extends StatelessWidget {
+  const _NoFollowedSourcesBlock();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Container(
+      padding: const EdgeInsets.all(FacteurSpacing.space4),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+        border: Border.all(color: colors.surfaceElevated),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            PhosphorIcons.plusCircle(PhosphorIconsStyle.regular),
+            size: 24,
+            color: colors.primary,
+          ),
+          const SizedBox(width: FacteurSpacing.space3),
+          Expanded(
+            child: Text(
+              'Aucune source suivie pour le moment. Ajoutez une source pour personnaliser votre veille.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.textSecondary,
+                    height: 1.35,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NoSourcesMatchBlock extends StatelessWidget {
+  final bool hasActiveFilter;
+  final bool hasSearchQuery;
+  final VoidCallback onReset;
+
+  const _NoSourcesMatchBlock({
+    required this.hasActiveFilter,
+    required this.hasSearchQuery,
+    required this.onReset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final label = hasSearchQuery
+        ? 'Aucune source suivie ne correspond à cette recherche.'
+        : 'Aucune source suivie pour ces filtres.';
+
+    return Container(
+      padding: const EdgeInsets.all(FacteurSpacing.space4),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+        border: Border.all(color: colors.surfaceElevated),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            PhosphorIcons.funnel(PhosphorIconsStyle.regular),
+            size: 34,
+            color: colors.textTertiary,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
+          ),
+          if (hasActiveFilter || hasSearchQuery) ...[
+            const SizedBox(height: 8),
+            TextButton(onPressed: onReset, child: const Text('Réinitialiser')),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Filter sheet widget ─────────────────────────────────────
 
 class _FilterSheetContent extends ConsumerWidget {
@@ -642,7 +749,7 @@ class _FilterSheetContent extends ConsumerWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: colors.textTertiary.withOpacity(0.3),
+                color: colors.textTertiary.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -804,8 +911,9 @@ class _IntroBlock extends StatelessWidget {
         children: [
           Text(
             'Vos sources de confiance',
-            style: FacteurTypography.serifTitle(colors.textPrimary)
-                .copyWith(fontSize: 20, height: 1.2),
+            style: FacteurTypography.serifTitle(
+              colors.textPrimary,
+            ).copyWith(fontSize: 20, height: 1.2),
           ),
           const SizedBox(height: 6),
           Text(
@@ -856,7 +964,7 @@ class _HidePaidToggleCard extends ConsumerWidget {
                   height: 36,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: colors.primary.withOpacity(0.10),
+                    color: colors.primary.withValues(alpha: 0.10),
                   ),
                   alignment: Alignment.center,
                   child: Icon(
@@ -872,25 +980,23 @@ class _HidePaidToggleCard extends ConsumerWidget {
                     children: [
                       Text(
                         'Masquer les articles payants*',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         '*: Sauf abonnements connectés.',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: colors.textSecondary),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colors.textSecondary,
+                            ),
                       ),
                     ],
                   ),
                 ),
                 Switch.adaptive(
                   value: hidePaid,
-                  activeColor: colors.primary,
+                  activeThumbColor: colors.primary,
                   onChanged: (v) =>
                       ref.read(hidePaidContentProvider.notifier).toggle(v),
                 ),

@@ -169,6 +169,36 @@ class TestSelection:
         assert results == []
 
     @pytest.mark.asyncio
+    async def test_force_show_bypasses_cool_down_without_touching_last_shown(self):
+        session = AsyncMock()
+        old_last_shown = _now() - timedelta(hours=1)
+        src = _mk_source(name="Forced")
+        perso = SimpleNamespace(
+            pepite_carousel_last_shown_at=old_last_shown,
+            pepite_carousel_dismissed_at=_now() - timedelta(days=1),
+            muted_sources=[],
+        )
+        session.scalar = AsyncMock(return_value=perso)
+        session.flush = AsyncMock()
+
+        followed_result = MagicMock()
+        followed_result.scalars.return_value.all.return_value = []
+        interests_result = MagicMock()
+        interests_result.all.return_value = []
+        sources_result = MagicMock()
+        sources_result.all.return_value = [(src, 0)]
+        session.execute = AsyncMock(
+            side_effect=[followed_result, interests_result, sources_result]
+        )
+
+        service = PepiteService(session)
+        results = await service.get_pepites_for_user(str(uuid4()), force_show=True)
+
+        assert [r.name for r in results] == ["Forced"]
+        assert perso.pepite_carousel_last_shown_at == old_last_shown
+        session.flush.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_excludes_followed_and_muted(self):
         session = AsyncMock()
         user_id = uuid4()
