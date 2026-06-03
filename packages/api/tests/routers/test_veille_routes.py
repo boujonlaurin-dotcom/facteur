@@ -708,6 +708,54 @@ class TestOtherThemeIngestion:
         # La source ingérée doit avoir theme='custom' (mappé depuis 'other')
         assert data["sources"][0]["source"]["theme"] == "custom"
 
+    async def test_post_config_skips_unresolvable_niche_source(
+        self, auth_user, monkeypatch
+    ):
+        """PYTHON-51 : une source niche dont le flux RSS est introuvable ne doit
+        plus faire échouer tout l'enregistrement (500) — on l'ignore, on garde le
+        reste de la veille."""
+        from app.services import source_service
+
+        async def _fake_detect(self, url):
+            raise ValueError("No RSS feed found")
+
+        monkeypatch.setattr(
+            source_service.SourceService, "detect_source", _fake_detect
+        )
+
+        payload = {
+            "theme_id": "other",
+            "theme_label": "Musées Barcelone",
+            "topics": [
+                {
+                    "topic_id": "expos",
+                    "label": "Expositions",
+                    "kind": "preset",
+                    "position": 0,
+                }
+            ],
+            "source_selections": [
+                {
+                    "kind": "niche",
+                    "niche_candidate": {
+                        "name": "Site sans flux",
+                        "url": "https://exemple-sans-rss.test",
+                        "why": None,
+                    },
+                }
+            ],
+            "keywords": [{"keyword": "vernissage", "position": 0}],
+        }
+        async with _client() as c:
+            r = await c.post("/api/veille/config", json=payload)
+
+        # Avant le fix : 500. Après : 200, source ignorée, reste persisté.
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["sources"] == []
+        assert len(data["topics"]) == 1
+        assert len(data["keywords"]) == 1
+
 
 class TestLegacyGoneShims:
     async def test_suggestions_topics_410(self, auth_user):

@@ -346,7 +346,19 @@ async def upsert_config(
 
     seen_source_ids: set[UUID] = set()
     for idx, sel in enumerate(body.source_selections):
-        source_id = await _resolve_source_id(db, sel, body.theme_id)
+        try:
+            source_id = await _resolve_source_id(db, sel, body.theme_id)
+        except ValueError as exc:
+            # Source niche dont le flux RSS est introuvable au moment du save :
+            # on l'ignore au lieu de faire échouer tout l'enregistrement (PYTHON-51).
+            # detect_source lève ce ValueError AVANT toute écriture DB → on peut
+            # `continue` sans corrompre la session.
+            logger.warning(
+                "veille.niche_source_skipped",
+                url=getattr(sel.niche_candidate, "url", None),
+                error=str(exc),
+            )
+            continue
         if source_id in seen_source_ids:
             continue
         seen_source_ids.add(source_id)
