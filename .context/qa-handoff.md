@@ -1,73 +1,70 @@
-# QA Handoff — Allègement Couverture médiatique
+# QA Handoff — Sources favorites dans la Tournée (PR 1)
+
+> Rempli par l'agent dev. Input de `/validate-feature` (Chrome 390×844).
 
 ## Feature développée
-
-Allègement visuel de la section inline « Couverture médiatique » dans le reader
-article : état vide plus discret, badge de polarisation, explication du
-surlignage derrière un bouton info, analyse remontée, disclaimer Mistral Large,
-suppression du bloc « CET ARTICLE », et wash du pivot sur le titre de l'article.
+Une source favorite s'affiche désormais comme une **vraie section de la Tournée** (Flux
+Continu) : hero avec **nom + grand logo de la source**, **top-3 articles classés** par les mêmes
+piliers de scoring que les sections thème (fenêtre 24→48→72h), dédup inter-sections, et un
+**« Lire plus »** ouvrant la **curation complète** de la source. PR 1 = le contenu, via le mécanisme
+de favori existant (favoriser depuis Flâner / Mes sources). L'ordre unifié + cap-5 + modal de
+composition arrivent en PR 2.
 
 ## PR associée
-
-Non créée.
+À créer (`gh pr create --base main`) — voir `.context/pr-handoff.md`.
 
 ## Écrans impactés
-
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Reader article | Détail contenu interne | Modifié |
-| Reader article alternatif | Second path de rendu détail contenu | Modifié |
-| Bottom sheet perspectives | Couverture médiatique | Modifié via zone analyse partagée |
+| Tournée (Flux Continu) | `/flux-continu` | Modifié — sections source insérées entre thèmes et veille |
+| Détail source | `/flux-continu/source/:id` | **Nouveau** — curation complète + carrousels source |
 
 ## Scénarios de test
 
-### Scénario 1 : État vide
-**Parcours** :
-1. Ouvrir un article dont l'API perspectives ne renvoie aucune autre source.
-2. Observer la section « Couverture médiatique (0) ».
-**Résultat attendu** : le placeholder est discret, sans dividers pleine largeur
-au-dessus/en dessous, avec texte plus petit et atténué, sans caret ni spectrum.
+### Scénario 1 : Happy path — une source favorite devient une section
+1. Aller dans Flâner / Mes sources, **favoriser** une source active (ex. Le Monde).
+2. Revenir sur la **Tournée**.
+**Attendu** : une section apparaît avec le **logo** de la source à droite du hero (net, pas
+d'illustration thème), le **nom** de la source comme titre, et **3 articles** classés (ordre ≠ pur
+chronologique). La section se place **après les thèmes favoris** et **avant la veille**.
 
-### Scénario 2 : Section ouverte avec perspectives
-**Parcours** :
-1. Ouvrir un article avec plusieurs perspectives.
-2. Déplier « Couverture médiatique ».
-3. Observer le haut de la section.
-**Résultat attendu** : la balise polarisation apparaît si niveau `medium` ou
-`high`, le bouton info ouvre le texte de surlignage, l'analyse est au-dessus des
-titres variants, et le bloc « CET ARTICLE » n'apparaît plus.
+### Scénario 2 : Dédup — pas de doublon avec l'Essentiel / un thème
+1. Avec une source favorite dont un article est déjà dans l'Essentiel ou une section thème au-dessus.
+**Attendu** : l'article n'apparaît **qu'une seule fois** (la section au-dessus gagne) ; la section
+source ne le ré-affiche pas.
 
-### Scénario 3 : Analyse Facteur
-**Parcours** :
-1. Dans une section ouverte, lancer ou afficher l'analyse Facteur.
-2. Lire la mention sous l'analyse.
-**Résultat attendu** : la mention affiche « Analyse générée par Mistral Large ·
-l'IA peut faire des erreurs. ».
+### Scénario 3 : « Lire plus » → curation complète
+1. Sur une section source, taper **« Tout lire »**.
+**Attendu** : écran détail source = **toute la curation** de la source (chronologique, paginée à
+l'infini), carrousels filtrés sur la source (affichés seulement si ≥ 2 items), **aucun bloc
+« Explorer de nouvelles sources »**, footer « Retour à la Tournée » / « suivant ».
 
-### Scénario 4 : Wash pivot titre reader
-**Parcours** :
-1. Ouvrir un article avec `reference_pivot`.
-2. Déplier la section « Couverture médiatique ».
-**Résultat attendu** : le pivot du titre de l'article reçoit un wash gris léger à
-l'ouverture, sans ajouter de bloc référence dans la section.
+### Scénario 4 : Edge — source sans article frais
+1. Source favorite n'ayant aucun article récent dans la fenêtre.
+**Attendu** : la section **reste visible** (jamais masquée) avec un **état vide** : « Rien de neuf
+récemment chez <source>. » + CTA **« Voir toute la curation »** (ouvre le détail).
+
+### Scénario 5 : Non-régression Flâner
+1. Dans Flâner, épingler/filtrer la même source.
+**Attendu** : le feed Flâner reste **chronologique** (inchangé) — seul le contexte Tournée est classé.
 
 ## Critères d'acceptation
-
-- [ ] État vide nettement moins chargé.
-- [ ] Section ouverte hiérarchisée : badge/info puis analyse puis variantes.
-- [ ] Disclaimer IA visible sous l'analyse.
-- [ ] Aucun rendu « CET ARTICLE ».
-- [ ] Wash pivot visible sur le titre du reader à l'ouverture.
-- [ ] Console sans erreur et pas de 4xx/5xx perspectives inattendus.
+- [ ] Section source = hero logo + nom + top-3 classé (≠ pur chrono).
+- [ ] Dédup inter-sections respectée (pas de doublon avec Essentiel/thèmes).
+- [ ] « Lire plus » → curation complète + carrousels source (si ≥2) + **pas** d'« Explorer ».
+- [ ] Source vide → section toujours visible + CTA « Voir toute la curation ».
+- [ ] Flâner reste chronologique (non-régression).
+- [ ] Console sans erreurs, réseau sans 4xx/5xx inattendus.
 
 ## Zones de risque
-
-- Les deux chemins de rendu du reader doivent rester cohérents.
-- Le bouton info doit rester tappable en viewport mobile 390x844.
-- Le titre reader ne doit pas changer de hauteur de façon visible au moment du
-  wash.
+- **Logo réseau** : fallback initiales si l'URL échoue (SourceLogoAvatar).
+- **Détail source** : peinture instantanée du top-3 classé puis remplacement par la 1ʳᵉ page
+  chronologique → léger reflow attendu au chargement.
+- **Cap intérimaire** : jusqu'à 3 sources (parité thèmes) → total possible 3 thèmes + 3 sources +
+  veille (le cap-5 unifié est PR 2).
 
 ## Dépendances
-
-Pas de changement backend. Le wash dépend du champ API existant
-`reference_pivot`.
+- Backend `/api/feed?source_id=<id>&personalized=true` → top classé 24h (mêmes piliers que thèmes).
+- Backend `/api/feed?source_id=<id>` (sans personalized) → curation complète chronologique.
+- Providers : `userSourcesStateProvider` (favoris) + `userSourcesProvider` (catalogue) déjà en place.
+- **Aucune migration DB** (changement logique seul, 1 head Alembic).

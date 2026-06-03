@@ -117,6 +117,19 @@ void main() {
     test('falls back to theme:unknown for slug-less theme sections', () {
       expect(sectionKey(themeSection(slug: null)), 'theme:unknown');
     });
+
+    test('uses source:<id> for source sections', () {
+      final src = FeedThemeSection(
+        kind: SectionKind.source,
+        label: 'Le Monde',
+        accent: const Color(0xFF8E44AD),
+        coreVisibleCount: 3,
+        sourceId: 'src-uuid',
+        sourceLogoUrl: 'https://logo.test/x.png',
+        items: const <Content>[],
+      );
+      expect(sectionKey(src), 'source:src-uuid');
+    });
   });
 
   group('FluxContinuState', () {

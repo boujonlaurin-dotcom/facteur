@@ -10,9 +10,8 @@ import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../../../shared/widgets/states/laurin_fallback_view.dart';
 
 import '../../my_interests/models/user_interests_state.dart' show InterestState;
-import '../../my_interests/models/user_sources_state.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
-import '../../my_interests/widgets/favorites_reorderable_section.dart';
+import '../../flux_continu/widgets/tournee_composer_sheet.dart';
 import '../../my_interests/widgets/interest_state_picker_sheet.dart';
 import '../../settings/providers/paid_content_provider.dart';
 import '../models/source_model.dart';
@@ -118,7 +117,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final sourcesAsync = ref.watch(userSourcesProvider);
-    final sourcesStateAsync = ref.watch(userSourcesStateProvider);
 
     // Synchronise le compteur d'échecs consécutifs avec l'état du provider —
     // mêmes règles que feed_screen.dart : incrémente sur 1ère AsyncError,
@@ -302,27 +300,9 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
               children: [
                 _IntroBlock(colors: colors),
                 const SizedBox(height: 12),
-                // Story 22.1 — section Favoris (drag-reorderable, cap 3).
-                _SourceFavoritesSection(
-                  favorites: sourcesStateAsync.value?.favorites ?? const [],
-                  allSources: allSources,
-                  onReorder: (reordered) async {
-                    try {
-                      await ref
-                          .read(userSourcesStateProvider.notifier)
-                          .reorderFavorites(reordered);
-                    } catch (_) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content:
-                              Text('Impossible de réordonner les favoris.'),
-                          duration: Duration(seconds: 3),
-                        ),
-                      );
-                    }
-                  },
-                ),
+                // Gestion des favoris (sources + thèmes + veille, ordre libre,
+                // cap 5) centralisée dans « Composer ma Tournée ».
+                const ComposeTourneeButton(),
                 const SizedBox(height: 8),
                 if (premiumSources.isNotEmpty)
                   _buildCollapsibleSection(
@@ -540,61 +520,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
             .read(userSourcesProvider.notifier)
             .toggleMute(source.id, source.isMuted);
       },
-    );
-  }
-}
-
-/// Story 22.1 — bloc Favoris pour les sources.
-class _SourceFavoritesSection extends StatelessWidget {
-  final List<SourceFavoriteRef> favorites;
-  final List<Source> allSources;
-  final void Function(List<SourceFavoriteRef> reordered) onReorder;
-
-  const _SourceFavoritesSection({
-    required this.favorites,
-    required this.allSources,
-    required this.onReorder,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final byId = {for (final s in allSources) s.id: s};
-
-    return FavoritesReorderableSection<SourceFavoriteRef>(
-      items: favorites,
-      keyOf: (r) => ValueKey('source:${r.sourceId}'),
-      emptyStateText:
-          'Aucune source favorite — marquez-en une pour l\'épingler dans Flâner.',
-      padding: EdgeInsets.zero,
-      itemBuilder: (context, refItem) {
-        final source = byId[refItem.sourceId];
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Row(
-            children: [
-              Icon(
-                PhosphorIcons.star(PhosphorIconsStyle.fill),
-                color: colors.primary,
-                size: 14,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  source?.name ?? 'Source',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: colors.textPrimary,
-                      ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-      onReorder: onReorder,
     );
   }
 }

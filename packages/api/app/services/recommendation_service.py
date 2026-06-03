@@ -117,15 +117,20 @@ def is_personalized_theme_mode(
 ) -> bool:
     """Story 21.2 — Tournée du jour personalized-theme dispatch.
 
-    Returns True when the caller is asking for a favorite-theme section of
-    the Flux Continu (`personalized=True` + `theme|topic`, no source pinned).
-    These calls bypass the chronological short-circuit and fall through to
-    the PillarScoringEngine branch.
+    Returns True when the caller is asking for a personalized section of the
+    Flux Continu (`personalized=True` + `theme|topic|source`). These calls
+    bypass the chronological short-circuit and fall through to the
+    PillarScoringEngine branch.
+
+    Source sections (PR « Sources dans la Tournée ») reuse this dispatch :
+    `source_id + personalized=true` est classé par les mêmes piliers que les
+    sections thème (fenêtre adaptative 24→48→72h). Le filtre `source_id`
+    restreint déjà le pool à une source (`_get_candidates` l'applique en
+    première branche), donc la stratification two-phase reste inerte. Flâner
+    appelle `source_id` SANS `personalized` → reste chronologique.
     """
-    return (
-        personalized
-        and (theme is not None or topic is not None)
-        and source_uuid is None
+    return personalized and (
+        theme is not None or topic is not None or source_uuid is not None
     )
 
 
@@ -2393,13 +2398,16 @@ class RecommendationService:
         # Otherwise, exclude hidden + saved + seen + consumed (default feed).
         from sqlalchemy import exists
 
-        # Tournée du jour : sections curées par thème/topic restreintes aux
-        # sources suivies + fenêtre 24h + boost user_subtopics. Inerte sans
-        # personalized=true côté client (rétro-compat).
-        personalized_theme_mode = (
-            personalized
-            and (theme is not None or topic is not None)
-            and source_id is None
+        # Tournée du jour : sections curées par thème/topic/source restreintes
+        # (source suivie) + fenêtre adaptative 24→48→72h + boost user_subtopics.
+        # Inerte sans personalized=true côté client (rétro-compat Flâner).
+        # Source unique de vérité : is_personalized_theme_mode() (évite tout
+        # drift entre ce dispatch et le helper testé unitairement).
+        personalized_theme_mode = is_personalized_theme_mode(
+            personalized=personalized,
+            theme=theme,
+            topic=topic,
+            source_uuid=source_id,
         )
 
         explicit_filter = (

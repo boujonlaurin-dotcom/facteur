@@ -267,6 +267,85 @@ async def test_personalized_theme_relaxes_seen_consumed_filter():
 
 
 # ---------------------------------------------------------------------------
+# Sections SOURCE de la Tournée (PR « Sources dans la Tournée »).
+# source_id + personalized=true ⇒ chemin scoré (fenêtre 24h) restreint à la
+# source ; le filtre source_id court-circuite la stratification two-phase, et
+# source_id SANS personalized reste chronologique (non-régression Flâner).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_personalized_source_filters_and_scores():
+    """source_id + personalized=True → pool restreint à la source ET fenêtre
+    24h (branche scoring), sans la restriction two-phase sources suivies."""
+    service, session = _make_service()
+    captured: list[str] = []
+    session.scalars, _ = _stub_scalars(captured)
+
+    src = uuid4()
+    await asyncio.wait_for(
+        service._get_candidates(
+            user_id=uuid4(),
+            limit_candidates=500,
+            source_id=src,
+            personalized=True,
+            followed_source_ids={uuid4(), uuid4()},
+        ),
+        timeout=5.0,
+    )
+
+    assert captured, "expected at least one SQL statement"
+    sql = captured[0].lower()
+    # Pool restreint à la source unique.
+    assert "source_id = " in sql or "source_id =" in sql, (
+        f"source section must filter on the single source_id. Got:\n{captured[0]}"
+    )
+    # Fenêtre de fraîcheur appliquée → preuve qu'on est dans le chemin scoré
+    # (personalized_theme_mode True), pas l'early-return chrono.
+    assert "published_at" in sql and ">=" in sql, (
+        "source section + personalized must add the adaptive freshness window."
+        f" Got:\n{captured[0]}"
+    )
+    # La stratification two-phase (sources suivies) est inerte : le filtre
+    # source_id gagne la première branche du if/elif.
+    assert "sources.id in" not in sql and "source.id in" not in sql, (
+        "source mode must NOT apply the followed-source two-phase restriction."
+        f" Got:\n{captured[0]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_source_alone_stays_chronological():
+    """source_id SANS personalized → filtre source seul, AUCUNE fenêtre 24h
+    (early-return chrono, non-régression Flâner épingle-source)."""
+    service, session = _make_service()
+    captured: list[str] = []
+    session.scalars, _ = _stub_scalars(captured)
+
+    src = uuid4()
+    await asyncio.wait_for(
+        service._get_candidates(
+            user_id=uuid4(),
+            limit_candidates=500,
+            source_id=src,
+            personalized=False,
+            followed_source_ids={uuid4()},
+        ),
+        timeout=5.0,
+    )
+
+    sql = captured[0].lower()
+    assert "source_id = " in sql or "source_id =" in sql, (
+        f"Flâner source filter must still apply source_id. Got:\n{captured[0]}"
+    )
+    # Pas de fenêtre de fraîcheur en mode non-personnalisé.
+    assert ">= " not in sql or "published_at" not in sql, (
+        "source alone (personalized=False) must not add the 24h window."
+        f" Got:\n{captured[0]}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Backfill curé NON-suivi : garantit ≥ THEMATIC_HARD_FLOOR articles par section
 # thématique quand le pool des sources suivies est trop maigre (même au palier
 # 72h). On complète avec des sources curées non-suivies (comme Flâner), marquées
@@ -446,13 +525,28 @@ class TestPersonalizedThemeModeDispatch:
             is False
         )
 
-    def test_source_pin_takes_precedence(self):
-        # When the caller pins a source (?source_id=…) we keep the existing
-        # source-scoped chronological behavior even with personalized=True.
+    def test_personalized_source_activates_personalized_mode(self):
+        # PR « Sources dans la Tournée » : une section source favorite
+        # (?source_id=… &personalized=true) est désormais classée par les mêmes
+        # piliers que les thèmes (fenêtre adaptative 24→48→72h), donc le mode
+        # personnalisé doit s'activer pour source seule.
         assert (
             is_personalized_theme_mode(
                 personalized=True,
-                theme="tech",
+                theme=None,
+                topic=None,
+                source_uuid="some-source-uuid",
+            )
+            is True
+        )
+
+    def test_source_without_personalized_stays_chronological(self):
+        # Flâner épingle une source SANS personalized → reste chronologique
+        # (le filtre source_id court-circuite vers l'early-return chrono).
+        assert (
+            is_personalized_theme_mode(
+                personalized=False,
+                theme=None,
                 topic=None,
                 source_uuid="some-source-uuid",
             )

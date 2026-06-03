@@ -36,7 +36,7 @@ import '../widgets/citation_du_jour_card.dart';
 import '../widgets/closing_card_v18.dart';
 import '../widgets/flux_continu_article_card.dart';
 import '../widgets/my_interests_intro.dart';
-import '../widgets/my_interests_sheet.dart';
+import '../widgets/tournee_composer_sheet.dart';
 import '../widgets/geoloc_prompt_banner.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
@@ -379,6 +379,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   void _openThemeSection(BuildContext context, FeedThemeSection section) {
     final key = Uri.encodeComponent(sectionKey(section));
     context.push('${RoutePaths.fluxContinu}/theme/$key', extra: section);
+  }
+
+  /// PR « Sources dans la Tournée » — ouvre la vue détail d'une section source
+  /// (curation complète de la source). Miroir de [_openThemeSection], route
+  /// `/flux-continu/source/:id` (id = sectionKey = `source:<uuid>`).
+  void _openSourceSection(BuildContext context, FeedThemeSection section) {
+    final key = Uri.encodeComponent(sectionKey(section));
+    context.push('${RoutePaths.fluxContinu}/source/$key', extra: section);
   }
 
   /// Opens the dedicated full-page view for a [DigestTopicSection]
@@ -954,7 +962,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           SliverToBoxAdapter(
             child: MyInterestsIntro(
               favoriteCount: favoriteCount,
-              onTapManage: () => showMyInterestsBottomSheet(context),
+              onTapManage: () => showTourneeComposerSheet(context),
             ),
           ),
         );
@@ -985,14 +993,16 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 if (mounted) ref.invalidate(swipeLeftHintSeenProvider);
               },
               onTapFavorite:
-                  isFavorite ? () => showMyInterestsBottomSheet(context) : null,
+                  isFavorite ? () => showTourneeComposerSheet(context) : null,
               // Story 23.4 — bouton réglages (tune) sur la section veille →
               // ouvre la config en édition. Réutilisé par le CTA d'état vide.
               onTapSettings: section.kind == SectionKind.veille
                   ? () => context.push('${RoutePaths.veilleConfig}?mode=edit')
                   : null,
               onSeeAll: section is FeedThemeSection
-                  ? () => _openThemeSection(context, section)
+                  ? (section.kind == SectionKind.source
+                      ? () => _openSourceSection(context, section)
+                      : () => _openThemeSection(context, section))
                   : section is DigestTopicSection
                       ? () => _openDigestSection(context, section)
                       : null,

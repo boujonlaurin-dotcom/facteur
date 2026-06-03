@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../sources/widgets/source_logo_avatar.dart';
 
 /// Banner that opens a Flux Continu V1.8 section.
 ///
@@ -38,6 +39,12 @@ class SectionBanner extends StatelessWidget {
   /// [false] keeps the thematic banners pixel-identical.
   final bool large;
 
+  /// PR « Sources dans la Tournée » — quand non null, le hero rend le **logo
+  /// de la source** (net, sans le fadeout d'illustration) à la place de
+  /// [illustrationAsset]. Le nom de la source ([title]) sert de fallback en
+  /// initiales si le logo réseau échoue.
+  final String? logoUrl;
+
   const SectionBanner({
     super.key,
     required this.title,
@@ -48,6 +55,7 @@ class SectionBanner extends StatelessWidget {
     this.onTapFavorite,
     this.onTapSettings,
     this.large = false,
+    this.logoUrl,
   });
 
   @override
@@ -192,7 +200,20 @@ class SectionBanner extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (illustrationAsset != null) ...[
+                if (logoUrl != null) ...[
+                  const SizedBox(width: 12),
+                  // Logo source rendu **net** (pas de ShaderMask ni d'Opacity
+                  // 0.72 comme l'illustration thème) — un logo doit rester
+                  // lisible. Fallback initiales géré par SourceLogoAvatar.
+                  IgnorePointer(
+                    child: SourceLogoAvatar.fromUrl(
+                      logoUrl: logoUrl,
+                      name: title,
+                      size: large ? 96 : 62,
+                      radius: 16,
+                    ),
+                  ),
+                ] else if (illustrationAsset != null) ...[
                   const SizedBox(width: 12),
                   SizedBox(
                     width: large ? 96 : 62,
