@@ -216,29 +216,17 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
+    // Always watch so the fetch starts on mount and any update triggers a rebuild.
+    final forecast = ref.watch(weatherProvider).valueOrNull;
 
     final Widget child;
-    if (_showWeather) {
-      final forecast = ref.watch(weatherProvider).valueOrNull;
-      if (forecast != null) {
-        child = GestureDetector(
-          key: const ValueKey('weather'),
-          behavior: HitTestBehavior.opaque,
-          onTap: () => showWeatherDetailSheet(context),
-          child: _WeatherBadge(forecast: forecast),
-        );
-      } else {
-        child = GestureDetector(
-          key: const ValueKey('date'),
-          behavior: HitTestBehavior.opaque,
-          onTap: () => setState(() => _showWeather = true),
-          child: _DateStamp(
-            day: now.day,
-            month: _monthAbbrev(now.month),
-            accent: widget.accent,
-          ),
-        );
-      }
+    if (_showWeather && forecast != null) {
+      child = GestureDetector(
+        key: const ValueKey('weather'),
+        behavior: HitTestBehavior.opaque,
+        onTap: () => showWeatherDetailSheet(context),
+        child: _WeatherBadge(forecast: forecast),
+      );
     } else {
       child = GestureDetector(
         key: const ValueKey('date'),
@@ -305,8 +293,8 @@ class _WeatherBadge extends StatelessWidget {
       children: [
         SvgPicture.asset(
           'assets/images/weather/${forecast.condition.assetName}.svg',
-          width: 100,
-          height: 100,
+          width: 90,
+          height: 90,
         ),
         const SizedBox(height: 3),
         RichText(

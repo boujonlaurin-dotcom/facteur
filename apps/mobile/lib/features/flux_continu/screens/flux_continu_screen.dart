@@ -1185,8 +1185,8 @@ class _SectionPassageDotState extends State<_SectionPassageDot>
               return Transform.scale(
                 scale: scale,
                 child: Container(
-                  width: 3.5,
-                  height: 3.5,
+                  width: 2.5,
+                  height: 2.5,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: dotColor.withValues(alpha: 0.76 + 0.14 * glow),
