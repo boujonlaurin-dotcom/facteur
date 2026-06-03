@@ -32,6 +32,7 @@ import '../../../shared/strings/loader_error_strings.dart';
 import '../../../shared/widgets/loaders/loading_view.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
+import '../utils/section_snap.dart';
 import '../widgets/citation_du_jour_card.dart';
 import '../widgets/closing_card_v18.dart';
 import '../widgets/flux_continu_article_card.dart';
@@ -54,11 +55,10 @@ const double _kStickyThreshold = 60.0;
 /// couple px of slack.
 const double _kStickyBarHeight = 54.0;
 
-/// Section-passage affordance tuning. The visual marker carries the extra
-/// breathing room; the attraction only corrects tiny near-boundary drifts.
-const double _kPassageSlowScrollDeltaPx = 14.0;
-const double _kPassageAttractMaxPx = 42.0;
-const double _kPassageAttractMinPx = 2.0;
+// Section-snap tuning lives in `utils/section_snap.dart` (kSnapCaptureFraction,
+// kBoundaryCrossVelocity, kSnapEpsilon, kSnapSpring) so the resting-position
+// arithmetic stays a pure, unit-testable function. The snap itself is woven
+// into the fling's ballistic phase by [_SectionSnapPhysics] below.
 
 /// Minimum delta (px) before the scroll-up FAB toggles, to avoid flicker
 /// on tiny inertia bounces. Matches the legacy FeedScreen behaviour.
@@ -136,10 +136,22 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
   bool _showScrollTopFab = false;
   double _lastScrollPos = 0;
-  double _lastPassageScrollPos = 0;
-  double _lastPassageScrollDeltaAbs = double.infinity;
   int _passagePulseSequence = 0;
-  bool _isPassageAttracting = false;
+
+  /// Mutable, stable holder of the section-start anchors (absolute scroll
+  /// pixels). Passed *by reference* to the immutable [_SectionSnapPhysics],
+  /// which reads it live — the physics is rebuilt every frame and must never
+  /// own a copy. Recomputed only on layout/content changes (sections don't
+  /// resize mid-session), never per scroll frame.
+  final _SnapAnchors _snapAnchors = _SnapAnchors();
+  bool _snapAnchorsRecomputeScheduled = false;
+
+  /// A section snap is in flight (its ballistic spring is settling). While set,
+  /// the per-section `selectionClick` tick is suppressed so the medium settle
+  /// haptic isn't doubled. The settle haptic itself is deferred to the
+  /// [ScrollEndNotification] via [_pendingSnapHaptic].
+  bool _isSnapping = false;
+  bool _pendingSnapHaptic = false;
 
   /// Garde-fou : le flow post-onboarding (dialog customs échoués + modales
   /// thème & notifications) ne doit se jouer qu'une seule fois par montage,
@@ -182,8 +194,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (!_scroll.hasClients) return;
     final pos = _scroll.position;
     final currentScroll = pos.pixels;
-    _lastPassageScrollDeltaAbs = (currentScroll - _lastPassageScrollPos).abs();
-    _lastPassageScrollPos = currentScroll;
     final showSticky = currentScroll > _kStickyThreshold;
     if (_stickyVisible.value != showSticky) {
       _stickyVisible.value = showSticky;
@@ -300,10 +310,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       // Discrete "selection" tick when the active tab flips section under the
       // sticky bar. Gated on visibility so we don't buzz during the initial
       // layout / top-of-page scroll, before the sticky is even revealed.
+      // Suppressed while a snap is settling: the medium settle haptic owns the
+      // boundary crossing, so we don't double-buzz.
       if (_stickyVisible.value) {
-        unawaited(HapticFeedback.selectionClick());
+        if (!_isSnapping) {
+          unawaited(HapticFeedback.selectionClick());
+        }
         _pulsePassageForStickyIndex(activeAt);
-        unawaited(_maybeAttractToActiveSection(activeAt));
       }
       _activeIndex.value = activeAt;
       _alignTabsToActive(activeAt);
@@ -328,42 +341,80 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     );
   }
 
-  Future<void> _maybeAttractToActiveSection(int stickyIndex) async {
-    if (_isPassageAttracting) return;
-    if (!_scroll.hasClients) return;
-    if (_lastPassageScrollDeltaAbs > _kPassageSlowScrollDeltaPx) return;
-    if (_scroll.position.userScrollDirection == ScrollDirection.idle) return;
-    final sectionIndex = _sectionIndexForStickyIndex(stickyIndex);
-    if (sectionIndex <= 0) return;
-    final targetKey = _sectionKeys[sectionIndex];
-    final ctx = targetKey.currentContext;
-    if (ctx == null) return;
-    final box = ctx.findRenderObject();
-    if (box is! RenderBox || !box.attached) return;
+  /// Called by [_SectionSnapPhysics] the instant a ballistic simulation is
+  /// built: `true` when it chose a section-anchored spring, `false` for a free
+  /// (natural) fling. Plain flag writes — runs during the physics phase, never
+  /// touches `setState`.
+  void _setSnapping(bool snapping) {
+    _isSnapping = snapping;
+    _pendingSnapHaptic = snapping;
+  }
+
+  /// Drops a snap that is no longer reaching its settle — a driven scroll took
+  /// over, or a fresh drag interrupted it — so its deferred settle haptic does
+  /// not fire spuriously. Single seam so every non-ballistic scroll path stays
+  /// consistent (callers don't open-code the flag clears).
+  void _cancelPendingSnap() {
+    _isSnapping = false;
+    _pendingSnapHaptic = false;
+  }
+
+  /// Bridges scroll notifications to the snap haptic. The medium settle haptic
+  /// is fired at rest (not when the spring is built) so it reads as the section
+  /// "posing" under the sticky bar. A fresh drag cancels any pending settle.
+  bool _onScrollNotification(ScrollNotification n) {
+    if (n.depth != 0) return false;
+    if (n is ScrollStartNotification && n.dragDetails != null) {
+      _cancelPendingSnap();
+    } else if (n is ScrollEndNotification) {
+      if (_pendingSnapHaptic) {
+        _pendingSnapHaptic = false;
+        unawaited(HapticFeedback.mediumImpact());
+      }
+      _isSnapping = false;
+    }
+    return false;
+  }
+
+  /// Recomputes the section-start anchors from current layout. Each anchor is
+  /// the absolute scroll offset that would bring a sticky entry's top flush
+  /// under the sticky bar — identical maths to [_scrollToSection]. Offset-
+  /// invariant (we add `_scroll.offset` back), so it is safe to run mid-scroll.
+  void _recomputeSnapAnchors() {
+    if (!_scroll.hasClients) {
+      _snapAnchors.values = const [];
+      return;
+    }
     final scrollBox = _scroll.position.context.notificationContext
         ?.findRenderObject() as RenderBox?;
     if (scrollBox == null) return;
-    final delta = box.localToGlobal(Offset.zero, ancestor: scrollBox).dy -
-        _kStickyBarHeight;
-    if (delta.abs() < _kPassageAttractMinPx ||
-        delta.abs() > _kPassageAttractMaxPx) {
-      return;
+    final offset = _scroll.offset;
+    final result = <double>[];
+    for (final key in _stickyEntryKeys) {
+      final ctx = key.currentContext;
+      if (ctx == null) continue;
+      final box = ctx.findRenderObject();
+      if (box is! RenderBox || !box.attached) continue;
+      final anchor = offset +
+          (box.localToGlobal(Offset.zero, ancestor: scrollBox).dy -
+              _kStickyBarHeight);
+      result.add(anchor);
     }
-    final target = (_scroll.offset + delta).clamp(
-      0.0,
-      _scroll.position.maxScrollExtent,
-    );
-    _isPassageAttracting = true;
-    try {
-      unawaited(HapticFeedback.lightImpact());
-      await _scroll.animateTo(
-        target,
-        duration: const Duration(milliseconds: 230),
-        curve: Curves.easeOutQuart,
-      );
-    } finally {
-      _isPassageAttracting = false;
-    }
+    result.sort();
+    _snapAnchors.values = result;
+  }
+
+  /// Defers an anchor recompute to the next post-frame (when layout is settled),
+  /// coalescing the bursts of builds that fold/expand/content changes produce
+  /// into a single pass. Never runs per scroll frame.
+  void _scheduleAnchorRecompute() {
+    if (_snapAnchorsRecomputeScheduled) return;
+    _snapAnchorsRecomputeScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _snapAnchorsRecomputeScheduled = false;
+      if (!mounted) return;
+      _recomputeSnapAnchors();
+    });
   }
 
   void _alignTabsToActive(int index) {
@@ -411,6 +462,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       0.0,
       _scroll.position.maxScrollExtent,
     );
+    // Driven scroll, not ballistic → clear any snap that was still in flight so
+    // its settle haptic doesn't fire at the end of this animation.
+    _cancelPendingSnap();
     await _scroll.animateTo(
       target,
       duration: const Duration(milliseconds: 700),
@@ -420,6 +474,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
   Future<void> _scrollToTop() async {
     if (!_scroll.hasClients) return;
+    _cancelPendingSnap();
     unawaited(HapticFeedback.lightImpact());
     _markSectionsAboveAsScrolledPast(null);
     await _scroll.animateTo(
@@ -763,6 +818,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // Source unique : aligne [_sectionKeys] + [_stickyEntryKeys] sur les slivers
     // et dérive les descripteurs d'onglets (label+accent), dans le même ordre.
     final stickyTabs = _syncStickyEntries(state.valueOrNull, grillePresent);
+    // Sections don't resize mid-session (folds defer to next launch), so we
+    // refresh the snap anchors only on these content/layout-driven rebuilds —
+    // never per scroll frame.
+    _scheduleAnchorRecompute();
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
       // Header & footer vivent dans le scaffold de page partagé :
@@ -914,91 +973,104 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // NB : [_sectionKeys] est synchronisé en amont par [_syncStickyEntries]
     // (appelé dans build) → on s'appuie sur cet alignement ici.
 
-    return RefreshIndicator(
-      onRefresh: _handleRefresh,
-      color: colors.primary,
-      child: CustomScrollView(
-        controller: _scroll,
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          // NB : le header (logo · streak · réglages) vit dans le scaffold de
-          // page partagé — fixe, hors du scroll.
-          SliverToBoxAdapter(
-            child: impressionSlot == FirstImpressionSlot.renudgeBanner
-                ? const NotificationRenudgeBanner()
-                : const SizedBox.shrink(),
-          ),
-          SliverToBoxAdapter(
-            child: impressionSlot == FirstImpressionSlot.wellInformed
-                ? const WellInformedPrompt()
-                : const SizedBox.shrink(),
-          ),
-          SliverToBoxAdapter(
-            child: impressionSlot == FirstImpressionSlot.geolocPrompt
-                ? const GeolocPromptBanner()
-                : const SizedBox.shrink(),
-          ),
-          const SliverToBoxAdapter(child: LettresNotificationBanner()),
-          // One SliverToBoxAdapter per section. Sections never resize during
-          // a session (folds are deferred to the next cold launch), so the
-          // simpler non-lazy adapter is sufficient and keeps the GlobalKey
-          // measurement reliable.
-          //
-          // The "Mes intérêts" intro (V10) is injected once, right before the
-          // first user-favorite theme section (`theme1` / `theme2`). The
-          // computed index handles both ordering modes (normal / sereine) by
-          // tracking the actual position of the first favorite kind.
-          // Folded sections render as individual FoldedSectionCards directly,
-          // in place — no "Tournée du jour" grouping toggle.
-          ..._buildSectionSlivers(
-            context: context,
-            state: state,
-            notifier: notifier,
-          ),
-          if (state.sections.isEmpty)
-            SliverToBoxAdapter(
-              child: _EmptySectionsHint(onRetry: notifier.refresh),
+    return NotificationListener<ScrollNotification>(
+      onNotification: _onScrollNotification,
+      child: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        color: colors.primary,
+        child: CustomScrollView(
+          controller: _scroll,
+          // Section-anchored snap woven into the fling's ballistic phase. The
+          // platform parent (Bouncing/Clamping) is preserved via `applyTo`, so
+          // overscroll/pull-to-refresh feel native; the snap only chooses the
+          // resting position. AlwaysScrollable keeps the page scrollable even
+          // when content is short.
+          physics: AlwaysScrollableScrollPhysics(
+            parent: _SectionSnapPhysics(
+              anchors: _snapAnchors,
+              onSnap: _setSnapping,
             ),
-          // Citation du jour — clôture éditoriale en fin de tournée. Affichée
-          // dès qu'une citation existe et que la tournée n'est pas clôturée
-          // (`closingDismissed`) : replier la tournée ne doit pas la masquer,
-          // c'est un rituel de fin de tournée.
-          if (state.quote != null && !state.closingDismissed)
+          ),
+          slivers: [
+            // NB : le header (logo · streak · réglages) vit dans le scaffold de
+            // page partagé — fixe, hors du scroll.
             SliverToBoxAdapter(
-              child: KeyedSubtree(
-                key: _citationKey,
-                child: CitationDuJourCard(quote: state.quote!),
+              child: impressionSlot == FirstImpressionSlot.renudgeBanner
+                  ? const NotificationRenudgeBanner()
+                  : const SizedBox.shrink(),
+            ),
+            SliverToBoxAdapter(
+              child: impressionSlot == FirstImpressionSlot.wellInformed
+                  ? const WellInformedPrompt()
+                  : const SizedBox.shrink(),
+            ),
+            SliverToBoxAdapter(
+              child: impressionSlot == FirstImpressionSlot.geolocPrompt
+                  ? const GeolocPromptBanner()
+                  : const SizedBox.shrink(),
+            ),
+            const SliverToBoxAdapter(child: LettresNotificationBanner()),
+            // One SliverToBoxAdapter per section. Sections never resize during
+            // a session (folds are deferred to the next cold launch), so the
+            // simpler non-lazy adapter is sufficient and keeps the GlobalKey
+            // measurement reliable.
+            //
+            // The "Mes intérêts" intro (V10) is injected once, right before the
+            // first user-favorite theme section (`theme1` / `theme2`). The
+            // computed index handles both ordering modes (normal / sereine) by
+            // tracking the actual position of the first favorite kind.
+            // Folded sections render as individual FoldedSectionCards directly,
+            // in place — no "Tournée du jour" grouping toggle.
+            ..._buildSectionSlivers(
+              context: context,
+              state: state,
+              notifier: notifier,
+            ),
+            if (state.sections.isEmpty)
+              SliverToBoxAdapter(
+                child: _EmptySectionsHint(onRetry: notifier.refresh),
+              ),
+            // Citation du jour — clôture éditoriale en fin de tournée. Affichée
+            // dès qu'une citation existe et que la tournée n'est pas clôturée
+            // (`closingDismissed`) : replier la tournée ne doit pas la masquer,
+            // c'est un rituel de fin de tournée.
+            if (state.quote != null && !state.closingDismissed)
+              SliverToBoxAdapter(
+                child: KeyedSubtree(
+                  key: _citationKey,
+                  child: CitationDuJourCard(quote: state.quote!),
+                ),
+              ),
+            // « Le mot du jour » — récompense de fin de Tournée. Sliver additif
+            // au-dessus de ClosingCardV18 (cette dernière n'est pas modifiée :
+            // zéro régression, revert trivial). La carte se câble seule au
+            // grilleProvider et ne rend rien tant que `GET today` n'a pas répondu.
+            // Hors gate `closingDismissed` : elle reste dans le feed même après
+            // fermeture de la tournée (en état « déjà jouée »), et se masque
+            // seule (SizedBox.shrink) s'il n'y a pas de mot du jour.
+            // Grille — rendue juste après « Actus du jour » (cf.
+            // _buildSectionSlivers) quand cette section existe. Fallback bas
+            // ici uniquement si le digest est absent / la liste vide, pour ne
+            // jamais perdre la Grille. Hors gate `closingDismissed`.
+            if (!hasActus) _grilleSliver,
+            // Carte « Fin de tournée » — toujours affichée (jamais masquée) : elle
+            // reste le repère de clôture même après être passé sur Flâner.
+            // « Continuer » navigue vers Flâner sans masquer la carte. « Refermer »
+            // ferme réellement l'app sur Android (SystemNavigator.pop) ; sur iOS,
+            // la fermeture programmatique est interdite → on masque le bouton et
+            // on affiche une phrase de clôture à la place.
+            SliverToBoxAdapter(
+              child: ClosingCardV18(
+                articleCount: totalArticles,
+                onContinue: () => context.go(RoutePaths.flaner),
+                onClose: isAndroid ? () => SystemNavigator.pop() : null,
+                closeHint:
+                    isAndroid ? null : 'Vous pouvez refermer l’app — à demain',
               ),
             ),
-          // « Le mot du jour » — récompense de fin de Tournée. Sliver additif
-          // au-dessus de ClosingCardV18 (cette dernière n'est pas modifiée :
-          // zéro régression, revert trivial). La carte se câble seule au
-          // grilleProvider et ne rend rien tant que `GET today` n'a pas répondu.
-          // Hors gate `closingDismissed` : elle reste dans le feed même après
-          // fermeture de la tournée (en état « déjà jouée »), et se masque
-          // seule (SizedBox.shrink) s'il n'y a pas de mot du jour.
-          // Grille — rendue juste après « Actus du jour » (cf.
-          // _buildSectionSlivers) quand cette section existe. Fallback bas
-          // ici uniquement si le digest est absent / la liste vide, pour ne
-          // jamais perdre la Grille. Hors gate `closingDismissed`.
-          if (!hasActus) _grilleSliver,
-          // Carte « Fin de tournée » — toujours affichée (jamais masquée) : elle
-          // reste le repère de clôture même après être passé sur Flâner.
-          // « Continuer » navigue vers Flâner sans masquer la carte. « Refermer »
-          // ferme réellement l'app sur Android (SystemNavigator.pop) ; sur iOS,
-          // la fermeture programmatique est interdite → on masque le bouton et
-          // on affiche une phrase de clôture à la place.
-          SliverToBoxAdapter(
-            child: ClosingCardV18(
-              articleCount: totalArticles,
-              onContinue: () => context.go(RoutePaths.flaner),
-              onClose: isAndroid ? () => SystemNavigator.pop() : null,
-              closeHint:
-                  isAndroid ? null : 'Vous pouvez refermer l’app — à demain',
-            ),
-          ),
-          const SliverToBoxAdapter(child: SizedBox(height: 92)),
-        ],
+            const SliverToBoxAdapter(child: SizedBox(height: 92)),
+          ],
+        ),
       ),
     );
   }
@@ -1099,6 +1171,105 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     }
     return slivers;
   }
+}
+
+/// Mutable, stable holder of the section-start anchors shared between the
+/// screen state and the (immutable) [_SectionSnapPhysics]. The physics reads
+/// [values] live each ballistic build; the state owns the writes.
+class _SnapAnchors {
+  List<double> values = const [];
+}
+
+/// Scroll physics that folds a section-anchored snap into the fling's ballistic
+/// phase. The platform parent (Bouncing iOS / Clamping Android) is preserved
+/// via [applyTo], so `naturalLanding` inherits the native deceleration and the
+/// snap is intrinsically un-gated by speed — it triggers on slow *and* fast
+/// gestures.
+class _SectionSnapPhysics extends ScrollPhysics {
+  final _SnapAnchors anchors;
+  final ValueChanged<bool> onSnap;
+
+  const _SectionSnapPhysics({
+    required this.anchors,
+    required this.onSnap,
+    super.parent,
+  });
+
+  @override
+  _SectionSnapPhysics applyTo(ScrollPhysics? ancestor) {
+    return _SectionSnapPhysics(
+      anchors: anchors,
+      onSnap: onSnap,
+      parent: buildParent(ancestor),
+    );
+  }
+
+  @override
+  Simulation? createBallisticSimulation(
+    ScrollMetrics position,
+    double velocity,
+  ) {
+    final natural = super.createBallisticSimulation(position, velocity);
+    final target = _resolveTarget(position, velocity, natural);
+    onSnap(target != null);
+    if (target == null) return natural;
+    return ScrollSpringSimulation(
+      kSnapSpring,
+      position.pixels,
+      target,
+      velocity,
+      tolerance: toleranceFor(position),
+    );
+  }
+
+  /// Resolves the clamped section-anchored resting position, or `null` to keep
+  /// the natural fling (header zone, deep inside a tall section, already
+  /// aligned, or no anchors).
+  double? _resolveTarget(
+    ScrollMetrics position,
+    double velocity,
+    Simulation? natural,
+  ) {
+    final list = anchors.values;
+    if (list.isEmpty) return null;
+    // Header/banner zone (above the first section) → let the RefreshIndicator
+    // own pull-to-refresh; never snap.
+    if (position.pixels <= list.first) return null;
+
+    final landing =
+        natural == null ? position.pixels : _simulationEndX(natural, position);
+    if (landing <= 0) return null;
+
+    final raw = resolveSnapTarget(
+      currentPixels: position.pixels,
+      naturalLanding: landing,
+      velocity: velocity,
+      anchors: list,
+      usableViewport: position.viewportDimension - _kStickyBarHeight,
+    );
+    if (raw == null) return null;
+
+    final clamped = raw.clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if ((clamped - position.pixels).abs() <= kSnapEpsilon) return null;
+    return clamped;
+  }
+}
+
+/// Estimates the resting position of a ballistic [sim] by sampling it forward
+/// until it reports done (capped). Honours the platform deceleration baked into
+/// [sim] rather than re-deriving a friction model.
+double _simulationEndX(Simulation sim, ScrollMetrics position) {
+  var last = position.pixels;
+  for (var t = 0.0; t <= 10.0; t += 1 / 60) {
+    final x = sim.x(t);
+    if (x.isNaN) break;
+    last = x;
+    if (sim.isDone(t)) break;
+  }
+  return last;
 }
 
 class _SectionPassagePulse {
