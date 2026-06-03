@@ -668,8 +668,8 @@ class TestOtherThemeIngestion:
     async def test_other_theme_niche_source_ingestion(
         self, auth_user, monkeypatch
     ):
-        from unittest.mock import AsyncMock
         from app.services import source_service
+        from app.workers import rss_sync
 
         async def _fake_detect(self, url):
             from types import SimpleNamespace
@@ -683,6 +683,16 @@ class TestOtherThemeIngestion:
             )
 
         monkeypatch.setattr(source_service.SourceService, "detect_source", _fake_detect)
+
+        # Une source niche fraîchement créée doit déclencher un sync immédiat
+        # (sinon sa table `contents` reste vide jusqu'au cycle récurrent).
+        synced: list[str] = []
+
+        async def _fake_sync_source(source_id):
+            synced.append(source_id)
+            return True
+
+        monkeypatch.setattr(rss_sync, "sync_source", _fake_sync_source)
 
         payload = {
             "theme_id": "other",
@@ -707,6 +717,10 @@ class TestOtherThemeIngestion:
         assert data["theme_id"] == "other"
         # La source ingérée doit avoir theme='custom' (mappé depuis 'other')
         assert data["sources"][0]["source"]["theme"] == "custom"
+        # Sync immédiat enfilé pour la source niche créée.
+        assert synced == [data["sources"][0]["source"]["id"]]
+        # Source bien connectée → aucune remontée d'échec.
+        assert data["unconnected_sources"] == []
 
     async def test_post_config_skips_unresolvable_niche_source(
         self, auth_user, monkeypatch
@@ -755,6 +769,13 @@ class TestOtherThemeIngestion:
         assert data["sources"] == []
         assert len(data["topics"]) == 1
         assert len(data["keywords"]) == 1
+        # La source non connectée est remontée au mobile (url + raison) pour
+        # afficher « X sources n'ont pas pu être connectées » + CTA recherche.
+        assert len(data["unconnected_sources"]) == 1
+        assert (
+            data["unconnected_sources"][0]["url"] == "https://exemple-sans-rss.test"
+        )
+        assert data["unconnected_sources"][0]["reason"]
 
 
 class TestLegacyGoneShims:

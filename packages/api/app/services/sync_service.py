@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.content import Content
 from app.models.enums import ContentType, SourceType
 from app.models.source import Source, UserSource
+from app.models.veille import VeilleSource
 from app.services.content_extractor import ContentExtractor
 from app.services.ml.language_filter import detect_language
 from app.services.paywall_detector import detect_paywall
@@ -89,10 +90,17 @@ class SyncService:
             .distinct()
             .scalar_subquery()
         )
+        # Sources niche référencées par une veille : is_curated=False et absentes
+        # de user_sources → autrement jamais synchronisées (plan veille V0, Pb 1).
+        veille_source_ids = (
+            select(VeilleSource.source_id).distinct().scalar_subquery()
+        )
         result = await self.session.execute(
             select(Source).where(
                 Source.is_active,
-                (Source.is_curated) | (Source.id.in_(custom_source_ids)),
+                (Source.is_curated)
+                | (Source.id.in_(custom_source_ids))
+                | (Source.id.in_(veille_source_ids)),
             )
         )
         sources = result.scalars().all()

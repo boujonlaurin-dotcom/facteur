@@ -82,18 +82,20 @@ class FluxContinuRepository {
   /// sectionVeille1 + badge "Ma veille") qui rend matched_on superflu V1.
   Future<FeedResponse> getVeilleFeedItems({
     int limit = 10,
+    int offset = 0,
     bool serein = false,
   }) async {
+    final pageNum = (offset ~/ limit) + 1;
     try {
       final response = await _apiClient.dio.get<dynamic>(
         'veille/feed',
-        queryParameters: {'limit': limit, 'offset': 0, 'serein': serein},
+        queryParameters: {'limit': limit, 'offset': offset, 'serein': serein},
       );
       if (response.statusCode != 200 || response.data is! Map) {
         return FeedResponse(
           items: const [],
           pagination: Pagination(
-            page: 1,
+            page: pageNum,
             perPage: limit,
             total: 0,
             hasNext: false,
@@ -110,7 +112,7 @@ class FluxContinuRepository {
       return FeedResponse(
         items: items,
         pagination: Pagination(
-          page: 1,
+          page: pageNum,
           perPage: limit,
           total: (data['total'] as num?)?.toInt() ?? items.length,
           hasNext: (data['has_more'] as bool?) ?? false,
@@ -122,7 +124,7 @@ class FluxContinuRepository {
       return FeedResponse(
         items: const [],
         pagination: Pagination(
-          page: 1,
+          page: pageNum,
           perPage: limit,
           total: 0,
           hasNext: false,
