@@ -1443,8 +1443,8 @@ class _PerspectivesInlineSectionState
     }
 
     if (_emptyStage != _EmptyStage.none) return;
-    // Fade + slide démarrent ensemble dès la détection (prochain frame)
-    _emptyDismissTimer = Timer(Duration.zero, () {
+    // Pause de lecture avant de démarrer le fade+slide
+    _emptyDismissTimer = Timer(const Duration(seconds: 3), () {
       if (!mounted || widget.status != PerspectivesSectionStatus.empty) return;
       setState(() => _emptyStage = _EmptyStage.fading);
       // Collapse hauteur une fois le slide terminé

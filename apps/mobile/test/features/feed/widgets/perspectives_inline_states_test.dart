@@ -147,8 +147,12 @@ void main() {
     await tester.tap(find.text('Couverture médiatique (0)'));
     expect(toggleCount, 0);
 
-    // Timer.zero → fading démarre dès le prochain frame
-    await tester.pump(Duration.zero);
+    // Pause de lecture : le bandeau reste visible
+    await tester.pump(const Duration(milliseconds: 2999));
+    expect(find.text('Couverture médiatique (0)'), findsOneWidget);
+
+    // Timer 3 s → fading + slide démarrent
+    await tester.pump(const Duration(milliseconds: 1));
     expect(
       tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
       0,
