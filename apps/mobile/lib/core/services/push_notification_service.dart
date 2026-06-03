@@ -185,6 +185,33 @@ class PushNotificationService {
     }
   }
 
+  /// Construit le triplet (title, body, bigText) pour la notif « Bonnes
+  /// nouvelles du jour » — miroir de [buildCopy] mais ton serein.
+  ///
+  /// - [teasers] vide → corps générique ([goodNewsTitle] / [goodNewsBody]) ;
+  /// - sinon → body collapsed avec le premier teaser (clip 60c), bigText en
+  ///   bullets (max 3).
+  static ({String title, String body, String bigText}) buildGoodNewsCopy({
+    List<String>? teasers,
+  }) {
+    final cleaned = (teasers ?? const <String>[])
+        .map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .take(3)
+        .toList();
+    if (cleaned.isEmpty) {
+      return (title: goodNewsTitle, body: goodNewsBody, bigText: goodNewsBody);
+    }
+    final first = cleaned.first;
+    final clipped = first.length > 60 ? '${first.substring(0, 57)}…' : first;
+    final bullets = cleaned.map((t) => '• $t').join('\n');
+    return (
+      title: goodNewsTitle,
+      body: 'À la une : $clipped',
+      bigText: 'Vos bonnes nouvelles du jour :\n$bullets',
+    );
+  }
+
   // --- Daily digest --------------------------------------------------------
 
   /// Planifie la notification quotidienne à l'heure correspondant à [timeSlot].
@@ -314,9 +341,11 @@ class PushNotificationService {
   /// principal pour permettre un horaire dédié sans coupler les opt-ins.
   Future<bool> scheduleDailyGoodNewsNotification({
     NotifTimeSlot timeSlot = NotifTimeSlot.evening,
+    List<String>? teasers,
   }) async {
     final time = _timeOfDayFor(timeSlot);
     final scheduledDate = _nextInstanceOf(time);
+    final copy = buildGoodNewsCopy(teasers: teasers);
 
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
@@ -345,7 +374,7 @@ class PushNotificationService {
         const Person(name: 'Toi'),
         groupConversation: false,
         messages: [
-          Message(goodNewsBody, DateTime.now(), sender),
+          Message(copy.bigText, DateTime.now(), sender),
         ],
       ),
     );
@@ -353,8 +382,8 @@ class PushNotificationService {
 
     await _plugin.zonedSchedule(
       id: _NotifIds.dailyGoodNews,
-      title: goodNewsTitle,
-      body: goodNewsBody,
+      title: copy.title,
+      body: copy.body,
       scheduledDate: scheduledDate,
       notificationDetails: NotificationDetails(
         android: androidDetails,
@@ -367,7 +396,7 @@ class PushNotificationService {
 
     debugPrint(
       'PushNotificationService: good news scheduled @ $scheduledDate '
-      '(slot: $timeSlot)',
+      '(slot: $timeSlot, teasers: ${teasers?.length ?? 0})',
     );
 
     return _isScheduled(_NotifIds.dailyGoodNews);

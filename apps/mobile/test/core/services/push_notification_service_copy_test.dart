@@ -60,4 +60,39 @@ void main() {
       expect(copy.body, contains("Belle journée"));
     });
   });
+
+  group('PushNotificationService.buildGoodNewsCopy', () {
+    test('no teasers falls back to generic good news copy', () {
+      final copy = PushNotificationService.buildGoodNewsCopy();
+      expect(copy.title, PushNotificationService.goodNewsTitle);
+      expect(copy.body, PushNotificationService.goodNewsBody);
+      expect(copy.bigText, PushNotificationService.goodNewsBody);
+    });
+
+    test('empty teasers list falls back to generic copy', () {
+      final copy = PushNotificationService.buildGoodNewsCopy(teasers: const []);
+      expect(copy.body, PushNotificationService.goodNewsBody);
+    });
+
+    test('teasers render bullet bigText (max 3) + collapsed body', () {
+      final copy = PushNotificationService.buildGoodNewsCopy(
+        teasers: ['Solidarité', 'Avancée médicale', 'Climat positif', 'Quatrième'],
+      );
+      expect(copy.title, PushNotificationService.goodNewsTitle);
+      expect(copy.body, 'À la une : Solidarité');
+      expect(
+        copy.bigText,
+        'Vos bonnes nouvelles du jour :\n'
+        '• Solidarité\n• Avancée médicale\n• Climat positif',
+      );
+    });
+
+    test('truncates first teaser longer than 60 chars', () {
+      final copy = PushNotificationService.buildGoodNewsCopy(
+        teasers: ['A' * 80],
+      );
+      expect(copy.body, endsWith('…'));
+      expect(copy.body.length, lessThanOrEqualTo('À la une : '.length + 58));
+    });
+  });
 }

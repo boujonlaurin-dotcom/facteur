@@ -1,15 +1,12 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
-import '../../../core/services/push_notification_service.dart';
 import '../../../core/services/widget_service.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
-import '../../settings/providers/notifications_settings_provider.dart';
 import '../models/digest_models.dart';
 import '../repositories/digest_repository.dart';
 import 'serein_toggle_provider.dart';
@@ -157,8 +154,6 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         ref.read(sereinToggleProvider.notifier).initFromApi(dual.sereinEnabled);
         // Push to home screen widget
         _syncWidget();
-        // Update notification with dynamic topic keywords
-        unawaited(_updateNotificationWithTopics());
         // If either variant was served as yesterday's stale fallback while
         // fresh content is being generated in background, schedule a silent
         // auto-refetch so the user sees today's digest without pulling.
@@ -211,7 +206,6 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
           _normalDigest = digest;
           _cachedDate = _todayDateString;
           ref.read(sereinToggleProvider.notifier).initFromApi(false);
-          unawaited(_updateNotificationWithTopics());
           _maybeScheduleStaleFallbackRefetch();
           return digest;
         } catch (_) {
@@ -294,46 +288,6 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   /// the in-app Serein/"Bonnes Nouvelles" toggle is on.
   void _syncWidget() {
     WidgetService.updateWidget(digest: _normalDigest);
-  }
-
-  /// Update the daily notification with topic keywords from the loaded digest.
-  /// Uses the normal digest topics to build an engaging notification body.
-  /// Only updates if push notifications are enabled in user settings.
-  ///
-  /// If the user has Serein mode enabled, a calmer notification copy is used
-  /// to avoid triggering anxiety before reading.
-  Future<void> _updateNotificationWithTopics() async {
-    try {
-      final settings = ref.read(notificationsSettingsProvider);
-      if (!settings.pushEnabled) return;
-
-      final digest = _normalDigest;
-      if (digest == null) return;
-
-      final isSerein = ref.read(sereinToggleProvider).enabled;
-      final topTopics = digest.topics
-          .map((t) => t.label.trim())
-          .where((l) => l.isNotEmpty)
-          .take(3)
-          .toList();
-
-      // Variante C (jour calme) hors v1 — Serein + variante A pour rester
-      // cohérent avec le brief §6.1 (variante C = override manuel uniquement).
-      final variant = (!isSerein && topTopics.isNotEmpty)
-          ? NotifVariant.variantB
-          : NotifVariant.variantA;
-
-      await PushNotificationService().scheduleDailyDigestNotification(
-        timeSlot: settings.timeSlot,
-        variant: variant,
-        teasers: variant == NotifVariant.variantB ? topTopics : null,
-      );
-      debugPrint(
-        'DigestNotifier: Re-scheduled (variant: $variant, slot: ${settings.timeSlot})',
-      );
-    } catch (e, stack) {
-      debugPrint('DigestNotifier: Failed to update notification: $e\n$stack');
-    }
   }
 
   /// Clear the in-memory cache (forces next load to call API).

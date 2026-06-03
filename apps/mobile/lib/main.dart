@@ -21,6 +21,7 @@ import 'core/services/posthog_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/ui/notification_service.dart';
 import 'features/flux_continu/services/tournee_progress_service.dart';
+import 'features/settings/providers/notifications_settings_provider.dart';
 
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:timeago/src/messages/fr_messages.dart'
@@ -314,6 +315,18 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
         defaultValue: true) as bool;
     bootPushEnabledHive = pushEnabled;
 
+    // Cold start : re-pose la variante B personnalisée avec les derniers
+    // teasers persistés (le home les rafraîchira au 1er load frais). Liste vide
+    // (1er lancement) → variante A générique, acceptable. Clé + lecture
+    // défensive partagées avec le provider (source de vérité).
+    final essentielTeasers = NotificationsSettingsNotifier.readTeasers(
+      settingsBox,
+      NotificationsSettingsNotifier.kEssentielTeasers,
+    );
+    final digestVariant = essentielTeasers.isEmpty
+        ? NotifVariant.variantA
+        : NotifVariant.variantB;
+
     // Diagnostic + scheduling sont indépendants : collecter le diagnostic
     // pendant la planification (alarms + permission). `pushEnabled=false`
     // → on collecte quand même le diagnostic (cf. bug-notifications-stalled).
@@ -327,14 +340,20 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
           await pushNotificationService.isDigestNotificationScheduled();
       if (!alreadyScheduled) {
         final scheduled =
-            await pushNotificationService.scheduleDailyDigestNotification();
+            await pushNotificationService.scheduleDailyDigestNotification(
+          variant: digestVariant,
+          teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
+        );
         if (!scheduled) {
           debugPrint(
             'Main: WARNING — digest notification scheduling failed, retrying...',
           );
           await pushNotificationService.requestExactAlarmPermission();
           final retryOk =
-              await pushNotificationService.scheduleDailyDigestNotification();
+              await pushNotificationService.scheduleDailyDigestNotification(
+            variant: digestVariant,
+            teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
+          );
           debugPrint('Main: Retry result: $retryOk');
         }
       } else {
