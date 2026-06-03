@@ -29,6 +29,12 @@ const String kHighlightIntroText =
     'marquent l\'angle éditorial : plus le surlignage '
     'est intense, plus le choix de mot est éditorialisé.';
 
+const String kDivergenceExplanationText =
+    'Facteur mesure la divergence en comparant le vocabulaire et le cadrage '
+    'adopté par chaque source ayant couvert cet article. '
+    'Un niveau élevé (Polarisé) signale des angles éditoriaux très différents ; '
+    'un niveau bas (Traitements similaires) indique un traitement convergent.';
+
 /// Ouvre l'URL d'une perspective dans le reader unique (`ContentDetailScreen`
 /// en mode externe) via la route `content-external` sur le root navigator.
 /// On garde ainsi le MÊME header / footer / scroll / anti-saccades que pour un
@@ -1640,16 +1646,6 @@ class _PerspectivesInlineSectionState
             perspective: variants[i],
             isLast: i == variants.length - 1,
           ),
-        if (widget.comparisonQuality == 'low')
-          Padding(
-            padding: const EdgeInsets.only(top: 8, bottom: 4),
-            child: Center(
-              child: PerspectivesWarningBadge(
-                colors: colors,
-                textTheme: textTheme,
-              ),
-            ),
-          ),
         if (widget.analysisState == PerspectivesAnalysisState.idle)
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
@@ -1709,11 +1705,70 @@ class _PerspectivesInlineSectionState
                 ),
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
+            if (widget.comparisonQuality == 'low') ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: colors.textTertiary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      PhosphorIcons.warning(PhosphorIconsStyle.regular),
+                      size: 14,
+                      color: colors.textSecondary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Comparaison limitée — sujet peu couvert par les médias',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+            ],
             Row(
               children: [
                 Icon(
-                  PhosphorIcons.info(PhosphorIconsStyle.regular),
+                  PhosphorIcons.chartBar(PhosphorIconsStyle.regular),
+                  size: 18,
+                  color: colors.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Niveau de polarisation',
+                  style: textTheme.titleSmall?.copyWith(
+                    color: colors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              kDivergenceExplanationText,
+              style: textTheme.bodyMedium?.copyWith(
+                color: colors.textSecondary,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Divider(
+              color: colors.textSecondary.withValues(alpha: 0.1),
+              height: 1,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Icon(
+                  PhosphorIcons.highlighter(PhosphorIconsStyle.regular),
                   size: 18,
                   color: colors.primary,
                 ),
