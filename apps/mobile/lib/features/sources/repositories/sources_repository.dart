@@ -25,18 +25,25 @@ class SourcesRepository {
           if (data.containsKey('curated')) {
             final result = <Source>[];
             if (data['curated'] != null) {
-              result.addAll((data['curated'] as List).map(
-                  (json) => Source.fromJson(json as Map<String, dynamic>)));
+              result.addAll(
+                (data['curated'] as List).map(
+                  (json) => Source.fromJson(json as Map<String, dynamic>),
+                ),
+              );
             }
             if (data['custom'] != null) {
-              result.addAll((data['custom'] as List).map(
-                  (json) => Source.fromJson(json as Map<String, dynamic>)));
+              result.addAll(
+                (data['custom'] as List).map(
+                  (json) => Source.fromJson(json as Map<String, dynamic>),
+                ),
+              );
             }
             return result;
           }
           // Log unexpected map
           print(
-              'SourcesRepository: [WARNING] Received Map but expected List or Catalog: $data');
+            'SourcesRepository: [WARNING] Received Map but expected List or Catalog: $data',
+          );
         }
         return [];
       }
@@ -50,8 +57,10 @@ class SourcesRepository {
 
   Future<List<Source>> getTrendingSources({int limit = 10}) async {
     try {
-      final response = await _apiClient.dio
-          .get<dynamic>('sources/trending', queryParameters: {'limit': limit});
+      final response = await _apiClient.dio.get<dynamic>(
+        'sources/trending',
+        queryParameters: {'limit': limit},
+      );
       if (response.statusCode == 200) {
         final data = response.data;
         if (data is List) {
@@ -106,7 +115,9 @@ class SourcesRepository {
   }
 
   Future<void> updateSourceSubscription(
-      String sourceId, bool hasSubscription) async {
+    String sourceId,
+    bool hasSubscription,
+  ) async {
     try {
       await _apiClient.dio.put<dynamic>(
         'sources/$sourceId/subscription',
@@ -159,14 +170,16 @@ class SourcesRepository {
 
   Future<List<FollowedTheme>> getThemesFollowed() async {
     try {
-      final response =
-          await _apiClient.dio.get<dynamic>('sources/themes-followed');
+      final response = await _apiClient.dio.get<dynamic>(
+        'sources/themes-followed',
+      );
       if (response.statusCode == 200 && response.data is Map) {
         final themes = (response.data as Map<String, dynamic>)['themes'];
         if (themes is List) {
           return themes
-              .map((json) =>
-                  FollowedTheme.fromJson(json as Map<String, dynamic>))
+              .map(
+                (json) => FollowedTheme.fromJson(json as Map<String, dynamic>),
+              )
               .toList();
         }
       }
@@ -189,10 +202,15 @@ class SourcesRepository {
     }
   }
 
-  Future<List<Source>> getPepites({int limit = 10}) async {
+  Future<List<Source>> getPepites({
+    int limit = 10,
+    bool forceShow = false,
+  }) async {
     try {
-      final response = await _apiClient.dio
-          .get<dynamic>('sources/pepites', queryParameters: {'limit': limit});
+      final response = await _apiClient.dio.get<dynamic>(
+        'sources/pepites',
+        queryParameters: {'limit': limit, if (forceShow) 'force_show': true},
+      );
       if (response.statusCode == 200) {
         final data = response.data;
         if (data is List) {
@@ -221,14 +239,19 @@ class SourcesRepository {
 
   Future<ThemeSourcesResponse> getSourcesByTheme(String slug) async {
     try {
-      final response =
-          await _apiClient.dio.get<dynamic>('sources/by-theme/$slug');
+      final response = await _apiClient.dio.get<dynamic>(
+        'sources/by-theme/$slug',
+      );
       if (response.statusCode == 200 && response.data is Map) {
         return ThemeSourcesResponse.fromJson(
-            response.data as Map<String, dynamic>);
+          response.data as Map<String, dynamic>,
+        );
       }
       return const ThemeSourcesResponse(
-          curated: [], candidates: [], community: []);
+        curated: [],
+        candidates: [],
+        community: [],
+      );
     } catch (e) {
       // ignore: avoid_print
       print('SourcesRepository: [ERROR] getSourcesByTheme: $e');

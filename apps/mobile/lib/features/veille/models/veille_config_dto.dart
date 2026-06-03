@@ -137,6 +137,24 @@ class VeilleKeywordDto {
 }
 
 @immutable
+class VeilleUnconnectedSourceDto {
+  final String url;
+  final String reason;
+
+  const VeilleUnconnectedSourceDto({
+    required this.url,
+    required this.reason,
+  });
+
+  factory VeilleUnconnectedSourceDto.fromJson(Map<String, dynamic> json) {
+    return VeilleUnconnectedSourceDto(
+      url: json['url'] as String? ?? '',
+      reason: json['reason'] as String? ?? '',
+    );
+  }
+}
+
+@immutable
 class VeilleConfigDto {
   final String id;
   final String userId;
@@ -152,6 +170,10 @@ class VeilleConfigDto {
   final String? editorialBrief;
   final String? presetId;
 
+  /// Sources niche dont le flux RSS n'a pas pu être détecté lors de l'upsert.
+  /// Peuplé uniquement par la réponse de `POST /veille/config` ; vide sur GET.
+  final List<VeilleUnconnectedSourceDto> unconnectedSources;
+
   const VeilleConfigDto({
     required this.id,
     required this.userId,
@@ -166,6 +188,7 @@ class VeilleConfigDto {
     this.purpose,
     this.editorialBrief,
     this.presetId,
+    this.unconnectedSources = const [],
   });
 
   factory VeilleConfigDto.fromJson(Map<String, dynamic> json) {
@@ -192,6 +215,10 @@ class VeilleConfigDto {
       purpose: json['purpose'] as String?,
       editorialBrief: json['editorial_brief'] as String?,
       presetId: json['preset_id'] as String?,
+      unconnectedSources: ((json['unconnected_sources'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(VeilleUnconnectedSourceDto.fromJson)
+          .toList(),
     );
   }
 }

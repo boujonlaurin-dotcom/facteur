@@ -32,13 +32,17 @@ ARG SUPABASE_URL
 ARG SUPABASE_ANON_KEY
 ARG POSTHOG_API_KEY
 ARG APP_RELEASE_TAG
+ARG SENTRY_DSN
+ARG SENTRY_ENVIRONMENT=production
 
 RUN flutter build web --release \
     --dart-define="API_BASE_URL=${API_BASE_URL}" \
     --dart-define="SUPABASE_URL=${SUPABASE_URL}" \
     --dart-define="SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}" \
     --dart-define="POSTHOG_API_KEY=${POSTHOG_API_KEY}" \
-    --dart-define="APP_RELEASE_TAG=${APP_RELEASE_TAG}"
+    --dart-define="APP_RELEASE_TAG=${APP_RELEASE_TAG}" \
+    --dart-define="SENTRY_DSN=${SENTRY_DSN}" \
+    --dart-define="SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT}"
 
 # ─────────────────────────────────────────────
 # Stage 2 — Serve avec nginx

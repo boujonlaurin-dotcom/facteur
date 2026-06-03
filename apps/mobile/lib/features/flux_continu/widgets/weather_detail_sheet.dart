@@ -349,8 +349,8 @@ class _DayRow extends StatelessWidget {
           const SizedBox(width: FacteurSpacing.space2),
           SvgPicture.asset(
             'assets/images/weather/${day.condition.assetName}.svg',
-            width: 52,
-            height: 52,
+            width: 68,
+            height: 68,
           ),
           const Spacer(),
           // Max en gros (WeatherDay n'expose pas de temp « actuelle »), avec la

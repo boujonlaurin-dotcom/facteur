@@ -66,8 +66,28 @@ class VeilleConfigScreen extends ConsumerWidget {
 
     Future<void> handleSubmit() async {
       try {
-        await notifier.submit();
+        final cfg = await notifier.submit();
         if (!context.mounted) return;
+        // Sources niche dont le flux RSS est introuvable : on garde l'utilisateur
+        // sur l'étape Sources (recherche/ajout) au lieu de filer vers la Tournée,
+        // pour qu'il puisse en chercher d'autres (plan V0, Problème 1).
+        if (cfg != null && cfg.unconnectedSources.isNotEmpty) {
+          final n = cfg.unconnectedSources.length;
+          final s = n > 1 ? 's' : '';
+          final verb = n > 1 ? "n'ont" : "n'a";
+          notifier.goToStep(3);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              duration: const Duration(seconds: 6),
+              content: Text(
+                '$n source$s $verb pas pu être connectée$s '
+                '(flux RSS introuvable). Tu peux en chercher d\'autres '
+                'ci-dessous.',
+              ),
+            ),
+          );
+          return;
+        }
         showProgressToast(
           context,
           level: ProgressToastLevel.step,

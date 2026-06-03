@@ -58,29 +58,51 @@ class SectionBanner extends StatelessWidget {
     this.logoUrl,
   });
 
+  double _trailingControlReserve() {
+    if (onTapSettings != null) return 58;
+    if (onTapFold != null) return 30;
+    return 0;
+  }
+
+  String? _displayBlurbFor(String title, String? rawBlurb) {
+    // Keep the visible copy current even when a route was opened with a stale
+    // section snapshot built before the provider constants changed.
+    if (title.trim() == 'Actus du jour') {
+      return 'Les sujets les + couverts en France.';
+    }
+    return rawBlurb;
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final hasBlurb = blurb != null && blurb!.trim().isNotEmpty;
+    final effectiveBlurb = _displayBlurbFor(title, blurb);
+    final hasBlurb = effectiveBlurb != null && effectiveBlurb.trim().isNotEmpty;
     // `width: double.infinity` is required because the parent SectionBlock
     // Column uses `CrossAxisAlignment.start`, which would otherwise size
     // this Container to its intrinsic width and leave parchment showing
     // past the gradient on the right.
-    // Top-only radius : the cards below the banner butt up against its
-    // bottom edge, so rounding the bottom would carve out a parchment notch.
-    const topRadius = BorderRadius.vertical(top: Radius.circular(10));
+    // Inline sections keep a top-only radius because the cards below the
+    // banner butt up against its bottom edge. The large Flâner hero stands
+    // alone, so it gets the same radius on every corner.
+    const inlineRadius = BorderRadius.vertical(
+      top: Radius.circular(FacteurRadius.large),
+    );
+    const largeRadius = BorderRadius.all(Radius.circular(FacteurRadius.large));
+    final borderRadius = large ? largeRadius : inlineRadius;
     final container = Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(0, 3, 0, 5),
       // Thematic sections have no blurb — a single title line doesn't need
       // the taller editorial floor, so we drop it to keep the scroll tight.
-      // The `large` page-hero variant gets a taller floor to breathe.
+      // The `large` page-hero variant gets a taller floor to breathe, while
+      // content can still grow naturally when title/blurb wrap.
       constraints: BoxConstraints(
-        minHeight: hasBlurb ? (large ? 120 : 78) : 60,
+        minHeight: hasBlurb ? (large ? 140 : 92) : 60,
       ),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        borderRadius: topRadius,
+        borderRadius: borderRadius,
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
@@ -147,57 +169,69 @@ class SectionBanner extends StatelessWidget {
             // down. Add a few px of top inset on the blurb variant to match
             // the thematic dash's apparent inset.
             padding: large
-                ? const EdgeInsets.fromLTRB(22, 16, 16, 16)
-                : EdgeInsets.fromLTRB(20, hasBlurb ? 14 : 8, 14, hasBlurb ? 12 : 9),
+                ? const EdgeInsets.fromLTRB(22, 24, 16, 20)
+                : EdgeInsets.fromLTRB(
+                    20,
+                    hasBlurb ? 20 : 8,
+                    14,
+                    hasBlurb ? 14 : 9,
+                  ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _AccentDash(accent: accent, large: large),
-                      Padding(
-                        padding: EdgeInsets.only(
-                          top: 2,
-                          bottom: hasBlurb ? 4 : 0,
-                        ),
-                        child: Text.rich(
-                          TextSpan(
-                            text: title,
-                            children: onTapFavorite == null
-                                ? null
-                                : <InlineSpan>[
-                                    const TextSpan(text: '  '),
-                                    WidgetSpan(
-                                      alignment: PlaceholderAlignment.middle,
-                                      child: _FavoriteStar(
-                                        color: colors.primary,
-                                        onTap: onTapFavorite!,
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      right: illustrationAsset == null
+                          ? _trailingControlReserve()
+                          : 0,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _AccentDash(accent: accent, large: large),
+                        Padding(
+                          padding: EdgeInsets.only(
+                            top: 2,
+                            bottom: hasBlurb ? (large ? 10 : 8) : 0,
+                          ),
+                          child: Text.rich(
+                            TextSpan(
+                              text: title,
+                              children: onTapFavorite == null
+                                  ? null
+                                  : <InlineSpan>[
+                                      const TextSpan(text: '  '),
+                                      WidgetSpan(
+                                        alignment: PlaceholderAlignment.middle,
+                                        child: _FavoriteStar(
+                                          color: colors.primary,
+                                          onTap: onTapFavorite!,
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                            style: GoogleFonts.fraunces(
-                              fontSize: large ? 28 : 20,
-                              fontWeight: FontWeight.w700,
-                              height: 1.06,
-                              letterSpacing: -0.4,
-                              color: colors.textPrimary,
+                                    ],
+                              style: GoogleFonts.fraunces(
+                                fontSize: large ? 28 : 20,
+                                fontWeight: FontWeight.w700,
+                                height: large ? 1.12 : 1.08,
+                                letterSpacing: -0.4,
+                                color: colors.textPrimary,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      if (hasBlurb)
-                        Text(
-                          blurb!,
-                          style: GoogleFonts.dmSans(
-                            fontSize: large ? 14 : 12,
-                            height: 1.35,
-                            color: colors.textSecondary,
+                        if (hasBlurb)
+                          Text(
+                            effectiveBlurb,
+                            style: GoogleFonts.dmSans(
+                              fontSize: large ? 14 : 12,
+                              height: large ? 1.42 : 1.36,
+                              color: colors.textSecondary,
+                            ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
                 if (logoUrl != null) ...[
@@ -255,7 +289,7 @@ class SectionBanner extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTapFold,
-        borderRadius: topRadius,
+        borderRadius: borderRadius,
         splashColor: accent.withValues(alpha: 0.08),
         highlightColor: accent.withValues(alpha: 0.04),
         child: container,

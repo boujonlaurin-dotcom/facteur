@@ -668,8 +668,8 @@ class TestOtherThemeIngestion:
     async def test_other_theme_niche_source_ingestion(
         self, auth_user, monkeypatch
     ):
-        from unittest.mock import AsyncMock
         from app.services import source_service
+        from app.workers import rss_sync
 
         async def _fake_detect(self, url):
             from types import SimpleNamespace
@@ -683,6 +683,16 @@ class TestOtherThemeIngestion:
             )
 
         monkeypatch.setattr(source_service.SourceService, "detect_source", _fake_detect)
+
+        # Une source niche fraîchement créée doit déclencher un sync immédiat
+        # (sinon sa table `contents` reste vide jusqu'au cycle récurrent).
+        synced: list[str] = []
+
+        async def _fake_sync_source(source_id):
+            synced.append(source_id)
+            return True
+
+        monkeypatch.setattr(rss_sync, "sync_source", _fake_sync_source)
 
         payload = {
             "theme_id": "other",
@@ -707,6 +717,65 @@ class TestOtherThemeIngestion:
         assert data["theme_id"] == "other"
         # La source ingérée doit avoir theme='custom' (mappé depuis 'other')
         assert data["sources"][0]["source"]["theme"] == "custom"
+        # Sync immédiat enfilé pour la source niche créée.
+        assert synced == [data["sources"][0]["source"]["id"]]
+        # Source bien connectée → aucune remontée d'échec.
+        assert data["unconnected_sources"] == []
+
+    async def test_post_config_skips_unresolvable_niche_source(
+        self, auth_user, monkeypatch
+    ):
+        """PYTHON-51 : une source niche dont le flux RSS est introuvable ne doit
+        plus faire échouer tout l'enregistrement (500) — on l'ignore, on garde le
+        reste de la veille."""
+        from app.services import source_service
+
+        async def _fake_detect(self, url):
+            raise ValueError("No RSS feed found")
+
+        monkeypatch.setattr(
+            source_service.SourceService, "detect_source", _fake_detect
+        )
+
+        payload = {
+            "theme_id": "other",
+            "theme_label": "Musées Barcelone",
+            "topics": [
+                {
+                    "topic_id": "expos",
+                    "label": "Expositions",
+                    "kind": "preset",
+                    "position": 0,
+                }
+            ],
+            "source_selections": [
+                {
+                    "kind": "niche",
+                    "niche_candidate": {
+                        "name": "Site sans flux",
+                        "url": "https://exemple-sans-rss.test",
+                        "why": None,
+                    },
+                }
+            ],
+            "keywords": [{"keyword": "vernissage", "position": 0}],
+        }
+        async with _client() as c:
+            r = await c.post("/api/veille/config", json=payload)
+
+        # Avant le fix : 500. Après : 200, source ignorée, reste persisté.
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["sources"] == []
+        assert len(data["topics"]) == 1
+        assert len(data["keywords"]) == 1
+        # La source non connectée est remontée au mobile (url + raison) pour
+        # afficher « X sources n'ont pas pu être connectées » + CTA recherche.
+        assert len(data["unconnected_sources"]) == 1
+        assert (
+            data["unconnected_sources"][0]["url"] == "https://exemple-sans-rss.test"
+        )
+        assert data["unconnected_sources"][0]["reason"]
 
 
 class TestLegacyGoneShims:

@@ -6,7 +6,10 @@ Consolide : CoreLayer (theme), ArticleTopicLayer, BehavioralLayer,
 
 from app.models.content import Content
 from app.models.enums import ContentType, InterestState
-from app.services.recommendation.helpers import compute_coverage_score
+from app.services.recommendation.helpers import (
+    compute_coverage_score,
+    matches_word_boundary,
+)
 from app.services.recommendation.pillars.base import BasePillar, PillarContribution
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import ScoringContext
@@ -404,7 +407,7 @@ class PertinencePillar(BasePillar):
             if not matched and tp.keywords:
                 for kw in tp.keywords:
                     kw_lower = kw.lower().strip()
-                    if kw_lower and (kw_lower in title_lower or kw_lower in desc_lower):
+                    if matches_word_boundary(kw_lower, title_lower, desc_lower):
                         matched = True
                         break
 
@@ -452,7 +455,7 @@ class PertinencePillar(BasePillar):
             kw_lower = kw.lower().strip()
             if not kw_lower or kw_lower in seen:
                 continue
-            if kw_lower in title_lower or kw_lower in desc_lower:
+            if matches_word_boundary(kw_lower, title_lower, desc_lower):
                 seen.add(kw_lower)
                 kw_hits += 1
 

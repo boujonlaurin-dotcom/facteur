@@ -75,6 +75,18 @@ class VeilleKeywordResponse(BaseModel):
     position: int = 0
 
 
+class VeilleUnconnectedSource(BaseModel):
+    """Source niche dont le flux RSS n'a pas pu être détecté à l'enregistrement.
+
+    Renvoyée par `POST /api/veille/config` pour que le mobile puisse afficher
+    « X sources n'ont pas pu être connectées » + une CTA de recherche, au lieu
+    de les laisser disparaître silencieusement (cf. plan veille V0, Problème 1).
+    """
+
+    url: str
+    reason: str
+
+
 class VeilleConfigResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -91,6 +103,9 @@ class VeilleConfigResponse(BaseModel):
     purpose: str | None = None
     editorial_brief: str | None = None
     preset_id: str | None = None
+    # Sources niche dont le flux RSS n'a pas pu être détecté lors de l'upsert.
+    # Toujours vide sur GET /config ; peuplé uniquement par POST /config.
+    unconnected_sources: list[VeilleUnconnectedSource] = Field(default_factory=list)
 
 
 class VeilleTopicSelection(BaseModel):

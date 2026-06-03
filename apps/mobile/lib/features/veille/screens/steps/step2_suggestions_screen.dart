@@ -386,18 +386,6 @@ class _AngleCard extends StatelessWidget {
                               color: const Color(0xFF2C2A29),
                             ),
                           ),
-                          if (angle.reason != null &&
-                              angle.reason!.trim().isNotEmpty) ...[
-                            const SizedBox(height: 3),
-                            Text(
-                              angle.reason!,
-                              style: GoogleFonts.dmSans(
-                                fontSize: 11.5,
-                                height: 1.4,
-                                color: const Color(0xFF959392),
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ),

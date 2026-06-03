@@ -595,6 +595,7 @@ class _PinnedItemsList extends StatelessWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       buildDefaultDragHandles: false,
+      proxyDecorator: (child, index, animation) => child,
       itemCount: items.length,
       onReorder: onReorder,
       itemBuilder: (context, index) {

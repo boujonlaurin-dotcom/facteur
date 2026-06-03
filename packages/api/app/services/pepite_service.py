@@ -99,7 +99,7 @@ class PepiteService:
         return created
 
     async def get_pepites_for_user(
-        self, user_id: str, limit: int = 4
+        self, user_id: str, limit: int = 4, force_show: bool = False
     ) -> list[SourceResponse]:
         """Retourne jusqu'à `limit` sources pépites pour l'utilisateur.
 
@@ -108,7 +108,7 @@ class PepiteService:
         user_uuid = UUID(user_id)
         personalization = await self._load_personalization(user_uuid)
 
-        if not self._is_eligible(personalization):
+        if not force_show and not self._is_eligible(personalization):
             return []
 
         followed_ids = await self._user_followed_source_ids(user_uuid)
@@ -162,9 +162,12 @@ class PepiteService:
         if not selected:
             return []
 
-        personalization = await self._ensure_personalization(user_uuid, personalization)
-        personalization.pepite_carousel_last_shown_at = _now()
-        await self.db.flush()
+        if not force_show:
+            personalization = await self._ensure_personalization(
+                user_uuid, personalization
+            )
+            personalization.pepite_carousel_last_shown_at = _now()
+            await self.db.flush()
 
         return [
             SourceResponse(

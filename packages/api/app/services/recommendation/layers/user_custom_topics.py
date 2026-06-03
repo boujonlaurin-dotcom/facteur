@@ -11,9 +11,9 @@ Entity matches get a 1.5x multiplier bonus (precise match).
 """
 
 import json
-import re
 
 from app.models.content import Content
+from app.services.recommendation.helpers import matches_word_boundary
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import BaseScoringLayer, ScoringContext
 
@@ -72,12 +72,7 @@ class UserCustomTopicLayer(BaseScoringLayer):
             if not matched and topic_profile.keywords:
                 for kw in topic_profile.keywords:
                     kw_lower = kw.lower().strip()
-                    if not kw_lower:
-                        continue
-                    pattern = r"\b" + re.escape(kw_lower) + r"\b"
-                    if re.search(pattern, title_lower) or re.search(
-                        pattern, desc_lower
-                    ):
+                    if matches_word_boundary(kw_lower, title_lower, desc_lower):
                         matched = True
                         match_type = f"keyword:{kw}"
                         break

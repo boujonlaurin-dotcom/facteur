@@ -52,8 +52,7 @@ const String _kVeilleIllustration = 'assets/notifications/facteur_veille.png';
 /// Blurbs rendered under each section title.
 const String _kEssentielBlurb =
     "L'essentiel des actus les plus couvertes en France aujourd'hui, en privilégiant tes sources.";
-const String _kActusDuJourBlurb =
-    'Les actus les plus couvertes du jour en France, regroupées par sujet.';
+const String _kActusDuJourBlurb = 'Les sujets les + couverts en France.';
 const String _kBonnesBlurb = 'Un peu de douceur...';
 
 /// Hard cap on the number of favorite theme sections rendered in the tournée.
@@ -677,19 +676,35 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
     final isSerene = current.isSerene;
     final nextPage = target.currentPage + 1;
-    final theme = target.themeSlug;
-    final topic = target.customTopicId;
-    final response = await _safe<FeedResponse>(
-      () => _feedRepo.getFeed(
-        page: nextPage,
-        limit: _kThemeSectionPageLimit,
-        theme: theme,
-        topic: topic,
-        serein: isSerene,
-        personalized: true,
-      ),
-      'loadMoreTheme($key)',
-    );
+    final FeedResponse? response;
+    if (target.kind == SectionKind.veille) {
+      // La veille pagine via /api/veille/feed (offset), PAS via le feed général
+      // personnalisé : ce dernier injectait des articles hors-veille en fin de
+      // section et déclenchait tout le pipeline de reco (plan V0, Pb 2&3).
+      final offset = (nextPage - 1) * _kThemeSectionPageLimit;
+      response = await _safe<FeedResponse>(
+        () => ref.read(fluxContinuRepositoryProvider).getVeilleFeedItems(
+          limit: _kThemeSectionPageLimit,
+          offset: offset,
+          serein: isSerene,
+        ),
+        'loadMoreTheme(veille offset=$offset)',
+      );
+    } else {
+      final theme = target.themeSlug;
+      final topic = target.customTopicId;
+      response = await _safe<FeedResponse>(
+        () => _feedRepo.getFeed(
+          page: nextPage,
+          limit: _kThemeSectionPageLimit,
+          theme: theme,
+          topic: topic,
+          serein: isSerene,
+          personalized: true,
+        ),
+        'loadMoreTheme($key)',
+      );
+    }
 
     // Re-read state in case it shifted while the request was in flight.
     final afterCurrent = state.valueOrNull;
@@ -1114,7 +1129,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       VeilleFavoriteRef() => _safe<FeedResponse>(
         () => ref
             .read(fluxContinuRepositoryProvider)
-            .getVeilleFeedItems(limit: 10, serein: isSerene),
+            .getVeilleFeedItems(
+              limit: _kThemeSectionPageLimit,
+              serein: isSerene,
+            ),
         'getVeilleFeedItems',
       ),
     };
@@ -1130,6 +1148,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // la coupe plus sur un seuil min d'items ; `null` seulement sans config.
     if (activeCfg == null) return null;
     final items = feed?.items ?? const <Content>[];
+    // hasMore dérivé de la pagination backend (`has_more`), pas du défaut `true`
+    // du modèle : sans ça la section se croyait toujours paginable et
+    // `loadMoreTheme` partait chercher des articles hors-veille (plan V0, Pb 2&3).
+    final hasMore = _themeHasMore(
+      feed?.pagination.hasNext ?? false,
+      items.length,
+    );
     return FeedThemeSection(
       kind: SectionKind.veille,
       label: 'Ma veille — ${activeCfg.themeLabel}',
@@ -1138,6 +1163,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       illustrationAsset: _kVeilleIllustration,
       coreVisibleCount: 3,
       items: items,
+      hasMore: hasMore,
     );
   }
 

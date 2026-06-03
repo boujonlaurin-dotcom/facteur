@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 import sentry_sdk
 import structlog
 from cachetools import TTLCache
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import case, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,6 +47,7 @@ from app.schemas.veille import (
     VeilleSuggestSourcesRequest,
     VeilleSuggestSourcesResponse,
     VeilleTopicResponse,
+    VeilleUnconnectedSource,
 )
 from app.services.ml.topic_enrichment_service import get_topic_enrichment_service
 from app.services.rss_parser import RSSParser
@@ -201,10 +202,15 @@ async def _resolve_source_id(
     db: AsyncSession,
     selection,
     theme_id: str,
-) -> UUID:
-    """Renvoie un source_id existant ou ingère le candidat niche."""
+) -> tuple[UUID, bool]:
+    """Renvoie `(source_id, created)`.
+
+    `created=True` uniquement quand une nouvelle ligne `Source` niche vient
+    d'être insérée (→ l'appelant doit enfiler un `sync_source` immédiat pour
+    ingérer son contenu ; cf. plan veille V0, Problème 1).
+    """
     if selection.source_id is not None:
-        return selection.source_id
+        return selection.source_id, False
     if selection.niche_candidate is None:
         raise HTTPException(
             status_code=400,
@@ -221,7 +227,7 @@ async def _resolve_source_id(
         .first()
     )
     if existing is not None:
-        return existing.id
+        return existing.id, False
 
     try:
         source_type = SourceType(detected.detected_type)
@@ -247,7 +253,7 @@ async def _resolve_source_id(
         source_id=str(new_source.id),
         feed_url=new_source.feed_url,
     )
-    return new_source.id
+    return new_source.id, True
 
 
 # ─── Endpoints config ────────────────────────────────────────────────────────
@@ -281,6 +287,7 @@ async def get_config(
 @router.post("/config", response_model=VeilleConfigResponse)
 async def upsert_config(
     body: VeilleConfigUpsert,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -345,11 +352,38 @@ async def upsert_config(
             )
 
     seen_source_ids: set[UUID] = set()
+    # Sources niche nouvellement créées → sync immédiat après commit (Problème 1).
+    created_source_ids: list[UUID] = []
+    # Sources niche dont le flux RSS est introuvable → remontées au mobile.
+    unconnected: list[VeilleUnconnectedSource] = []
     for idx, sel in enumerate(body.source_selections):
-        source_id = await _resolve_source_id(db, sel, body.theme_id)
+        try:
+            source_id, created = await _resolve_source_id(db, sel, body.theme_id)
+        except ValueError as exc:
+            # Source niche dont le flux RSS est introuvable au moment du save :
+            # on l'ignore au lieu de faire échouer tout l'enregistrement (PYTHON-51).
+            # detect_source lève ce ValueError AVANT toute écriture DB → on peut
+            # `continue` sans corrompre la session. On remonte l'échec au mobile
+            # via `unconnected_sources` pour proposer une CTA de recherche.
+            url = getattr(sel.niche_candidate, "url", None)
+            logger.warning(
+                "veille.niche_source_skipped",
+                url=url,
+                error=str(exc),
+            )
+            if url:
+                unconnected.append(
+                    VeilleUnconnectedSource(
+                        url=url,
+                        reason="Aucun flux RSS détecté à cette adresse.",
+                    )
+                )
+            continue
         if source_id in seen_source_ids:
             continue
         seen_source_ids.add(source_id)
+        if created:
+            created_source_ids.append(source_id)
         db.add(
             VeilleSource(
                 veille_config_id=cfg.id,
@@ -383,6 +417,15 @@ async def upsert_config(
     await db.commit()
     await db.refresh(cfg)
 
+    # Sync immédiat des sources niche fraîchement créées : sans ça leur table
+    # `contents` reste vide jusqu'au prochain cycle récurrent (« source associée
+    # mais aucun article »). Même pattern que POST /api/sources/custom.
+    if created_source_ids:
+        from app.workers.rss_sync import sync_source
+
+        for sid in created_source_ids:
+            background_tasks.add_task(sync_source, str(sid))
+
     try:
         from app.services.posthog_client import get_posthog_client
 
@@ -400,7 +443,9 @@ async def upsert_config(
     except Exception:  # noqa: BLE001 — métrique fire-and-forget
         logger.warning("veille.posthog_capture_failed", exc_info=True)
 
-    return await _hydrate_response(db, cfg)
+    response = await _hydrate_response(db, cfg)
+    response.unconnected_sources = unconnected
+    return response
 
 
 @router.delete("/config", status_code=204)
