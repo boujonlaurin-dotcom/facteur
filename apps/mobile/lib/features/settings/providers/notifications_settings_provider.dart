@@ -112,6 +112,14 @@ class NotificationsSettingsNotifier
   static const _kGoodNewsEnabled = 'notif_good_news_enabled';
   static const _kGoodNewsTimeSlot = 'notif_good_news_time_slot';
   static const _kNotifVeilleEnabled = 'notif_veille_enabled';
+  // Derniers teasers connus, écrits/lus en direct dans la box (hors `state`,
+  // `_persist` et `_patchBackend`) : purement locaux, jamais shippés au
+  // backend. Le contenu d'une notif locale étant « cuit » au scheduling, ces
+  // clés permettent aux 3 points de déclenchement (cold start, load frais,
+  // mutation réglages) de re-poser la variante B personnalisée. Publiques pour
+  // que `main.dart` (cold start) lise la même clé sans dupliquer le littéral.
+  static const kEssentielTeasers = 'notif_essentiel_teasers';
+  static const kGoodNewsTeasers = 'notif_good_news_teasers';
 
   Future<Box<dynamic>> _box() => Hive.openBox<dynamic>(_boxName);
 
@@ -225,8 +233,17 @@ class NotificationsSettingsNotifier
     await push.cancelDigestNotification();
     await push.cancelWeeklyCommunityPick();
     await push.cancelGoodNewsNotification();
+    final box = await _box();
+    final essentielTeasers = readTeasers(box, kEssentielTeasers);
+    final goodNewsTeasers = readTeasers(box, kGoodNewsTeasers);
     if (state.pushEnabled) {
-      await push.scheduleDailyDigestNotification(timeSlot: state.timeSlot);
+      await push.scheduleDailyDigestNotification(
+        timeSlot: state.timeSlot,
+        variant: essentielTeasers.isEmpty
+            ? NotifVariant.variantA
+            : NotifVariant.variantB,
+        teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
+      );
       if (state.preset == NotifPreset.curieux) {
         await push.scheduleWeeklyCommunityPick();
       }
@@ -234,8 +251,40 @@ class NotificationsSettingsNotifier
     if (state.goodNewsEnabled) {
       await push.scheduleDailyGoodNewsNotification(
         timeSlot: state.goodNewsTimeSlot,
+        teasers: goodNewsTeasers.isEmpty ? null : goodNewsTeasers,
       );
     }
+  }
+
+  /// Lecture défensive d'une liste de teasers persistée. Hive rend des
+  /// `List<dynamic>` ; on filtre aux `String` pour éviter un crash de cast.
+  /// Statique + publique : `main.dart` (cold start) lit la même box sans
+  /// dupliquer la logique de cast défensif.
+  static List<String> readTeasers(Box<dynamic> box, String key) {
+    final raw = box.get(key);
+    if (raw is! List) return const [];
+    return raw.whereType<String>().toList(growable: false);
+  }
+
+  /// Met à jour les teasers persistés depuis le dernier digest chargé, puis
+  /// replanifie les notifs perso. Appelée fire-and-forget depuis
+  /// `fluxContinuProvider` après un load frais.
+  ///
+  /// Écriture **conditionnelle** : on n'écrase une liste persistée que si la
+  /// fraîche est non vide — un échec réseau transitoire (digest partiel) ne
+  /// doit pas effacer la perso d'hier.
+  Future<void> syncDigestTeasers({
+    required List<String> essentielTeasers,
+    required List<String> goodNewsTeasers,
+  }) async {
+    final box = await _box();
+    if (essentielTeasers.isNotEmpty) {
+      await box.put(kEssentielTeasers, essentielTeasers);
+    }
+    if (goodNewsTeasers.isNotEmpty) {
+      await box.put(kGoodNewsTeasers, goodNewsTeasers);
+    }
+    await _reschedule();
   }
 
   /// Persiste, replanifie, sync backend.

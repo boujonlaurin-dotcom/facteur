@@ -14,12 +14,14 @@ import '../../feed/providers/feed_provider.dart' show feedRepositoryProvider;
 import '../../feed/repositories/feed_repository.dart';
 import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/providers/user_interests_provider.dart';
+import '../../settings/providers/notifications_settings_provider.dart';
 import '../../veille/providers/veille_active_config_provider.dart';
 import '../models/flux_continu_models.dart';
 import '../repositories/essentiel_repository.dart';
 import '../repositories/flux_continu_repository.dart';
 import '../services/flux_continu_cache_service.dart';
 import '../services/tournee_progress_service.dart';
+import '../utils/notif_teasers.dart';
 import '../utils/theme_color_mapping.dart';
 
 /// Accent applied to the legacy "Actus du jour" digest topic section
@@ -200,8 +202,29 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
           essentielArticles: essentielArticles,
         ),
       );
+      // Re-pose les notifs perso (Essentiel + Bonnes Nouvelles) avec le contenu
+      // frais. Fire-and-forget, gated sur `dual != null` → ne tire jamais sur le
+      // chemin caché (stale) ni quand le digest a totalement échoué.
+      unawaited(_syncNotificationTeasers(dual, essentielArticles));
     }
     return next;
+  }
+
+  /// Pousse les derniers teasers connus vers `NotificationsSettingsNotifier`
+  /// pour re-planifier les notifs perso. Non bloquant, try/catch interne : une
+  /// erreur de scheduling ne doit jamais casser le rendu du home.
+  Future<void> _syncNotificationTeasers(
+    DualDigestResponse dual,
+    List<EssentielArticle> essentielArticles,
+  ) async {
+    try {
+      await ref.read(notificationsSettingsProvider.notifier).syncDigestTeasers(
+        essentielTeasers: buildEssentielTeasers(essentielArticles),
+        goodNewsTeasers: buildGoodNewsTeasers(dual.serein),
+      );
+    } catch (e) {
+      debugPrint('FluxContinu: syncNotificationTeasers failed: $e');
+    }
   }
 
   Future<FluxContinuState> _buildStateFromPayload({
