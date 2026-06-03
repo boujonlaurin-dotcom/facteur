@@ -59,6 +59,64 @@ PerspectivesSectionStatus resolvePerspectivesStatus(
   return PerspectivesSectionStatus.empty;
 }
 
+/// Sink for launch breadcrumbs — injected so tests can capture them without
+/// reaching into Sentry.
+typedef LaunchBreadcrumbSink =
+    void Function(
+      String message, {
+      SentryLevel level,
+      Map<String, Object?> data,
+    });
+
+/// Opens the external source URL for the article reader CTA, keeping the Web
+/// and mobile branches strictly separate.
+///
+/// * **Web** : ouvre immédiatement dans le geste utilisateur — PAS de
+///   `canLaunchUrl`, PAS d'animation de sortie, cible `_blank`. Une ouverture
+///   hors geste (ou derrière l'overlay blanc) est précisément ce qui figeait
+///   l'écran sur le build web ; un échec est loggé au lieu de laisser
+///   l'overlay coincé.
+/// * **Mobile** : garde `canLaunchUrl` + le mode `externalApplication`
+///   (l'animation de sortie et son rollback restent gérés par l'appelant).
+///
+/// Retourne `true` quand `launchUrl` signale un succès. Ne jette jamais : les
+/// exceptions sont capturées, loggées, puis renvoyées en `false` pour que
+/// l'appelant puisse rollback l'animation.
+@visibleForTesting
+Future<bool> launchReaderUrl(
+  Uri uri, {
+  required bool isWeb,
+  required Future<bool> Function(Uri, {LaunchMode mode, String? webOnlyWindowName})
+  launch,
+  Future<bool> Function(Uri)? canLaunch,
+  LaunchBreadcrumbSink? breadcrumb,
+  Map<String, Object?> logData = const {},
+}) async {
+  // `urlHost` seulement — jamais l'URL complète dans les logs.
+  final data = <String, Object?>{...logData, 'urlHost': uri.host, 'isWeb': isWeb};
+  breadcrumb?.call('attempt', data: data);
+  try {
+    final bool ok;
+    if (isWeb) {
+      ok = await launch(
+        uri,
+        mode: LaunchMode.platformDefault,
+        webOnlyWindowName: '_blank',
+      );
+    } else {
+      final canGo = canLaunch == null || await canLaunch(uri);
+      ok = canGo && await launch(uri, mode: LaunchMode.externalApplication);
+    }
+    if (!ok) {
+      breadcrumb?.call('result_false', level: SentryLevel.warning, data: data);
+    }
+    return ok;
+  } catch (_) {
+    breadcrumb?.call('exception', level: SentryLevel.error, data: data);
+    return false;
+  }
+}
+
 /// Écran de détail d'un contenu avec mode lecture In-App (Story 5.2)
 /// Restauré avec les fonctionnalités de l'ancien ArticleViewerModal :
 /// - Badge de biais politique
@@ -144,7 +202,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _perspectivesCtaTriggered = false;
   bool _linkCopiedHeader = false;
   Timer? _linkCopiedHeaderTimer;
-  bool _webFallbackRedirectScheduled = false;
   late DateTime _startTime;
   WebViewController? _webViewController;
   // Mutable: flipped to `true` from `_onReadOnSiteTap` when the in-app
@@ -1395,19 +1452,74 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  Future<void> _animateAndLaunch(String url) async {
+  /// Push a tiny launch breadcrumb to Sentry: category + message + a small bag
+  /// of non-PII fields (no full URL — only `urlHost`).
+  void _addLaunchBreadcrumb(
+    String message, {
+    SentryLevel level = SentryLevel.info,
+    Map<String, Object?> data = const {},
+  }) {
+    unawaited(
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'reader.launch',
+          message: message,
+          level: level,
+          data: data,
+        ),
+      ),
+    );
+  }
+
+  /// Minimal, PII-free context attached to every launch breadcrumb.
+  Map<String, Object?> _launchLogData(String trigger) {
+    final c = _content;
+    return {
+      'contentId': c?.id,
+      'sourceId': c?.source.id,
+      'sourceName': c?.source.name,
+      'trigger': trigger,
+      'platform': kIsWeb ? 'web' : defaultTargetPlatform.name,
+    };
+  }
+
+  Future<void> _animateAndLaunch(String url, {String trigger = 'cta'}) async {
     final uri = Uri.tryParse(url);
     if (uri == null) return;
+    final logData = _launchLogData(trigger);
+
+    Future<bool> launch({required bool isWeb}) => launchReaderUrl(
+      uri,
+      isWeb: isWeb,
+      launch: launchUrl,
+      canLaunch: canLaunchUrl,
+      breadcrumb: _addLaunchBreadcrumb,
+      logData: logData,
+    );
+
+    // Web: open immediately from within the user gesture — no canLaunchUrl, no
+    // exit animation, no white overlay. Deferring the open (behind the overlay
+    // / outside the gesture) is exactly what froze the web reader.
+    if (kIsWeb) {
+      await launch(isWeb: true);
+      return;
+    }
+
     final reduceMotion = MediaQuery.of(context).disableAnimations;
-    if (!await canLaunchUrl(uri)) return;
     if (reduceMotion) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      await launch(isWeb: false);
       return;
     }
 
     setState(() => _isExitAnimating = true);
     await _exitAnimController.forward(from: 0.0);
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final launched = await launch(isWeb: false);
+    // Rollback the fade-to-white if the browser never actually opened, so the
+    // user is not stranded behind a frozen white overlay.
+    if (!launched && mounted) {
+      _exitAnimController.reset();
+      setState(() => _isExitAnimating = false);
+    }
   }
 
   Future<void> _openOriginalUrl() async {
@@ -1415,6 +1527,81 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (url != null) {
       await _animateAndLaunch(url);
     }
+  }
+
+  /// Stable web fallback when no in-app reader is available: an explicit
+  /// "Ouvrir dans le navigateur" button. Replaces the fragile auto-redirect
+  /// that opened outside the user gesture and could leave a white screen.
+  Widget _buildWebOpenPrompt(BuildContext context, Content content) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    return Scaffold(
+      backgroundColor: colors.backgroundPrimary,
+      appBar: AppBar(
+        backgroundColor: colors.backgroundPrimary,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(
+            PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular),
+            color: colors.textPrimary,
+          ),
+          onPressed: () => context.pop(),
+        ),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: FacteurSpacing.space6,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (content.title.isNotEmpty) ...[
+                Text(
+                  content.title,
+                  textAlign: TextAlign.center,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.titleMedium?.copyWith(
+                    color: colors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: FacteurSpacing.space2),
+              ],
+              Text(
+                'Cet article s\'ouvre sur le site de la source.',
+                textAlign: TextAlign.center,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: FacteurSpacing.space6),
+              ElevatedButton.icon(
+                onPressed: () =>
+                    _animateAndLaunch(content.url, trigger: 'web_open_prompt'),
+                icon: Icon(
+                  PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.bold),
+                  size: 18,
+                ),
+                label: const Text('Ouvrir dans le navigateur'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: FacteurSpacing.space6,
+                    vertical: FacteurSpacing.space4,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   String _getFabLabel() {
@@ -1569,39 +1756,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         !useScrollToSite;
     final isVideoContent = content.isVideo;
 
-    // Web: no WebView available — auto-redirect to original URL
+    // Web: no in-app WebView available. Instead of auto-redirecting from a
+    // post-frame callback (an open outside the user gesture, which browsers
+    // block — leaving a frozen white screen), render a stable prompt with an
+    // explicit button so the open fires from a real tap.
     if (kIsWeb &&
         !useScrollToSite &&
         !useInAppReading &&
         !isVideoContent &&
-        content.url.isNotEmpty &&
-        !_webFallbackRedirectScheduled) {
-      _webFallbackRedirectScheduled = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        final uri = Uri.tryParse(content.url);
-        if (uri != null) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
-        if (mounted) context.pop();
-      });
-      return Scaffold(
-        backgroundColor: colors.backgroundPrimary,
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: colors.primary),
-              const SizedBox(height: FacteurSpacing.space4),
-              Text(
-                'Ouverture dans votre navigateur...',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
-              ),
-            ],
-          ),
-        ),
-      );
+        content.url.isNotEmpty) {
+      return _buildWebOpenPrompt(context, content);
     }
 
     return Scaffold(
