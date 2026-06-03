@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -26,6 +28,12 @@ const String kHighlightIntroText =
     'Le surlignage met en évidence les termes qui '
     'marquent l\'angle éditorial : plus le surlignage '
     'est intense, plus le choix de mot est éditorialisé.';
+
+const String kDivergenceExplanationText =
+    'Facteur mesure la divergence en comparant le vocabulaire et le cadrage '
+    'adopté par chaque source ayant couvert cet article. '
+    'Un niveau élevé (Polarisé) signale des angles éditoriaux très différents ; '
+    'un niveau bas (Traitements similaires) indique un traitement convergent.';
 
 /// Ouvre l'URL d'une perspective dans le reader unique (`ContentDetailScreen`
 /// en mode externe) via la route `content-external` sur le root navigator.
@@ -81,13 +89,13 @@ class Perspective {
       highlightSpans: rawHighlights == null
           ? const []
           : rawHighlights
-                .map((e) => HighlightSpan.fromJson(e as Map<String, dynamic>))
-                .toList(),
+              .map((e) => HighlightSpan.fromJson(e as Map<String, dynamic>))
+              .toList(),
       sharedTokens: rawShared == null
           ? const []
           : rawShared
-                .map((e) => TokenSpan.fromJson(e as Map<String, dynamic>))
-                .toList(),
+              .map((e) => TokenSpan.fromJson(e as Map<String, dynamic>))
+              .toList(),
       language: json['language'] as String?,
     );
   }
@@ -211,9 +219,7 @@ class _PerspectivesBottomSheetState
     _openedAt = DateTime.now();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref
-          .read(analyticsServiceProvider)
-          .trackPerspectiveComparisonOpened(
+      ref.read(analyticsServiceProvider).trackPerspectiveComparisonOpened(
             contentId: widget.contentId,
             sourcesCount: widget.perspectives.length,
           );
@@ -223,15 +229,12 @@ class _PerspectivesBottomSheetState
   @override
   void dispose() {
     final opened = _openedAt;
-    final elapsed = opened != null
-        ? DateTime.now().difference(opened).inSeconds
-        : 0;
+    final elapsed =
+        opened != null ? DateTime.now().difference(opened).inSeconds : 0;
     // En tests / teardown rapide, le ProviderScope peut être disposé avant
     // ce widget — on ne veut pas crasher pour un event analytics.
     try {
-      ref
-          .read(analyticsServiceProvider)
-          .trackPerspectiveComparisonClosed(
+      ref.read(analyticsServiceProvider).trackPerspectiveComparisonClosed(
             contentId: widget.contentId,
             viewedArticles: _viewedPerspectiveIds.length,
             openedSeconds: elapsed,
@@ -242,9 +245,7 @@ class _PerspectivesBottomSheetState
 
   void _onPerspectiveViewed(String perspectiveId) {
     if (!_viewedPerspectiveIds.add(perspectiveId)) return;
-    ref
-        .read(analyticsServiceProvider)
-        .trackPerspectiveArticleViewed(
+    ref.read(analyticsServiceProvider).trackPerspectiveArticleViewed(
           contentId: widget.contentId,
           perspectiveArticleId: perspectiveId,
         );
@@ -406,8 +407,8 @@ class _PerspectivesBottomSheetState
                                     color: colors.textPrimary,
                                     fontSize:
                                         (textTheme.titleMedium?.fontSize ??
-                                            16) +
-                                        1,
+                                                16) +
+                                            1,
                                   ),
                                 ),
                               ),
@@ -465,11 +466,11 @@ class _PerspectivesBottomSheetState
                                         children: [
                                           Text(
                                             'Tout afficher',
-                                            style: textTheme.labelSmall
-                                                ?.copyWith(
-                                                  color: colors.primary,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
+                                            style:
+                                                textTheme.labelSmall?.copyWith(
+                                              color: colors.primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
                                           ),
                                           const SizedBox(width: 4),
                                           Icon(
@@ -707,8 +708,7 @@ class _PerspectiveCard extends ConsumerWidget {
                           highlightSpans: perspective.highlightSpans,
                           sharedTokens: perspective.sharedTokens,
                           biasColor: perspective.getBiasColor(colors),
-                          baseStyle:
-                              textTheme.bodyMedium?.copyWith(
+                          baseStyle: textTheme.bodyMedium?.copyWith(
                                 color: colors.textPrimary,
                                 fontSize:
                                     (textTheme.bodyMedium?.fontSize ?? 14) + 2,
@@ -967,9 +967,8 @@ class PerspectivesBiasBar extends StatelessWidget {
             return Expanded(
               flex: flexValues[i],
               child: GestureDetector(
-                onTap: count > 0 && !compact
-                    ? () => onSegmentTap(seg.$1)
-                    : null,
+                onTap:
+                    count > 0 && !compact ? () => onSegmentTap(seg.$1) : null,
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 200),
                   opacity: isActive ? 1.0 : 0.3,
@@ -1388,9 +1387,22 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
       _PerspectivesInlineSectionState();
 }
 
+enum _EmptyStage { none, fading, collapsed }
+
+// ── Timing de la séquence "aucune source trouvée" ──────────────────────────
+// Ajuster ces 4 valeurs pour calibrer l'animation :
+const _kEmptyReadDelay   = Duration(milliseconds: 2000); // pause avant le fade
+const _kEmptyFadeDuration = Duration(milliseconds: 2000);  // fade 0.28 → 0
+const _kEmptySlideDuration = Duration(milliseconds: 650); // glissement vers la droite
+const _kEmptyInitialOpacity = 0.28;                       // opacité pendant la pause
+// ──────────────────────────────────────────────────────────────────────────
+
 class _PerspectivesInlineSectionState
     extends ConsumerState<PerspectivesInlineSection> {
   double _rotationTurns = 0.0;
+  Timer? _emptyDismissTimer;
+  Timer? _emptyCollapseTimer;
+  _EmptyStage _emptyStage = _EmptyStage.none;
   // Incrementé à chaque transition replié → ouvert : chaque DiffTitle reçoit
   // ce nombre dans sa Key, ce qui le re-crée et relance sa cascade. Garantit
   // que l'animation est jouée 1× par ouverture et pas re-déclenchée sur les
@@ -1401,6 +1413,7 @@ class _PerspectivesInlineSectionState
   void initState() {
     super.initState();
     _rotationTurns = widget.isExpanded ? 0.5 : 0.0;
+    _syncEmptyDismissal();
   }
 
   @override
@@ -1412,6 +1425,42 @@ class _PerspectivesInlineSectionState
         _animationGeneration++;
       }
     }
+    if (widget.status != oldWidget.status) {
+      _syncEmptyDismissal();
+    }
+  }
+
+  @override
+  void dispose() {
+    _emptyDismissTimer?.cancel();
+    _emptyCollapseTimer?.cancel();
+    super.dispose();
+  }
+
+  void _syncEmptyDismissal() {
+    _emptyDismissTimer?.cancel();
+    _emptyDismissTimer = null;
+    _emptyCollapseTimer?.cancel();
+    _emptyCollapseTimer = null;
+
+    if (widget.status != PerspectivesSectionStatus.empty) {
+      if (_emptyStage != _EmptyStage.none) {
+        setState(() => _emptyStage = _EmptyStage.none);
+      }
+      return;
+    }
+
+    if (_emptyStage != _EmptyStage.none) return;
+    // Pause de lecture avant de démarrer le fade+slide
+    _emptyDismissTimer = Timer(_kEmptyReadDelay, () {
+      if (!mounted || widget.status != PerspectivesSectionStatus.empty) return;
+      setState(() => _emptyStage = _EmptyStage.fading);
+      // Collapse hauteur une fois le slide terminé
+      _emptyCollapseTimer = Timer(_kEmptySlideDuration, () {
+        if (!mounted || widget.status != PerspectivesSectionStatus.empty) return;
+        setState(() => _emptyStage = _EmptyStage.collapsed);
+      });
+    });
   }
 
   static const _groupOrder = ['gauche', 'centre', 'droite'];
@@ -1440,85 +1489,116 @@ class _PerspectivesInlineSectionState
     final variants = _filteredPerspectives.take(8).toList();
     final isReady = widget.status == PerspectivesSectionStatus.ready;
     final isEmpty = widget.status == PerspectivesSectionStatus.empty;
+    final shouldShowHeader = !isEmpty || _emptyStage != _EmptyStage.collapsed;
     final label = widget.status == PerspectivesSectionStatus.loading
         ? 'Couverture médiatique'
         : 'Couverture médiatique (${widget.perspectives.length})';
-    final labelColor = isEmpty
-        ? colors.textTertiary.withValues(alpha: 0.62)
-        : colors.textPrimary;
+    final labelColor = colors.textPrimary;
     final shouldShowBody = isReady && widget.isExpanded;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // ── Bandeau cm-panel-inline : hairlines + label + spectrum + count + caret ──
-        GestureDetector(
-          onTap: isReady ? widget.onToggle : null,
-          behavior: HitTestBehavior.opaque,
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border(
-                top: BorderSide(
-                  color: Colors.black.withValues(alpha: isEmpty ? 0.025 : 0.08),
-                  width: 1,
-                ),
-                bottom: BorderSide(
-                  color: Colors.black.withValues(alpha: isEmpty ? 0.025 : 0.08),
-                  width: 1,
-                ),
-              ),
-            ),
-            padding: EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: isEmpty ? 8 : 13,
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          label,
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                          style: GoogleFonts.dmSans(
-                            fontSize: isEmpty ? 11 : 13,
-                            fontWeight: isEmpty
-                                ? FontWeight.w600
-                                : FontWeight.w700,
-                            color: labelColor,
+        AnimatedSize(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          alignment: Alignment.topCenter,
+          child: shouldShowHeader
+              // Disparition empty : à la fin du fade, le bandeau glisse vers la
+              // droite hors écran avant que l'`AnimatedSize` ne replie la
+              // hauteur — sortie franche plutôt qu'un simple collapse vertical.
+              ? AnimatedSlide(
+                  duration: _kEmptySlideDuration,
+                  curve: Curves.easeOutCubic,
+                  offset: isEmpty && _emptyStage != _EmptyStage.none
+                      ? const Offset(1.1, 0)
+                      : Offset.zero,
+                  // Fondu front-loadé : disparaît progressivement avant que le
+                  // slide ne s'amorce.
+                  child: AnimatedOpacity(
+                    duration: _kEmptyFadeDuration,
+                    curve: Curves.easeOut,
+                    opacity: isEmpty ? (_emptyStage != _EmptyStage.none ? 0 : _kEmptyInitialOpacity) : 1,
+                    child: GestureDetector(
+                      onTap: isReady ? widget.onToggle : null,
+                      behavior: HitTestBehavior.opaque,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        decoration: BoxDecoration(
+                          border: Border(
+                            top: BorderSide(
+                              color: Colors.black.withValues(
+                                alpha: isReady ? 0.08 : 0,
+                              ),
+                              width: 1,
+                            ),
+                            bottom: BorderSide(
+                              color: Colors.black.withValues(
+                                alpha: isReady ? 0.08 : 0,
+                              ),
+                              width: 1,
+                            ),
                           ),
                         ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 13,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      label,
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: labelColor,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (!isEmpty) ...[
+                              const SizedBox(width: 12),
+                              if (widget.status ==
+                                  PerspectivesSectionStatus.loading)
+                                const CoverageSpectrumBarShimmer()
+                              else
+                                CoverageSpectrumBar(
+                                  distribution: widget.biasDistribution,
+                                ),
+                            ],
+                            if (isReady) ...[
+                              const SizedBox(width: 10),
+                              AnimatedRotation(
+                                turns: _rotationTurns,
+                                duration: const Duration(milliseconds: 250),
+                                curve: Curves.easeInOut,
+                                child: Icon(
+                                  PhosphorIcons.caretDown(
+                                    PhosphorIconsStyle.regular,
+                                  ),
+                                  size: 14,
+                                  color: colors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
-                ),
-                if (widget.status != PerspectivesSectionStatus.empty) ...[
-                  const SizedBox(width: 12),
-                  if (widget.status == PerspectivesSectionStatus.loading)
-                    const CoverageSpectrumBarShimmer()
-                  else
-                    CoverageSpectrumBar(distribution: widget.biasDistribution),
-                ],
-                if (isReady) ...[
-                  const SizedBox(width: 10),
-                  AnimatedRotation(
-                    turns: _rotationTurns,
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeInOut,
-                    child: Icon(
-                      PhosphorIcons.caretDown(PhosphorIconsStyle.regular),
-                      size: 14,
-                      color: colors.textSecondary,
                     ),
                   ),
-                ],
-              ],
-            ),
-          ),
+                )
+              : const SizedBox.shrink(),
         ),
         AnimatedSize(
           duration: const Duration(milliseconds: 250),
@@ -1537,83 +1617,71 @@ class _PerspectivesInlineSectionState
     TextTheme textTheme,
     List<Perspective> variants,
   ) {
-    final hasDivergenceBadge =
-        widget.divergenceLevel == 'medium' || widget.divergenceLevel == 'high';
+    final hasDivergenceBadge = widget.divergenceLevel != null;
     final shouldShowIntroInfo = variants.isNotEmpty;
     final shouldShowToolsRow = hasDivergenceBadge || shouldShowIntroInfo;
 
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [colors.primary.withValues(alpha: 0.045), Colors.transparent],
-          stops: const [0.0, 0.5],
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (shouldShowToolsRow)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-              child: Row(
-                children: [
-                  if (hasDivergenceBadge)
-                    _DivergenceChip(
-                      divergenceLevel: widget.divergenceLevel,
-                      colors: colors,
-                    ),
-                  const Spacer(),
-                  if (shouldShowIntroInfo)
-                    _HighlightInfoButton(
-                      colors: colors,
-                      onTap: () =>
-                          _showHighlightInfo(context, colors, textTheme),
-                    ),
-                ],
-              ),
-            ),
-          if (widget.analysisState == PerspectivesAnalysisState.idle)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
-              child: _AnalysisCtaCard(
-                onTap: widget.onRequestAnalysis,
-                state: widget.analysisState,
-              ),
-            ),
-          if (widget.analysisState != PerspectivesAnalysisState.idle)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-              child: PerspectivesAnalysisZone(
-                state: widget.analysisState,
-                text: widget.analysisText,
-                onRequestAnalysis: widget.onRequestAnalysis,
-                colors: colors,
-                textTheme: textTheme,
-                zoneKey: widget.analysisZoneKey,
-              ),
-            ),
-          for (var i = 0; i < variants.length; i++)
-            _VariantRow(
-              key: ValueKey('variant_${_animationGeneration}_$i'),
-              firstCardKey: i == 0 ? widget.firstCardKey : null,
-              perspective: variants[i],
-              isLast: i == variants.length - 1,
-            ),
-          if (widget.comparisonQuality == 'low')
-            Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 4),
-              child: Center(
-                child: PerspectivesWarningBadge(
-                  colors: colors,
-                  textTheme: textTheme,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (shouldShowToolsRow)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: hasDivergenceBadge
+                      // scaleDown : pleine taille (+45 %) quand ça rentre, se
+                      // réduit gracieusement pour le label long « low » sur les
+                      // largeurs serrées plutôt que d'overflow.
+                      ? FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: DivergenceInlineBadge(
+                            divergenceLevel: widget.divergenceLevel,
+                            scale: 1.45,
+                          ),
+                        )
+                      : const SizedBox.shrink(),
                 ),
-              ),
+                if (shouldShowIntroInfo)
+                  _HighlightInfoButton(
+                    colors: colors,
+                    onTap: () => _showHighlightInfo(context, colors, textTheme),
+                  ),
+              ],
             ),
-          const SizedBox(height: 16),
-        ],
-      ),
+          ),
+        for (var i = 0; i < variants.length; i++)
+          _VariantRow(
+            key: ValueKey('variant_${_animationGeneration}_$i'),
+            firstCardKey: i == 0 ? widget.firstCardKey : null,
+            perspective: variants[i],
+            isLast: i == variants.length - 1,
+          ),
+        if (widget.analysisState == PerspectivesAnalysisState.idle)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
+            child: _AnalysisCtaCard(
+              onTap: widget.onRequestAnalysis,
+              state: widget.analysisState,
+            ),
+          ),
+        if (widget.analysisState != PerspectivesAnalysisState.idle)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+            child: PerspectivesAnalysisZone(
+              state: widget.analysisState,
+              text: widget.analysisText,
+              onRequestAnalysis: widget.onRequestAnalysis,
+              colors: colors,
+              textTheme: textTheme,
+              zoneKey: widget.analysisZoneKey,
+            ),
+          ),
+        const SizedBox(height: 16),
+      ],
     );
   }
 
@@ -1651,11 +1719,70 @@ class _PerspectivesInlineSectionState
                 ),
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
+            if (widget.comparisonQuality == 'low') ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: colors.textTertiary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      PhosphorIcons.warning(PhosphorIconsStyle.regular),
+                      size: 14,
+                      color: colors.textSecondary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Comparaison limitée — sujet peu couvert par les médias',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+            ],
             Row(
               children: [
                 Icon(
-                  PhosphorIcons.info(PhosphorIconsStyle.regular),
+                  PhosphorIcons.chartBar(PhosphorIconsStyle.regular),
+                  size: 18,
+                  color: colors.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Niveau de polarisation',
+                  style: textTheme.titleSmall?.copyWith(
+                    color: colors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              kDivergenceExplanationText,
+              style: textTheme.bodyMedium?.copyWith(
+                color: colors.textSecondary,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Divider(
+              color: colors.textSecondary.withValues(alpha: 0.1),
+              height: 1,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Icon(
+                  PhosphorIcons.highlighter(PhosphorIconsStyle.regular),
                   size: 18,
                   color: colors.primary,
                 ),
@@ -1684,25 +1811,6 @@ class _PerspectivesInlineSectionState
   }
 }
 
-class _DivergenceChip extends StatelessWidget {
-  final String? divergenceLevel;
-  final FacteurColors colors;
-
-  const _DivergenceChip({required this.divergenceLevel, required this.colors});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: colors.primary.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: DivergenceInlineBadge(divergenceLevel: divergenceLevel),
-    );
-  }
-}
-
 class _HighlightInfoButton extends StatelessWidget {
   final FacteurColors colors;
   final VoidCallback onTap;
@@ -1717,19 +1825,10 @@ class _HighlightInfoButton extends StatelessWidget {
       visualDensity: VisualDensity.compact,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-      icon: Container(
-        width: 24,
-        height: 24,
-        decoration: BoxDecoration(
-          color: colors.textSecondary.withValues(alpha: 0.08),
-          shape: BoxShape.circle,
-        ),
-        alignment: Alignment.center,
-        child: Icon(
-          PhosphorIcons.info(PhosphorIconsStyle.regular),
-          size: 15,
-          color: colors.textSecondary,
-        ),
+      icon: Icon(
+        PhosphorIcons.info(PhosphorIconsStyle.regular),
+        size: 17,
+        color: colors.textSecondary,
       ),
     );
   }
@@ -1803,8 +1902,7 @@ class _PivotWashTitleState extends State<PivotWashTitle>
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final titleStyle =
-        widget.textStyle ??
+    final titleStyle = widget.textStyle ??
         GoogleFonts.fraunces(
           fontSize: 16.5,
           fontWeight: FontWeight.w600,
@@ -1919,8 +2017,7 @@ class _VariantRow extends ConsumerWidget {
               highlightSpans: perspective.highlightSpans,
               sharedTokens: perspective.sharedTokens,
               biasColor: biasColor,
-              baseStyle:
-                  textTheme.bodyMedium?.copyWith(
+              baseStyle: textTheme.bodyMedium?.copyWith(
                     fontSize: 15.5,
                     height: 1.35,
                     color: colors.textPrimary,
