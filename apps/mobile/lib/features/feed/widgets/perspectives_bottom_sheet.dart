@@ -1389,6 +1389,14 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
 
 enum _EmptyStage { none, fading, collapsed }
 
+// ── Timing de la séquence "aucune source trouvée" ──────────────────────────
+// Ajuster ces 4 valeurs pour calibrer l'animation :
+const _kEmptyReadDelay   = Duration(milliseconds: 1500); // pause avant le fade
+const _kEmptyFadeDuration = Duration(milliseconds: 800);  // fade 0.28 → 0
+const _kEmptySlideDuration = Duration(milliseconds: 960); // glissement vers la droite
+const _kEmptyInitialOpacity = 0.28;                       // opacité pendant la pause
+// ──────────────────────────────────────────────────────────────────────────
+
 class _PerspectivesInlineSectionState
     extends ConsumerState<PerspectivesInlineSection> {
   double _rotationTurns = 0.0;
@@ -1444,11 +1452,11 @@ class _PerspectivesInlineSectionState
 
     if (_emptyStage != _EmptyStage.none) return;
     // Pause de lecture avant de démarrer le fade+slide
-    _emptyDismissTimer = Timer(const Duration(milliseconds: 500), () {
+    _emptyDismissTimer = Timer(_kEmptyReadDelay, () {
       if (!mounted || widget.status != PerspectivesSectionStatus.empty) return;
       setState(() => _emptyStage = _EmptyStage.fading);
       // Collapse hauteur une fois le slide terminé
-      _emptyCollapseTimer = Timer(const Duration(milliseconds: 960), () {
+      _emptyCollapseTimer = Timer(_kEmptySlideDuration, () {
         if (!mounted || widget.status != PerspectivesSectionStatus.empty) return;
         setState(() => _emptyStage = _EmptyStage.collapsed);
       });
@@ -1501,7 +1509,7 @@ class _PerspectivesInlineSectionState
               // droite hors écran avant que l'`AnimatedSize` ne replie la
               // hauteur — sortie franche plutôt qu'un simple collapse vertical.
               ? AnimatedSlide(
-                  duration: const Duration(milliseconds: 960),
+                  duration: _kEmptySlideDuration,
                   curve: Curves.easeOutCubic,
                   offset: isEmpty && _emptyStage != _EmptyStage.none
                       ? const Offset(1.1, 0)
@@ -1509,9 +1517,9 @@ class _PerspectivesInlineSectionState
                   // Fondu front-loadé : disparaît progressivement avant que le
                   // slide ne s'amorce.
                   child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 800),
+                    duration: _kEmptyFadeDuration,
                     curve: Curves.easeOut,
-                    opacity: isEmpty ? (_emptyStage != _EmptyStage.none ? 0 : 0.28) : 1,
+                    opacity: isEmpty ? (_emptyStage != _EmptyStage.none ? 0 : _kEmptyInitialOpacity) : 1,
                     child: GestureDetector(
                       onTap: isReady ? widget.onToggle : null,
                       behavior: HitTestBehavior.opaque,
