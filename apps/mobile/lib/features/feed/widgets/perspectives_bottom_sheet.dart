@@ -1443,10 +1443,12 @@ class _PerspectivesInlineSectionState
     }
 
     if (_emptyStage != _EmptyStage.none) return;
-    _emptyDismissTimer = Timer(const Duration(seconds: 1), () {
+    // Fade + slide démarrent ensemble dès la détection (prochain frame)
+    _emptyDismissTimer = Timer(Duration.zero, () {
       if (!mounted || widget.status != PerspectivesSectionStatus.empty) return;
       setState(() => _emptyStage = _EmptyStage.fading);
-      _emptyCollapseTimer = Timer(const Duration(milliseconds: 350), () {
+      // Collapse hauteur une fois le slide terminé
+      _emptyCollapseTimer = Timer(const Duration(milliseconds: 960), () {
         if (!mounted || widget.status != PerspectivesSectionStatus.empty) return;
         setState(() => _emptyStage = _EmptyStage.collapsed);
       });
@@ -1513,15 +1515,20 @@ class _PerspectivesInlineSectionState
                     child: GestureDetector(
                       onTap: isReady ? widget.onToggle : null,
                       behavior: HitTestBehavior.opaque,
-                      child: Container(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
                         decoration: BoxDecoration(
                           border: Border(
                             top: BorderSide(
-                              color: Colors.black.withValues(alpha: 0.08),
+                              color: Colors.black.withValues(
+                                alpha: isReady ? 0.08 : 0,
+                              ),
                               width: 1,
                             ),
                             bottom: BorderSide(
-                              color: Colors.black.withValues(alpha: 0.08),
+                              color: Colors.black.withValues(
+                                alpha: isReady ? 0.08 : 0,
+                              ),
                               width: 1,
                             ),
                           ),

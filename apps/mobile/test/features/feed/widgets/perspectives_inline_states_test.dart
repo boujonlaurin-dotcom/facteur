@@ -147,16 +147,15 @@ void main() {
     await tester.tap(find.text('Couverture médiatique (0)'));
     expect(toggleCount, 0);
 
-    await tester.pump(const Duration(milliseconds: 999));
-    expect(find.text('Couverture médiatique (0)'), findsOneWidget);
-
-    await tester.pump(const Duration(milliseconds: 1));
+    // Timer.zero → fading démarre dès le prochain frame
+    await tester.pump(Duration.zero);
     expect(
       tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
       0,
     );
 
-    await tester.pump(const Duration(milliseconds: 350));
+    // Collapse après la durée du slide (960 ms) + AnimatedSize (250 ms)
+    await tester.pump(const Duration(milliseconds: 960));
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('Couverture médiatique (0)'), findsNothing);
   });
