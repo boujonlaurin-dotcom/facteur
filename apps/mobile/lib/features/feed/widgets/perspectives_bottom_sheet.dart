@@ -1499,16 +1499,15 @@ class _PerspectivesInlineSectionState
               // droite hors écran avant que l'`AnimatedSize` ne replie la
               // hauteur — sortie franche plutôt qu'un simple collapse vertical.
               ? AnimatedSlide(
-                  duration: const Duration(milliseconds: 480),
+                  duration: const Duration(milliseconds: 960),
                   curve: Curves.easeOutCubic,
                   offset: isEmpty && _emptyStage != _EmptyStage.none
                       ? const Offset(1.1, 0)
                       : Offset.zero,
-                  // Fondu front-loadé (rapide + easeOut) : le bandeau est déjà
-                  // quasi invisible quand le slide démarre, plutôt que de rester
-                  // visible le temps que la translation s'amorce.
+                  // Fondu front-loadé : disparaît progressivement avant que le
+                  // slide ne s'amorce.
                   child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 180),
+                    duration: const Duration(milliseconds: 500),
                     curve: Curves.easeOut,
                     opacity: isEmpty ? (_emptyStage != _EmptyStage.none ? 0 : 0.28) : 1,
                     child: GestureDetector(
