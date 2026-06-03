@@ -238,13 +238,12 @@ class _Tab extends StatelessWidget {
 
 /// Felt-tip "surligneur" stroke painted behind a tab label. Reads as a
 /// hand-drawn highlighter pass rather than a flat rounded chip :
-/// - a band covering only the lower ~66 % of the text height, anchored to the
+/// - a band covering only the lower ~62 % of the text height, anchored to the
 ///   baseline so ascenders/descenders peek out,
-/// - a slight ~-2° tilt,
-/// - uneven rounded caps (leading tighter, trailing longer) for the
-///   "movement / manual trace" feel,
-/// - reduced opacity (0.16) with a second translucent pass (0.10) layered near
-///   the baseline to build up the felt density.
+/// - a slight ~-1.2° tilt,
+/// - softly uneven rounded caps for the "movement / manual trace" feel,
+/// - reduced opacity (0.13) with a second translucent pass (0.07) layered near
+///   the baseline to keep the felt density restrained.
 class _MarkerHighlight extends CustomPainter {
   final Color color;
 
@@ -253,36 +252,38 @@ class _MarkerHighlight extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (size.width <= 0 || size.height <= 0) return;
-    final bandHeight = size.height * 0.66;
+    final bandHeight = size.height * 0.62;
     final top = size.height - bandHeight; // anchored to the baseline
     final rect = Rect.fromLTWH(0, top, size.width, bandHeight);
 
     canvas.save();
     // Tilt around the band centre so the whole stroke leans slightly.
     canvas.translate(size.width / 2, size.height / 2);
-    canvas.rotate(-2 * math.pi / 180);
+    canvas.rotate(-1.2 * math.pi / 180);
     canvas.translate(-size.width / 2, -size.height / 2);
 
-    // Uneven caps: leading (left) tighter, trailing (right) longer/rounder.
+    // Uneven caps, kept subtle so the marker feels hand-drawn but steady.
     final base = RRect.fromRectAndCorners(
       rect,
-      topLeft: Radius.circular(bandHeight * 0.32),
-      bottomLeft: Radius.circular(bandHeight * 0.28),
-      topRight: Radius.circular(bandHeight * 0.55),
-      bottomRight: Radius.circular(bandHeight * 0.62),
+      topLeft: Radius.circular(bandHeight * 0.38),
+      bottomLeft: Radius.circular(bandHeight * 0.36),
+      topRight: Radius.circular(bandHeight * 0.48),
+      bottomRight: Radius.circular(bandHeight * 0.52),
     );
-    canvas.drawRRect(base, Paint()..color = color.withValues(alpha: 0.16));
+    canvas.drawRRect(base, Paint()..color = color.withValues(alpha: 0.13));
 
     // Second pass, inset toward the baseline, adds the denser felt core.
     final core = Rect.fromLTWH(
-      rect.left + size.width * 0.05,
+      rect.left + size.width * 0.06,
       rect.top + bandHeight * 0.30,
-      size.width * 0.90,
-      bandHeight * 0.70,
+      size.width * 0.88,
+      bandHeight * 0.66,
     );
-    final coreRRect =
-        RRect.fromRectAndRadius(core, Radius.circular(bandHeight * 0.4));
-    canvas.drawRRect(coreRRect, Paint()..color = color.withValues(alpha: 0.10));
+    final coreRRect = RRect.fromRectAndRadius(
+      core,
+      Radius.circular(bandHeight * 0.4),
+    );
+    canvas.drawRRect(coreRRect, Paint()..color = color.withValues(alpha: 0.07));
 
     canvas.restore();
   }

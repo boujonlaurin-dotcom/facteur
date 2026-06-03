@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform;
+    show ValueListenable, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -54,6 +54,12 @@ const double _kStickyThreshold = 60.0;
 /// couple px of slack.
 const double _kStickyBarHeight = 54.0;
 
+/// Section-passage affordance tuning. The visual marker carries the extra
+/// breathing room; the attraction only corrects tiny near-boundary drifts.
+const double _kPassageSlowScrollDeltaPx = 14.0;
+const double _kPassageAttractMaxPx = 42.0;
+const double _kPassageAttractMinPx = 2.0;
+
 /// Minimum delta (px) before the scroll-up FAB toggles, to avoid flicker
 /// on tiny inertia bounces. Matches the legacy FeedScreen behaviour.
 const double _kScrollDirThreshold = 12.0;
@@ -69,10 +75,14 @@ const double _kPullHintMinDepthPx = 800.0;
 /// Onglets sticky des deux cartes virtuelles. Accents repris tels quels de
 /// chaque carte : ocre/ambre signature de La Grille pour « Mot du jour », brun
 /// chaud du tampon de [CitationDuJourCard] pour « Citation du jour ».
-const _motDuJourTab =
-    StickyTab(label: 'Mot du jour', accent: GrilleConstants.presentTile);
-const _citationTab =
-    StickyTab(label: 'Citation du jour', accent: CitationDuJourCard.stampColor);
+const _motDuJourTab = StickyTab(
+  label: 'Mot du jour',
+  accent: GrilleConstants.presentTile,
+);
+const _citationTab = StickyTab(
+  label: 'Citation du jour',
+  accent: CitationDuJourCard.stampColor,
+);
 
 class FluxContinuScreen extends ConsumerStatefulWidget {
   const FluxContinuScreen({super.key});
@@ -87,6 +97,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   final ValueNotifier<bool> _stickyVisible = ValueNotifier(false);
   final ValueNotifier<double> _scrollProgress = ValueNotifier(0);
   final ValueNotifier<int> _activeIndex = ValueNotifier(0);
+  final ValueNotifier<_SectionPassagePulse?> _sectionPassagePulse =
+      ValueNotifier(null);
 
   final List<GlobalKey> _sectionKeys = [];
 
@@ -124,6 +136,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
   bool _showScrollTopFab = false;
   double _lastScrollPos = 0;
+  double _lastPassageScrollPos = 0;
+  double _lastPassageScrollDeltaAbs = double.infinity;
+  int _passagePulseSequence = 0;
+  bool _isPassageAttracting = false;
 
   /// Garde-fou : le flow post-onboarding (dialog customs échoués + modales
   /// thème & notifications) ne doit se jouer qu'une seule fois par montage,
@@ -157,6 +173,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     _stickyVisible.dispose();
     _scrollProgress.dispose();
     _activeIndex.dispose();
+    _sectionPassagePulse.dispose();
     _pullHintTimer?.cancel();
     super.dispose();
   }
@@ -165,6 +182,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (!_scroll.hasClients) return;
     final pos = _scroll.position;
     final currentScroll = pos.pixels;
+    _lastPassageScrollDeltaAbs = (currentScroll - _lastPassageScrollPos).abs();
+    _lastPassageScrollPos = currentScroll;
     final showSticky = currentScroll > _kStickyThreshold;
     if (_stickyVisible.value != showSticky) {
       _stickyVisible.value = showSticky;
@@ -283,9 +302,67 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       // layout / top-of-page scroll, before the sticky is even revealed.
       if (_stickyVisible.value) {
         unawaited(HapticFeedback.selectionClick());
+        _pulsePassageForStickyIndex(activeAt);
+        unawaited(_maybeAttractToActiveSection(activeAt));
       }
       _activeIndex.value = activeAt;
       _alignTabsToActive(activeAt);
+    }
+  }
+
+  int _sectionIndexForStickyIndex(int stickyIndex) {
+    if (stickyIndex < 0 || stickyIndex >= _stickyEntryKeys.length) return -1;
+    final key = _stickyEntryKeys[stickyIndex];
+    for (var i = 0; i < _sectionKeys.length; i++) {
+      if (identical(_sectionKeys[i], key)) return i;
+    }
+    return -1;
+  }
+
+  void _pulsePassageForStickyIndex(int stickyIndex) {
+    final sectionIndex = _sectionIndexForStickyIndex(stickyIndex);
+    if (sectionIndex <= 0) return;
+    _sectionPassagePulse.value = _SectionPassagePulse(
+      index: sectionIndex - 1,
+      sequence: ++_passagePulseSequence,
+    );
+  }
+
+  Future<void> _maybeAttractToActiveSection(int stickyIndex) async {
+    if (_isPassageAttracting) return;
+    if (!_scroll.hasClients) return;
+    if (_lastPassageScrollDeltaAbs > _kPassageSlowScrollDeltaPx) return;
+    if (_scroll.position.userScrollDirection == ScrollDirection.idle) return;
+    final sectionIndex = _sectionIndexForStickyIndex(stickyIndex);
+    if (sectionIndex <= 0) return;
+    final targetKey = _sectionKeys[sectionIndex];
+    final ctx = targetKey.currentContext;
+    if (ctx == null) return;
+    final box = ctx.findRenderObject();
+    if (box is! RenderBox || !box.attached) return;
+    final scrollBox = _scroll.position.context.notificationContext
+        ?.findRenderObject() as RenderBox?;
+    if (scrollBox == null) return;
+    final delta = box.localToGlobal(Offset.zero, ancestor: scrollBox).dy -
+        _kStickyBarHeight;
+    if (delta.abs() < _kPassageAttractMinPx ||
+        delta.abs() > _kPassageAttractMaxPx) {
+      return;
+    }
+    final target = (_scroll.offset + delta).clamp(
+      0.0,
+      _scroll.position.maxScrollExtent,
+    );
+    _isPassageAttracting = true;
+    try {
+      unawaited(HapticFeedback.lightImpact());
+      await _scroll.animateTo(
+        target,
+        duration: const Duration(milliseconds: 230),
+        curve: Curves.easeOutQuart,
+      );
+    } finally {
+      _isPassageAttracting = false;
     }
   }
 
@@ -959,6 +1036,16 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           ),
         );
       }
+      if (i > 0) {
+        slivers.add(
+          SliverToBoxAdapter(
+            child: _SectionPassageDot(
+              index: i - 1,
+              pulseListenable: _sectionPassagePulse,
+            ),
+          ),
+        );
+      }
       final section = state.sections[i];
       final isFavorite = _isFavoriteSection(section);
       slivers.add(
@@ -1011,6 +1098,117 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       }
     }
     return slivers;
+  }
+}
+
+class _SectionPassagePulse {
+  final int index;
+  final int sequence;
+
+  const _SectionPassagePulse({required this.index, required this.sequence});
+}
+
+class _SectionPassageDot extends StatefulWidget {
+  final int index;
+  final ValueListenable<_SectionPassagePulse?> pulseListenable;
+
+  _SectionPassageDot({
+    required this.index,
+    required this.pulseListenable,
+  }) : super(key: ValueKey('section_passage_dot_$index'));
+
+  @override
+  State<_SectionPassageDot> createState() => _SectionPassageDotState();
+}
+
+class _SectionPassageDotState extends State<_SectionPassageDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController;
+  int _lastSequence = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 360),
+    );
+    widget.pulseListenable.addListener(_onPulse);
+  }
+
+  @override
+  void didUpdateWidget(_SectionPassageDot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pulseListenable != widget.pulseListenable) {
+      oldWidget.pulseListenable.removeListener(_onPulse);
+      widget.pulseListenable.addListener(_onPulse);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.pulseListenable.removeListener(_onPulse);
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  void _onPulse() {
+    final pulse = widget.pulseListenable.value;
+    if (pulse == null || pulse.index != widget.index) return;
+    if (pulse.sequence == _lastSequence) return;
+    _lastSequence = pulse.sequence;
+    _pulseController
+      ..stop()
+      ..value = 0
+      ..forward();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final dotColor = context.isDarkMode
+        ? Colors.white.withValues(alpha: 0.42)
+        : Colors.black.withValues(alpha: 0.34);
+    return Semantics(
+      label: 'Passage de section',
+      child: SizedBox(
+        height: 36,
+        child: Align(
+          alignment: const Alignment(0, -0.68),
+          child: AnimatedBuilder(
+            animation: _pulseController,
+            builder: (context, _) {
+              final t = Curves.easeOutCubic.transform(_pulseController.value);
+              final scale =
+                  1 + (0.30 * (1 - (2 * t - 1).abs()).clamp(0.0, 1.0));
+              final glow = (1 - t).clamp(0.0, 1.0);
+              return Transform.scale(
+                scale: scale,
+                child: Container(
+                  width: 3.5,
+                  height: 3.5,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: dotColor.withValues(alpha: 0.76 + 0.14 * glow),
+                    boxShadow: [
+                      BoxShadow(
+                        color: dotColor.withValues(alpha: 0.13 * glow),
+                        blurRadius: 5,
+                        spreadRadius: 0.5,
+                      ),
+                    ],
+                    border: Border.all(
+                      color: colors.backgroundPrimary.withValues(alpha: 0.78),
+                      width: 0.75,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
   }
 }
 
