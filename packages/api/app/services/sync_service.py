@@ -92,9 +92,7 @@ class SyncService:
         )
         # Sources niche référencées par une veille : is_curated=False et absentes
         # de user_sources → autrement jamais synchronisées (plan veille V0, Pb 1).
-        veille_source_ids = (
-            select(VeilleSource.source_id).distinct().scalar_subquery()
-        )
+        veille_source_ids = select(VeilleSource.source_id).distinct().scalar_subquery()
         result = await self.session.execute(
             select(Source).where(
                 Source.is_active,
