@@ -105,4 +105,19 @@ void main() {
     expect(find.text('POLARISÉ'), findsOneWidget);
     expect(find.textContaining('Forte polarisation'), findsNothing);
   });
+
+  testWidgets('inline low divergence → badge traitements similaires rendu', (
+    tester,
+  ) async {
+    await _pumpInline(
+      tester,
+      perspectives: [
+        _p('A'),
+        _p('B', bias: 'right'),
+      ],
+      divergenceLevel: 'low',
+    );
+
+    expect(find.text('TRAITEMENTS SIMILAIRES'), findsOneWidget);
+  });
 }

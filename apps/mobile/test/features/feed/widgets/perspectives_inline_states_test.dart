@@ -4,18 +4,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/features/detail/screens/content_detail_screen.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart'
-    show TokenSpan;
+    show PerspectiveData, PerspectivesResponse, TokenSpan;
 import 'package:facteur/features/feed/widgets/coverage_spectrum_bar.dart';
 import 'package:facteur/features/feed/widgets/perspectives_bottom_sheet.dart';
 
 Perspective _p(String name, {String bias = 'center'}) => Perspective(
-      title: 'Titre $name',
-      url: 'https://example.com/$name',
-      sourceName: name,
-      sourceDomain: '',
-      biasStance: bias,
-    );
+  title: 'Titre $name',
+  url: 'https://example.com/$name',
+  sourceName: name,
+  sourceDomain: '',
+  biasStance: bias,
+);
 
 Future<void> _pumpInline(
   WidgetTester tester, {
@@ -77,7 +78,54 @@ void main() {
     expect(toggleCount, 0);
   });
 
-  testWidgets('empty shows grey zero label without caret and is not tappable', (
+  test('partial empty response keeps perspectives status loading', () {
+    expect(
+      perspectivesStatusForTesting(null),
+      PerspectivesSectionStatus.loading,
+    );
+    expect(
+      perspectivesStatusForTesting(
+        PerspectivesResponse(
+          perspectives: const [],
+          keywords: const [],
+          biasDistribution: const {},
+          partial: true,
+        ),
+      ),
+      PerspectivesSectionStatus.loading,
+    );
+    expect(
+      perspectivesStatusForTesting(
+        PerspectivesResponse(
+          perspectives: [
+            PerspectiveData(
+              title: 'Titre',
+              url: 'https://example.com/a',
+              sourceName: 'A',
+              sourceDomain: 'example.com',
+              biasStance: 'center',
+            ),
+          ],
+          keywords: const [],
+          biasDistribution: const {},
+          partial: true,
+        ),
+      ),
+      PerspectivesSectionStatus.ready,
+    );
+    expect(
+      perspectivesStatusForTesting(
+        PerspectivesResponse(
+          perspectives: const [],
+          keywords: const [],
+          biasDistribution: const {},
+        ),
+      ),
+      PerspectivesSectionStatus.empty,
+    );
+  });
+
+  testWidgets('empty fades out after delay without caret and is not tappable', (
     tester,
   ) async {
     var toggleCount = 0;
@@ -91,9 +139,26 @@ void main() {
     expect(find.text('Couverture médiatique (0)'), findsOneWidget);
     expect(find.byType(CoverageSpectrumBarShimmer), findsNothing);
     expect(find.byIcon(caret), findsNothing);
+    expect(
+      tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
+      0.5,
+    );
 
     await tester.tap(find.text('Couverture médiatique (0)'));
     expect(toggleCount, 0);
+
+    await tester.pump(const Duration(milliseconds: 999));
+    expect(find.text('Couverture médiatique (0)'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(
+      tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
+      0,
+    );
+
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text('Couverture médiatique (0)'), findsNothing);
   });
 
   testWidgets('ready keeps caret and toggles on tap', (tester) async {
@@ -115,7 +180,7 @@ void main() {
   });
 
   testWidgets(
-    'expanded ready puts analysis above variants and removes ref block',
+    'expanded ready puts variants above analysis and removes ref block',
     (tester) async {
       await _pumpInline(
         tester,
@@ -130,12 +195,14 @@ void main() {
         onToggle: () {},
       );
 
-      final analysisTop =
-          tester.getTopLeft(find.text('Analyse Facteur').first).dy;
-      final firstVariantTop =
-          tester.getTopLeft(find.text('Titre A', findRichText: true)).dy;
+      final analysisTop = tester
+          .getTopLeft(find.text('Analyse Facteur').first)
+          .dy;
+      final firstVariantTop = tester
+          .getTopLeft(find.text('Titre A', findRichText: true))
+          .dy;
 
-      expect(analysisTop, lessThan(firstVariantTop));
+      expect(firstVariantTop, lessThan(analysisTop));
       expect(find.text('CET ARTICLE'), findsNothing);
       expect(
         find.text(
@@ -145,6 +212,24 @@ void main() {
       );
     },
   );
+
+  testWidgets('expanded ready body has no gradient halo', (tester) async {
+    await _pumpInline(
+      tester,
+      status: PerspectivesSectionStatus.ready,
+      perspectives: [_p('A')],
+      isExpanded: true,
+      onToggle: () {},
+    );
+
+    final gradientDecorations = tester
+        .widgetList<Container>(find.byType(Container))
+        .map((container) => container.decoration)
+        .whereType<BoxDecoration>()
+        .where((decoration) => decoration.gradient != null);
+
+    expect(gradientDecorations, isEmpty);
+  });
 
   testWidgets('PivotWashTitle washes the reader title pivot when expanded', (
     tester,

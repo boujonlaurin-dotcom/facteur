@@ -15,26 +15,27 @@ void main() {
   }
 
   group('DivergenceInlineBadge', () {
-    testWidgets('low → silence total (même comportement que null)',
-        (tester) async {
+    testWidgets('low → Traitements similaires en text_secondary non bold', (
+      tester,
+    ) async {
       await tester.pumpWidget(host('low'));
       await tester.pumpAndSettle();
 
-      // Option A validée : 'low' = silence total, aucun badge affiché
-      expect(find.text('CONSENSUS'), findsNothing);
-      expect(find.text('AVIS VARIÉS'), findsNothing);
-      expect(find.text('POLARISÉ'), findsNothing);
+      expect(find.text('TRAITEMENTS SIMILAIRES'), findsOneWidget);
+      final label = tester.widget<Text>(find.text('TRAITEMENTS SIMILAIRES'));
+      expect(label.style?.fontWeight, FontWeight.w500);
       expect(
         find.descendant(
           of: find.byType(DivergenceInlineBadge),
           matching: find.byType(CustomPaint),
         ),
-        findsNothing,
+        findsOneWidget,
       );
     });
 
-    testWidgets('medium → Avis variés en text_tertiary (non bold)',
-        (tester) async {
+    testWidgets('medium → Avis variés en text_tertiary (non bold)', (
+      tester,
+    ) async {
       await tester.pumpWidget(host('medium'));
       await tester.pumpAndSettle();
 
@@ -52,12 +53,13 @@ void main() {
       expect(label.style?.fontWeight, FontWeight.w700);
     });
 
-    testWidgets('null → SizedBox.shrink (silence, pas de rendu)',
-        (tester) async {
+    testWidgets('null → SizedBox.shrink (silence, pas de rendu)', (
+      tester,
+    ) async {
       await tester.pumpWidget(host(null));
       await tester.pumpAndSettle();
 
-      expect(find.text('CONSENSUS'), findsNothing);
+      expect(find.text('TRAITEMENTS SIMILAIRES'), findsNothing);
       expect(find.text('AVIS VARIÉS'), findsNothing);
       expect(find.text('POLARISÉ'), findsNothing);
       // Aucun CustomPaint sous notre widget (les CustomPaint du framework

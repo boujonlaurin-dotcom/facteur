@@ -8,7 +8,7 @@ import '../../../config/theme.dart';
 /// mono uppercase. Niveau dérivé directement du `divergenceLevel` exposé par
 /// le back via `DigestTopic.divergenceLevel` :
 ///
-/// * `'low'`  → `Consensus`  (3 dots groupés au centre, label tertiary)
+/// * `'low'`  → `Traitements similaires` (3 dots groupés au centre)
 /// * `'medium'` → `Avis variés` (5 dots étalés régulièrement, label tertiary)
 /// * `'high'` → `Polarisé`   (2 paires brique-marine, label primary bold)
 ///
@@ -22,10 +22,16 @@ class DivergenceInlineBadge extends StatelessWidget {
   /// compenser l'absence du label qui portait l'information sémantique.
   final bool iconOnly;
 
+  /// Facteur d'échelle appliqué au glyphe ET au label (1.0 = taille de base).
+  /// Utilisé par la section « Couverture médiatique » pour grossir la balise
+  /// (~+45 %) ; toutes les autres call-sites gardent 1.0.
+  final double scale;
+
   const DivergenceInlineBadge({
     super.key,
     this.divergenceLevel,
     this.iconOnly = false,
+    this.scale = 1.0,
   });
 
   @override
@@ -34,7 +40,7 @@ class DivergenceInlineBadge extends StatelessWidget {
     if (config == null) return const SizedBox.shrink();
 
     final glyph = CustomPaint(
-      size: const Size(28, 12),
+      size: Size(28 * scale, 12 * scale),
       painter: _DivergenceGlyphPainter(config),
     );
 
@@ -44,14 +50,14 @@ class DivergenceInlineBadge extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         glyph,
-        const SizedBox(width: 4),
+        SizedBox(width: 4 * scale),
         Text(
           config.label,
           style: GoogleFonts.courierPrime(
-            fontSize: 10,
+            fontSize: 8 * scale,
             fontWeight: config.bold ? FontWeight.w700 : FontWeight.w500,
             color: config.labelColor,
-            letterSpacing: 0.4,
+            letterSpacing: 0.35 * scale,
           ),
         ),
       ],
@@ -59,10 +65,23 @@ class DivergenceInlineBadge extends StatelessWidget {
   }
 
   static _BadgeConfig? _configFor(
-      String? level, FacteurColors colors, bool iconOnly) {
+    String? level,
+    FacteurColors colors,
+    bool iconOnly,
+  ) {
     switch (level) {
       case 'low':
-        return null;
+        final dotOpacity = iconOnly ? 0.85 : 0.72;
+        return _BadgeConfig(
+          label: 'TRAITEMENTS SIMILAIRES',
+          dots: [
+            _Dot(11, 6, colors.success, dotOpacity),
+            _Dot(15, 6, colors.success, dotOpacity),
+            _Dot(19, 6, colors.success, dotOpacity),
+          ],
+          labelColor: colors.textSecondary,
+          bold: false,
+        );
       case 'medium':
         // En iconOnly les dots portent tout le sens — on remonte l'opacité
         // pour qu'ils restent lisibles sans le label.
@@ -126,6 +145,10 @@ class _DivergenceGlyphPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Coordonnées des dots calées sur une base 28×12 ; on scale le canvas pour
+    // honorer une taille demandée plus grande (cf. `scale` du badge).
+    final s = size.width / 28;
+    if (s != 1) canvas.scale(s);
     for (final dot in config.dots) {
       final paint = Paint()..color = dot.color.withValues(alpha: dot.opacity);
       canvas.drawCircle(Offset(dot.x, dot.y), _radius, paint);

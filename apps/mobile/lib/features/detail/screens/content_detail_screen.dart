@@ -1,7 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:facteur/core/utils/html_utils.dart';
 import 'package:flutter/foundation.dart'
-    show Factory, defaultTargetPlatform, kIsWeb;
+    show Factory, defaultTargetPlatform, kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -48,6 +48,16 @@ import '../../lettres/providers/letters_provider.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
+
+@visibleForTesting
+PerspectivesSectionStatus perspectivesStatusForTesting(
+  PerspectivesResponse? response,
+) {
+  if (response == null) return PerspectivesSectionStatus.loading;
+  if (response.perspectives.isNotEmpty) return PerspectivesSectionStatus.ready;
+  if (response.partial) return PerspectivesSectionStatus.loading;
+  return PerspectivesSectionStatus.empty;
+}
 
 /// Écran de détail d'un contenu avec mode lecture In-App (Story 5.2)
 /// Restauré avec les fonctionnalités de l'ancien ArticleViewerModal :
@@ -211,15 +221,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool get _showPerspectivesBand =>
       _content?.contentType == ContentType.article;
 
-  PerspectivesSectionStatus get _perspectivesStatus {
-    final response = _perspectivesResponse;
-    if (response != null) {
-      return response.perspectives.isEmpty
-          ? PerspectivesSectionStatus.empty
-          : PerspectivesSectionStatus.ready;
-    }
-    return PerspectivesSectionStatus.loading;
-  }
+  PerspectivesSectionStatus get _perspectivesStatus =>
+      perspectivesStatusForTesting(_perspectivesResponse);
 
   List<Perspective> get _inlinePerspectives {
     final response = _perspectivesResponse;
