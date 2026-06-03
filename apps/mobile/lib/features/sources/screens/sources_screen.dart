@@ -12,7 +12,7 @@ import '../../../shared/widgets/states/laurin_fallback_view.dart';
 import '../../my_interests/models/user_interests_state.dart' show InterestState;
 import '../../my_interests/models/user_sources_state.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
-import '../../my_interests/widgets/favorites_reorderable_section.dart';
+import '../../../config/constants.dart';
 import '../../my_interests/widgets/interest_state_picker_sheet.dart';
 import '../../settings/providers/paid_content_provider.dart';
 import '../models/source_model.dart';
@@ -285,6 +285,8 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
               children: [
                 _IntroBlock(colors: colors),
                 const SizedBox(height: 12),
+                const _HidePaidToggleCard(),
+                const SizedBox(height: 4),
                 // Story 22.1 — section Favoris (drag-reorderable, cap 3).
                 if (!noFollowedSources || visibleFavorites.isNotEmpty)
                   _SourceFavoritesSection(
@@ -318,6 +320,8 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                         );
                       }
                     },
+                    buildItem: (source) =>
+                        _buildSourceItem(source, sourcesState),
                   ),
                 const SizedBox(height: 8),
                 if (premiumSources.isNotEmpty)
@@ -332,7 +336,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                     sourcesState: sourcesState,
                     icon: PhosphorIcons.star(PhosphorIconsStyle.fill),
                   ),
-                const _HidePaidToggleCard(),
                 const SizedBox(height: 8),
                 if (noResults)
                   _NoSourcesMatchBlock(
@@ -570,52 +573,152 @@ class _SourceFavoritesSection extends StatelessWidget {
   final List<SourceFavoriteRef> favorites;
   final List<Source> allSources;
   final void Function(List<SourceFavoriteRef> reordered) onReorder;
+  final Widget Function(Source source) buildItem;
 
   const _SourceFavoritesSection({
     required this.favorites,
     required this.allSources,
     required this.onReorder,
+    required this.buildItem,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
     final byId = {for (final s in allSources) s.id: s};
 
-    return FavoritesReorderableSection<SourceFavoriteRef>(
-      items: favorites,
-      keyOf: (r) => ValueKey('source:${r.sourceId}'),
-      emptyStateText:
-          'Aucune source favorite — marquez-en une pour l\'épingler dans Flâner.',
-      padding: EdgeInsets.zero,
-      itemBuilder: (context, refItem) {
-        final source = byId[refItem.sourceId];
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 12, 2, 4),
           child: Row(
             children: [
               Icon(
                 PhosphorIcons.star(PhosphorIconsStyle.fill),
-                color: colors.primary,
-                size: 14,
+                size: 17,
+                color: colors.textSecondary,
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  source?.name ?? 'Source',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: colors.textPrimary,
-                      ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  'Favoris',
+                  style: textTheme.titleSmall?.copyWith(
+                    color: colors.textSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                '${favorites.length}',
+                style: textTheme.labelMedium?.copyWith(
+                  color: colors.textSecondary,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
           ),
-        );
-      },
-      onReorder: onReorder,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
+          child: Text(
+            'Les $kFavoriteCap premiers (ordre modifiable) sont dans votre Tournée du jour.',
+            style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
+          ),
+        ),
+        if (favorites.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
+            child: Text(
+              'Aucune source favorite — marquez-en une pour l\'épingler dans Flâner.',
+              style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
+            ),
+          )
+        else
+          ReorderableListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            itemCount: favorites.length,
+            padding: EdgeInsets.zero,
+            itemBuilder: (context, index) {
+              final refItem = favorites[index];
+              final source = byId[refItem.sourceId];
+              if (source == null) {
+                return SizedBox.shrink(
+                    key: ValueKey('source:${refItem.sourceId}'));
+              }
+              final inTour = index < kFavoriteCap;
+              final isTourBoundary =
+                  index == kFavoriteCap && favorites.length > kFavoriteCap;
+              return Column(
+                key: ValueKey('source:${refItem.sourceId}'),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (isTourBoundary)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Divider(
+                              color: colors.surfaceElevated,
+                              height: 1,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Hors Tournée du jour',
+                            style: textTheme.bodySmall?.copyWith(
+                              color: colors.textTertiary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Divider(
+                              color: colors.surfaceElevated,
+                              height: 1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  Opacity(
+                    opacity: inTour ? 1.0 : 0.55,
+                    child: Row(
+                      children: [
+                        Expanded(child: buildItem(source)),
+                        ReorderableDragStartListener(
+                          index: index,
+                          child: Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Icon(
+                              PhosphorIcons.dotsSixVertical(
+                                  PhosphorIconsStyle.regular),
+                              color: colors.textTertiary,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+            onReorder: (oldIndex, newIndex) {
+              final reordered = [...favorites];
+              final adjusted =
+                  newIndex > oldIndex ? newIndex - 1 : newIndex;
+              final moved = reordered.removeAt(oldIndex);
+              reordered.insert(adjusted, moved);
+              onReorder(reordered);
+            },
+          ),
+        const SizedBox(height: 8),
+      ],
     );
   }
 }
@@ -899,32 +1002,24 @@ class _IntroBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    return Container(
-      padding: const EdgeInsets.all(FacteurSpacing.space4),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(FacteurRadius.large),
-        border: Border.all(color: colors.surfaceElevated),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Vos sources de confiance',
-            style: FacteurTypography.serifTitle(
-              colors.textPrimary,
-            ).copyWith(fontSize: 20, height: 1.2),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Vos sources de confiance',
+          style: FacteurTypography.serifTitle(
+            colors.textPrimary,
+          ).copyWith(fontSize: 20, height: 1.2),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Gérez vos préférences par sources. Ajoutez certaines en favoris pour les voir apparaitre plus souvent. Masquez celles que vous souhaitez filtrer de vos flux.',
+          style: textTheme.bodySmall?.copyWith(
+            color: colors.textSecondary,
+            height: 1.45,
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Gérez vos préférences par sources. Ajoutez certaines en favoris pour les voir apparaitre plus souvent. Masquez celles que vous souhaitez filtrer de vos flux.',
-            style: textTheme.bodySmall?.copyWith(
-              color: colors.textSecondary,
-              height: 1.45,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -938,72 +1033,52 @@ class _HidePaidToggleCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     final hidePaid = ref.watch(hidePaidContentProvider);
-    final borderRadius = BorderRadius.circular(FacteurRadius.large);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Material(
-        color: colors.surface,
-        borderRadius: borderRadius,
-        child: InkWell(
-          onTap: () =>
-              ref.read(hidePaidContentProvider.notifier).toggle(!hidePaid),
-          borderRadius: borderRadius,
-          child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
-              borderRadius: borderRadius,
-              border: Border.all(color: colors.surfaceElevated),
+              shape: BoxShape.circle,
+              color: colors.primary.withValues(alpha: 0.10),
             ),
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space4,
-              vertical: FacteurSpacing.space3,
+            alignment: Alignment.center,
+            child: Icon(
+              PhosphorIcons.lock(PhosphorIconsStyle.regular),
+              color: colors.primary,
+              size: 18,
             ),
-            child: Row(
+          ),
+          const SizedBox(width: FacteurSpacing.space3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: colors.primary.withValues(alpha: 0.10),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    PhosphorIcons.lock(PhosphorIconsStyle.regular),
-                    color: colors.primary,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: FacteurSpacing.space3),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Masquer les articles payants*',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                Text(
+                  'Masquer les articles payants*',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '*: Sauf abonnements connectés.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: colors.textSecondary,
-                            ),
-                      ),
-                    ],
-                  ),
                 ),
-                Switch.adaptive(
-                  value: hidePaid,
-                  activeThumbColor: colors.primary,
-                  onChanged: (v) =>
-                      ref.read(hidePaidContentProvider.notifier).toggle(v),
+                const SizedBox(height: 2),
+                Text(
+                  '*: Sauf abonnements connectés.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
                 ),
               ],
             ),
           ),
-        ),
+          Switch.adaptive(
+            value: hidePaid,
+            activeThumbColor: colors.primary,
+            onChanged: (v) =>
+                ref.read(hidePaidContentProvider.notifier).toggle(v),
+          ),
+        ],
       ),
     );
   }
