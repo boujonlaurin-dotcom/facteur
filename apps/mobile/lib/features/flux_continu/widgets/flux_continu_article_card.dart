@@ -54,8 +54,8 @@ class FluxArticleVM {
         thumbnailUrl: article.thumbnailUrl,
         sourceName: article.source?.name ?? 'Inconnu',
         sourceLogoUrl: article.source?.logoUrl,
-        themeLabel: (article.source?.theme != null &&
-                article.source!.theme!.isNotEmpty)
+        themeLabel:
+            (article.source?.theme != null && article.source!.theme!.isNotEmpty)
             ? getTopicLabel(article.source!.theme!)
             : null,
         contentType: article.contentType,
@@ -77,7 +77,8 @@ class FluxArticleVM {
         durationSeconds: article.durationSeconds,
         publishedAt: article.publishedAt,
         isFollowedSource: article.isFollowedSource,
-        isRead: article.status == ContentStatus.consumed ||
+        isRead:
+            article.status == ContentStatus.consumed ||
             article.readingProgress > 0,
       );
     }
@@ -131,9 +132,11 @@ class _FluxContinuArticleCardState extends State<FluxContinuArticleCard> {
     // Reclaim the thumb slot when the network image fails — avoids the
     // grey/broken visual reported on many Reporterre articles (cached
     // vignettes that 404 or load empty).
-    final hasThumb = vm.thumbnailUrl != null &&
+    final hasThumb =
+        vm.thumbnailUrl != null &&
         vm.thumbnailUrl!.isNotEmpty &&
         !_thumbErrored;
+    const cardRadius = BorderRadius.all(Radius.circular(FacteurRadius.large));
 
     Widget card = Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -143,22 +146,25 @@ class _FluxContinuArticleCardState extends State<FluxContinuArticleCard> {
           children: [
             Material(
               color: colors.surface,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: cardRadius,
               elevation: 0,
               child: GestureDetector(
                 onLongPressStart: (_) => ArticlePreviewOverlay.show(
-                    context, articleToContent(widget.article)),
+                  context,
+                  articleToContent(widget.article),
+                ),
                 onLongPressMoveUpdate: (details) =>
                     ArticlePreviewOverlay.updateScroll(
-                        details.localOffsetFromOrigin.dy),
+                      details.localOffsetFromOrigin.dy,
+                    ),
                 onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
                 child: InkWell(
                   onTap: widget.onTap,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: cardRadius,
                   child: Ink(
                     decoration: BoxDecoration(
                       color: colors.surface,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: cardRadius,
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.05),
@@ -210,7 +216,8 @@ class _FluxContinuArticleCardState extends State<FluxContinuArticleCard> {
                             vm: vm,
                             colors: colors,
                             showPressReview:
-                                widget.isEssentiel && widget.pressReviewCount > 0,
+                                widget.isEssentiel &&
+                                widget.pressReviewCount > 0,
                             pressReviewCount: widget.pressReviewCount,
                             perspectiveSources: widget.perspectiveSources,
                             divergenceLevel: widget.divergenceLevel,
@@ -334,15 +341,11 @@ class _Thumbnail extends StatelessWidget {
                 // Bubble up so the parent card can drop the thumb slot
                 // entirely (next rebuild). Returning shrink keeps the
                 // current frame from flashing a placeholder.
-                WidgetsBinding.instance
-                    .addPostFrameCallback((_) => onError());
+                WidgetsBinding.instance.addPostFrameCallback((_) => onError());
                 return const SizedBox.shrink();
               },
             ),
-            if (isVideo)
-              const Center(
-                child: _VideoPlayBadge(),
-              ),
+            if (isVideo) const Center(child: _VideoPlayBadge()),
           ],
         ),
       ),
@@ -455,8 +458,7 @@ class _Footer extends StatelessWidget {
         const SizedBox(width: 6),
         separator,
         const SizedBox(width: 6),
-        Icon(PhosphorIconsRegular.clock,
-            size: 12, color: colors.textTertiary),
+        Icon(PhosphorIconsRegular.clock, size: 12, color: colors.textTertiary),
         const SizedBox(width: 3),
         Text(
           _publishedAtShort(vm.publishedAt),
@@ -522,11 +524,7 @@ class _SourceDot extends StatelessWidget {
         color: accent,
         shape: BoxShape.circle,
         boxShadow: [
-          BoxShadow(
-            color: ringColor,
-            spreadRadius: 1.5,
-            blurRadius: 0,
-          ),
+          BoxShadow(color: ringColor, spreadRadius: 1.5, blurRadius: 0),
         ],
       ),
       child: hasLogo
@@ -553,8 +551,9 @@ class _Initial extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final trimmed = name.trim();
-    final initial =
-        trimmed.isEmpty ? '?' : trimmed.characters.first.toUpperCase();
+    final initial = trimmed.isEmpty
+        ? '?'
+        : trimmed.characters.first.toUpperCase();
     return Text(
       initial,
       style: GoogleFonts.dmSans(

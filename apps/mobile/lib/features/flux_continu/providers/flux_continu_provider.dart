@@ -47,8 +47,7 @@ const String _kVeilleIllustration = 'assets/notifications/facteur_veille.png';
 /// Blurbs rendered under each section title.
 const String _kEssentielBlurb =
     "L'essentiel des actus les plus couvertes en France aujourd'hui, en privilégiant tes sources.";
-const String _kActusDuJourBlurb =
-    'Les actus les plus couvertes du jour en France, regroupées par sujet.';
+const String _kActusDuJourBlurb = 'Les sujets les + couverts en France.';
 const String _kBonnesBlurb = 'Un peu de douceur...';
 
 /// Hard cap on the number of favorite theme sections rendered in the tournée.
