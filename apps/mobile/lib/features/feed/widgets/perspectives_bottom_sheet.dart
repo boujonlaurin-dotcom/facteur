@@ -1444,7 +1444,7 @@ class _PerspectivesInlineSectionState
 
     if (_emptyStage != _EmptyStage.none) return;
     // Pause de lecture avant de démarrer le fade+slide
-    _emptyDismissTimer = Timer(const Duration(seconds: 3), () {
+    _emptyDismissTimer = Timer(const Duration(milliseconds: 500), () {
       if (!mounted || widget.status != PerspectivesSectionStatus.empty) return;
       setState(() => _emptyStage = _EmptyStage.fading);
       // Collapse hauteur une fois le slide terminé
@@ -1509,7 +1509,7 @@ class _PerspectivesInlineSectionState
                   // Fondu front-loadé : disparaît progressivement avant que le
                   // slide ne s'amorce.
                   child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 500),
+                    duration: const Duration(milliseconds: 800),
                     curve: Curves.easeOut,
                     opacity: isEmpty ? (_emptyStage != _EmptyStage.none ? 0 : 0.28) : 1,
                     child: GestureDetector(

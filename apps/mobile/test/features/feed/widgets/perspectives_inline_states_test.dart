@@ -148,10 +148,10 @@ void main() {
     expect(toggleCount, 0);
 
     // Pause de lecture : le bandeau reste visible
-    await tester.pump(const Duration(milliseconds: 2999));
+    await tester.pump(const Duration(milliseconds: 499));
     expect(find.text('Couverture médiatique (0)'), findsOneWidget);
 
-    // Timer 3 s → fading + slide démarrent
+    // Timer 500 ms → fading + slide démarrent
     await tester.pump(const Duration(milliseconds: 1));
     expect(
       tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
