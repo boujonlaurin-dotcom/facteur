@@ -50,7 +50,7 @@ import '../../saved/providers/collections_provider.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
 
 @visibleForTesting
-PerspectivesSectionStatus perspectivesStatusForTesting(
+PerspectivesSectionStatus resolvePerspectivesStatus(
   PerspectivesResponse? response,
 ) {
   if (response == null) return PerspectivesSectionStatus.loading;
@@ -222,7 +222,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _content?.contentType == ContentType.article;
 
   PerspectivesSectionStatus get _perspectivesStatus =>
-      perspectivesStatusForTesting(_perspectivesResponse);
+      resolvePerspectivesStatus(_perspectivesResponse);
 
   List<Perspective> get _inlinePerspectives {
     final response = _perspectivesResponse;

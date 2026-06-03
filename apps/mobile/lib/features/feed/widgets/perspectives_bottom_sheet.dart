@@ -1381,13 +1381,14 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
       _PerspectivesInlineSectionState();
 }
 
+enum _EmptyStage { none, fading, collapsed }
+
 class _PerspectivesInlineSectionState
     extends ConsumerState<PerspectivesInlineSection> {
   double _rotationTurns = 0.0;
   Timer? _emptyDismissTimer;
   Timer? _emptyCollapseTimer;
-  bool _emptyDismissed = false;
-  bool _emptyCollapsed = false;
+  _EmptyStage _emptyStage = _EmptyStage.none;
   // Incrementé à chaque transition replié → ouvert : chaque DiffTitle reçoit
   // ce nombre dans sa Key, ce qui le re-crée et relance sa cascade. Garantit
   // que l'animation est jouée 1× par ouverture et pas re-déclenchée sur les
@@ -1429,24 +1430,19 @@ class _PerspectivesInlineSectionState
     _emptyCollapseTimer = null;
 
     if (widget.status != PerspectivesSectionStatus.empty) {
-      if (_emptyDismissed || _emptyCollapsed) {
-        setState(() {
-          _emptyDismissed = false;
-          _emptyCollapsed = false;
-        });
+      if (_emptyStage != _EmptyStage.none) {
+        setState(() => _emptyStage = _EmptyStage.none);
       }
       return;
     }
 
-    if (_emptyDismissed || _emptyCollapsed) return;
+    if (_emptyStage != _EmptyStage.none) return;
     _emptyDismissTimer = Timer(const Duration(seconds: 1), () {
       if (!mounted || widget.status != PerspectivesSectionStatus.empty) return;
-      setState(() => _emptyDismissed = true);
+      setState(() => _emptyStage = _EmptyStage.fading);
       _emptyCollapseTimer = Timer(const Duration(milliseconds: 350), () {
-        if (!mounted || widget.status != PerspectivesSectionStatus.empty) {
-          return;
-        }
-        setState(() => _emptyCollapsed = true);
+        if (!mounted || widget.status != PerspectivesSectionStatus.empty) return;
+        setState(() => _emptyStage = _EmptyStage.collapsed);
       });
     });
   }
@@ -1477,7 +1473,7 @@ class _PerspectivesInlineSectionState
     final variants = _filteredPerspectives.take(8).toList();
     final isReady = widget.status == PerspectivesSectionStatus.ready;
     final isEmpty = widget.status == PerspectivesSectionStatus.empty;
-    final shouldShowHeader = !isEmpty || !_emptyCollapsed;
+    final shouldShowHeader = !isEmpty || _emptyStage != _EmptyStage.collapsed;
     final label = widget.status == PerspectivesSectionStatus.loading
         ? 'Couverture médiatique'
         : 'Couverture médiatique (${widget.perspectives.length})';
@@ -1499,7 +1495,7 @@ class _PerspectivesInlineSectionState
               ? AnimatedSlide(
                   duration: const Duration(milliseconds: 350),
                   curve: Curves.easeOutCubic,
-                  offset: isEmpty && _emptyDismissed
+                  offset: isEmpty && _emptyStage != _EmptyStage.none
                       ? const Offset(1.1, 0)
                       : Offset.zero,
                   // Fondu front-loadé (rapide + easeOut) : le bandeau est déjà
@@ -1508,7 +1504,7 @@ class _PerspectivesInlineSectionState
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 180),
                     curve: Curves.easeOut,
-                    opacity: isEmpty ? (_emptyDismissed ? 0 : 0.5) : 1,
+                    opacity: isEmpty ? (_emptyStage != _EmptyStage.none ? 0 : 0.5) : 1,
                     child: GestureDetector(
                       onTap: isReady ? widget.onToggle : null,
                       behavior: HitTestBehavior.opaque,

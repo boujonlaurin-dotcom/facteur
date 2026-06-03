@@ -41,7 +41,7 @@ class DivergenceInlineBadge extends StatelessWidget {
 
     final glyph = CustomPaint(
       size: Size(28 * scale, 12 * scale),
-      painter: _DivergenceGlyphPainter(config),
+      painter: _DivergenceGlyphPainter(config, scale),
     );
 
     if (iconOnly) return glyph;
@@ -139,16 +139,14 @@ class _Dot {
 
 class _DivergenceGlyphPainter extends CustomPainter {
   final _BadgeConfig config;
-  _DivergenceGlyphPainter(this.config);
+  final double scale;
+  _DivergenceGlyphPainter(this.config, this.scale);
 
   static const double _radius = 1.5;
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Coordonnées des dots calées sur une base 28×12 ; on scale le canvas pour
-    // honorer une taille demandée plus grande (cf. `scale` du badge).
-    final s = size.width / 28;
-    if (s != 1) canvas.scale(s);
+    if (scale != 1.0) canvas.scale(scale);
     for (final dot in config.dots) {
       final paint = Paint()..color = dot.color.withValues(alpha: dot.opacity);
       canvas.drawCircle(Offset(dot.x, dot.y), _radius, paint);
@@ -157,6 +155,6 @@ class _DivergenceGlyphPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DivergenceGlyphPainter oldDelegate) {
-    return oldDelegate.config != config;
+    return oldDelegate.config != config || oldDelegate.scale != scale;
   }
 }

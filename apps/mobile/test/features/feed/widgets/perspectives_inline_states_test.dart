@@ -80,11 +80,11 @@ void main() {
 
   test('partial empty response keeps perspectives status loading', () {
     expect(
-      perspectivesStatusForTesting(null),
+      resolvePerspectivesStatus(null),
       PerspectivesSectionStatus.loading,
     );
     expect(
-      perspectivesStatusForTesting(
+      resolvePerspectivesStatus(
         PerspectivesResponse(
           perspectives: const [],
           keywords: const [],
@@ -95,7 +95,7 @@ void main() {
       PerspectivesSectionStatus.loading,
     );
     expect(
-      perspectivesStatusForTesting(
+      resolvePerspectivesStatus(
         PerspectivesResponse(
           perspectives: [
             PerspectiveData(
@@ -114,7 +114,7 @@ void main() {
       PerspectivesSectionStatus.ready,
     );
     expect(
-      perspectivesStatusForTesting(
+      resolvePerspectivesStatus(
         PerspectivesResponse(
           perspectives: const [],
           keywords: const [],
