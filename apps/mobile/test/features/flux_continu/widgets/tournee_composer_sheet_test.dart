@@ -69,7 +69,7 @@ UserInterestsState _interests(List<FavoriteRef> favorites) => UserInterestsState
       customTopics: const [],
       favorites: favorites,
       favoriteCount: favorites.length,
-      favoriteCap: 3,
+      favoriteCap: 5,
     );
 
 UserSourcesState _sources({
@@ -87,7 +87,7 @@ UserSourcesState _sources({
       ],
       favorites: favorites,
       favoriteCount: favorites.length,
-      favoriteCap: 3,
+      favoriteCap: 5,
     );
 
 Source _source(String id, String name) =>

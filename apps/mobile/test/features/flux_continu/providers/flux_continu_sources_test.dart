@@ -66,7 +66,7 @@ UserInterestsState _interestsState({List<FavoriteRef> favorites = const []}) {
     customTopics: const [],
     favorites: favorites,
     favoriteCount: favorites.length,
-    favoriteCap: 3,
+    favoriteCap: 5,
   );
 }
 
@@ -81,7 +81,7 @@ UserSourcesState _sourcesState({List<SourceFavoriteRef> favorites = const []}) {
         .toList(),
     favorites: favorites,
     favoriteCount: favorites.length,
-    favoriteCap: 3,
+    favoriteCap: 5,
   );
 }
 
@@ -293,7 +293,7 @@ void main() {
   });
 
   test('plusieurs sources favorites respectent l\'ordre par position et le '
-      'cap (parité thèmes = 3)', () async {
+      'cap (parité thèmes = 5)', () async {
     stubFeed(
       themeIds: const {},
       sourceIds: {
@@ -301,6 +301,8 @@ void main() {
         'b': ['b1', 'b2'],
         'c': ['c1', 'c2'],
         'd': ['d1', 'd2'],
+        'e': ['e1', 'e2'],
+        'f': ['f1', 'f2'],
       },
     );
     final container = await buildContainer(
@@ -310,8 +312,17 @@ void main() {
         SourceFavoriteRef(sourceId: 'a', position: 0),
         SourceFavoriteRef(sourceId: 'b', position: 1),
         SourceFavoriteRef(sourceId: 'd', position: 3),
+        SourceFavoriteRef(sourceId: 'f', position: 5),
+        SourceFavoriteRef(sourceId: 'e', position: 4),
       ]),
-      catalog: [_source('a'), _source('b'), _source('c'), _source('d')],
+      catalog: [
+        _source('a'),
+        _source('b'),
+        _source('c'),
+        _source('d'),
+        _source('e'),
+        _source('f'),
+      ],
     );
     addTearDown(container.dispose);
 
@@ -321,7 +332,7 @@ void main() {
         .map((s) => s.sourceId)
         .toList();
 
-    // Triées par position (a,b,c,d) puis capées à 3 → a,b,c.
-    expect(sources, ['a', 'b', 'c']);
+    // Triées par position (a,b,c,d,e,f) puis capées à 5 → a,b,c,d,e.
+    expect(sources, ['a', 'b', 'c', 'd', 'e']);
   });
 }

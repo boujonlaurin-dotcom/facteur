@@ -1,7 +1,7 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../config/theme.dart';
+import '../../../widgets/design/facteur_image.dart';
 import '../models/source_model.dart';
 
 /// Avatar carré pour une source : logo si dispo, sinon initiales du nom.
@@ -39,12 +39,12 @@ class SourceLogoAvatar extends StatelessWidget {
     if (url != null && url.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(radius),
-        child: CachedNetworkImage(
+        child: FacteurImage(
           imageUrl: url,
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorWidget: (_, __, ___) => _Initials(
+          errorWidget: (_) => _Initials(
             name: name,
             size: size,
             radius: radius,

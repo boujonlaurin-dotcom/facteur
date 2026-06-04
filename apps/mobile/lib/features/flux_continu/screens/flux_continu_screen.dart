@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:haptic_feedback/haptic_feedback.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
@@ -41,7 +42,6 @@ import '../widgets/tournee_composer_sheet.dart';
 import '../widgets/geoloc_prompt_banner.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
-import '../../grille/grille_constants.dart';
 import '../../grille/providers/grille_provider.dart';
 import '../../grille/widgets/grille_cta_card.dart';
 
@@ -54,6 +54,14 @@ const double _kStickyThreshold = 60.0;
 /// dropped from the sticky overlay: tabs row (48) + progress track (4) + a
 /// couple px of slack.
 const double _kStickyBarHeight = 54.0;
+
+/// Hauteur (px) du **footer glassmorphique partagé** (barre d'onglets) qui
+/// recouvre le bas de la zone scrollable — le contenu passe dessous. On la
+/// retranche du cadrage « bas de section » pour que les dernières cartes (le
+/// « Lire plus ») ne soient pas tronquées par le footer. La safe-area du bas
+/// (encoche / home indicator) s'y **ajoute dynamiquement** (cf.
+/// [_recomputeSnapAnchors]). Tune-able à l'œil : monter si le bas reste rogné.
+const double _kFooterBarHeight = 50.0;
 
 // Section-snap tuning lives in `utils/section_snap.dart` (kSnapCaptureFraction,
 // kBoundaryCrossVelocity, kSnapEpsilon, kSnapSpring) so the resting-position
@@ -85,6 +93,10 @@ const _citationTab = StickyTab(
   label: 'Citation du jour',
   accent: _kLeisureTabAccent,
 );
+const _closingTab = StickyTab(
+  label: 'Fin de tournée',
+  accent: Color(0xFF2E7D32),
+);
 
 class FluxContinuScreen extends ConsumerStatefulWidget {
   const FluxContinuScreen({super.key});
@@ -104,16 +116,18 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
   final List<GlobalKey> _sectionKeys = [];
 
-  // Clés dédiées aux deux cartes virtuelles qui ont désormais un onglet sticky.
+  // Clés dédiées aux cartes virtuelles qui ont désormais un onglet sticky.
   // La Grille n'est montée qu'à un seul endroit à la fois (après Actus, ou en
   // fallback bas) → une seule clé suffit. Disjointes de [_sectionKeys] : la
   // logique de fold (qui itère _sectionKeys) reste inchangée.
   final GlobalKey _grilleKey = GlobalKey();
   final GlobalKey _citationKey = GlobalKey();
+  final GlobalKey _closingKey = GlobalKey();
 
   // Clés des « entrées sticky » dans l'ordre exact des slivers : sections +
-  // Mot du jour + Citation. Source unique pour le suivi de section active et le
-  // scroll-to-section (les onglets en dérivent via [_syncStickyEntries]).
+  // Mot du jour + Citation + Fin de tournée. Source unique pour le suivi de
+  // section active et le scroll-to-section (les onglets en dérivent via
+  // [_syncStickyEntries]).
   final List<GlobalKey> _stickyEntryKeys = [];
 
   /// Sliver « Grille du jour » (carte d'entrée de La Grille). Padding maquette
@@ -148,8 +162,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   final _SnapAnchors _snapAnchors = _SnapAnchors();
   bool _snapAnchorsRecomputeScheduled = false;
 
+  /// Safe-area inset at the bottom (home indicator / notch), captured in
+  /// [build]. Added to [_kFooterBarHeight] so the « bottom of section » frame
+  /// clears the shared footer on every device. Read in [_recomputeSnapAnchors]
+  /// (a post-frame callback) where reading `MediaQuery` directly is unsafe.
+  double _safeAreaBottom = 0;
+
   /// A section snap is in flight (its ballistic spring is settling). While set,
-  /// the per-section `selectionClick` tick is suppressed so the medium settle
+  /// the per-section passage haptic is suppressed so the stronger settle
   /// haptic isn't doubled. The settle haptic itself is deferred to the
   /// [ScrollEndNotification] via [_pendingSnapHaptic].
   bool _isSnapping = false;
@@ -309,14 +329,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       }
     }
     if (_activeIndex.value != activeAt) {
-      // Discrete "selection" tick when the active tab flips section under the
+      // Strong section haptic when the active tab flips section under the
       // sticky bar. Gated on visibility so we don't buzz during the initial
       // layout / top-of-page scroll, before the sticky is even revealed.
-      // Suppressed while a snap is settling: the medium settle haptic owns the
+      // Suppressed while a snap is settling: the settle haptic owns the
       // boundary crossing, so we don't double-buzz.
       if (_stickyVisible.value) {
         if (!_isSnapping) {
-          unawaited(HapticFeedback.selectionClick());
+          unawaited(_triggerSectionChangeHaptic());
         }
         _pulsePassageForStickyIndex(activeAt);
       }
@@ -361,7 +381,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     _pendingSnapHaptic = false;
   }
 
-  /// Bridges scroll notifications to the snap haptic. The medium settle haptic
+  /// Bridges scroll notifications to the snap haptic. The settle haptic
   /// is fired at rest (not when the spring is built) so it reads as the section
   /// "posing" under the sticky bar. A fresh drag cancels any pending settle.
   bool _onScrollNotification(ScrollNotification n) {
@@ -371,17 +391,33 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     } else if (n is ScrollEndNotification) {
       if (_pendingSnapHaptic) {
         _pendingSnapHaptic = false;
-        unawaited(HapticFeedback.mediumImpact());
+        unawaited(_triggerSectionChangeHaptic());
       }
       _isSnapping = false;
     }
     return false;
   }
 
-  /// Recomputes the section-start anchors from current layout. Each anchor is
-  /// the absolute scroll offset that would bring a sticky entry's top flush
-  /// under the sticky bar — identical maths to [_scrollToSection]. Offset-
-  /// invariant (we add `_scroll.offset` back), so it is safe to run mid-scroll.
+  Future<void> _triggerSectionChangeHaptic() async {
+    try {
+      await Haptics.vibrate(HapticsType.heavy, usage: HapticsUsage.touch);
+    } catch (_) {
+      await HapticFeedback.heavyImpact();
+    }
+  }
+
+  /// Recomputes the section framing offsets from current layout. Each sticky
+  /// entry yields a [SectionFrame]:
+  /// - `top`    : the offset that brings the entry's top flush under the sticky
+  ///   bar (identical maths to [_scrollToSection]);
+  /// - `bottom` : the offset that brings the entry's bottom flush to the footer.
+  ///   It is `> top` only for entries taller than the usable viewport — those
+  ///   get a free-reading interior; shorter entries collapse `bottom == top`.
+  ///
+  /// [resolveSnapTarget] turns these into the edge-triggered feel: free while a
+  /// section fills the screen, snap to the next frame in the travel direction
+  /// otherwise. Offset-invariant (we add `_scroll.offset` back), so it is safe
+  /// to run mid-scroll.
   void _recomputeSnapAnchors() {
     if (!_scroll.hasClients) {
       _snapAnchors.values = const [];
@@ -391,18 +427,28 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         ?.findRenderObject() as RenderBox?;
     if (scrollBox == null) return;
     final offset = _scroll.offset;
-    final result = <double>[];
+    // Visible bottom edge: the scroll area extends under the shared footer
+    // (content passes beneath it), so the section bottom must land above the
+    // footer bar + bottom safe-area, else the last cards (« Lire plus ») are
+    // truncated.
+    final visibleBottom =
+        scrollBox.size.height - (_kFooterBarHeight + _safeAreaBottom);
+    final result = <SectionFrame>[];
     for (final key in _stickyEntryKeys) {
       final ctx = key.currentContext;
       if (ctx == null) continue;
       final box = ctx.findRenderObject();
       if (box is! RenderBox || !box.attached) continue;
-      final anchor = offset +
-          (box.localToGlobal(Offset.zero, ancestor: scrollBox).dy -
-              _kStickyBarHeight);
-      result.add(anchor);
+      final topGlobal = box.localToGlobal(Offset.zero, ancestor: scrollBox).dy;
+      final top = offset + (topGlobal - _kStickyBarHeight);
+      // Bottom flush to the visible bottom (above the footer). `bottom - top =
+      // sectionHeight - usableViewport`, so `bottom > top` exactly when the
+      // section is taller than the visible area — i.e. only those gain a
+      // free-reading zone.
+      final bottom = offset + (topGlobal + box.size.height) - visibleBottom;
+      result.add((top: top, bottom: bottom));
     }
-    result.sort();
+    result.sort((a, b) => a.top.compareTo(b.top));
     _snapAnchors.values = result;
   }
 
@@ -831,6 +877,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // Sections don't resize mid-session (folds defer to next launch), so we
     // refresh the snap anchors only on these content/layout-driven rebuilds —
     // never per scroll frame.
+    _safeAreaBottom = MediaQuery.viewPaddingOf(context).bottom;
     _scheduleAnchorRecompute();
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
@@ -955,6 +1002,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (!hasActus && grillePresent) {
       add(_grilleKey, _motDuJourTab);
     }
+    add(_closingKey, _closingTab);
 
     _stickyEntryKeys
       ..clear()
@@ -1070,12 +1118,16 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             // la fermeture programmatique est interdite → on masque le bouton et
             // on affiche une phrase de clôture à la place.
             SliverToBoxAdapter(
-              child: ClosingCardV18(
-                articleCount: totalArticles,
-                onContinue: () => context.go(RoutePaths.flaner),
-                onClose: isAndroid ? () => SystemNavigator.pop() : null,
-                closeHint:
-                    isAndroid ? null : 'Vous pouvez refermer l’app — à demain',
+              child: KeyedSubtree(
+                key: _closingKey,
+                child: ClosingCardV18(
+                  articleCount: totalArticles,
+                  onContinue: () => context.go(RoutePaths.flaner),
+                  onClose: isAndroid ? () => SystemNavigator.pop() : null,
+                  closeHint: isAndroid
+                      ? null
+                      : 'Vous pouvez refermer l’app — à demain',
+                ),
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 92)),
@@ -1185,11 +1237,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   }
 }
 
-/// Mutable, stable holder of the section-start anchors shared between the
+/// Mutable, stable holder of the section framing offsets shared between the
 /// screen state and the (immutable) [_SectionSnapPhysics]. The physics reads
 /// [values] live each ballistic build; the state owns the writes.
 class _SnapAnchors {
-  List<double> values = const [];
+  List<SectionFrame> values = const [];
 }
 
 /// Scroll physics that folds a section-anchored snap into the fling's ballistic
@@ -1234,9 +1286,9 @@ class _SectionSnapPhysics extends ScrollPhysics {
     );
   }
 
-  /// Resolves the clamped section-anchored resting position, or `null` to keep
-  /// the natural fling (header zone, deep inside a tall section, already
-  /// aligned, or no anchors).
+  /// Resolves the clamped section-framed resting position, or `null` to keep
+  /// the natural fling (header zone, free inside a tall section, already
+  /// aligned, or no frames).
   double? _resolveTarget(
     ScrollMetrics position,
     double velocity,
@@ -1244,20 +1296,40 @@ class _SectionSnapPhysics extends ScrollPhysics {
   ) {
     final list = anchors.values;
     if (list.isEmpty) return null;
+    // Let the platform overscroll own the hard edges. At the bottom of the feed
+    // (notably under "Fin de tournée"), forcing our section spring on top of
+    // iOS' bounce creates stepped rebounds and repeated settle haptics.
+    if (position.outOfRange ||
+        (position.pixels >= position.maxScrollExtent - kSnapEpsilon &&
+            velocity >= 0)) {
+      return null;
+    }
     // Header/banner zone (above the first section) → let the RefreshIndicator
     // own pull-to-refresh; never snap.
-    if (position.pixels <= list.first) return null;
+    if (position.pixels <= list.first.top) return null;
 
     final landing =
         natural == null ? position.pixels : _simulationEndX(natural, position);
     if (landing <= 0) return null;
 
+    // Travel direction from the controller, not the lift velocity: a slow
+    // drag-to-read down ends at ≈ 0 velocity, which would misread as "going
+    // up". ScrollDirection.reverse = scrolling down (offset increasing) ⇒ +1;
+    // .forward = up ⇒ -1.
+    final scrollDirection = position is ScrollPosition
+        ? switch (position.userScrollDirection) {
+            ScrollDirection.reverse => 1.0,
+            ScrollDirection.forward => -1.0,
+            ScrollDirection.idle => 0.0,
+          }
+        : 0.0;
+
     final raw = resolveSnapTarget(
       currentPixels: position.pixels,
       naturalLanding: landing,
       velocity: velocity,
-      anchors: list,
-      usableViewport: position.viewportDimension - _kStickyBarHeight,
+      scrollDirection: scrollDirection,
+      frames: list,
     );
     if (raw == null) return null;
 

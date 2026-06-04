@@ -317,8 +317,8 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
                           _FavoritesPromptCta(
                             label: 'Définir mes thèmes favoris',
                             subtitle: quickPicks.isEmpty
-                                ? 'Ajoute-les en favori dans Mes intérêts (top 3 = Tournée du jour)'
-                                : '${quickPicks.length} favori${quickPicks.length > 1 ? "s" : ""} — top 3 affiché dans la Tournée du jour',
+                                ? 'Ajoute-les en favori dans Mes intérêts (top 5 = Tournée du jour)'
+                                : '${quickPicks.length} favori${quickPicks.length > 1 ? "s" : ""} — top 5 affiché dans la Tournée du jour',
                             colors: colors,
                             onTap: () {
                               Navigator.of(context).pop();

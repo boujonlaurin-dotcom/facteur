@@ -1,7 +1,7 @@
 """Service métier — système d'intérêts unifié (Story 22.1).
 
 Gère les mutations d'état (`hidden`/`unfollowed`/`followed`/`favorite`) sur les
-3 entités (Thèmes, Sujets, Sources) et l'ordre canonique des favoris (cap=3
+3 entités (Thèmes, Sujets, Sources) et l'ordre canonique des favoris (cap=5
 par catégorie). L'invalidation cache et les events PostHog sont du ressort
 des routers (couche transport).
 """
@@ -53,12 +53,12 @@ class TargetNotFavorite(Exception):
 
 
 class CustomTopicNotReorderable(Exception):
-    """Un custom_topic favori ne peut pas occuper une position du top 3 reorderable.
+    """Un custom_topic favori ne peut pas occuper une position du top 5 reorderable.
 
-    Le top 3 « Tournée du jour » est réservé aux thèmes et veilles (cf. Story
+    Le top 5 « Tournée du jour » est réservé aux thèmes et veilles (cf. Story
     23.x bug-custom-topic-favori-regression). Les custom_topic favoris sont
     affichés dans une section séparée « Sujets épinglés » côté mobile, alimentent
-    les onglets de la section Explorer, mais ne sont pas draggable dans le top 3.
+    les onglets de la section Explorer, mais ne sont pas draggable dans le top 5.
     """
 
     def __init__(self, target_id: str):

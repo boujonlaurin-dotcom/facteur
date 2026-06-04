@@ -5,7 +5,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 
 /// Typographic divider inserted once in the Flux Continu feed, right before
-/// the first user-favorite theme section. Tells the user that the next
+/// the first user-favorite tournée section. Tells the user that the next
 /// section(s) are configurable and offers a ghost CTA that opens the same
 /// bottom sheet as the inline favorite stars on the banners themselves.
 class MyInterestsIntro extends StatelessWidget {
@@ -24,23 +24,23 @@ class MyInterestsIntro extends StatelessWidget {
     // The hero-card padding is 22px horizontally — match it so the rule lines
     // up with the title/blurb edge of the section banner that follows.
     final label = favoriteCount > 1
-        ? 'TES $favoriteCount THÈMES FAVORIS'
-        : 'TON THÈME FAVORI';
+        ? 'TES $favoriteCount FAVORIS DE TOURNÉE'
+        : 'TON FAVORI DE TOURNÉE';
     final stampStyle = GoogleFonts.dmSans(
-      fontSize: 11,
-      fontWeight: FontWeight.w700,
-      letterSpacing: 0.6,
+      fontSize: 12.5,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 0.7,
       color: colors.textStamp,
     );
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 18, 22, 8),
+      padding: const EdgeInsets.fromLTRB(22, 22, 22, 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(
             PhosphorIcons.star(PhosphorIconsStyle.fill),
-            size: 11,
+            size: 13,
             color: colors.textStamp,
           ),
           const SizedBox(width: 6),

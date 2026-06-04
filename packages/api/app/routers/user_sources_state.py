@@ -2,7 +2,7 @@
 
 Endpoints monté sous `/api/user/sources` (distinct du router `sources.py` monté
 sous `/api/sources` qui sert le catalogue + endpoints legacy `PUT /weight`).
-Couvre l'écran « Mes sources » côté mobile (liste + favoris ordonnés, cap=3
+Couvre l'écran « Mes sources » côté mobile (liste + favoris ordonnés, cap=5
 indépendant des intérêts).
 """
 

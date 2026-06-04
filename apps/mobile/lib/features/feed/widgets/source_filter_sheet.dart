@@ -257,8 +257,8 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
                           _FavoritesPromptCta(
                             label: 'Définir mes sources favorites',
                             subtitle: favorites.isEmpty
-                                ? 'Ajoute-les en favori dans Mes sources (top 3 = Tournée du jour)'
-                                : '${favorites.length} favori${favorites.length > 1 ? "s" : ""} — top 3 affiché dans la Tournée du jour',
+                                ? 'Ajoute-les en favori dans Mes sources (top 5 = Tournée du jour)'
+                                : '${favorites.length} favori${favorites.length > 1 ? "s" : ""} — top 5 affiché dans la Tournée du jour',
                             colors: colors,
                             onTap: () {
                               Navigator.of(context).pop();

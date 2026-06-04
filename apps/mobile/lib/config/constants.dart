@@ -296,7 +296,7 @@ class SentryConstants {
 class InterestConstants {
   InterestConstants._();
 
-  static const int favoriteCap = 3;
+  static const int favoriteCap = 5;
 }
 
 /// Alias top-level expliciment demandé par le hand-off 22.1.2.

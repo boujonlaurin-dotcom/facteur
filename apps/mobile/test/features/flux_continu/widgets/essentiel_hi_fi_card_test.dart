@@ -77,7 +77,7 @@ void main() {
 
       expect(find.textContaining('Ton Essentiel'), findsOneWidget);
       expect(
-        find.textContaining('Tes 5 articles du jour'),
+        find.textContaining('5 articles du jour, basé sur tes intérêts'),
         findsOneWidget,
       );
       expect(

@@ -29,7 +29,7 @@ class _FakeRepo implements UserInterestsRepository {
     int? position,
   }) async {
     setCalls++;
-    if (throwCap) throw const FavoriteCapReachedException(3);
+    if (throwCap) throw const FavoriteCapReachedException(5);
     if (throwAfterOptimistic != null) throw throwAfterOptimistic!;
     final favorites = state == InterestState.favorite
         ? <FavoriteRef>[...initial.favorites, ref]
@@ -75,7 +75,7 @@ void main() {
         customTopics: [],
         favorites: [],
         favoriteCount: 0,
-        favoriteCap: 3,
+        favoriteCap: 5,
       );
 
   test('optimistic update reflects new state before API resolves', () async {

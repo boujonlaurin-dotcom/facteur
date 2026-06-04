@@ -57,7 +57,7 @@ UserInterestsState _interestsState({
     customTopics: customTopics,
     favorites: favorites,
     favoriteCount: favorites.length,
-    favoriteCap: 3,
+    favoriteCap: 5,
   );
 }
 
@@ -590,7 +590,7 @@ void main() {
       expect(themeSections.single.customTopicId, customId);
     });
 
-    test('3 favorites cap (4th ignored)', () async {
+    test('5 favorites cap (6th ignored)', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       when(() => feedRepo.getFeed(
             page: any(named: 'page'),
@@ -605,7 +605,9 @@ void main() {
           ThemeFavoriteRef(slug: 'tech'),
           ThemeFavoriteRef(slug: 'science'),
           ThemeFavoriteRef(slug: 'culture'),
-          ThemeFavoriteRef(slug: 'economy'), // 4th — must be dropped
+          ThemeFavoriteRef(slug: 'economy'),
+          ThemeFavoriteRef(slug: 'politics'),
+          ThemeFavoriteRef(slug: 'sport'), // 6th — must be dropped
         ]),
       );
       addTearDown(container.dispose);
@@ -615,7 +617,7 @@ void main() {
           .whereType<FeedThemeSection>()
           .map((s) => s.themeSlug)
           .toList();
-      expect(slugs, ['tech', 'science', 'culture']);
+      expect(slugs, ['tech', 'science', 'culture', 'economy', 'politics']);
     });
   });
 

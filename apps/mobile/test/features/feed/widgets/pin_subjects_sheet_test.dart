@@ -73,7 +73,7 @@ UserInterestsState _state({
     customTopics: topics,
     favorites: favorites,
     favoriteCount: favorites.length,
-    favoriteCap: 3,
+    favoriteCap: 5,
   );
 }
 

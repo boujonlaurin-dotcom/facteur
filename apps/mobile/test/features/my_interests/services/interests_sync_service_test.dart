@@ -31,7 +31,7 @@ class _RecorderRepo implements UserInterestsRepository {
       customTopics: [],
       favorites: [],
       favoriteCount: 0,
-      favoriteCap: 3,
+      favoriteCap: 5,
     );
   }
 
@@ -120,7 +120,7 @@ void main() {
       'theme_priority_Technologie': 2.0,
       'theme_priority_Sciences': 2.0,
     });
-    final repo = _RecorderRepo()..throwOnSet = const FavoriteCapReachedException(3);
+    final repo = _RecorderRepo()..throwOnSet = const FavoriteCapReachedException(5);
     final service = await makeService(repo);
 
     // Ne doit pas crash, et le flag doit être posé in fine.

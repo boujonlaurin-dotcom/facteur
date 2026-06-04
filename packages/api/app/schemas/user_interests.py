@@ -2,8 +2,8 @@
 
 Couvre les écrans « Mes intérêts » (Thèmes + Sujets) et « Mes sources ». L'enum
 `InterestState` est l'axe sémantique unique (hidden/unfollowed/followed/favorite)
-partagé par les 3 entités. `FAVORITE_CAP=3` n'est plus une limite dure mais le
-cap d'affichage de la « Tournée du jour » (les 3 premiers favoris par position).
+partagé par les 3 entités. `FAVORITE_CAP=5` n'est plus une limite dure mais le
+cap d'affichage de la « Tournée du jour » (les 5 premiers favoris par position).
 """
 
 from typing import Literal

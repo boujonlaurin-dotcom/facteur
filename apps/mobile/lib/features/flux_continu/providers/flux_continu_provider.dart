@@ -56,20 +56,18 @@ const String _kActusDuJourBlurb = 'Les sujets les + couverts en France.';
 const String _kBonnesBlurb = 'Un peu de douceur...';
 
 /// Hard cap on the number of favorite theme sections rendered in the tournée.
-/// Mirrors `kFavoriteCap = 3` in the my_interests provider — the value is
+/// Mirrors `kFavoriteCap = 5` in the my_interests provider — the value is
 /// duplicated here only because the maps key by sectionKey and we slice the
 /// favorite list during composition. Keep aligned with the backend constant.
-const int _kMaxFavoriteSections = 3;
+const int _kMaxFavoriteSections = 5;
 
 /// Hard cap on the number of favorite SOURCE sections rendered in the tournée
-/// (PR « Sources dans la Tournée »). Parité avec les thèmes
-/// ([_kMaxFavoriteSections]) — décision PO. Cap intérimaire : l'unification
-/// cap-5 total (veille incluse) + ordre 100 % libre est reportée en PR 2.
-const int _kMaxFavoriteSourceSections = 3;
+/// (PR « Sources dans la Tournée »). Parité avec les thèmes.
+const int _kMaxFavoriteSourceSections = 5;
 
 /// Cap d'AFFICHAGE de la Tournée (thèmes + sources + veille mélangés). Distinct
-/// des caps serveur par type (3+3) — décision PO Option A : on garde 3 thèmes +
-/// 3 sources favoris possibles, mais on n'affiche que les 5 premiers.
+/// des caps serveur par type : on peut avoir 5 thèmes + 5 sources favoris
+/// possibles, mais on n'affiche que les 5 premiers.
 const int _kMaxTourneeSections = 5;
 
 /// Number of items requested per page for each theme section of the Tournée
@@ -999,7 +997,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// Source of truth: `userInterestsProvider.favorites` (the user-declared
   /// favorites, cap = [_kMaxFavoriteSections]). Fallback when the provider
   /// hasn't loaded yet OR returned an empty list: the legacy `top-themes`
-  /// endpoint (weight-based) capped to 3 entries, then canonical macro
+  /// endpoint (weight-based) capped to 5 entries, then canonical macro
   /// themes. This guarantees fresh accounts always see a tournée even before
   /// the backfill migration runs.
   List<FavoriteRef> _pickFavorites(List<TopTheme> topFallback) {
@@ -1008,8 +1006,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
     // Story 23.4 — la veille a un **slot dédié hors cap** : on la sépare des
     // favoris thème/sujet (cap = [_kMaxFavoriteSections]) puis on l'ajoute en
-    // plus, pour qu'elle ne soit jamais coupée par le `.take(3)` (bug : favori
-    // veille en position 3 → invisible).
+    // plus, pour qu'elle ne soit jamais coupée par le cap thème/source.
     VeilleFavoriteRef? veilleRef;
     final nonVeille = <FavoriteRef>[];
     for (final f in favorites) {
