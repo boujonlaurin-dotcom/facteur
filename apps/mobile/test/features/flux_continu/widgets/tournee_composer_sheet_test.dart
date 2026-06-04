@@ -3,7 +3,11 @@
 // au-delà du cap 5, et handlers ajout/retrait (membership) via spies.
 import 'package:facteur/config/routes.dart';
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/tournee_composer_sheet.dart';
+import 'package:facteur/features/grille/models/grille_models.dart';
+import 'package:facteur/features/grille/providers/grille_provider.dart';
+import 'package:facteur/features/grille/repositories/grille_repository.dart';
 import 'package:facteur/features/my_interests/models/user_interests_state.dart';
 import 'package:facteur/features/my_interests/models/user_sources_state.dart';
 import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
@@ -66,6 +70,36 @@ class _StubVeilleNotifier extends VeilleActiveConfigNotifier {
   Future<VeilleConfigDto?> build() async => null;
 }
 
+class _FakeGrilleRepository implements GrilleRepository {
+  _FakeGrilleRepository(this.today);
+
+  final GrilleTodayResponse? today;
+
+  @override
+  Future<GrilleTodayResponse> getToday() async {
+    final value = today;
+    if (value == null) throw Exception('mock: no grille');
+    return value;
+  }
+
+  @override
+  Future<GrilleLeaderboardResponse> getLeaderboard() =>
+      throw UnimplementedError();
+
+  @override
+  Future<GrilleRevealResponse> revealWord() => throw UnimplementedError();
+
+  @override
+  Future<GrilleGuessResponse> submitGuess(String mot) =>
+      throw UnimplementedError();
+}
+
+class _StubSereinToggleNotifier extends SereinToggleNotifier {
+  _StubSereinToggleNotifier(super.ref, bool enabled) {
+    state = SereinToggleState(enabled: enabled, isLoading: false);
+  }
+}
+
 UserInterestsState _interests(List<FavoriteRef> favorites) =>
     UserInterestsState(
       themes: const [],
@@ -81,11 +115,13 @@ UserSourcesState _sources({
 }) =>
     UserSourcesState(
       sources: [
-        ...favorites.map((f) => SourceInterest(
-              sourceId: f.sourceId,
-              state: InterestState.favorite,
-              priorityMultiplier: 1.0,
-            )),
+        ...favorites.map(
+          (f) => SourceInterest(
+            sourceId: f.sourceId,
+            state: InterestState.favorite,
+            priorityMultiplier: 1.0,
+          ),
+        ),
         ...followed,
       ],
       favorites: favorites,
@@ -95,6 +131,23 @@ UserSourcesState _sources({
 
 Source _source(String id, String name) =>
     Source(id: id, name: name, type: SourceType.article);
+
+GrilleTodayResponse _grilleToday() => const GrilleTodayResponse(
+      date: '2026-05-30',
+      dateAffichee: 'Vendredi 30 mai',
+      dateCourt: 'Ven. 30 mai',
+      numero: 'N°143',
+      longueur: 6,
+      essaisMax: 6,
+      premiereLettre: 'C',
+      indice: 'indice',
+      theme: 'theme',
+      statut: 'in_progress',
+      essais: [],
+      nbEssais: 0,
+      streak: 5,
+      prochainMotDansSec: 1000,
+    );
 
 Widget _wrap(Widget child) => MaterialApp(
       theme: ThemeData(extensions: [FacteurPalettes.light]),
@@ -107,6 +160,8 @@ Future<({_SpyInterestsNotifier interests, _SpySourcesNotifier sources})>
   required UserInterestsState interests,
   required UserSourcesState sources,
   List<Source> catalog = const [],
+  GrilleTodayResponse? grilleToday,
+  bool isSerene = false,
 }) async {
   final spyInterests = _SpyInterestsNotifier(interests);
   final spySources = _SpySourcesNotifier(sources);
@@ -118,6 +173,12 @@ Future<({_SpyInterestsNotifier interests, _SpySourcesNotifier sources})>
         userSourcesStateProvider.overrideWith(() => spySources),
         userSourcesProvider.overrideWith(() => _StubCatalogNotifier(catalog)),
         veilleActiveConfigProvider.overrideWith(() => _StubVeilleNotifier()),
+        grilleRepositoryProvider.overrideWithValue(
+          _FakeGrilleRepository(grilleToday),
+        ),
+        sereinToggleProvider.overrideWith(
+          (ref) => _StubSereinToggleNotifier(ref, isSerene),
+        ),
       ],
       child: _wrap(
         Builder(
@@ -142,6 +203,7 @@ Future<void> _openSheetWithRouter(
   WidgetTester tester, {
   required UserInterestsState interests,
   required UserSourcesState sources,
+  GrilleTodayResponse? grilleToday,
 }) async {
   final router = GoRouter(
     initialLocation: '/',
@@ -175,10 +237,20 @@ Future<void> _openSheetWithRouter(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        userInterestsProvider.overrideWith(() => _SpyInterestsNotifier(interests)),
-        userSourcesStateProvider.overrideWith(() => _SpySourcesNotifier(sources)),
+        userInterestsProvider.overrideWith(
+          () => _SpyInterestsNotifier(interests),
+        ),
+        userSourcesStateProvider.overrideWith(
+          () => _SpySourcesNotifier(sources),
+        ),
         userSourcesProvider.overrideWith(() => _StubCatalogNotifier(const [])),
         veilleActiveConfigProvider.overrideWith(() => _StubVeilleNotifier()),
+        grilleRepositoryProvider.overrideWithValue(
+          _FakeGrilleRepository(grilleToday),
+        ),
+        sereinToggleProvider.overrideWith(
+          (ref) => _StubSereinToggleNotifier(ref, false),
+        ),
       ],
       child: MaterialApp.router(
         theme: ThemeData(extensions: [FacteurPalettes.light]),
@@ -208,8 +280,43 @@ void main() {
     expect(find.text('Composer ma Tournée'), findsOneWidget);
     expect(find.text('MA TOURNÉE'), findsOneWidget);
     expect(find.text('AJOUTER'), findsOneWidget);
-    // Tournée vide → hint.
-    expect(find.textContaining('Ta Tournée est vide'), findsOneWidget);
+    expect(find.text('Actus du jour'), findsOneWidget);
+    expect(find.text('Bonnes Nouvelles'), findsOneWidget);
+    expect(find.textContaining('Ta Tournée est vide'), findsNothing);
+  });
+
+  testWidgets('affiche la Grille dans MA TOURNÉE quand le mot existe', (
+    tester,
+  ) async {
+    await _openSheet(
+      tester,
+      interests: _interests(const []),
+      sources: _sources(),
+      grilleToday: _grilleToday(),
+    );
+
+    expect(find.text('La Grille du jour'), findsOneWidget);
+  });
+
+  testWidgets('mode serène customisé : aperçu conserve l\'ordre normal', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'tournee_customized_v1': true,
+    });
+    await _openSheet(
+      tester,
+      interests: _interests(const []),
+      sources: _sources(),
+      grilleToday: _grilleToday(),
+      isSerene: true,
+    );
+
+    final actusY = tester.getTopLeft(find.text('Actus du jour')).dy;
+    final grilleY = tester.getTopLeft(find.text('La Grille du jour')).dy;
+    final bonnesY = tester.getTopLeft(find.text('Bonnes Nouvelles')).dy;
+    expect(actusY, lessThan(grilleY));
+    expect(grilleY, lessThan(bonnesY));
   });
 
   testWidgets('MA TOURNÉE mélange thèmes + sources favoris, sans trait ≤ 5', (
@@ -255,6 +362,9 @@ void main() {
   testWidgets('retirer une source → setSourceState(.., followed)', (
     tester,
   ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'tournee_order_v1': ['source:s1'],
+    });
     final spies = await _openSheet(
       tester,
       interests: _interests(const []),
@@ -265,7 +375,7 @@ void main() {
     );
 
     await tester.tap(
-      find.byIcon(PhosphorIcons.minusCircle(PhosphorIconsStyle.fill)),
+      find.byIcon(PhosphorIcons.minusCircle(PhosphorIconsStyle.fill)).first,
     );
     await tester.pumpAndSettle();
 
@@ -293,6 +403,40 @@ void main() {
     expect(ref, isA<ThemeFavoriteRef>());
     expect((ref as ThemeFavoriteRef).slug, 'tech');
     expect(state, InterestState.favorite);
+  });
+
+  testWidgets('retirer Actus masque la clé puis Réafficher restaure', (
+    tester,
+  ) async {
+    await _openSheet(
+      tester,
+      interests: _interests(const []),
+      sources: _sources(),
+    );
+
+    await tester.tap(
+      find.byIcon(PhosphorIcons.minusCircle(PhosphorIconsStyle.fill)).first,
+    );
+    await tester.pumpAndSettle();
+
+    var prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getStringList('tournee_hidden_keys_v1'),
+      contains('essentiel'),
+    );
+    expect(find.text('Actus du jour'), findsNothing);
+    expect(find.text('Réafficher Actus du jour'), findsOneWidget);
+
+    await tester.tap(find.text('Réafficher Actus du jour'));
+    await tester.pumpAndSettle();
+
+    prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getStringList('tournee_hidden_keys_v1') ?? const <String>[],
+      isNot(contains('essentiel')),
+    );
+    expect(prefs.getStringList('tournee_order_v1'), contains('essentiel'));
+    expect(find.text('Actus du jour'), findsOneWidget);
   });
 
   group('footer GÉRER', () {
@@ -334,28 +478,32 @@ void main() {
       expect(find.text('SOURCES SCREEN'), findsOneWidget);
     });
 
-    testWidgets('tap « Gérer ses intérêts » → ferme la sheet + route intérêts', (
-      tester,
-    ) async {
-      await _openSheetWithRouter(
-        tester,
-        interests: _interests(const []),
-        sources: _sources(),
-      );
+    testWidgets(
+      'tap « Gérer ses intérêts » → ferme la sheet + route intérêts',
+      (tester) async {
+        await _openSheetWithRouter(
+          tester,
+          interests: _interests(const []),
+          sources: _sources(),
+        );
 
-      await tester.ensureVisible(find.text('Gérer ses intérêts'));
-      await tester.tap(find.text('Gérer ses intérêts'));
-      await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Gérer ses intérêts'));
+        await tester.tap(find.text('Gérer ses intérêts'));
+        await tester.pumpAndSettle();
 
-      expect(find.text('Composer ma Tournée'), findsNothing);
-      expect(find.text('INTERESTS SCREEN'), findsOneWidget);
-    });
+        expect(find.text('Composer ma Tournée'), findsNothing);
+        expect(find.text('INTERESTS SCREEN'), findsOneWidget);
+      },
+    );
   });
 
   group('markCustomized — 1ʳᵉ mutation', () {
     testWidgets('retirer une source marque la Tournée comme customisée', (
       tester,
     ) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'tournee_order_v1': ['source:s1'],
+      });
       await _openSheet(
         tester,
         interests: _interests(const []),
@@ -366,7 +514,7 @@ void main() {
       );
 
       await tester.tap(
-        find.byIcon(PhosphorIcons.minusCircle(PhosphorIconsStyle.fill)),
+        find.byIcon(PhosphorIcons.minusCircle(PhosphorIconsStyle.fill)).first,
       );
       await tester.pumpAndSettle();
 

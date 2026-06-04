@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:facteur/features/digest/models/digest_models.dart';
 import 'package:facteur/features/digest/models/dual_digest_response.dart';
 import 'package:facteur/features/digest/providers/digest_provider.dart';
@@ -10,11 +12,16 @@ import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
 import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
 import 'package:facteur/features/flux_continu/repositories/flux_continu_repository.dart';
+import 'package:facteur/features/flux_continu/services/flux_continu_cache_service.dart';
+import 'package:facteur/features/grille/models/grille_models.dart';
+import 'package:facteur/features/grille/providers/grille_provider.dart';
+import 'package:facteur/features/grille/repositories/grille_repository.dart';
 import 'package:facteur/features/my_interests/models/user_interests_state.dart';
 import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive/hive.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -28,6 +35,23 @@ class _MockFluxContinuRepository extends Mock
 class _StubEssentielRepository implements EssentielRepository {
   @override
   Future<List<EssentielArticle>?> fetch() async => const [];
+}
+
+class _NoGrilleRepository implements GrilleRepository {
+  @override
+  Future<GrilleTodayResponse> getToday() async =>
+      throw Exception('mock: no grille');
+
+  @override
+  Future<GrilleLeaderboardResponse> getLeaderboard() =>
+      throw UnimplementedError();
+
+  @override
+  Future<GrilleRevealResponse> revealWord() => throw UnimplementedError();
+
+  @override
+  Future<GrilleGuessResponse> submitGuess(String mot) =>
+      throw UnimplementedError();
 }
 
 /// Stub notifier that returns a fixed [UserInterestsState] synchronously,
@@ -98,14 +122,16 @@ FeedResponse _feedResponseWithIds(
 }) {
   return FeedResponse(
     items: ids
-        .map((id) => Content(
-              id: id,
-              title: 'title-$id',
-              url: 'https://x.test/$id',
-              contentType: ContentType.article,
-              publishedAt: DateTime(2026, 1, 1),
-              source: Source(id: 's', name: 'S', type: SourceType.article),
-            ))
+        .map(
+          (id) => Content(
+            id: id,
+            title: 'title-$id',
+            url: 'https://x.test/$id',
+            contentType: ContentType.article,
+            publishedAt: DateTime(2026, 1, 1),
+            source: Source(id: 's', name: 'S', type: SourceType.article),
+          ),
+        )
         .toList(),
     pagination: Pagination(page: page, perPage: 10, total: 0, hasNext: hasNext),
     carousels: const [],
@@ -119,42 +145,67 @@ void main() {
   late _MockFeedRepository feedRepo;
   late _MockFluxContinuRepository fluxRepo;
 
+  Future<void> clearFluxCache() async {
+    final cacheBox = Hive.isBoxOpen(FluxContinuCacheService.boxName)
+        ? Hive.box<String>(FluxContinuCacheService.boxName)
+        : await Hive.openBox<String>(FluxContinuCacheService.boxName);
+    await cacheBox.clear();
+  }
+
   ProviderContainer makeContainer({
     UserInterestsState? interests,
+    _StubUserInterestsNotifier? interestsNotifier,
   }) {
+    final userInterestsNotifier = interestsNotifier ??
+        _StubUserInterestsNotifier(interests ?? _interestsState());
     return ProviderContainer(
       overrides: [
         digestRepositoryProvider.overrideWithValue(digestRepo),
         feedRepositoryProvider.overrideWithValue(feedRepo),
         fluxContinuRepositoryProvider.overrideWithValue(fluxRepo),
-        essentielRepositoryProvider
-            .overrideWithValue(_StubEssentielRepository()),
-        userInterestsProvider.overrideWith(
-          () => _StubUserInterestsNotifier(interests ?? _interestsState()),
+        essentielRepositoryProvider.overrideWithValue(
+          _StubEssentielRepository(),
         ),
+        grilleRepositoryProvider.overrideWithValue(_NoGrilleRepository()),
+        userInterestsProvider.overrideWith(() => userInterestsNotifier),
+        sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
       ],
     );
   }
 
-  setUp(() {
+  setUpAll(() {
+    Hive.init(Directory.systemTemp.createTempSync('flux_provider_hive').path);
+  });
+
+  setUp(() async {
+    await clearFluxCache();
     digestRepo = _MockDigestRepository();
     feedRepo = _MockFeedRepository();
     fluxRepo = _MockFluxContinuRepository();
 
     // The provider wraps each upstream call in `_safe<T>` which catches and
     // logs — empty/throwing repos are the canonical "no payload" path.
-    when(() => digestRepo.fetchBothDigests())
-        .thenThrow(Exception('mock: no digest'));
-    when(() => fluxRepo.getTopThemes())
-        .thenAnswer((_) async => const <TopTheme>[]);
-    when(() => feedRepo.getFeed(
-          page: any(named: 'page'),
-          limit: any(named: 'limit'),
-          theme: any(named: 'theme'),
-          topic: any(named: 'topic'),
-          serein: any(named: 'serein'),
-          personalized: any(named: 'personalized'),
-        )).thenThrow(Exception('mock: no feed'));
+    when(
+      () => digestRepo.fetchBothDigests(),
+    ).thenThrow(Exception('mock: no digest'));
+    when(
+      () => fluxRepo.getTopThemes(),
+    ).thenAnswer((_) async => const <TopTheme>[]);
+    when(
+      () => feedRepo.getFeed(
+        page: any(named: 'page'),
+        limit: any(named: 'limit'),
+        theme: any(named: 'theme'),
+        topic: any(named: 'topic'),
+        serein: any(named: 'serein'),
+        personalized: any(named: 'personalized'),
+      ),
+    ).thenThrow(Exception('mock: no feed'));
+  });
+
+  tearDown(() async {
+    await pumpEventQueue(times: 5);
+    await clearFluxCache();
   });
 
   group('FluxContinuNotifier — purge cross-day', () {
@@ -168,13 +219,13 @@ void main() {
         todayClosingKey: true,
       });
 
-      final container = makeContainer();
-      addTearDown(container.dispose);
+        final container = makeContainer();
+        addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
-      // Purge runs as `unawaited` — give the microtask queue a beat.
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
+        await container.read(fluxContinuProvider.future);
+        // Purge runs as `unawaited` — give the microtask queue a beat.
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
 
       final prefs = await SharedPreferences.getInstance();
       final keys = prefs.getKeys();
@@ -192,8 +243,8 @@ void main() {
         'flux_continu_folded_${_todayIso()}': <String>['bonnes'],
       });
 
-      final container = makeContainer();
-      addTearDown(container.dispose);
+        final container = makeContainer();
+        addTearDown(container.dispose);
 
       await container.read(fluxContinuProvider.future);
       await Future<void>.delayed(Duration.zero);
@@ -220,71 +271,74 @@ void main() {
   });
 
   group('FluxContinuNotifier — favorites-driven theme sections', () {
-    test('0 favorites + empty top-themes fallback → 3 canonical themes fetched',
-        () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
-      // Digest absent, feed absent → only the theme fetches matter.
-      when(() => feedRepo.getFeed(
+    test(
+      '0 favorites + empty top-themes fallback → 3 canonical themes fetched',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        // Digest absent, feed absent → only the theme fetches matter.
+        when(
+          () => feedRepo.getFeed(
             page: any(named: 'page'),
             limit: any(named: 'limit'),
             theme: any(named: 'theme'),
             serein: any(named: 'serein'),
             personalized: any(named: 'personalized'),
-          )).thenAnswer((_) async => _feedResponseWith(3));
+          ),
+        ).thenAnswer((_) async => _feedResponseWith(3));
 
-      final container = makeContainer(); // 0 favorites in stub
-      addTearDown(container.dispose);
+        final container = makeContainer(); // 0 favorites in stub
+        addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+        await container.read(fluxContinuProvider.future);
 
-      // 3 fallback canonical theme fetches (tech, environment, science).
-      final captured = verify(() => feedRepo.getFeed(
+        // 3 fallback canonical theme fetches (tech, environment, science).
+        final captured = verify(
+          () => feedRepo.getFeed(
             page: any(named: 'page'),
             limit: any(named: 'limit'),
             theme: captureAny(named: 'theme'),
             serein: any(named: 'serein'),
             personalized: any(named: 'personalized'),
-          )).captured;
-      expect(captured, containsAll(['tech', 'environment', 'science']));
-    });
+          ),
+        ).captured;
+        expect(captured, containsAll(['tech', 'environment', 'science']));
+      },
+    );
 
     test('Theme favorite triggers getFeed(theme: slug)', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
-      when(() => feedRepo.getFeed(
-            page: any(named: 'page'),
-            limit: any(named: 'limit'),
-            theme: any(named: 'theme'),
-            serein: any(named: 'serein'),
-            personalized: any(named: 'personalized'),
-          )).thenAnswer((_) async => _feedResponseWith(3));
+      when(
+        () => feedRepo.getFeed(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+          theme: any(named: 'theme'),
+          serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
+        ),
+      ).thenAnswer((_) async => _feedResponseWith(3));
 
       final container = makeContainer(
-        interests: _interestsState(favorites: [
-          const ThemeFavoriteRef(slug: 'culture'),
-        ]),
+        interests: _interestsState(
+          favorites: [const ThemeFavoriteRef(slug: 'culture')],
+        ),
       );
       addTearDown(container.dispose);
 
       await container.read(fluxContinuProvider.future);
 
-      verify(() => feedRepo.getFeed(
-            page: any(named: 'page'),
-            limit: any(named: 'limit'),
-            theme: 'culture',
-            serein: any(named: 'serein'),
-            personalized: any(named: 'personalized'),
-          )).called(1);
+      verify(
+        () => feedRepo.getFeed(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+          theme: 'culture',
+          serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
+        ),
+      ).called(1);
     });
 
-    test('Custom topic favorite triggers getFeed(topic: uuid)', () async {
+    test('Custom topic favorite is excluded from Tournée', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
-      when(() => feedRepo.getFeed(
-            page: any(named: 'page'),
-            limit: any(named: 'limit'),
-            topic: any(named: 'topic'),
-            serein: any(named: 'serein'),
-            personalized: any(named: 'personalized'),
-          )).thenAnswer((_) async => _feedResponseWith(3));
 
       const customId = 'aaaa-bbbb-cccc';
       final container = makeContainer(
@@ -305,40 +359,107 @@ void main() {
 
       final state = await container.read(fluxContinuProvider.future);
 
-      verify(() => feedRepo.getFeed(
-            page: any(named: 'page'),
-            limit: any(named: 'limit'),
-            topic: customId,
-            serein: any(named: 'serein'),
-            personalized: any(named: 'personalized'),
-          )).called(1);
+      verifyNever(
+        () => feedRepo.getFeed(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+          topic: customId,
+          serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
+        ),
+      );
 
       final themeSections =
           state.sections.whereType<FeedThemeSection>().toList();
-      expect(themeSections, hasLength(1));
-      expect(themeSections.single.label, 'IA & éducation');
-      expect(themeSections.single.customTopicId, customId);
+      expect(themeSections.where((s) => s.customTopicId != null), isEmpty);
+    });
+
+    test('Custom topic favorite added live is ignored', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      when(
+        () => feedRepo.getFeed(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+          theme: any(named: 'theme'),
+          serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
+        ),
+      ).thenAnswer((_) async => _feedResponseWith(3));
+
+      const customId = 'aaaa-bbbb-cccc';
+      final interestsNotifier = _StubUserInterestsNotifier(
+        _interestsState(
+          favorites: const [ThemeFavoriteRef(slug: 'tech')],
+        ),
+      );
+      final container = makeContainer(interestsNotifier: interestsNotifier);
+      addTearDown(container.dispose);
+
+      await container.read(fluxContinuProvider.future);
+      clearInteractions(feedRepo);
+
+      interestsNotifier.setState(
+        _interestsState(
+          favorites: const [
+            ThemeFavoriteRef(slug: 'tech'),
+            CustomTopicFavoriteRef(id: customId),
+          ],
+          customTopics: const [
+            CustomTopicInterest(
+              id: customId,
+              topicName: 'IA & éducation',
+              slugParent: 'tech',
+              state: InterestState.favorite,
+              priorityMultiplier: 2.0,
+            ),
+          ],
+        ),
+      );
+      await pumpEventQueue(times: 5);
+
+      verifyNever(
+        () => feedRepo.getFeed(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+          topic: customId,
+          serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
+        ),
+      );
+      verifyNever(
+        () => feedRepo.getFeed(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+          theme: 'tech',
+          serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
+        ),
+      );
     });
 
     test('5 favorites cap (6th ignored)', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
-      when(() => feedRepo.getFeed(
-            page: any(named: 'page'),
-            limit: any(named: 'limit'),
-            theme: any(named: 'theme'),
-            serein: any(named: 'serein'),
-            personalized: any(named: 'personalized'),
-          )).thenAnswer((_) async => _feedResponseWith(3));
+      when(
+        () => feedRepo.getFeed(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+          theme: any(named: 'theme'),
+          serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
+        ),
+      ).thenAnswer((_) async => _feedResponseWith(3));
 
       final container = makeContainer(
-        interests: _interestsState(favorites: const [
-          ThemeFavoriteRef(slug: 'tech'),
-          ThemeFavoriteRef(slug: 'science'),
-          ThemeFavoriteRef(slug: 'culture'),
-          ThemeFavoriteRef(slug: 'economy'),
-          ThemeFavoriteRef(slug: 'politics'),
-          ThemeFavoriteRef(slug: 'sport'), // 6th — must be dropped
-        ]),
+        interests: _interestsState(
+          favorites: const [
+            ThemeFavoriteRef(slug: 'tech'),
+            ThemeFavoriteRef(slug: 'science'),
+            ThemeFavoriteRef(slug: 'culture'),
+            ThemeFavoriteRef(slug: 'economy'),
+            ThemeFavoriteRef(slug: 'politics'),
+            ThemeFavoriteRef(slug: 'sport'), // 6th — must be dropped
+          ],
+        ),
       );
       addTearDown(container.dispose);
 
@@ -354,18 +475,20 @@ void main() {
   group('FluxContinuNotifier — Tournée du jour curation (personalized)', () {
     test('Theme favorite forwards personalized:true to getFeed', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
-      when(() => feedRepo.getFeed(
-            page: any(named: 'page'),
-            limit: any(named: 'limit'),
-            theme: any(named: 'theme'),
-            serein: any(named: 'serein'),
-            personalized: any(named: 'personalized'),
-          )).thenAnswer((_) async => _feedResponseWith(3));
+      when(
+        () => feedRepo.getFeed(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+          theme: any(named: 'theme'),
+          serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
+        ),
+      ).thenAnswer((_) async => _feedResponseWith(3));
 
       final container = makeContainer(
-        interests: _interestsState(favorites: const [
-          ThemeFavoriteRef(slug: 'tech'),
-        ]),
+        interests: _interestsState(
+          favorites: const [ThemeFavoriteRef(slug: 'tech')],
+        ),
       );
       addTearDown(container.dispose);
 
@@ -373,111 +496,117 @@ void main() {
 
       // The Tournée du jour theme sections opt in to the backend curation
       // (followed sources only + 24h window + user_subtopics boost).
-      verify(() => feedRepo.getFeed(
-            page: any(named: 'page'),
-            limit: any(named: 'limit'),
-            theme: 'tech',
-            serein: any(named: 'serein'),
-            personalized: true,
-          )).called(1);
+      verify(
+        () => feedRepo.getFeed(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+          theme: 'tech',
+          serein: any(named: 'serein'),
+          personalized: true,
+        ),
+      ).called(1);
     });
 
-    test('Custom topic favorite forwards personalized:true to getFeed',
-        () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
-      when(() => feedRepo.getFeed(
-            page: any(named: 'page'),
-            limit: any(named: 'limit'),
-            topic: any(named: 'topic'),
-            serein: any(named: 'serein'),
-            personalized: any(named: 'personalized'),
-          )).thenAnswer((_) async => _feedResponseWith(3));
+    test(
+      'Custom topic favorite does not hit personalized topic feed',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
 
-      const customId = 'aaaa-bbbb-cccc';
-      final container = makeContainer(
-        interests: _interestsState(
-          favorites: const [CustomTopicFavoriteRef(id: customId)],
-          customTopics: const [
-            CustomTopicInterest(
-              id: customId,
-              topicName: 'IA & éducation',
-              slugParent: 'tech',
-              state: InterestState.favorite,
-              priorityMultiplier: 2.0,
-            ),
-          ],
-        ),
-      );
-      addTearDown(container.dispose);
+        const customId = 'aaaa-bbbb-cccc';
+        final container = makeContainer(
+          interests: _interestsState(
+            favorites: const [CustomTopicFavoriteRef(id: customId)],
+            customTopics: const [
+              CustomTopicInterest(
+                id: customId,
+                topicName: 'IA & éducation',
+                slugParent: 'tech',
+                state: InterestState.favorite,
+                priorityMultiplier: 2.0,
+              ),
+            ],
+          ),
+        );
+        addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+        await container.read(fluxContinuProvider.future);
 
-      verify(() => feedRepo.getFeed(
+        verifyNever(
+          () => feedRepo.getFeed(
             page: any(named: 'page'),
             limit: any(named: 'limit'),
             topic: customId,
             serein: any(named: 'serein'),
             personalized: true,
-          )).called(1);
-    });
+          ),
+        );
+      },
+    );
   });
 
   group('FluxContinuNotifier — loadMoreTheme pagination', () {
-    test('appends next page items, increments page, propagates hasMore',
-        () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
+    test(
+      'appends next page items, increments page, propagates hasMore',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
 
-      // Initial fetch (page 1) — 10 items (= page limit), hasNext=true.
-      // The page must be FULL to keep hasMore=true after the safety-net
-      // guard "items.length < limit ⇒ hasMore=false" (cf.
-      // `_kThemeSectionPageLimit` in flux_continu_provider.dart).
-      final pageOneIds = List.generate(10, (i) => 'a${i + 1}');
-      final pageTwoIds = List.generate(3, (i) => 'b${i + 1}');
-      when(() => feedRepo.getFeed(
-                page: 1,
-                limit: any(named: 'limit'),
-                theme: any(named: 'theme'),
-                serein: any(named: 'serein'),
-                personalized: any(named: 'personalized'),
-              ))
-          .thenAnswer((_) async =>
-              _feedResponseWithIds(pageOneIds, page: 1, hasNext: true));
-      // Load-more fetch (page 2) — 3 new items, hasNext=false (last page).
-      when(() => feedRepo.getFeed(
-                page: 2,
-                limit: any(named: 'limit'),
-                theme: any(named: 'theme'),
-                serein: any(named: 'serein'),
-                personalized: any(named: 'personalized'),
-              ))
-          .thenAnswer((_) async =>
-              _feedResponseWithIds(pageTwoIds, page: 2, hasNext: false));
+        // Initial fetch (page 1) — 10 items (= page limit), hasNext=true.
+        // The page must be FULL to keep hasMore=true after the safety-net
+        // guard "items.length < limit ⇒ hasMore=false" (cf.
+        // `_kThemeSectionPageLimit` in flux_continu_provider.dart).
+        final pageOneIds = List.generate(10, (i) => 'a${i + 1}');
+        final pageTwoIds = List.generate(3, (i) => 'b${i + 1}');
+        when(
+          () => feedRepo.getFeed(
+            page: 1,
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          ),
+        ).thenAnswer(
+          (_) async => _feedResponseWithIds(pageOneIds, page: 1, hasNext: true),
+        );
+        // Load-more fetch (page 2) — 3 new items, hasNext=false (last page).
+        when(
+          () => feedRepo.getFeed(
+            page: 2,
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          ),
+        ).thenAnswer(
+          (_) async =>
+              _feedResponseWithIds(pageTwoIds, page: 2, hasNext: false),
+        );
 
-      final container = makeContainer(
-        interests: _interestsState(favorites: const [
-          ThemeFavoriteRef(slug: 'tech'),
-        ]),
-      );
-      addTearDown(container.dispose);
+        final container = makeContainer(
+          interests: _interestsState(
+            favorites: const [ThemeFavoriteRef(slug: 'tech')],
+          ),
+        );
+        addTearDown(container.dispose);
 
-      final initial = await container.read(fluxContinuProvider.future);
-      final themeSection =
-          initial.sections.whereType<FeedThemeSection>().single;
-      expect(themeSection.items.map((c) => c.id), pageOneIds);
-      expect(themeSection.currentPage, 1);
-      expect(themeSection.hasMore, true);
+        final initial = await container.read(fluxContinuProvider.future);
+        final themeSection =
+            initial.sections.whereType<FeedThemeSection>().single;
+        expect(themeSection.items.map((c) => c.id), pageOneIds);
+        expect(themeSection.currentPage, 1);
+        expect(themeSection.hasMore, true);
 
-      await container
-          .read(fluxContinuProvider.notifier)
-          .loadMoreTheme(sectionKey(themeSection));
+        await container
+            .read(fluxContinuProvider.notifier)
+            .loadMoreTheme(sectionKey(themeSection));
 
-      final after = container.read(fluxContinuProvider).requireValue;
-      final updated = after.sections.whereType<FeedThemeSection>().single;
-      expect(updated.items.map((c) => c.id), [...pageOneIds, ...pageTwoIds]);
-      expect(updated.currentPage, 2);
-      expect(updated.hasMore, false);
-      expect(updated.isLoadingMore, false);
-    });
+        final after = container.read(fluxContinuProvider).requireValue;
+        final updated = after.sections.whereType<FeedThemeSection>().single;
+        expect(updated.items.map((c) => c.id), [...pageOneIds, ...pageTwoIds]);
+        expect(updated.currentPage, 2);
+        expect(updated.hasMore, false);
+        expect(updated.isLoadingMore, false);
+      },
+    );
 
     test(
         'partial page-1 response (< limit) forces hasMore=false even if '
@@ -490,21 +619,26 @@ void main() {
       // ThemeSectionScreen → bloque l'affichage de la closing card et du
       // bloc "Section suivante".
       SharedPreferences.setMockInitialValues(<String, Object>{});
-      when(() => feedRepo.getFeed(
-                page: 1,
-                limit: any(named: 'limit'),
-                theme: any(named: 'theme'),
-                serein: any(named: 'serein'),
-                personalized: any(named: 'personalized'),
-              ))
-          .thenAnswer((_) async => _feedResponseWithIds(
-              const ['a1', 'a2', 'a3'],
-              page: 1, hasNext: true));
+      when(
+        () => feedRepo.getFeed(
+          page: 1,
+          limit: any(named: 'limit'),
+          theme: any(named: 'theme'),
+          serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
+        ),
+      ).thenAnswer(
+        (_) async => _feedResponseWithIds(
+          const ['a1', 'a2', 'a3'],
+          page: 1,
+          hasNext: true,
+        ),
+      );
 
       final container = makeContainer(
-        interests: _interestsState(favorites: const [
-          ThemeFavoriteRef(slug: 'tech'),
-        ]),
+        interests: _interestsState(
+          favorites: const [ThemeFavoriteRef(slug: 'tech')],
+        ),
       );
       addTearDown(container.dispose);
 
@@ -512,58 +646,70 @@ void main() {
       final themeSection =
           initial.sections.whereType<FeedThemeSection>().single;
       expect(themeSection.items.length, 3);
-      expect(themeSection.hasMore, false,
-          reason: 'partial page must short-circuit pagination');
+      expect(
+        themeSection.hasMore,
+        false,
+        reason: 'partial page must short-circuit pagination',
+      );
     });
 
-    test('does nothing when section is already at end (hasMore=false)',
-        () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
-      when(() => feedRepo.getFeed(
-                page: 1,
-                limit: any(named: 'limit'),
-                theme: any(named: 'theme'),
-                serein: any(named: 'serein'),
-                personalized: any(named: 'personalized'),
-              ))
-          .thenAnswer((_) async => _feedResponseWithIds(const ['a1', 'a2'],
-              page: 1, hasNext: false));
+    test(
+      'does nothing when section is already at end (hasMore=false)',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        when(
+          () => feedRepo.getFeed(
+            page: 1,
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          ),
+        ).thenAnswer(
+          (_) async =>
+              _feedResponseWithIds(const ['a1', 'a2'], page: 1, hasNext: false),
+        );
 
-      final container = makeContainer(
-        interests: _interestsState(favorites: const [
-          ThemeFavoriteRef(slug: 'tech'),
-        ]),
-      );
-      addTearDown(container.dispose);
+        final container = makeContainer(
+          interests: _interestsState(
+            favorites: const [ThemeFavoriteRef(slug: 'tech')],
+          ),
+        );
+        addTearDown(container.dispose);
 
-      final initial = await container.read(fluxContinuProvider.future);
-      final themeSection =
-          initial.sections.whereType<FeedThemeSection>().single;
-      expect(themeSection.hasMore, false);
+        final initial = await container.read(fluxContinuProvider.future);
+        final themeSection =
+            initial.sections.whereType<FeedThemeSection>().single;
+        expect(themeSection.hasMore, false);
 
-      // Call loadMoreTheme — backend must NOT be hit a second time.
-      await container
-          .read(fluxContinuProvider.notifier)
-          .loadMoreTheme(sectionKey(themeSection));
+        // Call loadMoreTheme — backend must NOT be hit a second time.
+        await container
+            .read(fluxContinuProvider.notifier)
+            .loadMoreTheme(sectionKey(themeSection));
 
-      // Theme=tech fetch happens exactly once (initial). The page=1
-      // continuation fetch in `_fetchAll` is not theme-scoped and matched
-      // separately by the default mock; we only assert on theme fetches.
-      verify(() => feedRepo.getFeed(
+        // Theme=tech fetch happens exactly once (initial). The page=1
+        // continuation fetch in `_fetchAll` is not theme-scoped and matched
+        // separately by the default mock; we only assert on theme fetches.
+        verify(
+          () => feedRepo.getFeed(
             page: 1,
             limit: any(named: 'limit'),
             theme: 'tech',
             serein: any(named: 'serein'),
             personalized: any(named: 'personalized'),
-          )).called(1);
-      verifyNever(() => feedRepo.getFeed(
+          ),
+        ).called(1);
+        verifyNever(
+          () => feedRepo.getFeed(
             page: 2,
             limit: any(named: 'limit'),
             theme: 'tech',
             serein: any(named: 'serein'),
             personalized: any(named: 'personalized'),
-          ));
-    });
+          ),
+        );
+      },
+    );
   });
 
   group('FluxContinuNotifier — Story 9.2 hotfix (Actus du jour)', () {
@@ -581,73 +727,79 @@ void main() {
       rank: 1,
     );
 
-    test('EssentielSection (hi-fi) and "Actus du jour" coexist in sections',
-        () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
+    test(
+      'EssentielSection (hi-fi) and "Actus du jour" coexist in sections',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
 
-      // Digest "normal" with two non-empty topics → builds the legacy
-      // "Actus du jour" DigestTopicSection.
-      final digest = DigestResponse(
-        digestId: 'd1',
-        userId: 'u1',
-        targetDate: DateTime(2026, 5, 23),
-        generatedAt: DateTime(2026, 5, 23),
-        topics: [
-          DigestTopic(
-            topicId: 't1',
-            label: 'Topic A',
-            articles: const [DigestItem(contentId: 'a1', title: 'A')],
-          ),
-          DigestTopic(
-            topicId: 't2',
-            label: 'Topic B',
-            articles: const [DigestItem(contentId: 'b1', title: 'B')],
-          ),
-        ],
-      );
-      when(() => digestRepo.fetchBothDigests()).thenAnswer(
-        (_) async => DualDigestResponse(normal: digest, sereinEnabled: false),
-      );
+        // Digest "normal" with two non-empty topics → builds the legacy
+        // "Actus du jour" DigestTopicSection.
+        final digest = DigestResponse(
+          digestId: 'd1',
+          userId: 'u1',
+          targetDate: DateTime(2026, 5, 23),
+          generatedAt: DateTime(2026, 5, 23),
+          topics: [
+            const DigestTopic(
+              topicId: 't1',
+              label: 'Topic A',
+              articles: [DigestItem(contentId: 'a1', title: 'A')],
+            ),
+            const DigestTopic(
+              topicId: 't2',
+              label: 'Topic B',
+              articles: [DigestItem(contentId: 'b1', title: 'B')],
+            ),
+          ],
+        );
+        when(() => digestRepo.fetchBothDigests()).thenAnswer(
+          (_) async => DualDigestResponse(normal: digest, sereinEnabled: false),
+        );
 
-      final container = ProviderContainer(
-        overrides: [
-          digestRepositoryProvider.overrideWithValue(digestRepo),
-          feedRepositoryProvider.overrideWithValue(feedRepo),
-          fluxContinuRepositoryProvider.overrideWithValue(fluxRepo),
-          essentielRepositoryProvider.overrideWithValue(
-            _OneArticleEssentielRepository(hiFiArticle),
-          ),
-          userInterestsProvider.overrideWith(
-            () => _StubUserInterestsNotifier(_interestsState()),
-          ),
-          sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
-        ],
-      );
-      addTearDown(container.dispose);
+        final container = ProviderContainer(
+          overrides: [
+            digestRepositoryProvider.overrideWithValue(digestRepo),
+            feedRepositoryProvider.overrideWithValue(feedRepo),
+            fluxContinuRepositoryProvider.overrideWithValue(fluxRepo),
+            essentielRepositoryProvider.overrideWithValue(
+              _OneArticleEssentielRepository(hiFiArticle),
+            ),
+            grilleRepositoryProvider.overrideWithValue(_NoGrilleRepository()),
+            userInterestsProvider.overrideWith(
+              () => _StubUserInterestsNotifier(_interestsState()),
+            ),
+            sereinToggleProvider.overrideWith(
+              (ref) => SereinToggleNotifier(ref),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
 
-      final state = await container.read(fluxContinuProvider.future);
+        final state = await container.read(fluxContinuProvider.future);
 
-      // Both must be present, with distinct sectionKeys.
-      final essentielV3 = state.sections.whereType<EssentielSection>().toList();
-      final actusDuJour = state.sections
-          .whereType<DigestTopicSection>()
-          .where((s) => s.kind == SectionKind.essentiel)
-          .toList();
-      expect(essentielV3, hasLength(1));
-      expect(actusDuJour, hasLength(1));
-      expect(actusDuJour.single.label, 'Actus du jour');
-      // Distinct keys — no collision in the folded/moreOpen maps.
-      expect(sectionKey(essentielV3.single), 'essentiel_v3');
-      expect(sectionKey(actusDuJour.single), 'essentiel');
-      // The dedup pass drops the lead article of "Actus du jour" if it ever
-      // overlaps with the hi-fi card — the legacy section must still
-      // survive composition though (it carries other topics).
-      expect(
-        state.sections.indexOf(essentielV3.single),
-        lessThan(state.sections.indexOf(actusDuJour.single)),
-        reason: 'Hi-fi card renders above the legacy "Actus du jour"',
-      );
-    });
+        // Both must be present, with distinct sectionKeys.
+        final essentielV3 =
+            state.sections.whereType<EssentielSection>().toList();
+        final actusDuJour = state.sections
+            .whereType<DigestTopicSection>()
+            .where((s) => s.kind == SectionKind.essentiel)
+            .toList();
+        expect(essentielV3, hasLength(1));
+        expect(actusDuJour, hasLength(1));
+        expect(actusDuJour.single.label, 'Actus du jour');
+        // Distinct keys — no collision in the folded/moreOpen maps.
+        expect(sectionKey(essentielV3.single), 'essentiel_v3');
+        expect(sectionKey(actusDuJour.single), 'essentiel');
+        // The dedup pass drops the lead article of "Actus du jour" if it ever
+        // overlaps with the hi-fi card — the legacy section must still
+        // survive composition though (it carries other topics).
+        expect(
+          state.sections.indexOf(essentielV3.single),
+          lessThan(state.sections.indexOf(actusDuJour.single)),
+          reason: 'Hi-fi card renders above the legacy "Actus du jour"',
+        );
+      },
+    );
   });
 
   group('FluxContinuNotifier — dedup inter-sections', () {
@@ -683,8 +835,10 @@ void main() {
           digestRepositoryProvider.overrideWithValue(digestRepo),
           feedRepositoryProvider.overrideWithValue(feedRepo),
           fluxContinuRepositoryProvider.overrideWithValue(fluxRepo),
-          essentielRepositoryProvider
-              .overrideWithValue(_OneArticleEssentielRepository(hiFi)),
+          essentielRepositoryProvider.overrideWithValue(
+            _OneArticleEssentielRepository(hiFi),
+          ),
+          grilleRepositoryProvider.overrideWithValue(_NoGrilleRepository()),
           userInterestsProvider.overrideWith(
             () => _StubUserInterestsNotifier(_interestsState()),
           ),
@@ -758,9 +912,9 @@ void main() {
 
       expect(state.sections.whereType<EssentielSection>(), hasLength(1));
       expect(
-        state.sections
-            .whereType<DigestTopicSection>()
-            .where((s) => s.kind == SectionKind.essentiel),
+        state.sections.whereType<DigestTopicSection>().where(
+              (s) => s.kind == SectionKind.essentiel,
+            ),
         isEmpty,
         reason: 'A fully-deduped "Actus du jour" must be dropped, not orphaned',
       );

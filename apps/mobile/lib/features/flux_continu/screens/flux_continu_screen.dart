@@ -42,7 +42,6 @@ import '../widgets/tournee_composer_sheet.dart';
 import '../widgets/geoloc_prompt_banner.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
-import '../../grille/providers/grille_provider.dart';
 import '../../grille/widgets/grille_cta_card.dart';
 
 /// Scroll offset at which the AppBar is swapped with the sticky tab bar.
@@ -130,19 +129,18 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   // [_syncStickyEntries]).
   final List<GlobalKey> _stickyEntryKeys = [];
 
-  /// Sliver « Grille du jour » (carte d'entrée de La Grille). Padding maquette
-  /// partagé par ses deux sites de rendu : juste après « Actus du jour » (cas
-  /// nominal) et le fallback bas quand le digest est absent. Wrappé dans un
+  /// Sliver « Grille du jour » (carte d'entrée de La Grille). Son insertion est
+  /// pilotée par `FluxContinuState.grilleSlotIndex`. Wrappé dans un
   /// `KeyedSubtree(_grilleKey)` pour exposer la carte au suivi sticky.
   SliverToBoxAdapter get _grilleSliver => SliverToBoxAdapter(
-        child: KeyedSubtree(
-          key: _grilleKey,
-          child: const Padding(
-            padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
-            child: GrilleCtaCard(),
-          ),
-        ),
-      );
+    child: KeyedSubtree(
+      key: _grilleKey,
+      child: const Padding(
+        padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
+        child: GrilleCtaCard(),
+      ),
+    ),
+  );
 
   /// Articles swipe-dismissed and replaced by a [FeedbackInline] banner at
   /// the same position. The hide API has already fired (via
@@ -167,7 +165,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// clears the shared footer on every device. Read in [_recomputeSnapAnchors]
   /// (a post-frame callback) where reading `MediaQuery` directly is unsafe.
   double _safeAreaBottom = 0;
-
 
   /// Garde-fou : le flow post-onboarding (dialog customs échoués + modales
   /// thème & notifications) ne doit se jouer qu'une seule fois par montage,
@@ -275,7 +272,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // majority-visible, which matches what the user is actually reading. Itère
     // la liste combinée (sections + Mot du jour + Citation).
     const viewportTop = _kStickyBarHeight;
-    final viewportBottom = viewportTop +
+    final viewportBottom =
+        viewportTop +
         (_scroll.hasClients ? _scroll.position.viewportDimension : 0.0);
     int activeAt = 0;
     double bestVisible = -1;
@@ -356,8 +354,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       _snapAnchors.values = const [];
       return;
     }
-    final scrollBox = _scroll.position.context.notificationContext
-        ?.findRenderObject() as RenderBox?;
+    final scrollBox =
+        _scroll.position.context.notificationContext?.findRenderObject()
+            as RenderBox?;
     if (scrollBox == null) return;
     final offset = _scroll.offset;
     // Visible bottom edge: the scroll area extends under the shared footer
@@ -427,8 +426,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (ctx == null) return;
     final box = ctx.findRenderObject();
     if (box is! RenderBox) return;
-    final scrollBox = _scroll.position.context.notificationContext
-        ?.findRenderObject() as RenderBox?;
+    final scrollBox =
+        _scroll.position.context.notificationContext?.findRenderObject()
+            as RenderBox?;
     if (scrollBox == null) {
       await Scrollable.ensureVisible(
         ctx,
@@ -437,7 +437,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       );
       return;
     }
-    final delta = box.localToGlobal(Offset.zero, ancestor: scrollBox).dy -
+    final delta =
+        box.localToGlobal(Offset.zero, ancestor: scrollBox).dy -
         _kStickyBarHeight;
     final target = (_scroll.offset + delta).clamp(
       0.0,
@@ -558,7 +559,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
   void _trackFeedbackSubmit(String contentId, String feedbackType) {
     unawaited(
-      ref.read(analyticsServiceProvider).trackArticleFeedbackSubmitted(
+      ref
+          .read(analyticsServiceProvider)
+          .trackArticleFeedbackSubmitted(
             contentId: contentId,
             feedbackType: feedbackType,
             origin: 'flux_continu',
@@ -712,14 +715,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         ref.read(postOnboardingFlowPendingProvider) != null) {
       _schedulePostOnboardingFlow();
     }
-    // Mot du jour présent ⇔ la Grille a un mot du jour (sinon GrilleCtaCard se
-    // masque). `.select` ne reconstruit que lorsque la présence bascule.
-    final grillePresent = ref.watch(
-      grilleProvider.select((v) => v.valueOrNull?.today != null),
-    );
     // Source unique : aligne [_sectionKeys] + [_stickyEntryKeys] sur les slivers
     // et dérive les descripteurs d'onglets (label+accent), dans le même ordre.
-    final stickyTabs = _syncStickyEntries(state.valueOrNull, grillePresent);
+    final stickyTabs = _syncStickyEntries(state.valueOrNull);
     // Sections don't resize mid-session, so we refresh the snap anchors only on
     // these content/layout-driven rebuilds — never per scroll frame.
     _safeAreaBottom = MediaQuery.viewPaddingOf(context).bottom;
@@ -759,8 +757,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 child: AnimatedSlide(
                   duration: const Duration(milliseconds: 220),
                   curve: Curves.easeOutCubic,
-                  offset:
-                      _showScrollTopFab ? Offset.zero : const Offset(0, 1.6),
+                  offset: _showScrollTopFab
+                      ? Offset.zero
+                      : const Offset(0, 1.6),
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 220),
                     opacity: _showScrollTopFab ? 1.0 : 0.0,
@@ -796,10 +795,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// [_buildContent]. Synchronise [_sectionKeys] (1 clé/section) et
   /// [_stickyEntryKeys] (clés combinées pour le suivi actif + le scroll), puis
   /// retourne les descripteurs d'onglets (label+accent) dans le même ordre.
-  List<StickyTab> _syncStickyEntries(
-    FluxContinuState? state,
-    bool grillePresent,
-  ) {
+  List<StickyTab> _syncStickyEntries(FluxContinuState? state) {
     if (state == null) {
       _stickyEntryKeys.clear();
       return const [];
@@ -809,12 +805,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         ..clear()
         ..addAll(List.generate(state.sections.length, (_) => GlobalKey()));
     }
-    // « Actus du jour » = DigestTopicSection kind essentiel : la Grille est
-    // rendue juste après elle (sinon en fallback bas, après la Citation).
-    final hasActus = state.sections.any(
-      (s) => s is DigestTopicSection && s.kind == SectionKind.essentiel,
-    );
     final citationPresent = state.quote != null && !state.closingDismissed;
+    final grilleSlotIndex = state.grilleSlotIndex;
 
     final keys = <GlobalKey>[];
     final tabs = <StickyTab>[];
@@ -824,24 +816,20 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     }
 
     for (var i = 0; i < state.sections.length; i++) {
+      if (grilleSlotIndex == i) {
+        add(_grilleKey, _motDuJourTab);
+      }
       final section = state.sections[i];
       add(
         _sectionKeys[i],
         StickyTab(label: section.label, accent: section.accent),
       );
-      if (grillePresent &&
-          section is DigestTopicSection &&
-          section.kind == SectionKind.essentiel) {
-        add(_grilleKey, _motDuJourTab);
-      }
+    }
+    if (grilleSlotIndex == state.sections.length) {
+      add(_grilleKey, _motDuJourTab);
     }
     if (citationPresent) {
       add(_citationKey, _citationTab);
-    }
-    // Fallback bas : Grille rendue après la Citation quand il n'y a pas d'Actus
-    // (cf. `if (!hasActus) _grilleSliver` dans _buildContent).
-    if (!hasActus && grillePresent) {
-      add(_grilleKey, _motDuJourTab);
     }
     add(_closingKey, _closingTab);
 
@@ -863,12 +851,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // Store) → on y montre une phrase de clôture au lieu du bouton.
     final isAndroid = defaultTargetPlatform == TargetPlatform.android;
 
-    // « Actus du jour » = DigestTopicSection kind essentiel (identité robuste,
-    // cf. _buildSectionSlivers). Quand elle existe, la Grille est rendue juste
-    // après elle ; sinon on garde la Grille en fallback bas (digest absent).
-    final hasActus = state.sections.any(
-      (s) => s is DigestTopicSection && s.kind == SectionKind.essentiel,
-    );
     // NB : [_sectionKeys] est synchronisé en amont par [_syncStickyEntries]
     // (appelé dans build) → on s'appuie sur cet alignement ici.
 
@@ -885,9 +867,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           // resting position. AlwaysScrollable keeps the page scrollable even
           // when content is short.
           physics: AlwaysScrollableScrollPhysics(
-            parent: _SectionSnapPhysics(
-              anchors: _snapAnchors,
-            ),
+            parent: _SectionSnapPhysics(anchors: _snapAnchors),
           ),
           slivers: [
             // NB : le header (logo · streak · réglages) vit dans le scaffold de
@@ -921,7 +901,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
               state: state,
               notifier: notifier,
             ),
-            if (state.sections.isEmpty)
+            if (state.sections.isEmpty && state.grilleSlotIndex == null)
               SliverToBoxAdapter(
                 child: _EmptySectionsHint(onRetry: notifier.refresh),
               ),
@@ -936,18 +916,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                   child: CitationDuJourCard(quote: state.quote!),
                 ),
               ),
-            // « Le mot du jour » — récompense de fin de Tournée. Sliver additif
-            // au-dessus de ClosingCardV18 (cette dernière n'est pas modifiée :
-            // zéro régression, revert trivial). La carte se câble seule au
-            // grilleProvider et ne rend rien tant que `GET today` n'a pas répondu.
-            // Hors gate `closingDismissed` : elle reste dans le feed même après
-            // fermeture de la tournée (en état « déjà jouée »), et se masque
-            // seule (SizedBox.shrink) s'il n'y a pas de mot du jour.
-            // Grille — rendue juste après « Actus du jour » (cf.
-            // _buildSectionSlivers) quand cette section existe. Fallback bas
-            // ici uniquement si le digest est absent / la liste vide, pour ne
-            // jamais perdre la Grille. Hors gate `closingDismissed`.
-            if (!hasActus) _grilleSliver,
             // Carte « Fin de tournée » — toujours affichée (jamais masquée) : elle
             // reste le repère de clôture même après être passé sur Flâner.
             // « Continuer » navigue vers Flâner sans masquer la carte. « Refermer »
@@ -988,6 +956,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
     final slivers = <SliverToBoxAdapter>[];
     for (var i = 0; i < state.sections.length; i++) {
+      if (state.grilleSlotIndex == i) {
+        slivers.add(_grilleSliver);
+      }
       // Inject the "Mes intérêts" intro once, right before the first
       // user-favorite section. Skipped when favorites are first (no system
       // section above to separate from) or absent altogether.
@@ -1033,8 +1004,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 await markSwipeLeftHintSeen();
                 if (mounted) ref.invalidate(swipeLeftHintSeenProvider);
               },
-              onTapFavorite:
-                  isFavorite ? () => showTourneeComposerSheet(context) : null,
+              onTapFavorite: isFavorite
+                  ? () => showTourneeComposerSheet(context)
+                  : null,
               // Story 23.4 — bouton réglages (tune) sur la section veille →
               // ouvre la config en édition. Réutilisé par le CTA d'état vide.
               onTapSettings: section.kind == SectionKind.veille
@@ -1042,28 +1014,25 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                   : null,
               // Tournée bugs E2E — CTA « Ajouter des sources » de l'empty-state
               // d'une section thème favorite vide → ouvre « Composer ma Tournée ».
-              onAddSources: section is FeedThemeSection &&
+              onAddSources:
+                  section is FeedThemeSection &&
                       section.kind == SectionKind.theme
                   ? () => showTourneeComposerSheet(context)
                   : null,
               onSeeAll: section is FeedThemeSection
                   ? (section.kind == SectionKind.source
-                      ? () => _openSourceSection(context, section)
-                      : () => _openThemeSection(context, section))
+                        ? () => _openSourceSection(context, section)
+                        : () => _openThemeSection(context, section))
                   : section is DigestTopicSection
-                      ? () => _openDigestSection(context, section)
-                      : null,
+                  ? () => _openDigestSection(context, section)
+                  : null,
             ),
           ),
         ),
       );
-      // Grille rendue immédiatement après « Actus du jour » (identité robuste :
-      // DigestTopicSection kind essentiel). Sliver séparé, hors du KeyedSubtree
-      // — pas de GlobalKey, n'altère pas l'indexation _sectionKeys.
-      if (section is DigestTopicSection &&
-          section.kind == SectionKind.essentiel) {
-        slivers.add(_grilleSliver);
-      }
+    }
+    if (state.grilleSlotIndex == state.sections.length) {
+      slivers.add(_grilleSliver);
     }
     return slivers;
   }
@@ -1084,17 +1053,11 @@ class _SnapAnchors {
 class _SectionSnapPhysics extends ScrollPhysics {
   final _SnapAnchors anchors;
 
-  const _SectionSnapPhysics({
-    required this.anchors,
-    super.parent,
-  });
+  const _SectionSnapPhysics({required this.anchors, super.parent});
 
   @override
   _SectionSnapPhysics applyTo(ScrollPhysics? ancestor) {
-    return _SectionSnapPhysics(
-      anchors: anchors,
-      parent: buildParent(ancestor),
-    );
+    return _SectionSnapPhysics(anchors: anchors, parent: buildParent(ancestor));
   }
 
   @override
@@ -1136,8 +1099,9 @@ class _SectionSnapPhysics extends ScrollPhysics {
     // own pull-to-refresh; never snap.
     if (position.pixels <= list.first.top) return null;
 
-    final landing =
-        natural == null ? position.pixels : _simulationEndX(natural, position);
+    final landing = natural == null
+        ? position.pixels
+        : _simulationEndX(natural, position);
     if (landing <= 0) return null;
 
     // Travel direction from the controller, not the lift velocity: a slow
@@ -1195,10 +1159,8 @@ class _SectionPassageDot extends StatefulWidget {
   final int index;
   final ValueListenable<_SectionPassagePulse?> pulseListenable;
 
-  _SectionPassageDot({
-    required this.index,
-    required this.pulseListenable,
-  }) : super(key: ValueKey('section_passage_dot_$index'));
+  _SectionPassageDot({required this.index, required this.pulseListenable})
+    : super(key: ValueKey('section_passage_dot_$index'));
 
   @override
   State<_SectionPassageDot> createState() => _SectionPassageDotState();

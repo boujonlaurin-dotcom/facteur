@@ -1,17 +1,16 @@
-/// Ordre unifié de la Tournée du jour — thèmes + sources + veille mélangés.
+/// Ordre unifié de la Tournée du jour — éditorial + thèmes + sources + veille.
 ///
 /// Distinct de `pinned_tabs_order_v1` (onglets Flâner, cf.
 /// `feed/providers/tab_order_prefs_provider.dart`) : ici on ordonne les
 /// **sections de la Tournée**. Les clés typées sont alignées sur `sectionKey()`
 /// (`flux_continu_models.dart`) pour que [applyOrder] s'aligne avec le rendu et
-/// la dédup inter-sections : `theme:<slug>` / `source:<id>` / `veille`. Pas de
-/// clé `topic:` — les sujets personnalisés sont exclus de la Tournée
-/// (Flâner-only).
+/// la dédup inter-sections : `essentiel` / `bonnes` / `grille` /
+/// `theme:<slug>` / `source:<id>` / `veille`. Pas de clé `topic:` — les sujets
+/// personnalisés sont exclus de la Tournée (Flâner-only).
 ///
-/// `veilleHidden` mémorise un retrait explicite de la veille depuis « Composer
-/// ma Tournée ». Tant qu'il est vrai, le provider Tournée ne ré-injecte pas la
-/// veille même si une config est active (suppression du self-heal) ; la
-/// ré-ajouter via la modal le repasse à `false`.
+/// `hiddenKeys` mémorise les retraits explicites depuis « Composer ma Tournée ».
+/// Tant qu'une clé y figure, le provider Tournée ne ré-injecte pas l'élément
+/// correspondant. Le getter compat `veilleHidden` couvre l'ancien usage veille.
 ///
 /// `customized` mémorise que l'utilisateur a personnalisé sa Tournée au moins
 /// une fois (ajout/retrait d'un thème, d'une source ou de la veille). Tant
@@ -28,8 +27,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 export '../../feed/providers/tab_order_prefs_provider.dart' show applyOrder;
 
 const _kTourneeOrderKey = 'tournee_order_v1';
-const _kVeilleHiddenKey = 'tournee_veille_hidden_v1';
+const _kTourneeHiddenKeysKey = 'tournee_hidden_keys_v1';
+const _kLegacyVeilleHiddenKey = 'tournee_veille_hidden_v1';
 const _kTourneeCustomizedKey = 'tournee_customized_v1';
+
+/// Cap d'affichage de la Tournée du jour, partagé provider + composer.
+const int kTourneeVisibleCap = 5;
 
 /// Clé d'un thème favori dans l'ordre Tournée (= `sectionKey` d'une section thème).
 String tourneeThemeKey(String slug) => 'theme:$slug';
@@ -37,41 +40,56 @@ String tourneeThemeKey(String slug) => 'theme:$slug';
 /// Clé d'une source favorite dans l'ordre Tournée (= `sectionKey` d'une section source).
 String tourneeSourceKey(String sourceId) => 'source:$sourceId';
 
+/// Clé des Actus du jour (DigestTopicSection `SectionKind.essentiel`).
+const String kTourneeActusKey = 'essentiel';
+
+/// Clé des Bonnes Nouvelles (DigestTopicSection `SectionKind.bonnes`).
+const String kTourneeBonnesKey = 'bonnes';
+
+/// Clé de La Grille du jour (slot autonome, pas une `FluxSection`).
+const String kTourneeGrilleKey = 'grille';
+
 /// Clé de la veille (singleton à V1) — alignée sur la branche `'veille'` de `sectionKey`.
 const String kTourneeVeilleKey = 'veille';
 
-/// État de l'ordre Tournée : la liste ordonnée de clés + le flag de masquage
-/// veille + le flag « Tournée customisée » (cf. doc de la library).
+/// État de l'ordre Tournée : la liste ordonnée de clés + les clés masquées +
+/// le flag « Tournée customisée » (cf. doc de la library).
 class TourneeOrderState {
   final List<String> order;
-  final bool veilleHidden;
+  final Set<String> hiddenKeys;
   final bool customized;
 
   const TourneeOrderState({
     required this.order,
-    required this.veilleHidden,
+    this.hiddenKeys = const {},
     this.customized = false,
   });
 
-  static const empty =
-      TourneeOrderState(order: [], veilleHidden: false, customized: false);
+  static const empty = TourneeOrderState(
+    order: [],
+    hiddenKeys: {},
+    customized: false,
+  );
+
+  /// Compat lecture legacy : la veille est masquée si sa clé est dans
+  /// [hiddenKeys]. Les écritures doivent passer par [setHidden].
+  bool get veilleHidden => hiddenKeys.contains(kTourneeVeilleKey);
 
   TourneeOrderState copyWith({
     List<String>? order,
-    bool? veilleHidden,
+    Set<String>? hiddenKeys,
     bool? customized,
-  }) =>
-      TourneeOrderState(
-        order: order ?? this.order,
-        veilleHidden: veilleHidden ?? this.veilleHidden,
-        customized: customized ?? this.customized,
-      );
+  }) => TourneeOrderState(
+    order: order ?? this.order,
+    hiddenKeys: hiddenKeys ?? this.hiddenKeys,
+    customized: customized ?? this.customized,
+  );
 }
 
 final tourneeOrderPrefsProvider =
     StateNotifierProvider<TourneeOrderPrefsNotifier, TourneeOrderState>((ref) {
-  return TourneeOrderPrefsNotifier();
-});
+      return TourneeOrderPrefsNotifier();
+    });
 
 class TourneeOrderPrefsNotifier extends StateNotifier<TourneeOrderState> {
   TourneeOrderPrefsNotifier() : super(TourneeOrderState.empty) {
@@ -81,9 +99,16 @@ class TourneeOrderPrefsNotifier extends StateNotifier<TourneeOrderState> {
   Future<void> _load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final hiddenList = prefs.getStringList(_kTourneeHiddenKeysKey);
+      final hiddenKeys = hiddenList != null
+          ? hiddenList.toSet()
+          : <String>{
+              if (prefs.getBool(_kLegacyVeilleHiddenKey) == true)
+                kTourneeVeilleKey,
+            };
       state = TourneeOrderState(
         order: prefs.getStringList(_kTourneeOrderKey) ?? const [],
-        veilleHidden: prefs.getBool(_kVeilleHiddenKey) ?? false,
+        hiddenKeys: Set.unmodifiable(hiddenKeys),
         customized: prefs.getBool(_kTourneeCustomizedKey) ?? false,
       );
     } catch (_) {
@@ -92,7 +117,8 @@ class TourneeOrderPrefsNotifier extends StateNotifier<TourneeOrderState> {
     }
   }
 
-  /// Écrit le nouvel ordre global (clés `theme:`/`source:`/`veille`).
+  /// Écrit le nouvel ordre global (`essentiel`/`bonnes`/`grille`/`theme:`/
+  /// `source:`/`veille`).
   Future<void> setOrder(List<String> keys) async {
     state = state.copyWith(order: List.unmodifiable(keys));
     try {
@@ -103,17 +129,27 @@ class TourneeOrderPrefsNotifier extends StateNotifier<TourneeOrderState> {
     }
   }
 
-  /// Masque (ou réaffiche) la veille dans la Tournée. `true` désactive le
-  /// self-heal côté provider Tournée même si une config veille est active.
-  Future<void> setVeilleHidden(bool hidden) async {
-    state = state.copyWith(veilleHidden: hidden);
+  /// Masque (ou réaffiche) une clé dans la Tournée.
+  Future<void> setHidden(String key, bool hidden) async {
+    final next = Set<String>.from(state.hiddenKeys);
+    if (hidden) {
+      next.add(key);
+    } else {
+      next.remove(key);
+    }
+    final persisted = next.toList()..sort();
+    state = state.copyWith(hiddenKeys: Set.unmodifiable(persisted));
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_kVeilleHiddenKey, hidden);
+      await prefs.setStringList(_kTourneeHiddenKeysKey, persisted);
     } catch (_) {
       // best-effort.
     }
   }
+
+  /// Shim compat écriture veille-only.
+  Future<void> setVeilleHidden(bool hidden) =>
+      setHidden(kTourneeVeilleKey, hidden);
 
   /// Marque la Tournée comme personnalisée (1ʳᵉ mutation utilisateur). Idempotent
   /// — no-op si déjà vrai. Désactive le fallback canonique côté provider Tournée

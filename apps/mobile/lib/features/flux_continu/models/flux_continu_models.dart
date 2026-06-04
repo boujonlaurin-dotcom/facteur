@@ -384,6 +384,11 @@ DigestItem pickTopicLead(DigestTopic topic) {
 @immutable
 class FluxContinuState {
   final List<FluxSection> sections;
+
+  /// Absolute insertion index for the standalone Grille sliver inside
+  /// [sections], or `null` when La Grille is hidden, unavailable, or below the
+  /// visible cap. The Grille is not a [FluxSection].
+  final int? grilleSlotIndex;
   final bool isSerene;
   // Per-section UI state keyed by [sectionKey]. String keys (rather than
   // `SectionKind`) so multiple theme sections (one per favorite, 0..3) keep
@@ -406,6 +411,7 @@ class FluxContinuState {
 
   const FluxContinuState({
     this.sections = const [],
+    this.grilleSlotIndex,
     this.isSerene = false,
     this.moreOpen = const {},
     this.closingDismissed = false,
@@ -417,6 +423,7 @@ class FluxContinuState {
 
   FluxContinuState copyWith({
     List<FluxSection>? sections,
+    int? grilleSlotIndex,
     bool? isSerene,
     Map<String, bool>? moreOpen,
     bool? closingDismissed,
@@ -428,6 +435,7 @@ class FluxContinuState {
   }) {
     return FluxContinuState(
       sections: sections ?? this.sections,
+      grilleSlotIndex: grilleSlotIndex ?? this.grilleSlotIndex,
       isSerene: isSerene ?? this.isSerene,
       moreOpen: moreOpen ?? this.moreOpen,
       closingDismissed: closingDismissed ?? this.closingDismissed,

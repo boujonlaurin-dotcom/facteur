@@ -9,6 +9,8 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/ui/notification_service.dart';
+import '../../digest/providers/serein_toggle_provider.dart';
+import '../../grille/providers/grille_provider.dart';
 import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/models/user_sources_state.dart';
 import '../../my_interests/providers/user_interests_provider.dart';
@@ -24,14 +26,18 @@ import '../providers/tournee_order_prefs_provider.dart';
 import '../utils/theme_color_mapping.dart';
 import 'choice_tile.dart';
 
-/// Plafond d'affichage de la Tournée. Au-delà, les sections passent sous le
-/// trait « Hors Tournée du jour » (décision PO — cap d'affichage, pas cap
-/// serveur : on peut garder plus de favoris que le cap visible).
-const int kTourneeVisibleCap = 5;
+/// Accent des Actus du jour dans la composition (aligné avec le provider).
+const Color _kEssentielAccent = Color(0xFFB0470A);
+
+/// Accent des Bonnes Nouvelles dans la composition (aligné avec le provider).
+const Color _kBonnesAccent = Color(0xFF2E7D32);
 
 /// Accent de la veille dans la composition (aligné sur `_kVeilleAccent` du
 /// provider Tournée / `FacteurColors.sectionVeille1`).
 const Color _kVeilleAccent = Color(0xFF2C3E50);
+
+/// Accent de La Grille du jour, aligné avec la tuile "présent" du jeu.
+const Color _kGrilleAccent = Color(0xFFD9A441);
 
 /// Ouvre « Composer ma Tournée » — la modale unifiée d'ordre & de gestion des
 /// sections de la Tournée du jour (thèmes + sources + veille, cap 5, ordre
@@ -98,11 +104,12 @@ class ComposeTourneeButton extends StatelessWidget {
   }
 }
 
-enum _ItemKind { theme, source, veille }
+enum _ItemKind { theme, source, veille, actus, bonnes, grille }
 
 /// Un élément de la Tournée dans la zone « MA TOURNÉE » : un thème, une source
-/// ou la veille. La `key` est alignée sur `sectionKey()` (`theme:`/`source:`/
-/// `veille`) pour que [applyOrder] colle au rendu et à la dédup du provider.
+/// ou un singleton éditorial. La `key` est alignée sur `sectionKey()` /
+/// le slot Grille (`essentiel`/`bonnes`/`grille`/`theme:`/`source:`/`veille`)
+/// pour que [applyOrder] colle au rendu et à la dédup du provider.
 class _TourneeItem {
   final String key;
   final _ItemKind kind;
@@ -149,9 +156,10 @@ class _TourneeComposerContentState
   Future<void> _appendOrder(String key) async {
     final current = ref.read(tourneeOrderPrefsProvider).order;
     if (current.contains(key)) return;
-    await ref
-        .read(tourneeOrderPrefsProvider.notifier)
-        .setOrder([...current, key]);
+    await ref.read(tourneeOrderPrefsProvider.notifier).setOrder([
+      ...current,
+      key,
+    ]);
   }
 
   Future<void> _removeOrder(String key) async {
@@ -198,8 +206,16 @@ class _TourneeComposerContentState
 
   Future<void> _onAddVeille() async {
     await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
-    await ref.read(tourneeOrderPrefsProvider.notifier).setVeilleHidden(false);
+    await ref
+        .read(tourneeOrderPrefsProvider.notifier)
+        .setHidden(kTourneeVeilleKey, false);
     await _appendOrder(kTourneeVeilleKey);
+  }
+
+  Future<void> _onRestoreEditorial(String key) async {
+    await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
+    await ref.read(tourneeOrderPrefsProvider.notifier).setHidden(key, false);
+    await _appendOrder(key);
   }
 
   Future<void> _onRemove(_TourneeItem item) async {
@@ -229,7 +245,13 @@ class _TourneeComposerContentState
         // pas d'archive backend. Ré-ajoutable via la tuile veille.
         await ref
             .read(tourneeOrderPrefsProvider.notifier)
-            .setVeilleHidden(true);
+            .setHidden(kTourneeVeilleKey, true);
+      case _ItemKind.actus:
+      case _ItemKind.bonnes:
+      case _ItemKind.grille:
+        await ref
+            .read(tourneeOrderPrefsProvider.notifier)
+            .setHidden(item.key, true);
     }
   }
 
@@ -261,8 +283,7 @@ class _TourneeComposerContentState
   Future<void> _syncInterestPositions(List<FavoriteRef> themeRefs) async {
     final interests = ref.read(userInterestsProvider).valueOrNull;
     if (interests == null) return;
-    final themeSlots =
-        interests.favorites.whereType<ThemeFavoriteRef>().length;
+    final themeSlots = interests.favorites.whereType<ThemeFavoriteRef>().length;
     if (themeRefs.length != themeSlots) return;
     var i = 0;
     final merged = [
@@ -304,8 +325,12 @@ class _TourneeComposerContentState
     final sourceById = {for (final s in catalog) s.id: s};
     final veilleCfg = ref.watch(veilleActiveConfigProvider).valueOrNull;
     final tournee = ref.watch(tourneeOrderPrefsProvider);
+    final isSerene = ref.watch(sereinToggleProvider).enabled;
+    final grilleAvailable = ref.watch(
+      grilleProvider.select((v) => v.valueOrNull?.today != null),
+    );
 
-    // ── MA TOURNÉE — membership (thèmes favoris + sources favorites + veille) ─
+    // ── MA TOURNÉE — membership (éditorial + thèmes + sources + veille) ─────
     final favoriteThemeSlugs = <String>[
       for (final f in interests?.favorites ?? const <FavoriteRef>[])
         if (f is ThemeFavoriteRef) f.slug,
@@ -313,42 +338,93 @@ class _TourneeComposerContentState
     final sourceFavorites = [...(sourcesState?.favorites ?? const [])]
       ..sort((a, b) => a.position.compareTo(b.position));
 
-    final items = <_TourneeItem>[];
+    const actusItem = _TourneeItem(
+      key: kTourneeActusKey,
+      kind: _ItemKind.actus,
+      id: kTourneeActusKey,
+      label: 'Actus du jour',
+      emoji: '🗞️',
+      accent: _kEssentielAccent,
+    );
+    const bonnesItem = _TourneeItem(
+      key: kTourneeBonnesKey,
+      kind: _ItemKind.bonnes,
+      id: kTourneeBonnesKey,
+      label: 'Bonnes Nouvelles',
+      emoji: '🌱',
+      accent: _kBonnesAccent,
+    );
+    const grilleItem = _TourneeItem(
+      key: kTourneeGrilleKey,
+      kind: _ItemKind.grille,
+      id: kTourneeGrilleKey,
+      label: 'La Grille du jour',
+      emoji: '🧩',
+      accent: _kGrilleAccent,
+    );
+
+    final themeItems = <_TourneeItem>[];
     for (final slug in favoriteThemeSlugs) {
       final v = visualFor(slug);
-      items.add(_TourneeItem(
-        key: tourneeThemeKey(slug),
-        kind: _ItemKind.theme,
-        id: slug,
-        label: v.label,
-        emoji: _themeEmoji(slug),
-        accent: v.accent,
-      ));
+      themeItems.add(
+        _TourneeItem(
+          key: tourneeThemeKey(slug),
+          kind: _ItemKind.theme,
+          id: slug,
+          label: v.label,
+          emoji: _themeEmoji(slug),
+          accent: v.accent,
+        ),
+      );
     }
+    final sourceItems = <_TourneeItem>[];
     for (final f in sourceFavorites) {
       final source = sourceById[f.sourceId];
       if (source == null) continue;
-      items.add(_TourneeItem(
-        key: tourneeSourceKey(f.sourceId),
-        kind: _ItemKind.source,
-        id: f.sourceId,
-        label: source.name,
-        accent: sourceAccentFor(f.sourceId),
-        source: source,
-      ));
+      sourceItems.add(
+        _TourneeItem(
+          key: tourneeSourceKey(f.sourceId),
+          kind: _ItemKind.source,
+          id: f.sourceId,
+          label: source.name,
+          accent: sourceAccentFor(f.sourceId),
+          source: source,
+        ),
+      );
     }
-    final showVeilleInTournee = veilleCfg != null && !tournee.veilleHidden;
-    if (showVeilleInTournee) {
-      items.add(_TourneeItem(
-        key: kTourneeVeilleKey,
-        kind: _ItemKind.veille,
-        id: veilleCfg.id,
-        label: 'Ma veille — ${veilleCfg.themeLabel}',
-        emoji: '🔭',
-        accent: _kVeilleAccent,
-      ));
-    }
-    final orderedItems = applyOrder(items, tournee.order, (e) => e.key);
+    final veilleItem = veilleCfg == null
+        ? null
+        : _TourneeItem(
+            key: kTourneeVeilleKey,
+            kind: _ItemKind.veille,
+            id: veilleCfg.id,
+            label: 'Ma veille — ${veilleCfg.themeLabel}',
+            emoji: '🔭',
+            accent: _kVeilleAccent,
+          );
+    final useSereneDefault = isSerene && !tournee.customized;
+    final defaultItems = useSereneDefault
+        ? <_TourneeItem>[
+            bonnesItem,
+            ...themeItems,
+            ...sourceItems,
+            if (veilleItem != null) veilleItem,
+            actusItem,
+            if (grilleAvailable) grilleItem,
+          ]
+        : <_TourneeItem>[
+            actusItem,
+            if (grilleAvailable) grilleItem,
+            ...themeItems,
+            ...sourceItems,
+            if (veilleItem != null) veilleItem,
+            bonnesItem,
+          ];
+    final visibleItems = [
+      for (final item in defaultItems)
+        if (!tournee.hiddenKeys.contains(item.key)) item,
+    ];
+    final orderedItems = applyOrder(visibleItems, tournee.order, (e) => e.key);
 
     // ── AJOUTER — candidats non encore dans la Tournée ────────────────────────
     final favSourceIds = sourceFavorites.map((f) => f.sourceId).toSet();
@@ -367,13 +443,19 @@ class _TourneeComposerContentState
     ];
 
     // Caps serveur (Option A) — désactivation proactive + message.
-    final interestsAtCap = interests != null &&
-        interests.favoriteCount >= interests.favoriteCap;
+    final interestsAtCap =
+        interests != null && interests.favoriteCount >= interests.favoriteCap;
     final sourcesAtCap = sourcesState != null &&
         sourcesState.favorites.length >= sourcesState.favoriteCap;
 
-    final canAddVeille = veilleCfg != null &&
-        (tournee.veilleHidden || !items.any((e) => e.kind == _ItemKind.veille));
+    final hiddenEditorialItems = <_TourneeItem>[
+      if (tournee.hiddenKeys.contains(kTourneeActusKey)) actusItem,
+      if (tournee.hiddenKeys.contains(kTourneeBonnesKey)) bonnesItem,
+      if (grilleAvailable && tournee.hiddenKeys.contains(kTourneeGrilleKey))
+        grilleItem,
+    ];
+    final canAddVeille =
+        veilleCfg != null && tournee.hiddenKeys.contains(kTourneeVeilleKey);
 
     return SafeArea(
       top: false,
@@ -413,7 +495,7 @@ class _TourneeComposerContentState
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Mélange thèmes, sources et veille, dans l\'ordre que tu veux. '
+                  'Mélange actus, grille, thèmes, sources et veille, dans l\'ordre que tu veux. '
                   'Les 5 premiers composent ta Tournée du jour.',
                   style: textTheme.bodySmall?.copyWith(
                     color: colors.textTertiary,
@@ -486,6 +568,21 @@ class _TourneeComposerContentState
                     onAdd: _onAddTheme,
                   ),
 
+                if (hiddenEditorialItems.isNotEmpty) ...[
+                  const SizedBox(height: FacteurSpacing.space3),
+                  for (final item in hiddenEditorialItems)
+                    _AddRow(
+                      key: ValueKey('restore_${item.key}'),
+                      leading: Text(
+                        item.emoji,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                      label: 'Réafficher ${item.label}',
+                      disabled: false,
+                      colors: colors,
+                      onTap: () => _onRestoreEditorial(item.key),
+                    ),
+                ],
                 const SizedBox(height: FacteurSpacing.space3),
                 if (canAddVeille)
                   _VeilleTile(
@@ -577,8 +674,7 @@ class _TourneeList extends StatelessWidget {
           key: ValueKey(item.key),
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (index == kTourneeVisibleCap)
-              _CapDivider(colors: colors),
+            if (index == kTourneeVisibleCap) _CapDivider(colors: colors),
             _TourneeRow(
               item: item,
               index: index,
@@ -733,7 +829,10 @@ class _SourcesAddList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (atCap)
-          _CapHint(label: 'Maximum de sources favorites atteint.', colors: colors),
+          _CapHint(
+            label: 'Maximum de sources favorites atteint.',
+            colors: colors,
+          ),
         for (final s in sources)
           _AddRow(
             key: ValueKey('add_source_${s.id}'),
@@ -821,8 +920,7 @@ class _AddRow extends StatelessWidget {
                     onTap();
                   },
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: colors.surface,
                 borderRadius: BorderRadius.circular(12),
