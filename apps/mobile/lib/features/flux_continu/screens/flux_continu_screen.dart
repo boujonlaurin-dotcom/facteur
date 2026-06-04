@@ -54,13 +54,6 @@ const double _kStickyThreshold = 60.0;
 /// couple px of slack.
 const double _kStickyBarHeight = 54.0;
 
-/// Hauteur (px) du **footer glassmorphique partagé** (barre d'onglets) qui
-/// recouvre le bas de la zone scrollable — le contenu passe dessous. On la
-/// retranche du cadrage « bas de section » pour que les dernières cartes (le
-/// « Lire plus ») ne soient pas tronquées par le footer. La safe-area du bas
-/// (encoche / home indicator) s'y **ajoute dynamiquement** (cf.
-/// [_recomputeSnapAnchors]). Tune-able à l'œil : monter si le bas reste rogné.
-const double _kFooterBarHeight = 50.0;
 
 // Section-snap tuning lives in `utils/section_snap.dart` (kSnapCaptureFraction,
 // kBoundaryCrossVelocity, kSnapEpsilon, kSnapSpring) so the resting-position
@@ -160,10 +153,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   final _SnapAnchors _snapAnchors = _SnapAnchors();
   bool _snapAnchorsRecomputeScheduled = false;
 
-  /// Safe-area inset at the bottom (home indicator / notch), captured in
-  /// [build]. Added to [_kFooterBarHeight] so the « bottom of section » frame
-  /// clears the shared footer on every device. Read in [_recomputeSnapAnchors]
-  /// (a post-frame callback) where reading `MediaQuery` directly is unsafe.
+  /// Total bottom overlay height (app nav bar + system insets), captured from
+  /// [MediaQuery.paddingOf] in [build]. With [extendBody: true] on the outer
+  /// Scaffold, padding.bottom reflects the actual rendered height of
+  /// [MainBottomNav] (50 dp content + SafeArea bottom padding), so it adapts
+  /// automatically when the Android navigation bar raises the footer.
+  /// Read in [_recomputeSnapAnchors] (post-frame callback — direct MediaQuery
+  /// reads are unsafe there).
   double _safeAreaBottom = 0;
 
   /// Garde-fou : le flow post-onboarding (dialog customs échoués + modales
@@ -331,9 +327,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
   Future<void> _triggerSectionChangeHaptic() async {
     try {
-      await Haptics.vibrate(HapticsType.heavy, usage: HapticsUsage.touch);
+      await Haptics.vibrate(HapticsType.medium, usage: HapticsUsage.touch);
     } catch (_) {
-      await HapticFeedback.heavyImpact();
+      await HapticFeedback.mediumImpact();
     }
   }
 
@@ -363,8 +359,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // (content passes beneath it), so the section bottom must land above the
     // footer bar + bottom safe-area, else the last cards (« Lire plus ») are
     // truncated.
-    final visibleBottom =
-        scrollBox.size.height - (_kFooterBarHeight + _safeAreaBottom);
+    final visibleBottom = scrollBox.size.height - _safeAreaBottom;
     final result = <SectionFrame>[];
     for (final key in _stickyEntryKeys) {
       final ctx = key.currentContext;
@@ -720,7 +715,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final stickyTabs = _syncStickyEntries(state.valueOrNull);
     // Sections don't resize mid-session, so we refresh the snap anchors only on
     // these content/layout-driven rebuilds — never per scroll frame.
-    _safeAreaBottom = MediaQuery.viewPaddingOf(context).bottom;
+    _safeAreaBottom = MediaQuery.paddingOf(context).bottom;
     _scheduleAnchorRecompute();
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
