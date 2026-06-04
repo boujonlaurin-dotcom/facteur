@@ -22,6 +22,7 @@ import '../../veille/providers/veille_active_config_provider.dart';
 import '../../veille/providers/veille_themes_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart';
 import '../utils/theme_color_mapping.dart';
+import 'choice_tile.dart';
 
 /// Plafond d'affichage de la Tournée. Au-delà, les sections passent sous le
 /// trait « Hors Tournée du jour » (décision PO — cap d'affichage, pas cap
@@ -163,6 +164,7 @@ class _TourneeComposerContentState
   }
 
   Future<void> _onAddTheme(String slug) async {
+    await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
     try {
       await ref.read(userInterestsProvider.notifier).setInterestState(
             ThemeFavoriteRef(slug: slug),
@@ -179,6 +181,7 @@ class _TourneeComposerContentState
   }
 
   Future<void> _onAddSource(String sourceId) async {
+    await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
     try {
       await ref
           .read(userSourcesStateProvider.notifier)
@@ -194,11 +197,13 @@ class _TourneeComposerContentState
   }
 
   Future<void> _onAddVeille() async {
+    await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
     await ref.read(tourneeOrderPrefsProvider.notifier).setVeilleHidden(false);
     await _appendOrder(kTourneeVeilleKey);
   }
 
   Future<void> _onRemove(_TourneeItem item) async {
+    await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
     // Retire d'abord la clé d'ordre (optimiste, sans risque), puis dé-favorise.
     await _removeOrder(item.key);
     switch (item.kind) {
@@ -499,6 +504,39 @@ class _TourneeComposerContentState
                       router.pushNamed(RouteNames.veilleConfig);
                     },
                   ),
+
+                // ── GÉRER ───────────────────────────────────────────────────
+                // La ChoiceTile porte son propre padding horizontal (20px) →
+                // ses tuiles s'indentent légèrement sous le label « GÉRER »,
+                // ce qui regroupe visuellement le footer de gestion.
+                const SizedBox(height: FacteurSpacing.space4),
+                _SectionLabel(label: 'GÉRER', colors: colors),
+                const SizedBox(height: 4),
+                // « Gérer ses sources » en premier — met en avant l'ajout de
+                // sources (cause racine des sections thème vides : suivre plus
+                // de sources alimente les thèmes).
+                ChoiceTile(
+                  icon: Icons.rss_feed,
+                  accent: colors.sectionVeille1,
+                  title: 'Gérer ses sources',
+                  subtitle: 'Suis ou masque les médias qui te parlent.',
+                  onTap: () {
+                    final router = GoRouter.of(context);
+                    Navigator.of(context).pop();
+                    router.pushNamed(RouteNames.sources);
+                  },
+                ),
+                ChoiceTile(
+                  icon: Icons.favorite_outline,
+                  accent: colors.sectionEssentiel,
+                  title: 'Gérer ses intérêts',
+                  subtitle: 'Choisis les thèmes qui guident ta Tournée.',
+                  onTap: () {
+                    final router = GoRouter.of(context);
+                    Navigator.of(context).pop();
+                    router.pushNamed(RouteNames.myInterests);
+                  },
+                ),
               ],
             ),
           ),

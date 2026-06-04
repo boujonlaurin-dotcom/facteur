@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import '../../feed/widgets/feedback_inline.dart';
 import '../models/flux_continu_models.dart';
 import 'essentiel_hi_fi_card.dart';
-import 'essentiel_personalize_sheet.dart';
 import 'flux_continu_article_card.dart';
 import 'folded_section_card.dart';
 import 'plus_de_button.dart';
 import 'section_banner.dart';
+import 'tournee_composer_sheet.dart';
 
 /// Identifies which chip the user picked on a [FeedbackInline] banner.
 enum FluxFeedbackChip { source, topic, alreadySeen }
@@ -57,6 +57,11 @@ class SectionBlock extends StatelessWidget {
   /// wired for the veille section → opens the veille config in edit mode.
   final VoidCallback? onTapSettings;
 
+  /// CTA « Ajouter des sources » de l'empty-state d'une section thème favorite
+  /// vide. Ouvre « Composer ma Tournée ». Distinct de [onTapSettings]
+  /// (spécifique veille). Câblé uniquement pour les sections thème.
+  final VoidCallback? onAddSources;
+
   const SectionBlock({
     super.key,
     required this.section,
@@ -75,6 +80,7 @@ class SectionBlock extends StatelessWidget {
     this.onSwipeHintComplete,
     this.onTapFavorite,
     this.onTapSettings,
+    this.onAddSources,
     this.onSeeAll,
   });
 
@@ -108,7 +114,7 @@ class SectionBlock extends StatelessWidget {
             EssentielHiFiCard(
               articles: section.articles,
               onTapArticle: (a) => onTapArticle(a, section),
-              onTapPersonalize: () => EssentielPersonalizeSheet.show(context),
+              onTapPersonalize: () => showTourneeComposerSheet(context),
             ),
             const SizedBox(height: 16),
           ],
@@ -239,7 +245,28 @@ class SectionBlock extends StatelessWidget {
         // complète de la source (qui contient souvent des articles plus
         // anciens). Décision PO : ne jamais masquer une source favorite.
         if (items.isEmpty && section.kind == SectionKind.source) {
-          return [_SourceEmptyState(sourceName: section.label, onSeeAll: onSeeAll)];
+          return [
+            _FavoriteEmptyState(
+              message: 'Rien de neuf récemment chez ${section.label}.',
+              ctaIcon: Icons.library_books_outlined,
+              ctaLabel: 'Voir toute la curation',
+              onCta: onSeeAll,
+            )
+          ];
+        }
+        // Tournée bugs E2E — une section thème **favorite** vide reste visible
+        // (miroir source/veille : ne jamais masquer un favori) : placeholder +
+        // CTA « Ajouter des sources » qui ouvre « Composer ma Tournée ». Un
+        // thème à 1 article rend sa carte normalement.
+        if (items.isEmpty && section.kind == SectionKind.theme) {
+          return [
+            _FavoriteEmptyState(
+              message: 'Rien de neuf récemment sur ${section.label}.',
+              ctaIcon: Icons.add_rounded,
+              ctaLabel: 'Ajouter des sources',
+              onCta: onAddSources,
+            )
+          ];
         }
         final visible = items.take(coreVisibleCount).toList();
         return [
@@ -313,13 +340,22 @@ class _VeilleEmptyState extends StatelessWidget {
   }
 }
 
-/// PR « Sources dans la Tournée » — état vide/low d'une section source (source
-/// favorite sans article frais dans la fenêtre). Garde la section visible et
-/// renvoie vers la curation complète de la source.
-class _SourceEmptyState extends StatelessWidget {
-  final String sourceName;
-  final VoidCallback? onSeeAll;
-  const _SourceEmptyState({required this.sourceName, this.onSeeAll});
+/// État vide partagé d'une section **favorite** (source ou thème) sans article
+/// frais dans la fenêtre. Décision PO : ne jamais masquer un favori → la section
+/// reste visible avec un placeholder + un CTA optionnel. Spécialisé par les
+/// sections source (« Voir toute la curation ») et thème (« Ajouter des
+/// sources » → « Composer ma Tournée »).
+class _FavoriteEmptyState extends StatelessWidget {
+  final String message;
+  final IconData ctaIcon;
+  final String ctaLabel;
+  final VoidCallback? onCta;
+  const _FavoriteEmptyState({
+    required this.message,
+    required this.ctaIcon,
+    required this.ctaLabel,
+    this.onCta,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -335,21 +371,21 @@ class _SourceEmptyState extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Rien de neuf récemment chez $sourceName.',
+            message,
             style: const TextStyle(
               fontSize: 14,
               height: 1.4,
               color: Color(0xFF5D5B5A),
             ),
           ),
-          if (onSeeAll != null) ...[
+          if (onCta != null) ...[
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
-                onPressed: onSeeAll,
-                icon: const Icon(Icons.library_books_outlined, size: 16),
-                label: const Text('Voir toute la curation'),
+                onPressed: onCta,
+                icon: Icon(ctaIcon, size: 16),
+                label: Text(ctaLabel),
                 style: TextButton.styleFrom(
                   foregroundColor: const Color(0xFF2C3E50),
                   padding: const EdgeInsets.symmetric(horizontal: 8),

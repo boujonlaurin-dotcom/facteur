@@ -417,4 +417,114 @@ void main() {
         reason: 'veille masquée par veilleHidden');
     expect(sections.where((s) => s.kind == SectionKind.theme), hasLength(1));
   });
+
+  group('fallback canonique gaté (Tournée bugs E2E)', () {
+    test(
+        '0 favori + customized=false + 0 source/veille ⇒ fallback canonique '
+        '(compte neuf)', () async {
+      // Prefs vides (setUp) → customized=false → compte réellement neuf.
+      stubFeed(themeIds: {
+        'tech': ['a', 'b'],
+        'environment': ['a', 'b'],
+        'science': ['a', 'b'],
+      });
+      final container = await buildContainer(
+        interests: _interestsState(),
+        sourcesState: _sourcesState(),
+        catalog: const [],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(fluxContinuProvider.future);
+      final slugs = favoriteSections(container)
+          .where((s) => s.kind == SectionKind.theme)
+          .map((s) => s.themeSlug)
+          .toList();
+      expect(slugs, containsAll(['tech', 'environment', 'science']),
+          reason: 'un compte neuf garde sa Tournée par défaut');
+    });
+
+    test(
+        '0 favori + customized=true ⇒ pas de fallback canonique (retrait '
+        'volontaire respecté)', () async {
+      // L'utilisateur a vidé sa Tournée puis rechargé : le flag persistant
+      // désactive la ré-injection des thèmes canoniques.
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'tournee_customized_v1': true,
+      });
+      stubFeed();
+      final container = await buildContainer(
+        interests: _interestsState(),
+        sourcesState: _sourcesState(),
+        catalog: const [],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(fluxContinuProvider.future);
+      expect(
+        favoriteSections(container).where((s) => s.kind == SectionKind.theme),
+        isEmpty,
+        reason: 'fallback désactivé après personnalisation',
+      );
+      // Aucun thème canonique n'est même fetché.
+      verifyNever(() => feedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            topic: any(named: 'topic'),
+            sourceId: any(named: 'sourceId'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          ));
+    });
+
+    test(
+        '0 favori + customized=false MAIS source favorite ⇒ pas de fallback '
+        '(Tournée source-only)', () async {
+      // Une source favorite suffit à rendre la Tournée non vide → on ne pad
+      // pas avec des thèmes canoniques que l'utilisateur n'a pas choisis.
+      stubFeed(sourceIds: {
+        's1': ['x1']
+      });
+      final container = await buildContainer(
+        interests: _interestsState(),
+        sourcesState: _sourcesState(
+          favorites: [SourceFavoriteRef(sourceId: 's1', position: 0)],
+        ),
+        catalog: [_source('s1')],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(fluxContinuProvider.future);
+      final sections = favoriteSections(container);
+      expect(sections.where((s) => s.kind == SectionKind.theme), isEmpty,
+          reason: 'présence d\'une source favorite désactive le fallback');
+      expect(sections.where((s) => s.kind == SectionKind.source), hasLength(1));
+    });
+  });
+
+  test(
+      'thème favori explicite à 1 item ⇒ section construite (jamais masquée, '
+      'miroir source/veille)', () async {
+    // Avant le fix, `_buildThemeSection` coupait toute section < 2 items —
+    // une section thème favorite « sparse » disparaissait sans feedback.
+    stubFeed(themeIds: {
+      'society': ['only-one']
+    });
+    final container = await buildContainer(
+      interests:
+          _interestsState(favorites: [ThemeFavoriteRef(slug: 'society')]),
+      sourcesState: _sourcesState(),
+      catalog: const [],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(fluxContinuProvider.future);
+    final society = favoriteSections(container)
+        .where((s) => s.themeSlug == 'society')
+        .toList();
+    expect(society, hasLength(1),
+        reason: 'favori explicite jamais coupé même sous 2 items');
+    expect(society.single.items, hasLength(1));
+  });
 }
