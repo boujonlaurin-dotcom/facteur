@@ -16,11 +16,6 @@ class SectionBanner extends StatelessWidget {
   final Color accent;
   final String? illustrationAsset;
 
-  /// Optional callback fired when the banner is tapped — drives the manual
-  /// fold gesture on editorial sections (caret `expand_less` to the right of
-  /// the title). When null, the banner is non-interactive (legacy behavior).
-  final VoidCallback? onTapFold;
-
   /// Optional callback for the inline favorite star, posed at the end of the
   /// title's last line. When null, no star is rendered — the banner layout is
   /// strictly identical to the legacy V1.8 banner. Only the two user-favorite
@@ -51,7 +46,6 @@ class SectionBanner extends StatelessWidget {
     required this.accent,
     this.blurb,
     this.illustrationAsset,
-    this.onTapFold,
     this.onTapFavorite,
     this.onTapSettings,
     this.large = false,
@@ -60,7 +54,6 @@ class SectionBanner extends StatelessWidget {
 
   double _trailingControlReserve() {
     if (onTapSettings != null) return 58;
-    if (onTapFold != null) return 30;
     return 0;
   }
 
@@ -136,21 +129,8 @@ class SectionBanner extends StatelessWidget {
               ),
             ),
           ),
-          if (onTapFold != null)
-            Positioned(
-              top: 12,
-              // Décalé à gauche du bouton réglages quand celui-ci est présent.
-              right: onTapSettings != null ? 46 : 12,
-              child: IgnorePointer(
-                child: Icon(
-                  Icons.expand_less,
-                  size: 16,
-                  color: colors.textPrimary.withValues(alpha: 0.45),
-                ),
-              ),
-            ),
-          // Bouton réglages (veille) — hors IgnorePointer pour rester tappable
-          // indépendamment du fold de la bannière.
+          // Bouton réglages (veille) — hit target indépendant, hors
+          // IgnorePointer pour rester tappable.
           if (onTapSettings != null)
             Positioned(
               top: 8,
@@ -284,17 +264,7 @@ class SectionBanner extends StatelessWidget {
         ],
       ),
     );
-    if (onTapFold == null) return container;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTapFold,
-        borderRadius: borderRadius,
-        splashColor: accent.withValues(alpha: 0.08),
-        highlightColor: accent.withValues(alpha: 0.04),
-        child: container,
-      ),
-    );
+    return container;
   }
 }
 

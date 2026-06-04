@@ -6,8 +6,8 @@ void main() {
   // - a short section at 0 (bottom == top ⇒ no free zone);
   // - a TALL section framed 300 (top) … 600 (bottom) ⇒ free interior (300, 600);
   // - a short section at 1200.
-  // Snap points = {0, 300, 600, 1200}; transition zone (600, 1200) is wide so
-  // the edge-margin deadband and the directional commit are both exercisable.
+  // Snap points = {0, 300, 600, 1200}. The 600→1200 gap is wide so the
+  // one-step cap (you only ever advance to the ADJACENT point) is testable.
   const List<SectionFrame> frames = [
     (top: 0.0, bottom: 0.0),
     (top: 300.0, bottom: 600.0),
@@ -33,75 +33,83 @@ void main() {
       }
     });
 
-    test('a small overshoot past the section bottom is pulled back (margin)',
-        () {
-      // Down, only `within` px past the 600 bottom: the deadband re-frames the
-      // section's last cards (600) instead of switching to the next one.
+    // --- One-step cap: a fling NEVER skips a section ------------------------
+
+    test('a violent fling down only advances ONE frame (never skips)', () {
+      // Lift just past the short top (10) with a huge natural landing way past
+      // 1200. The old bracketing would commit near the landing (skipping
+      // 300/600). The cap pins the target to the adjacent point: 300.
       final target = resolveSnapTarget(
-        currentPixels: 580,
-        naturalLanding: 600 + within,
-        velocity: 60,
+        currentPixels: 10,
+        naturalLanding: 5000,
+        velocity: 9000,
+        scrollDirection: 1, // down
+        frames: frames,
+      );
+      expect(target, 300.0);
+    });
+
+    test('a violent fling up only recedes ONE frame (never skips)', () {
+      // Lift at the last frame (1200) with a huge upward landing past 0. Cap ⇒
+      // previous adjacent point only: 600.
+      final target = resolveSnapTarget(
+        currentPixels: 1200,
+        naturalLanding: -5000,
+        velocity: -9000,
+        scrollDirection: -1, // up
+        frames: frames,
+      );
+      expect(target, 600.0);
+    });
+
+    test('a hard fling from inside a tall section stops at its bottom (one step)',
+        () {
+      // Lift inside the (300, 600) interior, huge landing past the section.
+      // The cap advances to the section's own bottom frame (600), not beyond.
+      final target = resolveSnapTarget(
+        currentPixels: 320,
+        naturalLanding: 5000,
+        velocity: 9000,
         scrollDirection: 1, // down
         frames: frames,
       );
       expect(target, 600.0);
     });
 
-    test('past the margin, scrolling down commits to the next section top', () {
-      // Down, `beyond` the deadband: now it switches forward to the next frame.
+    // --- Directional one-step commits --------------------------------------
+
+    test('past the margin, scrolling down commits to the next adjacent frame',
+        () {
+      // Lift on the tall bottom (600), fling carries `beyond` the margin ⇒
+      // advance one frame to 1200.
       final target = resolveSnapTarget(
-        currentPixels: 650,
+        currentPixels: 600,
         naturalLanding: 600 + beyond,
-        velocity: 60,
+        velocity: 300,
         scrollDirection: 1, // down
         frames: frames,
       );
       expect(target, 1200.0);
     });
 
-    test('a small overshoot above a section top is pulled back (margin)', () {
-      // Up, only `within` px above the 1200 top: the deadband keeps it framed on
-      // 1200 rather than jumping back to the previous section.
+    test('past the margin, scrolling up commits to the previous adjacent frame',
+        () {
+      // Lift on the tall bottom (600), fling up clearing the (300,600) free
+      // zone entirely ⇒ recede one frame to the tall top (300).
       final target = resolveSnapTarget(
-        currentPixels: 1180,
-        naturalLanding: 1200 - within,
-        velocity: -60,
+        currentPixels: 600,
+        naturalLanding: 100, // past the tall top, out of the free interior
+        velocity: -300,
         scrollDirection: -1, // up
         frames: frames,
       );
-      expect(target, 1200.0);
+      expect(target, 300.0);
     });
 
-    test('past the margin, scrolling up commits to the previous section bottom',
-        () {
-      // Up, `beyond` the deadband below the 1200 top: switch back to frame the
-      // previous section's last cards (600).
-      final target = resolveSnapTarget(
-        currentPixels: 1150,
-        naturalLanding: 1200 - beyond,
-        velocity: -60,
-        scrollDirection: -1, // up
-        frames: frames,
-      );
-      expect(target, 600.0);
-    });
-
-    test('poses on the tall section bottom (its last cards) when reaching it',
-        () {
-      // Landing flush on the bottom frame ⇒ rest there.
-      final target = resolveSnapTarget(
-        currentPixels: 520,
-        naturalLanding: 600,
-        velocity: 40,
-        scrollDirection: 1, // down
-        frames: frames,
-      );
-      expect(target, 600.0);
-    });
-
-    test('entering a tall section from below poses on its top', () {
-      // Landing exactly on the tall section top (300): pose on it. Past it is
-      // the free zone.
+    test('a gentle approach to a tall section top poses on it', () {
+      // Lift below the tall top (250) and coast to land on 300: within the
+      // margin ⇒ re-frame on the nearest snap point, the tall top. (A *harder*
+      // fling would land inside the (300,600) free zone and stay free.)
       final target = resolveSnapTarget(
         currentPixels: 250,
         naturalLanding: 300,
@@ -112,40 +120,46 @@ void main() {
       expect(target, 300.0);
     });
 
-    test('a short section commits to the next top once past the margin (down)',
+    // --- Deadband (pull-back) ----------------------------------------------
+
+    test('a small overshoot past a frame is pulled back to it (margin, down)',
         () {
-      // Mid-gap between the short section (0) and the tall top (300): beyond the
-      // deadband ⇒ pose forward on 300.
+      // Lift just past 600, fling carries only `within` the margin ⇒ re-frame
+      // the current section (pull back to 600) instead of switching.
       final target = resolveSnapTarget(
-        currentPixels: 20,
-        naturalLanding: 150,
-        velocity: 80,
+        currentPixels: 620,
+        naturalLanding: 620 + within,
+        velocity: 60,
         scrollDirection: 1, // down
         frames: frames,
       );
-      expect(target, 300.0);
+      expect(target, 600.0);
     });
 
-    test('the margin also holds a short section for a tiny nudge', () {
-      // A `within`-px nudge down off the short top (0): pulled back to 0.
+    test('a small overshoot before a frame is pulled back to it (margin, up)',
+        () {
+      // Lift just before the finale frame (1180) heading up, fling within the
+      // margin ⇒ pull back to the nearest frame (1200) rather than receding.
       final target = resolveSnapTarget(
-        currentPixels: 10,
-        naturalLanding: within,
-        velocity: 30,
-        scrollDirection: 1, // down
+        currentPixels: 1180,
+        naturalLanding: 1180 - within,
+        velocity: -60,
+        scrollDirection: -1, // up
         frames: frames,
       );
-      expect(target, 0.0);
+      expect(target, 1200.0);
     });
+
+    // --- Direction sourcing -------------------------------------------------
 
     test('the controller direction wins over a noisy near-zero lift velocity',
         () {
-      // Resting mid-transition (900), heading DOWN per the controller. Whatever
-      // the noisy lift velocity reports, commit forward on 1200.
+      // Lift on 600 heading DOWN per the controller, with a strong fling.
+      // Whatever the noisy lift velocity reports, commit forward one frame.
       for (final v in [0.0, -5.0, 12.0]) {
         final target = resolveSnapTarget(
-          currentPixels: 900,
-          naturalLanding: 900 + v / 10,
+          currentPixels: 600,
+          naturalLanding: 600 + beyond,
           velocity: v,
           scrollDirection: 1, // down (from the controller, reliable)
           frames: frames,
@@ -156,8 +170,8 @@ void main() {
 
     test('scrolling down beyond the last short entry frames it as the finale',
         () {
-      // Regression for "Fin de tournée": the final virtual entry is short, so
-      // overshooting it at the bottom of the flow must still settle on its frame.
+      // Regression for "Fin de tournée": lift between 600 and 1200 with a
+      // strong downward fling ⇒ the adjacent point 1200 (the finale frame).
       final target = resolveSnapTarget(
         currentPixels: 1050,
         naturalLanding: 1350,
@@ -170,12 +184,12 @@ void main() {
 
     test('falls back to velocity sign when the controller direction is unknown',
         () {
-      // scrollDirection 0 (idle) ⇒ use velocity.sign. Upward velocity mid-gap ⇒
-      // commit back to 600.
+      // scrollDirection 0 (idle) ⇒ use velocity.sign. Strong upward fling from
+      // 900 ⇒ recede one frame to 600.
       final target = resolveSnapTarget(
         currentPixels: 900,
-        naturalLanding: 900,
-        velocity: -100, // up
+        naturalLanding: 900 - beyond,
+        velocity: -300, // up
         scrollDirection: 0,
         frames: frames,
       );
@@ -184,10 +198,10 @@ void main() {
 
     test('falls back to the nearest frame when both direction signals are zero',
         () {
-      // scrollDirection 0 and velocity 0 ⇒ nearest frame to the landing (600).
+      // scrollDirection 0 and velocity 0 ⇒ nearest frame to currentPixels.
       final target = resolveSnapTarget(
-        currentPixels: 500,
-        naturalLanding: 850,
+        currentPixels: 620,
+        naturalLanding: 620,
         velocity: 0,
         scrollDirection: 0,
         frames: frames,

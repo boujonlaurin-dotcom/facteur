@@ -19,7 +19,7 @@ enum SectionKind { essentiel, bonnes, theme, veille, source }
 
 /// Stable identity for a section across rebuilds.
 ///
-/// Used as a key into the `moreOpen` / `folded` maps so per-section UI state
+/// Used as a key into the `moreOpen` map so per-section UI state
 /// survives provider refreshes. For theme sections, the slug or custom topic
 /// id discriminates between multiple `kind == theme` instances; system
 /// sections collapse to just their kind name. La section veille collapse à
@@ -30,8 +30,7 @@ enum SectionKind { essentiel, bonnes, theme, veille, source }
 ///   - la nouvelle [EssentielSection] (carte hi-fi "L'Essentiel du jour")
 ///     → mappée sur `'essentiel_v3'` ;
 ///   - la [DigestTopicSection] legacy renommée "Actus du jour"
-///     → garde la clé historique `'essentiel'` afin que les prefs
-///     `flux_continu_folded_*` déjà écrites côté PO restent valides.
+///     → garde la clé historique `'essentiel'` pour son état `moreOpen`.
 String sectionKey(FluxSection section) {
   return switch (section) {
     EssentielSection() => 'essentiel_v3',
@@ -203,7 +202,7 @@ class EssentielArticle {
 /// Section v3 "L'Essentiel du jour" — single hi-fi card with 5 cross-topic
 /// articles. Distinct from [DigestTopicSection] which renders one card per
 /// digest topic. The card itself is built by `EssentielHiFiCard`; the section
-/// shell only carries the data and shares the fold/sticky infrastructure.
+/// shell only carries the data and shares the sticky infrastructure.
 class EssentielSection extends FluxSection {
   final List<EssentielArticle> articles;
 
@@ -375,34 +374,6 @@ DigestItem pickTopicLead(DigestTopic topic) {
   return topic.articles.first;
 }
 
-/// Vrai si toutes les cartes visibles en preview (les `coreVisibleCount`
-/// premières, avant « Plus de… ») de la section sont marquées lues. Gate du
-/// fold scroll-past : une section ne se replie automatiquement que lorsque
-/// l'utilisateur a réellement consommé ses cartes visibles.
-///
-/// Une preview vide ⇒ `false` (évite un fold vacuously-true sur une section
-/// sans contenu visible). Le repli manuel (caret/CTA) reste non gaté ailleurs.
-bool allPreviewArticlesRead(FluxSection section) {
-  final core = section.coreVisibleCount;
-  // Une preview non vide dont chaque carte visible passe le prédicat de lecture.
-  bool allRead<T>(Iterable<T> items, bool Function(T) isRead) {
-    final preview = items.take(core);
-    return preview.isNotEmpty && preview.every(isRead);
-  }
-
-  return switch (section) {
-    EssentielSection(:final articles) => allRead(articles, (a) => a.isRead),
-    DigestTopicSection(:final topics) => allRead(
-      topics,
-      (t) => t.articles.isNotEmpty && pickTopicLead(t).isRead,
-    ),
-    FeedThemeSection(:final items) => allRead(
-      items,
-      (c) => c.status == ContentStatus.consumed,
-    ),
-  };
-}
-
 /// Snapshot of the Flux Continu screen state.
 ///
 /// `sections` is the **ordered** list to render (already accounting for the
@@ -423,22 +394,14 @@ class FluxContinuState {
   // `SectionKind`) so multiple theme sections (one per favorite, 0..3) keep
   // independent state — the legacy enum-keyed maps could not represent that.
   final Map<String, bool> moreOpen;
-  // Sections the user has fully scrolled past (rendered as compact title
-  // cards). Persisted day-by-day so revisiting later in the day keeps the
-  // editorial zone collapsed; reset the next day when fresh content arrives.
-  final Map<String, bool> folded;
   // Whether the closing card "Vous êtes à jour" has been dismissed for the
   // day — either via the Continuer/Refermer buttons or by scrolling past it.
-  // Persisted day-by-day, mirroring [folded].
+  // Persisted day-by-day.
   final bool closingDismissed;
   // Content ids the user has swipe-dismissed during this session. Cards with
   // ids in this set are filtered out before render so the swipe-away feels
   // instant; the hide API call is fire-and-forget in the provider.
   final Set<String> dismissedIds;
-  // Section keys queued for fold at the next cold launch (via "Sujet
-  // suivant" or scroll-past detection). The section stays expanded on screen
-  // — only the in-session indicator on the "Sujet suivant" button flips.
-  final Set<String> markedForNextSession;
   // Citation du jour — rendue comme clôture éditoriale juste avant
   // ClosingCardV18 ("Fin de tournée"). Déterministe (seed = user_id + date)
   // côté backend, disponible dans les deux modes normal + sérène.
@@ -451,10 +414,8 @@ class FluxContinuState {
     this.grilleSlotIndex,
     this.isSerene = false,
     this.moreOpen = const {},
-    this.folded = const {},
     this.closingDismissed = false,
     this.dismissedIds = const {},
-    this.markedForNextSession = const {},
     this.quote,
     this.isLoading = true,
     this.error,
@@ -465,10 +426,8 @@ class FluxContinuState {
     int? grilleSlotIndex,
     bool? isSerene,
     Map<String, bool>? moreOpen,
-    Map<String, bool>? folded,
     bool? closingDismissed,
     Set<String>? dismissedIds,
-    Set<String>? markedForNextSession,
     QuoteResponse? quote,
     bool? isLoading,
     Object? error,
@@ -479,23 +438,18 @@ class FluxContinuState {
       grilleSlotIndex: grilleSlotIndex ?? this.grilleSlotIndex,
       isSerene: isSerene ?? this.isSerene,
       moreOpen: moreOpen ?? this.moreOpen,
-      folded: folded ?? this.folded,
       closingDismissed: closingDismissed ?? this.closingDismissed,
       dismissedIds: dismissedIds ?? this.dismissedIds,
-      markedForNextSession: markedForNextSession ?? this.markedForNextSession,
       quote: quote ?? this.quote,
       isLoading: isLoading ?? this.isLoading,
       error: clearError ? null : (error ?? this.error),
     );
   }
 
-  /// Convenience accessors — caller passes the section itself so the key
+  /// Convenience accessor — caller passes the section itself so the key
   /// derivation stays inside the model. Lets widgets stay agnostic of the
   /// string-key encoding scheme.
   bool isOpen(FluxSection section) => moreOpen[sectionKey(section)] ?? false;
-  bool isFolded(FluxSection section) => folded[sectionKey(section)] ?? false;
-  bool isMarkedForNextSession(FluxSection section) =>
-      markedForNextSession.contains(sectionKey(section));
 
   /// Slugs of the `FeedThemeSection`s that make up today's tournée — used by
   /// the Explorer filter bar to hide chips for themes the user has already

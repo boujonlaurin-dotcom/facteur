@@ -1,70 +1,77 @@
-# QA Handoff — Sources favorites dans la Tournée (PR 1)
+# QA Handoff — Polish UX/UI « l'Essentiel » (Flux Continu)
 
 > Rempli par l'agent dev. Input de `/validate-feature` (Chrome 390×844).
 
-## Feature développée
-Une source favorite s'affiche désormais comme une **vraie section de la Tournée** (Flux
-Continu) : hero avec **nom + grand logo de la source**, **top-3 articles classés** par les mêmes
-piliers de scoring que les sections thème (fenêtre 24→48→72h), dédup inter-sections, et un
-**« Lire plus »** ouvrant la **curation complète** de la source. PR 1 = le contenu, via le mécanisme
-de favori existant (favoriser depuis Flâner / Mes sources). L'ordre unifié + cap-5 + modal de
-composition arrivent en PR 2.
+Branche : `boujonlaurin-dotcom/essentiel-ux-scroll-haptics`
+Écran : **l'Essentiel** (Flux Continu) — `apps/mobile/lib/features/flux_continu/`
 
-## PR associée
-À créer (`gh pr create --base main`) — voir `.context/pr-handoff.md`.
+3 ajustements UX/UI livrés en une PR. **Point 1 (haptique/snap) = validation device réel
+obligatoire** (non simulable en web). Points 2 & 3 testables via Chrome (viewport 390×844).
 
-## Écrans impactés
-| Écran | Route | Modifié / Nouveau |
-|-------|-------|-------------------|
-| Tournée (Flux Continu) | `/flux-continu` | Modifié — sections source insérées entre thèmes et veille |
-| Détail source | `/flux-continu/source/:id` | **Nouveau** — curation complète + carrousels source |
+---
 
-## Scénarios de test
+## Point 1 — Snap « jamais sauter une section » (one-step cap)
 
-### Scénario 1 : Happy path — une source favorite devient une section
-1. Aller dans Flâner / Mes sources, **favoriser** une source active (ex. Le Monde).
-2. Revenir sur la **Tournée**.
-**Attendu** : une section apparaît avec le **logo** de la source à droite du hero (net, pas
-d'illustration thème), le **nom** de la source comme titre, et **3 articles** classés (ordre ≠ pur
-chronologique). La section se place **après les thèmes favoris** et **avant la veille**.
+**Changement** : `resolveSnapTarget` (`utils/section_snap.dart`) borne désormais la cible du snap
+au **point d'ancrage adjacent à la position de lever de doigt** (`currentPixels`), plus au
+*naturalLanding* du fling. Quelle que soit la force du geste, on n'avance/recule que d'**une**
+section → un seul flip d'onglet actif → **un seul haptique** par pas.
 
-### Scénario 2 : Dédup — pas de doublon avec l'Essentiel / un thème
-1. Avec une source favorite dont un article est déjà dans l'Essentiel ou une section thème au-dessus.
-**Attendu** : l'article n'apparaît **qu'une seule fois** (la section au-dessus gagne) ; la section
-source ne le ré-affiche pas.
+### Scénarios (device réel)
+- **Happy path** : scroller fort vers le bas → on ne descend que d'**une** section à la fois ;
+  enchaîner des scrolls rapides descend toute la tournée, un buzz net par pas.
+- Idem vers le haut (remonter une section par geste).
+- **Lecture libre conservée** : au milieu d'une section plus haute que l'écran, le scroll reste
+  libre (pas de snap), snap uniquement aux bords (haut/bas de section).
+- **Edge** : fling très violent depuis le haut → ne saute pas 2-3 sections, s'arrête à la suivante.
+- **Edge** : petit nudge (< 120 px d'inertie) → re-cadre la section courante (pull-back), pas de
+  switch.
+- **Edge bas de tournée** : sous « Fin de tournée », le rebond natif iOS reste propre (pas de
+  rebonds étagés / buzz répétés).
 
-### Scénario 3 : « Lire plus » → curation complète
-1. Sur une section source, taper **« Tout lire »**.
-**Attendu** : écran détail source = **toute la curation** de la source (chronologique, paginée à
-l'infini), carrousels filtrés sur la source (affichés seulement si ≥ 2 items), **aucun bloc
-« Explorer de nouvelles sources »**, footer « Retour à la Tournée » / « suivant ».
+> Si un fling très fort vers une cible proche dépasse légèrement : 1er levier = `kSectionEdgeMargin`
+> (120 px) ; 2e levier = caper la `velocity` transmise au spring dans `_SectionSnapPhysics`.
 
-### Scénario 4 : Edge — source sans article frais
-1. Source favorite n'ayant aucun article récent dans la fenêtre.
-**Attendu** : la section **reste visible** (jamais masquée) avec un **état vide** : « Rien de neuf
-récemment chez <source>. » + CTA **« Voir toute la curation »** (ouvre le détail).
+## Point 2 — Désaturation de la progress bar (sticky header)
 
-### Scénario 5 : Non-régression Flâner
-1. Dans Flâner, épingler/filtrer la même source.
-**Attendu** : le feed Flâner reste **chronologique** (inchangé) — seul le contexte Tournée est classé.
+**Changement** : `sticky_tab_bar.dart` — les 4 stops du dégradé saturés (rouge/orange/bleu/teal)
+remplacés par des tons **neutres/pastel** (rose poussiéreux → ocre doux → bleu ardoise → sauge) ;
+halo passé de alpha 0.35 → 0.10.
+
+### Scénarios (Chrome 390×844)
+- Scroller jusqu'à révéler le sticky header → la barre de progression doit être **nettement plus
+  discrète** (ne tire plus l'œil), tons neutres.
+- Vérifier la progression (le remplissage suit toujours le scroll, valeur inchangée).
+- Comparer light/dark si possible.
+- *(Valeurs facilement ajustables si encore trop/pas assez visibles.)*
+
+## Point 3 — Suppression complète du fold
+
+**Changement** : retrait total de la mécanique de repli des sections (repli auto scroll-past +
+chevrons manuels). Fichier `folded_section_card.dart` supprimé ; champs `folded`/
+`markedForNextSession` retirés du state ; chevron `expand_less` retiré de la bannière.
+
+### Scénarios (Chrome 390×844)
+- Plus **aucun chevron** de repli sur les bannières de section.
+- Les sections restent **toujours déployées**, même après avoir tout lu / scrollé au-delà /
+  rouvert l'écran.
+- **Non-régression à vérifier intactes** :
+  - « Voir plus » / « Voir tout » (overflow des sections) fonctionne.
+  - Carte de clôture « Fin de tournée » présente et ses CTA (Continuer / Refermer).
+  - Swipe-dismiss d'un article + feedback inline.
+  - Étoile favori (bannières thème) + bouton réglages (section veille) toujours tappables.
+
+---
 
 ## Critères d'acceptation
-- [ ] Section source = hero logo + nom + top-3 classé (≠ pur chrono).
-- [ ] Dédup inter-sections respectée (pas de doublon avec Essentiel/thèmes).
-- [ ] « Lire plus » → curation complète + carrousels source (si ≥2) + **pas** d'« Explorer ».
-- [ ] Source vide → section toujours visible + CTA « Voir toute la curation ».
-- [ ] Flâner reste chronologique (non-régression).
+- [ ] (device) 1 geste = 1 section + 1 haptique, dans les deux sens ; lecture libre intra-section OK.
+- [ ] Progress bar désaturée, discrète, progression correcte.
+- [ ] Zéro chevron / repli ; sections toujours ouvertes ; « Voir plus » + clôture + swipe intacts.
 - [ ] Console sans erreurs, réseau sans 4xx/5xx inattendus.
 
-## Zones de risque
-- **Logo réseau** : fallback initiales si l'URL échoue (SourceLogoAvatar).
-- **Détail source** : peinture instantanée du top-3 classé puis remplacement par la 1ʳᵉ page
-  chronologique → léger reflow attendu au chargement.
-- **Cap intérimaire** : jusqu'à 3 sources (parité thèmes) → total possible 3 thèmes + 3 sources +
-  veille (le cap-5 unifié est PR 2).
-
-## Dépendances
-- Backend `/api/feed?source_id=<id>&personalized=true` → top classé 24h (mêmes piliers que thèmes).
-- Backend `/api/feed?source_id=<id>` (sans personalized) → curation complète chronologique.
-- Providers : `userSourcesStateProvider` (favoris) + `userSourcesProvider` (catalogue) déjà en place.
-- **Aucune migration DB** (changement logique seul, 1 head Alembic).
+## État technique
+- `flutter analyze` : propre sur flux_continu.
+- Tests unitaires : `section_snap_test` (15/15), `flux_continu_models_test`,
+  `section_banner_favorite_test` verts. `flux_continu_provider_test` échoue en local
+  (Hive/Supabase non-init — pré-existant) ; pas de régression (baseline 25 échecs, idem env).
+- Build APK debug : OK.
