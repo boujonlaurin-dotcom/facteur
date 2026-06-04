@@ -6,7 +6,24 @@ clés FR du contrat (`dateAffichee`, `nbEssais`, `premiereLettre`,
 JSON byte-exactes. Toute évolution se synchronise des deux côtés.
 """
 
+from uuid import UUID
+
 from pydantic import BaseModel
+
+
+class GrilleFeaturedMixin(BaseModel):
+    """Snapshot de l'article réel accroché au mot du jour (auto-matching).
+
+    Tous optionnels et peuplés **uniquement en fin de partie** (même gating que
+    `mot`/`pourquoi`). `null` si aucun article n'a été matché → le mobile
+    retombe sur `pourquoi`.
+    """
+
+    featuredContentId: UUID | None = None
+    featuredTitle: str | None = None
+    featuredExcerpt: str | None = None
+    featuredUrl: str | None = None
+    featuredSource: str | None = None
 
 
 class GrilleEssai(BaseModel):
@@ -16,11 +33,12 @@ class GrilleEssai(BaseModel):
     etats: list[str]
 
 
-class GrilleTodayResponse(BaseModel):
+class GrilleTodayResponse(GrilleFeaturedMixin):
     """Réponse de `GET /api/grille/today`.
 
     `mot` et `pourquoi` restent `null` tant que `statut == in_progress`
-    (le mot n'est jamais exposé avant la fin de partie).
+    (le mot n'est jamais exposé avant la fin de partie). Les champs `featured*`
+    suivent le même gating (fin de partie uniquement).
     """
 
     date: str
@@ -47,12 +65,13 @@ class GrilleGuessRequest(BaseModel):
     mot: str
 
 
-class GrilleGuessResponse(BaseModel):
+class GrilleGuessResponse(GrilleFeaturedMixin):
     """Réponse de `POST /api/grille/today/guess`.
 
     En cas de refus (`valide=false`), seul `raison` est renseigné et l'essai
     n'est pas consommé. En cas d'acceptation, `etats`/`statut`/`nbEssais` sont
-    renseignés ; `mot`/`pourquoi` uniquement sur `solved`/`failed`.
+    renseignés ; `mot`/`pourquoi` (et `featured*`) uniquement sur
+    `solved`/`failed`.
     """
 
     valide: bool
@@ -64,11 +83,12 @@ class GrilleGuessResponse(BaseModel):
     pourquoi: str | None = None
 
 
-class GrilleRevealResponse(BaseModel):
+class GrilleRevealResponse(GrilleFeaturedMixin):
     """Réponse de `POST /api/grille/today/reveal` (« donner sa langue au chat »).
 
     Le mot du jour est exposé (`statut == revealed`) sans compter comme défaite ;
-    la partie est seulement exclue du classement.
+    la partie est seulement exclue du classement. Les champs `featured*` sont
+    exposés (partie terminée).
     """
 
     statut: str

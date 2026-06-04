@@ -15,10 +15,12 @@ Usage:
 """
 
 import asyncio
+import contextlib
 import datetime
 from typing import Any
 from uuid import UUID
 
+import sentry_sdk
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -251,6 +253,12 @@ class DigestGenerationJob:
                 logger.error(
                     "digest_generation_editorial_precompute_failed", error=str(e)
                 )
+
+            # 1.7 Auto-matching « mot du jour » → article réel de la tournée.
+            # Best-effort, non bloquant : un échec ici ne touche jamais le digest.
+            await self._match_grille_featured_article(
+                session, target_date, editorial_ctx_pour_vous
+            )
 
             # 2. Traiter par batches pour limiter la charge mémoire
             for i in range(0, len(user_ids), self.batch_size):
@@ -492,6 +500,42 @@ class DigestGenerationJob:
             # Non-fatal: if retention fails the batch can still run.
             logger.exception("editorial_highlights_history_prune_failed")
             await session.rollback()
+
+    async def _match_grille_featured_article(
+        self,
+        session: AsyncSession,
+        target_date: datetime.date,
+        editorial_ctx_pour_vous,
+    ) -> None:
+        """Accroche l'actu du jour qui matche le mot de la Grille (best-effort).
+
+        Fige un snapshot (titre/extrait/url/source) sur le `GrillePuzzle` du jour
+        depuis le contexte éditorial global pour_vous. Entièrement isolé : toute
+        erreur est loggée + remontée à Sentry mais n'altère JAMAIS la génération
+        du digest (le mot du jour est secondaire). Idempotent.
+        """
+        if editorial_ctx_pour_vous is None:
+            return
+        try:
+            from app.services.grille_matcher import match_grille_featured_article
+
+            matched = await match_grille_featured_article(
+                session, target_date, editorial_ctx_pour_vous
+            )
+            await session.commit()
+            logger.info(
+                "digest_generation_grille_featured_done",
+                target_date=str(target_date),
+                matched=matched,
+            )
+        except Exception as e:
+            logger.exception(
+                "digest_generation_grille_featured_failed",
+                target_date=str(target_date),
+            )
+            sentry_sdk.capture_exception(e)
+            with contextlib.suppress(Exception):
+                await session.rollback()
 
     async def _get_active_users(self, session: AsyncSession) -> list[UUID]:
         """Récupère la liste des utilisateurs actifs (avec profil).

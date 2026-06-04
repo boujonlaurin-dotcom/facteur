@@ -1040,6 +1040,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
               onTapSettings: section.kind == SectionKind.veille
                   ? () => context.push('${RoutePaths.veilleConfig}?mode=edit')
                   : null,
+              // Tournée bugs E2E — CTA « Ajouter des sources » de l'empty-state
+              // d'une section thème favorite vide → ouvre « Composer ma Tournée ».
+              onAddSources: section is FeedThemeSection &&
+                      section.kind == SectionKind.theme
+                  ? () => showTourneeComposerSheet(context)
+                  : null,
               onSeeAll: section is FeedThemeSection
                   ? (section.kind == SectionKind.source
                       ? () => _openSourceSection(context, section)

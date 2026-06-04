@@ -197,7 +197,14 @@ mixin _$GrilleTodayResponse {
   String? get mot => throw _privateConstructorUsedError;
   String? get pourquoi => throw _privateConstructorUsedError;
   int get streak => throw _privateConstructorUsedError;
-  int get prochainMotDansSec => throw _privateConstructorUsedError;
+  int get prochainMotDansSec =>
+      throw _privateConstructorUsedError; // Article réel accroché au mot du jour (auto-matching) — peuplé seulement
+// en fin de partie. `null` → reveal sur `pourquoi` (fallback).
+  String? get featuredContentId => throw _privateConstructorUsedError;
+  String? get featuredTitle => throw _privateConstructorUsedError;
+  String? get featuredExcerpt => throw _privateConstructorUsedError;
+  String? get featuredUrl => throw _privateConstructorUsedError;
+  String? get featuredSource => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -227,7 +234,12 @@ abstract class $GrilleTodayResponseCopyWith<$Res> {
       String? mot,
       String? pourquoi,
       int streak,
-      int prochainMotDansSec});
+      int prochainMotDansSec,
+      String? featuredContentId,
+      String? featuredTitle,
+      String? featuredExcerpt,
+      String? featuredUrl,
+      String? featuredSource});
 }
 
 /// @nodoc
@@ -259,6 +271,11 @@ class _$GrilleTodayResponseCopyWithImpl<$Res, $Val extends GrilleTodayResponse>
     Object? pourquoi = freezed,
     Object? streak = null,
     Object? prochainMotDansSec = null,
+    Object? featuredContentId = freezed,
+    Object? featuredTitle = freezed,
+    Object? featuredExcerpt = freezed,
+    Object? featuredUrl = freezed,
+    Object? featuredSource = freezed,
   }) {
     return _then(_value.copyWith(
       date: null == date
@@ -325,6 +342,26 @@ class _$GrilleTodayResponseCopyWithImpl<$Res, $Val extends GrilleTodayResponse>
           ? _value.prochainMotDansSec
           : prochainMotDansSec // ignore: cast_nullable_to_non_nullable
               as int,
+      featuredContentId: freezed == featuredContentId
+          ? _value.featuredContentId
+          : featuredContentId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredTitle: freezed == featuredTitle
+          ? _value.featuredTitle
+          : featuredTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredExcerpt: freezed == featuredExcerpt
+          ? _value.featuredExcerpt
+          : featuredExcerpt // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredUrl: freezed == featuredUrl
+          ? _value.featuredUrl
+          : featuredUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredSource: freezed == featuredSource
+          ? _value.featuredSource
+          : featuredSource // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -353,7 +390,12 @@ abstract class _$$GrilleTodayResponseImplCopyWith<$Res>
       String? mot,
       String? pourquoi,
       int streak,
-      int prochainMotDansSec});
+      int prochainMotDansSec,
+      String? featuredContentId,
+      String? featuredTitle,
+      String? featuredExcerpt,
+      String? featuredUrl,
+      String? featuredSource});
 }
 
 /// @nodoc
@@ -383,6 +425,11 @@ class __$$GrilleTodayResponseImplCopyWithImpl<$Res>
     Object? pourquoi = freezed,
     Object? streak = null,
     Object? prochainMotDansSec = null,
+    Object? featuredContentId = freezed,
+    Object? featuredTitle = freezed,
+    Object? featuredExcerpt = freezed,
+    Object? featuredUrl = freezed,
+    Object? featuredSource = freezed,
   }) {
     return _then(_$GrilleTodayResponseImpl(
       date: null == date
@@ -449,6 +496,26 @@ class __$$GrilleTodayResponseImplCopyWithImpl<$Res>
           ? _value.prochainMotDansSec
           : prochainMotDansSec // ignore: cast_nullable_to_non_nullable
               as int,
+      featuredContentId: freezed == featuredContentId
+          ? _value.featuredContentId
+          : featuredContentId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredTitle: freezed == featuredTitle
+          ? _value.featuredTitle
+          : featuredTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredExcerpt: freezed == featuredExcerpt
+          ? _value.featuredExcerpt
+          : featuredExcerpt // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredUrl: freezed == featuredUrl
+          ? _value.featuredUrl
+          : featuredUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredSource: freezed == featuredSource
+          ? _value.featuredSource
+          : featuredSource // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -472,7 +539,12 @@ class _$GrilleTodayResponseImpl extends _GrilleTodayResponse {
       this.mot,
       this.pourquoi,
       required this.streak,
-      required this.prochainMotDansSec})
+      required this.prochainMotDansSec,
+      this.featuredContentId,
+      this.featuredTitle,
+      this.featuredExcerpt,
+      this.featuredUrl,
+      this.featuredSource})
       : _essais = essais,
         super._();
 
@@ -517,10 +589,22 @@ class _$GrilleTodayResponseImpl extends _GrilleTodayResponse {
   final int streak;
   @override
   final int prochainMotDansSec;
+// Article réel accroché au mot du jour (auto-matching) — peuplé seulement
+// en fin de partie. `null` → reveal sur `pourquoi` (fallback).
+  @override
+  final String? featuredContentId;
+  @override
+  final String? featuredTitle;
+  @override
+  final String? featuredExcerpt;
+  @override
+  final String? featuredUrl;
+  @override
+  final String? featuredSource;
 
   @override
   String toString() {
-    return 'GrilleTodayResponse(date: $date, dateAffichee: $dateAffichee, dateCourt: $dateCourt, numero: $numero, longueur: $longueur, essaisMax: $essaisMax, premiereLettre: $premiereLettre, indice: $indice, theme: $theme, statut: $statut, essais: $essais, nbEssais: $nbEssais, mot: $mot, pourquoi: $pourquoi, streak: $streak, prochainMotDansSec: $prochainMotDansSec)';
+    return 'GrilleTodayResponse(date: $date, dateAffichee: $dateAffichee, dateCourt: $dateCourt, numero: $numero, longueur: $longueur, essaisMax: $essaisMax, premiereLettre: $premiereLettre, indice: $indice, theme: $theme, statut: $statut, essais: $essais, nbEssais: $nbEssais, mot: $mot, pourquoi: $pourquoi, streak: $streak, prochainMotDansSec: $prochainMotDansSec, featuredContentId: $featuredContentId, featuredTitle: $featuredTitle, featuredExcerpt: $featuredExcerpt, featuredUrl: $featuredUrl, featuredSource: $featuredSource)';
   }
 
   @override
@@ -551,29 +635,45 @@ class _$GrilleTodayResponseImpl extends _GrilleTodayResponse {
                 other.pourquoi == pourquoi) &&
             (identical(other.streak, streak) || other.streak == streak) &&
             (identical(other.prochainMotDansSec, prochainMotDansSec) ||
-                other.prochainMotDansSec == prochainMotDansSec));
+                other.prochainMotDansSec == prochainMotDansSec) &&
+            (identical(other.featuredContentId, featuredContentId) ||
+                other.featuredContentId == featuredContentId) &&
+            (identical(other.featuredTitle, featuredTitle) ||
+                other.featuredTitle == featuredTitle) &&
+            (identical(other.featuredExcerpt, featuredExcerpt) ||
+                other.featuredExcerpt == featuredExcerpt) &&
+            (identical(other.featuredUrl, featuredUrl) ||
+                other.featuredUrl == featuredUrl) &&
+            (identical(other.featuredSource, featuredSource) ||
+                other.featuredSource == featuredSource));
   }
 
   @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-      runtimeType,
-      date,
-      dateAffichee,
-      dateCourt,
-      numero,
-      longueur,
-      essaisMax,
-      premiereLettre,
-      indice,
-      theme,
-      statut,
-      const DeepCollectionEquality().hash(_essais),
-      nbEssais,
-      mot,
-      pourquoi,
-      streak,
-      prochainMotDansSec);
+  int get hashCode => Object.hashAll([
+        runtimeType,
+        date,
+        dateAffichee,
+        dateCourt,
+        numero,
+        longueur,
+        essaisMax,
+        premiereLettre,
+        indice,
+        theme,
+        statut,
+        const DeepCollectionEquality().hash(_essais),
+        nbEssais,
+        mot,
+        pourquoi,
+        streak,
+        prochainMotDansSec,
+        featuredContentId,
+        featuredTitle,
+        featuredExcerpt,
+        featuredUrl,
+        featuredSource
+      ]);
 
   @JsonKey(ignore: true)
   @override
@@ -607,7 +707,12 @@ abstract class _GrilleTodayResponse extends GrilleTodayResponse {
       final String? mot,
       final String? pourquoi,
       required final int streak,
-      required final int prochainMotDansSec}) = _$GrilleTodayResponseImpl;
+      required final int prochainMotDansSec,
+      final String? featuredContentId,
+      final String? featuredTitle,
+      final String? featuredExcerpt,
+      final String? featuredUrl,
+      final String? featuredSource}) = _$GrilleTodayResponseImpl;
   const _GrilleTodayResponse._() : super._();
 
   factory _GrilleTodayResponse.fromJson(Map<String, dynamic> json) =
@@ -645,6 +750,17 @@ abstract class _GrilleTodayResponse extends GrilleTodayResponse {
   int get streak;
   @override
   int get prochainMotDansSec;
+  @override // Article réel accroché au mot du jour (auto-matching) — peuplé seulement
+// en fin de partie. `null` → reveal sur `pourquoi` (fallback).
+  String? get featuredContentId;
+  @override
+  String? get featuredTitle;
+  @override
+  String? get featuredExcerpt;
+  @override
+  String? get featuredUrl;
+  @override
+  String? get featuredSource;
   @override
   @JsonKey(ignore: true)
   _$$GrilleTodayResponseImplCopyWith<_$GrilleTodayResponseImpl> get copyWith =>
@@ -660,6 +776,11 @@ mixin _$GrilleRevealResponse {
   String get statut => throw _privateConstructorUsedError;
   String get mot => throw _privateConstructorUsedError;
   String get pourquoi => throw _privateConstructorUsedError;
+  String? get featuredContentId => throw _privateConstructorUsedError;
+  String? get featuredTitle => throw _privateConstructorUsedError;
+  String? get featuredExcerpt => throw _privateConstructorUsedError;
+  String? get featuredUrl => throw _privateConstructorUsedError;
+  String? get featuredSource => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -673,7 +794,15 @@ abstract class $GrilleRevealResponseCopyWith<$Res> {
           $Res Function(GrilleRevealResponse) then) =
       _$GrilleRevealResponseCopyWithImpl<$Res, GrilleRevealResponse>;
   @useResult
-  $Res call({String statut, String mot, String pourquoi});
+  $Res call(
+      {String statut,
+      String mot,
+      String pourquoi,
+      String? featuredContentId,
+      String? featuredTitle,
+      String? featuredExcerpt,
+      String? featuredUrl,
+      String? featuredSource});
 }
 
 /// @nodoc
@@ -693,6 +822,11 @@ class _$GrilleRevealResponseCopyWithImpl<$Res,
     Object? statut = null,
     Object? mot = null,
     Object? pourquoi = null,
+    Object? featuredContentId = freezed,
+    Object? featuredTitle = freezed,
+    Object? featuredExcerpt = freezed,
+    Object? featuredUrl = freezed,
+    Object? featuredSource = freezed,
   }) {
     return _then(_value.copyWith(
       statut: null == statut
@@ -707,6 +841,26 @@ class _$GrilleRevealResponseCopyWithImpl<$Res,
           ? _value.pourquoi
           : pourquoi // ignore: cast_nullable_to_non_nullable
               as String,
+      featuredContentId: freezed == featuredContentId
+          ? _value.featuredContentId
+          : featuredContentId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredTitle: freezed == featuredTitle
+          ? _value.featuredTitle
+          : featuredTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredExcerpt: freezed == featuredExcerpt
+          ? _value.featuredExcerpt
+          : featuredExcerpt // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredUrl: freezed == featuredUrl
+          ? _value.featuredUrl
+          : featuredUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredSource: freezed == featuredSource
+          ? _value.featuredSource
+          : featuredSource // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -719,7 +873,15 @@ abstract class _$$GrilleRevealResponseImplCopyWith<$Res>
       __$$GrilleRevealResponseImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({String statut, String mot, String pourquoi});
+  $Res call(
+      {String statut,
+      String mot,
+      String pourquoi,
+      String? featuredContentId,
+      String? featuredTitle,
+      String? featuredExcerpt,
+      String? featuredUrl,
+      String? featuredSource});
 }
 
 /// @nodoc
@@ -736,6 +898,11 @@ class __$$GrilleRevealResponseImplCopyWithImpl<$Res>
     Object? statut = null,
     Object? mot = null,
     Object? pourquoi = null,
+    Object? featuredContentId = freezed,
+    Object? featuredTitle = freezed,
+    Object? featuredExcerpt = freezed,
+    Object? featuredUrl = freezed,
+    Object? featuredSource = freezed,
   }) {
     return _then(_$GrilleRevealResponseImpl(
       statut: null == statut
@@ -750,6 +917,26 @@ class __$$GrilleRevealResponseImplCopyWithImpl<$Res>
           ? _value.pourquoi
           : pourquoi // ignore: cast_nullable_to_non_nullable
               as String,
+      featuredContentId: freezed == featuredContentId
+          ? _value.featuredContentId
+          : featuredContentId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredTitle: freezed == featuredTitle
+          ? _value.featuredTitle
+          : featuredTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredExcerpt: freezed == featuredExcerpt
+          ? _value.featuredExcerpt
+          : featuredExcerpt // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredUrl: freezed == featuredUrl
+          ? _value.featuredUrl
+          : featuredUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredSource: freezed == featuredSource
+          ? _value.featuredSource
+          : featuredSource // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -758,7 +945,14 @@ class __$$GrilleRevealResponseImplCopyWithImpl<$Res>
 @JsonSerializable()
 class _$GrilleRevealResponseImpl implements _GrilleRevealResponse {
   const _$GrilleRevealResponseImpl(
-      {required this.statut, required this.mot, required this.pourquoi});
+      {required this.statut,
+      required this.mot,
+      required this.pourquoi,
+      this.featuredContentId,
+      this.featuredTitle,
+      this.featuredExcerpt,
+      this.featuredUrl,
+      this.featuredSource});
 
   factory _$GrilleRevealResponseImpl.fromJson(Map<String, dynamic> json) =>
       _$$GrilleRevealResponseImplFromJson(json);
@@ -769,10 +963,20 @@ class _$GrilleRevealResponseImpl implements _GrilleRevealResponse {
   final String mot;
   @override
   final String pourquoi;
+  @override
+  final String? featuredContentId;
+  @override
+  final String? featuredTitle;
+  @override
+  final String? featuredExcerpt;
+  @override
+  final String? featuredUrl;
+  @override
+  final String? featuredSource;
 
   @override
   String toString() {
-    return 'GrilleRevealResponse(statut: $statut, mot: $mot, pourquoi: $pourquoi)';
+    return 'GrilleRevealResponse(statut: $statut, mot: $mot, pourquoi: $pourquoi, featuredContentId: $featuredContentId, featuredTitle: $featuredTitle, featuredExcerpt: $featuredExcerpt, featuredUrl: $featuredUrl, featuredSource: $featuredSource)';
   }
 
   @override
@@ -783,12 +987,31 @@ class _$GrilleRevealResponseImpl implements _GrilleRevealResponse {
             (identical(other.statut, statut) || other.statut == statut) &&
             (identical(other.mot, mot) || other.mot == mot) &&
             (identical(other.pourquoi, pourquoi) ||
-                other.pourquoi == pourquoi));
+                other.pourquoi == pourquoi) &&
+            (identical(other.featuredContentId, featuredContentId) ||
+                other.featuredContentId == featuredContentId) &&
+            (identical(other.featuredTitle, featuredTitle) ||
+                other.featuredTitle == featuredTitle) &&
+            (identical(other.featuredExcerpt, featuredExcerpt) ||
+                other.featuredExcerpt == featuredExcerpt) &&
+            (identical(other.featuredUrl, featuredUrl) ||
+                other.featuredUrl == featuredUrl) &&
+            (identical(other.featuredSource, featuredSource) ||
+                other.featuredSource == featuredSource));
   }
 
   @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(runtimeType, statut, mot, pourquoi);
+  int get hashCode => Object.hash(
+      runtimeType,
+      statut,
+      mot,
+      pourquoi,
+      featuredContentId,
+      featuredTitle,
+      featuredExcerpt,
+      featuredUrl,
+      featuredSource);
 
   @JsonKey(ignore: true)
   @override
@@ -810,7 +1033,12 @@ abstract class _GrilleRevealResponse implements GrilleRevealResponse {
   const factory _GrilleRevealResponse(
       {required final String statut,
       required final String mot,
-      required final String pourquoi}) = _$GrilleRevealResponseImpl;
+      required final String pourquoi,
+      final String? featuredContentId,
+      final String? featuredTitle,
+      final String? featuredExcerpt,
+      final String? featuredUrl,
+      final String? featuredSource}) = _$GrilleRevealResponseImpl;
 
   factory _GrilleRevealResponse.fromJson(Map<String, dynamic> json) =
       _$GrilleRevealResponseImpl.fromJson;
@@ -821,6 +1049,16 @@ abstract class _GrilleRevealResponse implements GrilleRevealResponse {
   String get mot;
   @override
   String get pourquoi;
+  @override
+  String? get featuredContentId;
+  @override
+  String? get featuredTitle;
+  @override
+  String? get featuredExcerpt;
+  @override
+  String? get featuredUrl;
+  @override
+  String? get featuredSource;
   @override
   @JsonKey(ignore: true)
   _$$GrilleRevealResponseImplCopyWith<_$GrilleRevealResponseImpl>
@@ -840,6 +1078,11 @@ mixin _$GrilleGuessResponse {
   int? get nbEssais => throw _privateConstructorUsedError;
   String? get mot => throw _privateConstructorUsedError;
   String? get pourquoi => throw _privateConstructorUsedError;
+  String? get featuredContentId => throw _privateConstructorUsedError;
+  String? get featuredTitle => throw _privateConstructorUsedError;
+  String? get featuredExcerpt => throw _privateConstructorUsedError;
+  String? get featuredUrl => throw _privateConstructorUsedError;
+  String? get featuredSource => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -860,7 +1103,12 @@ abstract class $GrilleGuessResponseCopyWith<$Res> {
       String? statut,
       int? nbEssais,
       String? mot,
-      String? pourquoi});
+      String? pourquoi,
+      String? featuredContentId,
+      String? featuredTitle,
+      String? featuredExcerpt,
+      String? featuredUrl,
+      String? featuredSource});
 }
 
 /// @nodoc
@@ -883,6 +1131,11 @@ class _$GrilleGuessResponseCopyWithImpl<$Res, $Val extends GrilleGuessResponse>
     Object? nbEssais = freezed,
     Object? mot = freezed,
     Object? pourquoi = freezed,
+    Object? featuredContentId = freezed,
+    Object? featuredTitle = freezed,
+    Object? featuredExcerpt = freezed,
+    Object? featuredUrl = freezed,
+    Object? featuredSource = freezed,
   }) {
     return _then(_value.copyWith(
       valide: null == valide
@@ -913,6 +1166,26 @@ class _$GrilleGuessResponseCopyWithImpl<$Res, $Val extends GrilleGuessResponse>
           ? _value.pourquoi
           : pourquoi // ignore: cast_nullable_to_non_nullable
               as String?,
+      featuredContentId: freezed == featuredContentId
+          ? _value.featuredContentId
+          : featuredContentId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredTitle: freezed == featuredTitle
+          ? _value.featuredTitle
+          : featuredTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredExcerpt: freezed == featuredExcerpt
+          ? _value.featuredExcerpt
+          : featuredExcerpt // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredUrl: freezed == featuredUrl
+          ? _value.featuredUrl
+          : featuredUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredSource: freezed == featuredSource
+          ? _value.featuredSource
+          : featuredSource // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -932,7 +1205,12 @@ abstract class _$$GrilleGuessResponseImplCopyWith<$Res>
       String? statut,
       int? nbEssais,
       String? mot,
-      String? pourquoi});
+      String? pourquoi,
+      String? featuredContentId,
+      String? featuredTitle,
+      String? featuredExcerpt,
+      String? featuredUrl,
+      String? featuredSource});
 }
 
 /// @nodoc
@@ -953,6 +1231,11 @@ class __$$GrilleGuessResponseImplCopyWithImpl<$Res>
     Object? nbEssais = freezed,
     Object? mot = freezed,
     Object? pourquoi = freezed,
+    Object? featuredContentId = freezed,
+    Object? featuredTitle = freezed,
+    Object? featuredExcerpt = freezed,
+    Object? featuredUrl = freezed,
+    Object? featuredSource = freezed,
   }) {
     return _then(_$GrilleGuessResponseImpl(
       valide: null == valide
@@ -983,6 +1266,26 @@ class __$$GrilleGuessResponseImplCopyWithImpl<$Res>
           ? _value.pourquoi
           : pourquoi // ignore: cast_nullable_to_non_nullable
               as String?,
+      featuredContentId: freezed == featuredContentId
+          ? _value.featuredContentId
+          : featuredContentId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredTitle: freezed == featuredTitle
+          ? _value.featuredTitle
+          : featuredTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredExcerpt: freezed == featuredExcerpt
+          ? _value.featuredExcerpt
+          : featuredExcerpt // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredUrl: freezed == featuredUrl
+          ? _value.featuredUrl
+          : featuredUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      featuredSource: freezed == featuredSource
+          ? _value.featuredSource
+          : featuredSource // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -997,7 +1300,12 @@ class _$GrilleGuessResponseImpl extends _GrilleGuessResponse {
       this.statut,
       this.nbEssais,
       this.mot,
-      this.pourquoi})
+      this.pourquoi,
+      this.featuredContentId,
+      this.featuredTitle,
+      this.featuredExcerpt,
+      this.featuredUrl,
+      this.featuredSource})
       : _etats = etats,
         super._();
 
@@ -1026,10 +1334,20 @@ class _$GrilleGuessResponseImpl extends _GrilleGuessResponse {
   final String? mot;
   @override
   final String? pourquoi;
+  @override
+  final String? featuredContentId;
+  @override
+  final String? featuredTitle;
+  @override
+  final String? featuredExcerpt;
+  @override
+  final String? featuredUrl;
+  @override
+  final String? featuredSource;
 
   @override
   String toString() {
-    return 'GrilleGuessResponse(valide: $valide, raison: $raison, etats: $etats, statut: $statut, nbEssais: $nbEssais, mot: $mot, pourquoi: $pourquoi)';
+    return 'GrilleGuessResponse(valide: $valide, raison: $raison, etats: $etats, statut: $statut, nbEssais: $nbEssais, mot: $mot, pourquoi: $pourquoi, featuredContentId: $featuredContentId, featuredTitle: $featuredTitle, featuredExcerpt: $featuredExcerpt, featuredUrl: $featuredUrl, featuredSource: $featuredSource)';
   }
 
   @override
@@ -1045,7 +1363,17 @@ class _$GrilleGuessResponseImpl extends _GrilleGuessResponse {
                 other.nbEssais == nbEssais) &&
             (identical(other.mot, mot) || other.mot == mot) &&
             (identical(other.pourquoi, pourquoi) ||
-                other.pourquoi == pourquoi));
+                other.pourquoi == pourquoi) &&
+            (identical(other.featuredContentId, featuredContentId) ||
+                other.featuredContentId == featuredContentId) &&
+            (identical(other.featuredTitle, featuredTitle) ||
+                other.featuredTitle == featuredTitle) &&
+            (identical(other.featuredExcerpt, featuredExcerpt) ||
+                other.featuredExcerpt == featuredExcerpt) &&
+            (identical(other.featuredUrl, featuredUrl) ||
+                other.featuredUrl == featuredUrl) &&
+            (identical(other.featuredSource, featuredSource) ||
+                other.featuredSource == featuredSource));
   }
 
   @JsonKey(ignore: true)
@@ -1058,7 +1386,12 @@ class _$GrilleGuessResponseImpl extends _GrilleGuessResponse {
       statut,
       nbEssais,
       mot,
-      pourquoi);
+      pourquoi,
+      featuredContentId,
+      featuredTitle,
+      featuredExcerpt,
+      featuredUrl,
+      featuredSource);
 
   @JsonKey(ignore: true)
   @override
@@ -1083,7 +1416,12 @@ abstract class _GrilleGuessResponse extends GrilleGuessResponse {
       final String? statut,
       final int? nbEssais,
       final String? mot,
-      final String? pourquoi}) = _$GrilleGuessResponseImpl;
+      final String? pourquoi,
+      final String? featuredContentId,
+      final String? featuredTitle,
+      final String? featuredExcerpt,
+      final String? featuredUrl,
+      final String? featuredSource}) = _$GrilleGuessResponseImpl;
   const _GrilleGuessResponse._() : super._();
 
   factory _GrilleGuessResponse.fromJson(Map<String, dynamic> json) =
@@ -1103,6 +1441,16 @@ abstract class _GrilleGuessResponse extends GrilleGuessResponse {
   String? get mot;
   @override
   String? get pourquoi;
+  @override
+  String? get featuredContentId;
+  @override
+  String? get featuredTitle;
+  @override
+  String? get featuredExcerpt;
+  @override
+  String? get featuredUrl;
+  @override
+  String? get featuredSource;
   @override
   @JsonKey(ignore: true)
   _$$GrilleGuessResponseImplCopyWith<_$GrilleGuessResponseImpl> get copyWith =>

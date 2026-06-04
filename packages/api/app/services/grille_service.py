@@ -44,6 +44,21 @@ def _game_score(game: GrilleGameState) -> int | str:
     return game.attempts if game.status == STATUS_SOLVED else "X"
 
 
+def _featured_fields(puzzle: GrillePuzzle) -> dict[str, object | None]:
+    """Snapshot figé de l'article matché (colonnes `featured_*`), en camelCase.
+
+    À n'inclure qu'en fin de partie (même gating que `mot`/`pourquoi`). Pas de
+    join runtime : on lit les colonnes figées par le job de matching.
+    """
+    return {
+        "featuredContentId": puzzle.featured_content_id,
+        "featuredTitle": puzzle.featured_title,
+        "featuredExcerpt": puzzle.featured_excerpt,
+        "featuredUrl": puzzle.featured_url,
+        "featuredSource": puzzle.featured_source,
+    }
+
+
 class PuzzleNotFound(Exception):
     """Aucun puzzle seedé pour la date demandée."""
 
@@ -145,6 +160,7 @@ class GrilleService:
             pourquoi=puzzle.pourquoi if finished else None,
             streak=await self._compute_streak(user_id),
             prochainMotDansSec=next_rollover_seconds(now_paris()),
+            **(_featured_fields(puzzle) if finished else {}),
         )
 
     # ----- POST /today/guess -----------------------------------------------
@@ -166,6 +182,20 @@ class GrilleService:
             return GrilleGuessResponse(valide=False, raison="longueur")
         if not is_valid_word(mot):
             return GrilleGuessResponse(valide=False, raison="hors_dictionnaire")
+
+        # Idempotence : si le dernier essai joué est exactement ce mot, c'est un
+        # retry d'une réponse perdue côté réseau (le client a renvoyé le même
+        # POST). On renvoie le résultat recalculé de ce dernier essai SANS le
+        # ré-append — pas de double-comptage. La partie est forcément encore en
+        # cours ici (un essai qui l'aurait terminée aurait levé GameAlreadyFinished
+        # au garde plus haut), donc `mot`/`pourquoi` restent masqués.
+        if game.guesses and game.guesses[-1] == mot:
+            return GrilleGuessResponse(
+                valide=True,
+                etats=compute_tiles(puzzle.word, mot),
+                statut=game.status,
+                nbEssais=game.attempts,
+            )
 
         # Essai accepté.
         game.guesses = [*game.guesses, mot]
@@ -190,6 +220,7 @@ class GrilleService:
             nbEssais=game.attempts,
             mot=puzzle.word if finished else None,
             pourquoi=puzzle.pourquoi if finished else None,
+            **(_featured_fields(puzzle) if finished else {}),
         )
 
     # ----- POST /today/reveal ----------------------------------------------
@@ -218,6 +249,7 @@ class GrilleService:
             statut=STATUS_REVEALED,
             mot=puzzle.word,
             pourquoi=puzzle.pourquoi,
+            **_featured_fields(puzzle),
         )
 
     # ----- GET /today/leaderboard ------------------------------------------

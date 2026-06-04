@@ -74,5 +74,28 @@ void main() {
       expect(notifier.state.order, ['source:s1', 'theme:tech']);
       expect(notifier.state.veilleHidden, isTrue);
     });
+
+    test('markCustomized persiste sous tournee_customized_v1 (idempotent)',
+        () async {
+      final notifier = TourneeOrderPrefsNotifier();
+      expect(notifier.state.customized, isFalse);
+
+      await notifier.markCustomized();
+      expect(notifier.state.customized, isTrue);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('tournee_customized_v1'), isTrue);
+
+      // Idempotent : un 2ᵉ appel ne change rien.
+      await notifier.markCustomized();
+      expect(notifier.state.customized, isTrue);
+    });
+
+    test('_load restaure customized depuis les prefs', () async {
+      SharedPreferences.setMockInitialValues({'tournee_customized_v1': true});
+      final notifier = TourneeOrderPrefsNotifier();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(notifier.state.customized, isTrue);
+    });
   });
 }

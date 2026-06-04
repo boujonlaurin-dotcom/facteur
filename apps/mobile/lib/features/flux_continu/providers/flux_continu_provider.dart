@@ -306,13 +306,15 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // si seul l'un des deux a réussi.
     _quote = dual?.serein?.quote ?? dual?.normal?.quote;
 
-    final favorites = _pickFavorites(topThemes);
+    final picked = _pickFavorites(topThemes);
+    final favorites = picked.refs;
     _lastFavorites = favorites;
     final favoriteSources = _pickFavoriteSources();
     _lastSourceFavorites = favoriteSources;
     final fetched = fetchThemes
         ? await Future.wait([
-            _fetchThemeSections(favorites, isSerene),
+            _fetchThemeSections(favorites, isSerene,
+                isExplicitFavorite: !picked.isFallback),
             _fetchSourceSections(favoriteSources, isSerene),
           ])
         : const [<FeedThemeSection>[], <FeedThemeSection>[]];
@@ -811,15 +813,22 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// Builds a FeedThemeSection from a fetched payload. The label/accent come
   /// from the canonical theme visual mapping for Theme favorites; for custom
   /// topic (Sujet) favorites the caller passes the user's topic name.
+  ///
+  /// [isExplicitFavorite] : un favori thème **explicite** n'est jamais coupé
+  /// (miroir de [_buildSourceSection] : ne jamais masquer un favori — l'état
+  /// vide est rendu par SectionBlock). Un thème **de fallback** (compte neuf)
+  /// reste coupé sous 2 items pour ne pas afficher un empty-state canonique
+  /// que l'utilisateur n'a pas choisi.
   FeedThemeSection? _buildThemeSection({
     required FeedResponse? feed,
     required String label,
     required Color accent,
+    required bool isExplicitFavorite,
     String? themeSlug,
     String? customTopicId,
   }) {
     final items = feed?.items ?? const <Content>[];
-    if (items.length < 2) return null;
+    if (!isExplicitFavorite && items.length < 2) return null;
     final hasMore = _themeHasMore(
       feed?.pagination.hasNext ?? false,
       items.length,
@@ -845,7 +854,18 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// endpoint (weight-based) capped to 5 entries, then canonical macro
   /// themes. This guarantees fresh accounts always see a tournée even before
   /// the backfill migration runs.
-  List<FavoriteRef> _pickFavorites(List<TopTheme> topFallback) {
+  ///
+  /// Le fallback canonique est **gaté** sur un compte réellement neuf
+  /// (`!customized && pas de source favorite && pas de veille`) : sans ça, un
+  /// retrait volontaire de tous les thèmes se faisait ré-injecter au prochain
+  /// reload (cold start / pull-to-refresh / toggle serein / invalidateSelf).
+  ///
+  /// `isFallback` indique si les `refs` thème renvoyés sont des thèmes canoniques
+  /// (compte neuf) plutôt que des favoris explicites — consommé par
+  /// [_fetchThemeSections] pour décider de l'affichage d'un empty-state.
+  ({List<FavoriteRef> refs, bool isFallback}) _pickFavorites(
+    List<TopTheme> topFallback,
+  ) {
     final favorites =
         ref.read(userInterestsProvider).valueOrNull?.favorites ?? const [];
 
@@ -871,41 +891,63 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     }
 
     final List<FavoriteRef> themeRefs;
+    var isFallback = false;
     if (nonVeille.isNotEmpty) {
       themeRefs = nonVeille.take(_kMaxFavoriteSections).toList(growable: false);
     } else {
-      // Fallback fresh accounts : top-themes pondérés puis macro canoniques.
-      final valid = topFallback
-          .where((t) => themeMap.containsKey(t.interestSlug))
-          .map<FavoriteRef>((t) => ThemeFavoriteRef(slug: t.interestSlug))
-          .toList();
-      // Pad with canonical macro themes the user is missing — order: tech,
-      // environment, science (matches the backend backfill list).
-      const canonical = [fallbackTheme1, fallbackTheme2, 'science'];
-      final present =
-          valid.whereType<ThemeFavoriteRef>().map((r) => r.slug).toSet();
-      for (final slug in canonical) {
-        if (valid.length >= _kMaxFavoriteSections) break;
-        if (present.contains(slug)) continue;
-        valid.add(ThemeFavoriteRef(slug: slug));
-        present.add(slug);
+      // Fallback canonique réservé aux comptes réellement neufs : pas de retrait
+      // volontaire enregistré, pas de source favorite, pas de veille. Sinon on
+      // respecte la Tournée vide / source-only (on peut descendre à 0 thème).
+      final customized = ref.read(tourneeOrderPrefsProvider).customized;
+      final hasSourceFav = ref
+              .read(userSourcesStateProvider)
+              .valueOrNull
+              ?.favorites
+              .isNotEmpty ??
+          false;
+      if (customized || hasSourceFav || veilleRef != null) {
+        themeRefs = const [];
+      } else {
+        // Fallback fresh accounts : top-themes pondérés puis macro canoniques.
+        final valid = topFallback
+            .where((t) => themeMap.containsKey(t.interestSlug))
+            .map<FavoriteRef>((t) => ThemeFavoriteRef(slug: t.interestSlug))
+            .toList();
+        // Pad with canonical macro themes the user is missing — order: tech,
+        // environment, science (matches the backend backfill list).
+        const canonical = [fallbackTheme1, fallbackTheme2, 'science'];
+        final present =
+            valid.whereType<ThemeFavoriteRef>().map((r) => r.slug).toSet();
+        for (final slug in canonical) {
+          if (valid.length >= _kMaxFavoriteSections) break;
+          if (present.contains(slug)) continue;
+          valid.add(ThemeFavoriteRef(slug: slug));
+          present.add(slug);
+        }
+        themeRefs = valid.take(_kMaxFavoriteSections).toList(growable: false);
+        isFallback = themeRefs.isNotEmpty;
       }
-      themeRefs = valid.take(_kMaxFavoriteSections).toList(growable: false);
     }
 
-    return [
-      ...themeRefs,
-      if (veilleRef != null) veilleRef,
-    ];
+    return (
+      refs: [
+        ...themeRefs,
+        if (veilleRef != null) veilleRef,
+      ],
+      isFallback: isFallback,
+    );
   }
 
   /// Fetches one FeedResponse per favorite ref in parallel and turns them
-  /// into FeedThemeSections. Drops sections that have fewer than 2 items
-  /// (mirrors the legacy behavior — keeps the tournée useful, never sparse).
+  /// into FeedThemeSections. Un favori thème **explicite**
+  /// ([isExplicitFavorite] = true) est toujours rendu (empty-state si vide) ;
+  /// les thèmes de **fallback** (compte neuf) sont coupés sous 2 items pour
+  /// garder la Tournée par défaut utile sans afficher d'empty-state non choisi.
   Future<List<FeedThemeSection>> _fetchThemeSections(
     List<FavoriteRef> favorites,
-    bool isSerene,
-  ) async {
+    bool isSerene, {
+    bool isExplicitFavorite = true,
+  }) async {
     if (favorites.isEmpty) return const [];
     final interestsState = ref.read(userInterestsProvider).valueOrNull;
     final feeds = await Future.wait(
@@ -921,12 +963,14 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
             label: visualFor(slug).label,
             accent: visualFor(slug).accent,
             themeSlug: slug,
+            isExplicitFavorite: isExplicitFavorite,
           ),
         CustomTopicFavoriteRef(:final id) => _buildThemeSection(
             feed: feed,
             label: _customTopicLabel(interestsState, id),
             accent: _customTopicAccent(interestsState, id),
             customTopicId: id,
+            isExplicitFavorite: isExplicitFavorite,
           ),
         // Story 23.2 PR-4 : la veille devient une section Tournée dédiée
         // avec son propre accent et label, calculée séparément des thèmes.
