@@ -543,21 +543,29 @@ class EditorialPipelineService:
             if not cluster or not cluster.contents:
                 return
 
-            representative = sorted(
+            # Most-recent-first ordering: the representative (pivot) is the
+            # freshest article, the rest are the "other sources".
+            ordered_contents = sorted(
                 cluster.contents, key=lambda c: c.published_at, reverse=True
-            )[0]
+            )
+            representative = ordered_contents[0]
 
             # Step 1 — cluster-based perspectives (source of truth).
             # Helper is shared with /contents/{id}/perspectives so the
             # endpoint returns the same merged count as this pipeline (the
             # PR #390 invariant still holds between header and bottom sheet).
-            ordered_contents = sorted(
-                cluster.contents, key=lambda c: c.published_at, reverse=True
-            )
+            # Exclure le représentatif — c'est l'article ouvert, pas une
+            # "autre source". Sans ça, perspective_count l'inclut (N) alors
+            # que l'endpoint /perspectives le retire du snapshot (N-1), d'où
+            # un off-by-one permanent card/section + une barre de biais
+            # divergente.
+            ordered_without_rep = [
+                c for c in ordered_contents if c.id != representative.id
+            ]
             try:
                 cluster_perspectives = (
                     await perspective_service.build_cluster_perspectives(
-                        ordered_contents
+                        ordered_without_rep
                     )
                 )
             except Exception:
