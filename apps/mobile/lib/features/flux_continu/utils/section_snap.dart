@@ -171,7 +171,7 @@ double? _lastStrictlyBefore(List<double> sorted, double value) {
 double _nearest(List<double> sorted, double value) {
   var best = sorted.first;
   var bestDist = (best - value).abs();
-  for (final p in sorted) {
+  for (final p in sorted.skip(1)) {
     final d = (p - value).abs();
     if (d < bestDist) {
       best = p;

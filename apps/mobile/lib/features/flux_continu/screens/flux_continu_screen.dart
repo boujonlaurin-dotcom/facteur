@@ -1021,7 +1021,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
               section: section,
               isOpen: state.isOpen(section),
               onToggleMore: () => notifier.toggleMore(section),
-              onTapArticle: (a, _) => _openArticle(context, a),
+              onTapArticle: (a) => _openArticle(context, a),
               onDismissArticle: _onSwipeDismiss,
               pendingFeedbackIds: _pendingFeedback,
               onSelectFeedbackChip: (id, chip) =>

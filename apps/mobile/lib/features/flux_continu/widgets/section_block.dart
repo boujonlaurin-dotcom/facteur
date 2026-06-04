@@ -22,7 +22,7 @@ class SectionBlock extends StatelessWidget {
   final FluxSection section;
   final bool isOpen;
   final VoidCallback onToggleMore;
-  final void Function(Object article, FluxSection section) onTapArticle;
+  final void Function(Object article) onTapArticle;
   final ValueChanged<String>? onDismissArticle;
 
   /// Opens the dedicated full-page view for a [FeedThemeSection]. Wired by
@@ -83,7 +83,7 @@ class SectionBlock extends StatelessWidget {
           children: [
             EssentielHiFiCard(
               articles: section.articles,
-              onTapArticle: (a) => onTapArticle(a, section),
+              onTapArticle: (a) => onTapArticle(a),
               onTapPersonalize: () => EssentielPersonalizeSheet.show(context),
             ),
             const SizedBox(height: 16),
@@ -172,7 +172,7 @@ class SectionBlock extends StatelessWidget {
     final isEssentiel = section.kind == SectionKind.essentiel;
     switch (section) {
       case EssentielSection():
-        // _buildExpanded short-circuits to EssentielHiFiCard before reaching
+        // build() short-circuits to EssentielHiFiCard before reaching
         // _buildCards, so this branch is unreachable in practice.
         return const [];
       case DigestTopicSection(:final topics, :final coreVisibleCount):
@@ -191,7 +191,7 @@ class SectionBlock extends StatelessWidget {
                 perspectiveSources: visible[i].perspectiveSources,
                 divergenceLevel: visible[i].divergenceLevel,
                 onTap: () =>
-                    onTapArticle(pickTopicLead(visible[i]), section),
+                    onTapArticle(pickTopicLead(visible[i])),
                 onSwipeDismiss: onDismissArticle == null
                     ? null
                     : () =>
@@ -224,7 +224,7 @@ class SectionBlock extends StatelessWidget {
             else
               FluxContinuArticleCard(
                 article: visible[i],
-                onTap: () => onTapArticle(visible[i], section),
+                onTap: () => onTapArticle(visible[i]),
                 onSwipeDismiss: onDismissArticle == null
                     ? null
                     : () => onDismissArticle!(visible[i].id),
