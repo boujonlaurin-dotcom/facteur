@@ -129,32 +129,73 @@ void main() {
 
   group('VeilleConfigDto.fromJson — unconnected_sources', () {
     Map<String, dynamic> baseConfig() => {
-      'id': 'cfg-1',
-      'user_id': 'user-1',
-      'theme_id': 'tech',
-      'theme_label': 'Tech',
-      'status': 'active',
-      'created_at': '2026-06-04T00:00:00Z',
-      'updated_at': '2026-06-04T00:00:00Z',
-      'topics': const [],
-      'sources': const [],
-      'keywords': const [],
-    };
+          'id': 'cfg-1',
+          'user_id': 'user-1',
+          'theme_id': 'tech',
+          'theme_label': 'Tech',
+          'status': 'active',
+          'created_at': '2026-06-04T00:00:00Z',
+          'updated_at': '2026-06-04T00:00:00Z',
+          'topics': const <dynamic>[],
+          'sources': const <dynamic>[],
+          'keywords': const <dynamic>[],
+        };
 
     test('mappe url + reason des sources non connectées', () {
       final dto = VeilleConfigDto.fromJson({
         ...baseConfig(),
         'unconnected_sources': const [
-          {'url': 'https://exemple.test', 'reason': 'Aucun flux RSS.'},
+          {
+            'client_slug': 'niche-exemple',
+            'name': 'Exemple',
+            'url': 'https://exemple.test',
+            'reason': 'Aucun flux RSS.',
+          },
         ],
       });
       expect(dto.unconnectedSources, hasLength(1));
+      expect(dto.unconnectedSources.first.clientSlug, 'niche-exemple');
+      expect(dto.unconnectedSources.first.name, 'Exemple');
       expect(dto.unconnectedSources.first.url, 'https://exemple.test');
       expect(dto.unconnectedSources.first.reason, 'Aucun flux RSS.');
     });
 
     test('clé absente → liste vide (rétro-compat backend non déployé)', () {
-      expect(VeilleConfigDto.fromJson(baseConfig()).unconnectedSources, isEmpty);
+      expect(
+        VeilleConfigDto.fromJson(baseConfig()).unconnectedSources,
+        isEmpty,
+      );
+    });
+  });
+
+  group('VeilleResolveSourceCandidatesResponseDto.fromJson', () {
+    test('mappe resolved + failed', () {
+      final dto = VeilleResolveSourceCandidatesResponseDto.fromJson(const {
+        'resolved': [
+          {
+            'client_slug': 'niche-macba',
+            'source_id': 'src-1',
+            'name': 'MACBA',
+            'url': 'https://www.macba.cat',
+            'feed_url': 'https://www.macba.cat/feed.xml',
+            'logo_url': 'https://logo.test/macba.png',
+            'description': 'Musée',
+          },
+        ],
+        'failed': [
+          {
+            'client_slug': 'niche-ko',
+            'name': 'KO',
+            'url': 'https://ko.test',
+            'reason': 'Aucun flux RSS.',
+          },
+        ],
+      });
+      expect(dto.resolved.single.clientSlug, 'niche-macba');
+      expect(dto.resolved.single.sourceId, 'src-1');
+      expect(dto.resolved.single.feedUrl, 'https://www.macba.cat/feed.xml');
+      expect(dto.failed.single.clientSlug, 'niche-ko');
+      expect(dto.failed.single.reason, 'Aucun flux RSS.');
     });
   });
 }

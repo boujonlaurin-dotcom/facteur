@@ -662,6 +662,145 @@ class TestSuggestEndpoints:
         assert captured["keywords"] == [f"kw-{i}" for i in range(40)]
 
 
+class TestResolveSourceCandidates:
+    async def test_resolve_candidates_reuses_existing_source(
+        self, auth_user, curated_tech_source, monkeypatch
+    ):
+        from app.services.search import smart_source_search
+
+        async def _should_not_detect(self, url):
+            raise AssertionError("existing source should not trigger RSS detection")
+
+        monkeypatch.setattr(
+            smart_source_search.SmartSourceSearchService,
+            "_detect_with_root_fallback",
+            _should_not_detect,
+        )
+
+        async with _client() as c:
+            r = await c.post(
+                "/api/veille/sources/resolve-candidates",
+                json={
+                    "candidates": [
+                        {
+                            "client_slug": "existing-tech",
+                            "name": "Tech Daily",
+                            "url": curated_tech_source.url,
+                            "why": "Déjà au catalogue",
+                        }
+                    ]
+                },
+            )
+
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["failed"] == []
+        assert data["resolved"][0]["client_slug"] == "existing-tech"
+        assert data["resolved"][0]["source_id"] == str(curated_tech_source.id)
+
+    async def test_resolve_candidates_creates_source_and_returns_failures(
+        self, auth_user, db_session, monkeypatch
+    ):
+        from app.services.search import smart_source_search
+
+        async def _fake_detect(self, url):
+            if "macba" not in url:
+                return None
+            return (
+                "https://www.macba.cat",
+                {
+                    "feed_url": "https://www.macba.cat/feed.xml",
+                    "name": "MACBA feed",
+                    "type": "rss",
+                    "favicon_url": "https://www.macba.cat/favicon.ico",
+                    "description": "Musée contemporain",
+                },
+            )
+
+        monkeypatch.setattr(
+            smart_source_search.SmartSourceSearchService,
+            "_detect_with_root_fallback",
+            _fake_detect,
+        )
+
+        async with _client() as c:
+            r = await c.post(
+                "/api/veille/sources/resolve-candidates",
+                json={
+                    "candidates": [
+                        {
+                            "client_slug": "niche-macba",
+                            "name": "MACBA",
+                            "url": "https://www.macba.cat",
+                            "why": "Musée officiel",
+                        },
+                        {
+                            "client_slug": "niche-ko",
+                            "name": "Site KO",
+                            "url": "https://ko.test",
+                            "why": None,
+                        },
+                    ]
+                },
+            )
+
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["resolved"][0]["client_slug"] == "niche-macba"
+        assert data["resolved"][0]["name"] == "MACBA"
+        assert data["resolved"][0]["feed_url"] == "https://www.macba.cat/feed.xml"
+        assert data["resolved"][0]["logo_url"] == "https://www.macba.cat/favicon.ico"
+        assert data["failed"] == [
+            {
+                "client_slug": "niche-ko",
+                "name": "Site KO",
+                "url": "https://ko.test",
+                "reason": "Aucun flux RSS détecté à cette adresse.",
+            }
+        ]
+
+        source_id = UUID(data["resolved"][0]["source_id"])
+        src = await db_session.scalar(select(Source).where(Source.id == source_id))
+        assert src is not None
+        assert src.feed_url == "https://www.macba.cat/feed.xml"
+        assert src.type == SourceType.ARTICLE
+        assert src.theme == "custom"
+
+    async def test_post_config_with_source_id_does_not_detect(
+        self, auth_user, curated_tech_source, monkeypatch
+    ):
+        from app.services import source_service
+
+        async def _should_not_detect(self, url):
+            raise AssertionError("source_id upsert must not detect RSS")
+
+        monkeypatch.setattr(
+            source_service.SourceService, "detect_source", _should_not_detect
+        )
+
+        payload = {
+            "theme_id": "tech",
+            "theme_label": "Tech",
+            "topics": [],
+            "source_selections": [
+                {
+                    "kind": "niche",
+                    "source_id": str(curated_tech_source.id),
+                    "why": "résolue avant submit",
+                    "position": 0,
+                }
+            ],
+            "keywords": [],
+        }
+        async with _client() as c:
+            r = await c.post("/api/veille/config", json=payload)
+
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["sources"][0]["source"]["id"] == str(curated_tech_source.id)
+        assert data["unconnected_sources"] == []
+
+
 class TestOtherThemeIngestion:
     """theme_id='other' (tuile Autre) doit mapper vers theme='custom' à l'ingestion."""
 
@@ -752,6 +891,7 @@ class TestOtherThemeIngestion:
                 {
                     "kind": "niche",
                     "niche_candidate": {
+                        "client_slug": "niche-sans-flux",
                         "name": "Site sans flux",
                         "url": "https://exemple-sans-rss.test",
                         "why": None,
@@ -772,6 +912,8 @@ class TestOtherThemeIngestion:
         # La source non connectée est remontée au mobile (url + raison) pour
         # afficher « X sources n'ont pas pu être connectées » + CTA recherche.
         assert len(data["unconnected_sources"]) == 1
+        assert data["unconnected_sources"][0]["client_slug"] == "niche-sans-flux"
+        assert data["unconnected_sources"][0]["name"] == "Site sans flux"
         assert (
             data["unconnected_sources"][0]["url"] == "https://exemple-sans-rss.test"
         )

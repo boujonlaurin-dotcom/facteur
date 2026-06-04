@@ -140,16 +140,22 @@ class VeilleKeywordDto {
 class VeilleUnconnectedSourceDto {
   final String url;
   final String reason;
+  final String? clientSlug;
+  final String? name;
 
   const VeilleUnconnectedSourceDto({
     required this.url,
     required this.reason,
+    this.clientSlug,
+    this.name,
   });
 
   factory VeilleUnconnectedSourceDto.fromJson(Map<String, dynamic> json) {
     return VeilleUnconnectedSourceDto(
       url: json['url'] as String? ?? '',
       reason: json['reason'] as String? ?? '',
+      clientSlug: json['client_slug'] as String?,
+      name: json['name'] as String?,
     );
   }
 }
@@ -257,17 +263,20 @@ class VeilleTopicSelectionRequest {
 
 @immutable
 class VeilleNicheCandidateRequest {
+  final String? clientSlug;
   final String name;
   final String url;
   final String? why;
 
   const VeilleNicheCandidateRequest({
+    this.clientSlug,
     required this.name,
     required this.url,
     this.why,
   });
 
   Map<String, dynamic> toJson() => {
+    if (clientSlug != null) 'client_slug': clientSlug,
     'name': name,
     'url': url,
     if (why != null) 'why': why,
@@ -465,6 +474,113 @@ class VeilleSuggestSourcesResponse {
       sources: ((json['sources'] as List?) ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(VeilleSourceSuggestionDto.fromJson)
+          .toList(),
+    );
+  }
+}
+
+// ─── Résolution batch sources candidates (POST /veille/sources/resolve-candidates)
+
+@immutable
+class VeilleResolveSourceCandidateRequest {
+  final String clientSlug;
+  final String name;
+  final String url;
+  final String? why;
+
+  const VeilleResolveSourceCandidateRequest({
+    required this.clientSlug,
+    required this.name,
+    required this.url,
+    this.why,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'client_slug': clientSlug,
+    'name': name,
+    'url': url,
+    if (why != null) 'why': why,
+  };
+}
+
+@immutable
+class VeilleResolvedSourceCandidateDto {
+  final String clientSlug;
+  final String sourceId;
+  final String name;
+  final String url;
+  final String feedUrl;
+  final String? logoUrl;
+  final String? description;
+
+  const VeilleResolvedSourceCandidateDto({
+    required this.clientSlug,
+    required this.sourceId,
+    required this.name,
+    required this.url,
+    required this.feedUrl,
+    this.logoUrl,
+    this.description,
+  });
+
+  factory VeilleResolvedSourceCandidateDto.fromJson(Map<String, dynamic> json) {
+    return VeilleResolvedSourceCandidateDto(
+      clientSlug: json['client_slug'] as String,
+      sourceId: json['source_id'] as String,
+      name: json['name'] as String,
+      url: json['url'] as String,
+      feedUrl: json['feed_url'] as String,
+      logoUrl: json['logo_url'] as String?,
+      description: json['description'] as String?,
+    );
+  }
+}
+
+@immutable
+class VeilleFailedSourceCandidateDto {
+  final String clientSlug;
+  final String name;
+  final String url;
+  final String reason;
+
+  const VeilleFailedSourceCandidateDto({
+    required this.clientSlug,
+    required this.name,
+    required this.url,
+    required this.reason,
+  });
+
+  factory VeilleFailedSourceCandidateDto.fromJson(Map<String, dynamic> json) {
+    return VeilleFailedSourceCandidateDto(
+      clientSlug: json['client_slug'] as String,
+      name: json['name'] as String? ?? '',
+      url: json['url'] as String? ?? '',
+      reason: json['reason'] as String? ?? '',
+    );
+  }
+}
+
+@immutable
+class VeilleResolveSourceCandidatesResponseDto {
+  final List<VeilleResolvedSourceCandidateDto> resolved;
+  final List<VeilleFailedSourceCandidateDto> failed;
+
+  const VeilleResolveSourceCandidatesResponseDto({
+    this.resolved = const [],
+    this.failed = const [],
+  });
+
+  factory VeilleResolveSourceCandidatesResponseDto.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    return VeilleResolveSourceCandidatesResponseDto(
+      resolved: ((json['resolved'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(VeilleResolvedSourceCandidateDto.fromJson)
+          .toList(),
+      failed: ((json['failed'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(VeilleFailedSourceCandidateDto.fromJson)
           .toList(),
     );
   }

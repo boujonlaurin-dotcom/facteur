@@ -10,10 +10,11 @@ import '../../sources/widgets/source_detail_modal.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
 import '../models/veille_config.dart';
 import '../models/veille_source_example.dart';
+import '../providers/veille_config_provider.dart';
 import '../providers/veille_source_examples_provider.dart';
 
 /// Carte source pour le flow Veille — palette sépia, logo réel,
-/// CTA "Connecter/Connectée" unifié, badge "Source de confiance" pour les
+/// CTA d'état passif (Prête / Vérification / À remplacer), badge "Source de confiance" pour les
 /// sources déjà suivies par l'user. Tap → SourceDetailModal en consultation.
 /// Footer expansible "Voir 2 exemples récents" qui charge à la demande
 /// les derniers articles de la source via [veilleSourceExamplesProvider].
@@ -23,6 +24,9 @@ class VeilleSourceCard extends ConsumerStatefulWidget {
   final bool isAlreadyFollowed;
   final VoidCallback onToggle;
   final bool showExamples;
+  final String? exampleSourceId;
+  final VeilleSourceConnectionStatus connectionStatus;
+  final String? failureReason;
 
   const VeilleSourceCard({
     super.key,
@@ -31,6 +35,9 @@ class VeilleSourceCard extends ConsumerStatefulWidget {
     required this.isAlreadyFollowed,
     required this.onToggle,
     this.showExamples = true,
+    this.exampleSourceId,
+    this.connectionStatus = VeilleSourceConnectionStatus.connected,
+    this.failureReason,
   });
 
   @override
@@ -166,10 +173,24 @@ class _VeilleSourceCardState extends ConsumerState<VeilleSourceCard> {
                   const SizedBox(width: 8),
                   _ConnectButton(
                     active: widget.inVeille,
+                    status: widget.connectionStatus,
                     onTap: widget.onToggle,
                   ),
                 ],
               ),
+              if (widget.connectionStatus ==
+                      VeilleSourceConnectionStatus.failed &&
+                  widget.failureReason != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  widget.failureReason!,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 11.5,
+                    height: 1.35,
+                    color: const Color(0xFF9A4F3F),
+                  ),
+                ),
+              ],
               if (widget.showExamples) ...[
                 const SizedBox(height: 10),
                 _ExamplesToggle(expanded: _expanded, onTap: _toggleExpanded),
@@ -180,7 +201,9 @@ class _VeilleSourceCardState extends ConsumerState<VeilleSourceCard> {
                   child: _expanded
                       ? Padding(
                           padding: const EdgeInsets.only(top: 8),
-                          child: _ExamplesPanel(sourceId: source.id),
+                          child: _ExamplesPanel(
+                            sourceId: widget.exampleSourceId ?? source.id,
+                          ),
                         )
                       : const SizedBox.shrink(),
                 ),
@@ -388,13 +411,41 @@ class _SourceDeConfianceBadge extends StatelessWidget {
 
 class _ConnectButton extends StatelessWidget {
   final bool active;
+  final VeilleSourceConnectionStatus status;
   final VoidCallback onTap;
-  const _ConnectButton({required this.active, required this.onTap});
+  const _ConnectButton({
+    required this.active,
+    required this.status,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final failed = status == VeilleSourceConnectionStatus.failed;
+    final pending = active && status == VeilleSourceConnectionStatus.pending;
+    final filled = active && !failed && !pending;
+    final borderColor = failed
+        ? const Color(0xFFB86A5B)
+        : (filled ? FacteurColors.veille : const Color(0xFFD2C9BB));
+    final fg = failed
+        ? const Color(0xFF9A4F3F)
+        : (filled ? Colors.white : FacteurColors.veille);
+    final label = failed
+        ? 'À remplacer'
+        : pending
+        ? 'Vérification…'
+        : active
+        ? 'Prête'
+        : 'Retirée';
+    final icon = failed
+        ? PhosphorIcons.warningCircle(PhosphorIconsStyle.bold)
+        : pending
+        ? PhosphorIcons.clock()
+        : active
+        ? PhosphorIcons.check(PhosphorIconsStyle.bold)
+        : PhosphorIcons.minus(PhosphorIconsStyle.bold);
     return Material(
-      color: active ? FacteurColors.veille : Colors.white,
+      color: filled ? FacteurColors.veille : Colors.white,
       borderRadius: BorderRadius.circular(100),
       child: InkWell(
         onTap: onTap,
@@ -403,28 +454,19 @@ class _ConnectButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(100),
-            border: Border.all(
-              color: active ? FacteurColors.veille : const Color(0xFFD2C9BB),
-              width: 1.5,
-            ),
+            border: Border.all(color: borderColor, width: 1.5),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                active
-                    ? PhosphorIcons.check(PhosphorIconsStyle.bold)
-                    : PhosphorIcons.plus(PhosphorIconsStyle.bold),
-                size: 12,
-                color: active ? Colors.white : FacteurColors.veille,
-              ),
+              Icon(icon, size: 12, color: fg),
               const SizedBox(width: 5),
               Text(
-                active ? 'Connectée' : 'Connecter',
+                label,
                 style: GoogleFonts.dmSans(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: active ? Colors.white : FacteurColors.veille,
+                  color: fg,
                 ),
               ),
             ],

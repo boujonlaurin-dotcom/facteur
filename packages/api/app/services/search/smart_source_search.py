@@ -700,6 +700,15 @@ class SmartSourceSearchService:
             return None
         return f"{parsed.scheme}://{parsed.netloc}"
 
+    async def detect_feed(self, url: str) -> tuple[str, dict] | None:
+        """Public one-off feed detection (root-fallback strategy).
+
+        Exposed so callers outside the search pipeline (e.g. the veille source
+        resolver) can reuse the detection logic without reaching into a private
+        helper. Returns ``(resolved_url, feed_meta)`` or ``None``.
+        """
+        return await self._detect_with_root_fallback(url)
+
     async def _detect_with_root_fallback(self, url: str) -> tuple[str, dict] | None:
         """Resolve *url* to a feed, preferring the host root.
 

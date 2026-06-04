@@ -204,6 +204,24 @@ class VeilleRepository {
     }
   }
 
+  /// `POST /api/veille/sources/resolve-candidates` — valide en batch les
+  /// candidats sources et renvoie les `source_id` prêts pour l'upsert config.
+  Future<VeilleResolveSourceCandidatesResponseDto> resolveSourceCandidates(
+    List<VeilleResolveSourceCandidateRequest> candidates,
+  ) async {
+    try {
+      final response = await _dio.post<dynamic>(
+        'veille/sources/resolve-candidates',
+        data: {'candidates': candidates.map((c) => c.toJson()).toList()},
+      );
+      return VeilleResolveSourceCandidatesResponseDto.fromJson(
+        response.data as Map<String, dynamic>,
+      );
+    } on DioException catch (e) {
+      throw _wrap(e);
+    }
+  }
+
   VeilleApiException _wrap(DioException e) {
     final code = e.response?.statusCode;
     final detail = e.response?.data is Map

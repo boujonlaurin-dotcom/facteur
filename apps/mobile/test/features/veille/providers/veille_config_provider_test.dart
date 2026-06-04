@@ -12,6 +12,9 @@ import 'package:facteur/features/veille/screens/steps/step3_sources_screen.dart'
 /// `_buildUpsertRequest`). Toute autre méthode throw → instrumentation à fixer.
 class _CaptureRepo implements VeilleRepository {
   VeilleConfigUpsertRequest? captured;
+  List<VeilleResolveSourceCandidateRequest>? capturedResolveCandidates;
+  VeilleResolveSourceCandidatesResponseDto resolveResponse =
+      const VeilleResolveSourceCandidatesResponseDto();
   VeilleResolvedTopicDto resolvedTopic = const VeilleResolvedTopicDto(
     label: 'Musées contemporains de Barcelone',
     topicId: 'custom-musees-contemporains-de-barcelone',
@@ -42,6 +45,14 @@ class _CaptureRepo implements VeilleRepository {
     String? themeId,
     String? themeLabel,
   }) async => resolvedTopic;
+
+  @override
+  Future<VeilleResolveSourceCandidatesResponseDto> resolveSourceCandidates(
+    List<VeilleResolveSourceCandidateRequest> candidates,
+  ) async {
+    capturedResolveCandidates = candidates;
+    return resolveResponse;
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
@@ -182,7 +193,7 @@ void main() {
     expect(container.read(veilleConfigProvider).step, 1);
   });
 
-  test('realSelectedSourceCount compte catalogue et candidat niche valide', () {
+  test('source suggérée est présélectionnée pending et ne compte pas CTA', () {
     notifier.addCustomSourceToVeille(
       sourceId: 'src-1',
       name: 'Le Monde',
@@ -200,13 +211,121 @@ void main() {
       'MACBA',
       'https://www.macba.cat',
     );
-    notifier.toggleSource(slug);
+    final s = container.read(veilleConfigProvider);
 
-    expect(container.read(veilleConfigProvider).realSelectedSourceCount, 2);
+    expect(s.selectedSourceIds, contains(slug));
+    expect(
+      s.sourcesMeta[slug]!.connectionStatus,
+      VeilleSourceConnectionStatus.pending,
+    );
+    expect(s.realSelectedSourceCount, 1);
   });
 
-  test('submit sérialise un candidat niche en niche_candidate', () async {
+  test(
+    'resolvePendingSources marque les candidats résolus connected',
+    () async {
+      final repo = _CaptureRepo();
+      repo.resolveResponse = const VeilleResolveSourceCandidatesResponseDto(
+        resolved: [
+          VeilleResolvedSourceCandidateDto(
+            clientSlug: 'niche-wwwmacbacat-macba',
+            sourceId: 'src-macba',
+            name: 'MACBA',
+            url: 'https://www.macba.cat',
+            feedUrl: 'https://www.macba.cat/feed.xml',
+            logoUrl: 'https://logo.test/macba.png',
+          ),
+        ],
+      );
+      final c = ProviderContainer(
+        overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+      );
+      addTearDown(c.dispose);
+      final n = c.read(veilleConfigProvider.notifier);
+
+      n.registerSuggestedSources(const [
+        VeilleSourceSuggestionDto(
+          name: 'MACBA',
+          url: 'https://www.macba.cat',
+          why: 'Musée officiel',
+          relevanceScore: 1,
+        ),
+      ]);
+      final slug = VeilleConfigNotifier.sourceSuggestionSlug(
+        'MACBA',
+        'https://www.macba.cat',
+      );
+      await n.resolvePendingSources();
+
+      final s = c.read(veilleConfigProvider);
+      expect(repo.capturedResolveCandidates!.single.clientSlug, slug);
+      expect(s.sourcesMeta[slug]!.apiSourceId, 'src-macba');
+      expect(
+        s.sourcesMeta[slug]!.connectionStatus,
+        VeilleSourceConnectionStatus.connected,
+      );
+      expect(s.realSelectedSourceCount, 1);
+    },
+  );
+
+  test('resolvePendingSources désélectionne les candidats KO', () async {
     final repo = _CaptureRepo();
+    final slug = VeilleConfigNotifier.sourceSuggestionSlug(
+      'MACBA',
+      'https://www.macba.cat',
+    );
+    repo.resolveResponse = VeilleResolveSourceCandidatesResponseDto(
+      failed: [
+        VeilleFailedSourceCandidateDto(
+          clientSlug: slug,
+          name: 'MACBA',
+          url: 'https://www.macba.cat',
+          reason: 'Aucun flux RSS.',
+        ),
+      ],
+    );
+    final c = ProviderContainer(
+      overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+    );
+    addTearDown(c.dispose);
+    final n = c.read(veilleConfigProvider.notifier);
+
+    n.registerSuggestedSources(const [
+      VeilleSourceSuggestionDto(
+        name: 'MACBA',
+        url: 'https://www.macba.cat',
+        why: 'Musée officiel',
+        relevanceScore: 1,
+      ),
+    ]);
+    await n.resolvePendingSources();
+
+    final s = c.read(veilleConfigProvider);
+    expect(s.selectedSourceIds, isNot(contains(slug)));
+    expect(
+      s.sourcesMeta[slug]!.connectionStatus,
+      VeilleSourceConnectionStatus.failed,
+    );
+    expect(s.lastError, contains("n'a pas pu être connectée"));
+  });
+
+  test('submit sérialise un candidat résolu en source_id', () async {
+    final repo = _CaptureRepo();
+    final slug = VeilleConfigNotifier.sourceSuggestionSlug(
+      'MACBA',
+      'https://www.macba.cat',
+    );
+    repo.resolveResponse = VeilleResolveSourceCandidatesResponseDto(
+      resolved: [
+        VeilleResolvedSourceCandidateDto(
+          clientSlug: slug,
+          sourceId: 'src-macba',
+          name: 'MACBA',
+          url: 'https://www.macba.cat',
+          feedUrl: 'https://www.macba.cat/feed.xml',
+        ),
+      ],
+    );
     final c = ProviderContainer(
       overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
     );
@@ -223,19 +342,14 @@ void main() {
         relevanceScore: 1,
       ),
     ]);
-    final slug = VeilleConfigNotifier.sourceSuggestionSlug(
-      'MACBA',
-      'https://www.macba.cat',
-    );
-    n.toggleSource(slug);
+    await n.resolvePendingSources();
     await n.submit();
 
     final source = repo.captured!.sourceSelections.single;
     expect(source.kind, 'niche');
-    expect(source.sourceId, isNull);
-    expect(source.nicheCandidate!.name, 'MACBA');
-    expect(source.nicheCandidate!.url, 'https://www.macba.cat');
-    expect(source.toJson()['niche_candidate'], isA<Map<String, dynamic>>());
+    expect(source.sourceId, 'src-macba');
+    expect(source.nicheCandidate, isNull);
+    expect(source.toJson()['source_id'], 'src-macba');
   });
 
   test('addUrlSourceToVeille ajoute une source niche locale sélectionnée', () {
