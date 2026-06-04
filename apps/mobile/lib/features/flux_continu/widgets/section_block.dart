@@ -89,7 +89,7 @@ class SectionBlock extends StatelessWidget {
           children: [
             EssentielHiFiCard(
               articles: section.articles,
-              onTapArticle: (a) => onTapArticle(a, section),
+              onTapArticle: (a) => onTapArticle(a),
               onTapPersonalize: () => showTourneeComposerSheet(context),
             ),
             const SizedBox(height: 16),
