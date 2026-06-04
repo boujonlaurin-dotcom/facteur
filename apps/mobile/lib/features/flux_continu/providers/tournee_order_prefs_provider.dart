@@ -12,6 +12,13 @@
 /// ma Tournée ». Tant qu'il est vrai, le provider Tournée ne ré-injecte pas la
 /// veille même si une config est active (suppression du self-heal) ; la
 /// ré-ajouter via la modal le repasse à `false`.
+///
+/// `customized` mémorise que l'utilisateur a personnalisé sa Tournée au moins
+/// une fois (ajout/retrait d'un thème, d'une source ou de la veille). Tant
+/// qu'il est faux, le provider Tournée ré-injecte les thèmes canoniques de
+/// fallback quand la liste de favoris est vide (comptes neufs). Dès la 1ʳᵉ
+/// mutation il passe à `true` → un retrait volontaire est respecté et les
+/// thèmes canoniques ne réapparaissent plus au prochain reload.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,6 +29,7 @@ export '../../feed/providers/tab_order_prefs_provider.dart' show applyOrder;
 
 const _kTourneeOrderKey = 'tournee_order_v1';
 const _kVeilleHiddenKey = 'tournee_veille_hidden_v1';
+const _kTourneeCustomizedKey = 'tournee_customized_v1';
 
 /// Clé d'un thème favori dans l'ordre Tournée (= `sectionKey` d'une section thème).
 String tourneeThemeKey(String slug) => 'theme:$slug';
@@ -32,19 +40,31 @@ String tourneeSourceKey(String sourceId) => 'source:$sourceId';
 /// Clé de la veille (singleton à V1) — alignée sur la branche `'veille'` de `sectionKey`.
 const String kTourneeVeilleKey = 'veille';
 
-/// État de l'ordre Tournée : la liste ordonnée de clés + le flag de masquage veille.
+/// État de l'ordre Tournée : la liste ordonnée de clés + le flag de masquage
+/// veille + le flag « Tournée customisée » (cf. doc de la library).
 class TourneeOrderState {
   final List<String> order;
   final bool veilleHidden;
+  final bool customized;
 
-  const TourneeOrderState({required this.order, required this.veilleHidden});
+  const TourneeOrderState({
+    required this.order,
+    required this.veilleHidden,
+    this.customized = false,
+  });
 
-  static const empty = TourneeOrderState(order: [], veilleHidden: false);
+  static const empty =
+      TourneeOrderState(order: [], veilleHidden: false, customized: false);
 
-  TourneeOrderState copyWith({List<String>? order, bool? veilleHidden}) =>
+  TourneeOrderState copyWith({
+    List<String>? order,
+    bool? veilleHidden,
+    bool? customized,
+  }) =>
       TourneeOrderState(
         order: order ?? this.order,
         veilleHidden: veilleHidden ?? this.veilleHidden,
+        customized: customized ?? this.customized,
       );
 }
 
@@ -64,6 +84,7 @@ class TourneeOrderPrefsNotifier extends StateNotifier<TourneeOrderState> {
       state = TourneeOrderState(
         order: prefs.getStringList(_kTourneeOrderKey) ?? const [],
         veilleHidden: prefs.getBool(_kVeilleHiddenKey) ?? false,
+        customized: prefs.getBool(_kTourneeCustomizedKey) ?? false,
       );
     } catch (_) {
       // Pas de prefs (ex. tests sans mock) → état vide.
@@ -89,6 +110,20 @@ class TourneeOrderPrefsNotifier extends StateNotifier<TourneeOrderState> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_kVeilleHiddenKey, hidden);
+    } catch (_) {
+      // best-effort.
+    }
+  }
+
+  /// Marque la Tournée comme personnalisée (1ʳᵉ mutation utilisateur). Idempotent
+  /// — no-op si déjà vrai. Désactive le fallback canonique côté provider Tournée
+  /// pour que les retraits volontaires soient respectés au prochain reload.
+  Future<void> markCustomized() async {
+    if (state.customized) return;
+    state = state.copyWith(customized: true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kTourneeCustomizedKey, true);
     } catch (_) {
       // best-effort.
     }

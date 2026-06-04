@@ -129,6 +129,53 @@ void main() {
     });
   });
 
+  group('SectionBlock — section thème vide (Tournée bugs E2E)', () {
+    testWidgets(
+        'thème favori sans article : empty-state TOUJOURS visible + CTA '
+        '« Ajouter des sources »', (tester) async {
+      var tapped = false;
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 0),
+          isOpen: false,
+          onToggleMore: () {},
+          onTapArticle: (_, __) {},
+          onSeeAll: () {},
+          onAddSources: () => tapped = true,
+        ),
+      ));
+
+      // Aucune carte, mais la section reste rendue avec son empty-state + CTA.
+      expect(find.byType(FluxContinuArticleCard), findsNothing);
+      expect(
+        find.textContaining('Rien de neuf récemment sur Tech'),
+        findsOneWidget,
+      );
+      expect(find.text('Ajouter des sources'), findsOneWidget);
+
+      await tester.tap(find.text('Ajouter des sources'));
+      await tester.pumpAndSettle();
+      expect(tapped, isTrue);
+    });
+
+    testWidgets('thème à 1 article rend sa carte (pas d\'empty-state)',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 1),
+          isOpen: false,
+          onToggleMore: () {},
+          onTapArticle: (_, __) {},
+          onSeeAll: () {},
+          onAddSources: () {},
+        ),
+      ));
+
+      expect(find.byType(FluxContinuArticleCard), findsOneWidget);
+      expect(find.text('Ajouter des sources'), findsNothing);
+    });
+  });
+
   group('SectionBlock — coreVisibleCount slice', () {
     testWidgets(
         'FeedThemeSection renders only coreVisibleCount cards when closed',

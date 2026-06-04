@@ -1,6 +1,7 @@
 // PR « Composer ma Tournée » — couverture de la modale de composition :
 // rendu MA TOURNÉE (thèmes + sources mélangés), trait « Hors Tournée du jour »
 // au-delà du cap 5, et handlers ajout/retrait (membership) via spies.
+import 'package:facteur/config/routes.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/flux_continu/widgets/tournee_composer_sheet.dart';
 import 'package:facteur/features/my_interests/models/user_interests_state.dart';
@@ -14,6 +15,7 @@ import 'package:facteur/features/veille/providers/veille_active_config_provider.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -133,6 +135,62 @@ Future<({_SpyInterestsNotifier interests, _SpySourcesNotifier sources})>
   return (interests: spyInterests, sources: spySources);
 }
 
+/// Variante GoRouter — ouvre la sheet sous un `MaterialApp.router` avec des
+/// routes nommées `sources` / `my-interests`, pour tester le footer GÉRER (pop
+/// de la sheet + navigation `pushNamed`).
+Future<void> _openSheetWithRouter(
+  WidgetTester tester, {
+  required UserInterestsState interests,
+  required UserSourcesState sources,
+}) async {
+  final router = GoRouter(
+    initialLocation: '/',
+    routes: [
+      GoRoute(
+        path: '/',
+        builder: (context, _) => Scaffold(
+          body: Center(
+            child: ElevatedButton(
+              onPressed: () => showTourneeComposerSheet(context),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/settings/sources',
+        name: RouteNames.sources,
+        builder: (_, __) =>
+            const Scaffold(body: Center(child: Text('SOURCES SCREEN'))),
+      ),
+      GoRoute(
+        path: '/settings/interests',
+        name: RouteNames.myInterests,
+        builder: (_, __) =>
+            const Scaffold(body: Center(child: Text('INTERESTS SCREEN'))),
+      ),
+    ],
+  );
+
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        userInterestsProvider.overrideWith(() => _SpyInterestsNotifier(interests)),
+        userSourcesStateProvider.overrideWith(() => _SpySourcesNotifier(sources)),
+        userSourcesProvider.overrideWith(() => _StubCatalogNotifier(const [])),
+        veilleActiveConfigProvider.overrideWith(() => _StubVeilleNotifier()),
+      ],
+      child: MaterialApp.router(
+        theme: ThemeData(extensions: [FacteurPalettes.light]),
+        routerConfig: router,
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('open'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -235,5 +293,103 @@ void main() {
     expect(ref, isA<ThemeFavoriteRef>());
     expect((ref as ThemeFavoriteRef).slug, 'tech');
     expect(state, InterestState.favorite);
+  });
+
+  group('footer GÉRER', () {
+    testWidgets('rend 2 ChoiceTile, « Gérer ses sources » en premier', (
+      tester,
+    ) async {
+      await _openSheet(
+        tester,
+        interests: _interests(const []),
+        sources: _sources(),
+      );
+
+      expect(find.text('GÉRER'), findsOneWidget);
+      expect(find.text('Gérer ses sources'), findsOneWidget);
+      expect(find.text('Gérer ses intérêts'), findsOneWidget);
+
+      // Sources mises en avant → au-dessus des intérêts.
+      final sourcesY = tester.getTopLeft(find.text('Gérer ses sources')).dy;
+      final interetsY = tester.getTopLeft(find.text('Gérer ses intérêts')).dy;
+      expect(sourcesY, lessThan(interetsY));
+    });
+
+    testWidgets('tap « Gérer ses sources » → ferme la sheet + route sources', (
+      tester,
+    ) async {
+      await _openSheetWithRouter(
+        tester,
+        interests: _interests(const []),
+        sources: _sources(),
+      );
+      expect(find.text('Composer ma Tournée'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('Gérer ses sources'));
+      await tester.tap(find.text('Gérer ses sources'));
+      await tester.pumpAndSettle();
+
+      // Sheet fermée (pop) + navigation effectuée.
+      expect(find.text('Composer ma Tournée'), findsNothing);
+      expect(find.text('SOURCES SCREEN'), findsOneWidget);
+    });
+
+    testWidgets('tap « Gérer ses intérêts » → ferme la sheet + route intérêts', (
+      tester,
+    ) async {
+      await _openSheetWithRouter(
+        tester,
+        interests: _interests(const []),
+        sources: _sources(),
+      );
+
+      await tester.ensureVisible(find.text('Gérer ses intérêts'));
+      await tester.tap(find.text('Gérer ses intérêts'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Composer ma Tournée'), findsNothing);
+      expect(find.text('INTERESTS SCREEN'), findsOneWidget);
+    });
+  });
+
+  group('markCustomized — 1ʳᵉ mutation', () {
+    testWidgets('retirer une source marque la Tournée comme customisée', (
+      tester,
+    ) async {
+      await _openSheet(
+        tester,
+        interests: _interests(const []),
+        sources: _sources(
+          favorites: const [SourceFavoriteRef(sourceId: 's1', position: 0)],
+        ),
+        catalog: [_source('s1', 'Le Monde')],
+      );
+
+      await tester.tap(
+        find.byIcon(PhosphorIcons.minusCircle(PhosphorIconsStyle.fill)),
+      );
+      await tester.pumpAndSettle();
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('tournee_customized_v1'), isTrue);
+    });
+
+    testWidgets('ajouter un thème marque la Tournée comme customisée', (
+      tester,
+    ) async {
+      await _openSheet(
+        tester,
+        interests: _interests(const []),
+        sources: _sources(),
+      );
+
+      await tester.tap(find.text('Thèmes'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Technologie'));
+      await tester.pumpAndSettle();
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('tournee_customized_v1'), isTrue);
+    });
   });
 }
