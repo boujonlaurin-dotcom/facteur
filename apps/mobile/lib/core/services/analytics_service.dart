@@ -828,6 +828,13 @@ class AnalyticsService {
     await _capturePostHog('grille_actus_tapped', props);
   }
 
+  /// Le joueur a ouvert le vrai article accroché au mot du jour (reveal).
+  Future<void> trackGrilleArticleTapped({String? numero}) async {
+    final props = {'session_id': _sessionId, 'numero': numero};
+    await _logEvent('grille_article_tapped', props);
+    await _capturePostHog('grille_article_tapped', props);
+  }
+
   /// Le joueur a « donné sa langue au chat » (mot révélé, exclu du classement).
   Future<void> trackGrilleRevealed({String? numero}) async {
     final props = {'session_id': _sessionId, 'numero': numero};

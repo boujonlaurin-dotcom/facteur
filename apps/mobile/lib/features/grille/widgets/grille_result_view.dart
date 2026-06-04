@@ -156,15 +156,46 @@ class GrilleResultView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  '« ${today.pourquoi} »',
-                  style: GoogleFonts.fraunces(
-                    fontSize: 14,
-                    fontStyle: FontStyle.italic,
-                    height: 1.5,
-                    color: c.textSecondary,
+                // Si un vrai article de la tournée est accroché, on l'affiche
+                // (titre + extrait) ; sinon on retombe sur la phrase « pourquoi ».
+                if (today.featuredExcerpt != null) ...[
+                  Text(
+                    today.featuredTitle ?? '',
+                    style: GoogleFonts.fraunces(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
+                      color: c.textPrimary,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 4),
+                  Text(
+                    today.featuredExcerpt!,
+                    style: GoogleFonts.fraunces(
+                      fontSize: 14,
+                      fontStyle: FontStyle.italic,
+                      height: 1.5,
+                      color: c.textSecondary,
+                    ),
+                  ),
+                  if (today.featuredSource != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      today.featuredSource!,
+                      style: FacteurTypography.bodySmall(c.textTertiary)
+                          .copyWith(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ] else
+                  Text(
+                    '« ${today.pourquoi} »',
+                    style: GoogleFonts.fraunces(
+                      fontSize: 14,
+                      fontStyle: FontStyle.italic,
+                      height: 1.5,
+                      color: c.textSecondary,
+                    ),
+                  ),
               ],
             ),
           ),

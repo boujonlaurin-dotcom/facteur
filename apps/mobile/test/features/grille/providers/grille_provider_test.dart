@@ -8,19 +8,29 @@ import 'package:facteur/features/grille/repositories/grille_repository.dart';
 
 /// Repository en mémoire — implémente le contrat sans réseau.
 class _FakeGrilleRepository implements GrilleRepository {
-  _FakeGrilleRepository(this.today, {this.guessResult});
+  _FakeGrilleRepository(this.today, {this.guessResult, this.throwOnGuess = false});
 
   GrilleTodayResponse today;
   GrilleGuessResponse? guessResult;
+
+  /// Simule un échec réseau (timeout) sur le POST guess.
+  bool throwOnGuess;
   int guessCalls = 0;
   int revealCalls = 0;
+  int getTodayCalls = 0;
 
   @override
-  Future<GrilleTodayResponse> getToday() async => today;
+  Future<GrilleTodayResponse> getToday() async {
+    getTodayCalls++;
+    return today;
+  }
 
   @override
   Future<GrilleGuessResponse> submitGuess(String mot) async {
     guessCalls++;
+    if (throwOnGuess) {
+      throw Exception('network timeout');
+    }
     return guessResult ?? const GrilleGuessResponse(valide: false, raison: 'longueur');
   }
 
@@ -201,6 +211,32 @@ void main() {
     expect(s.today.pourquoi, 'parce que');
     expect(s.justFinished, isFalse, reason: 'révéler n’est pas une victoire');
     expect(s.draft, isEmpty);
+  });
+
+  test('échec réseau : networkError posé, submitting reset, pas de rethrow, '
+      'self-heal re-fetch', () async {
+    final repo = _FakeGrilleRepository(_todayInProgress(), throwOnGuess: true);
+    final c = await _container(repo);
+    final notifier = c.read(grilleProvider.notifier);
+    final getTodayBefore = repo.getTodayCalls;
+
+    for (final l in 'LIMAT'.split('')) {
+      notifier.addLetter(l);
+    }
+    // Ne doit PAS rejeter (le rethrow était la source du freeze).
+    await notifier.submitGuess();
+
+    final s = c.read(grilleProvider).value!;
+    expect(repo.guessCalls, 1);
+    expect(s.networkError, isTrue, reason: 'erreur réseau ré-essayable');
+    expect(s.submitting, isFalse, reason: 'le clavier se réactive');
+    expect(s.today.essais, isEmpty, reason: 'aucun essai consommé localement');
+    expect(repo.getTodayCalls, getTodayBefore + 1,
+        reason: '_reconcileToday re-fetch le today (self-heal)');
+
+    // Une nouvelle frappe efface l'état d'erreur réseau.
+    notifier.addLetter('Z');
+    expect(c.read(grilleProvider).value!.networkError, isFalse);
   });
 
   test('addLetter borné à longueur ; removeLetter ne supprime jamais la 1re',

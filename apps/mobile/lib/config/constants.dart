@@ -30,6 +30,11 @@ class ApiConstants {
   /// Timeout des requêtes HTTP
   static const Duration timeout = Duration(seconds: 30);
 
+  /// Timeout dédié au POST `grille/today/guess` — court, pour éviter le hang
+  /// silencieux (clavier figé) quand le réseau traîne. Override du `timeout`
+  /// global de 30 s ; le retry serveur est rendu idempotent côté backend.
+  static const Duration grilleGuessTimeout = Duration(seconds: 12);
+
   /// Nombre d'items par page dans le feed
   static const int feedPageSize = 20;
 }

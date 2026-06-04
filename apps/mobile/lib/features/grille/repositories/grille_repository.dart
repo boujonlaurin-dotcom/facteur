@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 
+import '../../../config/constants.dart';
 import '../../../core/api/api_client.dart';
 import '../models/grille_models.dart';
 
@@ -56,6 +57,13 @@ class GrilleRepository {
       final response = await _apiClient.dio.post<dynamic>(
         'grille/today/guess',
         data: {'mot': mot},
+        // Timeout court dédié (override le 30 s global) : un POST qui traîne
+        // ne doit plus figer le clavier. Le retry est sûr — le backend rend
+        // le re-submit du même mot idempotent.
+        options: Options(
+          sendTimeout: ApiConstants.grilleGuessTimeout,
+          receiveTimeout: ApiConstants.grilleGuessTimeout,
+        ),
       );
       return GrilleGuessResponse.fromJson(
         response.data as Map<String, dynamic>,

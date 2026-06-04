@@ -75,6 +75,34 @@ def test_dictionary_contains_seeded_word():
     assert not is_valid_word("ZZZZZZ")
 
 
+def test_dictionary_accepts_proper_nouns():
+    # Correctif bug « mots valides refusés » : noms propres curés acceptés.
+    assert is_valid_word("ITALIE")
+    assert is_valid_word("RUSSIE")
+    # Conjugaisons (déjà couvertes par la source inflectée) restent valides.
+    assert is_valid_word("MANGES")
+    # Un prénom courant (6 lettres) est accepté.
+    assert is_valid_word("THOMAS")
+
+
+def test_dictionary_accepts_accented_proper_nouns_normalized():
+    # Les noms propres accentués de l'asset sont normalisés (sans accent).
+    assert is_valid_word("GENEVE")  # Genève
+    assert is_valid_word("HELENE")  # Hélène
+
+
+def test_proper_nouns_asset_in_sync_with_generated_dictionary():
+    """Garde-fou : chaque entrée 6-lettres de l'asset curé figure dans le dico
+    généré (sans refetch réseau). Détecte un oubli de régénération."""
+    from scripts.build_grille_dictionary import _proper_nouns
+
+    words = get_dictionary()
+    curated = _proper_nouns()
+    assert curated, "l'asset de noms propres ne doit pas être vide"
+    missing = curated - set(words)
+    assert not missing, f"noms propres absents du dico généré : {sorted(missing)}"
+
+
 # ----- next_rollover_seconds ------------------------------------------------
 
 

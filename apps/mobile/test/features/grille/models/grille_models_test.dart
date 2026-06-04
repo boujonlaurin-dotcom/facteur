@@ -61,6 +61,58 @@ void main() {
       expect(r.isFinished, isTrue);
       expect(r.mot, 'CLIMAT');
     });
+
+    test('parse les champs featured* (article réel accroché)', () {
+      final r = GrilleTodayResponse.fromJson({
+        'date': '2026-05-30',
+        'dateAffichee': 'x',
+        'dateCourt': 'x',
+        'numero': 'N°143',
+        'longueur': 6,
+        'essaisMax': 6,
+        'premiereLettre': 'C',
+        'indice': 'x',
+        'theme': 'x',
+        'statut': 'solved',
+        'essais': const <Map<String, dynamic>>[],
+        'nbEssais': 3,
+        'mot': 'CLIMAT',
+        'pourquoi': 'parce que',
+        'streak': 5,
+        'prochainMotDansSec': 1000,
+        'featuredContentId': '11111111-1111-1111-1111-111111111111',
+        'featuredTitle': 'Accord mondial sur le climat',
+        'featuredExcerpt': 'Les délégations ont trouvé un terrain d’entente.',
+        'featuredUrl': 'https://exemple.fr/climat',
+        'featuredSource': 'Le Monde',
+      });
+      expect(r.featuredContentId, '11111111-1111-1111-1111-111111111111');
+      expect(r.featuredTitle, 'Accord mondial sur le climat');
+      expect(r.featuredExcerpt, isNotNull);
+      expect(r.featuredUrl, 'https://exemple.fr/climat');
+      expect(r.featuredSource, 'Le Monde');
+    });
+
+    test('featured* absents → null (rétrocompat / aucun match)', () {
+      final r = GrilleTodayResponse.fromJson({
+        'date': '2026-05-30',
+        'dateAffichee': 'x',
+        'dateCourt': 'x',
+        'numero': 'N°143',
+        'longueur': 6,
+        'essaisMax': 6,
+        'premiereLettre': 'C',
+        'indice': 'x',
+        'theme': 'x',
+        'statut': 'in_progress',
+        'essais': const <Map<String, dynamic>>[],
+        'nbEssais': 0,
+        'streak': 5,
+        'prochainMotDansSec': 1000,
+      });
+      expect(r.featuredContentId, isNull);
+      expect(r.featuredExcerpt, isNull);
+    });
   });
 
   group('GrilleGuessResponse.fromJson', () {
