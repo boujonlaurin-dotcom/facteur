@@ -42,7 +42,6 @@ import '../../../core/nudges/nudge_counters.dart';
 import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/widgets/nudge_inline_banner.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
-import '../../../config/topic_labels.dart';
 import '../../digest/widgets/editorial_badge.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../lettres/providers/letters_provider.dart';
@@ -2649,8 +2648,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ));
     }
 
-    for (final slug in content.topics) {
-      final label = getTopicLabel(slug);
+    final subjectCount = content.topics.length + content.entities.length;
+    if (subjectCount > 0) {
+      final label = subjectCount == 1 ? '1 sujet' : '$subjectCount sujets';
       chips.add((
         widget: GestureDetector(
           onTap: () => TopicChip.showArticleSheet(context, content),
@@ -2672,32 +2672,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         width: _measureChipWidth(label, labelStyle),
       ));
     }
-    for (final entity in content.entities) {
-      chips.add((
-        widget: GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(
-            context,
-            content,
-            initialSection: ArticleSheetSection.entities,
-          ),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: colors.textTertiary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              entity.text,
-              style: labelStyle?.copyWith(
-                color: colors.textTertiary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
-        width: _measureChipWidth(entity.text, labelStyle),
-      ));
-    }
 
     if (chips.isEmpty) return const SizedBox.shrink();
 
@@ -2715,7 +2689,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           // Need an overflow chip — find the largest visibleCount such that
           // [visibleCount chips + overflow chip] all fit within 2 lines.
           // Use the max possible overflow width for a stable estimate.
-          final overflowChipW = _measureChipWidth('+$total sujets', labelStyle);
+          final overflowChipW = _measureChipWidth('+$total', labelStyle);
           while (visibleCount > 0) {
             final test = [...widths.take(visibleCount), overflowChipW];
             if (_simulateWrapVisible(test, availWidth) == test.length) break;
@@ -2724,8 +2698,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         }
 
         final overflow = total - visibleCount;
-        final overflowLabel =
-            overflow == 1 ? '+1 sujet' : '+$overflow sujets';
 
         return Wrap(
           spacing: spacing,
@@ -2749,7 +2721,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    overflowLabel,
+                    '+$overflow',
                     style: labelStyle?.copyWith(
                       color: colors.textTertiary,
                       fontWeight: FontWeight.w500,
@@ -3779,19 +3751,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final topInset = MediaQuery.of(context).padding.top;
     final headerHeight = topInset + _kHeaderContentHeight;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(height: headerHeight),
-        // Extra breathing room so tag chips aren't clipped by the header overlay
-        const SizedBox(height: FacteurSpacing.space2),
-        if (content.entities.isNotEmpty || content.topics.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space4,
-              vertical: 6,
-            ),
-            child: _buildTagsWrap(context, content),
-          ),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
       ],
     );
