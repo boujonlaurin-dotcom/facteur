@@ -72,16 +72,18 @@ const double _kFabHideAboveScroll = 380.0;
 /// pull-to-refresh hint pill — avoids nudging after a tiny inertia scroll.
 const double _kPullHintMinDepthPx = 800.0;
 
-/// Onglets sticky des deux cartes virtuelles. Accents repris tels quels de
-/// chaque carte : ocre/ambre signature de La Grille pour « Mot du jour », brun
-/// chaud du tampon de [CitationDuJourCard] pour « Citation du jour ».
+/// Onglets sticky des deux cartes virtuelles.
+/// Accent intentionnellement neutre/crème (vs les accents vifs des sections
+/// éditoriales) pour signaler visuellement que Grille et Citation sont du
+/// contenu "pause / loisir" — le surligneur marker sera quasi discret.
+const _kLeisureTabAccent = Color(0xFFB8A898);
 const _motDuJourTab = StickyTab(
   label: 'Mot du jour',
-  accent: GrilleConstants.presentTile,
+  accent: _kLeisureTabAccent,
 );
 const _citationTab = StickyTab(
   label: 'Citation du jour',
-  accent: CitationDuJourCard.stampColor,
+  accent: _kLeisureTabAccent,
 );
 
 class FluxContinuScreen extends ConsumerStatefulWidget {

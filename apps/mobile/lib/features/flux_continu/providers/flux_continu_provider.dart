@@ -1250,7 +1250,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     return FeedThemeSection(
       kind: SectionKind.source,
       label: source.name,
-      accent: visualFor(source.theme ?? '').accent,
+      accent: sourceAccentFor(source.id),
       coreVisibleCount: 3,
       sourceId: source.id,
       sourceLogoUrl: source.logoUrl,

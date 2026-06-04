@@ -328,7 +328,7 @@ class _TourneeComposerContentState
         kind: _ItemKind.source,
         id: f.sourceId,
         label: source.name,
-        accent: colors.primary,
+        accent: sourceAccentFor(f.sourceId),
         source: source,
       ));
     }

@@ -714,62 +714,64 @@ final isOnboardingCompleteProvider = Provider<bool>((ref) {
   return section1 && section2 && section3;
 });
 
-/// Liste des thèmes disponibles
+/// Liste des thèmes disponibles.
+/// Les couleurs sont alignées sur [themeMap] (theme_color_mapping.dart) pour
+/// une cohérence visuelle entre l'onboarding et le Flux Continu.
 class AvailableThemes {
   static final List<ThemeOption> all = [
     const ThemeOption(
       slug: 'tech',
       label: OnboardingStrings.themeTech,
       emoji: '💻',
-      color: Colors.blue,
+      color: Color(0xFF1565C0),
     ),
     const ThemeOption(
       slug: 'international',
       label: OnboardingStrings.themeInternational,
       emoji: '🌍',
-      color: Colors.cyan,
+      color: Color(0xFF0288D1),
     ),
     const ThemeOption(
       slug: 'science',
       label: OnboardingStrings.themeScience,
       emoji: '🔬',
-      color: Colors.purple,
+      color: Color(0xFF0097A7),
     ),
     const ThemeOption(
       slug: 'culture',
       label: OnboardingStrings.themeCulture,
       emoji: '🎨',
-      color: Colors.pink,
+      color: Color(0xFFAD1457),
     ),
     const ThemeOption(
       slug: 'politics',
       label: OnboardingStrings.themePolitics,
       emoji: '🏛️',
-      color: Colors.brown,
+      color: Color(0xFFB71C1C),
     ),
     const ThemeOption(
       slug: 'society',
       label: OnboardingStrings.themeSociety,
       emoji: '👥',
-      color: Colors.teal,
+      color: Color(0xFF6A1B9A),
     ),
     const ThemeOption(
       slug: 'environment',
       label: OnboardingStrings.themeEnvironment,
       emoji: '🌿',
-      color: Colors.green,
+      color: Color(0xFF00695C),
     ),
     const ThemeOption(
       slug: 'economy',
       label: OnboardingStrings.themeEconomy,
       emoji: '📈',
-      color: Colors.indigo,
+      color: Color(0xFFF57F17),
     ),
     const ThemeOption(
       slug: 'sport',
       label: OnboardingStrings.themeSport,
       emoji: '⚽',
-      color: Colors.orange,
+      color: Color(0xFFE64A19),
     ),
   ];
 }
