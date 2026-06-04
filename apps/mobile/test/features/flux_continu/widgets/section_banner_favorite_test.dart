@@ -33,17 +33,14 @@ void main() {
           findsNothing);
     });
 
-    testWidgets('renders the star and fires onTapFavorite without triggering '
-        'onTapFold', (tester) async {
+    testWidgets('renders the star and fires onTapFavorite', (tester) async {
       var favoriteTaps = 0;
-      var foldTaps = 0;
 
       await tester.pumpWidget(_wrap(
         SectionBanner(
           title: 'Climat',
           accent: const Color(0xFF6C3483),
           blurb: 'Ta veille climat — sourcée, lente, sans panique.',
-          onTapFold: () => foldTaps++,
           onTapFavorite: () => favoriteTaps++,
         ),
       ));
@@ -56,8 +53,6 @@ void main() {
       await tester.pump();
 
       expect(favoriteTaps, 1);
-      expect(foldTaps, 0,
-          reason: 'Star tap must not bubble up to the fold InkWell.');
     });
   });
 }

@@ -14,7 +14,6 @@ final tourneeProgressServiceProvider = Provider<TourneeProgressService>((ref) {
   return TourneeProgressService(prefs: ref.watch(sharedPreferencesProvider));
 });
 
-const String kFoldedPrefsKeyPrefix = 'flux_continu_folded_';
 const String kClosingPrefsKeyPrefix = 'flux_continu_closing_dismissed_';
 
 /// Boundary hour (Paris time) at which the "tournée day" flips.
@@ -52,9 +51,6 @@ class TourneeProgressService {
     return shifted.toIso8601String().substring(0, 10);
   }
 
-  static String foldedPrefsKey(DateTime day) =>
-      '$kFoldedPrefsKeyPrefix${dayKey(day)}';
-
   static String closingPrefsKey(DateTime day) =>
       '$kClosingPrefsKeyPrefix${dayKey(day)}';
 
@@ -83,49 +79,16 @@ class TourneeProgressService {
     }
   }
 
-  Future<Map<String, bool>> loadFoldedForToday({
-    DateTime? now,
-    bool Function(String key)? isLiveKey,
-  }) async {
-    try {
-      final prefs = await _prefs();
-      final names =
-          prefs.getStringList(foldedPrefsKey(now ?? DateTime.now())) ??
-          const <String>[];
-      if (names.isEmpty) return const {};
-      return {
-        for (final name in names)
-          if (isLiveKey == null || isLiveKey(name)) name: true,
-      };
-    } catch (e) {
-      debugPrint('TourneeProgress: loadFoldedForToday failed: $e');
-      return const {};
-    }
-  }
-
-  Future<void> persistFolded(Map<String, bool> folded, {DateTime? now}) async {
-    try {
-      final prefs = await _prefs();
-      final names = folded.entries
-          .where((e) => e.value)
-          .map((e) => e.key)
-          .toList();
-      await prefs.setStringList(foldedPrefsKey(now ?? DateTime.now()), names);
-    } catch (e) {
-      debugPrint('TourneeProgress: persistFolded failed: $e');
-    }
-  }
-
   Future<void> purgeOldPrefsKeys({DateTime? now}) async {
     try {
       final prefs = await _prefs();
       final today = now ?? DateTime.now();
-      final foldedToday = foldedPrefsKey(today);
       final closingToday = closingPrefsKey(today);
+      // Purge stale closing-dismissed keys (previous days) **and** any leftover
+      // `flux_continu_folded_*` blobs from before the fold mechanic was removed
+      // (2026-06), so they don't linger in SharedPreferences forever.
       final stale = prefs.getKeys().where((k) {
-        if (k.startsWith(kFoldedPrefsKeyPrefix) && k != foldedToday) {
-          return true;
-        }
+        if (k.startsWith('flux_continu_folded_')) return true;
         if (k.startsWith(kClosingPrefsKeyPrefix) && k != closingToday) {
           return true;
         }

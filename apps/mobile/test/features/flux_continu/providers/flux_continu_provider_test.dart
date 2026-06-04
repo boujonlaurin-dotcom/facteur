@@ -13,7 +13,6 @@ import 'package:facteur/features/flux_continu/repositories/flux_continu_reposito
 import 'package:facteur/features/my_interests/models/user_interests_state.dart';
 import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -61,17 +60,18 @@ UserInterestsState _interestsState({
   );
 }
 
-String _todayKey() {
+String _todayIso() {
   // Mirror the provider's 07:30-local tournée-day boundary: before 07:30 the
-  // active prefs key still references yesterday so the fold survives across
-  // midnight (the digest hasn't regenerated yet).
+  // active prefs key still references yesterday so the closing-dismissed flag
+  // survives across midnight (the digest hasn't regenerated yet).
   final now = DateTime.now();
   final shifted = (now.hour < 7 || (now.hour == 7 && now.minute < 30))
       ? now.subtract(const Duration(days: 1))
       : now;
-  final day = shifted.toIso8601String().substring(0, 10);
-  return 'flux_continu_folded_$day';
+  return shifted.toIso8601String().substring(0, 10);
 }
+
+String _todayClosingKey() => 'flux_continu_closing_dismissed_${_todayIso()}';
 
 FeedResponse _feedResponseWith(int items) {
   return FeedResponse(
@@ -158,16 +158,14 @@ void main() {
   });
 
   group('FluxContinuNotifier — purge cross-day', () {
-    test('removes folded keys from previous days, keeps today\'s key',
+    test('removes closing-dismissed keys from previous days, keeps today\'s',
         () async {
-      const oldKey = 'flux_continu_folded_2020-01-01';
       const oldClosingKey = 'flux_continu_closing_dismissed_2020-01-01';
-      final todayFoldedKey = _todayKey();
+      final todayClosingKey = _todayClosingKey();
 
-      SharedPreferences.setMockInitialValues({
-        oldKey: <String>['essentiel'],
+      SharedPreferences.setMockInitialValues(<String, Object>{
         oldClosingKey: true,
-        todayFoldedKey: <String>['bonnes'],
+        todayClosingKey: true,
       });
 
       final container = makeContainer();
@@ -180,311 +178,44 @@ void main() {
 
       final prefs = await SharedPreferences.getInstance();
       final keys = prefs.getKeys();
-      expect(keys, isNot(contains(oldKey)));
       expect(keys, isNot(contains(oldClosingKey)));
-      expect(keys, contains(todayFoldedKey));
+      expect(keys, contains(todayClosingKey));
     });
 
-    test('starts with empty folded map when no key exists for today', () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
-
-      final container = makeContainer();
-      addTearDown(container.dispose);
-
-      final state = await container.read(fluxContinuProvider.future);
-
-      expect(state.folded, isEmpty);
-    });
-
-    test('loads today\'s folded sections from SharedPreferences on build',
+    test('sweeps leftover legacy folded blobs (mechanic removed 2026-06)',
         () async {
+      // The fold mechanic and its `flux_continu_folded_*` SharedPreferences
+      // blobs were removed. The cross-day purge now sweeps any such leftover —
+      // today's included — so they never linger.
       SharedPreferences.setMockInitialValues(<String, Object>{
-        _todayKey(): <String>['essentiel', 'bonnes'],
+        'flux_continu_folded_2020-01-01': <String>['essentiel'],
+        'flux_continu_folded_${_todayIso()}': <String>['bonnes'],
       });
 
       final container = makeContainer();
       addTearDown(container.dispose);
 
-      final state = await container.read(fluxContinuProvider.future);
-
-      // No sections built (mocks return null), so the compose step strips
-      // entries pointing to absent kinds — folded ends up empty even though
-      // the prefs had values. This is the intentional behavior of `_compose`.
-      expect(state.folded, isEmpty);
-    });
-
-    test('silently ignores legacy theme1/theme2 keys in prefs', () async {
-      // Legacy SharedPreferences format used `theme1` / `theme2` to identify
-      // the two favorite theme sections. The new format uses `theme:<slug>` /
-      // `topic:<uuid>`. The migration is parse-tolerant — old keys are
-      // silently dropped, never crash, and get purged by the cross-day
-      // purge inside 24h.
-      SharedPreferences.setMockInitialValues(<String, Object>{
-        _todayKey(): <String>['essentiel', 'theme1', 'theme2'],
-      });
-
-      final container = makeContainer();
-      addTearDown(container.dispose);
-
-      // No throw, no warning.
-      final state = await container.read(fluxContinuProvider.future);
-      expect(state.folded, isEmpty);
-    });
-  });
-
-  group('FluxContinuNotifier — fold queue', () {
-    test('markScrolledPastForNextSession persists section to today\'s key',
-        () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
-
-      final container = makeContainer();
-      addTearDown(container.dispose);
-
       await container.read(fluxContinuProvider.future);
-      const section = DigestTopicSection(
-        kind: SectionKind.essentiel,
-        label: 'Essentiel',
-        accent: Color(0xFFB0470A),
-        coreVisibleCount: 3,
-        topics: [],
-      );
-      await container
-          .read(fluxContinuProvider.notifier)
-          .markScrolledPastForNextSession(section);
-
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getStringList(_todayKey()), contains('essentiel'));
-    });
-
-    test('markScrolledPastForNextSession is idempotent per section key',
-        () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
-
-      final container = makeContainer();
-      addTearDown(container.dispose);
-
-      await container.read(fluxContinuProvider.future);
-      const section = FeedThemeSection(
-        kind: SectionKind.theme,
-        label: 'Tech',
-        accent: Color(0xFF2C3E50),
-        coreVisibleCount: 3,
-        themeSlug: 'tech',
-        items: [],
-      );
-      final notifier = container.read(fluxContinuProvider.notifier);
-      await notifier.markScrolledPastForNextSession(section);
-      await notifier.markScrolledPastForNextSession(section);
-
-      final prefs = await SharedPreferences.getInstance();
-      final stored = prefs.getStringList(_todayKey()) ?? const [];
-      expect(stored.where((s) => s == 'theme:tech').length, 1);
-    });
-
-    test('applyPendingFoldsToState is a no-op when queue is empty', () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
-
-      final container = makeContainer();
-      addTearDown(container.dispose);
-
-      final initial = await container.read(fluxContinuProvider.future);
-      container.read(fluxContinuProvider.notifier).applyPendingFoldsToState();
-      final after = container.read(fluxContinuProvider).valueOrNull;
-
-      expect(after, isNotNull);
-      expect(after!.folded, equals(initial.folded));
-    });
-
-    test('persistQueuedSnapshot exposes queued section keys', () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
-
-      final container = makeContainer();
-      addTearDown(container.dispose);
-
-      await container.read(fluxContinuProvider.future);
-      final notifier = container.read(fluxContinuProvider.notifier);
-
-      expect(notifier.persistQueuedSnapshot(), isEmpty);
-
-      const essentiel = DigestTopicSection(
-        kind: SectionKind.essentiel,
-        label: 'Essentiel',
-        accent: Color(0xFFB0470A),
-        coreVisibleCount: 3,
-        topics: [],
-      );
-      const tech = FeedThemeSection(
-        kind: SectionKind.theme,
-        label: 'Tech',
-        accent: Color(0xFF2C3E50),
-        coreVisibleCount: 3,
-        themeSlug: 'tech',
-        items: [],
-      );
-      await notifier.markScrolledPastForNextSession(essentiel);
-      await notifier.markScrolledPastForNextSession(tech);
-
-      expect(
-        notifier.persistQueuedSnapshot(),
-        equals(<String>{'essentiel', 'theme:tech'}),
-      );
-    });
-
-    test('applyPendingFoldsToState(exceptKeys: all) is a no-op', () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
-
-      final container = makeContainer();
-      addTearDown(container.dispose);
-
-      final initial = await container.read(fluxContinuProvider.future);
-      final notifier = container.read(fluxContinuProvider.notifier);
-
-      const essentiel = DigestTopicSection(
-        kind: SectionKind.essentiel,
-        label: 'Essentiel',
-        accent: Color(0xFFB0470A),
-        coreVisibleCount: 3,
-        topics: [],
-      );
-      await notifier.markScrolledPastForNextSession(essentiel);
-
-      notifier.applyPendingFoldsToState(exceptKeys: {'essentiel'});
-      final after = container.read(fluxContinuProvider).valueOrNull;
-
-      // Excluded keys are never promoted — state.folded stays unchanged.
-      expect(after, isNotNull);
-      expect(after!.folded, equals(initial.folded));
-      // But the queue is preserved (so the cold-launch persist still applies).
-      expect(notifier.persistQueuedSnapshot(), contains('essentiel'));
-    });
-
-    test(
-        'unfoldLocally purges _persistQueued and prefs so cold launch '
-        'does not re-fold the section', () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
-
-      final container = makeContainer();
-      addTearDown(container.dispose);
-
-      await container.read(fluxContinuProvider.future);
-      final notifier = container.read(fluxContinuProvider.notifier);
-      const essentiel = DigestTopicSection(
-        kind: SectionKind.essentiel,
-        label: 'Actus du jour',
-        accent: Color(0xFFB0470A),
-        coreVisibleCount: 3,
-        topics: [],
-      );
-
-      // Queue the fold (simulates the user scrolling past the section).
-      await notifier.markScrolledPastForNextSession(essentiel);
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getStringList(_todayKey()), contains('essentiel'));
-      expect(notifier.persistQueuedSnapshot(), contains('essentiel'));
-
-      // User taps the folded card to re-expand. The fix must clear both the
-      // in-memory queue AND the prefs blob, otherwise the next cold launch
-      // would restore the fold and leave the section permanently folded.
-      notifier.unfoldLocally(essentiel);
-      // Give the unawaited _persistFolded a tick to flush.
+      await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 
-      expect(notifier.persistQueuedSnapshot(), isEmpty);
-      expect(prefs.getStringList(_todayKey()) ?? const <String>[],
-          isNot(contains('essentiel')));
-    });
-
-    test('markScrolledPastForNextSession exposes the key in state', () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
-
-      final container = makeContainer();
-      addTearDown(container.dispose);
-
-      await container.read(fluxContinuProvider.future);
-      final notifier = container.read(fluxContinuProvider.notifier);
-      const tech = FeedThemeSection(
-        kind: SectionKind.theme,
-        label: 'Tech',
-        accent: Color(0xFF2C3E50),
-        coreVisibleCount: 3,
-        themeSlug: 'tech',
-        items: [],
-      );
-
-      await notifier.markScrolledPastForNextSession(tech);
-      final state = container.read(fluxContinuProvider).valueOrNull;
-
-      expect(state, isNotNull);
-      expect(state!.markedForNextSession, contains('theme:tech'));
-      expect(state.isMarkedForNextSession(tech), isTrue);
-    });
-
-    test('unfoldLocally removes the key from state.markedForNextSession',
-        () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
-
-      final container = makeContainer();
-      addTearDown(container.dispose);
-
-      await container.read(fluxContinuProvider.future);
-      final notifier = container.read(fluxContinuProvider.notifier);
-      const essentiel = DigestTopicSection(
-        kind: SectionKind.essentiel,
-        label: 'Actus du jour',
-        accent: Color(0xFFB0470A),
-        coreVisibleCount: 3,
-        topics: [],
-      );
-
-      await notifier.markScrolledPastForNextSession(essentiel);
+      final prefs = await SharedPreferences.getInstance();
       expect(
-        container.read(fluxContinuProvider).valueOrNull?.markedForNextSession,
-        contains('essentiel'),
-      );
-
-      notifier.unfoldLocally(essentiel);
-      await Future<void>.delayed(Duration.zero);
-
-      expect(
-        container.read(fluxContinuProvider).valueOrNull?.markedForNextSession,
-        isNot(contains('essentiel')),
+        prefs.getKeys().where((k) => k.startsWith('flux_continu_folded_')),
+        isEmpty,
       );
     });
 
-    test(
-        'applyPendingFoldsToState drops promoted keys from '
-        'markedForNextSession (but keeps excluded ones)', () async {
+    test('starts with empty state when no prefs exist for today', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
 
       final container = makeContainer();
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
-      final notifier = container.read(fluxContinuProvider.notifier);
-      const essentiel = DigestTopicSection(
-        kind: SectionKind.essentiel,
-        label: 'Essentiel',
-        accent: Color(0xFFB0470A),
-        coreVisibleCount: 3,
-        topics: [],
-      );
-      const tech = FeedThemeSection(
-        kind: SectionKind.theme,
-        label: 'Tech',
-        accent: Color(0xFF2C3E50),
-        coreVisibleCount: 3,
-        themeSlug: 'tech',
-        items: [],
-      );
-      await notifier.markScrolledPastForNextSession(essentiel);
-      await notifier.markScrolledPastForNextSession(tech);
+      final state = await container.read(fluxContinuProvider.future);
 
-      notifier.applyPendingFoldsToState(exceptKeys: {'theme:tech'});
-      final state = container.read(fluxContinuProvider).valueOrNull;
-
-      expect(state, isNotNull);
-      expect(state!.markedForNextSession, isNot(contains('essentiel')));
-      expect(state.markedForNextSession, contains('theme:tech'));
+      expect(state.closingDismissed, isFalse);
+      expect(state.moreOpen, isEmpty);
     });
   });
 

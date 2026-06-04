@@ -5,7 +5,6 @@ import '../models/flux_continu_models.dart';
 import 'essentiel_hi_fi_card.dart';
 import 'essentiel_personalize_sheet.dart';
 import 'flux_continu_article_card.dart';
-import 'folded_section_card.dart';
 import 'plus_de_button.dart';
 import 'section_banner.dart';
 
@@ -22,10 +21,7 @@ enum FluxFeedbackChip { source, topic, alreadySeen }
 class SectionBlock extends StatelessWidget {
   final FluxSection section;
   final bool isOpen;
-  final bool isFolded;
   final VoidCallback onToggleMore;
-  final VoidCallback? onUnfold;
-  final VoidCallback? onFold;
   final void Function(Object article, FluxSection section) onTapArticle;
   final ValueChanged<String>? onDismissArticle;
 
@@ -63,9 +59,6 @@ class SectionBlock extends StatelessWidget {
     required this.isOpen,
     required this.onToggleMore,
     required this.onTapArticle,
-    this.isFolded = false,
-    this.onUnfold,
-    this.onFold,
     this.onDismissArticle,
     this.pendingFeedbackIds = const <String>{},
     this.onSelectFeedbackChip,
@@ -80,23 +73,6 @@ class SectionBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Instant swap (no AnimatedSize): the screen's scroll listener compensates
-    // the offset by the exact pixel delta the moment we shrink, so the
-    // viewport visually doesn't move. An animated transition here would defeat
-    // the compensation by leaving the height in flux when the post-frame
-    // callback measures it.
-    return isFolded ? _buildFolded() : _buildExpanded();
-  }
-
-  Widget _buildFolded() {
-    return FoldedSectionCard(
-      title: section.label,
-      articleCount: section.totalCount,
-      onTap: onUnfold,
-    );
-  }
-
-  Widget _buildExpanded() {
     final section = this.section;
     // EssentielSection is a fully self-contained hi-fi card — no banner,
     // no "Plus de…" overflow.
@@ -131,7 +107,6 @@ class SectionBlock extends StatelessWidget {
                   section.kind == SectionKind.source
               ? section.sourceLogoUrl
               : null,
-          onTapFold: onFold,
           onTapFavorite: onTapFavorite,
           onTapSettings: onTapSettings,
         ),

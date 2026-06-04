@@ -55,22 +55,29 @@ typedef SectionFrame = ({double top, double bottom});
 ///
 /// The feel: the reader is **free** while a section fully fills the viewport
 /// (its top is above the sticky header *and* its bottom is below the footer —
-/// no edge shows). Once an edge crosses into the viewport the scroll **snaps**:
-/// - a *small* overshoot past an extremity (within [kSectionEdgeMargin]) is
-///   pulled **back** to re-frame that section — a margin before the card
-///   actually switches;
-/// - a *larger* scroll commits to the next frame *in the travel direction*
-///   (down ⇒ next section top, up ⇒ previous section bottom), so the reader is
-///   never left floating between two sections without feedback.
-/// A section shorter than the viewport has no free zone, so beyond the margin it
-/// behaves like the simple "pose on the next section top" rule.
+/// no edge shows). Once an edge crosses into the viewport the scroll **snaps**,
+/// with a hard **one-step cap**: whatever the fling's strength, the commit
+/// target is always the frame **adjacent to the finger-lift position**
+/// ([currentPixels]) in the travel direction — never bracketed around where the
+/// fling *would* land. So a violent fling can no longer skip several sections at
+/// once: it advances exactly one frame, the active section flips once, and the
+/// screen fires a single haptic. The reader chains quick flings to descend.
+/// - a *small* overshoot (the fling carries less than [kSectionEdgeMargin] past
+///   the lift point) re-frames the **current** section — a margin before the
+///   card actually switches («&nbsp;collant&nbsp;» à la carte courante);
+/// - a *larger* fling commits **one** frame in the travel direction (down ⇒
+///   next snap point, up ⇒ previous one).
+/// A section shorter than the viewport has no free zone, so it always snaps.
 ///
 /// Pure arithmetic — no Flutter binding — so it is unit-testable without the
 /// Hive/Supabase bootstrap that the widget suite needs.
 ///
-/// - [currentPixels]   : scroll offset at finger lift.
-/// - [naturalLanding]  : where the platform ballistic *would* settle (carries
-///   the fling energy → the rule is intrinsically un-gated by speed).
+/// - [currentPixels]   : scroll offset at finger lift. **The commit anchor** —
+///   the target is always one frame away from here.
+/// - [naturalLanding]  : where the platform ballistic *would* settle. Used only
+///   to (a) detect free-reading inside a tall section and (b) measure the fling
+///   overshoot magnitude for the deadband — **not** as the commit bracket, so
+///   the target stays un-skippable regardless of fling strength.
 /// - [velocity]        : fling velocity (px/s, signed). Only a fallback for the
 ///   travel direction.
 /// - [scrollDirection] : the reader's *travel* direction, sign only — +1 down
@@ -109,35 +116,30 @@ double? resolveSnapTarget({
   }
   points.sort();
 
-  // Bracketing extremities around the landing.
-  final lo = _lastAtOrBefore(points, naturalLanding);
-  final hi = _firstAtOrAfter(points, naturalLanding);
-  if (lo == null) return _commit(hi!, currentPixels); // below the first frame
-  if (hi == null) return _commit(lo, currentPixels); // above the last frame
-  if (lo == hi) return _commit(lo, currentPixels); // landing ≈ on a frame
-
-  // Edge margin (deadband): a small overshoot past an extremity is pulled BACK
-  // to it — the « marge » before the section switches. Applied only when the
-  // landing is close to exactly one extremity; if it is close to both (a narrow
-  // gap between short sections) we fall through to the directional commit so
-  // those still switch immediately.
-  final nearLo = (naturalLanding - lo) <= kSectionEdgeMargin;
-  final nearHi = (hi - naturalLanding) <= kSectionEdgeMargin;
-  if (nearLo && !nearHi) return _commit(lo, currentPixels);
-  if (nearHi && !nearLo) return _commit(hi, currentPixels);
-
-  // Committed switch: snap to the frame in the travel direction (controller
-  // direction first, then the fling sign, then the nearest frame).
+  // Travel direction: controller first, then the fling sign (lift velocity).
   final dir = scrollDirection != 0 ? scrollDirection : velocity.sign;
-  final double target;
-  if (dir > 0) {
-    target = hi;
-  } else if (dir < 0) {
-    target = lo;
-  } else {
-    target = (naturalLanding - lo) <= (hi - naturalLanding) ? lo : hi;
+
+  // Deadband (« marge »): how far the fling's inertia carries past the lift
+  // point. A small overshoot — or no direction at all — re-frames the section
+  // the reader is on (pull-back to the nearest snap point); it must exceed the
+  // margin before the card actually switches.
+  final overshoot = (naturalLanding - currentPixels).abs();
+  if (overshoot < kSectionEdgeMargin || dir == 0) {
+    return _commit(_nearest(points, currentPixels), currentPixels);
   }
-  return _commit(target, currentPixels);
+
+  // One-step commit: the snap point ADJACENT to the lift position in the travel
+  // direction. Because the target is anchored on [currentPixels] (not on
+  // [naturalLanding]), a stronger fling can never bracket — and so never skip —
+  // a farther section: it always advances exactly one frame. When there is no
+  // neighbour in that direction (already at the extremity) fall back to the
+  // nearest frame so a hard fling past the last entry still settles on it.
+  if (dir > 0) {
+    final next = _firstStrictlyAfter(points, currentPixels);
+    return _commit(next ?? _nearest(points, currentPixels), currentPixels);
+  }
+  final prev = _lastStrictlyBefore(points, currentPixels);
+  return _commit(prev ?? _nearest(points, currentPixels), currentPixels);
 }
 
 /// `null` when [target] is already aligned with [currentPixels] (± epsilon).
@@ -146,18 +148,35 @@ double? _commit(double target, double currentPixels) {
   return target;
 }
 
-/// First point `>= value` (± epsilon), or `null` when [value] is beyond the last.
-double? _firstAtOrAfter(List<double> sorted, double value) {
+/// First point strictly `> value` (beyond ± epsilon), or `null` when [value]
+/// is at/after the last point.
+double? _firstStrictlyAfter(List<double> sorted, double value) {
   for (final p in sorted) {
-    if (p >= value - kSnapEpsilon) return p;
+    if (p > value + kSnapEpsilon) return p;
   }
   return null;
 }
 
-/// Last point `<= value` (± epsilon), or `null` when [value] is below the first.
-double? _lastAtOrBefore(List<double> sorted, double value) {
+/// Last point strictly `< value` (before ± epsilon), or `null` when [value]
+/// is at/before the first point.
+double? _lastStrictlyBefore(List<double> sorted, double value) {
   for (var i = sorted.length - 1; i >= 0; i--) {
-    if (sorted[i] <= value + kSnapEpsilon) return sorted[i];
+    if (sorted[i] < value - kSnapEpsilon) return sorted[i];
   }
   return null;
+}
+
+/// Point closest to [value] (ties resolve to the lower point). [sorted] is
+/// non-empty at every call site (the empty-frames guard returns early).
+double _nearest(List<double> sorted, double value) {
+  var best = sorted.first;
+  var bestDist = (best - value).abs();
+  for (final p in sorted) {
+    final d = (p - value).abs();
+    if (d < bestDist) {
+      best = p;
+      bestDist = d;
+    }
+  }
+  return best;
 }

@@ -118,8 +118,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
   // Clés dédiées aux cartes virtuelles qui ont désormais un onglet sticky.
   // La Grille n'est montée qu'à un seul endroit à la fois (après Actus, ou en
-  // fallback bas) → une seule clé suffit. Disjointes de [_sectionKeys] : la
-  // logique de fold (qui itère _sectionKeys) reste inchangée.
+  // fallback bas) → une seule clé suffit. Disjointes de [_sectionKeys] : le
+  // suivi de section active (qui itère _sectionKeys) reste inchangé.
   final GlobalKey _grilleKey = GlobalKey();
   final GlobalKey _citationKey = GlobalKey();
   final GlobalKey _closingKey = GlobalKey();
@@ -222,7 +222,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       _scrollProgress.value = nextProgress;
     }
     _updateActiveSection();
-    _maybeFoldSections();
 
     if (currentScroll > _maxScrollDepthPx) {
       _maxScrollDepthPx = currentScroll;
@@ -266,33 +265,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     }
   }
 
-  /// Records sections that have fully scrolled above the viewport, **without
-  /// collapsing them on screen**. The fold is deferred to the next cold launch.
-  void _maybeFoldSections() {
-    final value = ref.read(fluxContinuProvider).valueOrNull;
-    if (value == null) return;
-    final count = value.sections.length < _sectionKeys.length
-        ? value.sections.length
-        : _sectionKeys.length;
-    final notifier = ref.read(fluxContinuProvider.notifier);
-    for (var i = 0; i < count; i++) {
-      final section = value.sections[i];
-      if (value.isFolded(section)) continue;
-      // Gate lecture : ne queue le repli scroll-past que si toutes les cartes
-      // visibles en preview de la section sont lues (décision PO).
-      if (!allPreviewArticlesRead(section)) continue;
-      final key = _sectionKeys[i];
-      final ctx = key.currentContext;
-      if (ctx == null) continue;
-      final box = ctx.findRenderObject();
-      if (box is! RenderBox || !box.attached) continue;
-      final bottom = box.localToGlobal(Offset.zero).dy + box.size.height;
-      if (bottom < -32) {
-        notifier.markScrolledPastForNextSession(section);
-      }
-    }
-  }
-
   void _updateActiveSection() {
     if (_stickyEntryKeys.isEmpty) return;
     // Active = sticky entry that occupies the most visible area below the
@@ -325,9 +297,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (_activeIndex.value != activeAt) {
       // Strong section haptic when the active tab flips section under the
       // sticky bar. Gated on visibility so we don't buzz during the initial
-      // layout / top-of-page scroll, before the sticky is even revealed.
-      // Suppressed while a snap is settling: the settle haptic owns the
-      // boundary crossing, so we don't double-buzz.
+      // layout / top-of-page scroll, before the sticky is even revealed. The
+      // snap's one-step cap (cf. resolveSnapTarget) keeps a fling to a single
+      // boundary crossing, so this fires exactly once per step.
       if (_stickyVisible.value) {
         unawaited(_triggerSectionChangeHaptic());
         _pulsePassageForStickyIndex(activeAt);
@@ -414,7 +386,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   }
 
   /// Defers an anchor recompute to the next post-frame (when layout is settled),
-  /// coalescing the bursts of builds that fold/expand/content changes produce
+  /// coalescing the bursts of builds that "Plus de…"/content changes produce
   /// into a single pass. Never runs per scroll frame.
   void _scheduleAnchorRecompute() {
     if (_snapAnchorsRecomputeScheduled) return;
@@ -481,14 +453,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   Future<void> _scrollToTop() async {
     if (!_scroll.hasClients) return;
     unawaited(HapticFeedback.lightImpact());
-    _markSectionsAboveAsScrolledPast(null);
     await _scroll.animateTo(
       0,
       duration: const Duration(milliseconds: 900),
       curve: Curves.easeInOutCubic,
     );
-    if (!mounted) return;
-    ref.read(fluxContinuProvider.notifier).applyPendingFoldsToState();
   }
 
   /// Pull-to-refresh handler. Wraps the provider's refresh + clears pending
@@ -535,28 +504,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     );
   }
 
-  /// Opens an article and, on return, promotes any sections the user
-  /// scrolled past (or that sit above [fromSection]) to the live folded
-  /// state. `fromSection == null` means the article was tapped from the
-  /// Explorer feed (or via scroll-to-top sweep) — every editorial section
-  /// is queued.
-  ///
-  /// The section the article was tapped from is excluded from the fold on
-  /// return so the user finds the section still expanded at the same scroll
-  /// position. For sections that *do* fold (those above [fromSection], or
-  /// all of them when reading from Explorer), we measure their cumulative
-  /// height before and after the resize and apply a silent
-  /// [ScrollPosition.correctBy] so the article the user just left stays
-  /// visually anchored.
-  Future<void> _openArticle(
-    BuildContext context,
-    Object article, {
-    FluxSection? fromSection,
-  }) async {
-    _markSectionsAboveAsScrolledPast(fromSection);
-    final exceptKeys =
-        fromSection == null ? const <String>{} : {sectionKey(fromSection)};
-    final heightsBefore = _measureFoldCandidateHeights(exceptKeys);
+  /// Opens an article and, on return, marks it read in local state so the
+  /// card immediately shows the grey + check badge without waiting for a
+  /// pull-to-refresh.
+  Future<void> _openArticle(BuildContext context, Object article) async {
     String? openedContentId;
     if (article is DigestItem) {
       openedContentId = article.contentId;
@@ -578,69 +529,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       return;
     }
     if (!mounted) return;
-    // Mark the article as read in local state so the card immediately
-    // shows the grey + check badge without waiting for a pull-to-refresh.
     ref.read(fluxContinuProvider.notifier).markArticleRead(openedContentId);
-    ref
-        .read(fluxContinuProvider.notifier)
-        .applyPendingFoldsToState(exceptKeys: exceptKeys);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scroll.hasClients) return;
-      final heightsAfter = _measureFoldCandidateHeights(exceptKeys);
-      final delta = heightsBefore - heightsAfter;
-      if (delta <= 0.5) return;
-      final position = _scroll.position;
-      final corrected = (position.pixels - delta).clamp(
-        0.0,
-        position.maxScrollExtent,
-      );
-      position.correctBy(corrected - position.pixels);
-    });
-  }
-
-  /// Cumulative on-screen height of the sections queued for fold (minus
-  /// [exceptKeys]). Used as the delta to compensate scroll offset when the
-  /// fold happens above the viewport.
-  double _measureFoldCandidateHeights(Set<String> exceptKeys) {
-    final value = ref.read(fluxContinuProvider).valueOrNull;
-    if (value == null) return 0.0;
-    final queued =
-        ref.read(fluxContinuProvider.notifier).persistQueuedSnapshot();
-    if (queued.isEmpty) return 0.0;
-    final count = math.min(value.sections.length, _sectionKeys.length);
-    double sum = 0.0;
-    for (var i = 0; i < count; i++) {
-      final section = value.sections[i];
-      final key = sectionKey(section);
-      if (!queued.contains(key)) continue;
-      if (exceptKeys.contains(key)) continue;
-      final ctx = _sectionKeys[i].currentContext;
-      if (ctx == null) continue;
-      final box = ctx.findRenderObject();
-      if (box is! RenderBox || !box.attached) continue;
-      sum += box.size.height;
-    }
-    return sum;
-  }
-
-  void _markSectionsAboveAsScrolledPast(FluxSection? fromSection) {
-    final value = ref.read(fluxContinuProvider).valueOrNull;
-    if (value == null) return;
-    final notifier = ref.read(fluxContinuProvider.notifier);
-    final fromKey = fromSection == null ? null : sectionKey(fromSection);
-    if (fromKey == null) {
-      for (final s in value.sections) {
-        // Gate lecture : même contrat que _maybeFoldSections (décision PO).
-        if (!allPreviewArticlesRead(s)) continue;
-        unawaited(notifier.markScrolledPastForNextSession(s));
-      }
-      return;
-    }
-    for (final s in value.sections) {
-      if (sectionKey(s) == fromKey) break;
-      if (!allPreviewArticlesRead(s)) continue;
-      unawaited(notifier.markScrolledPastForNextSession(s));
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -831,9 +720,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // Source unique : aligne [_sectionKeys] + [_stickyEntryKeys] sur les slivers
     // et dérive les descripteurs d'onglets (label+accent), dans le même ordre.
     final stickyTabs = _syncStickyEntries(state.valueOrNull, grillePresent);
-    // Sections don't resize mid-session (folds defer to next launch), so we
-    // refresh the snap anchors only on these content/layout-driven rebuilds —
-    // never per scroll frame.
+    // Sections don't resize mid-session, so we refresh the snap anchors only on
+    // these content/layout-driven rebuilds — never per scroll frame.
     _safeAreaBottom = MediaQuery.viewPaddingOf(context).bottom;
     _scheduleAnchorRecompute();
     return Scaffold(
@@ -908,10 +796,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// [_buildContent]. Synchronise [_sectionKeys] (1 clé/section) et
   /// [_stickyEntryKeys] (clés combinées pour le suivi actif + le scroll), puis
   /// retourne les descripteurs d'onglets (label+accent) dans le même ordre.
-  ///
-  /// Ne touche PAS à la logique de fold (`_maybeFoldSections`,
-  /// `_measureFoldCandidateHeights`, `_markSectionsAboveAsScrolledPast`) qui
-  /// continue d'itérer `_sectionKeys` / `state.sections`.
   List<StickyTab> _syncStickyEntries(
     FluxContinuState? state,
     bool grillePresent,
@@ -1025,16 +909,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             ),
             const SliverToBoxAdapter(child: LettresNotificationBanner()),
             // One SliverToBoxAdapter per section. Sections never resize during
-            // a session (folds are deferred to the next cold launch), so the
-            // simpler non-lazy adapter is sufficient and keeps the GlobalKey
-            // measurement reliable.
+            // a session, so the simpler non-lazy adapter is sufficient and
+            // keeps the GlobalKey measurement reliable.
             //
             // The "Mes intérêts" intro (V10) is injected once, right before the
-            // first user-favorite theme section (`theme1` / `theme2`). The
-            // computed index handles both ordering modes (normal / sereine) by
-            // tracking the actual position of the first favorite kind.
-            // Folded sections render as individual FoldedSectionCards directly,
-            // in place — no "Tournée du jour" grouping toggle.
+            // first user-favorite theme section. The computed index handles
+            // both ordering modes (normal / sereine) by tracking the actual
+            // position of the first favorite kind.
             ..._buildSectionSlivers(
               context: context,
               state: state,
@@ -1104,19 +985,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final favoriteCount = state.sections.where(_isFavoriteSection).length;
     final swipeLeftHintSeen =
         ref.watch(swipeLeftHintSeenProvider).valueOrNull ?? true;
-    // When the user has consumed every editorial section, the inline
-    // "Mes intérêts" intro reads as residual chrome — hide it so the
-    // folded stack collapses tightly into the closing card.
-    final allFolded = state.sections.isNotEmpty &&
-        state.sections.every((s) => state.isFolded(s));
 
     final slivers = <SliverToBoxAdapter>[];
     for (var i = 0; i < state.sections.length; i++) {
       // Inject the "Mes intérêts" intro once, right before the first
       // user-favorite section. Skipped when favorites are first (no system
-      // section above to separate from), absent altogether, or once every
-      // section above has been folded (no editorial context left to break).
-      if (i == firstFavoriteIndex && firstFavoriteIndex > 0 && !allFolded) {
+      // section above to separate from) or absent altogether.
+      if (i == firstFavoriteIndex && firstFavoriteIndex > 0) {
         slivers.add(
           SliverToBoxAdapter(
             child: MyInterestsIntro(
@@ -1145,11 +1020,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             child: SectionBlock(
               section: section,
               isOpen: state.isOpen(section),
-              isFolded: state.isFolded(section),
               onToggleMore: () => notifier.toggleMore(section),
-              onUnfold: () => notifier.unfoldLocally(section),
-              onFold: () => notifier.foldLocally(section),
-              onTapArticle: (a, s) => _openArticle(context, a, fromSection: s),
+              onTapArticle: (a, _) => _openArticle(context, a),
               onDismissArticle: _onSwipeDismiss,
               pendingFeedbackIds: _pendingFeedback,
               onSelectFeedbackChip: (id, chip) =>
@@ -1181,9 +1053,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       );
       // Grille rendue immédiatement après « Actus du jour » (identité robuste :
       // DigestTopicSection kind essentiel). Sliver séparé, hors du KeyedSubtree
-      // — pas de GlobalKey, n'altère pas l'indexation _sectionKeys. Le check
-      // porte sur l'identité de la section (pas son état fold) → la Grille suit
-      // même la carte repliée.
+      // — pas de GlobalKey, n'altère pas l'indexation _sectionKeys.
       if (section is DigestTopicSection &&
           section.kind == SectionKind.essentiel) {
         slivers.add(_grilleSliver);
