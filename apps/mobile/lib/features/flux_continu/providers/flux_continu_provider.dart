@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +14,7 @@ import '../../digest/repositories/digest_repository.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart' show feedRepositoryProvider;
 import '../../feed/repositories/feed_repository.dart';
+import '../../grille/providers/grille_provider.dart';
 import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/models/user_sources_state.dart';
 import '../../my_interests/providers/user_interests_provider.dart';
@@ -65,11 +68,6 @@ const int _kMaxFavoriteSections = 5;
 /// Hard cap on the number of favorite SOURCE sections rendered in the tournée
 /// (PR « Sources dans la Tournée »). Parité avec les thèmes.
 const int _kMaxFavoriteSourceSections = 5;
-
-/// Cap d'AFFICHAGE de la Tournée (thèmes + sources + veille mélangés). Distinct
-/// des caps serveur par type : on peut avoir 5 thèmes + 5 sources favoris
-/// possibles, mais on n'affiche que les 5 premiers.
-const int _kMaxTourneeSections = 5;
 
 /// Number of items requested per page for each theme section of the Tournée
 /// (initial load + each "loadMoreTheme" call). When the backend returns
@@ -163,9 +161,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     ) {
       final nextFavorites = next.valueOrNull?.favorites;
       if (nextFavorites == null) return;
-      if (_favoriteListsEqual(_lastFavorites, nextFavorites)) return;
+      final picked = _pickExplicitFavorites(nextFavorites);
+      if (_favoriteListsEqual(_lastFavorites, picked)) return;
       if (!state.hasValue) return;
-      unawaited(_refetchThemesOnly(nextFavorites));
+      unawaited(_refetchThemesOnly(picked));
     });
 
     // PR « Sources dans la Tournée » — réagit à l'ajout/retrait/réordre d'une
@@ -183,16 +182,26 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       unawaited(_refetchSourcesOnly(picked));
     });
 
-    // PR 2 — un changement d'ordre/masque veille via « Composer ma Tournée »
+    // PR 2 — un changement d'ordre/masques via « Composer ma Tournée »
     // ne refetch rien (sections déjà dans _themes/_sources) : juste un recompose
-    // (le bloc favori relit l'ordre + applique le cap d'affichage).
+    // (la liste Tournée relit l'ordre + applique le cap d'affichage).
     ref.listen<TourneeOrderState>(tourneeOrderPrefsProvider, (prev, next) {
       if (!state.hasValue) return;
       if (prev != null &&
-          identical(prev.order, next.order) &&
-          prev.veilleHidden == next.veilleHidden) {
+          listEquals(prev.order, next.order) &&
+          setEquals(prev.hiddenKeys, next.hiddenKeys)) {
         return;
       }
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
+    });
+
+    // La Grille est un slot autonome dans la liste cappée : sa présence dépend
+    // uniquement de `today != null`, pas des sections déjà fetchées.
+    ref.listen<AsyncValue<GrilleState>>(grilleProvider, (prev, next) {
+      if (!state.hasValue) return;
+      final wasPresent = prev?.valueOrNull?.today != null;
+      final isPresent = next.valueOrNull?.today != null;
+      if (wasPresent == isPresent) return;
       state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
     });
 
@@ -323,8 +332,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     _lastSourceFavorites = favoriteSources;
     final fetched = fetchThemes
         ? await Future.wait([
-            _fetchThemeSections(favorites, isSerene,
-                isExplicitFavorite: !picked.isFallback),
+            _fetchThemeSections(
+              favorites,
+              isSerene,
+              isExplicitFavorite: !picked.isFallback,
+            ),
             _fetchSourceSections(favoriteSources, isSerene),
           ])
         : const [<FeedThemeSection>[], <FeedThemeSection>[]];
@@ -340,28 +352,34 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }
 
   FluxContinuState _compose(bool isSerene) {
-    final ordered = <FluxSection>[];
-    if (isSerene) {
-      // Mode sérène — "L'Essentiel du jour" reste en tête (parité avec le
-      // mode normal), puis Bonnes Nouvelles, thèmes favoris, "Actus du jour".
-      if (_essentiel != null) ordered.add(_essentiel!);
-      if (_bonnes != null) ordered.add(_bonnes!);
-      ordered.addAll(_favoriteSectionsBlock());
-      if (_actusDuJour != null) ordered.add(_actusDuJour!);
-    } else {
-      // Mode normal — carte hi-fi v3 ("L'Essentiel du jour"),
-      // puis "Actus du jour" (digest legacy regroupé par sujet),
-      // puis les thèmes favoris, puis Bonnes Nouvelles.
-      if (_essentiel != null) ordered.add(_essentiel!);
-      if (_actusDuJour != null) ordered.add(_actusDuJour!);
-      ordered.addAll(_favoriteSectionsBlock());
-      if (_bonnes != null) ordered.add(_bonnes!);
-    }
+    final tournee = ref.read(tourneeOrderPrefsProvider);
+    final grilleAvailable = ref.read(grilleProvider).valueOrNull?.today != null;
+    final sectionByKey = _tourneeSectionByKey();
+    final orderedKeys = _orderedTourneeKeys(
+      isSerene: isSerene,
+      customized: tournee.customized,
+      sectionByKey: sectionByKey,
+      grilleAvailable: grilleAvailable,
+      hiddenKeys: tournee.hiddenKeys,
+      order: tournee.order,
+    );
+
+    final rawOrdered = <FluxSection>[
+      if (_essentiel != null) _essentiel!,
+      for (final key in orderedKeys)
+        if (key != kTourneeGrilleKey && sectionByKey[key] != null)
+          sectionByKey[key]!,
+    ];
+    final finalSections = _dedupeSectionsInOrder(_filterSections(rawOrdered));
+    final grilleSlotIndex = _resolveGrilleSlotIndex(
+      orderedKeys: orderedKeys,
+      finalSections: finalSections,
+    );
 
     // Drop folded/moreOpen entries pointing at sections that didn't survive
     // composition (e.g. a favorite was removed since the prefs were written
     // earlier today). Keeps the maps tight and avoids stale ghosts.
-    final keysPresent = ordered.map(sectionKey).toSet();
+    final keysPresent = finalSections.map(sectionKey).toSet();
     final foldedFiltered = <String, bool>{
       for (final entry in _folded.entries)
         if (entry.value && keysPresent.contains(entry.key)) entry.key: true,
@@ -387,7 +405,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     }
 
     return FluxContinuState(
-      sections: _dedupeSectionsInOrder(_filterSections(ordered)),
+      sections: finalSections,
+      grilleSlotIndex: grilleSlotIndex,
       isSerene: isSerene,
       moreOpen: _moreOpen,
       folded: _folded,
@@ -1085,10 +1104,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     }
 
     return (
-      refs: [
-        ...themeRefs,
-        if (veilleRef != null) veilleRef,
-      ],
+      refs: [...themeRefs, if (veilleRef != null) veilleRef],
       isFallback: isFallback,
     );
   }
@@ -1134,6 +1150,24 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       if (section != null) sections.add(section);
     }
     return sections;
+  }
+
+  List<FavoriteRef> _pickExplicitFavorites(List<FavoriteRef> favorites) {
+    VeilleFavoriteRef? veilleRef;
+    final nonVeille = <FavoriteRef>[];
+    for (final favorite in favorites) {
+      if (favorite is VeilleFavoriteRef) {
+        veilleRef ??= favorite;
+      } else if (favorite is CustomTopicFavoriteRef) {
+        continue;
+      } else {
+        nonVeille.add(favorite);
+      }
+    }
+    return [
+      ...nonVeille.take(_kMaxFavoriteSections),
+      if (veilleRef != null) veilleRef,
+    ];
   }
 
   Future<FeedResponse?> _fetchOneTheme(FavoriteRef favRef, bool isSerene) {
@@ -1295,28 +1329,79 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     );
   }
 
-  /// Bloc des sections favorites de la Tournée — ordre 100 % libre (thèmes +
-  /// sources + veille mélangés selon l'ordre composé via « Composer ma Tournée »)
-  /// puis cap d'affichage à [_kMaxTourneeSections]. Les clés d'ordre sont
-  /// alignées sur `sectionKey()` (`theme:`/`source:`/`veille`) ; l'ordre par
-  /// défaut (ordre prefs vide) reste thèmes → sources → veille (décision PO 2).
-  List<FluxSection> _favoriteSectionsBlock() {
-    final tournee = ref.read(tourneeOrderPrefsProvider);
-    final themeSections = _themes.where((s) => s.kind != SectionKind.veille);
-    // Décision PO 4 : veille masquée → on la retire du bloc (self-heal coupé
-    // côté _pickFavorites n'est pas nécessaire : le masque au bloc suffit).
-    final veilleSections = tournee.veilleHidden
-        ? const <FeedThemeSection>[]
-        : _themes.where((s) => s.kind == SectionKind.veille);
-    final combined = <FluxSection>[
-      ...themeSections,
-      ..._sources,
-      ...veilleSections,
+  Map<String, FluxSection> _tourneeSectionByKey() {
+    return {
+      if (_actusDuJour != null) kTourneeActusKey: _actusDuJour!,
+      if (_bonnes != null) kTourneeBonnesKey: _bonnes!,
+      for (final section in _themes) sectionKey(section): section,
+      for (final section in _sources) sectionKey(section): section,
+    };
+  }
+
+  /// Liste ordonnée des clés sous "L'Essentiel du jour" : éditorial, Grille,
+  /// thèmes, sources et veille partagent le même cap d'affichage.
+  List<String> _orderedTourneeKeys({
+    required bool isSerene,
+    required bool customized,
+    required Map<String, FluxSection> sectionByKey,
+    required bool grilleAvailable,
+    required Set<String> hiddenKeys,
+    required List<String> order,
+  }) {
+    final themeKeys = [
+      for (final section in _themes)
+        if (section.kind == SectionKind.theme) sectionKey(section),
     ];
-    // Ordre 100 % libre (clés theme:/source:/veille = sectionKey) + cap 5.
-    return applyOrder(combined, tournee.order, sectionKey)
-        .take(_kMaxTourneeSections)
-        .toList();
+    final sourceKeys = [for (final section in _sources) sectionKey(section)];
+    final veilleKeys = [
+      for (final section in _themes)
+        if (section.kind == SectionKind.veille) sectionKey(section),
+    ];
+    final favoriteKeys = [...themeKeys, ...sourceKeys, ...veilleKeys];
+    final useSereneDefault = isSerene && !customized;
+    final defaultKeys = useSereneDefault
+        ? <String>[
+            kTourneeBonnesKey,
+            ...favoriteKeys,
+            kTourneeActusKey,
+            if (grilleAvailable) kTourneeGrilleKey,
+          ]
+        : <String>[
+            kTourneeActusKey,
+            if (grilleAvailable) kTourneeGrilleKey,
+            ...favoriteKeys,
+            kTourneeBonnesKey,
+          ];
+    final availableKeys = [
+      for (final key in defaultKeys)
+        if (!hiddenKeys.contains(key) &&
+            (key == kTourneeGrilleKey || sectionByKey.containsKey(key)))
+          key,
+    ];
+    return applyOrder(
+      availableKeys,
+      order,
+      (key) => key,
+    ).take(kTourneeVisibleCap).toList(growable: false);
+  }
+
+  int? _resolveGrilleSlotIndex({
+    required List<String> orderedKeys,
+    required List<FluxSection> finalSections,
+  }) {
+    final grilleIndex = orderedKeys.indexOf(kTourneeGrilleKey);
+    if (grilleIndex < 0) return null;
+    final keysBeforeGrille = <String>{
+      if (_essentiel != null) sectionKey(_essentiel!),
+      ...orderedKeys.take(grilleIndex).where((key) => key != kTourneeGrilleKey),
+    };
+    var slot = 0;
+    for (final section in finalSections) {
+      if (keysBeforeGrille.contains(sectionKey(section))) slot++;
+    }
+    // `slot` counts the surviving sections that precede the Grille, so it is
+    // always within `[0, finalSections.length]` — no clamping needed.
+    return slot;
   }
 
   String _customTopicLabel(UserInterestsState? interests, String id) {
@@ -1337,10 +1422,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// favorites.
   Future<void> _refetchThemesOnly(List<FavoriteRef> nextFavorites) async {
     final isSerene = ref.read(sereinToggleProvider).enabled;
-    final capped =
-        nextFavorites.take(_kMaxFavoriteSections).toList(growable: false);
-    final themes = await _fetchThemeSections(capped, isSerene);
-    _lastFavorites = capped;
+    final picked = _pickExplicitFavorites(nextFavorites);
+    final themes = await _fetchThemeSections(picked, isSerene);
+    _lastFavorites = picked;
     _themes = themes;
     final current = state.valueOrNull;
     if (current == null) return;

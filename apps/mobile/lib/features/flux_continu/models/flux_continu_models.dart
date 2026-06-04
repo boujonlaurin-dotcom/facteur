@@ -393,9 +393,13 @@ bool allPreviewArticlesRead(FluxSection section) {
   return switch (section) {
     EssentielSection(:final articles) => allRead(articles, (a) => a.isRead),
     DigestTopicSection(:final topics) => allRead(
-        topics, (t) => t.articles.isNotEmpty && pickTopicLead(t).isRead),
-    FeedThemeSection(:final items) =>
-      allRead(items, (c) => c.status == ContentStatus.consumed),
+      topics,
+      (t) => t.articles.isNotEmpty && pickTopicLead(t).isRead,
+    ),
+    FeedThemeSection(:final items) => allRead(
+      items,
+      (c) => c.status == ContentStatus.consumed,
+    ),
   };
 }
 
@@ -409,6 +413,11 @@ bool allPreviewArticlesRead(FluxSection section) {
 @immutable
 class FluxContinuState {
   final List<FluxSection> sections;
+
+  /// Absolute insertion index for the standalone Grille sliver inside
+  /// [sections], or `null` when La Grille is hidden, unavailable, or below the
+  /// visible cap. The Grille is not a [FluxSection].
+  final int? grilleSlotIndex;
   final bool isSerene;
   // Per-section UI state keyed by [sectionKey]. String keys (rather than
   // `SectionKind`) so multiple theme sections (one per favorite, 0..3) keep
@@ -439,6 +448,7 @@ class FluxContinuState {
 
   const FluxContinuState({
     this.sections = const [],
+    this.grilleSlotIndex,
     this.isSerene = false,
     this.moreOpen = const {},
     this.folded = const {},
@@ -452,6 +462,7 @@ class FluxContinuState {
 
   FluxContinuState copyWith({
     List<FluxSection>? sections,
+    int? grilleSlotIndex,
     bool? isSerene,
     Map<String, bool>? moreOpen,
     Map<String, bool>? folded,
@@ -465,6 +476,7 @@ class FluxContinuState {
   }) {
     return FluxContinuState(
       sections: sections ?? this.sections,
+      grilleSlotIndex: grilleSlotIndex ?? this.grilleSlotIndex,
       isSerene: isSerene ?? this.isSerene,
       moreOpen: moreOpen ?? this.moreOpen,
       folded: folded ?? this.folded,

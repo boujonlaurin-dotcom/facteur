@@ -125,6 +125,7 @@ class NotificationsSettingsNotifier
 
   Future<void> _loadFromHive() async {
     final box = await _box();
+    if (!mounted) return;
     state = NotificationsSettings(
       pushEnabled: box.get(_kPush, defaultValue: false) as bool,
       preset: NotifPresetX.fromWire(box.get(_kPreset) as String?),
@@ -133,11 +134,9 @@ class NotificationsSettingsNotifier
       refusalCount: box.get(_kRefusalCount, defaultValue: 0) as int,
       lastRefusalAt: _readDate(box, _kLastRefusalAt),
       lastRenudgeAt: _readDate(box, _kLastRenudgeAt),
-      renudgeShownCount:
-          box.get(_kRenudgeShownCount, defaultValue: 0) as int,
+      renudgeShownCount: box.get(_kRenudgeShownCount, defaultValue: 0) as int,
       emailDigestEnabled: box.get(_kEmailDigest, defaultValue: false) as bool,
-      goodNewsEnabled:
-          box.get(_kGoodNewsEnabled, defaultValue: false) as bool,
+      goodNewsEnabled: box.get(_kGoodNewsEnabled, defaultValue: false) as bool,
       goodNewsTimeSlot: NotifTimeSlotX.fromWire(
         box.get(_kGoodNewsTimeSlot) as String?,
       ),
@@ -186,6 +185,7 @@ class NotificationsSettingsNotifier
         renudgeShownCount: dto.renudgeShownCount,
         notifVeilleEnabled: dto.notifVeilleEnabled,
       );
+      if (!mounted) return;
       state = fresh;
       await _persist(fresh);
       await _drainPendingSync();
