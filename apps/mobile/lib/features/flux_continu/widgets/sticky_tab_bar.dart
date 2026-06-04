@@ -74,13 +74,20 @@ class StickyTabBar extends StatelessWidget {
             child: CustomPaint(
               painter: _ProgressPainter(
                 progress: progress.clamp(0.0, 1.0),
+                // Désaturation forte (PO 2026-06) : on garde l'ordre/identité
+                // chromatique (rouge → ocre → bleu → sauge) mais saturation
+                // abaissée ~65 % + luminosité remontée vers des tons pastel,
+                // pour que la barre ne tire plus l'œil. Valeurs ajustables à
+                // l'œil sur device.
                 gradient: const [
-                  Color(0xFFB71C1C),
-                  Color(0xFFF57F17),
-                  Color(0xFF1565C0),
-                  Color(0xFF00695C),
+                  Color(0xFFB08585), // rose poussiéreux (ex B71C1C)
+                  Color(0xFFC9A878), // sable / ocre doux (ex F57F17)
+                  Color(0xFF7E96B5), // bleu ardoise atténué (ex 1565C0)
+                  Color(0xFF7FA39B), // sauge grisée (ex 00695C)
                 ],
-                glow: const Color.fromRGBO(183, 28, 28, 0.35),
+                // Halo fortement réduit (alpha 0.35 → 0.10) et accordé au
+                // nouveau rouge désaturé : présence à peine perceptible.
+                glow: const Color.fromRGBO(176, 133, 133, 0.10),
                 trackColor: trackColor,
               ),
               child: const SizedBox.expand(),

@@ -117,7 +117,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   // `userSourcesStateProvider` pour ne refetch que sur un vrai changement.
   List<SourceFavoriteRef> _lastSourceFavorites = const [];
   Map<String, bool> _moreOpen = const {};
-  Map<String, bool> _folded = const {};
   bool _closingDismissed = false;
   // Citation du jour servie par le backend (sérène ou normal — même pool
   // YAML, sélection déterministe seed = user_id + date). Rendue avant
@@ -125,15 +124,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   QuoteResponse? _quote;
   final Set<String> _dismissedIds = <String>{};
 
-  /// Sections marked as "consumed" during this session via the scroll-past
-  /// detection. Persisted to SharedPreferences so they appear as
-  /// [FoldedSectionCard] on the next cold launch, but **not** applied to
-  /// [state] during this session — so the user never sees the fold happen
-  /// while they're scrolling. This is intentional: any in-place size change
-  /// of a sliver in a [CustomScrollView] causes a visible content shift, so
-  /// we defer the visual fold to the next mount where it's part of the
-  /// initial layout (no transition for the user to perceive).
-  final Set<String> _persistQueued = <String>{};
   bool _closingPersistQueued = false;
 
   /// Snapshot of the favorite order we last fetched for. Used by the
@@ -332,7 +322,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     _sources = fetched[1];
 
     _moreOpen = const {};
-    _folded = await _loadFoldedForToday();
     _closingDismissed = await _loadClosingDismissedForToday();
     unawaited(_purgeOldPrefsKeys());
 
@@ -358,17 +347,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       if (_bonnes != null) ordered.add(_bonnes!);
     }
 
-    // Drop folded/moreOpen entries pointing at sections that didn't survive
-    // composition (e.g. a favorite was removed since the prefs were written
-    // earlier today). Keeps the maps tight and avoids stale ghosts.
+    // Drop moreOpen entries pointing at sections that didn't survive
+    // composition (e.g. a favorite was removed since it was opened earlier).
+    // Keeps the map tight and avoids stale ghosts.
     final keysPresent = ordered.map(sectionKey).toSet();
-    final foldedFiltered = <String, bool>{
-      for (final entry in _folded.entries)
-        if (entry.value && keysPresent.contains(entry.key)) entry.key: true,
-    };
-    if (foldedFiltered.length != _folded.length) {
-      _folded = foldedFiltered;
-    }
     final moreOpenFiltered = <String, bool>{
       for (final entry in _moreOpen.entries)
         if (entry.value && keysPresent.contains(entry.key)) entry.key: true,
@@ -377,23 +359,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       _moreOpen = moreOpenFiltered;
     }
 
-    // Filter persistQueued against present sections to avoid stale keys
-    // surviving a compose (e.g. a favorite was removed).
-    final persistFiltered = _persistQueued.where(keysPresent.contains).toSet();
-    if (persistFiltered.length != _persistQueued.length) {
-      _persistQueued
-        ..clear()
-        ..addAll(persistFiltered);
-    }
-
     return FluxContinuState(
       sections: _dedupeSectionsInOrder(_filterSections(ordered)),
       isSerene: isSerene,
       moreOpen: _moreOpen,
-      folded: _folded,
       closingDismissed: _closingDismissed,
       dismissedIds: Set.unmodifiable(_dismissedIds),
-      markedForNextSession: Set.unmodifiable(_persistQueued),
       quote: _quote,
       isLoading: false,
     );
@@ -746,31 +717,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     state = AsyncData(afterCurrent.copyWith(sections: nextSections));
   }
 
-  /// Records that the user has scrolled past [section] in this session, **but
-  /// does not collapse it on screen**. The section will appear as a
-  /// [FoldedSectionCard] on the next cold launch. This avoids the visible
-  /// content shift that an in-session resize of a sliver would cause.
-  /// Idempotent both per-section and per-session.
-  Future<void> markScrolledPastForNextSession(FluxSection section) async {
-    final key = sectionKey(section);
-    if (_persistQueued.contains(key)) return;
-    if (_folded[key] == true) return;
-    _persistQueued.add(key);
-    final current = state.valueOrNull;
-    if (current != null) {
-      state = AsyncData(
-        current.copyWith(
-          markedForNextSession: Set.unmodifiable(_persistQueued),
-        ),
-      );
-    }
-    final combined = <String, bool>{
-      ..._folded,
-      for (final k in _persistQueued) k: true,
-    };
-    await _persistFolded(combined);
-  }
-
   /// Dismisses the closing card "Vous êtes à jour" for the day. Triggered
   /// by the Continuer/Refermer CTAs. Idempotent.
   Future<void> markClosingDismissed() async {
@@ -782,114 +728,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     await _persistClosingDismissed(true);
   }
 
-  /// Records the closing-card dismissal for the next session without
-  /// hiding it now — same rationale as [markScrolledPastForNextSession].
+  /// Records the closing-card dismissal for the next session without hiding it
+  /// now: it stays visible this session and only loads dismissed on the next
+  /// cold launch, so the user never sees it disappear mid-scroll.
   Future<void> markClosingDismissedForNextSession() async {
     if (_closingPersistQueued || _closingDismissed) return;
     _closingPersistQueued = true;
     await _persistClosingDismissed(true);
-  }
-
-  /// Promotes every section currently in [_persistQueued] to the live
-  /// `folded` state. Called only at moments where the editorial slivers
-  /// are above the viewport (return from an Explorer article, scroll-to-top
-  /// button) so the resulting resize is invisible to the user. Idempotent.
-  ///
-  /// [exceptKeys] lets the caller skip specific section keys — typically the
-  /// section the user just read an article from, which must stay expanded on
-  /// return per the "fold only when leaving the section" rule. Excluded keys
-  /// remain in [_persistQueued] (and in SharedPreferences) so they will be
-  /// folded on the next cold launch — the section is considered consumed for
-  /// tomorrow's tournée even though we keep it visible right now.
-  void applyPendingFoldsToState({Set<String> exceptKeys = const {}}) {
-    if (_persistQueued.isEmpty) return;
-    final current = state.valueOrNull;
-    if (current == null) return;
-    final toPromote = _persistQueued.difference(exceptKeys);
-    if (toPromote.isEmpty) return;
-    final next = <String, bool>{..._folded, for (final k in toPromote) k: true};
-    if (next.length == _folded.length &&
-        next.entries.every((e) => _folded[e.key] == e.value)) {
-      return;
-    }
-    _folded = next;
-    _persistQueued.removeAll(toPromote);
-    state = AsyncData(
-      current.copyWith(
-        folded: next,
-        markedForNextSession: Set.unmodifiable(_persistQueued),
-      ),
-    );
-  }
-
-  /// Read-only snapshot of the sections queued for fold at next apply.
-  /// Used by the screen to compute the height delta of slivers that are
-  /// about to resize, so it can compensate the scroll offset.
-  Set<String> persistQueuedSnapshot() => Set.unmodifiable(_persistQueued);
-
-  /// Re-expands a folded section. Also purges the section from
-  /// [_persistQueued] and from the day-scoped SharedPreferences blob so a
-  /// cold launch in the same day does not re-fold the section.
-  ///
-  /// Without the prefs purge, [markScrolledPastForNextSession] would have
-  /// persisted the fold immediately and [_loadFoldedForToday] would restore
-  /// it on next mount — leaving sections like "Actus du jour" stuck folded
-  /// forever once the user has scrolled past them once.
-  void unfoldLocally(FluxSection section) {
-    final current = state.valueOrNull;
-    if (current == null) return;
-    final key = sectionKey(section);
-    final wasFolded = current.folded[key] == true;
-    final wasQueued = _persistQueued.remove(key);
-    if (!wasFolded && !wasQueued) return;
-    if (wasFolded) {
-      final next = Map<String, bool>.from(current.folded)..remove(key);
-      _folded = next;
-      state = AsyncData(
-        current.copyWith(
-          folded: next,
-          markedForNextSession: Set.unmodifiable(_persistQueued),
-        ),
-      );
-    } else if (wasQueued) {
-      state = AsyncData(
-        current.copyWith(
-          markedForNextSession: Set.unmodifiable(_persistQueued),
-        ),
-      );
-    }
-    // Rewrite the prefs blob with the new (live + still-queued) fold set so
-    // the unfold survives a cold launch in the same tournée day.
-    unawaited(
-      _persistFolded({..._folded, for (final k in _persistQueued) k: true}),
-    );
-  }
-
-  /// Manually folds a section in the current session only (not persisted).
-  /// Symmetric of [unfoldLocally] — drives the caret tap on [SectionBanner].
-  void foldLocally(FluxSection section) {
-    final current = state.valueOrNull;
-    if (current == null) return;
-    final key = sectionKey(section);
-    if (current.folded[key] == true) return;
-    final next = Map<String, bool>.from(current.folded)..[key] = true;
-    _folded = next;
-    state = AsyncData(current.copyWith(folded: next));
-  }
-
-  Future<Map<String, bool>> _loadFoldedForToday() async {
-    // Parse tolerantly: legacy enum-style names (`essentiel`, `bonnes`) are
-    // still valid. Anything that doesn't match the new string-key shape
-    // (`essentiel` / `bonnes` / `theme:slug` / `topic:uuid`) — notably the
-    // dead `theme1` / `theme2` from the previous schema — is silently
-    // dropped. The day purge below will remove the prefs blob in <24h.
-    return ref
-        .read(tourneeProgressServiceProvider)
-        .loadFoldedForToday(isLiveKey: _isLiveFoldedKey);
-  }
-
-  Future<void> _persistFolded(Map<String, bool> folded) async {
-    await ref.read(tourneeProgressServiceProvider).persistFolded(folded);
   }
 
   Future<bool> _loadClosingDismissedForToday() async {
@@ -1380,17 +1225,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       }
     }
     return true;
-  }
-
-  /// Validates a string key from the legacy SharedPreferences blob against
-  /// the new sectionKey scheme. Accepts `essentiel`, `bonnes`, `theme:*`
-  /// and `topic:*`; rejects everything else (notably `theme1` / `theme2`).
-  bool _isLiveFoldedKey(String key) {
-    if (key == SectionKind.essentiel.name) return true;
-    if (key == SectionKind.bonnes.name) return true;
-    if (key.startsWith('theme:')) return true;
-    if (key.startsWith('topic:')) return true;
-    return false;
   }
 
   Future<T?> _safe<T>(
