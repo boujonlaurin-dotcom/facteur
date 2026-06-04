@@ -25,7 +25,7 @@ import '../utils/theme_color_mapping.dart';
 
 /// Plafond d'affichage de la Tournée. Au-delà, les sections passent sous le
 /// trait « Hors Tournée du jour » (décision PO — cap d'affichage, pas cap
-/// serveur : on garde 3 thèmes + 3 sources possibles).
+/// serveur : on peut garder plus de favoris que le cap visible).
 const int kTourneeVisibleCap = 5;
 
 /// Accent de la veille dans la composition (aligné sur `_kVeilleAccent` du

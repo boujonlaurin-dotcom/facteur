@@ -41,7 +41,8 @@ class _FakeRepo implements UserInterestsRepository {
   }
 
   @override
-  Future<UserInterestsState> reorderFavorites(List<FavoriteRef> ordered) async =>
+  Future<UserInterestsState> reorderFavorites(
+          List<FavoriteRef> ordered) async =>
       initial.copyWith(favorites: ordered);
 
   // Stubs unused for these tests.
@@ -92,18 +93,17 @@ void main() {
     // the optimistic value should already be reflected.
     final pending = container
         .read(userInterestsProvider.notifier)
-        .setInterestState(const ThemeFavoriteRef(slug: 'tech'),
-            InterestState.favorite);
+        .setInterestState(
+            const ThemeFavoriteRef(slug: 'tech'), InterestState.favorite);
 
     final optimistic = container.read(userInterestsProvider).value!;
-    expect(optimistic.favorites,
-        contains(const ThemeFavoriteRef(slug: 'tech')));
+    expect(
+        optimistic.favorites, contains(const ThemeFavoriteRef(slug: 'tech')));
     expect(optimistic.favoriteCount, 1);
 
     await pending;
     final settled = container.read(userInterestsProvider).value!;
-    expect(settled.favorites,
-        contains(const ThemeFavoriteRef(slug: 'tech')));
+    expect(settled.favorites, contains(const ThemeFavoriteRef(slug: 'tech')));
   });
 
   test('rollback on FavoriteCapReachedException', () async {
@@ -116,10 +116,8 @@ void main() {
     await container.read(userInterestsProvider.future);
 
     expect(
-      () => container
-          .read(userInterestsProvider.notifier)
-          .setInterestState(const ThemeFavoriteRef(slug: 'tech'),
-              InterestState.favorite),
+      () => container.read(userInterestsProvider.notifier).setInterestState(
+          const ThemeFavoriteRef(slug: 'tech'), InterestState.favorite),
       throwsA(isA<FavoriteCapReachedException>()),
     );
 

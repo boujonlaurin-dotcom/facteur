@@ -15,7 +15,13 @@ import 'package:facteur/features/flux_continu/widgets/essentiel_hi_fi_card.dart'
 
 Widget _wrap(Widget child, {List<Override> overrides = const []}) {
   return ProviderScope(
-    overrides: overrides,
+    overrides: [
+      weatherProvider.overrideWith(
+        () => _FakeWeatherNotifier(_testWeatherForecast()),
+      ),
+      weatherLocationProvider.overrideWith(_FakeLocationNotifier.new),
+      ...overrides,
+    ],
     child: MaterialApp(
       theme: ThemeData(extensions: [FacteurPalettes.light]),
       home: Scaffold(body: SingleChildScrollView(child: child)),
@@ -34,6 +40,26 @@ class _FakeWeatherNotifier extends WeatherNotifier {
 class _FakeLocationNotifier extends WeatherLocationNotifier {
   @override
   WeatherLocation build() => WeatherLocation.paris;
+}
+
+WeatherForecast _testWeatherForecast() {
+  return WeatherForecast(
+    condition: WeatherCondition.sunny,
+    currentC: 19,
+    feelsLikeC: 18,
+    minC: 12,
+    maxC: 21,
+    fetchedAt: DateTime(2026, 5, 28),
+    days: [
+      for (var i = 0; i < 5; i++)
+        WeatherDay(
+          date: DateTime(2026, 5, 28).add(Duration(days: i)),
+          condition: WeatherCondition.sunny,
+          minC: 12 + i,
+          maxC: 21 + i,
+        ),
+    ],
+  );
 }
 
 EssentielArticle _article({

@@ -232,7 +232,8 @@ void main() {
     return state.sections.whereType<FeedThemeSection>().toList();
   }
 
-  test('cap d\'affichage 5 : 3 thèmes + 3 sources + veille (7 candidats) → '
+  test(
+      'cap d\'affichage 5 : 3 thèmes + 3 sources + veille (7 candidats) → '
       'seulement 5 sections, veille (en queue par défaut) coupée', () async {
     stubFeed(
       themeIds: {
@@ -268,7 +269,8 @@ void main() {
     expect(sections, hasLength(5),
         reason: 'cap d\'affichage de la Tournée = 5');
     expect(sections.where((s) => s.kind == SectionKind.veille), isEmpty,
-        reason: 'ordre par défaut thèmes→sources→veille → veille en 7e, coupée');
+        reason:
+            'ordre par défaut thèmes→sources→veille → veille en 7e, coupée');
     // Ordre par défaut : 3 thèmes puis 2 sources (a, b) ; c et veille tombent.
     expect(
       sections.map((s) => s.kind).toList(),
@@ -281,7 +283,9 @@ void main() {
       ],
     );
     expect(
-      sections.where((s) => s.kind == SectionKind.source).map((s) => s.sourceId),
+      sections
+          .where((s) => s.kind == SectionKind.source)
+          .map((s) => s.sourceId),
       ['a', 'b'],
     );
   });
@@ -291,8 +295,12 @@ void main() {
       'tournee_order_v1': ['source:s1', 'theme:society'],
     });
     stubFeed(
-      themeIds: {'society': ['t1', 't2']},
-      sourceIds: {'s1': ['x1', 'x2']},
+      themeIds: {
+        'society': ['t1', 't2']
+      },
+      sourceIds: {
+        's1': ['x1', 'x2']
+      },
     );
     final container = await buildContainer(
       interests:
@@ -359,7 +367,9 @@ void main() {
   test('sujet personnalisé favori : exclu de la Tournée (Flâner-only)',
       () async {
     stubFeed(
-      themeIds: {'society': ['t1', 't2']},
+      themeIds: {
+        'society': ['t1', 't2']
+      },
       // Un feed existe pour le sujet perso : il ne doit JAMAIS être fetché ni
       // composé puisque les custom topics sont exclus avant la résolution.
       sourceIds: const {},
@@ -388,7 +398,9 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'tournee_veille_hidden_v1': true,
     });
-    stubFeed(themeIds: {'society': ['t1', 't2']});
+    stubFeed(themeIds: {
+      'society': ['t1', 't2']
+    });
     final container = await buildContainer(
       interests:
           _interestsState(favorites: [ThemeFavoriteRef(slug: 'society')]),

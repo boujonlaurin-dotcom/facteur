@@ -543,8 +543,8 @@ class _MediumTile extends StatelessWidget {
                             article.sourceName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style:
-                                FacteurTypography.labelSmall(colors.textTertiary),
+                            style: FacteurTypography.labelSmall(
+                                colors.textTertiary),
                           ),
                         ),
                         // Réserve l'espace de la coche pour qu'elle ne

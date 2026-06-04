@@ -64,7 +64,8 @@ class _StubVeilleNotifier extends VeilleActiveConfigNotifier {
   Future<VeilleConfigDto?> build() async => null;
 }
 
-UserInterestsState _interests(List<FavoriteRef> favorites) => UserInterestsState(
+UserInterestsState _interests(List<FavoriteRef> favorites) =>
+    UserInterestsState(
       themes: const [],
       customTopics: const [],
       favorites: favorites,

@@ -28,10 +28,7 @@ class _FakeUserInterestsNotifier extends UserInterestsNotifier {
     if (current == null) return;
     final topics = [
       for (final t in current.customTopics)
-        if (t.id == refTarget.targetId)
-          t.copyWith(state: newState)
-        else
-          t,
+        if (t.id == refTarget.targetId) t.copyWith(state: newState) else t,
     ];
     final favorites = [
       for (final f in current.favorites)

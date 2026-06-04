@@ -89,9 +89,7 @@ async def test_get_interests_returns_veille_favorite(auth_user, db_session):
     db_session.add(cfg)
     await db_session.flush()
     db_session.add(
-        UserFavoriteInterest(
-            user_id=auth_user, position=0, veille_config_id=cfg.id
-        )
+        UserFavoriteInterest(user_id=auth_user, position=0, veille_config_id=cfg.id)
     )
     await db_session.commit()
 
@@ -130,9 +128,7 @@ async def test_patch_promotes_theme_to_favorite(auth_user_with_themes, db_sessio
 
 
 @pytest.mark.asyncio
-async def test_patch_accepts_more_than_cap_favorites(
-    auth_user_with_themes, db_session
-):
+async def test_patch_accepts_more_than_cap_favorites(auth_user_with_themes, db_session):
     """Story 22.2 — cap retiré : un 6e favori est accepté (position=5)."""
     transport = ASGITransport(app=app)
     with patch(
@@ -415,9 +411,7 @@ async def test_reorder_rejects_custom_topic(auth_user_with_themes, db_session):
 
 
 @pytest.mark.asyncio
-async def test_reorder_rejects_non_favorite_target(
-    auth_user_with_themes, db_session
-):
+async def test_reorder_rejects_non_favorite_target(auth_user_with_themes, db_session):
     """`science` n'est pas favori → reorder doit 422."""
     transport = ASGITransport(app=app)
     with patch(

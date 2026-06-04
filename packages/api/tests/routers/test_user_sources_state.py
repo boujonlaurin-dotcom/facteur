@@ -127,9 +127,7 @@ async def test_patch_upserts_followed_state_on_unknown_source(db_session):
             "app.routers.user_sources_state.get_posthog_client",
             return_value=MagicMock(),
         ):
-            async with AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as ac:
+            async with AsyncClient(transport=transport, base_url="http://test") as ac:
                 resp = await ac.patch(
                     "/api/user/sources",
                     json={"source_id": str(source.id), "state": "followed"},

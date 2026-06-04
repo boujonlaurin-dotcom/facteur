@@ -18,7 +18,8 @@ import '../../my_interests/providers/user_interests_provider.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../settings/providers/notifications_settings_provider.dart';
 import '../../sources/models/source_model.dart';
-import '../../sources/providers/sources_providers.dart' show userSourcesProvider;
+import '../../sources/providers/sources_providers.dart'
+    show userSourcesProvider;
 import '../../veille/providers/veille_active_config_provider.dart';
 import '../models/flux_continu_models.dart';
 import '../repositories/essentiel_repository.dart';
@@ -87,8 +88,8 @@ const int _kThemeSectionPageLimit = 10;
 /// sticky bar actually shape the list.
 final fluxContinuProvider =
     AsyncNotifierProvider<FluxContinuNotifier, FluxContinuState>(
-      FluxContinuNotifier.new,
-    );
+  FluxContinuNotifier.new,
+);
 
 class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   late DigestRepository _digestRepo;
@@ -267,9 +268,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   ) async {
     try {
       await ref.read(notificationsSettingsProvider.notifier).syncDigestTeasers(
-        essentielTeasers: buildEssentielTeasers(essentielArticles),
-        goodNewsTeasers: buildGoodNewsTeasers(dual.serein),
-      );
+            essentielTeasers: buildEssentielTeasers(essentielArticles),
+            goodNewsTeasers: buildGoodNewsTeasers(dual.serein),
+          );
     } catch (e) {
       debugPrint('FluxContinu: syncNotificationTeasers failed: $e');
     }
@@ -456,33 +457,33 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       for (final s in sections)
         switch (s) {
           EssentielSection(:final articles) => EssentielSection(
-            articles: articles
-                .where((a) => !_dismissedIds.contains(a.contentId))
-                .toList(growable: false),
-            blurb: s.blurb,
-            illustrationAsset: s.illustrationAsset,
-          ),
+              articles: articles
+                  .where((a) => !_dismissedIds.contains(a.contentId))
+                  .toList(growable: false),
+              blurb: s.blurb,
+              illustrationAsset: s.illustrationAsset,
+            ),
           DigestTopicSection(:final topics) => DigestTopicSection(
-            kind: s.kind,
-            label: s.label,
-            accent: s.accent,
-            coreVisibleCount: s.coreVisibleCount,
-            blurb: s.blurb,
-            illustrationAsset: s.illustrationAsset,
-            topics: topics
-                .where(
-                  (t) => !_dismissedIds.contains(pickTopicLead(t).contentId),
-                )
-                .toList(growable: false),
-          ),
+              kind: s.kind,
+              label: s.label,
+              accent: s.accent,
+              coreVisibleCount: s.coreVisibleCount,
+              blurb: s.blurb,
+              illustrationAsset: s.illustrationAsset,
+              topics: topics
+                  .where(
+                    (t) => !_dismissedIds.contains(pickTopicLead(t).contentId),
+                  )
+                  .toList(growable: false),
+            ),
           // copyWith préserve tous les champs (themeSlug/customTopicId/
           // sourceId/sourceLogoUrl/pagination) — ne reconstruis pas à la main
           // sous peine de perdre les champs source des sections Tournée.
           FeedThemeSection(:final items) => s.copyWith(
-            items: items
-                .where((c) => !_dismissedIds.contains(c.id))
-                .toList(growable: false),
-          ),
+              items: items
+                  .where((c) => !_dismissedIds.contains(c.id))
+                  .toList(growable: false),
+            ),
         },
     ];
   }
@@ -561,56 +562,56 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       for (final s in current.sections)
         switch (s) {
           EssentielSection(:final articles) => EssentielSection(
-            articles: [
-              for (final a in articles)
-                if (a.contentId == contentId)
-                  EssentielArticle(
-                    contentId: a.contentId,
-                    title: a.title,
-                    url: a.url,
-                    thumbnailUrl: a.thumbnailUrl,
-                    publishedAt: a.publishedAt,
-                    sourceName: a.sourceName,
-                    sourceLetter: a.sourceLetter,
-                    sectionLabel: a.sectionLabel,
-                    rank: a.rank,
-                    kind: a.kind,
-                    theme: a.theme,
-                    perspectiveCount: a.perspectiveCount,
-                    isRead: true,
-                    isSaved: a.isSaved,
-                    isLiked: a.isLiked,
-                    isDismissed: a.isDismissed,
-                    isFollowedSource: a.isFollowedSource,
-                    isFollowedTopic: a.isFollowedTopic,
-                    isActuDuJour: a.isActuDuJour,
-                  )
-                else
-                  a,
-            ],
-            blurb: s.blurb,
-            illustrationAsset: s.illustrationAsset,
-          ),
+              articles: [
+                for (final a in articles)
+                  if (a.contentId == contentId)
+                    EssentielArticle(
+                      contentId: a.contentId,
+                      title: a.title,
+                      url: a.url,
+                      thumbnailUrl: a.thumbnailUrl,
+                      publishedAt: a.publishedAt,
+                      sourceName: a.sourceName,
+                      sourceLetter: a.sourceLetter,
+                      sectionLabel: a.sectionLabel,
+                      rank: a.rank,
+                      kind: a.kind,
+                      theme: a.theme,
+                      perspectiveCount: a.perspectiveCount,
+                      isRead: true,
+                      isSaved: a.isSaved,
+                      isLiked: a.isLiked,
+                      isDismissed: a.isDismissed,
+                      isFollowedSource: a.isFollowedSource,
+                      isFollowedTopic: a.isFollowedTopic,
+                      isActuDuJour: a.isActuDuJour,
+                    )
+                  else
+                    a,
+              ],
+              blurb: s.blurb,
+              illustrationAsset: s.illustrationAsset,
+            ),
           DigestTopicSection(:final topics) => DigestTopicSection(
-            kind: s.kind,
-            label: s.label,
-            accent: s.accent,
-            coreVisibleCount: s.coreVisibleCount,
-            blurb: s.blurb,
-            illustrationAsset: s.illustrationAsset,
-            topics: [
-              for (final t in topics)
-                t.copyWith(
-                  articles: [
-                    for (final a in t.articles)
-                      if (a.contentId == contentId)
-                        a.copyWith(isRead: true)
-                      else
-                        a,
-                  ],
-                ),
-            ],
-          ),
+              kind: s.kind,
+              label: s.label,
+              accent: s.accent,
+              coreVisibleCount: s.coreVisibleCount,
+              blurb: s.blurb,
+              illustrationAsset: s.illustrationAsset,
+              topics: [
+                for (final t in topics)
+                  t.copyWith(
+                    articles: [
+                      for (final a in t.articles)
+                        if (a.contentId == contentId)
+                          a.copyWith(isRead: true)
+                        else
+                          a,
+                    ],
+                  ),
+              ],
+            ),
           FeedThemeSection(
             :final items,
             :final themeSlug,
@@ -682,10 +683,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       final offset = (nextPage - 1) * _kThemeSectionPageLimit;
       response = await _safe<FeedResponse>(
         () => ref.read(fluxContinuRepositoryProvider).getVeilleFeedItems(
-          limit: _kThemeSectionPageLimit,
-          offset: offset,
-          serein: isSerene,
-        ),
+              limit: _kThemeSectionPageLimit,
+              offset: offset,
+              serein: isSerene,
+            ),
         'loadMoreTheme(veille offset=$offset)',
       );
     } else {
@@ -939,8 +940,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     required String illustration,
     required int coreVisibleCount,
   }) {
-    final topics =
-        digest?.topics
+    final topics = digest?.topics
             .where((t) => t.articles.isNotEmpty)
             .toList(growable: false) ??
         const <DigestTopic>[];
@@ -1072,17 +1072,17 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       final feed = feeds[i];
       final section = switch (favRef) {
         ThemeFavoriteRef(:final slug) => _buildThemeSection(
-          feed: feed,
-          label: visualFor(slug).label,
-          accent: visualFor(slug).accent,
-          themeSlug: slug,
-        ),
+            feed: feed,
+            label: visualFor(slug).label,
+            accent: visualFor(slug).accent,
+            themeSlug: slug,
+          ),
         CustomTopicFavoriteRef(:final id) => _buildThemeSection(
-          feed: feed,
-          label: _customTopicLabel(interestsState, id),
-          accent: _customTopicAccent(interestsState, id),
-          customTopicId: id,
-        ),
+            feed: feed,
+            label: _customTopicLabel(interestsState, id),
+            accent: _customTopicAccent(interestsState, id),
+            customTopicId: id,
+          ),
         // Story 23.2 PR-4 : la veille devient une section Tournée dédiée
         // avec son propre accent et label, calculée séparément des thèmes.
         VeilleFavoriteRef() => _buildVeilleSection(feed),
@@ -1098,40 +1098,38 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // sections (vs. the unrestricted exploration mode used by feed chips).
     return switch (favRef) {
       ThemeFavoriteRef(:final slug) => _safe<FeedResponse>(
-        () => _feedRepo.getFeed(
-          page: 1,
-          limit: _kThemeSectionPageLimit,
-          theme: slug,
-          serein: isSerene,
-          personalized: true,
+          () => _feedRepo.getFeed(
+            page: 1,
+            limit: _kThemeSectionPageLimit,
+            theme: slug,
+            serein: isSerene,
+            personalized: true,
+          ),
+          'getFeed?theme=$slug&personalized=true',
         ),
-        'getFeed?theme=$slug&personalized=true',
-      ),
       // Backend `/api/feed` accepts a UUID stringified in the `topic` param
       // (story 22.1) — looked up against `user_topic_profiles` scoped on the
       // current user, so no cross-user leak.
       CustomTopicFavoriteRef(:final id) => _safe<FeedResponse>(
-        () => _feedRepo.getFeed(
-          page: 1,
-          limit: _kThemeSectionPageLimit,
-          topic: id,
-          serein: isSerene,
-          personalized: true,
+          () => _feedRepo.getFeed(
+            page: 1,
+            limit: _kThemeSectionPageLimit,
+            topic: id,
+            serein: isSerene,
+            personalized: true,
+          ),
+          'getFeed?topic=$id&personalized=true',
         ),
-        'getFeed?topic=$id&personalized=true',
-      ),
       // Story 23.2 PR-4 : la veille est résolue via `/api/veille/feed`,
       // exposée par FluxContinuRepository.getVeilleFeedItems (normalise la
       // réponse en FeedResponse Content-compatible).
       VeilleFavoriteRef() => _safe<FeedResponse>(
-        () => ref
-            .read(fluxContinuRepositoryProvider)
-            .getVeilleFeedItems(
-              limit: _kThemeSectionPageLimit,
-              serein: isSerene,
-            ),
-        'getVeilleFeedItems',
-      ),
+          () => ref.read(fluxContinuRepositoryProvider).getVeilleFeedItems(
+                limit: _kThemeSectionPageLimit,
+                serein: isSerene,
+              ),
+          'getVeilleFeedItems',
+        ),
     };
   }
 
@@ -1176,14 +1174,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   List<SourceFavoriteRef> _pickFavoriteSources([
     List<SourceFavoriteRef>? favorites,
   ]) {
-    final favs =
-        favorites ??
+    final favs = favorites ??
         ref.read(userSourcesStateProvider).valueOrNull?.favorites ??
         const <SourceFavoriteRef>[];
     final sorted = [...favs]..sort((a, b) => a.position.compareTo(b.position));
-    return sorted
-        .take(_kMaxFavoriteSourceSections)
-        .toList(growable: false);
+    return sorted.take(_kMaxFavoriteSourceSections).toList(growable: false);
   }
 
   /// Résout chaque source favorite en `Source` complet (nom + logo + thème)
@@ -1298,9 +1293,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// favorites.
   Future<void> _refetchThemesOnly(List<FavoriteRef> nextFavorites) async {
     final isSerene = ref.read(sereinToggleProvider).enabled;
-    final capped = nextFavorites
-        .take(_kMaxFavoriteSections)
-        .toList(growable: false);
+    final capped =
+        nextFavorites.take(_kMaxFavoriteSections).toList(growable: false);
     final themes = await _fetchThemeSections(capped, isSerene);
     _lastFavorites = capped;
     _themes = themes;

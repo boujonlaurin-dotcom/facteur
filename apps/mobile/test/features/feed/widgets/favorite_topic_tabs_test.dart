@@ -275,7 +275,8 @@ void main() {
         for (var i = 0; i < 6; i++) CustomTopicFavoriteRef(id: 't$i'),
       ];
       final sourceById = {
-        for (var i = 0; i < 6; i++) 's$i': _source(id: 's$i', name: 'Source $i'),
+        for (var i = 0; i < 6; i++)
+          's$i': _source(id: 's$i', name: 'Source $i'),
       };
       final sourceFavorites = [
         for (var i = 0; i < 6; i++)
@@ -324,7 +325,8 @@ void main() {
         for (var i = 0; i < 3; i++) CustomTopicFavoriteRef(id: 't$i'),
       ];
       final sourceById = {
-        for (var i = 0; i < 3; i++) 's$i': _source(id: 's$i', name: 'Source $i'),
+        for (var i = 0; i < 3; i++)
+          's$i': _source(id: 's$i', name: 'Source $i'),
       };
       final sourceFavorites = [
         for (var i = 0; i < 3; i++)

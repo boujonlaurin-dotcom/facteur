@@ -202,15 +202,19 @@ void main() {
     return state.sections.whereType<FeedThemeSection>().toList();
   }
 
-  test('une source favorite produit une section kind=source ordonnée après les '
+  test(
+      'une source favorite produit une section kind=source ordonnée après les '
       'thèmes, avec nom + logo', () async {
     stubFeed(
-      themeIds: {'tech': ['t1', 't2']},
-      sourceIds: {'src1': ['a1', 'a2', 'a3']},
+      themeIds: {
+        'tech': ['t1', 't2']
+      },
+      sourceIds: {
+        'src1': ['a1', 'a2', 'a3']
+      },
     );
     final container = await buildContainer(
-      interests:
-          _interestsState(favorites: [ThemeFavoriteRef(slug: 'tech')]),
+      interests: _interestsState(favorites: [ThemeFavoriteRef(slug: 'tech')]),
       sourcesState: _sourcesState(
         favorites: [SourceFavoriteRef(sourceId: 'src1', position: 0)],
       ),
@@ -223,10 +227,8 @@ void main() {
     await container.read(fluxContinuProvider.future);
     final sections = feedSections(container);
 
-    final themeIdx =
-        sections.indexWhere((s) => s.kind == SectionKind.theme);
-    final sourceIdx =
-        sections.indexWhere((s) => s.kind == SectionKind.source);
+    final themeIdx = sections.indexWhere((s) => s.kind == SectionKind.theme);
+    final sourceIdx = sections.indexWhere((s) => s.kind == SectionKind.source);
     expect(themeIdx, isNonNegative, reason: 'section thème attendue');
     expect(sourceIdx, isNonNegative, reason: 'section source attendue');
     expect(sourceIdx, greaterThan(themeIdx),
@@ -239,15 +241,19 @@ void main() {
     expect(src.items.map((c) => c.id), ['a1', 'a2', 'a3']);
   });
 
-  test('dédup inter-sections : un article partagé thème(au-dessus)/source '
+  test(
+      'dédup inter-sections : un article partagé thème(au-dessus)/source '
       'n\'apparaît que dans le thème', () async {
     stubFeed(
-      themeIds: {'tech': ['shared', 't2']},
-      sourceIds: {'src1': ['shared', 'a2']},
+      themeIds: {
+        'tech': ['shared', 't2']
+      },
+      sourceIds: {
+        'src1': ['shared', 'a2']
+      },
     );
     final container = await buildContainer(
-      interests:
-          _interestsState(favorites: [ThemeFavoriteRef(slug: 'tech')]),
+      interests: _interestsState(favorites: [ThemeFavoriteRef(slug: 'tech')]),
       sourcesState: _sourcesState(
         favorites: [SourceFavoriteRef(sourceId: 'src1', position: 0)],
       ),
@@ -266,7 +272,8 @@ void main() {
     expect(source.items.map((c) => c.id), ['a2']);
   });
 
-  test('source sans article frais : section TOUJOURS visible (items vides), '
+  test(
+      'source sans article frais : section TOUJOURS visible (items vides), '
       'jamais masquée', () async {
     stubFeed(
       themeIds: const {},
@@ -284,15 +291,15 @@ void main() {
     await container.read(fluxContinuProvider.future);
     final sections = feedSections(container);
 
-    final source =
-        sections.where((s) => s.kind == SectionKind.source).toList();
+    final source = sections.where((s) => s.kind == SectionKind.source).toList();
     expect(source, hasLength(1),
         reason: 'la section source reste rendue même vide (parité veille)');
     expect(source.first.items, isEmpty);
     expect(source.first.sourceId, 'src1');
   });
 
-  test('plusieurs sources favorites respectent l\'ordre par position et le '
+  test(
+      'plusieurs sources favorites respectent l\'ordre par position et le '
       'cap (parité thèmes = 5)', () async {
     stubFeed(
       themeIds: const {},
