@@ -13,8 +13,12 @@ import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart' show feedRepositoryProvider;
 import '../../feed/repositories/feed_repository.dart';
 import '../../my_interests/models/user_interests_state.dart';
+import '../../my_interests/models/user_sources_state.dart';
 import '../../my_interests/providers/user_interests_provider.dart';
+import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../settings/providers/notifications_settings_provider.dart';
+import '../../sources/models/source_model.dart';
+import '../../sources/providers/sources_providers.dart' show userSourcesProvider;
 import '../../veille/providers/veille_active_config_provider.dart';
 import '../models/flux_continu_models.dart';
 import '../repositories/essentiel_repository.dart';
@@ -23,6 +27,7 @@ import '../services/flux_continu_cache_service.dart';
 import '../services/tournee_progress_service.dart';
 import '../utils/notif_teasers.dart';
 import '../utils/theme_color_mapping.dart';
+import 'tournee_order_prefs_provider.dart'; // tourneeOrderPrefsProvider, TourneeOrderState, applyOrder (réexporté)
 
 /// Accent applied to the legacy "Actus du jour" digest topic section
 /// (DigestTopicSection avec kind=essentiel). Distinct de l'accent
@@ -55,6 +60,17 @@ const String _kBonnesBlurb = 'Un peu de douceur...';
 /// duplicated here only because the maps key by sectionKey and we slice the
 /// favorite list during composition. Keep aligned with the backend constant.
 const int _kMaxFavoriteSections = 3;
+
+/// Hard cap on the number of favorite SOURCE sections rendered in the tournée
+/// (PR « Sources dans la Tournée »). Parité avec les thèmes
+/// ([_kMaxFavoriteSections]) — décision PO. Cap intérimaire : l'unification
+/// cap-5 total (veille incluse) + ordre 100 % libre est reportée en PR 2.
+const int _kMaxFavoriteSourceSections = 3;
+
+/// Cap d'AFFICHAGE de la Tournée (thèmes + sources + veille mélangés). Distinct
+/// des caps serveur par type (3+3) — décision PO Option A : on garde 3 thèmes +
+/// 3 sources favoris possibles, mais on n'affiche que les 5 premiers.
+const int _kMaxTourneeSections = 5;
 
 /// Number of items requested per page for each theme section of the Tournée
 /// (initial load + each "loadMoreTheme" call). When the backend returns
@@ -94,6 +110,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   // `userInterestsProvider.favorites`. Empty when the user has no favorites
   // — the tournée then collapses to digest only.
   List<FeedThemeSection> _themes = const [];
+  // Up to [_kMaxFavoriteSourceSections] source sections (PR « Sources dans la
+  // Tournée »), résolues depuis `userSourcesStateProvider.favorites` +
+  // catalogue `userSourcesProvider`. Composées entre les thèmes et la veille.
+  List<FeedThemeSection> _sources = const [];
+  // Dernières sources favorites (sourceId+position) rendues — sert au listener
+  // `userSourcesStateProvider` pour ne refetch que sur un vrai changement.
+  List<SourceFavoriteRef> _lastSourceFavorites = const [];
   Map<String, bool> _moreOpen = const {};
   Map<String, bool> _folded = const {};
   bool _closingDismissed = false;
@@ -144,6 +167,34 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       if (_favoriteListsEqual(_lastFavorites, nextFavorites)) return;
       if (!state.hasValue) return;
       unawaited(_refetchThemesOnly(nextFavorites));
+    });
+
+    // PR « Sources dans la Tournée » — réagit à l'ajout/retrait/réordre d'une
+    // source favorite en ne refetchant QUE les sections source (le digest et
+    // les thèmes ne dépendent pas des sources favorites).
+    ref.listen<AsyncValue<UserSourcesState>>(userSourcesStateProvider, (
+      prev,
+      next,
+    ) {
+      final nextFavorites = next.valueOrNull?.favorites;
+      if (nextFavorites == null) return;
+      final picked = _pickFavoriteSources(nextFavorites);
+      if (_sourceFavoritesEqual(_lastSourceFavorites, picked)) return;
+      if (!state.hasValue) return;
+      unawaited(_refetchSourcesOnly(picked));
+    });
+
+    // PR 2 — un changement d'ordre/masque veille via « Composer ma Tournée »
+    // ne refetch rien (sections déjà dans _themes/_sources) : juste un recompose
+    // (le bloc favori relit l'ordre + applique le cap d'affichage).
+    ref.listen<TourneeOrderState>(tourneeOrderPrefsProvider, (prev, next) {
+      if (!state.hasValue) return;
+      if (prev != null &&
+          identical(prev.order, next.order) &&
+          prev.veilleHidden == next.veilleHidden) {
+        return;
+      }
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
     });
 
     final cached = await _cacheService.readToday();
@@ -268,9 +319,16 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
     final favorites = _pickFavorites(topThemes);
     _lastFavorites = favorites;
-    _themes = fetchThemes
-        ? await _fetchThemeSections(favorites, isSerene)
-        : const <FeedThemeSection>[];
+    final favoriteSources = _pickFavoriteSources();
+    _lastSourceFavorites = favoriteSources;
+    final fetched = fetchThemes
+        ? await Future.wait([
+            _fetchThemeSections(favorites, isSerene),
+            _fetchSourceSections(favoriteSources, isSerene),
+          ])
+        : const [<FeedThemeSection>[], <FeedThemeSection>[]];
+    _themes = fetched[0];
+    _sources = fetched[1];
 
     _moreOpen = const {};
     _folded = await _loadFoldedForToday();
@@ -287,7 +345,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       // mode normal), puis Bonnes Nouvelles, thèmes favoris, "Actus du jour".
       if (_essentiel != null) ordered.add(_essentiel!);
       if (_bonnes != null) ordered.add(_bonnes!);
-      ordered.addAll(_themes);
+      ordered.addAll(_favoriteSectionsBlock());
       if (_actusDuJour != null) ordered.add(_actusDuJour!);
     } else {
       // Mode normal — carte hi-fi v3 ("L'Essentiel du jour"),
@@ -295,7 +353,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       // puis les thèmes favoris, puis Bonnes Nouvelles.
       if (_essentiel != null) ordered.add(_essentiel!);
       if (_actusDuJour != null) ordered.add(_actusDuJour!);
-      ordered.addAll(_themes);
+      ordered.addAll(_favoriteSectionsBlock());
       if (_bonnes != null) ordered.add(_bonnes!);
     }
 
@@ -419,24 +477,14 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
                 )
                 .toList(growable: false),
           ),
-          FeedThemeSection(
-            :final items,
-            :final themeSlug,
-            :final customTopicId,
-          ) =>
-            FeedThemeSection(
-              kind: s.kind,
-              label: s.label,
-              accent: s.accent,
-              coreVisibleCount: s.coreVisibleCount,
-              blurb: s.blurb,
-              illustrationAsset: s.illustrationAsset,
-              themeSlug: themeSlug,
-              customTopicId: customTopicId,
-              items: items
-                  .where((c) => !_dismissedIds.contains(c.id))
-                  .toList(growable: false),
-            ),
+          // copyWith préserve tous les champs (themeSlug/customTopicId/
+          // sourceId/sourceLogoUrl/pagination) — ne reconstruis pas à la main
+          // sous peine de perdre les champs source des sections Tournée.
+          FeedThemeSection(:final items) => s.copyWith(
+            items: items
+                .where((c) => !_dismissedIds.contains(c.id))
+                .toList(growable: false),
+          ),
         },
     ];
   }
@@ -967,6 +1015,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     for (final f in favorites) {
       if (f is VeilleFavoriteRef) {
         veilleRef ??= f;
+      } else if (f is CustomTopicFavoriteRef) {
+        continue; // PR 2 : sujets perso = Flâner-only, hors Tournée (PO 5)
       } else {
         nonVeille.add(f);
       }
@@ -1117,6 +1167,122 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Sections SOURCE de la Tournée (PR « Sources dans la Tournée »).
+  // ---------------------------------------------------------------------------
+
+  /// Sources favorites à rendre comme sections, triées par `position` et capées
+  /// à [_kMaxFavoriteSourceSections]. Source de vérité : les `favorites` de
+  /// `userSourcesStateProvider` (distinct des thèmes/sujets/veille de
+  /// `userInterestsProvider`). Le paramètre optionnel permet au listener de
+  /// passer la valeur fraîche avant qu'elle ne soit committée au provider.
+  List<SourceFavoriteRef> _pickFavoriteSources([
+    List<SourceFavoriteRef>? favorites,
+  ]) {
+    final favs =
+        favorites ??
+        ref.read(userSourcesStateProvider).valueOrNull?.favorites ??
+        const <SourceFavoriteRef>[];
+    final sorted = [...favs]..sort((a, b) => a.position.compareTo(b.position));
+    return sorted
+        .take(_kMaxFavoriteSourceSections)
+        .toList(growable: false);
+  }
+
+  /// Résout chaque source favorite en `Source` complet (nom + logo + thème)
+  /// via le catalogue `userSourcesProvider`, puis fetch en parallèle le top
+  /// classé (mêmes piliers que les thèmes, `personalized: true`). Les favoris
+  /// dont la source n'est pas (encore) dans le catalogue sont ignorés ce cycle.
+  Future<List<FeedThemeSection>> _fetchSourceSections(
+    List<SourceFavoriteRef> favs,
+    bool isSerene,
+  ) async {
+    if (favs.isEmpty) return const [];
+    final catalog =
+        ref.read(userSourcesProvider).valueOrNull ?? const <Source>[];
+    final sourceById = {for (final s in catalog) s.id: s};
+    final resolved = <Source>[];
+    for (final fav in favs) {
+      final src = sourceById[fav.sourceId];
+      if (src != null) resolved.add(src);
+    }
+    if (resolved.isEmpty) return const [];
+    final feeds = await Future.wait(
+      resolved.map((src) => _fetchOneSource(src.id, isSerene)),
+    );
+    final sections = <FeedThemeSection>[];
+    for (var i = 0; i < resolved.length; i++) {
+      final section = _buildSourceSection(feed: feeds[i], source: resolved[i]);
+      if (section != null) sections.add(section);
+    }
+    return sections;
+  }
+
+  Future<FeedResponse?> _fetchOneSource(String sourceId, bool isSerene) {
+    // `personalized: true` + `source_id` ⇒ backend route vers le scoring
+    // piliers (fenêtre adaptative 24→48→72h), mêmes critères que les sections
+    // thème. Flâner appelle sans `personalized` → reste chronologique.
+    return _safe<FeedResponse>(
+      () => _feedRepo.getFeed(
+        page: 1,
+        limit: _kThemeSectionPageLimit,
+        sourceId: sourceId,
+        serein: isSerene,
+        personalized: true,
+      ),
+      'getFeed?source_id=$sourceId&personalized=true',
+    );
+  }
+
+  /// Construit une section source. Décision PO : **toujours visible** (comme la
+  /// veille), même avec 0/1 article — l'état vide est rendu par SectionBlock. On
+  /// ne coupe donc jamais sur le seuil `< 2` (contrairement à
+  /// [_buildThemeSection]). `null` ne survient pas ici (source déjà résolue).
+  FeedThemeSection? _buildSourceSection({
+    required FeedResponse? feed,
+    required Source source,
+  }) {
+    final items = feed?.items ?? const <Content>[];
+    final hasMore = _themeHasMore(
+      feed?.pagination.hasNext ?? false,
+      items.length,
+    );
+    return FeedThemeSection(
+      kind: SectionKind.source,
+      label: source.name,
+      accent: sourceAccentFor(source.id),
+      coreVisibleCount: 3,
+      sourceId: source.id,
+      sourceLogoUrl: source.logoUrl,
+      items: items,
+      hasMore: hasMore,
+    );
+  }
+
+  /// Bloc des sections favorites de la Tournée — ordre 100 % libre (thèmes +
+  /// sources + veille mélangés selon l'ordre composé via « Composer ma Tournée »)
+  /// puis cap d'affichage à [_kMaxTourneeSections]. Les clés d'ordre sont
+  /// alignées sur `sectionKey()` (`theme:`/`source:`/`veille`) ; l'ordre par
+  /// défaut (ordre prefs vide) reste thèmes → sources → veille (décision PO 2).
+  List<FluxSection> _favoriteSectionsBlock() {
+    final tournee = ref.read(tourneeOrderPrefsProvider);
+    final themeSections = _themes.where((s) => s.kind != SectionKind.veille);
+    // Décision PO 4 : veille masquée → on la retire du bloc (self-heal coupé
+    // côté _pickFavorites n'est pas nécessaire : le masque au bloc suffit).
+    final veilleSections = tournee.veilleHidden
+        ? const <FeedThemeSection>[]
+        : _themes.where((s) => s.kind == SectionKind.veille);
+    final combined = <FluxSection>[
+      ...themeSections,
+      ..._sources,
+      ...veilleSections,
+    ];
+    // Ordre 100 % libre (clés theme:/source:/veille = sectionKey) + cap 5.
+    return applyOrder(combined, tournee.order, sectionKey)
+        .take(_kMaxTourneeSections)
+        .toList();
+  }
+
   String _customTopicLabel(UserInterestsState? interests, String id) {
     final found = interests?.customTopics.where((t) => t.id == id).firstOrNull;
     return found?.topicName ?? 'Sujet personnalisé';
@@ -1150,6 +1316,33 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (a.length != b.length) return false;
     for (var i = 0; i < a.length; i++) {
       if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  /// Replays only the source-section fetches against the new favorite-source
+  /// list. Le digest et les thèmes ne dépendent pas des sources favorites.
+  Future<void> _refetchSourcesOnly(List<SourceFavoriteRef> picked) async {
+    final isSerene = ref.read(sereinToggleProvider).enabled;
+    _sources = await _fetchSourceSections(picked, isSerene);
+    _lastSourceFavorites = picked;
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(_compose(isSerene));
+  }
+
+  /// `SourceFavoriteRef.==` ne compare que `sourceId` ; on compare aussi la
+  /// `position` car l'ordre des sections en dépend (tri dans
+  /// [_pickFavoriteSources]).
+  bool _sourceFavoritesEqual(
+    List<SourceFavoriteRef> a,
+    List<SourceFavoriteRef> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].sourceId != b[i].sourceId || a[i].position != b[i].position) {
+        return false;
+      }
     }
     return true;
   }

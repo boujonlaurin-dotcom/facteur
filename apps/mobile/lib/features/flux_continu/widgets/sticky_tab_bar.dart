@@ -75,12 +75,12 @@ class StickyTabBar extends StatelessWidget {
               painter: _ProgressPainter(
                 progress: progress.clamp(0.0, 1.0),
                 gradient: const [
-                  Color(0xFFD35400),
-                  Color(0xFFC2185B),
-                  Color(0xFF2C3E50),
-                  Color(0xFF6C3483),
+                  Color(0xFFB71C1C),
+                  Color(0xFFF57F17),
+                  Color(0xFF1565C0),
+                  Color(0xFF00695C),
                 ],
-                glow: const Color.fromRGBO(211, 84, 0, 0.35),
+                glow: const Color.fromRGBO(183, 28, 28, 0.35),
                 trackColor: trackColor,
               ),
               child: const SizedBox.expand(),

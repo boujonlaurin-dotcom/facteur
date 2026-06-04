@@ -1,0 +1,408 @@
+// PR 2 — couverture du bloc favori UNIFIÉ de la Tournée composé par le
+// FluxContinuNotifier : ordre 100 % libre (thèmes + sources + veille mélangés
+// via « Composer ma Tournée »), cap d'affichage 5, exclusion des sujets perso,
+// et masquage de la veille (veilleHidden).
+import 'dart:io';
+
+import 'package:facteur/features/digest/models/digest_models.dart';
+import 'package:facteur/features/digest/providers/digest_provider.dart';
+import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
+import 'package:facteur/features/digest/repositories/digest_repository.dart';
+import 'package:facteur/features/feed/models/content_model.dart';
+import 'package:facteur/features/feed/providers/feed_provider.dart';
+import 'package:facteur/features/feed/repositories/feed_repository.dart';
+import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
+import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
+import 'package:facteur/features/flux_continu/providers/tournee_order_prefs_provider.dart';
+import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
+import 'package:facteur/features/flux_continu/repositories/flux_continu_repository.dart';
+import 'package:facteur/features/my_interests/models/user_interests_state.dart';
+import 'package:facteur/features/my_interests/models/user_sources_state.dart';
+import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
+import 'package:facteur/features/my_interests/providers/user_sources_state_provider.dart';
+import 'package:facteur/features/sources/models/source_model.dart';
+import 'package:facteur/features/sources/providers/sources_providers.dart';
+import 'package:facteur/features/veille/models/veille_config_dto.dart';
+import 'package:facteur/features/veille/providers/veille_active_config_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hive/hive.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+class _MockDigestRepository extends Mock implements DigestRepository {}
+
+class _MockFeedRepository extends Mock implements FeedRepository {}
+
+class _MockFluxContinuRepository extends Mock
+    implements FluxContinuRepository {}
+
+class _StubEssentielRepository implements EssentielRepository {
+  @override
+  Future<List<EssentielArticle>?> fetch() async => const [];
+}
+
+class _StubUserInterestsNotifier extends UserInterestsNotifier {
+  _StubUserInterestsNotifier(this._initial);
+  final UserInterestsState _initial;
+  @override
+  Future<UserInterestsState> build() async => _initial;
+}
+
+class _StubUserSourcesStateNotifier extends UserSourcesStateNotifier {
+  _StubUserSourcesStateNotifier(this._initial);
+  final UserSourcesState _initial;
+  @override
+  Future<UserSourcesState> build() async => _initial;
+}
+
+class _StubUserSourcesNotifier extends UserSourcesNotifier {
+  _StubUserSourcesNotifier(this._initial);
+  final List<Source> _initial;
+  @override
+  Future<List<Source>> build() async => _initial;
+}
+
+class _StubVeilleActiveConfigNotifier extends VeilleActiveConfigNotifier {
+  _StubVeilleActiveConfigNotifier(this._cfg);
+  final VeilleConfigDto? _cfg;
+  @override
+  Future<VeilleConfigDto?> build() async => _cfg;
+}
+
+UserInterestsState _interestsState({List<FavoriteRef> favorites = const []}) {
+  return UserInterestsState(
+    themes: const [],
+    customTopics: const [],
+    favorites: favorites,
+    favoriteCount: favorites.length,
+    favoriteCap: 3,
+  );
+}
+
+UserSourcesState _sourcesState({List<SourceFavoriteRef> favorites = const []}) {
+  return UserSourcesState(
+    sources: favorites
+        .map((f) => SourceInterest(
+              sourceId: f.sourceId,
+              state: InterestState.favorite,
+              priorityMultiplier: 1.0,
+            ))
+        .toList(),
+    favorites: favorites,
+    favoriteCount: favorites.length,
+    favoriteCap: 3,
+  );
+}
+
+VeilleConfigDto _veilleCfg({String id = 'cfg1'}) => VeilleConfigDto(
+      id: id,
+      userId: 'u',
+      themeId: 'tech',
+      themeLabel: 'Tech',
+      status: 'active',
+      createdAt: DateTime(2026, 1, 1),
+      updatedAt: DateTime(2026, 1, 1),
+      topics: const [],
+      sources: const [],
+      keywords: const [],
+    );
+
+FeedResponse _feedWithIds(List<String> ids, {String sourceId = 's'}) {
+  return FeedResponse(
+    items: ids
+        .map((id) => Content(
+              id: id,
+              title: 'title-$id',
+              url: 'https://x.test/$id',
+              contentType: ContentType.article,
+              publishedAt: DateTime(2026, 1, 1),
+              source: Source(
+                id: sourceId,
+                name: 'S',
+                type: SourceType.article,
+              ),
+            ))
+        .toList(),
+    pagination: Pagination(page: 1, perPage: 10, total: 0, hasNext: false),
+    carousels: const [],
+  );
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late _MockDigestRepository digestRepo;
+  late _MockFeedRepository feedRepo;
+  late _MockFluxContinuRepository fluxRepo;
+
+  setUpAll(() {
+    Hive.init(Directory.systemTemp.createTempSync('flux_tournee_hive').path);
+  });
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    digestRepo = _MockDigestRepository();
+    feedRepo = _MockFeedRepository();
+    fluxRepo = _MockFluxContinuRepository();
+
+    when(() => digestRepo.fetchBothDigests())
+        .thenThrow(Exception('mock: no digest'));
+    when(() => fluxRepo.getTopThemes())
+        .thenAnswer((_) async => const <TopTheme>[]);
+    // Veille feed — always-visible section, contenu indifférent ici.
+    when(() => fluxRepo.getVeilleFeedItems(
+          limit: any(named: 'limit'),
+          serein: any(named: 'serein'),
+        )).thenAnswer((_) async => _feedWithIds(const ['v1', 'v2']));
+  });
+
+  void stubFeed({
+    Map<String, List<String>> themeIds = const {},
+    Map<String, List<String>> sourceIds = const {},
+  }) {
+    when(() => feedRepo.getFeed(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+          theme: any(named: 'theme'),
+          topic: any(named: 'topic'),
+          sourceId: any(named: 'sourceId'),
+          serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
+        )).thenAnswer((invocation) async {
+      final src = invocation.namedArguments[#sourceId] as String?;
+      final theme = invocation.namedArguments[#theme] as String?;
+      if (src != null) {
+        return _feedWithIds(sourceIds[src] ?? const [], sourceId: src);
+      }
+      if (theme != null) {
+        return _feedWithIds(themeIds[theme] ?? const []);
+      }
+      return _feedWithIds(const []);
+    });
+  }
+
+  Future<ProviderContainer> buildContainer({
+    required UserInterestsState interests,
+    required UserSourcesState sourcesState,
+    required List<Source> catalog,
+    VeilleConfigDto? veilleCfg,
+  }) async {
+    final container = ProviderContainer(
+      overrides: [
+        digestRepositoryProvider.overrideWithValue(digestRepo),
+        feedRepositoryProvider.overrideWithValue(feedRepo),
+        fluxContinuRepositoryProvider.overrideWithValue(fluxRepo),
+        essentielRepositoryProvider
+            .overrideWithValue(_StubEssentielRepository()),
+        userInterestsProvider
+            .overrideWith(() => _StubUserInterestsNotifier(interests)),
+        userSourcesStateProvider
+            .overrideWith(() => _StubUserSourcesStateNotifier(sourcesState)),
+        userSourcesProvider
+            .overrideWith(() => _StubUserSourcesNotifier(catalog)),
+        veilleActiveConfigProvider
+            .overrideWith(() => _StubVeilleActiveConfigNotifier(veilleCfg)),
+        sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+      ],
+    );
+    // Pré-résout les providers lus en `valueOrNull` (synchrone) par le notifier.
+    await container.read(userSourcesStateProvider.future);
+    await container.read(userSourcesProvider.future);
+    await container.read(userInterestsProvider.future);
+    await container.read(veilleActiveConfigProvider.future);
+    // L'ordre Tournée se charge async depuis SharedPreferences dans le ctor du
+    // StateNotifier : on l'instancie puis on draine la queue pour que le `build`
+    // du FluxContinuNotifier lise l'ordre seedé (et pas l'état vide initial).
+    container.read(tourneeOrderPrefsProvider);
+    await pumpEventQueue();
+    return container;
+  }
+
+  Source _source(String id, {String? theme, String? logoUrl}) => Source(
+        id: id,
+        name: 'Source $id',
+        type: SourceType.article,
+        theme: theme,
+        logoUrl: logoUrl,
+      );
+
+  List<FeedThemeSection> favoriteSections(ProviderContainer container) {
+    final state = container.read(fluxContinuProvider).requireValue;
+    return state.sections.whereType<FeedThemeSection>().toList();
+  }
+
+  test('cap d\'affichage 5 : 3 thèmes + 3 sources + veille (7 candidats) → '
+      'seulement 5 sections, veille (en queue par défaut) coupée', () async {
+    stubFeed(
+      themeIds: {
+        'society': ['s1', 's2'],
+        'culture': ['c1', 'c2'],
+        'economy': ['e1', 'e2'],
+      },
+      sourceIds: {
+        'a': ['a1'],
+        'b': ['b1'],
+        'c': ['c9'],
+      },
+    );
+    final container = await buildContainer(
+      interests: _interestsState(favorites: [
+        ThemeFavoriteRef(slug: 'society'),
+        ThemeFavoriteRef(slug: 'culture'),
+        ThemeFavoriteRef(slug: 'economy'),
+      ]),
+      sourcesState: _sourcesState(favorites: [
+        SourceFavoriteRef(sourceId: 'a', position: 0),
+        SourceFavoriteRef(sourceId: 'b', position: 1),
+        SourceFavoriteRef(sourceId: 'c', position: 2),
+      ]),
+      catalog: [_source('a'), _source('b'), _source('c')],
+      veilleCfg: _veilleCfg(),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(fluxContinuProvider.future);
+    final sections = favoriteSections(container);
+
+    expect(sections, hasLength(5),
+        reason: 'cap d\'affichage de la Tournée = 5');
+    expect(sections.where((s) => s.kind == SectionKind.veille), isEmpty,
+        reason: 'ordre par défaut thèmes→sources→veille → veille en 7e, coupée');
+    // Ordre par défaut : 3 thèmes puis 2 sources (a, b) ; c et veille tombent.
+    expect(
+      sections.map((s) => s.kind).toList(),
+      [
+        SectionKind.theme,
+        SectionKind.theme,
+        SectionKind.theme,
+        SectionKind.source,
+        SectionKind.source,
+      ],
+    );
+    expect(
+      sections.where((s) => s.kind == SectionKind.source).map((s) => s.sourceId),
+      ['a', 'b'],
+    );
+  });
+
+  test('ordre explicite réordonne le bloc (source avant thème)', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'tournee_order_v1': ['source:s1', 'theme:society'],
+    });
+    stubFeed(
+      themeIds: {'society': ['t1', 't2']},
+      sourceIds: {'s1': ['x1', 'x2']},
+    );
+    final container = await buildContainer(
+      interests:
+          _interestsState(favorites: [ThemeFavoriteRef(slug: 'society')]),
+      sourcesState: _sourcesState(
+        favorites: [SourceFavoriteRef(sourceId: 's1', position: 0)],
+      ),
+      catalog: [_source('s1')],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(fluxContinuProvider.future);
+    final sections = favoriteSections(container);
+
+    final sourceIdx = sections.indexWhere((s) => s.kind == SectionKind.source);
+    final themeIdx = sections.indexWhere((s) => s.kind == SectionKind.theme);
+    expect(sourceIdx, isNonNegative);
+    expect(themeIdx, isNonNegative);
+    expect(sourceIdx, lessThan(themeIdx),
+        reason: 'l\'ordre prefs place la source avant le thème');
+  });
+
+  test('veille en tête d\'ordre : présente dans le cap, un autre item tombe',
+      () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'tournee_order_v1': ['veille'],
+    });
+    stubFeed(
+      themeIds: {
+        'society': ['s1', 's2'],
+        'culture': ['c1', 'c2'],
+        'economy': ['e1', 'e2'],
+      },
+      sourceIds: {
+        'a': ['a1'],
+        'b': ['b1'],
+        'c': ['c9'],
+      },
+    );
+    final container = await buildContainer(
+      interests: _interestsState(favorites: [
+        ThemeFavoriteRef(slug: 'society'),
+        ThemeFavoriteRef(slug: 'culture'),
+        ThemeFavoriteRef(slug: 'economy'),
+      ]),
+      sourcesState: _sourcesState(favorites: [
+        SourceFavoriteRef(sourceId: 'a', position: 0),
+        SourceFavoriteRef(sourceId: 'b', position: 1),
+        SourceFavoriteRef(sourceId: 'c', position: 2),
+      ]),
+      catalog: [_source('a'), _source('b'), _source('c')],
+      veilleCfg: _veilleCfg(),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(fluxContinuProvider.future);
+    final sections = favoriteSections(container);
+
+    expect(sections, hasLength(5));
+    expect(sections.first.kind, SectionKind.veille,
+        reason: 'veille remontée en tête par l\'ordre prefs');
+  });
+
+  test('sujet personnalisé favori : exclu de la Tournée (Flâner-only)',
+      () async {
+    stubFeed(
+      themeIds: {'society': ['t1', 't2']},
+      // Un feed existe pour le sujet perso : il ne doit JAMAIS être fetché ni
+      // composé puisque les custom topics sont exclus avant la résolution.
+      sourceIds: const {},
+    );
+    final container = await buildContainer(
+      interests: _interestsState(favorites: [
+        ThemeFavoriteRef(slug: 'society'),
+        CustomTopicFavoriteRef(id: 'ct1'),
+      ]),
+      sourcesState: _sourcesState(),
+      catalog: const [],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(fluxContinuProvider.future);
+    final sections = favoriteSections(container);
+
+    expect(sections.where((s) => s.kind == SectionKind.theme), hasLength(1),
+        reason: 'seul le thème society survit');
+    expect(sections.where((s) => s.customTopicId != null), isEmpty,
+        reason: 'aucune section issue d\'un sujet perso');
+  });
+
+  test('veilleHidden : pas de section veille même avec config active',
+      () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'tournee_veille_hidden_v1': true,
+    });
+    stubFeed(themeIds: {'society': ['t1', 't2']});
+    final container = await buildContainer(
+      interests:
+          _interestsState(favorites: [ThemeFavoriteRef(slug: 'society')]),
+      sourcesState: _sourcesState(),
+      catalog: const [],
+      veilleCfg: _veilleCfg(),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(fluxContinuProvider.future);
+    final sections = favoriteSections(container);
+
+    expect(sections.where((s) => s.kind == SectionKind.veille), isEmpty,
+        reason: 'veille masquée par veilleHidden');
+    expect(sections.where((s) => s.kind == SectionKind.theme), hasLength(1));
+  });
+}

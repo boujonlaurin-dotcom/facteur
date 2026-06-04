@@ -15,6 +15,7 @@ import '../features/feed/widgets/perspectives_bottom_sheet.dart'
     show Perspective;
 import '../features/flux_continu/screens/digest_section_screen.dart';
 import '../features/flux_continu/screens/flux_continu_screen.dart';
+import '../features/flux_continu/screens/source_section_screen.dart';
 import '../features/flux_continu/screens/theme_section_screen.dart';
 import '../features/flux_continu/models/flux_continu_models.dart';
 import '../features/flux_continu/services/tournee_progress_service.dart';
@@ -345,6 +346,23 @@ final routerProvider = Provider<GoRouter>((ref) {
                       return FullSwipeCupertinoPage(
                         child: DigestSectionScreen(
                           sectionKeyValue: key,
+                          initialSection: section,
+                        ),
+                      );
+                    },
+                  ),
+                  // PR « Sources dans la Tournée » — détail d'une section source
+                  // (curation complète). Miroir de `theme/:key` ; le param `:id`
+                  // est le sectionKey complet (`source:<uuid>`).
+                  GoRoute(
+                    path: 'source/:id',
+                    parentNavigatorKey: NotificationService.navigatorKey,
+                    pageBuilder: (context, state) {
+                      final id = state.pathParameters['id']!;
+                      final section = state.extra as FeedThemeSection?;
+                      return FullSwipeCupertinoPage(
+                        child: SourceSectionScreen(
+                          sectionKeyValue: id,
                           initialSection: section,
                         ),
                       );

@@ -10,6 +10,7 @@ import 'package:facteur/features/flux_continu/widgets/flux_continu_article_card.
 import 'package:facteur/features/flux_continu/widgets/plus_de_button.dart';
 import 'package:facteur/features/flux_continu/widgets/section_block.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
+import 'package:facteur/features/sources/widgets/source_logo_avatar.dart';
 
 Widget _wrap(Widget child) {
   return MaterialApp(
@@ -65,9 +66,65 @@ FeedThemeSection _themeSection({
   );
 }
 
+FeedThemeSection _sourceSection({
+  int items = 3,
+  String? logoUrl = 'https://logo.test/x.png',
+}) {
+  return FeedThemeSection(
+    kind: SectionKind.source,
+    label: 'Le Monde',
+    accent: const Color(0xFF8E44AD),
+    coreVisibleCount: 3,
+    sourceId: 'src1',
+    sourceLogoUrl: logoUrl,
+    items: List.generate(items, (i) => _content('c$i')),
+    hasMore: false,
+  );
+}
+
 void main() {
   setUpAll(() {
     GoogleFonts.config.allowRuntimeFetching = false;
+  });
+
+  group('SectionBlock — section source (PR Sources dans la Tournée)', () {
+    testWidgets('hero rend le logo source (SourceLogoAvatar) avec les cartes',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 3),
+          isOpen: false,
+          onToggleMore: () {},
+          onTapArticle: (_, __) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      // Logo source rendu dans le hero (pas d'illustration thème).
+      expect(find.byType(SourceLogoAvatar), findsOneWidget);
+      expect(find.byType(FluxContinuArticleCard), findsNWidgets(3));
+      // Le titre du hero = nom de la source.
+      expect(find.text('Le Monde'), findsOneWidget);
+    });
+
+    testWidgets(
+        'source sans article : état vide TOUJOURS visible + CTA curation',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 0),
+          isOpen: false,
+          onToggleMore: () {},
+          onTapArticle: (_, __) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      // Aucune carte, mais la section reste rendue avec son état vide + CTA.
+      expect(find.byType(FluxContinuArticleCard), findsNothing);
+      expect(find.text('Voir toute la curation'), findsOneWidget);
+      expect(find.byType(SourceLogoAvatar), findsOneWidget);
+    });
   });
 
   group('SectionBlock — coreVisibleCount slice', () {

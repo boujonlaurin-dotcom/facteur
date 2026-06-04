@@ -125,6 +125,12 @@ class SectionBlock extends StatelessWidget {
           accent: section.accent,
           blurb: section.blurb,
           illustrationAsset: section.illustrationAsset,
+          // PR « Sources dans la Tournée » — hero logo source à la place de
+          // l'illustration thème.
+          logoUrl: section is FeedThemeSection &&
+                  section.kind == SectionKind.source
+              ? section.sourceLogoUrl
+              : null,
           onTapFold: onFold,
           onTapFavorite: onTapFavorite,
           onTapSettings: onTapSettings,
@@ -228,6 +234,13 @@ class SectionBlock extends StatelessWidget {
         if (items.isEmpty && section.kind == SectionKind.veille) {
           return [_VeilleEmptyState(onTapSettings: onTapSettings)];
         }
+        // PR « Sources dans la Tournée » — section source **toujours visible**
+        // même sans article frais : placeholder + CTA vers la curation
+        // complète de la source (qui contient souvent des articles plus
+        // anciens). Décision PO : ne jamais masquer une source favorite.
+        if (items.isEmpty && section.kind == SectionKind.source) {
+          return [_SourceEmptyState(sourceName: section.label, onSeeAll: onSeeAll)];
+        }
         final visible = items.take(coreVisibleCount).toList();
         return [
           for (var i = 0; i < visible.length; i++)
@@ -286,6 +299,57 @@ class _VeilleEmptyState extends StatelessWidget {
                 onPressed: onTapSettings,
                 icon: const Icon(Icons.tune_rounded, size: 16),
                 label: const Text('Régler ma veille'),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF2C3E50),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 36),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// PR « Sources dans la Tournée » — état vide/low d'une section source (source
+/// favorite sans article frais dans la fenêtre). Garde la section visible et
+/// renvoie vers la curation complète de la source.
+class _SourceEmptyState extends StatelessWidget {
+  final String sourceName;
+  final VoidCallback? onSeeAll;
+  const _SourceEmptyState({required this.sourceName, this.onSeeAll});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE6E1D6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Rien de neuf récemment chez $sourceName.',
+            style: const TextStyle(
+              fontSize: 14,
+              height: 1.4,
+              color: Color(0xFF5D5B5A),
+            ),
+          ),
+          if (onSeeAll != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: onSeeAll,
+                icon: const Icon(Icons.library_books_outlined, size: 16),
+                label: const Text('Voir toute la curation'),
                 style: TextButton.styleFrom(
                   foregroundColor: const Color(0xFF2C3E50),
                   padding: const EdgeInsets.symmetric(horizontal: 8),

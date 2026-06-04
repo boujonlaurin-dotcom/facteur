@@ -26,7 +26,7 @@ import '../../veille/providers/veille_active_config_provider.dart';
 import '../../veille/providers/veille_repository_provider.dart';
 import '../models/user_interests_state.dart';
 import '../providers/user_interests_provider.dart';
-import '../widgets/favorites_reorderable_section.dart';
+import '../../flux_continu/widgets/tournee_composer_sheet.dart';
 import '../widgets/interest_state_picker_sheet.dart';
 
 const Map<String, String> _apiSlugToMacroLabel = {
@@ -289,42 +289,17 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
             ),
           ),
           if (!sereinMode) ...[
-            FavoritesReorderableSection<FavoriteRef>(
-              items: interests.favorites
-                  .where((f) => f is! CustomTopicFavoriteRef)
-                  .toList(),
-              keyOf: (ref) => ValueKey('${ref.kind}:${ref.targetId}'),
-              itemBuilder: (context, refItem) => _FavoriteRow(
-                refItem: refItem,
-                interests: interests,
-                onTap: () {
-                  if (refItem is VeilleFavoriteRef) {
-                    _showVeilleMenu(refItem);
-                  } else {
-                    _pickState(
-                      title: _labelFor(refItem, interests),
-                      refTarget: refItem,
-                      currentState: InterestState.favorite,
-                    );
-                  }
-                },
+            // Story « Sources dans la Tournée » — la gestion des favoris
+            // (thèmes + sources + veille, ordre libre, cap 5) est centralisée
+            // dans « Composer ma Tournée ». L'ancienne liste reorderable inline
+            // est remplacée par ce point d'entrée unique.
+            const ComposeTourneeButton(
+              padding: EdgeInsets.fromLTRB(
+                FacteurSpacing.space4,
+                0,
+                FacteurSpacing.space4,
+                FacteurSpacing.space2,
               ),
-              onReorder: (reordered) async {
-                try {
-                  await ref
-                      .read(userInterestsProvider.notifier)
-                      .reorderFavorites(reordered);
-                } catch (e) {
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content:
-                          Text('Impossible de réordonner les favoris.'),
-                      duration: Duration(seconds: 3),
-                    ),
-                  );
-                }
-              },
             ),
             _PinnedTopicsSection(
               pinned: interests.favorites
@@ -345,6 +320,35 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                 ref.watch(veilleActiveConfigProvider).valueOrNull == null)
               _CreateVeilleCta(
                 onTap: () => context.pushNamed(RouteNames.veilleConfig),
+              )
+            // Veille active → on garde un point d'entrée « Gérer ma veille »
+            // (modifier / archiver) puisque la liste favoris inline a disparu
+            // au profit de « Composer ma Tournée ».
+            else if (ref.watch(veilleActiveConfigProvider).valueOrNull != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  FacteurSpacing.space4,
+                  0,
+                  FacteurSpacing.space4,
+                  FacteurSpacing.space2,
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      final cfg =
+                          ref.read(veilleActiveConfigProvider).valueOrNull;
+                      if (cfg != null) {
+                        _showVeilleMenu(VeilleFavoriteRef(id: cfg.id));
+                      }
+                    },
+                    icon: Icon(
+                      PhosphorIcons.binoculars(PhosphorIconsStyle.regular),
+                      size: 16,
+                    ),
+                    label: const Text('Gérer ma veille'),
+                  ),
+                ),
               ),
           ],
           if (sereinMode) const _SereinSettingsHeader(),
@@ -420,17 +424,6 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
     );
   }
 
-  String _labelFor(FavoriteRef ref, UserInterestsState interests) {
-    return switch (ref) {
-      ThemeFavoriteRef(:final slug) => _apiSlugToMacroLabel[slug] ?? slug,
-      CustomTopicFavoriteRef(:final id) => interests.customTopics
-              .where((c) => c.id == id)
-              .map((c) => c.topicName)
-              .firstOrNull ??
-          'Sujet',
-      VeilleFavoriteRef() => 'Ma veille',
-    };
-  }
 }
 
 class _HiddenEntry {
@@ -625,98 +618,6 @@ class _SereinSettingsHeader extends StatelessWidget {
                 ],
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FavoriteRow extends StatelessWidget {
-  final FavoriteRef refItem;
-  final UserInterestsState interests;
-  final VoidCallback onTap;
-
-  const _FavoriteRow({
-    required this.refItem,
-    required this.interests,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
-    final (label, emoji) = switch (refItem) {
-      ThemeFavoriteRef(:final slug) => (
-          _apiSlugToMacroLabel[slug] ?? slug,
-          getMacroThemeEmoji(_apiSlugToMacroLabel[slug] ?? ''),
-        ),
-      CustomTopicFavoriteRef(:final id) => (
-          interests.customTopics
-                  .where((c) => c.id == id)
-                  .map((c) => c.topicName)
-                  .firstOrNull ??
-              'Sujet',
-          '',
-        ),
-      VeilleFavoriteRef() => ('Ma veille', ''),
-    };
-
-    final isVeille = refItem is VeilleFavoriteRef;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: FacteurSpacing.space2,
-          vertical: FacteurSpacing.space2,
-        ),
-        child: Row(
-          children: [
-            Icon(
-              isVeille
-                  ? PhosphorIcons.binoculars(PhosphorIconsStyle.fill)
-                  : PhosphorIcons.star(PhosphorIconsStyle.fill),
-              color: isVeille ? colors.sectionVeille1 : colors.primary,
-              size: 16,
-            ),
-            const SizedBox(width: 8),
-            if (emoji.isNotEmpty) ...[
-              Text(emoji, style: const TextStyle(fontSize: 14)),
-              const SizedBox(width: 4),
-            ],
-            Expanded(
-              child: Text(
-                label,
-                style: textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colors.textPrimary,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (isVeille) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: colors.sectionVeille1.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'VEILLE',
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.4,
-                    color: colors.sectionVeille1,
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
       ),

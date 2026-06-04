@@ -12,7 +12,10 @@ import '../../feed/models/content_model.dart';
 /// Story 23.2 PR-4 : `veille` ajouté comme 4ème kind. La veille (max 1 par
 /// user à V1) est rendue comme une section dédiée de la Tournée du jour avec
 /// l'accent visuel `sectionVeille1` et un badge "Ma veille".
-enum SectionKind { essentiel, bonnes, theme, veille }
+/// PR « Sources dans la Tournée » : `source` ajouté comme 5ème kind — une
+/// source favorite rendue comme section premium (hero logo + top-3 classé),
+/// réutilisant le payload [FeedThemeSection] (champs `sourceId`/`sourceLogoUrl`).
+enum SectionKind { essentiel, bonnes, theme, veille, source }
 
 /// Stable identity for a section across rebuilds.
 ///
@@ -33,8 +36,15 @@ String sectionKey(FluxSection section) {
   return switch (section) {
     EssentielSection() => 'essentiel_v3',
     DigestTopicSection() => section.kind.name,
-    FeedThemeSection(:final kind, :final themeSlug, :final customTopicId) =>
-      kind == SectionKind.veille
+    FeedThemeSection(
+      :final kind,
+      :final themeSlug,
+      :final customTopicId,
+      :final sourceId,
+    ) =>
+      kind == SectionKind.source
+          ? 'source:${sourceId ?? "unknown"}'
+          : kind == SectionKind.veille
           ? 'veille'
           : customTopicId != null
           ? 'topic:$customTopicId'
@@ -236,6 +246,17 @@ class DigestTopicSection extends FluxSection {
 class FeedThemeSection extends FluxSection {
   final String? themeSlug;
   final String? customTopicId;
+
+  /// UUID de la source quand `kind == SectionKind.source` (PR « Sources dans la
+  /// Tournée »). XOR avec themeSlug/customTopicId. Sert de clé `sectionKey` et
+  /// route le détail vers `/flux-continu/source/:id`.
+  final String? sourceId;
+
+  /// Logo de la source (rendu net dans le hero à la place de l'illustration
+  /// thème). Porté ici plutôt qu'un `Source` complet pour éviter une dépendance
+  /// du modèle au feature `sources`.
+  final String? sourceLogoUrl;
+
   final List<Content> items;
 
   /// Last page already fetched and appended into [items]. Starts at 1 (the
@@ -258,6 +279,8 @@ class FeedThemeSection extends FluxSection {
     required this.items,
     this.themeSlug,
     this.customTopicId,
+    this.sourceId,
+    this.sourceLogoUrl,
     this.currentPage = 1,
     this.hasMore = true,
     this.isLoadingMore = false,
@@ -282,6 +305,8 @@ class FeedThemeSection extends FluxSection {
       items: items ?? this.items,
       themeSlug: themeSlug,
       customTopicId: customTopicId,
+      sourceId: sourceId,
+      sourceLogoUrl: sourceLogoUrl,
       currentPage: currentPage ?? this.currentPage,
       hasMore: hasMore ?? this.hasMore,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,

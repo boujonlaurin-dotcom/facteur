@@ -10,15 +10,12 @@ import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../../../shared/widgets/states/laurin_fallback_view.dart';
 
 import '../../my_interests/models/user_interests_state.dart' show InterestState;
-import '../../my_interests/models/user_sources_state.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
-import '../../../config/constants.dart';
+import '../../flux_continu/widgets/tournee_composer_sheet.dart';
 import '../../my_interests/widgets/interest_state_picker_sheet.dart';
 import '../../settings/providers/paid_content_provider.dart';
 import '../models/source_model.dart';
-import '../models/source_theme_filters.dart';
 import '../providers/sources_providers.dart';
-import '../widgets/pepites_carousel.dart';
 import '../widgets/source_list_item.dart';
 
 class SourcesScreen extends ConsumerStatefulWidget {
@@ -36,12 +33,25 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   bool _isSearching = false;
   // Collapsible section state (open by default)
   bool _premiumExpanded = true;
-  bool _followedExpanded = true;
+  bool _customExpanded = true;
+  bool _curatedExpanded = true;
   bool _mutedExpanded = true;
 
   // Compteur d'échecs consécutifs : bascule entre FriendlyErrorView et
   // LaurinFallbackView après 2 échecs (pattern de feed_screen.dart).
   int _consecutiveErrorCount = 0;
+
+  static const _themeFilters = <({String? key, String label})>[
+    (key: null, label: 'Toutes'),
+    (key: 'tech', label: 'Tech'),
+    (key: 'society', label: 'Société'),
+    (key: 'environment', label: 'Environnement'),
+    (key: 'economy', label: 'Economie'),
+    (key: 'politics', label: 'Politique'),
+    (key: 'culture', label: 'Culture'),
+    (key: 'science', label: 'Sciences'),
+    (key: 'international', label: 'International'),
+  ];
 
   static const _typeFilters = <({SourceType? key, String label})>[
     (key: null, label: 'Tous'),
@@ -107,7 +117,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final sourcesAsync = ref.watch(userSourcesProvider);
-    final sourcesStateAsync = ref.watch(userSourcesStateProvider);
 
     // Synchronise le compteur d'échecs consécutifs avec l'état du provider —
     // mêmes règles que feed_screen.dart : incrémente sur 1ère AsyncError,
@@ -152,17 +161,15 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
               title: const Text('Sources de confiance'),
               actions: [
                 IconButton(
-                  icon: Icon(
-                    PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
-                  ),
+                  icon: Icon(PhosphorIcons.magnifyingGlass(
+                      PhosphorIconsStyle.regular)),
                   onPressed: () => setState(() => _isSearching = true),
                 ),
                 Stack(
                   children: [
                     IconButton(
                       icon: Icon(
-                        PhosphorIcons.funnel(PhosphorIconsStyle.regular),
-                      ),
+                          PhosphorIcons.funnel(PhosphorIconsStyle.regular)),
                       onPressed: () => _showFilterSheet(colors),
                     ),
                     if (_hasActiveFilter)
@@ -203,18 +210,32 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                   ),
           ),
           data: (sources) {
-            final sourcesState = sourcesStateAsync.value;
+            // Sort alphabetically
+            var allSources = sources.toList()
+              ..sort((a, b) =>
+                  a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
-            var filteredSources = sources.toList();
+            // Apply search filter
             if (_searchQuery.isNotEmpty) {
-              filteredSources = filteredSources
-                  .where(
-                    (s) => s.name.toLowerCase().contains(
-                          _searchQuery.toLowerCase(),
-                        ),
-                  )
+              allSources = allSources
+                  .where((s) =>
+                      s.name.toLowerCase().contains(_searchQuery.toLowerCase()))
                   .toList();
             }
+
+            if (allSources.isEmpty && _searchQuery.isEmpty) {
+              return _scrollableCenter(
+                Text(
+                  'Aucune source disponible',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                ),
+              );
+            }
+
+            // Apply theme + type filters for display
+            var filteredSources = allSources.toList();
             if (_selectedTheme != null) {
               filteredSources = filteredSources
                   .where((s) => s.theme?.toLowerCase() == _selectedTheme)
@@ -225,59 +246,53 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                   .where((s) => s.type == _selectedType)
                   .toList();
             }
-            filteredSources.sort(_compareByThemeThenName);
+            // Split into 4 groups: premium, custom (non-muted), curated (non-muted), muted
+            final premiumSources = filteredSources
+                .where((s) => s.hasSubscription && !s.isMuted)
+                .toList();
+            final customSources =
+                filteredSources.where((s) => s.isCustom && !s.isMuted).toList();
+            final curatedSources = filteredSources
+                .where((s) => s.isCurated && !s.isMuted)
+                .toList();
+            final mutedSources =
+                filteredSources.where((s) => s.isMuted).toList();
 
-            if (sources.isEmpty && _searchQuery.isEmpty) {
+            final noResults = filteredSources.isEmpty && _hasActiveFilter;
+
+            if (noResults) {
               return _scrollableCenter(
-                Text(
-                  'Aucune source disponible',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyLarge?.copyWith(color: colors.textSecondary),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      PhosphorIcons.funnel(PhosphorIconsStyle.regular),
+                      size: 40,
+                      color: colors.textTertiary,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Aucune source pour ces filtres',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(color: colors.textSecondary),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _selectedTheme = null;
+                          _selectedType = null;
+                        });
+                      },
+                      child: const Text('Réinitialiser les filtres'),
+                    ),
+                    ...mutedSources.map((source) => _buildSourceItem(source)),
+                  ],
                 ),
               );
             }
-
-            final followedNonMuted = filteredSources
-                .where(
-                  (s) => !s.isMuted && _isFollowedSource(s, sourcesState),
-                )
-                .map((s) => s.copyWith(isTrusted: true))
-                .toList();
-
-            final visibleFavoriteIds = followedNonMuted
-                .where((s) => _isFavoriteSource(s, sourcesState))
-                .map((s) => s.id)
-                .toSet();
-            final allFavorites = sourcesState?.favorites ?? const [];
-            final visibleFavorites = allFavorites
-                .where((f) => visibleFavoriteIds.contains(f.sourceId))
-                .toList();
-            final premiumSources = filteredSources
-                .where(
-                  (s) =>
-                      !s.isMuted &&
-                      s.hasSubscription &&
-                      _isFollowedSource(s, sourcesState) &&
-                      !_isFavoriteSource(s, sourcesState),
-                )
-                .map((s) => s.copyWith(isTrusted: true))
-                .toList();
-            final followedSources = followedNonMuted
-                .where(
-                  (s) =>
-                      !s.hasSubscription && !_isFavoriteSource(s, sourcesState),
-                )
-                .toList();
-            final mutedSources = filteredSources
-                .where((s) => s.isMuted)
-                .toList();
-
-            final noFollowedSources =
-                !sources.any((s) => !s.isMuted && _isFollowedSource(s, sourcesState));
-            final noResults = followedNonMuted.isEmpty &&
-                mutedSources.isEmpty &&
-                (_hasActiveFilter || _searchQuery.isNotEmpty);
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -285,97 +300,53 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
               children: [
                 _IntroBlock(colors: colors),
                 const SizedBox(height: 12),
-                const _HidePaidToggleCard(),
-                const SizedBox(height: 4),
-                // Story 22.1 — section Favoris (drag-reorderable, cap 3).
-                if (!noFollowedSources || visibleFavorites.isNotEmpty)
-                  _SourceFavoritesSection(
-                    favorites: visibleFavorites,
-                    allSources: followedNonMuted,
-                    onReorder: (reordered) async {
-                      final messenger = ScaffoldMessenger.of(context);
-                      final reorderedIds =
-                          reordered.map((f) => f.sourceId).toSet();
-                      var reorderedIndex = 0;
-                      final mergedFavorites = [
-                        for (final favorite in allFavorites)
-                          if (reorderedIds.contains(favorite.sourceId))
-                            reordered[reorderedIndex++]
-                          else
-                            favorite,
-                      ];
-                      try {
-                        await ref
-                            .read(userSourcesStateProvider.notifier)
-                            .reorderFavorites(mergedFavorites);
-                      } catch (_) {
-                        if (!mounted) return;
-                        messenger.showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Impossible de réordonner les favoris.',
-                            ),
-                            duration: Duration(seconds: 3),
-                          ),
-                        );
-                      }
-                    },
-                    buildItem: (source) =>
-                        _buildSourceItem(source, sourcesState),
-                  ),
+                // Gestion des favoris (sources + thèmes + veille, ordre libre,
+                // cap 5) centralisée dans « Composer ma Tournée ».
+                const ComposeTourneeButton(),
                 const SizedBox(height: 8),
                 if (premiumSources.isNotEmpty)
                   _buildCollapsibleSection(
-                    title: 'Abonnements premium',
+                    title: 'Mes abonnements Premium',
                     count: premiumSources.length,
                     isExpanded: _premiumExpanded,
                     onToggle: () =>
                         setState(() => _premiumExpanded = !_premiumExpanded),
                     sources: premiumSources,
                     colors: colors,
-                    sourcesState: sourcesState,
                     icon: PhosphorIcons.star(PhosphorIconsStyle.fill),
                   ),
+                const _HidePaidToggleCard(),
                 const SizedBox(height: 8),
-                if (noResults)
-                  _NoSourcesMatchBlock(
-                    hasActiveFilter: _hasActiveFilter,
-                    hasSearchQuery: _searchQuery.isNotEmpty,
-                    onReset: () {
-                      setState(() {
-                        _selectedTheme = null;
-                        _selectedType = null;
-                        _searchController.clear();
-                        _searchQuery = '';
-                      });
-                    },
-                  )
-                else if (noFollowedSources)
-                  const _NoFollowedSourcesBlock()
-                else if (followedSources.isNotEmpty)
+                if (customSources.isNotEmpty)
                   _buildCollapsibleSection(
-                    title: 'Sources suivies',
-                    count: followedSources.length,
-                    isExpanded: _followedExpanded,
+                    title: 'Mes sources personnalisees',
+                    count: customSources.length,
+                    isExpanded: _customExpanded,
                     onToggle: () =>
-                        setState(() => _followedExpanded = !_followedExpanded),
-                    sources: followedSources,
+                        setState(() => _customExpanded = !_customExpanded),
+                    sources: customSources,
                     colors: colors,
-                    sourcesState: sourcesState,
                   ),
-                const SizedBox(height: 8),
-                const PepitesCarousel(alwaysVisible: true),
+                if (curatedSources.isNotEmpty)
+                  _buildCollapsibleSection(
+                    title: 'Sources suggerees',
+                    count: curatedSources.length,
+                    isExpanded: _curatedExpanded,
+                    onToggle: () =>
+                        setState(() => _curatedExpanded = !_curatedExpanded),
+                    sources: curatedSources,
+                    colors: colors,
+                  ),
                 if (mutedSources.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   _buildCollapsibleSection(
-                    title: 'Sources masquées',
+                    title: 'Sources masquees',
                     count: mutedSources.length,
                     isExpanded: _mutedExpanded,
                     onToggle: () =>
                         setState(() => _mutedExpanded = !_mutedExpanded),
                     sources: mutedSources,
                     colors: colors,
-                    sourcesState: sourcesState,
                     icon: PhosphorIcons.eyeSlash(PhosphorIconsStyle.bold),
                     isMuted: true,
                   ),
@@ -423,24 +394,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     );
   }
 
-  bool _isFollowedSource(Source source, UserSourcesState? state) {
-    final sourceState = state?.stateOf(source.id);
-    return source.isTrusted ||
-        sourceState == InterestState.followed ||
-        sourceState == InterestState.favorite;
-  }
-
-  bool _isFavoriteSource(Source source, UserSourcesState? state) {
-    return state?.stateOf(source.id) == InterestState.favorite ||
-        (state?.favorites.any((f) => f.sourceId == source.id) ?? false);
-  }
-
-  static int _compareByThemeThenName(Source a, Source b) {
-    final themeCompare = a.getThemeLabel().compareTo(b.getThemeLabel());
-    if (themeCompare != 0) return themeCompare;
-    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-  }
-
   // ─── Filter bottom sheet ───────────────────────────────────
 
   void _showFilterSheet(FacteurColors colors) {
@@ -451,7 +404,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
       builder: (_) => _FilterSheetContent(
         selectedTheme: _selectedTheme,
         selectedType: _selectedType,
-        themeFilters: sourceThemeFilters,
+        themeFilters: _themeFilters,
         typeFilters: _typeFilters,
         hasActiveFilter: _hasActiveFilter,
         onThemeChanged: (v) => setState(() => _selectedTheme = v),
@@ -473,7 +426,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     required VoidCallback onToggle,
     required List<Source> sources,
     required FacteurColors colors,
-    required UserSourcesState? sourcesState,
     IconData? icon,
     bool isMuted = false,
   }) {
@@ -482,55 +434,60 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onToggle,
-            borderRadius: BorderRadius.circular(FacteurRadius.small),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(2, 12, 2, 10),
-              child: Row(
-                children: [
-                  if (icon != null) ...[
-                    Icon(icon, size: 17, color: titleColor),
-                    const SizedBox(width: 8),
-                  ],
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: titleColor,
-                            fontWeight: FontWeight.w700,
-                          ),
-                    ),
-                  ),
-                  Text(
-                    '$count',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+        GestureDetector(
+          onTap: onToggle,
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Row(
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 16, color: titleColor),
+                  const SizedBox(width: 8),
+                ],
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           color: titleColor,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.bold,
                         ),
                   ),
-                  const SizedBox(width: 8),
-                  AnimatedRotation(
-                    turns: isExpanded ? 0.0 : -0.25,
-                    duration: const Duration(milliseconds: 200),
-                    child: Icon(
-                      PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
-                      size: 15,
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: titleColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                       color: titleColor,
                     ),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 6),
+                AnimatedRotation(
+                  turns: isExpanded ? 0.0 : -0.25,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
+                    size: 14,
+                    color: titleColor,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
         AnimatedCrossFade(
           firstChild: Column(
-            children: sources
-                .map((source) => _buildSourceItem(source, sourcesState))
-                .toList(),
+            children:
+                sources.map((source) => _buildSourceItem(source)).toList(),
           ),
           secondChild: const SizedBox.shrink(),
           crossFadeState:
@@ -542,270 +499,27 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     );
   }
 
-  Widget _buildSourceItem(Source source, UserSourcesState? sourcesState) {
-    final isFavorite =
-        sourcesState?.favorites.any((f) => f.sourceId == source.id) ?? false;
-    final displaySource = source.copyWith(
-      isTrusted: source.isMuted
-          ? source.isTrusted
-          : _isFollowedSource(source, sourcesState),
-    );
+  Widget _buildSourceItem(Source source) {
+    final isFavorite = ref
+            .watch(userSourcesStateProvider)
+            .value
+            ?.favorites
+            .any((f) => f.sourceId == source.id) ??
+        false;
     return SourceListItem(
-      source: displaySource,
+      source: source,
       isFavorite: isFavorite,
-      onPickInterestState: () => _pickSourceState(displaySource),
+      onPickInterestState: () => _pickSourceState(source),
       onTap: () {
         ref
             .read(userSourcesProvider.notifier)
-            .toggleTrust(displaySource.id, displaySource.isTrusted);
+            .toggleTrust(source.id, source.isTrusted);
       },
       onToggleMute: () {
         ref
             .read(userSourcesProvider.notifier)
-            .toggleMute(displaySource.id, displaySource.isMuted);
+            .toggleMute(source.id, source.isMuted);
       },
-    );
-  }
-}
-
-/// Story 22.1 — bloc Favoris pour les sources.
-class _SourceFavoritesSection extends StatelessWidget {
-  final List<SourceFavoriteRef> favorites;
-  final List<Source> allSources;
-  final void Function(List<SourceFavoriteRef> reordered) onReorder;
-  final Widget Function(Source source) buildItem;
-
-  const _SourceFavoritesSection({
-    required this.favorites,
-    required this.allSources,
-    required this.onReorder,
-    required this.buildItem,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
-    final byId = {for (final s in allSources) s.id: s};
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(2, 12, 2, 4),
-          child: Row(
-            children: [
-              Icon(
-                PhosphorIcons.star(PhosphorIconsStyle.fill),
-                size: 17,
-                color: colors.textSecondary,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Favoris',
-                  style: textTheme.titleSmall?.copyWith(
-                    color: colors.textSecondary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Text(
-                '${favorites.length}',
-                style: textTheme.labelMedium?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
-          child: Text(
-            'Les $kFavoriteCap premiers (ordre modifiable) sont dans votre Tournée du jour.',
-            style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
-          ),
-        ),
-        if (favorites.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
-            child: Text(
-              'Aucune source favorite — marquez-en une pour l\'épingler dans Flâner.',
-              style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
-            ),
-          )
-        else
-          ReorderableListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            buildDefaultDragHandles: false,
-            proxyDecorator: (child, index, animation) => child,
-            itemCount: favorites.length,
-            padding: EdgeInsets.zero,
-            itemBuilder: (context, index) {
-              final refItem = favorites[index];
-              final source = byId[refItem.sourceId];
-              if (source == null) {
-                return SizedBox.shrink(
-                    key: ValueKey('source:${refItem.sourceId}'));
-              }
-              final inTour = index < kFavoriteCap;
-              final isTourBoundary =
-                  index == kFavoriteCap && favorites.length > kFavoriteCap;
-              return Column(
-                key: ValueKey('source:${refItem.sourceId}'),
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (isTourBoundary)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Divider(
-                              color: colors.border,
-                              height: 1,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Hors Tournée du jour',
-                            style: textTheme.bodySmall?.copyWith(
-                              color: colors.textTertiary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Divider(
-                              color: colors.border,
-                              height: 1,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  Opacity(
-                    opacity: inTour ? 1.0 : 0.55,
-                    child: Row(
-                      children: [
-                        Expanded(child: buildItem(source)),
-                        ReorderableDragStartListener(
-                          index: index,
-                          child: Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: Icon(
-                              PhosphorIcons.dotsSixVertical(
-                                  PhosphorIconsStyle.regular),
-                              color: colors.textTertiary,
-                              size: 18,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            },
-            onReorder: (oldIndex, newIndex) {
-              final reordered = [...favorites];
-              final adjusted =
-                  newIndex > oldIndex ? newIndex - 1 : newIndex;
-              final moved = reordered.removeAt(oldIndex);
-              reordered.insert(adjusted, moved);
-              onReorder(reordered);
-            },
-          ),
-        const SizedBox(height: 8),
-      ],
-    );
-  }
-}
-
-class _NoFollowedSourcesBlock extends StatelessWidget {
-  const _NoFollowedSourcesBlock();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    return Container(
-      padding: const EdgeInsets.all(FacteurSpacing.space4),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(FacteurRadius.large),
-        border: Border.all(color: colors.surfaceElevated),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            PhosphorIcons.plusCircle(PhosphorIconsStyle.regular),
-            size: 24,
-            color: colors.primary,
-          ),
-          const SizedBox(width: FacteurSpacing.space3),
-          Expanded(
-            child: Text(
-              'Aucune source suivie pour le moment. Ajoutez une source pour personnaliser votre veille.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.textSecondary,
-                    height: 1.35,
-                  ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NoSourcesMatchBlock extends StatelessWidget {
-  final bool hasActiveFilter;
-  final bool hasSearchQuery;
-  final VoidCallback onReset;
-
-  const _NoSourcesMatchBlock({
-    required this.hasActiveFilter,
-    required this.hasSearchQuery,
-    required this.onReset,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final label = hasSearchQuery
-        ? 'Aucune source suivie ne correspond à cette recherche.'
-        : 'Aucune source suivie pour ces filtres.';
-
-    return Container(
-      padding: const EdgeInsets.all(FacteurSpacing.space4),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(FacteurRadius.large),
-        border: Border.all(color: colors.surfaceElevated),
-      ),
-      child: Column(
-        children: [
-          Icon(
-            PhosphorIcons.funnel(PhosphorIconsStyle.regular),
-            size: 34,
-            color: colors.textTertiary,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
-          ),
-          if (hasActiveFilter || hasSearchQuery) ...[
-            const SizedBox(height: 8),
-            TextButton(onPressed: onReset, child: const Text('Réinitialiser')),
-          ],
-        ],
-      ),
     );
   }
 }
@@ -853,7 +567,7 @@ class _FilterSheetContent extends ConsumerWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: colors.textTertiary.withValues(alpha: 0.3),
+                color: colors.textTertiary.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -1003,24 +717,31 @@ class _IntroBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Vos sources de confiance',
-          style: FacteurTypography.serifTitle(
-            colors.textPrimary,
-          ).copyWith(fontSize: 20, height: 1.2),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'Gérez vos préférences par sources. Ajoutez certaines en favoris pour les voir apparaitre plus souvent. Masquez celles que vous souhaitez filtrer de vos flux.',
-          style: textTheme.bodySmall?.copyWith(
-            color: colors.textSecondary,
-            height: 1.45,
+    return Container(
+      padding: const EdgeInsets.all(FacteurSpacing.space4),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+        border: Border.all(color: colors.surfaceElevated),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Vos sources de confiance',
+            style: FacteurTypography.serifTitle(colors.textPrimary)
+                .copyWith(fontSize: 20, height: 1.2),
           ),
-        ),
-      ],
+          const SizedBox(height: 6),
+          Text(
+            'Gérez vos préférences par sources. Ajoutez certaines en favoris pour les voir apparaitre plus souvent. Masquez celles que vous souhaitez filtrer de vos flux.',
+            style: textTheme.bodySmall?.copyWith(
+              color: colors.textSecondary,
+              height: 1.45,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1034,59 +755,75 @@ class _HidePaidToggleCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     final hidePaid = ref.watch(hidePaidContentProvider);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Divider(height: 1, color: colors.surfaceElevated),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: colors.primary.withValues(alpha: 0.10),
+    final borderRadius = BorderRadius.circular(FacteurRadius.large);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Material(
+        color: colors.surface,
+        borderRadius: borderRadius,
+        child: InkWell(
+          onTap: () =>
+              ref.read(hidePaidContentProvider.notifier).toggle(!hidePaid),
+          borderRadius: borderRadius,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: borderRadius,
+              border: Border.all(color: colors.surfaceElevated),
+            ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: FacteurSpacing.space4,
+              vertical: FacteurSpacing.space3,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: colors.primary.withOpacity(0.10),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    PhosphorIcons.lock(PhosphorIconsStyle.regular),
+                    color: colors.primary,
+                    size: 18,
+                  ),
                 ),
-                alignment: Alignment.center,
-                child: Icon(
-                  PhosphorIcons.lock(PhosphorIconsStyle.regular),
-                  color: colors.primary,
-                  size: 18,
+                const SizedBox(width: FacteurSpacing.space3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Masquer les articles payants*',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '*: Sauf abonnements connectés.',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: colors.textSecondary),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: FacteurSpacing.space3),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Masquer les articles payants*',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                    Text(
-                      '*: Sauf abonnements connectés.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.textSecondary,
-                          ),
-                    ),
-                  ],
+                Switch.adaptive(
+                  value: hidePaid,
+                  activeColor: colors.primary,
+                  onChanged: (v) =>
+                      ref.read(hidePaidContentProvider.notifier).toggle(v),
                 ),
-              ),
-              Switch.adaptive(
-                value: hidePaid,
-                activeThumbColor: colors.primary,
-                onChanged: (v) =>
-                    ref.read(hidePaidContentProvider.notifier).toggle(v),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-        Divider(height: 1, color: colors.surfaceElevated),
-      ],
+      ),
     );
   }
 }

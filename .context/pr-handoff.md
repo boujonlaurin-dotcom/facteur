@@ -1,42 +1,52 @@
-feat(flaner): onglets épinglés fiabilisés (cap 10, fix « disparus ») + modal 2 onglets
+feat(tournée): sources favorites en sections dédiées (hero logo + top-3 classé + curation)
 
-Itération v2 de la modal d'épinglage Flâner (suite #748) : 1 bug + 3 évolutions UX
-+ réduction des boutons filtre/recherche. **Mobile/UX only — aucune modif backend.**
+PR 1 de « Sources dans la Tournée ». Une source favorite devient une **vraie section de la
+Tournée** (Flux Continu), cohérente avec les sections thème : hero **nom + grand logo source**,
+**top-3 articles classés** par les mêmes piliers de scoring que les thèmes (fenêtre adaptative
+24→48→72h), dédup inter-sections, et **« Lire plus »** → **curation complète** de la source.
 
 ## Pourquoi
-Quand sources **et** sujets sont épinglés ensemble, des onglets « disparaissent ».
-Cause racine (`favorite_topic_tabs.dart`) : tous les onglets étaient triés par `count`
-(non-lus) décroissant, or les sources ont `count: 0` codé en dur → toute source passait
-derrière tout sujet ayant des non-lus, atterrissait en fin de `ListView` horizontal et
-restait cachée derrière le fade `ShaderMask` (pas de cap, pas d'auto-scroll).
+La Tournée reflétait les thèmes/sujets favoris mais **jamais les sources favorites** (provider
+séparé, consommé seulement par Flâner). Le PO veut des sections source premium dans la Tournée,
+alimentées via le mécanisme de favori existant.
 
-## Quoi
-- **Chantier 1 — Cap 10 + fix « disparus »** (`favorite_topic_tabs.dart`) :
-  `kMaxFavoriteTabs = 10`, **suppression du tri par count** (ordre = insertion puis
-  `applyOrder`, aligné sur la modal), cap appliqué après `applyOrder` avec log du surplus
-  (pas de troncature silencieuse) + log diagnostic des favoris orphelins (desync).
-- **Chantier 2 — Suppression de l'onglet « Tous »** : membre d'enum conservé en no-op.
-  Taper l'onglet actif **vide toute la sélection** (`feed_filter_bar.dart`,
-  `setTopic/Theme/Entity/Source(null)` — corrige l'oubli historique de `setSource(null)`).
-  Suppression de `onTapActiveTabRefresh` + branche `count >= 3`.
-- **Chantier 3 — `+` → engrenage si > 4 onglets** : `_AddFavoritePill` reçoit `showGear`,
-  action inchangée (ouvre la modal).
-- **Chantier 4 — Modal : 2 onglets listes suivies** (`pin_subjects_sheet.dart`) : section
-  ÉPINGLÉS (drag interleaved) **inchangée** ; les listes suivies fusionnent en une zone
-  « SUIVIS » à 2 onglets (`SegmentedButton`). Sujets en **liste à plat** triée alpha (emoji
-  par ligne). Suppression de `_groupByTheme` / `_ThemeGroupHeader` / `pinnableGroups`.
-  Placeholder muet si l'onglet actif est vide.
-- **Point 4 — Boutons filtre + recherche réduits** : `_SearchTrigger` et le bouton filtre
-  (`filter_collapsible_panel.dart`) passent de 38 à 34 px (icônes 16). L'espace horizontal
-  libéré profite à la `ListView` des onglets.
+## Ce que fait la PR
+**Backend** (`recommendation_service.py`, logique seule, **aucune migration**)
+- Élargit le dispatch `is_personalized_theme_mode` (+ son recompute inline dans `_get_candidates`)
+  pour accepter `source_uuid` : `source_id + personalized=true` passe par le PillarScoringEngine
+  (fenêtre adaptative), au lieu de l'early-return chronologique. Le filtre `source_id` restreint déjà
+  le pool à une source, donc la stratification two-phase reste inerte.
+- **Non-régression Flâner** : Flâner appelle `source_id` **sans** `personalized` → reste chronologique.
+
+**Mobile**
+- Modèle : `SectionKind.source` + champs `sourceId`/`sourceLogoUrl` sur `FeedThemeSection`
+  (réutilisé → dédup + rendu cartes + see-all gratuits) ; `sectionKey` → `source:<id>`.
+- Provider : `_pickFavoriteSources` / `_fetchSourceSections` / `_buildSourceSection`
+  (`getFeed(sourceId, personalized:true)`), résolution `Source` via `userSourcesProvider`, compose
+  **thèmes → sources → veille**, refetch sur changement de favoris source. Source vide → section
+  **toujours visible** (parité veille).
+- UI : hero logo **net** (`SourceLogoAvatar.fromUrl`, sans fadeout) ; état vide source + CTA
+  « Voir toute la curation ».
+- Écran détail `/flux-continu/source/:id` : clone de l'écran thème avec **pagination chronologique
+  locale** (curation complète, `personalized:false`), carrousels filtrés `source.id`, **sans** bloc
+  « Explorer de nouvelles sources ».
+
+## Décisions PO
+- Jusqu'à **3 sources** (parité thèmes) — cap intérimaire ; cap-5 unifié + ordre libre = PR 2.
+- Source pauvre → **toujours visible** (état vide), jamais masquée.
+- « Lire plus » = **curation complète chronologique** (pas le top-3 classé).
 
 ## Tests
-- `favorite_topic_tabs_test.dart` : assertions « Tous » retirées ; ajout cap-10,
-  intercalage sujets/sources, sélection vide → aucun onglet actif.
-- `pin_subjects_sheet_test.dart` : liste à plat (en-têtes thème `findsNothing`), 2 segments
-  Sources/Sujets, épinglage 1-tap après bascule.
-- **26/26 tests verts** sur les 3 fichiers ciblés ; `flutter analyze` 0 nouvelle issue.
-- Suite feed : seules régressions = 5 échecs pré-existants `DioException` dans
-  `feed_sources_test.dart` (réseau non mocké, hors scope ; CI = backend only).
+- Backend : `tests/test_personalized_theme_mode.py` — dispatch source, SQL `source_id =` + fenêtre
+  24h en mode scoring, absence de two-phase, source seule reste chronologique. **20 passés.**
+  Suite recommandation : **83 passés.**
+- Mobile : provider (composition/ordre/dédup/empty/cap), widget (hero logo + état vide), modèle
+  (`sectionKey`). **59 passés** ; **143 passés** en non-régression (widgets/models/sources).
+- `flutter analyze` : **0 erreur**.
 
-Story : `docs/stories/core/10.1.sujets-epingles-flaner.md` (section « Itération v2 »).
+## Hors scope (PR 2)
+Modal unifié de composition de la Tournée + cap 5 total (veille incluse) + ordre 100 % libre.
+
+## Limite de vérif locale
+Docker/DB indispo dans ce workspace → curl `/api/feed` live + validation Chrome non exécutés ici
+(à faire via `/validate-feature`). Backend couvert au niveau unitaire (capture SQL).
