@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import unicodedata
-import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -33,17 +33,17 @@ from app.schemas.veille import (
     VeilleAngleSuggestion,
     VeilleConfigResponse,
     VeilleConfigUpsert,
+    VeilleFailedSourceCandidate,
     VeilleFeedArticle,
     VeilleFeedResponse,
     VeilleKeywordResponse,
     VeillePresetResponse,
-    VeilleFailedSourceCandidate,
-    VeilleResolveTopicRequest,
-    VeilleResolveTopicResponse,
+    VeilleResolvedSourceCandidate,
     VeilleResolveSourceCandidate,
     VeilleResolveSourceCandidatesRequest,
     VeilleResolveSourceCandidatesResponse,
-    VeilleResolvedSourceCandidate,
+    VeilleResolveTopicRequest,
+    VeilleResolveTopicResponse,
     VeilleSourceExample,
     VeilleSourceLite,
     VeilleSourceResponse,
@@ -398,9 +398,7 @@ async def resolve_source_candidates(
             continue
 
         existing = (
-            (
-                await db.execute(select(Source).where(Source.feed_url == feed_url))
-            )
+            (await db.execute(select(Source).where(Source.feed_url == feed_url)))
             .scalars()
             .first()
         )
