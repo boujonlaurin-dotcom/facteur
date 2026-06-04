@@ -9,7 +9,15 @@ import uuid
 from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import Date, DateTime, SmallInteger, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -54,6 +62,22 @@ class GrillePuzzle(Base):
     date_affichee: Mapped[str] = mapped_column(String, nullable=False)
     date_court: Mapped[str] = mapped_column(String, nullable=False)
     cancel: Mapped[str] = mapped_column(String, nullable=False)
+    # Snapshot figé de l'article de la tournée matché au mot du jour
+    # (auto-matching par le job digest). Tout nullable : aucun match → le reveal
+    # retombe sur `pourquoi`. FK ON DELETE SET NULL → la purge d'un article ne
+    # casse pas la grille (titre/extrait restent figés ci-dessous).
+    featured_content_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("contents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    featured_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    featured_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    featured_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    featured_source: Mapped[str | None] = mapped_column(Text, nullable=True)
+    featured_matched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False
     )

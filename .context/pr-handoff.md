@@ -1,52 +1,42 @@
-feat(tournée): sources favorites en sections dédiées (hero logo + top-3 classé + curation)
+fix(mot-du-jour): anti-freeze + dico élargi + lien Actu + reveal article réel
 
-PR 1 de « Sources dans la Tournée ». Une source favorite devient une **vraie section de la
-Tournée** (Flux Continu), cohérente avec les sections thème : hero **nom + grand logo source**,
-**top-3 articles classés** par les mêmes piliers de scoring que les thèmes (fenêtre adaptative
-24→48→72h), dédup inter-sections, et **« Lire plus »** → **curation complète** de la source.
+« Mot du jour » (La Grille) — 2 bugs + 2 améliorations remontés en prod par le PO,
+livrés en **une seule PR groupée** (décision PO). Détail : `docs/bugs/bug-mot-du-jour-bugs.md`.
 
-## Pourquoi
-La Tournée reflétait les thèmes/sujets favoris mais **jamais les sources favorites** (provider
-séparé, consommé seulement par Flâner). Le PO veut des sections source premium dans la Tournée,
-alimentées via le mécanisme de favori existant.
+## Part A — Anti-freeze (critique)
+- Timeout dédié 12 s sur `POST grille/today/guess` (override le 30 s global).
+- `submitGuess` : suppression du `rethrow` (source du hang silencieux) → état
+  `networkError` ré-essayable + self-heal `_reconcileToday()` ; clavier réactivé.
+- `_submitGuess` (écran) : plus de future non gérée ; pas de tracking « valide »
+  sur erreur réseau.
+- Backend **idempotent** : re-submit du même dernier mot (partie en cours) ne
+  double-compte pas → retry réseau sûr.
 
-## Ce que fait la PR
-**Backend** (`recommendation_service.py`, logique seule, **aucune migration**)
-- Élargit le dispatch `is_personalized_theme_mode` (+ son recompute inline dans `_get_candidates`)
-  pour accepter `source_uuid` : `source_id + personalized=true` passe par le PillarScoringEngine
-  (fenêtre adaptative), au lieu de l'early-return chronologique. Le filtre `source_id` restreint déjà
-  le pool à une source, donc la stratification two-phase reste inerte.
-- **Non-régression Flâner** : Flâner appelle `source_id` **sans** `personalized` → reste chronologique.
+## Part B — Dictionnaire élargi
+- Asset curé `grille_proper_nouns_fr.txt` (pays/villes/prénoms) → ITALIE, RUSSIE…
+  acceptés. Conjugaisons déjà couvertes par la source existante (vérifié) → pas
+  de 2ᵉ source (Lexique383 écarté : CC BY-SA share-alike). Dico régénéré committé.
 
-**Mobile**
-- Modèle : `SectionKind.source` + champs `sourceId`/`sourceLogoUrl` sur `FeedThemeSection`
-  (réutilisé → dédup + rendu cartes + see-all gratuits) ; `sectionKey` → `source:<id>`.
-- Provider : `_pickFavoriteSources` / `_fetchSourceSections` / `_buildSourceSection`
-  (`getFeed(sourceId, personalized:true)`), résolution `Source` via `userSourcesProvider`, compose
-  **thèmes → sources → veille**, refetch sur changement de favoris source. Source vide → section
-  **toujours visible** (parité veille).
-- UI : hero logo **net** (`SourceLogoAvatar.fromUrl`, sans fadeout) ; état vide source + CTA
-  « Voir toute la curation ».
-- Écran détail `/flux-continu/source/:id` : clone de l'écran thème avec **pagination chronologique
-  locale** (curation complète, `personalized:false`), carrousels filtrés `source.id`, **sans** bloc
-  « Explorer de nouvelles sources ».
+## Part C — Lien Actu du jour
+- `_goToActus` → page complète `…/section/essentiel`.
+- CTA « Lire l'actu du jour » toujours visible dans le jeu.
 
-## Décisions PO
-- Jusqu'à **3 sources** (parité thèmes) — cap intérimaire ; cap-5 unifié + ordre libre = PR 2.
-- Source pauvre → **toujours visible** (état vide), jamais masquée.
-- « Lire plus » = **curation complète chronologique** (pas le top-3 classé).
+## Part D — Reveal lié à un vrai article (auto-matching)
+- Migration additive `gr02_grille_featured_article` (nullable, FK ON DELETE SET NULL).
+- `grille_matcher.py` accroche l'article du digest qui matche le mot (best-effort,
+  hooké dans le job digest, non bloquant, idempotent).
+- `featured*` gated fin de partie ; mobile affiche vrai titre/extrait/source +
+  bouton « Lire l'article » (détail in-app), fallback `pourquoi`.
 
-## Tests
-- Backend : `tests/test_personalized_theme_mode.py` — dispatch source, SQL `source_id =` + fenêtre
-  24h en mode scoring, absence de two-phase, source seule reste chronologique. **20 passés.**
-  Suite recommandation : **83 passés.**
-- Mobile : provider (composition/ordre/dédup/empty/cap), widget (hero logo + état vide), modèle
-  (`sectionKey`). **59 passés** ; **143 passés** en non-régression (widgets/models/sources).
-- `flutter analyze` : **0 erreur**.
+## Vérif
+- 62 tests backend verts + 43 mobile verts. `ruff check/format app/` clean.
+- Alembic : 1 head (`gr02`), upgrade/downgrade round-trip OK sur DB vide.
+- `flutter analyze` clean (hors warning pré-existant carte_cta.dart).
 
-## Hors scope (PR 2)
-Modal unifié de composition de la Tournée + cap 5 total (veille incluse) + ordre 100 % libre.
+## Notes review
+- Migration = zone à risque DB : additive + nullable + FK SET NULL, testée en
+  round-trip. Le Dockerfile rejoue `alembic upgrade head` au boot Railway.
+- Suite mobile complète a ~27 échecs pré-existants hors-scope (Hive/Supabase) ;
+  CI = pytest backend only.
 
-## Limite de vérif locale
-Docker/DB indispo dans ce workspace → curl `/api/feed` live + validation Chrome non exécutés ici
-(à faire via `/validate-feature`). Backend couvert au niveau unitaire (capture SQL).
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

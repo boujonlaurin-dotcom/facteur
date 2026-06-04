@@ -1,6 +1,6 @@
 """Tests endpoint + service de La Grille du jour (Story 24.1)."""
 
-from datetime import date, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -16,7 +16,10 @@ from app.models.grille_game_state import (
     STATUS_SOLVED,
     GrilleGameState,
 )
+from app.models.content import Content
+from app.models.enums import ContentType, SourceType
 from app.models.grille_puzzle import GrillePuzzle
+from app.models.source import Source
 from app.services.grille_service import (
     GameAlreadyFinished,
     GameNotFinished,
@@ -40,7 +43,7 @@ def _override_user(user_id: str):
     return _fake_user
 
 
-async def _make_puzzle(db, *, word="CLIMAT", max_attempts=6, on_date=None):
+async def _make_puzzle(db, *, word="CLIMAT", max_attempts=6, on_date=None, featured=False):
     puzzle = GrillePuzzle(
         puzzle_date=on_date or today_paris(),
         word=word,
@@ -54,6 +57,36 @@ async def _make_puzzle(db, *, word="CLIMAT", max_attempts=6, on_date=None):
         date_court="Test 30 mai",
         cancel="30·05·26",
     )
+    if featured:
+        source = Source(
+            id=uuid4(),
+            name="Le Monde",
+            url="https://lemonde.fr",
+            feed_url=f"https://lemonde.fr/feed-{uuid4()}.xml",
+            type=SourceType.ARTICLE,
+            theme="society",
+            is_active=True,
+            is_curated=False,
+        )
+        db.add(source)
+        await db.flush()
+        content = Content(
+            id=uuid4(),
+            source_id=source.id,
+            title="Accord mondial sur le climat",
+            url="https://exemple.fr/climat",
+            description="Les délégations ont trouvé un terrain d'entente.",
+            published_at=datetime.now(UTC),
+            content_type=ContentType.ARTICLE,
+            guid=f"g-{uuid4()}",
+        )
+        db.add(content)
+        await db.flush()
+        puzzle.featured_content_id = content.id
+        puzzle.featured_title = "Accord mondial sur le climat"
+        puzzle.featured_excerpt = "Les délégations ont trouvé un terrain d'entente."
+        puzzle.featured_url = "https://exemple.fr/climat"
+        puzzle.featured_source = "Le Monde"
     db.add(puzzle)
     await db.commit()
     return puzzle
@@ -216,6 +249,86 @@ async def test_exhaust_attempts_marks_failed(db_session):
     today = await service.get_today(user_id)
     assert today.statut == STATUS_FAILED
     assert today.nbEssais == 2
+
+
+# ----- idempotence du re-submit (anti-freeze) -------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resubmit_same_word_is_idempotent(db_session):
+    # Retry d'une réponse perdue côté réseau : re-POST du même mot ne doit PAS
+    # double-compter l'essai et doit renvoyer les mêmes états.
+    await _make_puzzle(db_session)
+    service = GrilleService(db_session)
+    user_id = str(uuid4())
+
+    first = await service.submit_guess(user_id, "PLACER")
+    second = await service.submit_guess(user_id, "PLACER")
+
+    assert first.valide is True
+    assert second.valide is True
+    assert second.etats == first.etats
+    assert second.nbEssais == first.nbEssais == 1  # +1 une seule fois
+
+    today = await service.get_today(user_id)
+    assert today.nbEssais == 1
+    assert [e.mot for e in today.essais] == ["PLACER"]
+
+
+@pytest.mark.asyncio
+async def test_resubmit_different_word_still_consumes(db_session):
+    # Garde-fou : un mot *différent* après le dernier reste un nouvel essai.
+    await _make_puzzle(db_session)
+    service = GrilleService(db_session)
+    user_id = str(uuid4())
+
+    await service.submit_guess(user_id, "PLACER")
+    await service.submit_guess(user_id, "CALMER")
+
+    today = await service.get_today(user_id)
+    assert today.nbEssais == 2
+
+
+# ----- featured article (gating fin de partie) ------------------------------
+
+
+@pytest.mark.asyncio
+async def test_featured_hidden_while_in_progress(db_session):
+    await _make_puzzle(db_session, featured=True)
+    service = GrilleService(db_session)
+    user_id = str(uuid4())
+
+    today = await service.get_today(user_id)
+    # Gating identique à mot/pourquoi : rien n'est exposé en cours de partie.
+    assert today.featuredContentId is None
+    assert today.featuredTitle is None
+    assert today.featuredExcerpt is None
+
+
+@pytest.mark.asyncio
+async def test_featured_exposed_when_solved(db_session):
+    puzzle = await _make_puzzle(db_session, featured=True)
+    service = GrilleService(db_session)
+    user_id = str(uuid4())
+
+    res = await service.submit_guess(user_id, "CLIMAT")  # solved
+    assert res.featuredTitle == "Accord mondial sur le climat"
+    assert res.featuredContentId == puzzle.featured_content_id
+
+    today = await service.get_today(user_id)
+    assert today.featuredExcerpt is not None
+    assert today.featuredSource == "Le Monde"
+
+
+@pytest.mark.asyncio
+async def test_featured_exposed_on_reveal(db_session):
+    await _make_puzzle(db_session, featured=True)
+    service = GrilleService(db_session)
+    user_id = str(uuid4())
+
+    res = await service.reveal_word(user_id)
+    assert res.featuredTitle == "Accord mondial sur le climat"
+    assert res.featuredUrl == "https://exemple.fr/climat"
 
 
 # ----- reveal (« donner sa langue au chat ») --------------------------------

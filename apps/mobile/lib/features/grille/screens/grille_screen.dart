@@ -131,12 +131,19 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
     notifier.submitGuess().then((_) {
       if (!mounted) return;
       final after = ref.read(grilleProvider).valueOrNull;
+      // En cas d'échec réseau on ne trace pas un essai « valide » (l'essai
+      // n'a pas forcément été consommé côté serveur).
+      if (after?.networkError ?? false) return;
       ref.read(analyticsServiceProvider).trackGrilleGuessSubmitted(
             numero: today.numero,
             essai: essai,
             valide: after?.invalidReason == null,
             raison: after?.invalidReason,
           );
+    }).catchError((_) {
+      // submitGuess n'est plus censé rejeter (l'erreur réseau est portée par
+      // l'état networkError), mais on garde un garde-fou : plus jamais de
+      // future non gérée sur ce flux (cf. bug freeze).
     });
   }
 
@@ -198,9 +205,21 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
             children: [
               GrilleStatusLine(
                 message: _statusMessage(state),
-                isError: state.invalidReason != null,
+                isError: state.invalidReason != null || state.networkError,
               ),
-              // Rappel discret du lien avec l'actu, après 2 essais infructueux.
+              // CTA toujours visible : le lien avec l'Actu du jour ne dépend
+              // plus de 2 échecs préalables.
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: GrilleButton(
+                  label: 'Lire l’actu du jour',
+                  style: GrilleButtonStyle.ghost,
+                  icon: PhosphorIcons.newspaper(),
+                  onPressed: () => _goToActus(today),
+                ),
+              ),
+              // Rappel discret du lien avec l'actu, après 2 essais infructueux
+              // (nudge contextuel complémentaire, cadrage « indice »).
               if (today.nbEssais >= 2 && !today.isFinished)
                 _buildActusHint(context, today),
               const SizedBox(height: 10),
@@ -255,12 +274,28 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
     );
   }
 
-  /// Navigue vers les Actus du jour (flux continu) + trace l'évènement.
+  /// Navigue vers la **page complète** « Actu du jour » (section essentiel du
+  /// flux continu) + trace l'évènement. `fluxContinuProvider` est déjà chargé
+  /// (la Grille s'ouvre depuis l'accueil flux) ; sinon `DigestSectionScreen`
+  /// se ré-hydrate seul via son `ref.watch`.
   void _goToActus(GrilleTodayResponse today) {
     ref.read(analyticsServiceProvider).trackGrilleActusTapped(
           numero: today.numero,
         );
-    context.go(RoutePaths.fluxContinu);
+    context.go('${RoutePaths.fluxContinu}/section/essentiel');
+  }
+
+  /// Ouvre le vrai article accroché au mot du jour (détail in-app) + trace.
+  ///
+  /// `featuredContentId` n'est non-null que si la row `contents` existe encore
+  /// (FK `ON DELETE SET NULL`), donc le détail se charge toujours par id.
+  void _goToArticle(GrilleTodayResponse today) {
+    final id = today.featuredContentId;
+    if (id == null) return;
+    ref.read(analyticsServiceProvider).trackGrilleArticleTapped(
+          numero: today.numero,
+        );
+    context.pushNamed(RouteNames.contentDetail, pathParameters: {'id': id});
   }
 
   /// Confirme « donner sa langue au chat » puis révèle le mot.
@@ -296,6 +331,9 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
   }
 
   String _statusMessage(GrilleState state) {
+    if (state.networkError) {
+      return 'Connexion difficile — réessaie.';
+    }
     switch (state.invalidReason) {
       case 'longueur':
         return 'Il manque des lettres.';
@@ -333,11 +371,20 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
               child: Column(
                 children: [
-                  GrilleButton(
-                    label: 'Lire les actus du jour',
-                    icon: PhosphorIcons.newspaper(),
-                    onPressed: () => _goToActus(today),
-                  ),
+                  // Si un vrai article est accroché au mot, on l'ouvre en
+                  // priorité (détail in-app) ; sinon on garde le CTA générique.
+                  if (today.featuredContentId != null)
+                    GrilleButton(
+                      label: 'Lire l’article',
+                      icon: PhosphorIcons.newspaper(),
+                      onPressed: () => _goToArticle(today),
+                    )
+                  else
+                    GrilleButton(
+                      label: 'Lire l’actu du jour',
+                      icon: PhosphorIcons.newspaper(),
+                      onPressed: () => _goToActus(today),
+                    ),
                   const SizedBox(height: 4),
                   GrilleButton(
                     label: 'Partager ma grille',

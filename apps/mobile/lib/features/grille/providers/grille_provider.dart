@@ -23,6 +23,7 @@ class GrilleState {
     this.invalidNonce = 0,
     this.invalidReason,
     this.revealRow = -1,
+    this.networkError = false,
   });
 
   final GrilleTodayResponse today;
@@ -45,6 +46,11 @@ class GrilleState {
   /// Index de la ligne fraîchement révélée (flip), `-1` si aucune.
   final int revealRow;
 
+  /// Flag **transitoire** : le dernier POST `guess` a échoué côté réseau
+  /// (timeout / connexion). Déclenche un message ré-essayable et réactive le
+  /// clavier ; remis à `false` à la frappe suivante ou sur succès.
+  final bool networkError;
+
   GrilleState copyWith({
     GrilleTodayResponse? today,
     String? draft,
@@ -53,6 +59,7 @@ class GrilleState {
     int? invalidNonce,
     Object? invalidReason = _sentinel,
     int? revealRow,
+    bool? networkError,
   }) {
     return GrilleState(
       today: today ?? this.today,
@@ -64,6 +71,7 @@ class GrilleState {
           ? this.invalidReason
           : invalidReason as String?,
       revealRow: revealRow ?? this.revealRow,
+      networkError: networkError ?? this.networkError,
     );
   }
 
@@ -105,7 +113,13 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
     final clean = letter.toUpperCase();
     if (clean.length != 1) return;
     // Une nouvelle frappe efface l'éventuel état d'erreur précédent.
-    state = AsyncData(s.copyWith(draft: s.draft + clean, invalidReason: null));
+    state = AsyncData(
+      s.copyWith(
+        draft: s.draft + clean,
+        invalidReason: null,
+        networkError: false,
+      ),
+    );
   }
 
   /// Efface la dernière lettre saisie — **sans jamais effacer la 1re lettre
@@ -119,6 +133,7 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
       s.copyWith(
         draft: s.draft.substring(0, s.draft.length - 1),
         invalidReason: null,
+        networkError: false,
       ),
     );
   }
@@ -143,7 +158,7 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
       return;
     }
 
-    state = AsyncData(s.copyWith(submitting: true));
+    state = AsyncData(s.copyWith(submitting: true, networkError: false));
     final mot = s.draft;
     try {
       final res = await _repo.submitGuess(mot);
@@ -169,6 +184,12 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
         nbEssais: res.nbEssais ?? essais.length,
         mot: res.mot ?? after.today.mot,
         pourquoi: res.pourquoi ?? after.today.pourquoi,
+        featuredContentId:
+            res.featuredContentId ?? after.today.featuredContentId,
+        featuredTitle: res.featuredTitle ?? after.today.featuredTitle,
+        featuredExcerpt: res.featuredExcerpt ?? after.today.featuredExcerpt,
+        featuredUrl: res.featuredUrl ?? after.today.featuredUrl,
+        featuredSource: res.featuredSource ?? after.today.featuredSource,
       );
 
       state = AsyncData(
@@ -179,6 +200,7 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
           draft: _initialDraft(updatedToday),
           submitting: false,
           invalidReason: null,
+          networkError: false,
           revealRow: essais.length - 1,
           justFinished: res.isFinished,
         ),
@@ -187,9 +209,39 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
       // Le serveur considère la partie finie : on resynchronise.
       await refresh();
     } catch (e) {
+      // Échec réseau (timeout / connexion). On NE rethrow PAS — un rethrow ici
+      // remontait en future non gérée et laissait le clavier figé (le bug
+      // freeze). On signale l'erreur (ré-essayable) et on réactive le clavier,
+      // puis on tente un self-heal silencieux : si le POST avait atteint le
+      // serveur, l'essai « perdu » réapparaît au re-fetch (le serveur recalcule
+      // les cases dans get_today).
       final after = _current ?? s;
-      state = AsyncData(after.copyWith(submitting: false));
-      rethrow;
+      state = AsyncData(
+        after.copyWith(submitting: false, networkError: true),
+      );
+      await _reconcileToday();
+    }
+  }
+
+  /// Self-heal après un échec réseau : re-`getToday()` sans passer par
+  /// `AsyncLoading` (pour ne pas faire clignoter l'écran). Gardé dans son
+  /// propre try/catch — un échec de réconciliation est sans conséquence,
+  /// l'utilisateur peut simplement réessayer.
+  Future<void> _reconcileToday() async {
+    final s = _current;
+    if (s == null) return;
+    try {
+      final today = await _repo.getToday();
+      final after = _current ?? s;
+      state = AsyncData(
+        after.copyWith(
+          today: today,
+          // La 1re lettre offerte est re-pré-saisie si une ligne neuve s'ouvre.
+          draft: _initialDraft(today),
+        ),
+      );
+    } catch (_) {
+      // Réconciliation best-effort : on garde l'état networkError affiché.
     }
   }
 
@@ -207,6 +259,12 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
         statut: res.statut,
         mot: res.mot,
         pourquoi: res.pourquoi,
+        featuredContentId:
+            res.featuredContentId ?? after.today.featuredContentId,
+        featuredTitle: res.featuredTitle ?? after.today.featuredTitle,
+        featuredExcerpt: res.featuredExcerpt ?? after.today.featuredExcerpt,
+        featuredUrl: res.featuredUrl ?? after.today.featuredUrl,
+        featuredSource: res.featuredSource ?? after.today.featuredSource,
       );
       state = AsyncData(
         after.copyWith(

@@ -39,6 +39,11 @@ _$GrilleTodayResponseImpl _$$GrilleTodayResponseImplFromJson(
       pourquoi: json['pourquoi'] as String?,
       streak: (json['streak'] as num).toInt(),
       prochainMotDansSec: (json['prochainMotDansSec'] as num).toInt(),
+      featuredContentId: json['featuredContentId'] as String?,
+      featuredTitle: json['featuredTitle'] as String?,
+      featuredExcerpt: json['featuredExcerpt'] as String?,
+      featuredUrl: json['featuredUrl'] as String?,
+      featuredSource: json['featuredSource'] as String?,
     );
 
 Map<String, dynamic> _$$GrilleTodayResponseImplToJson(
@@ -60,6 +65,11 @@ Map<String, dynamic> _$$GrilleTodayResponseImplToJson(
       'pourquoi': instance.pourquoi,
       'streak': instance.streak,
       'prochainMotDansSec': instance.prochainMotDansSec,
+      'featuredContentId': instance.featuredContentId,
+      'featuredTitle': instance.featuredTitle,
+      'featuredExcerpt': instance.featuredExcerpt,
+      'featuredUrl': instance.featuredUrl,
+      'featuredSource': instance.featuredSource,
     };
 
 _$GrilleRevealResponseImpl _$$GrilleRevealResponseImplFromJson(
@@ -68,6 +78,11 @@ _$GrilleRevealResponseImpl _$$GrilleRevealResponseImplFromJson(
       statut: json['statut'] as String,
       mot: json['mot'] as String,
       pourquoi: json['pourquoi'] as String,
+      featuredContentId: json['featuredContentId'] as String?,
+      featuredTitle: json['featuredTitle'] as String?,
+      featuredExcerpt: json['featuredExcerpt'] as String?,
+      featuredUrl: json['featuredUrl'] as String?,
+      featuredSource: json['featuredSource'] as String?,
     );
 
 Map<String, dynamic> _$$GrilleRevealResponseImplToJson(
@@ -76,6 +91,11 @@ Map<String, dynamic> _$$GrilleRevealResponseImplToJson(
       'statut': instance.statut,
       'mot': instance.mot,
       'pourquoi': instance.pourquoi,
+      'featuredContentId': instance.featuredContentId,
+      'featuredTitle': instance.featuredTitle,
+      'featuredExcerpt': instance.featuredExcerpt,
+      'featuredUrl': instance.featuredUrl,
+      'featuredSource': instance.featuredSource,
     };
 
 _$GrilleGuessResponseImpl _$$GrilleGuessResponseImplFromJson(
@@ -89,6 +109,11 @@ _$GrilleGuessResponseImpl _$$GrilleGuessResponseImplFromJson(
       nbEssais: (json['nbEssais'] as num?)?.toInt(),
       mot: json['mot'] as String?,
       pourquoi: json['pourquoi'] as String?,
+      featuredContentId: json['featuredContentId'] as String?,
+      featuredTitle: json['featuredTitle'] as String?,
+      featuredExcerpt: json['featuredExcerpt'] as String?,
+      featuredUrl: json['featuredUrl'] as String?,
+      featuredSource: json['featuredSource'] as String?,
     );
 
 Map<String, dynamic> _$$GrilleGuessResponseImplToJson(
@@ -101,6 +126,11 @@ Map<String, dynamic> _$$GrilleGuessResponseImplToJson(
       'nbEssais': instance.nbEssais,
       'mot': instance.mot,
       'pourquoi': instance.pourquoi,
+      'featuredContentId': instance.featuredContentId,
+      'featuredTitle': instance.featuredTitle,
+      'featuredExcerpt': instance.featuredExcerpt,
+      'featuredUrl': instance.featuredUrl,
+      'featuredSource': instance.featuredSource,
     };
 
 _$GrilleDistributionItemImpl _$$GrilleDistributionItemImplFromJson(

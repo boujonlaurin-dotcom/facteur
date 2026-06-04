@@ -52,6 +52,13 @@ class GrilleTodayResponse with _$GrilleTodayResponse {
     String? pourquoi,
     required int streak,
     required int prochainMotDansSec,
+    // Article réel accroché au mot du jour (auto-matching) — peuplé seulement
+    // en fin de partie. `null` → reveal sur `pourquoi` (fallback).
+    String? featuredContentId,
+    String? featuredTitle,
+    String? featuredExcerpt,
+    String? featuredUrl,
+    String? featuredSource,
   }) = _GrilleTodayResponse;
 
   factory GrilleTodayResponse.fromJson(Map<String, dynamic> json) =>
@@ -74,6 +81,11 @@ class GrilleRevealResponse with _$GrilleRevealResponse {
     required String statut,
     required String mot,
     required String pourquoi,
+    String? featuredContentId,
+    String? featuredTitle,
+    String? featuredExcerpt,
+    String? featuredUrl,
+    String? featuredSource,
   }) = _GrilleRevealResponse;
 
   factory GrilleRevealResponse.fromJson(Map<String, dynamic> json) =>
@@ -97,6 +109,11 @@ class GrilleGuessResponse with _$GrilleGuessResponse {
     int? nbEssais,
     String? mot,
     String? pourquoi,
+    String? featuredContentId,
+    String? featuredTitle,
+    String? featuredExcerpt,
+    String? featuredUrl,
+    String? featuredSource,
   }) = _GrilleGuessResponse;
 
   factory GrilleGuessResponse.fromJson(Map<String, dynamic> json) =>
