@@ -66,7 +66,7 @@ UserInterestsState _interestsState({List<FavoriteRef> favorites = const []}) {
     customTopics: const [],
     favorites: favorites,
     favoriteCount: favorites.length,
-    favoriteCap: 3,
+    favoriteCap: 5,
   );
 }
 
@@ -81,7 +81,7 @@ UserSourcesState _sourcesState({List<SourceFavoriteRef> favorites = const []}) {
         .toList(),
     favorites: favorites,
     favoriteCount: favorites.length,
-    favoriteCap: 3,
+    favoriteCap: 5,
   );
 }
 
@@ -202,15 +202,19 @@ void main() {
     return state.sections.whereType<FeedThemeSection>().toList();
   }
 
-  test('une source favorite produit une section kind=source ordonnée après les '
+  test(
+      'une source favorite produit une section kind=source ordonnée après les '
       'thèmes, avec nom + logo', () async {
     stubFeed(
-      themeIds: {'tech': ['t1', 't2']},
-      sourceIds: {'src1': ['a1', 'a2', 'a3']},
+      themeIds: {
+        'tech': ['t1', 't2']
+      },
+      sourceIds: {
+        'src1': ['a1', 'a2', 'a3']
+      },
     );
     final container = await buildContainer(
-      interests:
-          _interestsState(favorites: [ThemeFavoriteRef(slug: 'tech')]),
+      interests: _interestsState(favorites: [ThemeFavoriteRef(slug: 'tech')]),
       sourcesState: _sourcesState(
         favorites: [SourceFavoriteRef(sourceId: 'src1', position: 0)],
       ),
@@ -223,10 +227,8 @@ void main() {
     await container.read(fluxContinuProvider.future);
     final sections = feedSections(container);
 
-    final themeIdx =
-        sections.indexWhere((s) => s.kind == SectionKind.theme);
-    final sourceIdx =
-        sections.indexWhere((s) => s.kind == SectionKind.source);
+    final themeIdx = sections.indexWhere((s) => s.kind == SectionKind.theme);
+    final sourceIdx = sections.indexWhere((s) => s.kind == SectionKind.source);
     expect(themeIdx, isNonNegative, reason: 'section thème attendue');
     expect(sourceIdx, isNonNegative, reason: 'section source attendue');
     expect(sourceIdx, greaterThan(themeIdx),
@@ -239,15 +241,19 @@ void main() {
     expect(src.items.map((c) => c.id), ['a1', 'a2', 'a3']);
   });
 
-  test('dédup inter-sections : un article partagé thème(au-dessus)/source '
+  test(
+      'dédup inter-sections : un article partagé thème(au-dessus)/source '
       'n\'apparaît que dans le thème', () async {
     stubFeed(
-      themeIds: {'tech': ['shared', 't2']},
-      sourceIds: {'src1': ['shared', 'a2']},
+      themeIds: {
+        'tech': ['shared', 't2']
+      },
+      sourceIds: {
+        'src1': ['shared', 'a2']
+      },
     );
     final container = await buildContainer(
-      interests:
-          _interestsState(favorites: [ThemeFavoriteRef(slug: 'tech')]),
+      interests: _interestsState(favorites: [ThemeFavoriteRef(slug: 'tech')]),
       sourcesState: _sourcesState(
         favorites: [SourceFavoriteRef(sourceId: 'src1', position: 0)],
       ),
@@ -266,7 +272,8 @@ void main() {
     expect(source.items.map((c) => c.id), ['a2']);
   });
 
-  test('source sans article frais : section TOUJOURS visible (items vides), '
+  test(
+      'source sans article frais : section TOUJOURS visible (items vides), '
       'jamais masquée', () async {
     stubFeed(
       themeIds: const {},
@@ -284,16 +291,16 @@ void main() {
     await container.read(fluxContinuProvider.future);
     final sections = feedSections(container);
 
-    final source =
-        sections.where((s) => s.kind == SectionKind.source).toList();
+    final source = sections.where((s) => s.kind == SectionKind.source).toList();
     expect(source, hasLength(1),
         reason: 'la section source reste rendue même vide (parité veille)');
     expect(source.first.items, isEmpty);
     expect(source.first.sourceId, 'src1');
   });
 
-  test('plusieurs sources favorites respectent l\'ordre par position et le '
-      'cap (parité thèmes = 3)', () async {
+  test(
+      'plusieurs sources favorites respectent l\'ordre par position et le '
+      'cap (parité thèmes = 5)', () async {
     stubFeed(
       themeIds: const {},
       sourceIds: {
@@ -301,6 +308,8 @@ void main() {
         'b': ['b1', 'b2'],
         'c': ['c1', 'c2'],
         'd': ['d1', 'd2'],
+        'e': ['e1', 'e2'],
+        'f': ['f1', 'f2'],
       },
     );
     final container = await buildContainer(
@@ -310,8 +319,17 @@ void main() {
         SourceFavoriteRef(sourceId: 'a', position: 0),
         SourceFavoriteRef(sourceId: 'b', position: 1),
         SourceFavoriteRef(sourceId: 'd', position: 3),
+        SourceFavoriteRef(sourceId: 'f', position: 5),
+        SourceFavoriteRef(sourceId: 'e', position: 4),
       ]),
-      catalog: [_source('a'), _source('b'), _source('c'), _source('d')],
+      catalog: [
+        _source('a'),
+        _source('b'),
+        _source('c'),
+        _source('d'),
+        _source('e'),
+        _source('f'),
+      ],
     );
     addTearDown(container.dispose);
 
@@ -321,7 +339,7 @@ void main() {
         .map((s) => s.sourceId)
         .toList();
 
-    // Triées par position (a,b,c,d) puis capées à 3 → a,b,c.
-    expect(sources, ['a', 'b', 'c']);
+    // Triées par position (a,b,c,d,e,f) puis capées à 5 → a,b,c,d,e.
+    expect(sources, ['a', 'b', 'c', 'd', 'e']);
   });
 }

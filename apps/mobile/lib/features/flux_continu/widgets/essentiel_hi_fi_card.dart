@@ -135,7 +135,7 @@ class _Header extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'Tes 5 articles du jour, basé sur tes préférences',
+                '5 articles du jour, basé sur tes intérêts',
                 style: FacteurTypography.bodySmall(
                   colors.textSecondary,
                 ).copyWith(height: 1.35),
@@ -543,8 +543,8 @@ class _MediumTile extends StatelessWidget {
                             article.sourceName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style:
-                                FacteurTypography.labelSmall(colors.textTertiary),
+                            style: FacteurTypography.labelSmall(
+                                colors.textTertiary),
                           ),
                         ),
                         // Réserve l'espace de la coche pour qu'elle ne

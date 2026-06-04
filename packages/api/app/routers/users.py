@@ -326,7 +326,7 @@ async def get_top_themes(
     Story 22.1 — la table `user_favorite_interests` (ordre user) prime ; les
     Sujets favoris (custom topics) sont projetés sur leur `slug_parent` pour
     rester compatibles avec le format `TopThemeResponse` (rétrocompat mobile).
-    Story 22.2 — le user peut avoir > 3 favoris, mais seuls les `FAVORITE_CAP`
+    Story 22.2 — le user peut avoir > 5 favoris, mais seuls les `FAVORITE_CAP`
     premiers (par `position` ASC) sont sélectionnés pour la Tournée du jour.
     Les thèmes sans article récent (14 derniers jours) sont exclus du fallback.
     """

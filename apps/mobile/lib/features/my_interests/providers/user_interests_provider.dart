@@ -18,7 +18,7 @@ class UserInterestsNotifier extends AsyncNotifier<UserInterestsState> {
 
   /// Mute l'état d'un Thème ou Sujet. Optimistic + rollback.
   /// Lève [FavoriteCapReachedException] (re-throw) pour que l'appelant affiche
-  /// un snackbar « tu as déjà 3 favoris ».
+  /// un snackbar « tu as déjà 5 favoris ».
   Future<void> setInterestState(
     FavoriteRef refTarget,
     InterestState newState,

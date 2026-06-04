@@ -11,6 +11,7 @@ import 'package:facteur/features/flux_continu/widgets/plus_de_button.dart';
 import 'package:facteur/features/flux_continu/widgets/section_block.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:facteur/features/sources/widgets/source_logo_avatar.dart';
+import 'package:facteur/widgets/design/facteur_image.dart';
 
 Widget _wrap(Widget child) {
   return MaterialApp(
@@ -102,6 +103,7 @@ void main() {
 
       // Logo source rendu dans le hero (pas d'illustration thème).
       expect(find.byType(SourceLogoAvatar), findsOneWidget);
+      expect(find.byType(FacteurImage), findsOneWidget);
       expect(find.byType(FluxContinuArticleCard), findsNWidgets(3));
       // Le titre du hero = nom de la source.
       expect(find.text('Le Monde'), findsOneWidget);

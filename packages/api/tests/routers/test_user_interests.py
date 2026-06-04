@@ -1,6 +1,6 @@
 """Tests des nouveaux endpoints `/api/user/interests` (Story 22.1).
 
-Couvre : GET (liste vide / avec favoris), PATCH (followed→favorite, cap=3 422),
+Couvre : GET (liste vide / avec favoris), PATCH (followed→favorite, cap=5),
 POST /reorder (transactionnel + refus si target n'est pas favorite),
 auto-création de UserInterest si l'user n'avait pas la row.
 """
@@ -47,8 +47,8 @@ async def auth_user(db_session):
 
 @pytest_asyncio.fixture
 async def auth_user_with_themes(db_session, auth_user):
-    """User avec 4 thèmes followed (assez pour pousser le cap=3)."""
-    for slug in ("tech", "society", "culture", "science"):
+    """User avec 6 thèmes followed (assez pour dépasser le cap d'affichage=5)."""
+    for slug in ("tech", "society", "culture", "science", "economy", "politics"):
         db_session.add(
             UserInterest(
                 user_id=auth_user,
@@ -89,9 +89,7 @@ async def test_get_interests_returns_veille_favorite(auth_user, db_session):
     db_session.add(cfg)
     await db_session.flush()
     db_session.add(
-        UserFavoriteInterest(
-            user_id=auth_user, position=0, veille_config_id=cfg.id
-        )
+        UserFavoriteInterest(user_id=auth_user, position=0, veille_config_id=cfg.id)
     )
     await db_session.commit()
 
@@ -130,31 +128,29 @@ async def test_patch_promotes_theme_to_favorite(auth_user_with_themes, db_sessio
 
 
 @pytest.mark.asyncio
-async def test_patch_accepts_more_than_cap_favorites(
-    auth_user_with_themes, db_session
-):
-    """Story 22.2 — cap retiré : un 4e favori est accepté (position=3)."""
+async def test_patch_accepts_more_than_cap_favorites(auth_user_with_themes, db_session):
+    """Story 22.2 — cap retiré : un 6e favori est accepté (position=5)."""
     transport = ASGITransport(app=app)
     with patch(
         "app.routers.user_interests.get_posthog_client", return_value=MagicMock()
     ):
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            for slug in ("tech", "society", "culture"):
+            for slug in ("tech", "society", "culture", "science", "economy"):
                 resp = await ac.patch(
                     "/api/user/interests",
                     json={"kind": "theme", "target_id": slug, "state": "favorite"},
                 )
                 assert resp.status_code == 200, resp.text
 
-            resp4 = await ac.patch(
+            resp6 = await ac.patch(
                 "/api/user/interests",
-                json={"kind": "theme", "target_id": "science", "state": "favorite"},
+                json={"kind": "theme", "target_id": "politics", "state": "favorite"},
             )
-    assert resp4.status_code == 200, resp4.text
-    body = resp4.json()
-    assert body["favorite_count"] == 4
+    assert resp6.status_code == 200, resp6.text
+    body = resp6.json()
+    assert body["favorite_count"] == 6
     positions = sorted(f["position"] for f in body["favorites"])
-    assert positions == [0, 1, 2, 3]
+    assert positions == [0, 1, 2, 3, 4, 5]
 
 
 @pytest.mark.asyncio
@@ -259,7 +255,7 @@ async def test_patch_allows_favorite_for_custom_topic(auth_user, db_session):
 
     Sémantique côté backend identique à un thème favori (state=favorite + ligne
     dans user_favorite_interests). Côté mobile, ces favoris sont affichés dans
-    la section « Sujets épinglés » séparée du top 3 reorderable. La
+    la section « Sujets épinglés » séparée du top 5 reorderable. La
     `priority_multiplier=2.0` synchronisée permet à `feed.py:get_tab_counts`
     d'alimenter les onglets de la section Explorer.
     """
@@ -383,9 +379,9 @@ async def test_patch_allows_followed_for_custom_topic(auth_user, db_session):
 async def test_reorder_rejects_custom_topic(auth_user_with_themes, db_session):
     """Un reorder qui inclut un custom_topic → 422 custom_topic_not_reorderable.
 
-    Le top 3 reorderable de la « Tournée du jour » est réservé aux thèmes et
+    Le top 5 reorderable de la « Tournée du jour » est réservé aux thèmes et
     veilles. Les custom_topic favoris vivent dans la section « Sujets épinglés »
-    séparée et ne sont pas draggable dans le top 3.
+    séparée et ne sont pas draggable dans le top 5.
     """
     topic = UserTopicProfile(
         user_id=auth_user_with_themes,
@@ -424,9 +420,7 @@ async def test_reorder_rejects_custom_topic(auth_user_with_themes, db_session):
 
 
 @pytest.mark.asyncio
-async def test_reorder_rejects_non_favorite_target(
-    auth_user_with_themes, db_session
-):
+async def test_reorder_rejects_non_favorite_target(auth_user_with_themes, db_session):
     """`science` n'est pas favori → reorder doit 422."""
     transport = ASGITransport(app=app)
     with patch(

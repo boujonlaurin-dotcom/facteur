@@ -4,6 +4,7 @@ library;
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../config/constants.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/providers.dart';
 import '../models/user_interests_state.dart';
@@ -108,14 +109,14 @@ class UserInterestsRepository {
   }
 
   /// Traduit 422 `favorite_cap_reached` en [FavoriteCapReachedException].
-  /// Format backend : `{ "detail": { "error": "favorite_cap_reached", "cap": 3 } }`.
+  /// Format backend : `{ "detail": { "error": "favorite_cap_reached", "cap": 5 } }`.
   void _maybeThrowCap(DioException e) {
     if (e.response?.statusCode != 422) return;
     final raw = e.response?.data;
     if (raw is Map && raw['detail'] is Map) {
       final detail = raw['detail'] as Map;
       if (detail['error'] == 'favorite_cap_reached') {
-        final cap = (detail['cap'] as num?)?.toInt() ?? 3;
+        final cap = (detail['cap'] as num?)?.toInt() ?? kFavoriteCap;
         throw FavoriteCapReachedException(cap);
       }
     }

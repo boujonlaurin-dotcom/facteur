@@ -587,7 +587,7 @@ class _StaticUserInterestsNotifier extends UserInterestsNotifier {
         customTopics: _customTopics,
         favorites: _favorites,
         favoriteCount: _favorites.length,
-        favoriteCap: 3,
+        favoriteCap: 5,
       );
 }
 

@@ -40,7 +40,8 @@ class InterestFilterSheet extends ConsumerStatefulWidget {
     BuildContext context, {
     String? currentTopicSlug,
     bool currentIsTheme = false,
-    required void Function(String slug, String name, {bool isTheme, bool isEntity})
+    required void Function(String slug, String name,
+            {bool isTheme, bool isEntity})
         onInterestSelected,
   }) {
     return showModalBottomSheet(
@@ -124,9 +125,8 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final topicsAsync = ref.watch(customTopicsProvider);
-    final favorites =
-        ref.watch(userInterestsProvider).value?.favorites ??
-            const <FavoriteRef>[];
+    final favorites = ref.watch(userInterestsProvider).value?.favorites ??
+        const <FavoriteRef>[];
 
     return Container(
       constraints: BoxConstraints(
@@ -317,8 +317,8 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
                           _FavoritesPromptCta(
                             label: 'Définir mes thèmes favoris',
                             subtitle: quickPicks.isEmpty
-                                ? 'Ajoute-les en favori dans Mes intérêts (top 3 = Tournée du jour)'
-                                : '${quickPicks.length} favori${quickPicks.length > 1 ? "s" : ""} — top 3 affiché dans la Tournée du jour',
+                                ? 'Ajoute-les en favori dans Mes intérêts (top 5 = Tournée du jour)'
+                                : '${quickPicks.length} favori${quickPicks.length > 1 ? "s" : ""} — top 5 affiché dans la Tournée du jour',
                             colors: colors,
                             onTap: () {
                               Navigator.of(context).pop();
@@ -435,8 +435,7 @@ class _FavoriteChipData {
     final isEntity = topic.entityType != null;
     final emoji = isEntity
         ? getEntityTypeEmoji(topic.entityType)
-        : getMacroThemeEmoji(
-            getTopicMacroTheme(topic.slugParent ?? '') ?? '');
+        : getMacroThemeEmoji(getTopicMacroTheme(topic.slugParent ?? '') ?? '');
     return _FavoriteChipData._(
       isTheme: false,
       label: topic.name,

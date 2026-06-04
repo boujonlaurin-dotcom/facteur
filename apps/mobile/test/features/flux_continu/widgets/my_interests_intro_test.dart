@@ -25,7 +25,7 @@ void main() {
         MyInterestsIntro(favoriteCount: 2, onTapManage: () => taps++),
       ));
 
-      expect(find.text('TES 2 THÈMES FAVORIS'), findsOneWidget);
+      expect(find.text('TES 2 FAVORIS DE TOURNÉE'), findsOneWidget);
       expect(find.text('GÉRER'), findsOneWidget);
 
       await tester.tap(find.text('GÉRER'));
@@ -37,7 +37,7 @@ void main() {
       await tester.pumpWidget(_wrap(
         MyInterestsIntro(favoriteCount: 1, onTapManage: () {}),
       ));
-      expect(find.text('TON THÈME FAVORI'), findsOneWidget);
+      expect(find.text('TON FAVORI DE TOURNÉE'), findsOneWidget);
     });
   });
 }

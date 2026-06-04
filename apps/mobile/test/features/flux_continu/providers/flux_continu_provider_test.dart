@@ -57,7 +57,7 @@ UserInterestsState _interestsState({
     customTopics: customTopics,
     favorites: favorites,
     favoriteCount: favorites.length,
-    favoriteCap: 3,
+    favoriteCap: 5,
   );
 }
 
@@ -66,10 +66,9 @@ String _todayKey() {
   // active prefs key still references yesterday so the fold survives across
   // midnight (the digest hasn't regenerated yet).
   final now = DateTime.now();
-  final shifted =
-      (now.hour < 7 || (now.hour == 7 && now.minute < 30))
-          ? now.subtract(const Duration(days: 1))
-          : now;
+  final shifted = (now.hour < 7 || (now.hour == 7 && now.minute < 30))
+      ? now.subtract(const Duration(days: 1))
+      : now;
   final day = shifted.toIso8601String().substring(0, 10);
   return 'flux_continu_folded_$day';
 }
@@ -108,8 +107,7 @@ FeedResponse _feedResponseWithIds(
               source: Source(id: 's', name: 'S', type: SourceType.article),
             ))
         .toList(),
-    pagination:
-        Pagination(page: page, perPage: 10, total: 0, hasNext: hasNext),
+    pagination: Pagination(page: page, perPage: 10, total: 0, hasNext: hasNext),
     carousels: const [],
   );
 }
@@ -360,7 +358,8 @@ void main() {
       expect(notifier.persistQueuedSnapshot(), contains('essentiel'));
     });
 
-    test('unfoldLocally purges _persistQueued and prefs so cold launch '
+    test(
+        'unfoldLocally purges _persistQueued and prefs so cold launch '
         'does not re-fold the section', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
 
@@ -590,7 +589,7 @@ void main() {
       expect(themeSections.single.customTopicId, customId);
     });
 
-    test('3 favorites cap (4th ignored)', () async {
+    test('5 favorites cap (6th ignored)', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       when(() => feedRepo.getFeed(
             page: any(named: 'page'),
@@ -605,7 +604,9 @@ void main() {
           ThemeFavoriteRef(slug: 'tech'),
           ThemeFavoriteRef(slug: 'science'),
           ThemeFavoriteRef(slug: 'culture'),
-          ThemeFavoriteRef(slug: 'economy'), // 4th — must be dropped
+          ThemeFavoriteRef(slug: 'economy'),
+          ThemeFavoriteRef(slug: 'politics'),
+          ThemeFavoriteRef(slug: 'sport'), // 6th — must be dropped
         ]),
       );
       addTearDown(container.dispose);
@@ -615,7 +616,7 @@ void main() {
           .whereType<FeedThemeSection>()
           .map((s) => s.themeSlug)
           .toList();
-      expect(slugs, ['tech', 'science', 'culture']);
+      expect(slugs, ['tech', 'science', 'culture', 'economy', 'politics']);
     });
   });
 
@@ -702,22 +703,24 @@ void main() {
       final pageOneIds = List.generate(10, (i) => 'a${i + 1}');
       final pageTwoIds = List.generate(3, (i) => 'b${i + 1}');
       when(() => feedRepo.getFeed(
-            page: 1,
-            limit: any(named: 'limit'),
-            theme: any(named: 'theme'),
-            serein: any(named: 'serein'),
-            personalized: any(named: 'personalized'),
-          )).thenAnswer((_) async =>
-          _feedResponseWithIds(pageOneIds, page: 1, hasNext: true));
+                page: 1,
+                limit: any(named: 'limit'),
+                theme: any(named: 'theme'),
+                serein: any(named: 'serein'),
+                personalized: any(named: 'personalized'),
+              ))
+          .thenAnswer((_) async =>
+              _feedResponseWithIds(pageOneIds, page: 1, hasNext: true));
       // Load-more fetch (page 2) — 3 new items, hasNext=false (last page).
       when(() => feedRepo.getFeed(
-            page: 2,
-            limit: any(named: 'limit'),
-            theme: any(named: 'theme'),
-            serein: any(named: 'serein'),
-            personalized: any(named: 'personalized'),
-          )).thenAnswer((_) async =>
-          _feedResponseWithIds(pageTwoIds, page: 2, hasNext: false));
+                page: 2,
+                limit: any(named: 'limit'),
+                theme: any(named: 'theme'),
+                serein: any(named: 'serein'),
+                personalized: any(named: 'personalized'),
+              ))
+          .thenAnswer((_) async =>
+              _feedResponseWithIds(pageTwoIds, page: 2, hasNext: false));
 
       final container = makeContainer(
         interests: _interestsState(favorites: const [
@@ -738,8 +741,7 @@ void main() {
           .loadMoreTheme(sectionKey(themeSection));
 
       final after = container.read(fluxContinuProvider).requireValue;
-      final updated =
-          after.sections.whereType<FeedThemeSection>().single;
+      final updated = after.sections.whereType<FeedThemeSection>().single;
       expect(updated.items.map((c) => c.id), [...pageOneIds, ...pageTwoIds]);
       expect(updated.currentPage, 2);
       expect(updated.hasMore, false);
@@ -758,13 +760,15 @@ void main() {
       // bloc "Section suivante".
       SharedPreferences.setMockInitialValues(<String, Object>{});
       when(() => feedRepo.getFeed(
-            page: 1,
-            limit: any(named: 'limit'),
-            theme: any(named: 'theme'),
-            serein: any(named: 'serein'),
-            personalized: any(named: 'personalized'),
-          )).thenAnswer((_) async =>
-          _feedResponseWithIds(const ['a1', 'a2', 'a3'], page: 1, hasNext: true));
+                page: 1,
+                limit: any(named: 'limit'),
+                theme: any(named: 'theme'),
+                serein: any(named: 'serein'),
+                personalized: any(named: 'personalized'),
+              ))
+          .thenAnswer((_) async => _feedResponseWithIds(
+              const ['a1', 'a2', 'a3'],
+              page: 1, hasNext: true));
 
       final container = makeContainer(
         interests: _interestsState(favorites: const [
@@ -785,13 +789,14 @@ void main() {
         () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       when(() => feedRepo.getFeed(
-            page: 1,
-            limit: any(named: 'limit'),
-            theme: any(named: 'theme'),
-            serein: any(named: 'serein'),
-            personalized: any(named: 'personalized'),
-          )).thenAnswer((_) async =>
-          _feedResponseWithIds(const ['a1', 'a2'], page: 1, hasNext: false));
+                page: 1,
+                limit: any(named: 'limit'),
+                theme: any(named: 'theme'),
+                serein: any(named: 'serein'),
+                personalized: any(named: 'personalized'),
+              ))
+          .thenAnswer((_) async => _feedResponseWithIds(const ['a1', 'a2'],
+              page: 1, hasNext: false));
 
       final container = makeContainer(
         interests: _interestsState(favorites: const [

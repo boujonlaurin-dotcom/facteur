@@ -10,10 +10,10 @@ import '../models/user_interests_state.dart';
 /// Habillage de l'état `favorite` dans le picker.
 ///
 /// - [theme] : étoile + "Favori (Tournée du jour)". S'applique aux thèmes et
-///   aux veilles draggable dans le top 3.
+///   aux veilles draggable dans le top 5.
 /// - [pinnedTopic] : punaise + "Épinglé (apparaît dans Explorer)". S'applique
 ///   aux sujets personnalisés qui alimentent les onglets de la section
-///   Explorer sans entrer dans le top 3 de la Tournée du jour.
+///   Explorer sans entrer dans le top 5 de la Tournée du jour.
 enum FavoriteSemantics { theme, pinnedTopic }
 
 class InterestStatePickerSheet extends StatelessWidget {

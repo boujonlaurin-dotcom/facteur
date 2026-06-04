@@ -31,12 +31,13 @@ class _RecorderRepo implements UserInterestsRepository {
       customTopics: [],
       favorites: [],
       favoriteCount: 0,
-      favoriteCap: 3,
+      favoriteCap: 5,
     );
   }
 
   @override
-  Future<UserInterestsState> reorderFavorites(List<FavoriteRef> ordered) async =>
+  Future<UserInterestsState> reorderFavorites(
+          List<FavoriteRef> ordered) async =>
       throw UnimplementedError();
 
   @override
@@ -83,9 +84,8 @@ void main() {
     await service.syncLegacyThemePreferences();
 
     expect(repo.calls.length, 2);
-    final promotedSlugs = repo.calls
-        .map((c) => (c.$1 as ThemeFavoriteRef).slug)
-        .toSet();
+    final promotedSlugs =
+        repo.calls.map((c) => (c.$1 as ThemeFavoriteRef).slug).toSet();
     expect(promotedSlugs, {'tech', 'science'});
     expect(repo.calls.every((c) => c.$2 == InterestState.favorite), isTrue);
   });
@@ -120,7 +120,8 @@ void main() {
       'theme_priority_Technologie': 2.0,
       'theme_priority_Sciences': 2.0,
     });
-    final repo = _RecorderRepo()..throwOnSet = const FavoriteCapReachedException(3);
+    final repo = _RecorderRepo()
+      ..throwOnSet = const FavoriteCapReachedException(5);
     final service = await makeService(repo);
 
     // Ne doit pas crash, et le flag doit être posé in fine.
@@ -145,10 +146,8 @@ void main() {
     await service.syncLegacyThemePreferences();
 
     final prefs = await SharedPreferences.getInstance();
-    final remainingLegacy = prefs
-        .getKeys()
-        .where((k) => k.startsWith('theme_priority_'))
-        .toList();
+    final remainingLegacy =
+        prefs.getKeys().where((k) => k.startsWith('theme_priority_')).toList();
     expect(remainingLegacy, isEmpty);
     expect(prefs.getString('other_key_preserved'), 'keep_me');
     expect(prefs.getBool('interests_v2_legacy_synced'), isTrue);
@@ -169,7 +168,7 @@ void main() {
 
     // La clé UnknownLabel est tout de même purgée (préfixe legacy).
     final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getKeys().where((k) => k.startsWith('theme_priority_')),
-        isEmpty);
+    expect(
+        prefs.getKeys().where((k) => k.startsWith('theme_priority_')), isEmpty);
   });
 }

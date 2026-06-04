@@ -87,14 +87,13 @@ void main() {
       _FakeUserSourcesStateNotifier? sourcesState,
     }) {
       final fake = notifier ?? _FakePepitesNotifier(sources);
-      final fakeSourcesState =
-          sourcesState ??
+      final fakeSourcesState = sourcesState ??
           _FakeUserSourcesStateNotifier(
             const UserSourcesState(
               sources: [],
               favorites: [],
               favoriteCount: 0,
-              favoriteCap: 3,
+              favoriteCap: 5,
             ),
           );
       return ProviderScope(
@@ -151,7 +150,7 @@ void main() {
           sources: [],
           favorites: [],
           favoriteCount: 0,
-          favoriteCap: 3,
+          favoriteCap: 5,
         ),
       );
       await tester.pumpWidget(
@@ -188,7 +187,7 @@ void main() {
               ],
               favorites: [],
               favoriteCount: 0,
-              favoriteCap: 3,
+              favoriteCap: 5,
             ),
           ),
         ),

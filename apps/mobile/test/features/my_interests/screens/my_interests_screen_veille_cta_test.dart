@@ -40,7 +40,7 @@ UserInterestsState _stateWithoutVeille() {
       ThemeFavoriteRef(slug: 'environment'),
     ],
     favoriteCount: 1,
-    favoriteCap: 3,
+    favoriteCap: 5,
   );
 }
 
@@ -53,7 +53,7 @@ UserInterestsState _stateWithVeille() {
       VeilleFavoriteRef(id: 'veille-uuid'),
     ],
     favoriteCount: 2,
-    favoriteCap: 3,
+    favoriteCap: 5,
   );
 }
 

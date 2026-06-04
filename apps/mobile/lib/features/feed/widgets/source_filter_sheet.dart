@@ -57,8 +57,8 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
     final followed = allSources
         .where((s) => (s.isTrusted || s.isCustom) && !s.isMuted)
         .toList();
-    followed.sort(
-        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    followed
+        .sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return followed;
   }
 
@@ -188,8 +188,8 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
                           .map((f) => f.sourceId)
                           .toSet() ??
                       const <String>{};
-                  final favorites = _filterByQuery(
-                      _getFavorites(allSources, favoriteIds));
+                  final favorites =
+                      _filterByQuery(_getFavorites(allSources, favoriteIds));
                   final allFollowed =
                       _filterByQuery(_getFollowedSources(allSources));
 
@@ -257,8 +257,8 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
                           _FavoritesPromptCta(
                             label: 'Définir mes sources favorites',
                             subtitle: favorites.isEmpty
-                                ? 'Ajoute-les en favori dans Mes sources (top 3 = Tournée du jour)'
-                                : '${favorites.length} favori${favorites.length > 1 ? "s" : ""} — top 3 affiché dans la Tournée du jour',
+                                ? 'Ajoute-les en favori dans Mes sources (top 5 = Tournée du jour)'
+                                : '${favorites.length} favori${favorites.length > 1 ? "s" : ""} — top 5 affiché dans la Tournée du jour',
                             colors: colors,
                             onTap: () {
                               Navigator.of(context).pop();
@@ -364,8 +364,10 @@ class _FavoriteChip extends StatelessWidget {
                   width: 16,
                   height: 16,
                   fit: BoxFit.cover,
-                  placeholder: (context) => const SizedBox(width: 16, height: 16),
-                  errorWidget: (context) => const SizedBox(width: 16, height: 16),
+                  placeholder: (context) =>
+                      const SizedBox(width: 16, height: 16),
+                  errorWidget: (context) =>
+                      const SizedBox(width: 16, height: 16),
                 ),
               ),
               const SizedBox(width: 6),
@@ -516,7 +518,8 @@ class _SourceItem extends StatelessWidget {
                 source.name,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: colors.textPrimary,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w400,
                     ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
