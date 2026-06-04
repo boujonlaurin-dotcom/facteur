@@ -7,6 +7,7 @@ import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
+import '../../feed/widgets/explore_section.dart';
 import '../../feed/widgets/feed_carousel.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
@@ -19,11 +20,6 @@ import '../widgets/theme_detail_footer.dart';
 /// articles for the current theme. Mirrors the threshold used on the main
 /// Flux Continu screen so the feel of the infinite scroll is identical.
 const double _kLoadMoreLeadingPx = 800.0;
-
-/// Cap on the number of "Explorer de nouvelles sources" articles surfaced.
-/// Past 6 the block stops being a discovery tease and starts to feel like a
-/// secondary feed — kept short on purpose.
-const int _kDiscoveryItemCap = 6;
 
 /// Full-page view of a Tournée du jour theme section (a `FeedThemeSection`).
 ///
@@ -248,7 +244,7 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
 
     return [
       SliverToBoxAdapter(
-        child: _BlockHeader(label: 'À explorer dans ${section.label}'),
+        child: ExploreBlockHeader(label: 'À explorer dans ${section.label}'),
       ),
       SliverList(
         delegate: SliverChildBuilderDelegate(
@@ -275,16 +271,12 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
     return async.when(
       data: (items) {
         final alreadyShownIds = section.items.map((c) => c.id).toSet();
-        final discovery = items
-            .where((c) =>
-                !c.isFollowedSource && !alreadyShownIds.contains(c.id))
-            .take(_kDiscoveryItemCap)
-            .toList(growable: false);
+        final discovery = pickExploreItems(items, alreadyShownIds);
 
         if (discovery.isNotEmpty) {
           return [
             const SliverToBoxAdapter(
-              child: _BlockHeader(label: 'Explorer de nouvelles sources'),
+              child: ExploreBlockHeader(label: 'Explorer de nouvelles sources'),
             ),
             SliverList(
               delegate: SliverChildBuilderDelegate(
@@ -317,9 +309,9 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
       },
       loading: () => const [
         SliverToBoxAdapter(
-          child: _BlockHeader(label: 'Explorer de nouvelles sources'),
+          child: ExploreBlockHeader(label: 'Explorer de nouvelles sources'),
         ),
-        SliverToBoxAdapter(child: _DiscoverySkeleton()),
+        SliverToBoxAdapter(child: ExploreDiscoverySkeleton()),
       ],
       error: (_, __) => const <Widget>[],
     );
@@ -375,54 +367,6 @@ class _LoadingMoreIndicator extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _BlockHeader extends StatelessWidget {
-  final String label;
-
-  const _BlockHeader({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
-      child: Text(
-        label,
-        style: GoogleFonts.dmSans(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: colors.textPrimary,
-        ),
-      ),
-    );
-  }
-}
-
-class _DiscoverySkeleton extends StatelessWidget {
-  const _DiscoverySkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    return Column(
-      children: List.generate(3, (_) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          child: Container(
-            height: 88,
-            decoration: BoxDecoration(
-              color: colors.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Colors.black.withValues(alpha: 0.04),
-              ),
-            ),
-          ),
-        );
-      }),
     );
   }
 }

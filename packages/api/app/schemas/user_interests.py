@@ -45,6 +45,9 @@ class CustomTopicInterestResponse(BaseModel):
     slug_parent: str
     state: InterestState
     priority_multiplier: float
+    entity_type: str | None = None
+    canonical_name: str | None = None
+    composite_score: float = 0.0
 
     model_config = ConfigDict(from_attributes=True)
 

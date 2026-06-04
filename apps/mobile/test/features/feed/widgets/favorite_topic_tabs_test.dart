@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/custom_topics/models/topic_models.dart';
 import 'package:facteur/features/custom_topics/providers/custom_topics_provider.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/widgets/favorite_topic_tabs.dart';
+import 'package:facteur/features/feed/widgets/filter_collapsible_panel.dart';
 import 'package:facteur/features/my_interests/models/user_interests_state.dart';
 import 'package:facteur/features/my_interests/models/user_sources_state.dart';
 import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
@@ -32,6 +34,19 @@ UserTopicProfile _topic({
     entityType: entityType,
     canonicalName: canonicalName,
     compositeScore: compositeScore,
+  );
+}
+
+CustomTopicInterest _interestFromProfile(UserTopicProfile topic) {
+  return CustomTopicInterest(
+    id: topic.id,
+    topicName: topic.name,
+    slugParent: topic.slugParent ?? topic.id,
+    state: InterestState.favorite,
+    priorityMultiplier: topic.priorityMultiplier,
+    entityType: topic.entityType,
+    canonicalName: topic.canonicalName,
+    compositeScore: topic.compositeScore,
   );
 }
 
@@ -275,7 +290,8 @@ void main() {
         for (var i = 0; i < 6; i++) CustomTopicFavoriteRef(id: 't$i'),
       ];
       final sourceById = {
-        for (var i = 0; i < 6; i++) 's$i': _source(id: 's$i', name: 'Source $i'),
+        for (var i = 0; i < 6; i++)
+          's$i': _source(id: 's$i', name: 'Source $i'),
       };
       final sourceFavorites = [
         for (var i = 0; i < 6; i++)
@@ -324,13 +340,14 @@ void main() {
         for (var i = 0; i < 3; i++) CustomTopicFavoriteRef(id: 't$i'),
       ];
       final sourceById = {
-        for (var i = 0; i < 3; i++) 's$i': _source(id: 's$i', name: 'Source $i'),
+        for (var i = 0; i < 3; i++)
+          's$i': _source(id: 's$i', name: 'Source $i'),
       };
       final sourceFavorites = [
         for (var i = 0; i < 3; i++)
           SourceFavoriteRef(sourceId: 's$i', position: i),
       ];
-      final order = const [
+      const order = [
         'topic:t0',
         'source:s0',
         'topic:t1',
@@ -377,14 +394,19 @@ void main() {
       required Widget child,
       List<UserTopicProfile> topics = const [],
       List<FavoriteRef> favorites = const [],
+      bool throwCustomTopics = false,
     }) {
       return ProviderScope(
         overrides: [
           customTopicsProvider.overrideWith(() {
+            if (throwCustomTopics) return _ThrowingCustomTopicsNotifier();
             return _StaticCustomTopicsNotifier(topics);
           }),
           userInterestsProvider.overrideWith(() {
-            return _StaticUserInterestsNotifier(favorites);
+            return _StaticUserInterestsNotifier(
+              favorites: favorites,
+              customTopics: topics.map(_interestFromProfile).toList(),
+            );
           }),
         ],
         child: MaterialApp(
@@ -438,6 +460,105 @@ void main() {
 
       expect(addCalls, 1);
     });
+
+    testWidgets(
+        'renders favorite subjects from user interests even if custom topics fail',
+        (tester) async {
+      await tester.pumpWidget(host(
+        topics: [_topic(id: 't1', name: 'IA santé', slugParent: 'ai-health')],
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
+        throwCustomTopics: true,
+        child: FavoriteTopicTabs(
+          items: const [],
+          onTabTap: (_, __) {},
+          onTapActiveTab: () {},
+          onAddFavorite: () {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('IA santé'), findsOneWidget);
+    });
+
+    testWidgets(
+        'inactive long tab labels are ellipsized while active label is complete',
+        (tester) async {
+      const inactiveLabel = 'Nom de sujet extrêmement long et difficile';
+      const activeLabel = 'Libellé actif extrêmement long et complet';
+
+      await tester.pumpWidget(host(
+        topics: [
+          _topic(id: 't1', name: inactiveLabel, slugParent: 'inactive'),
+          _topic(id: 't2', name: activeLabel, slugParent: 'active'),
+        ],
+        favorites: const [
+          CustomTopicFavoriteRef(id: 't1'),
+          CustomTopicFavoriteRef(id: 't2'),
+        ],
+        child: FavoriteTopicTabs(
+          items: const [],
+          selectedTopicSlug: 'active',
+          onTabTap: (_, __) {},
+          onTapActiveTab: () {},
+          onAddFavorite: () {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      final inactiveText = tester.widget<Text>(find.text(inactiveLabel));
+      final activeText = tester.widget<Text>(find.text(activeLabel));
+      expect(inactiveText.maxLines, 1);
+      expect(inactiveText.overflow, TextOverflow.ellipsis);
+      expect(activeText.maxLines, 1);
+      expect(activeText.overflow, TextOverflow.visible);
+    });
+  });
+
+  group('FilterCollapsiblePanel', () {
+    testWidgets('funnel lives in collapsed horizontal content and expands',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        theme: FacteurTheme.lightTheme,
+        home: Scaffold(
+          body: FilterCollapsiblePanel(
+            activeCount: 0,
+            chipsRow: const Text('chips row'),
+            leadingTrigger: const Text('search'),
+            collapsedContentBuilder: (filterTrigger) => SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  const Text('Sujet épinglé'),
+                  filterTrigger,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      final funnel = find.byIcon(
+        PhosphorIcons.funnel(PhosphorIconsStyle.regular),
+      );
+      expect(funnel, findsOneWidget);
+      expect(
+        find.ancestor(
+          of: funnel,
+          matching: find.byType(SingleChildScrollView),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(funnel);
+      await tester.pumpAndSettle();
+
+      expect(find.text('chips row'), findsOneWidget);
+      expect(
+        find.byIcon(PhosphorIcons.x(PhosphorIconsStyle.bold)),
+        findsOneWidget,
+      );
+    });
   });
 }
 
@@ -451,16 +572,28 @@ class _StaticCustomTopicsNotifier extends CustomTopicsNotifier {
 }
 
 class _StaticUserInterestsNotifier extends UserInterestsNotifier {
-  _StaticUserInterestsNotifier(this._favorites);
+  _StaticUserInterestsNotifier({
+    required List<FavoriteRef> favorites,
+    required List<CustomTopicInterest> customTopics,
+  })  : _favorites = favorites,
+        _customTopics = customTopics;
 
   final List<FavoriteRef> _favorites;
+  final List<CustomTopicInterest> _customTopics;
 
   @override
   Future<UserInterestsState> build() async => UserInterestsState(
         themes: const [],
-        customTopics: const [],
+        customTopics: _customTopics,
         favorites: _favorites,
         favoriteCount: _favorites.length,
         favoriteCap: 3,
       );
+}
+
+class _ThrowingCustomTopicsNotifier extends CustomTopicsNotifier {
+  @override
+  Future<List<UserTopicProfile>> build() async {
+    throw StateError('customTopicsProvider unavailable');
+  }
 }

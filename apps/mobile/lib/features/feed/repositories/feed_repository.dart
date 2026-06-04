@@ -90,6 +90,7 @@ class FeedRepository {
     bool includeUnfollowed = false,
     bool serein = false,
     bool personalized = false,
+    bool followedOnly = false,
     bool forceFresh = false,
   }) async {
     final result = await getFeedWithRaw(
@@ -107,6 +108,7 @@ class FeedRepository {
       includeUnfollowed: includeUnfollowed,
       serein: serein,
       personalized: personalized,
+      followedOnly: followedOnly,
       forceFresh: forceFresh,
     );
     return result.feed;
@@ -135,6 +137,7 @@ class FeedRepository {
     bool includeUnfollowed = false,
     bool serein = false,
     bool personalized = false,
+    bool followedOnly = false,
     bool forceFresh = false,
   }) async {
     // R5.1 — single-flight + dedupe gate for the default view only.
@@ -147,6 +150,7 @@ class FeedRepository {
         !savedOnly &&
         !hasNote &&
         !personalized &&
+        !followedOnly &&
         contentType == null &&
         mode == null &&
         theme == null &&
@@ -181,6 +185,7 @@ class FeedRepository {
         includeUnfollowed: includeUnfollowed,
         serein: serein,
         personalized: personalized,
+        followedOnly: followedOnly,
       );
       _defaultViewInflight = future;
       try {
@@ -212,6 +217,7 @@ class FeedRepository {
       includeUnfollowed: includeUnfollowed,
       serein: serein,
       personalized: personalized,
+      followedOnly: followedOnly,
     );
   }
 
@@ -230,6 +236,7 @@ class FeedRepository {
     bool includeUnfollowed = false,
     bool serein = false,
     bool personalized = false,
+    bool followedOnly = false,
   }) async {
     try {
       // Le backend renvoie directement une List<dynamic> pour le moment
@@ -284,6 +291,10 @@ class FeedRepository {
 
       if (personalized) {
         queryParams['personalized'] = true;
+      }
+
+      if (followedOnly) {
+        queryParams['followed_only'] = true;
       }
 
       final sw = Stopwatch()..start();

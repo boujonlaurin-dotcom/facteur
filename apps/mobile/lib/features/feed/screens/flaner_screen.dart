@@ -17,6 +17,9 @@ import '../../flux_continu/widgets/section_banner.dart';
 import '../../sources/widgets/pepites_carousel.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
+import '../providers/flaner_discovery_provider.dart';
+import '../widgets/explore_section.dart';
+import '../widgets/favorite_topic_tabs.dart' show FavoriteTabKind;
 import '../widgets/feed_carousel.dart';
 import '../widgets/feed_filter_bar.dart';
 import '../widgets/follow_keyword_suggestion_card.dart';
@@ -205,6 +208,7 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
           _buildFeedList(state),
           if (_loadingMore)
             const SliverToBoxAdapter(child: _LoadingMoreIndicator()),
+          ..._buildExploreSlivers(state),
           const SliverToBoxAdapter(child: SizedBox(height: 92)),
         ],
       ),
@@ -269,6 +273,69 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
           ),
         );
       }, childCount: contents.length + intercalations.length),
+    );
+  }
+
+  /// Bloc « Explorer de nouvelles sources » affiché sous la liste quand un
+  /// onglet de découverte (sujet / thème / entité) est actif. Le bloc principal
+  /// ne montre que les sources suivies (`followed_only`, rapide) ; ces articles
+  /// de sources non-suivies chargent **en parallèle** via
+  /// [flanerDiscoveryProvider] sans bloquer le rendu. Calque la section
+  /// « Explorer » de la page de section de la Tournée.
+  List<Widget> _buildExploreSlivers(FeedState state) {
+    final selection = ref.watch(feedFilterSelectionProvider);
+    final FlanerDiscoveryArg? arg;
+    if (selection.topic != null) {
+      arg = FlanerDiscoveryArg(
+        kind: FavoriteTabKind.subjectTopic,
+        slug: selection.topic!,
+      );
+    } else if (selection.theme != null) {
+      arg = FlanerDiscoveryArg(
+        kind: FavoriteTabKind.theme,
+        slug: selection.theme!,
+      );
+    } else if (selection.entity != null) {
+      arg = FlanerDiscoveryArg(
+        kind: FavoriteTabKind.subjectEntity,
+        slug: selection.entity!,
+      );
+    } else {
+      // Vue par défaut, onglet Source ou mot-clé → pas de bloc Explorer.
+      return const <Widget>[];
+    }
+
+    final async = ref.watch(flanerDiscoveryProvider(arg));
+    return async.when(
+      data: (items) {
+        final alreadyShownIds = state.items.map((c) => c.id).toSet();
+        final discovery = pickExploreItems(items, alreadyShownIds);
+        if (discovery.isEmpty) return const <Widget>[];
+        return [
+          const SliverToBoxAdapter(
+            child: ExploreBlockHeader(label: 'Explorer de nouvelles sources'),
+          ),
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final article = discovery[index];
+                return FluxContinuArticleCard(
+                  article: article,
+                  onTap: () => _openArticle(article),
+                );
+              },
+              childCount: discovery.length,
+            ),
+          ),
+        ];
+      },
+      loading: () => const [
+        SliverToBoxAdapter(
+          child: ExploreBlockHeader(label: 'Explorer de nouvelles sources'),
+        ),
+        SliverToBoxAdapter(child: ExploreDiscoverySkeleton()),
+      ],
+      error: (_, __) => const <Widget>[],
     );
   }
 }

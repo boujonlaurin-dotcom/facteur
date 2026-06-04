@@ -230,6 +230,7 @@ class RecommendationService:
         serein: bool = False,
         include_unfollowed: bool = False,
         personalized: bool = False,
+        followed_only: bool = False,
     ) -> list[Content]:
         """
         Génère un feed personnalisé pour l'utilisateur.
@@ -500,6 +501,9 @@ class RecommendationService:
             # sources + 24h window + boost user_subtopics.
             personalized=personalized,
             user_subtopics=user_subtopics,
+            # Onglets Flâner : restreindre le bloc principal aux sources suivies
+            # (tri chronologique conservé, contrairement à personalized).
+            followed_only=followed_only,
         )
         self.total_candidates = len(candidates)
 
@@ -2375,6 +2379,7 @@ class RecommendationService:
         excluded_topics: list[Any] | None = None,
         personalized: bool = False,
         user_subtopics: set[str] | None = None,
+        followed_only: bool = False,
     ) -> list[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import and_, or_
@@ -2489,6 +2494,16 @@ class RecommendationService:
         elif personalized_theme_mode:
             # Edge: user follows zero sources → fallback curated pour ne pas
             # rendre la section vide.
+            query = query.where(Source.is_curated, Source.source_tier != "deep")
+        elif (theme or topic or entity) and followed_only and followed_source_ids:
+            # Onglets Flâner (sujet/thème/entité) : bloc principal restreint aux
+            # sources suivies → requête rapide, tri chronologique conservé
+            # (personalized reste False). Le bloc « Explorer » charge les sources
+            # non-suivies en parallèle via un appel séparé sans followed_only.
+            query = query.where(Content.source_id.in_(followed_source_ids))
+        elif (theme or topic or entity) and followed_only:
+            # 0 source suivie → repli curé pour ne pas vider le bloc principal
+            # (même sémantique que personalized_theme_mode ci-dessus).
             query = query.where(Source.is_curated, Source.source_tier != "deep")
         elif theme or topic or entity or (keyword and include_unfollowed):
             pass

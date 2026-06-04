@@ -269,6 +269,9 @@ async def test_patch_allows_favorite_for_custom_topic(auth_user, db_session):
         slug_parent="sport",
         state=InterestState.FOLLOWED,
         priority_multiplier=1.0,
+        entity_type="EVENT",
+        canonical_name="Plongée",
+        composite_score=0.42,
     )
     db_session.add(topic)
     await db_session.commit()
@@ -292,6 +295,12 @@ async def test_patch_allows_favorite_for_custom_topic(auth_user, db_session):
         f["kind"] == "custom_topic" and f["target_id"] == str(topic.id)
         for f in body["favorites"]
     )
+    custom_topic = next(
+        t for t in body["custom_topics"] if t["id"] == str(topic.id)
+    )
+    assert custom_topic["entity_type"] == "EVENT"
+    assert custom_topic["canonical_name"] == "Plongée"
+    assert custom_topic["composite_score"] == pytest.approx(0.42)
 
     await db_session.refresh(topic)
     assert topic.state == InterestState.FAVORITE
