@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../config/theme.dart';
 import '../models/weather_snapshot.dart';
 import '../providers/weather_location_provider.dart';
 import '../providers/weather_provider.dart';
+import 'weather_condition_icon.dart';
 
 /// Ouvre la modal météo détaillée (aujourd'hui + prévision 5 jours).
 Future<void> showWeatherDetailSheet(BuildContext context) {
@@ -246,11 +246,7 @@ class _Content extends ConsumerWidget {
             children: [
               Row(
                 children: [
-                  SvgPicture.asset(
-                    'assets/images/weather/${forecast.condition.assetName}.svg',
-                    width: 72,
-                    height: 72,
-                  ),
+                  WeatherConditionIcon(condition: forecast.condition, size: 84),
                   const SizedBox(width: FacteurSpacing.space4),
                   Expanded(
                     child: Column(
@@ -347,11 +343,7 @@ class _DayRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: FacteurSpacing.space2),
-          SvgPicture.asset(
-            'assets/images/weather/${day.condition.assetName}.svg',
-            width: 68,
-            height: 68,
-          ),
+          WeatherConditionIcon(condition: day.condition, size: 76),
           const Spacer(),
           // Max en gros (WeatherDay n'expose pas de temp « actuelle »), avec la
           // plage min/max conservée dessous (décision PO : « quitte à dupliquer
