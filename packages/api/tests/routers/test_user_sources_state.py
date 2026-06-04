@@ -65,12 +65,13 @@ async def auth_user_with_sources(db_session):
 
 @pytest.mark.asyncio
 async def test_get_returns_sources_and_empty_favorites(auth_user_with_sources):
+    _, sources = auth_user_with_sources
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         resp = await ac.get("/api/user/sources")
     assert resp.status_code == 200
     body = resp.json()
-    assert len(body["sources"]) == 4
+    assert len(body["sources"]) == len(sources)
     assert body["favorite_count"] == 0
     assert body["favorite_cap"] == FAVORITE_CAP
 
