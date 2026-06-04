@@ -243,6 +243,8 @@ void main() {
       ));
 
       expect(find.byType(SvgPicture), findsNothing);
+      expect(find.text('Météo'), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_return_rounded), findsOneWidget);
     });
 
     testWidgets(
@@ -288,12 +290,16 @@ void main() {
 
       // Before timer fires → date stamp, no weather icon.
       expect(find.byType(SvgPicture), findsNothing);
+      expect(find.text('Météo'), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_return_rounded), findsOneWidget);
 
       // Advance 2 s → badge flips to weather (icon + min/max visible).
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
       expect(find.byType(SvgPicture), findsOneWidget);
+      expect(find.text('Météo'), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_return_rounded), findsNothing);
       expect(
         find.byWidgetPredicate(
           (widget) =>

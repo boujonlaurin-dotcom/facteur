@@ -3,7 +3,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
@@ -12,6 +11,7 @@ import '../models/flux_continu_models.dart';
 import '../models/weather_snapshot.dart';
 import '../providers/weather_provider.dart';
 import '../utils/theme_color_mapping.dart';
+import 'weather_condition_icon.dart';
 import 'weather_detail_sheet.dart';
 
 /// Carte hi-fi unique "L'Essentiel du jour".
@@ -291,12 +291,8 @@ class _WeatherBadge extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SvgPicture.asset(
-          'assets/images/weather/${forecast.condition.assetName}.svg',
-          width: 90,
-          height: 90,
-        ),
-        const SizedBox(height: 3),
+        WeatherConditionIcon(condition: forecast.condition, size: 95),
+        const SizedBox(height: 2),
         RichText(
           text: TextSpan(
             style: GoogleFonts.courierPrime(
@@ -320,11 +316,11 @@ class _WeatherBadge extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 1),
+        const SizedBox(height: 2),
         Icon(
           Icons.keyboard_arrow_down_rounded,
-          size: 12,
-          color: colors.textTertiary.withValues(alpha: 0.7),
+          size: 16,
+          color: colors.textTertiary,
           semanticLabel: 'Voir la météo détaillée',
         ),
       ],
@@ -345,39 +341,69 @@ class _DateStamp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 60,
-      height: 60,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.transparent,
-        shape: BoxShape.circle,
-        border: Border.all(color: accent, width: 0.7),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            day.toString().padLeft(2, '0'),
-            style: GoogleFonts.courierPrime(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              height: 1.0,
-              color: accent,
-            ),
+    final colors = Theme.of(context).extension<FacteurColors>()!;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 68,
+          height: 68,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            shape: BoxShape.circle,
+            border: Border.all(color: accent, width: 0.7),
           ),
-          Text(
-            month,
-            style: GoogleFonts.courierPrime(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              height: 1.0,
-              letterSpacing: 0.8,
-              color: accent,
-            ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                day.toString().padLeft(2, '0'),
+                style: GoogleFonts.courierPrime(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  height: 1.0,
+                  color: accent,
+                ),
+              ),
+              Text(
+                month,
+                style: GoogleFonts.courierPrime(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  height: 1.0,
+                  letterSpacing: 0.8,
+                  color: accent,
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Météo',
+              style: GoogleFonts.courierPrime(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                height: 1.0,
+                letterSpacing: 0.8,
+                color: colors.textTertiary.withValues(alpha: 0.76),
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(
+              Icons.keyboard_return_rounded,
+              size: 11,
+              color: colors.textTertiary.withValues(alpha: 0.72),
+              semanticLabel: 'Retourner vers la météo',
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
