@@ -85,6 +85,8 @@ class VeilleUnconnectedSource(BaseModel):
 
     url: str
     reason: str
+    client_slug: str | None = None
+    name: str | None = None
 
 
 class VeilleConfigResponse(BaseModel):
@@ -137,6 +139,7 @@ class VeilleNicheCandidate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     url: str = Field(min_length=4, max_length=2048)
     why: str | None = Field(default=None, max_length=500)
+    client_slug: str | None = Field(default=None, max_length=120)
 
 
 class VeilleSourceSelection(BaseModel):
@@ -323,3 +326,43 @@ class VeilleSourceSuggestion(BaseModel):
 
 class VeilleSuggestSourcesResponse(BaseModel):
     sources: list[VeilleSourceSuggestion] = Field(default_factory=list)
+
+
+# ─── Résolution batch de sources candidates (Step 3) ────────────────────────
+
+
+class VeilleResolveSourceCandidate(BaseModel):
+    """Candidat source proposé/local côté mobile, pas encore attaché à la veille."""
+
+    client_slug: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=200)
+    url: str = Field(min_length=4, max_length=2048)
+    why: str | None = Field(default=None, max_length=500)
+
+
+class VeilleResolveSourceCandidatesRequest(BaseModel):
+    candidates: list[VeilleResolveSourceCandidate] = Field(
+        default_factory=list, max_length=12
+    )
+
+
+class VeilleResolvedSourceCandidate(BaseModel):
+    client_slug: str
+    source_id: UUID
+    name: str
+    url: str
+    feed_url: str
+    logo_url: str | None = None
+    description: str | None = None
+
+
+class VeilleFailedSourceCandidate(BaseModel):
+    client_slug: str
+    name: str
+    url: str
+    reason: str
+
+
+class VeilleResolveSourceCandidatesResponse(BaseModel):
+    resolved: list[VeilleResolvedSourceCandidate] = Field(default_factory=list)
+    failed: list[VeilleFailedSourceCandidate] = Field(default_factory=list)

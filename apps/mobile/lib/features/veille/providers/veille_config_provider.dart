@@ -10,6 +10,8 @@ import 'veille_active_config_provider.dart';
 import 'veille_repository_provider.dart';
 import 'veille_themes_provider.dart';
 
+enum VeilleSourceConnectionStatus { pending, connected, failed }
+
 /// Métadonnées attachées à une source dans le state du flow.
 ///
 /// Permet de distinguer les sources catalogue (UUID API) des candidats niche ;
@@ -22,6 +24,9 @@ class VeilleSourceMeta {
   final String? apiSourceId; // UUID si la source vient du catalogue
   final String? url;
   final String? why;
+  final VeilleSourceConnectionStatus connectionStatus;
+  final String? failureReason;
+  final String? logoUrl;
 
   const VeilleSourceMeta({
     required this.slug,
@@ -30,7 +35,38 @@ class VeilleSourceMeta {
     this.apiSourceId,
     this.url,
     this.why,
+    this.connectionStatus = VeilleSourceConnectionStatus.connected,
+    this.failureReason,
+    this.logoUrl,
   });
+
+  VeilleSourceMeta copyWith({
+    String? slug,
+    String? name,
+    String? kind,
+    Object? apiSourceId = _Sentinel.value,
+    Object? url = _Sentinel.value,
+    Object? why = _Sentinel.value,
+    VeilleSourceConnectionStatus? connectionStatus,
+    Object? failureReason = _Sentinel.value,
+    Object? logoUrl = _Sentinel.value,
+  }) {
+    return VeilleSourceMeta(
+      slug: slug ?? this.slug,
+      name: name ?? this.name,
+      kind: kind ?? this.kind,
+      apiSourceId: apiSourceId == _Sentinel.value
+          ? this.apiSourceId
+          : apiSourceId as String?,
+      url: url == _Sentinel.value ? this.url : url as String?,
+      why: why == _Sentinel.value ? this.why : why as String?,
+      connectionStatus: connectionStatus ?? this.connectionStatus,
+      failureReason: failureReason == _Sentinel.value
+          ? this.failureReason
+          : failureReason as String?,
+      logoUrl: logoUrl == _Sentinel.value ? this.logoUrl : logoUrl as String?,
+    );
+  }
 }
 
 /// État du flow de configuration de la veille.
@@ -82,6 +118,17 @@ class VeilleConfigState {
   /// Mapping slug → metadata pour sources.
   final Map<String, VeilleSourceMeta> sourcesMeta;
 
+  /// Contrôle explicite des fetch LLM. Initialement vrai en création ; remis
+  /// à faux en édition pour réafficher la config existante sans relancer de
+  /// suggestions automatiquement.
+  final bool angleSuggestionsRequested;
+  final bool sourceSuggestionsRequested;
+
+  /// Batch de résolution Step 3 en cours + slugs déjà tentés, pour éviter de
+  /// rappeler en boucle le resolver depuis le build.
+  final bool isResolvingSources;
+  final Set<String> sourceResolutionAttemptedSlugs;
+
   /// Angles libres / mots-clés saisis en mode advanced (step2). Normalisés
   /// lowercase, max 60 chars, dédupliqués. Mappés sur `VeilleKeywordSelection`
   /// backend.
@@ -132,6 +179,10 @@ class VeilleConfigState {
     required this.customTopics,
     required this.topicLabels,
     required this.sourcesMeta,
+    required this.angleSuggestionsRequested,
+    required this.sourceSuggestionsRequested,
+    required this.isResolvingSources,
+    required this.sourceResolutionAttemptedSlugs,
     required this.keywords,
     required this.angleKeywords,
     required this.advancedMode,
@@ -157,6 +208,10 @@ class VeilleConfigState {
     customTopics: [],
     topicLabels: {},
     sourcesMeta: {},
+    angleSuggestionsRequested: true,
+    sourceSuggestionsRequested: true,
+    isResolvingSources: false,
+    sourceResolutionAttemptedSlugs: <String>{},
     keywords: <String>{},
     angleKeywords: {},
     advancedMode: false,
@@ -169,13 +224,22 @@ class VeilleConfigState {
     customThemeLabel: null,
   );
 
-  /// Nombre de sources réellement persistables : source catalogue avec
-  /// `apiSourceId`, ou candidat niche avec URL valide.
+  /// Nombre de sources réellement persistables : seules les sources résolues
+  /// avec un `source_id` backend comptent pour la CTA.
   int get realSelectedSourceCount => selectedSourceIds.where((id) {
     final meta = sourcesMeta[id];
     if (meta == null) return false;
-    return meta.apiSourceId != null || _isValidHttpUrl(meta.url);
+    return meta.connectionStatus == VeilleSourceConnectionStatus.connected &&
+        meta.apiSourceId != null;
   }).length;
+
+  bool get hasPendingSelectedSources => selectedSourceIds.any((id) {
+    final meta = sourcesMeta[id];
+    return meta != null &&
+        meta.connectionStatus == VeilleSourceConnectionStatus.pending &&
+        meta.apiSourceId == null &&
+        _isValidHttpUrl(meta.url);
+  });
 
   VeilleConfigState copyWith({
     int? step,
@@ -190,6 +254,10 @@ class VeilleConfigState {
     List<VeilleTopic>? customTopics,
     Map<String, String>? topicLabels,
     Map<String, VeilleSourceMeta>? sourcesMeta,
+    bool? angleSuggestionsRequested,
+    bool? sourceSuggestionsRequested,
+    bool? isResolvingSources,
+    Set<String>? sourceResolutionAttemptedSlugs,
     Set<String>? keywords,
     Map<String, List<String>>? angleKeywords,
     bool? advancedMode,
@@ -221,6 +289,13 @@ class VeilleConfigState {
     customTopics: customTopics ?? this.customTopics,
     topicLabels: topicLabels ?? this.topicLabels,
     sourcesMeta: sourcesMeta ?? this.sourcesMeta,
+    angleSuggestionsRequested:
+        angleSuggestionsRequested ?? this.angleSuggestionsRequested,
+    sourceSuggestionsRequested:
+        sourceSuggestionsRequested ?? this.sourceSuggestionsRequested,
+    isResolvingSources: isResolvingSources ?? this.isResolvingSources,
+    sourceResolutionAttemptedSlugs:
+        sourceResolutionAttemptedSlugs ?? this.sourceResolutionAttemptedSlugs,
     keywords: keywords ?? this.keywords,
     angleKeywords: angleKeywords ?? this.angleKeywords,
     advancedMode: advancedMode ?? this.advancedMode,
@@ -485,11 +560,41 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     selectedSourceIds: _toggle(state.selectedSourceIds, id),
   );
 
-  /// Enregistre les candidats LLM Step 3 sans les sélectionner. Ils restent
-  /// locaux au flow et seront ingérés seulement si le user les coche.
-  void registerSuggestedSources(List<VeilleSourceSuggestionDto> suggestions) {
+  void removeSource(String id) {
+    final nextSelected = Set<String>.from(state.selectedSourceIds)..remove(id);
+    final nextMeta = Map<String, VeilleSourceMeta>.from(state.sourcesMeta)
+      ..remove(id);
+    final nextAttempted = Set<String>.from(state.sourceResolutionAttemptedSlugs)
+      ..remove(id);
+    state = state.copyWith(
+      selectedSourceIds: nextSelected,
+      sourcesMeta: nextMeta,
+      sourceResolutionAttemptedSlugs: nextAttempted,
+    );
+  }
+
+  void requestMoreAngles() {
+    if (state.angleSuggestionsRequested) return;
+    state = state.copyWith(angleSuggestionsRequested: true, lastError: null);
+  }
+
+  void requestMoreSources() {
+    if (state.sourceSuggestionsRequested) return;
+    state = state.copyWith(sourceSuggestionsRequested: true, lastError: null);
+  }
+
+  /// Enregistre les candidats LLM Step 3 et les présélectionne. Ils restent
+  /// en `pending` jusqu'à résolution batch, puis l'upsert envoie un `source_id`.
+  void registerSuggestedSources(
+    List<VeilleSourceSuggestionDto> suggestions, {
+    bool selectByDefault = true,
+  }) {
     if (suggestions.isEmpty) return;
     final nextMeta = Map<String, VeilleSourceMeta>.from(state.sourcesMeta);
+    final nextSelected = Set<String>.from(state.selectedSourceIds);
+    final nextAttempted = Set<String>.from(
+      state.sourceResolutionAttemptedSlugs,
+    );
     var changed = false;
     for (final s in suggestions) {
       if (!_isValidHttpUrl(s.url)) continue;
@@ -501,10 +606,112 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
         kind: 'niche',
         url: s.url,
         why: s.why,
+        logoUrl: _faviconForUrl(s.url),
+        connectionStatus: VeilleSourceConnectionStatus.pending,
       );
+      if (selectByDefault) nextSelected.add(slug);
+      nextAttempted.remove(slug);
       changed = true;
     }
-    if (changed) state = state.copyWith(sourcesMeta: nextMeta);
+    if (changed) {
+      state = state.copyWith(
+        sourcesMeta: nextMeta,
+        selectedSourceIds: nextSelected,
+        sourceResolutionAttemptedSlugs: nextAttempted,
+      );
+    }
+  }
+
+  Future<void> resolvePendingSources({bool force = false}) async {
+    if (state.isResolvingSources) return;
+    final candidates = <VeilleResolveSourceCandidateRequest>[];
+    for (final slug in state.selectedSourceIds) {
+      if (!force && state.sourceResolutionAttemptedSlugs.contains(slug)) {
+        continue;
+      }
+      final meta = state.sourcesMeta[slug];
+      if (meta == null ||
+          meta.connectionStatus != VeilleSourceConnectionStatus.pending ||
+          meta.apiSourceId != null ||
+          !_isValidHttpUrl(meta.url)) {
+        continue;
+      }
+      candidates.add(
+        VeilleResolveSourceCandidateRequest(
+          clientSlug: slug,
+          name: meta.name,
+          url: meta.url!,
+          why: meta.why,
+        ),
+      );
+    }
+    if (candidates.isEmpty) return;
+
+    final attempted = {
+      ...state.sourceResolutionAttemptedSlugs,
+      ...candidates.map((c) => c.clientSlug),
+    };
+    state = state.copyWith(
+      isResolvingSources: true,
+      sourceResolutionAttemptedSlugs: attempted,
+      lastError: null,
+    );
+
+    try {
+      final repo = _ref.read(veilleRepositoryProvider);
+      final result = await repo.resolveSourceCandidates(candidates);
+      final nextMeta = Map<String, VeilleSourceMeta>.from(state.sourcesMeta);
+      final nextSelected = Set<String>.from(state.selectedSourceIds);
+
+      for (final resolved in result.resolved) {
+        final current = nextMeta[resolved.clientSlug];
+        if (current == null) continue;
+        nextMeta[resolved.clientSlug] = current.copyWith(
+          name: resolved.name,
+          apiSourceId: resolved.sourceId,
+          url: resolved.url,
+          logoUrl: resolved.logoUrl ?? current.logoUrl,
+          connectionStatus: VeilleSourceConnectionStatus.connected,
+          failureReason: null,
+        );
+        nextSelected.add(resolved.clientSlug);
+      }
+
+      for (final failed in result.failed) {
+        final current =
+            nextMeta[failed.clientSlug] ??
+            VeilleSourceMeta(
+              slug: failed.clientSlug,
+              name: failed.name,
+              kind: 'niche',
+              url: failed.url,
+              connectionStatus: VeilleSourceConnectionStatus.pending,
+            );
+        nextMeta[failed.clientSlug] = current.copyWith(
+          name: failed.name.isEmpty ? current.name : failed.name,
+          url: failed.url.isEmpty ? current.url : failed.url,
+          apiSourceId: null,
+          connectionStatus: VeilleSourceConnectionStatus.failed,
+          failureReason: failed.reason,
+        );
+        nextSelected.remove(failed.clientSlug);
+      }
+
+      state = state.copyWith(
+        sourcesMeta: nextMeta,
+        selectedSourceIds: nextSelected,
+        isResolvingSources: false,
+        lastError: result.failed.isEmpty
+            ? null
+            : _sourceFailureMessage(result.failed.length),
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isResolvingSources: false,
+        lastError:
+            'Impossible de vérifier les sources pour l\'instant. Réessaie.',
+      );
+    }
   }
 
   /// Ajoute un mot-clé / angle libre (step2 advanced). Normalise lowercase,
@@ -605,6 +812,8 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       apiSourceId: sourceId,
       url: url,
       why: why,
+      logoUrl: _faviconForUrl(url),
+      connectionStatus: VeilleSourceConnectionStatus.connected,
     );
     state = state.copyWith(
       sourcesMeta: nextMeta,
@@ -635,10 +844,15 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       kind: 'niche',
       url: normalizedUrl,
       why: _emptyToNull(why),
+      logoUrl: _faviconForUrl(normalizedUrl),
+      connectionStatus: VeilleSourceConnectionStatus.pending,
     );
     state = state.copyWith(
       sourcesMeta: nextMeta,
       selectedSourceIds: {...state.selectedSourceIds, slug},
+      sourceResolutionAttemptedSlugs: Set<String>.from(
+        state.sourceResolutionAttemptedSlugs,
+      )..remove(slug),
     );
   }
 
@@ -740,6 +954,8 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
         kind: 'followed',
         apiSourceId: s.id,
         url: s.url,
+        logoUrl: s.logoUrl ?? _faviconForUrl(s.url),
+        connectionStatus: VeilleSourceConnectionStatus.connected,
       );
       followed.add(s.id);
     }
@@ -786,7 +1002,10 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       // veille » reste affiché → clic → redirection feed (bug navigation).
       // Le chemin archivage le fait déjà (my_interests_screen.dart).
       _ref.invalidate(userInterestsProvider);
-      state = state.copyWith(isSubmitting: false);
+      state = _applyServerConfigResult(
+        state,
+        cfg,
+      ).copyWith(isSubmitting: false);
       return cfg;
     } on VeilleApiException catch (e) {
       state = state.copyWith(isSubmitting: false, lastError: e.message);
@@ -869,6 +1088,8 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
         apiSourceId: s.source.id,
         url: s.source.url,
         why: s.why,
+        logoUrl: s.source.logoUrl,
+        connectionStatus: VeilleSourceConnectionStatus.connected,
       );
       selectedSourceIds.add(s.source.id);
     }
@@ -887,6 +1108,10 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       topicLabels: topicLabels,
       selectedSourceIds: selectedSourceIds,
       sourcesMeta: sourcesMeta,
+      angleSuggestionsRequested: false,
+      sourceSuggestionsRequested: false,
+      isResolvingSources: false,
+      sourceResolutionAttemptedSlugs: const <String>{},
       keywords: keywords,
       angleKeywords: angleKeywords,
       advancedMode:
@@ -895,6 +1120,82 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       editorialBrief: cfg.editorialBrief,
       presetId: cfg.presetId,
     );
+  }
+
+  VeilleConfigState _applyServerConfigResult(
+    VeilleConfigState current,
+    VeilleConfigDto cfg,
+  ) {
+    final nextMeta = Map<String, VeilleSourceMeta>.from(current.sourcesMeta);
+    final nextSelected = Set<String>.from(current.selectedSourceIds);
+
+    for (final sourceRef in cfg.sources) {
+      final source = sourceRef.source;
+      var key = source.id;
+      for (final entry in nextMeta.entries) {
+        if (entry.value.apiSourceId == source.id) {
+          key = entry.key;
+          break;
+        }
+      }
+      nextMeta[key] =
+          (nextMeta[key] ??
+                  VeilleSourceMeta(
+                    slug: key,
+                    name: source.name,
+                    kind: sourceRef.kind,
+                    apiSourceId: source.id,
+                    url: source.url,
+                  ))
+              .copyWith(
+                name: source.name,
+                kind: sourceRef.kind,
+                apiSourceId: source.id,
+                url: source.url,
+                why: sourceRef.why,
+                logoUrl: source.logoUrl,
+                connectionStatus: VeilleSourceConnectionStatus.connected,
+                failureReason: null,
+              );
+      nextSelected.add(key);
+    }
+
+    for (final failed in cfg.unconnectedSources) {
+      final key = _keyForUnconnected(nextMeta, failed);
+      if (key == null) continue;
+      final currentMeta = nextMeta[key]!;
+      nextMeta[key] = currentMeta.copyWith(
+        name: failed.name ?? currentMeta.name,
+        url: failed.url.isEmpty ? currentMeta.url : failed.url,
+        apiSourceId: null,
+        connectionStatus: VeilleSourceConnectionStatus.failed,
+        failureReason: failed.reason,
+      );
+      nextSelected.remove(key);
+    }
+
+    return current.copyWith(
+      step: cfg.unconnectedSources.isEmpty ? current.step : 3,
+      sourcesMeta: nextMeta,
+      selectedSourceIds: nextSelected,
+      lastError: cfg.unconnectedSources.isEmpty
+          ? null
+          : _sourceFailureMessage(cfg.unconnectedSources.length),
+    );
+  }
+
+  String? _keyForUnconnected(
+    Map<String, VeilleSourceMeta> sources,
+    VeilleUnconnectedSourceDto failed,
+  ) {
+    final slug = failed.clientSlug;
+    if (slug != null && sources.containsKey(slug)) return slug;
+    for (final entry in sources.entries) {
+      final meta = entry.value;
+      if (failed.url.isNotEmpty && meta.url == failed.url) return entry.key;
+      if (failed.name != null && meta.name == failed.name) return entry.key;
+    }
+    return null;
   }
 
   /// Réinitialise le flow (utilisé après suppression / pour repartir d'une
@@ -964,6 +1265,9 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     for (final slug in s.selectedSourceIds) {
       final meta = s.sourcesMeta[slug];
       if (meta == null) continue;
+      if (meta.connectionStatus != VeilleSourceConnectionStatus.connected) {
+        continue;
+      }
       final apiSourceId = meta.apiSourceId;
       if (apiSourceId != null) {
         sourceSelections.add(
@@ -981,6 +1285,7 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
         VeilleSourceSelectionRequest(
           kind: meta.kind,
           nicheCandidate: VeilleNicheCandidateRequest(
+            clientSlug: meta.slug,
             name: meta.name,
             url: meta.url!,
             why: meta.why,
@@ -1016,6 +1321,22 @@ final veilleConfigProvider =
     StateNotifierProvider.autoDispose<VeilleConfigNotifier, VeilleConfigState>(
       (ref) => VeilleConfigNotifier(ref),
     );
+
+String _sourceFailureMessage(int count) {
+  final source = count > 1 ? 'sources' : 'source';
+  final verb = count > 1 ? "n'ont" : "n'a";
+  final suffix = count > 1 ? 's' : '';
+  return '$count $source $verb pas pu être connectée$suffix. '
+      'Remplace-les pour continuer.';
+}
+
+String? _faviconForUrl(String? url) {
+  if (url == null || url.trim().isEmpty) return null;
+  final uri = Uri.tryParse(url.trim());
+  final host = uri?.host;
+  if (host == null || host.isEmpty) return null;
+  return 'https://www.google.com/s2/favicons?sz=128&domain=$host';
+}
 
 bool _isValidHttpUrl(String? value) {
   if (value == null || value.trim().isEmpty) return false;

@@ -27,7 +27,7 @@ class Step2SuggestionsScreen extends ConsumerWidget {
     final state = ref.watch(veilleConfigProvider);
     final notifier = ref.read(veilleConfigProvider.notifier);
     final theme = state.selectedTheme;
-    final anglesAsync = theme == null
+    final anglesAsync = theme == null || !state.angleSuggestionsRequested
         ? const AsyncValue<List<VeilleAngleSuggestionDto>>.data(
             <VeilleAngleSuggestionDto>[],
           )
@@ -87,11 +87,16 @@ class Step2SuggestionsScreen extends ConsumerWidget {
                   ),
                 ],
                 const SizedBox(height: 22),
-                _AnglesSection(
-                  anglesAsync: anglesAsync,
-                  state: state,
-                  notifier: notifier,
-                ),
+                _ExistingAnglesSection(state: state, notifier: notifier),
+                if (!state.angleSuggestionsRequested) ...[
+                  _LoadMoreAnglesButton(onTap: notifier.requestMoreAngles),
+                ] else ...[
+                  _AnglesSection(
+                    anglesAsync: anglesAsync,
+                    state: state,
+                    notifier: notifier,
+                  ),
+                ],
                 const SizedBox(height: 24),
                 _AdvancedToggle(
                   expanded: state.advancedMode,
@@ -202,6 +207,69 @@ class _MainTopicChip extends StatelessWidget {
   }
 }
 
+class _ExistingAnglesSection extends StatelessWidget {
+  final VeilleConfigState state;
+  final VeilleConfigNotifier notifier;
+  const _ExistingAnglesSection({required this.state, required this.notifier});
+
+  @override
+  Widget build(BuildContext context) {
+    if (state.selectedSuggestions.isEmpty) return const SizedBox.shrink();
+    final angles = [
+      for (final slug in state.selectedSuggestions)
+        (
+          slug: slug,
+          dto: VeilleAngleSuggestionDto(
+            title: state.topicLabels[slug] ?? slug,
+            keywords: state.angleKeywords[slug] ?? const <String>[],
+            reason: null,
+          ),
+        ),
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'ANGLES SUIVIS',
+            style: GoogleFonts.dmSans(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+              color: const Color(0xFF8B7E63),
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (int i = 0; i < angles.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _AngleCard(
+              angle: angles[i].dto,
+              state: state,
+              notifier: notifier,
+              slugOverride: angles[i].slug,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadMoreAnglesButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _LoadMoreAnglesButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(PhosphorIcons.sparkle(), size: 15),
+      label: const Text('Proposer plus d’angles'),
+    );
+  }
+}
+
 /// Bloc « Angles suggérés » (LLM). Affiché au-dessus des preset topics.
 /// Pendant le fetch (~10-15 s) : un [FacteurLoader]. Liste vide (LLM KO ou
 /// thème sans angle) → rien (on retombe sur les preset topics → pas de
@@ -222,7 +290,14 @@ class _AnglesSection extends StatelessWidget {
       loading: () => const _AnglesLoading(),
       error: (_, __) => const SizedBox.shrink(),
       data: (angles) {
-        if (angles.isEmpty) return const SizedBox.shrink();
+        final visible = angles
+            .where(
+              (a) => !state.selectedSuggestions.contains(
+                VeilleConfigNotifier.angleSlug(a.title),
+              ),
+            )
+            .toList();
+        if (visible.isEmpty) return const SizedBox.shrink();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -246,9 +321,9 @@ class _AnglesSection extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            for (int i = 0; i < angles.length; i++) ...[
+            for (int i = 0; i < visible.length; i++) ...[
               if (i > 0) const SizedBox(height: 8),
-              _AngleCard(angle: angles[i], state: state, notifier: notifier),
+              _AngleCard(angle: visible[i], state: state, notifier: notifier),
             ],
             const SizedBox(height: 22),
           ],
@@ -312,15 +387,17 @@ class _AngleCard extends StatelessWidget {
   final VeilleAngleSuggestionDto angle;
   final VeilleConfigState state;
   final VeilleConfigNotifier notifier;
+  final String? slugOverride;
   const _AngleCard({
     required this.angle,
     required this.state,
     required this.notifier,
+    this.slugOverride,
   });
 
   @override
   Widget build(BuildContext context) {
-    final slug = VeilleConfigNotifier.angleSlug(angle.title);
+    final slug = slugOverride ?? VeilleConfigNotifier.angleSlug(angle.title);
     final selected = state.selectedSuggestions.contains(slug);
     final keywords = selected
         ? (state.angleKeywords[slug] ?? const <String>[])
@@ -344,7 +421,9 @@ class _AngleCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: () => notifier.toggleAngle(angle),
+              onTap: () => slugOverride == null
+                  ? notifier.toggleAngle(angle)
+                  : notifier.toggleSuggestion(slug),
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Row(

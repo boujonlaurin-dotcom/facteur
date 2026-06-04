@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import unicodedata
 from datetime import UTC, datetime, timedelta
@@ -32,10 +33,15 @@ from app.schemas.veille import (
     VeilleAngleSuggestion,
     VeilleConfigResponse,
     VeilleConfigUpsert,
+    VeilleFailedSourceCandidate,
     VeilleFeedArticle,
     VeilleFeedResponse,
     VeilleKeywordResponse,
     VeillePresetResponse,
+    VeilleResolvedSourceCandidate,
+    VeilleResolveSourceCandidate,
+    VeilleResolveSourceCandidatesRequest,
+    VeilleResolveSourceCandidatesResponse,
     VeilleResolveTopicRequest,
     VeilleResolveTopicResponse,
     VeilleSourceExample,
@@ -51,6 +57,7 @@ from app.schemas.veille import (
 )
 from app.services.ml.topic_enrichment_service import get_topic_enrichment_service
 from app.services.rss_parser import RSSParser
+from app.services.search.smart_source_search import SmartSourceSearchService
 from app.services.source_service import SourceService
 from app.services.user_interests_service import ensure_veille_favorite
 from app.services.veille.feed_filter import fetch_veille_feed, load_veille_filters
@@ -198,6 +205,42 @@ def _source_theme_for(veille_theme_id: str) -> str:
     return "custom" if veille_theme_id == "other" else veille_theme_id
 
 
+def _source_type_from_raw(raw: str | None) -> SourceType:
+    """Mappe les types RSS/feedparser vers l'enum `Source.type`."""
+    if raw in ("rss", "atom", None, ""):
+        return SourceType.ARTICLE
+    try:
+        return SourceType(raw)
+    except ValueError:
+        return SourceType.ARTICLE
+
+
+def _source_to_resolved_candidate(
+    source: Source, candidate: VeilleResolveSourceCandidate
+) -> VeilleResolvedSourceCandidate:
+    return VeilleResolvedSourceCandidate(
+        client_slug=candidate.client_slug,
+        source_id=source.id,
+        name=source.name,
+        url=source.url,
+        feed_url=source.feed_url,
+        logo_url=source.logo_url,
+        description=source.description,
+    )
+
+
+async def _find_source_by_url_or_feed(db: AsyncSession, url: str) -> Source | None:
+    return (
+        (
+            await db.execute(
+                select(Source).where(or_(Source.url == url, Source.feed_url == url))
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
 async def _resolve_source_id(
     db: AsyncSession,
     selection,
@@ -229,17 +272,12 @@ async def _resolve_source_id(
     if existing is not None:
         return existing.id, False
 
-    try:
-        source_type = SourceType(detected.detected_type)
-    except ValueError:
-        source_type = SourceType.ARTICLE
-
     new_source = Source(
         id=uuid4(),
         name=cand.name or detected.name,
         url=cand.url,
         feed_url=detected.feed_url,
-        type=source_type,
+        type=_source_type_from_raw(str(detected.detected_type)),
         theme=_source_theme_for(theme_id),
         description=detected.description,
         logo_url=detected.logo_url,
@@ -282,6 +320,116 @@ async def get_config(
         logger.warning("veille.favorite_self_heal_failed", exc_info=True)
 
     return await _hydrate_response(db, cfg)
+
+
+@router.post(
+    "/sources/resolve-candidates",
+    response_model=VeilleResolveSourceCandidatesResponse,
+)
+async def resolve_source_candidates(
+    body: VeilleResolveSourceCandidatesRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Résout des candidats source Step 3 sans les attacher à la veille.
+
+    Le mobile peut afficher vite les propositions, les présélectionner, puis
+    appeler ce batch en arrière-plan. Les sources résolues fournissent un
+    `source_id` prêt à être envoyé à `POST /config`, ce qui évite de relancer
+    une détection RSS lente au submit.
+    """
+    UUID(current_user_id)
+    if not body.candidates:
+        return VeilleResolveSourceCandidatesResponse()
+
+    resolved: list[VeilleResolvedSourceCandidate] = []
+    failed: list[VeilleFailedSourceCandidate] = []
+    pending: list[VeilleResolveSourceCandidate] = []
+    seen_slugs: set[str] = set()
+
+    for candidate in body.candidates:
+        if candidate.client_slug in seen_slugs:
+            continue
+        seen_slugs.add(candidate.client_slug)
+        existing = await _find_source_by_url_or_feed(db, candidate.url)
+        if existing is not None:
+            resolved.append(_source_to_resolved_candidate(existing, candidate))
+            continue
+        pending.append(candidate)
+
+    if not pending:
+        return VeilleResolveSourceCandidatesResponse(resolved=resolved, failed=failed)
+
+    search_service = SmartSourceSearchService(db)
+    semaphore = asyncio.Semaphore(5)
+
+    async def _detect(candidate: VeilleResolveSourceCandidate):
+        async with semaphore:
+            return candidate, await search_service.detect_feed(candidate.url)
+
+    try:
+        detections = await asyncio.gather(*(_detect(c) for c in pending))
+    finally:
+        await search_service.close()
+
+    for candidate, detection in detections:
+        if detection is None:
+            failed.append(
+                VeilleFailedSourceCandidate(
+                    client_slug=candidate.client_slug,
+                    name=candidate.name,
+                    url=candidate.url,
+                    reason="Aucun flux RSS détecté à cette adresse.",
+                )
+            )
+            continue
+
+        resolved_url, feed_meta = detection
+        feed_url = feed_meta.get("feed_url")
+        if not feed_url:
+            failed.append(
+                VeilleFailedSourceCandidate(
+                    client_slug=candidate.client_slug,
+                    name=candidate.name,
+                    url=candidate.url,
+                    reason="Aucun flux RSS détecté à cette adresse.",
+                )
+            )
+            continue
+
+        existing = (
+            (await db.execute(select(Source).where(Source.feed_url == feed_url)))
+            .scalars()
+            .first()
+        )
+        if existing is not None:
+            resolved.append(_source_to_resolved_candidate(existing, candidate))
+            continue
+
+        source = Source(
+            id=uuid4(),
+            name=candidate.name or feed_meta.get("name") or resolved_url,
+            url=resolved_url,
+            feed_url=feed_url,
+            type=_source_type_from_raw(feed_meta.get("type")),
+            theme="custom",
+            description=feed_meta.get("description"),
+            logo_url=feed_meta.get("favicon_url"),
+            is_curated=False,
+            is_active=True,
+        )
+        db.add(source)
+        await db.flush()
+        logger.info(
+            "veille.source_candidate_resolved",
+            source_id=str(source.id),
+            client_slug=candidate.client_slug,
+            feed_url=source.feed_url,
+        )
+        resolved.append(_source_to_resolved_candidate(source, candidate))
+
+    await db.commit()
+    return VeilleResolveSourceCandidatesResponse(resolved=resolved, failed=failed)
 
 
 @router.post("/config", response_model=VeilleConfigResponse)
@@ -376,6 +524,8 @@ async def upsert_config(
                     VeilleUnconnectedSource(
                         url=url,
                         reason="Aucun flux RSS détecté à cette adresse.",
+                        client_slug=getattr(sel.niche_candidate, "client_slug", None),
+                        name=getattr(sel.niche_candidate, "name", None),
                     )
                 )
             continue

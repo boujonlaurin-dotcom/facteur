@@ -18,8 +18,8 @@ import '../../widgets/veille_widgets.dart';
 /// Step 3 — choix des sources pour la veille.
 ///
 /// Les sources catalogue déjà appliquées gardent leurs exemples récents.
-/// Les sources LLM restent des candidats niche locaux au flow : elles sont
-/// ingérées seulement si le user les sélectionne puis submit.
+/// Les sources LLM sont présélectionnées puis résolues en arrière-plan pour
+/// obtenir un `source_id` avant le submit.
 class Step3SourcesScreen extends ConsumerWidget {
   final VoidCallback onClose;
   final Future<void> Function() onSubmit;
@@ -34,7 +34,9 @@ class Step3SourcesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(veilleConfigProvider);
     final notifier = ref.read(veilleConfigProvider.notifier);
-    final query = buildSuggestionQuery(state);
+    final query = state.sourceSuggestionsRequested
+        ? buildSuggestionQuery(state)
+        : null;
     final VoidCallback? onRetry = query == null
         ? null
         : () => ref.invalidate(veilleSourceSuggestionsProvider(query));
@@ -44,23 +46,29 @@ class Step3SourcesScreen extends ConsumerWidget {
           )
         : ref.watch(veilleSourceSuggestionsProvider(query));
 
-    final canSubmit = state.realSelectedSourceCount > 0 && !state.isSubmitting;
+    if (state.hasPendingSelectedSources && !state.isResolvingSources) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifier.resolvePendingSources();
+      });
+    }
 
-    // Sources catalogue déjà appliquées (preset / customSourceAdded). Affichées
-    // d'abord les sélectionnées, puis le reste (preset non-cochés p.ex.).
-    final curatedSources = <VeilleSource>[];
+    final canSubmit =
+        state.realSelectedSourceCount > 0 &&
+        !state.isSubmitting &&
+        !state.isResolvingSources;
+
+    // Sources déjà en state : existantes d'abord, puis suggestions/pending.
+    final sourceMetas = <VeilleSourceMeta>[];
     final seen = <String>{};
     for (final id in state.selectedSourceIds) {
       final meta = state.sourcesMeta[id];
-      if (meta?.apiSourceId == null) continue;
-      if (!seen.add(id)) continue;
-      curatedSources.add(_metaToUiSource(meta!));
+      if (meta == null || !seen.add(id)) continue;
+      sourceMetas.add(meta);
     }
     for (final entry in state.sourcesMeta.entries) {
       if (state.selectedSourceIds.contains(entry.key)) continue;
-      if (entry.value.apiSourceId == null) continue;
       if (!seen.add(entry.key)) continue;
-      curatedSources.add(_metaToUiSource(entry.value));
+      sourceMetas.add(entry.value);
     }
 
     return Column(
@@ -75,11 +83,11 @@ class Step3SourcesScreen extends ConsumerWidget {
                 const VeilleFlowH1('Quelles sources veux-tu suivre ?'),
                 const SizedBox(height: 8),
                 Text(
-                  curatedSources.isEmpty
+                  sourceMetas.isEmpty
                       ? 'Ajoute une source par URL pour démarrer ta veille — '
-                          'un blog niche, un flux RSS, etc.'
+                            'un blog niche, un flux RSS, etc.'
                       : 'Décoche celles que tu ne veux pas suivre, ou ajoute '
-                          'une source par URL via la configuration avancée.',
+                            'une source par URL via la configuration avancée.',
                   style: GoogleFonts.dmSans(
                     fontSize: 13,
                     color: const Color(0xFF5D5B5A),
@@ -87,44 +95,64 @@ class Step3SourcesScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 22),
-                if (curatedSources.isNotEmpty) ...[
+                if (sourceMetas.isNotEmpty) ...[
                   Column(
                     children: [
-                      for (int i = 0; i < curatedSources.length; i++) ...[
+                      for (int i = 0; i < sourceMetas.length; i++) ...[
                         if (i > 0) const SizedBox(height: 6),
                         VeilleSourceCard(
-                          source: curatedSources[i],
+                          source: _metaToUiSource(sourceMetas[i]),
                           inVeille: state.selectedSourceIds.contains(
-                            curatedSources[i].id,
+                            sourceMetas[i].slug,
                           ),
                           isAlreadyFollowed: false,
-                          showExamples: true,
+                          showExamples:
+                              sourceMetas[i].connectionStatus ==
+                                  VeilleSourceConnectionStatus.connected &&
+                              sourceMetas[i].apiSourceId != null,
+                          exampleSourceId: sourceMetas[i].apiSourceId,
+                          connectionStatus: sourceMetas[i].connectionStatus,
+                          failureReason: sourceMetas[i].failureReason,
                           onToggle: () =>
-                              notifier.toggleSource(curatedSources[i].id),
+                              sourceMetas[i].connectionStatus ==
+                                  VeilleSourceConnectionStatus.failed
+                              ? notifier.removeSource(sourceMetas[i].slug)
+                              : notifier.toggleSource(sourceMetas[i].slug),
                         ),
                       ],
                     ],
                   ),
                   const SizedBox(height: 22),
                 ],
-                suggestionsAsync.when(
-                  loading: () => const _SourceSuggestionsLoading(),
-                  error: (_, __) =>
-                      _SourceSuggestionsEmpty(onRetry: onRetry, isError: true),
-                  data: (suggestions) {
-                    if (suggestions.isEmpty) {
-                      return _SourceSuggestionsEmpty(onRetry: onRetry);
-                    }
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      notifier.registerSuggestedSources(suggestions);
-                    });
-                    return _SuggestedSourcesList(
-                      suggestions: suggestions,
-                      state: state,
-                      notifier: notifier,
-                    );
-                  },
-                ),
+                if (!state.sourceSuggestionsRequested)
+                  _LoadMoreSourcesButton(onTap: notifier.requestMoreSources)
+                else
+                  suggestionsAsync.when(
+                    loading: () => const _SourceSuggestionsLoading(),
+                    error: (_, __) => _SourceSuggestionsEmpty(
+                      onRetry: onRetry,
+                      isError: true,
+                    ),
+                    data: (suggestions) {
+                      if (suggestions.isEmpty) {
+                        return _SourceSuggestionsEmpty(onRetry: onRetry);
+                      }
+                      final hasNewSuggestion = suggestions.any((s) {
+                        if (!_isValidHttpUrl(s.url)) return false;
+                        final slug = VeilleConfigNotifier.sourceSuggestionSlug(
+                          s.name,
+                          s.url,
+                        );
+                        return !state.sourcesMeta.containsKey(slug);
+                      });
+                      if (hasNewSuggestion) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          notifier.registerSuggestedSources(suggestions);
+                        });
+                      }
+                      return _LoadMoreSourcesButton(onTap: onRetry);
+                    },
+                  ),
                 const SizedBox(height: 24),
                 _AdvancedToggle(
                   expanded: state.advancedMode,
@@ -149,11 +177,22 @@ class Step3SourcesScreen extends ConsumerWidget {
                 if (!canSubmit && !state.isSubmitting) ...[
                   const SizedBox(height: 12),
                   Text(
-                    'Sélectionne au moins une source pour continuer.',
+                    state.isResolvingSources || state.hasPendingSelectedSources
+                        ? 'Vérification des sources en cours.'
+                        : 'Sélectionne au moins une source prête pour continuer.',
                     style: GoogleFonts.dmSans(
                       fontSize: 12,
                       color: const Color(0xFF8B7E63),
                     ),
+                  ),
+                ],
+                if (state.lastError != null) ...[
+                  const SizedBox(height: 12),
+                  _InlineSourceStatusBanner(
+                    message: state.lastError!,
+                    onRetry: state.hasPendingSelectedSources
+                        ? () => notifier.resolvePendingSources(force: true)
+                        : null,
                   ),
                 ],
               ],
@@ -167,10 +206,30 @@ class Step3SourcesScreen extends ConsumerWidget {
               top: BorderSide(color: FacteurColors.veilleLineSoft),
             ),
           ),
-          child: VeilleCtaButton(
-            label: state.isSubmitting ? 'Enregistrement…' : 'Créer ma veille',
-            trailingIcon: PhosphorIcons.check(),
-            onPressed: canSubmit ? () => onSubmit() : null,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              VeilleCtaButton(
+                label: state.isSubmitting
+                    ? 'Enregistrement…'
+                    : 'Créer ma veille',
+                trailingIcon: PhosphorIcons.check(),
+                onPressed: canSubmit ? () => onSubmit() : null,
+              ),
+              if (state.isSubmitting || state.isResolvingSources) ...[
+                const SizedBox(height: 8),
+                Text(
+                  state.isSubmitting
+                      ? 'Enregistrement en cours. Tes choix restent affichés.'
+                      : 'Vérification des sources en arrière-plan.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 12,
+                    color: const Color(0xFF8B7E63),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ],
@@ -193,8 +252,9 @@ class Step3SourcesScreen extends ConsumerWidget {
               why: result.description,
             );
           } else {
-            final url =
-                result.feedUrl.trim().isNotEmpty ? result.feedUrl : result.url;
+            final url = result.feedUrl.trim().isNotEmpty
+                ? result.feedUrl
+                : result.url;
             if (_isValidHttpUrl(url)) {
               notifier.addUrlSourceToVeille(
                 name: result.name,
@@ -217,9 +277,7 @@ class Step3SourcesScreen extends ConsumerWidget {
       name: meta.name,
       meta: meta.kind == 'niche' ? 'Source niche' : 'Source curée',
       why: meta.why,
-      logoUrl: meta.url == null
-          ? null
-          : 'https://www.google.com/s2/favicons?sz=128&domain=${_domain(meta.url!)}',
+      logoUrl: meta.logoUrl,
     );
   }
 }
@@ -255,75 +313,69 @@ VeilleSourceSuggestionsQuery? buildSuggestionQuery(VeilleConfigState state) {
     themeId: theme,
     themeLabel: themeLabel,
     brief: state.editorialBrief ?? '',
-    anglesKey:
-        angleLabels.take(VeilleConfigNotifier.maxSuggestAngles).join('|'),
-    keywordsKey:
-        keywords.take(VeilleConfigNotifier.maxSuggestKeywords).join('|'),
+    anglesKey: angleLabels
+        .take(VeilleConfigNotifier.maxSuggestAngles)
+        .join('|'),
+    keywordsKey: keywords
+        .take(VeilleConfigNotifier.maxSuggestKeywords)
+        .join('|'),
   );
 }
 
-class _SuggestedSourcesList extends StatelessWidget {
-  final List<VeilleSourceSuggestionDto> suggestions;
-  final VeilleConfigState state;
-  final VeilleConfigNotifier notifier;
-
-  const _SuggestedSourcesList({
-    required this.suggestions,
-    required this.state,
-    required this.notifier,
-  });
+class _LoadMoreSourcesButton extends StatelessWidget {
+  final VoidCallback? onTap;
+  const _LoadMoreSourcesButton({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final valid = suggestions.where((s) => _isValidHttpUrl(s.url)).toList();
-    if (valid.isEmpty) {
-      return const _SourceSuggestionsEmpty(onRetry: null);
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'SOURCES PROPOSÉES',
-          style: GoogleFonts.dmSans(
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.8,
-            color: const Color(0xFF8B7E63),
-          ),
-        ),
-        const SizedBox(height: 8),
-        for (int i = 0; i < valid.length; i++) ...[
-          if (i > 0) const SizedBox(height: 6),
-          _suggestionCard(valid[i]),
-        ],
-      ],
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(PhosphorIcons.plus(), size: 15),
+      label: const Text('Charger plus'),
     );
   }
+}
 
-  Widget _suggestionCard(VeilleSourceSuggestionDto suggestion) {
-    final slug = VeilleConfigNotifier.sourceSuggestionSlug(
-      suggestion.name,
-      suggestion.url,
-    );
-    final source = VeilleSource(
-      id: slug,
-      letter:
-          suggestion.name.isNotEmpty ? suggestion.name[0].toUpperCase() : '?',
-      name: suggestion.name,
-      meta: 'Source proposée',
-      why: suggestion.why,
-      logoUrl:
-          'https://www.google.com/s2/favicons?sz=128&domain=${_domain(suggestion.url)}',
-    );
-    return VeilleSourceCard(
-      source: source,
-      inVeille: state.selectedSourceIds.contains(slug),
-      isAlreadyFollowed: false,
-      showExamples: false,
-      onToggle: () {
-        notifier.registerSuggestedSources([suggestion]);
-        notifier.toggleSource(slug);
-      },
+class _InlineSourceStatusBanner extends StatelessWidget {
+  final String message;
+  final VoidCallback? onRetry;
+  const _InlineSourceStatusBanner({required this.message, this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDFBF7),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: FacteurColors.veilleLineSoft),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            PhosphorIcons.warningCircle(),
+            size: 16,
+            color: const Color(0xFF8B7E63),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: GoogleFonts.dmSans(
+                fontSize: 12,
+                height: 1.35,
+                color: const Color(0xFF5D5B5A),
+              ),
+            ),
+          ),
+          if (onRetry != null) ...[
+            const SizedBox(width: 8),
+            TextButton(onPressed: onRetry, child: const Text('Réessayer')),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -479,11 +531,6 @@ class _AddSourceButton extends StatelessWidget {
       ),
     );
   }
-}
-
-String _domain(String url) {
-  final uri = Uri.tryParse(url);
-  return uri?.host ?? url;
 }
 
 bool _isValidHttpUrl(String value) {

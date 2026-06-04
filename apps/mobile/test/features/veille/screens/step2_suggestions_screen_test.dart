@@ -120,4 +120,65 @@ void main() {
     );
     expect(find.text('llm'), findsNothing);
   });
+
+  testWidgets('édition affiche les angles existants sans loader ni appel LLM', (
+    tester,
+  ) async {
+    var calls = 0;
+    final container = ProviderContainer(
+      overrides: [
+        veilleRepositoryProvider.overrideWithValue(
+          _FakeRepo(() {
+            calls++;
+            return Future.value(const []);
+          }),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final sub = container.listen(veilleConfigProvider, (_, __) {});
+    addTearDown(sub.close);
+    container
+        .read(veilleConfigProvider.notifier)
+        .hydrateFromActiveConfig(
+          VeilleConfigDto(
+            id: 'cfg-1',
+            userId: 'user-1',
+            themeId: 'tech',
+            themeLabel: 'Tech',
+            status: 'active',
+            createdAt: DateTime(2024),
+            updatedAt: DateTime(2024),
+            topics: const [
+              VeilleTopicDto(
+                id: 't0',
+                topicId: 'ai',
+                label: 'IA',
+                kind: 'preset',
+                reason: null,
+                position: 0,
+              ),
+              VeilleTopicDto(
+                id: 't1',
+                topicId: 'angle-regulation',
+                label: 'Régulation',
+                kind: 'suggested',
+                reason: null,
+                position: 1,
+                keywords: ['ai act'],
+              ),
+            ],
+            sources: const [],
+            keywords: const [],
+          ),
+        );
+
+    await tester.pumpWidget(_wrap(container));
+    await tester.pump();
+
+    expect(find.text('Régulation'), findsOneWidget);
+    expect(find.text('Recherche des bons angles'), findsNothing);
+    expect(calls, 0);
+    expect(find.text('Proposer plus d’angles'), findsOneWidget);
+  });
 }
