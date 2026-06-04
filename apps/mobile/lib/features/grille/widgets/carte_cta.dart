@@ -144,7 +144,7 @@ class CarteCta extends StatelessWidget {
               color: Color(0x1A000000), blurRadius: 4, offset: Offset(0, 2)),
         ],
       ),
-      padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 22),
       child: Column(
         children: [
           _stamp(context),
@@ -161,7 +161,7 @@ class CarteCta extends StatelessWidget {
               'Trouve le mot du jour',
               textAlign: TextAlign.center,
               style: GoogleFonts.fraunces(
-                fontSize: 23,
+                fontSize: 25,
                 fontWeight: FontWeight.w700,
                 height: 1.1,
                 letterSpacing: -0.5,
@@ -174,7 +174,7 @@ class CarteCta extends StatelessWidget {
             _intro(),
             textAlign: TextAlign.center,
             style: GoogleFonts.fraunces(
-              fontSize: 14.5,
+              fontSize: 15.5,
               fontStyle: FontStyle.italic,
               height: 1.5,
               color: c.textSecondary,
@@ -231,7 +231,7 @@ class CarteCta extends StatelessWidget {
   Widget _meta(BuildContext context) {
     final c = context.facteurColors;
     final base =
-        FacteurTypography.bodySmall(c.textTertiary).copyWith(fontSize: 12.5);
+        FacteurTypography.bodySmall(c.textTertiary).copyWith(fontSize: 13);
     final bold = base.copyWith(
       color: c.textSecondary,
       fontWeight: FontWeight.w700,

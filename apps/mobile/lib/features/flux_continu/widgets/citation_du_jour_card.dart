@@ -27,6 +27,7 @@ class CitationDuJourCard extends StatelessWidget {
     final colors = context.facteurColors;
     return Container(
       margin: const EdgeInsets.fromLTRB(18, 24, 18, 8),
+
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: colors.surface,
@@ -40,7 +41,7 @@ class CitationDuJourCard extends StatelessWidget {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+        padding: const EdgeInsets.fromLTRB(24, 26, 24, 26),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -70,7 +71,7 @@ class CitationDuJourCard extends StatelessWidget {
                 '« ${quote.text} »',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.fraunces(
-                  fontSize: 18,
+                  fontSize: 20,
                   fontStyle: FontStyle.italic,
                   height: 1.45,
                   color: colors.textPrimary,
@@ -88,7 +89,7 @@ class CitationDuJourCard extends StatelessWidget {
               _attribution(quote),
               textAlign: TextAlign.center,
               style: GoogleFonts.dmSans(
-                fontSize: 12,
+                fontSize: 13,
                 height: 1.4,
                 color: colors.textSecondary,
               ),
