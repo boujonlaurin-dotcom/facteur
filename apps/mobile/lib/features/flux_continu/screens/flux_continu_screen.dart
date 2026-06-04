@@ -168,12 +168,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// (a post-frame callback) where reading `MediaQuery` directly is unsafe.
   double _safeAreaBottom = 0;
 
-  /// A section snap is in flight (its ballistic spring is settling). While set,
-  /// the per-section passage haptic is suppressed so the stronger settle
-  /// haptic isn't doubled. The settle haptic itself is deferred to the
-  /// [ScrollEndNotification] via [_pendingSnapHaptic].
-  bool _isSnapping = false;
-  bool _pendingSnapHaptic = false;
 
   /// Garde-fou : le flow post-onboarding (dialog customs échoués + modales
   /// thème & notifications) ne doit se jouer qu'une seule fois par montage,
@@ -335,9 +329,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       // Suppressed while a snap is settling: the settle haptic owns the
       // boundary crossing, so we don't double-buzz.
       if (_stickyVisible.value) {
-        if (!_isSnapping) {
-          unawaited(_triggerSectionChangeHaptic());
-        }
+        unawaited(_triggerSectionChangeHaptic());
         _pulsePassageForStickyIndex(activeAt);
       }
       _activeIndex.value = activeAt;
@@ -367,19 +359,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// built: `true` when it chose a section-anchored spring, `false` for a free
   /// (natural) fling. Plain flag writes — runs during the physics phase, never
   /// touches `setState`.
-  void _setSnapping(bool snapping) {
-    _isSnapping = snapping;
-    _pendingSnapHaptic = snapping;
-  }
+  void _setSnapping(bool snapping) {}
 
   /// Drops a snap that is no longer reaching its settle — a driven scroll took
   /// over, or a fresh drag interrupted it — so its deferred settle haptic does
   /// not fire spuriously. Single seam so every non-ballistic scroll path stays
   /// consistent (callers don't open-code the flag clears).
-  void _cancelPendingSnap() {
-    _isSnapping = false;
-    _pendingSnapHaptic = false;
-  }
+  void _cancelPendingSnap() {}
 
   /// Bridges scroll notifications to the snap haptic. The settle haptic
   /// is fired at rest (not when the spring is built) so it reads as the section
@@ -388,12 +374,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (n.depth != 0) return false;
     if (n is ScrollStartNotification && n.dragDetails != null) {
       _cancelPendingSnap();
-    } else if (n is ScrollEndNotification) {
-      if (_pendingSnapHaptic) {
-        _pendingSnapHaptic = false;
-        unawaited(_triggerSectionChangeHaptic());
-      }
-      _isSnapping = false;
     }
     return false;
   }
