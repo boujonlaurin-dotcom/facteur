@@ -6,7 +6,6 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../custom_topics/models/topic_models.dart';
-import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/models/user_sources_state.dart';
 import '../../my_interests/providers/user_interests_provider.dart';
@@ -59,6 +58,7 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
   final void Function(FavoriteTabKind kind, String? slug) onTabTap;
   final VoidCallback onTapActiveTab;
   final VoidCallback onAddFavorite;
+  final Widget? trailingFilterTrigger;
 
   const FavoriteTopicTabs({
     super.key,
@@ -71,6 +71,7 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
     required this.onTabTap,
     required this.onTapActiveTab,
     required this.onAddFavorite,
+    this.trailingFilterTrigger,
   });
 
   @override
@@ -125,15 +126,15 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final topicsAsync = ref.watch(customTopicsProvider);
     final interestsAsync = ref.watch(userInterestsProvider);
     final sourcesStateAsync = ref.watch(userSourcesStateProvider);
     final sourcesAsync = ref.watch(userSourcesProvider);
     final order = ref.watch(tabOrderPrefsProvider);
 
-    final topics = topicsAsync.valueOrNull ?? const <UserTopicProfile>[];
-    final favorites =
-        interestsAsync.valueOrNull?.favorites ?? const <FavoriteRef>[];
+    final interests = interestsAsync.valueOrNull;
+    final customTopics =
+        interests?.customTopics ?? const <CustomTopicInterest>[];
+    final favorites = interests?.favorites ?? const <FavoriteRef>[];
     final sourceFavorites =
         sourcesStateAsync.valueOrNull?.favorites ?? const <SourceFavoriteRef>[];
     final sourceById = <String, Source>{
@@ -141,7 +142,7 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
     };
 
     final tabs = _buildTabModels(
-      topics: topics,
+      customTopics: customTopics,
       favorites: favorites,
       sourceFavorites: sourceFavorites,
       sourceById: sourceById,
@@ -158,6 +159,8 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
     // > 4 onglets épinglés → l'affordance d'ajout devient un engrenage
     // (« gérer ») plutôt qu'un « + ». Même action (ouvre la modal).
     final showGear = tabs.length > 4;
+    final trailingFilterTrigger = widget.trailingFilterTrigger;
+    final itemCount = tabs.length + 1 + (trailingFilterTrigger == null ? 0 : 1);
 
     return SizedBox(
       height: 38,
@@ -175,7 +178,7 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
           controller: _scrollController,
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.only(right: 16),
-          itemCount: tabs.length + 1,
+          itemCount: itemCount,
           separatorBuilder: (_, __) => const SizedBox(width: 2),
           itemBuilder: (ctx, i) {
             if (i == tabs.length) {
@@ -186,6 +189,12 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
                   widget.onAddFavorite();
                 },
                 colors: colors,
+              );
+            }
+            if (i == tabs.length + 1) {
+              return Padding(
+                padding: const EdgeInsets.only(left: 2),
+                child: trailingFilterTrigger,
               );
             }
             final tab = tabs[i];
@@ -214,6 +223,7 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
 @visibleForTesting
 List<FavoriteTabModel> buildFavoriteTabModelsForTest({
   required List<UserTopicProfile> topics,
+  List<CustomTopicInterest>? customTopics,
   required List<FavoriteRef> favorites,
   required List<Content> items,
   List<SourceFavoriteRef> sourceFavorites = const [],
@@ -226,7 +236,8 @@ List<FavoriteTabModel> buildFavoriteTabModelsForTest({
   String? selectedSourceId,
 }) =>
     _buildTabModels(
-      topics: topics,
+      customTopics:
+          customTopics ?? topics.map(_customInterestFromProfile).toList(),
       favorites: favorites,
       sourceFavorites: sourceFavorites,
       sourceById: sourceById,
@@ -239,13 +250,26 @@ List<FavoriteTabModel> buildFavoriteTabModelsForTest({
       selectedSourceId: selectedSourceId,
     );
 
+CustomTopicInterest _customInterestFromProfile(UserTopicProfile topic) {
+  return CustomTopicInterest(
+    id: topic.id,
+    topicName: topic.name,
+    slugParent: topic.slugParent ?? topic.id,
+    state: InterestState.favorite,
+    priorityMultiplier: topic.priorityMultiplier,
+    entityType: topic.entityType,
+    canonicalName: topic.canonicalName,
+    compositeScore: topic.compositeScore,
+  );
+}
+
 /// Onglets Flâner = *sujets épinglés* (custom topics + entités favoris) **et**
 /// *sources épinglées* (favoris sources), mélangés selon l'ordre unifié
 /// [order] (cf. [tabOrderPrefsProvider]). Les *thèmes/veille* pilotent la
 /// Tournée du jour et ne sont donc pas rendus en onglet ici — ils restent
 /// filtrables via la chip thème.
 List<FavoriteTabModel> _buildTabModels({
-  required List<UserTopicProfile> topics,
+  required List<CustomTopicInterest> customTopics,
   required List<FavoriteRef> favorites,
   required List<SourceFavoriteRef> sourceFavorites,
   required Map<String, Source> sourceById,
@@ -264,31 +288,31 @@ List<FavoriteTabModel> _buildTabModels({
       if (f is CustomTopicFavoriteRef) f.id,
   };
 
-  // Diagnostic : un sujet favori sans `UserTopicProfile` correspondant dans
-  // `topics` ne produira aucun onglet (hypothèse : `customTopicsProvider`
-  // incomplet vs `userInterestsProvider.favorites`).
+  // Diagnostic : un sujet favori sans `CustomTopicInterest` correspondant ne
+  // produira aucun onglet (réponse `user/interests` incohérente).
   if (kDebugMode) {
-    final knownTopicIds = {for (final t in topics) t.id};
+    final knownTopicIds = {for (final t in customTopics) t.id};
     final orphanFavorites =
         favoriteCustomIds.where((id) => !knownTopicIds.contains(id)).toList();
     if (orphanFavorites.isNotEmpty) {
       debugPrint(
         '[FavoriteTabs] ${orphanFavorites.length} sujet(s) favori(s) sans '
-        'UserTopicProfile (customTopicsProvider incomplet ?) : $orphanFavorites',
+        'CustomTopicInterest : $orphanFavorites',
       );
     }
   }
 
-  final entitySubjects = topics
+  final entitySubjects = customTopics
       .where((t) => t.entityType != null && favoriteCustomIds.contains(t.id))
       .toList()
     ..sort((a, b) => b.compositeScore.compareTo(a.compositeScore));
 
-  final topicSubjects = topics
-      .where((t) =>
-          t.entityType == null && favoriteCustomIds.contains(t.id))
+  final topicSubjects = customTopics
+      .where((t) => t.entityType == null && favoriteCustomIds.contains(t.id))
       .toList()
-    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    ..sort(
+      (a, b) => a.topicName.toLowerCase().compareTo(b.topicName.toLowerCase()),
+    );
 
   final cutoff = DateTime.now().subtract(const Duration(hours: 48));
   final tabs = <FavoriteTabModel>[];
@@ -301,13 +325,13 @@ List<FavoriteTabModel> _buildTabModels({
   final favoriteTabs = <({FavoriteTabModel tab, String key})>[];
 
   for (final entity in entitySubjects) {
-    final slug = entity.canonicalName ?? entity.name;
+    final slug = entity.canonicalName ?? entity.topicName;
     favoriteTabs.add((
       key: tabOrderTopicKey(entity.id),
       tab: FavoriteTabModel(
         kind: FavoriteTabKind.subjectEntity,
         slug: slug,
-        label: entity.name,
+        label: entity.topicName,
         emoji: '',
         count: useServer
             ? (serverCounts.entities[slug.toLowerCase()] ?? 0)
@@ -321,20 +345,18 @@ List<FavoriteTabModel> _buildTabModels({
   }
 
   for (final topic in topicSubjects) {
-    final slug = topic.slugParent ?? topic.id;
+    final slug = topic.slugParent;
     favoriteTabs.add((
       key: tabOrderTopicKey(topic.id),
       tab: FavoriteTabModel(
         kind: FavoriteTabKind.subjectTopic,
         slug: slug,
-        label: topic.name,
+        label: topic.topicName,
         emoji: '',
         count: useServer
             ? (serverCounts.topics[slug] ?? 0)
             : _countUnreadRecent(items,
-                cutoff: cutoff,
-                kind: FavoriteTabKind.subjectTopic,
-                slug: slug),
+                cutoff: cutoff, kind: FavoriteTabKind.subjectTopic, slug: slug),
         active: selectedTopicSlug != null && selectedTopicSlug == slug,
       ),
     ));
@@ -430,8 +452,7 @@ class _FavoriteTabItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final labelColor =
-        tab.active ? colors.textPrimary : colors.textSecondary;
+    final labelColor = tab.active ? colors.textPrimary : colors.textSecondary;
     final labelWeight = tab.active ? FontWeight.w700 : FontWeight.w500;
     final showBadge = tab.count >= 3;
     final showLabel =
@@ -440,6 +461,18 @@ class _FavoriteTabItem extends StatelessWidget {
         tab.kind == FavoriteTabKind.source && tab.source != null
             ? tab.source
             : null;
+    final label = Text(
+      showLabel,
+      style: TextStyle(
+        fontSize: 14.5,
+        fontWeight: labelWeight,
+        color: labelColor,
+        height: 1.15,
+      ),
+      maxLines: 1,
+      overflow: tab.active ? TextOverflow.visible : TextOverflow.ellipsis,
+      softWrap: false,
+    );
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -460,15 +493,13 @@ class _FavoriteTabItem extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    showLabel,
-                    style: TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: labelWeight,
-                      color: labelColor,
-                      height: 1.15,
+                  if (tab.active)
+                    label
+                  else
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 108),
+                      child: label,
                     ),
-                  ),
                   const SizedBox(height: 2),
                   Container(
                     height: 2,

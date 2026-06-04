@@ -55,7 +55,7 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
     return FilterCollapsiblePanel(
       activeCount: selection.activeCount,
       chipsRow: _buildChipsRow(context, selection),
-      leadingContent: FavoriteTopicTabs(
+      collapsedContentBuilder: (filterTrigger) => FavoriteTopicTabs(
         items: feedItems.cast(),
         serverCounts: serverCounts,
         selectedTopicSlug: selection.topic,
@@ -101,6 +101,7 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
           HapticFeedback.mediumImpact();
           showPinSubjectsSheet(context);
         },
+        trailingFilterTrigger: filterTrigger,
       ),
       leadingTrigger: _SearchTrigger(
         active: hasSearch,

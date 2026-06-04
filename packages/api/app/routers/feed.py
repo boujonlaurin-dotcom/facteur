@@ -164,6 +164,16 @@ async def get_personalized_feed(
             "the Tournée du jour theme sections."
         ),
     ),
+    followed_only: bool = Query(
+        False,
+        description=(
+            "When True AND theme/topic/entity is set, restrict candidates to "
+            "followed sources while keeping the chronological order (unlike "
+            "`personalized`). Powers the fast 'followed-first' block of the "
+            "Flâner discovery tabs; the 'Explorer' block fetches unfollowed "
+            "sources separately."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -226,6 +236,7 @@ async def get_personalized_feed(
                 keyword=keyword,
                 include_unfollowed=include_unfollowed,
                 personalized=personalized,
+                followed_only=followed_only,
             )
             payload = json.dumps(response.model_dump(mode="json")).encode("utf-8")
             FEED_CACHE.put(user_uuid, payload)
@@ -248,6 +259,7 @@ async def get_personalized_feed(
         keyword=keyword,
         include_unfollowed=include_unfollowed,
         personalized=personalized,
+        followed_only=followed_only,
     )
     return response
 
@@ -270,6 +282,7 @@ async def _compute_feed(
     keyword: str | None,
     include_unfollowed: bool = False,
     personalized: bool = False,
+    followed_only: bool = False,
 ) -> FeedResponse:
     """Run the full recommendation pipeline. Identical to the pre-Round-5
     body of `get_personalized_feed`, extracted for cache-miss reuse."""
@@ -299,6 +312,7 @@ async def _compute_feed(
         serein=serein,
         include_unfollowed=include_unfollowed,
         personalized=personalized,
+        followed_only=followed_only,
     )
 
     # Epic 11: Build clusters from custom topics (reuse from service, no duplicate query)

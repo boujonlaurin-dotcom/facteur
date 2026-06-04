@@ -346,6 +346,138 @@ async def test_source_alone_stays_chronological():
 
 
 # ---------------------------------------------------------------------------
+# `followed_only` — onglets de découverte Flâner (sujet / thème / entité).
+#
+# Le bloc principal de chaque onglet ne charge que les sources suivies → requête
+# rapide. Contrairement à `personalized`, le tri reste CHRONOLOGIQUE (pas de
+# scoring piliers ni de fenêtre adaptative). Le bloc « Explorer » charge les
+# sources non-suivies via un appel séparé SANS `followed_only` (chemin existant).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_followed_only_topic_restricts_to_followed_chronological():
+    """topic + followed_only=True + sources suivies → restriction aux sources
+    suivies (contents.source_id IN) SANS fenêtre de fraîcheur (chronologique)."""
+    service, session = _make_service()
+    captured: list[str] = []
+    session.scalars, _ = _stub_scalars(captured)
+
+    followed = {uuid4(), uuid4()}
+    await asyncio.wait_for(
+        service._get_candidates(
+            user_id=uuid4(),
+            limit_candidates=500,
+            topic="startups",
+            personalized=False,
+            followed_only=True,
+            followed_source_ids=followed,
+        ),
+        timeout=5.0,
+    )
+
+    assert captured, "expected at least one SQL statement"
+    sql = captured[0].lower()
+    # Restriction directe aux sources suivies (pas le two-phase sources.id IN).
+    assert "source_id in" in sql, (
+        "followed_only topic must restrict to followed sources via "
+        f"contents.source_id IN. Got:\n{captured[0]}"
+    )
+    # Tri chronologique conservé : aucune fenêtre published_at >= cutoff.
+    assert ">= " not in sql or "published_at" not in sql, (
+        "followed_only must stay chronological (no freshness window)."
+        f" Got:\n{captured[0]}"
+    )
+    # Pas de boost subtopic (réservé à personalized).
+    assert "overlap" not in sql and "&&" not in sql, (
+        f"followed_only must not add a subtopic overlap ORDER BY. Got:\n{captured[0]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_followed_only_entity_restricts_to_followed():
+    """entity + followed_only=True → même restriction aux sources suivies."""
+    service, session = _make_service()
+    captured: list[str] = []
+    session.scalars, _ = _stub_scalars(captured)
+
+    await asyncio.wait_for(
+        service._get_candidates(
+            user_id=uuid4(),
+            limit_candidates=500,
+            entity="OpenAI",
+            personalized=False,
+            followed_only=True,
+            followed_source_ids={uuid4()},
+        ),
+        timeout=5.0,
+    )
+
+    sql = captured[0].lower()
+    assert "source_id in" in sql, (
+        f"followed_only entity must restrict to followed sources. Got:\n{captured[0]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_followed_only_zero_followed_falls_back_to_curated():
+    """topic + followed_only=True + zéro source suivie → repli curé pour ne pas
+    vider le bloc principal (même sémantique que personalized_theme_mode)."""
+    service, session = _make_service()
+    captured: list[str] = []
+    session.scalars, _ = _stub_scalars(captured)
+
+    await asyncio.wait_for(
+        service._get_candidates(
+            user_id=uuid4(),
+            limit_candidates=500,
+            topic="startups",
+            personalized=False,
+            followed_only=True,
+            followed_source_ids=set(),
+        ),
+        timeout=5.0,
+    )
+
+    sql = captured[0].lower()
+    assert "is_curated" in sql, (
+        "followed_only with zero followed sources must fall back to curated."
+        f" Got:\n{captured[0]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_topic_without_followed_only_unchanged():
+    """Régression : topic + followed_only=False → comportement actuel inchangé
+    (toutes sources, aucune restriction suivie ni curée)."""
+    service, session = _make_service()
+    captured: list[str] = []
+    session.scalars, _ = _stub_scalars(captured)
+
+    await asyncio.wait_for(
+        service._get_candidates(
+            user_id=uuid4(),
+            limit_candidates=500,
+            topic="startups",
+            personalized=False,
+            followed_only=False,
+            followed_source_ids={uuid4()},
+        ),
+        timeout=5.0,
+    )
+
+    sql = captured[0].lower()
+    # Branche fourre-tout : ni restriction sources suivies, ni filtre curé.
+    assert "source_id in" not in sql, (
+        "topic without followed_only must not restrict to followed sources."
+        f" Got:\n{captured[0]}"
+    )
+    assert "is_curated" not in sql, (
+        f"topic without followed_only must not apply curated filter. Got:\n{captured[0]}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Backfill curé NON-suivi : garantit ≥ THEMATIC_HARD_FLOOR articles par section
 # thématique quand le pool des sources suivies est trop maigre (même au palier
 # 72h). On complète avec des sources curées non-suivies (comme Flâner), marquées

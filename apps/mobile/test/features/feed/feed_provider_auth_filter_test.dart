@@ -67,6 +67,7 @@ void main() {
         entity: any(named: 'entity'),
         keyword: any(named: 'keyword'),
         includeUnfollowed: any(named: 'includeUnfollowed'),
+        followedOnly: any(named: 'followedOnly'),
         serein: any(named: 'serein'),
       ),
     ).thenAnswer((invocation) async {

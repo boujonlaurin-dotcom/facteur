@@ -211,6 +211,15 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   String? get selectedKeyword => _selectedKeyword;
   List<Content> get globalItems => _globalItems;
 
+  /// True quand l'onglet actif est un onglet de découverte (sujet / thème /
+  /// entité). Le bloc principal est alors restreint aux sources suivies
+  /// (`followed_only`) pour un chargement rapide, le bloc « Explorer » charge
+  /// les sources non-suivies en parallèle. Source/mot-clé/vue par défaut → false.
+  bool get _discoveryFiltered =>
+      _selectedTopic != null ||
+      _selectedTheme != null ||
+      _selectedEntity != null;
+
   bool get _isUnfiltered =>
       _selectedFilter == null &&
       _selectedTopic == null &&
@@ -652,6 +661,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       entity: _selectedEntity,
       keyword: _selectedKeyword,
       includeUnfollowed: _includeUnfollowed,
+      followedOnly: _discoveryFiltered,
       serein: isSerein,
     );
 

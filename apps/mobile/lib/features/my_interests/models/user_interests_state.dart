@@ -188,6 +188,9 @@ class CustomTopicInterest {
   final String slugParent;
   final InterestState state;
   final double priorityMultiplier;
+  final String? entityType;
+  final String? canonicalName;
+  final double compositeScore;
 
   const CustomTopicInterest({
     required this.id,
@@ -195,6 +198,9 @@ class CustomTopicInterest {
     required this.slugParent,
     required this.state,
     required this.priorityMultiplier,
+    this.entityType,
+    this.canonicalName,
+    this.compositeScore = 0.0,
   });
 
   factory CustomTopicInterest.fromJson(Map<String, dynamic> json) {
@@ -204,12 +210,18 @@ class CustomTopicInterest {
       slugParent: json['slug_parent'] as String,
       state: InterestState.fromJson(json['state'] as String),
       priorityMultiplier: (json['priority_multiplier'] as num).toDouble(),
+      entityType: json['entity_type'] as String?,
+      canonicalName: json['canonical_name'] as String?,
+      compositeScore: ((json['composite_score'] as num?) ?? 0.0).toDouble(),
     );
   }
 
   CustomTopicInterest copyWith({
     InterestState? state,
     double? priorityMultiplier,
+    String? entityType,
+    String? canonicalName,
+    double? compositeScore,
   }) =>
       CustomTopicInterest(
         id: id,
@@ -217,6 +229,9 @@ class CustomTopicInterest {
         slugParent: slugParent,
         state: state ?? this.state,
         priorityMultiplier: priorityMultiplier ?? this.priorityMultiplier,
+        entityType: entityType ?? this.entityType,
+        canonicalName: canonicalName ?? this.canonicalName,
+        compositeScore: compositeScore ?? this.compositeScore,
       );
 }
 
@@ -277,13 +292,10 @@ class UserInterestsState {
               .map((t) => t.state)
               .firstOrNull ??
           InterestState.unfollowed,
-      CustomTopicFavoriteRef(:final id) => customTopics
-              .where((t) => t.id == id)
-              .map((t) => t.state)
-              .firstOrNull ??
-          InterestState.unfollowed,
+      CustomTopicFavoriteRef(:final id) =>
+        customTopics.where((t) => t.id == id).map((t) => t.state).firstOrNull ??
+            InterestState.unfollowed,
       VeilleFavoriteRef() => InterestState.favorite,
     };
   }
-
 }
