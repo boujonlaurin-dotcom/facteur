@@ -355,26 +355,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     );
   }
 
-  /// Called by [_SectionSnapPhysics] the instant a ballistic simulation is
-  /// built: `true` when it chose a section-anchored spring, `false` for a free
-  /// (natural) fling. Plain flag writes — runs during the physics phase, never
-  /// touches `setState`.
-  void _setSnapping(bool snapping) {}
-
-  /// Drops a snap that is no longer reaching its settle — a driven scroll took
-  /// over, or a fresh drag interrupted it — so its deferred settle haptic does
-  /// not fire spuriously. Single seam so every non-ballistic scroll path stays
-  /// consistent (callers don't open-code the flag clears).
-  void _cancelPendingSnap() {}
-
-  /// Bridges scroll notifications to the snap haptic. The settle haptic
-  /// is fired at rest (not when the spring is built) so it reads as the section
-  /// "posing" under the sticky bar. A fresh drag cancels any pending settle.
   bool _onScrollNotification(ScrollNotification n) {
-    if (n.depth != 0) return false;
-    if (n is ScrollStartNotification && n.dragDetails != null) {
-      _cancelPendingSnap();
-    }
     return false;
   }
 
@@ -490,9 +471,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       0.0,
       _scroll.position.maxScrollExtent,
     );
-    // Driven scroll, not ballistic → clear any snap that was still in flight so
-    // its settle haptic doesn't fire at the end of this animation.
-    _cancelPendingSnap();
     await _scroll.animateTo(
       target,
       duration: const Duration(milliseconds: 700),
@@ -502,7 +480,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
   Future<void> _scrollToTop() async {
     if (!_scroll.hasClients) return;
-    _cancelPendingSnap();
     unawaited(HapticFeedback.lightImpact());
     _markSectionsAboveAsScrolledPast(null);
     await _scroll.animateTo(
@@ -1026,7 +1003,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           physics: AlwaysScrollableScrollPhysics(
             parent: _SectionSnapPhysics(
               anchors: _snapAnchors,
-              onSnap: _setSnapping,
             ),
           ),
           slivers: [
@@ -1231,11 +1207,9 @@ class _SnapAnchors {
 /// gestures.
 class _SectionSnapPhysics extends ScrollPhysics {
   final _SnapAnchors anchors;
-  final ValueChanged<bool> onSnap;
 
   const _SectionSnapPhysics({
     required this.anchors,
-    required this.onSnap,
     super.parent,
   });
 
@@ -1243,7 +1217,6 @@ class _SectionSnapPhysics extends ScrollPhysics {
   _SectionSnapPhysics applyTo(ScrollPhysics? ancestor) {
     return _SectionSnapPhysics(
       anchors: anchors,
-      onSnap: onSnap,
       parent: buildParent(ancestor),
     );
   }
@@ -1255,7 +1228,6 @@ class _SectionSnapPhysics extends ScrollPhysics {
   ) {
     final natural = super.createBallisticSimulation(position, velocity);
     final target = _resolveTarget(position, velocity, natural);
-    onSnap(target != null);
     if (target == null) return natural;
     return ScrollSpringSimulation(
       kSnapSpring,
