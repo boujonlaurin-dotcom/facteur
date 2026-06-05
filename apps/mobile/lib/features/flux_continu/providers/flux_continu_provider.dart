@@ -172,14 +172,23 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       unawaited(_refetchSourcesOnly(picked));
     });
 
-    // PR 2 — un changement d'ordre/masques via « Composer ma Tournée »
-    // ne refetch rien (sections déjà dans _themes/_sources) : juste un recompose
-    // (la liste Tournée relit l'ordre + applique le cap d'affichage).
+    // Story 10.2 — `tournee_order_v1` fait autorité pour le **mode** des sources :
+    // une source y figure ⇒ mode « Essentiel ». Deux cas à distinguer ici :
+    //  - l'ensemble des clés `source:` de l'ordre change (une source entre ou
+    //    sort de l'Essentiel) ⇒ il faut **refetch** : une source qui entre
+    //    n'existe pas encore dans `_sources` ; une qui sort doit en disparaître.
+    //  - sinon (réordre/masques) ⇒ simple recompose (sections déjà fetchées).
     ref.listen<TourneeOrderState>(tourneeOrderPrefsProvider, (prev, next) {
       if (!state.hasValue) return;
       if (prev != null &&
           listEquals(prev.order, next.order) &&
           setEquals(prev.hiddenKeys, next.hiddenKeys)) {
+        return;
+      }
+      final prevSourceKeys =
+          prev?.essentielSourceKeys ?? const <String>{};
+      if (!setEquals(prevSourceKeys, next.essentielSourceKeys)) {
+        unawaited(_refetchSourcesOnly(_pickFavoriteSources()));
         return;
       }
       state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
@@ -1100,8 +1109,16 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final favs = favorites ??
         ref.read(userSourcesStateProvider).valueOrNull?.favorites ??
         const <SourceFavoriteRef>[];
-    final sorted = [...favs]..sort((a, b) => a.position.compareTo(b.position));
-    return sorted.take(_kMaxFavoriteSourceSections).toList(growable: false);
+    // Story 10.2 — appartenance exclusive : une source n'est rendue dans la
+    // Tournée que si elle est en mode « Essentiel » (sa clé `source:<id>` est
+    // dans `tournee_order_v1`). Sinon elle vit en mode « Flâner » (onglets).
+    // Règle centralisée dans [TourneeOrderState.sourceIsEssentiel].
+    final tournee = ref.read(tourneeOrderPrefsProvider);
+    final inEssentiel = [
+      for (final f in favs)
+        if (tournee.sourceIsEssentiel(f.sourceId)) f,
+    ]..sort((a, b) => a.position.compareTo(b.position));
+    return inEssentiel.take(_kMaxFavoriteSourceSections).toList(growable: false);
   }
 
   /// Résout chaque source favorite en `Source` complet (nom + logo + thème)

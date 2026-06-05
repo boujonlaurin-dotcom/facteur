@@ -13,6 +13,8 @@ import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
+import '../../flux_continu/providers/tournee_order_prefs_provider.dart'
+    show tourneeOrderPrefsProvider;
 import '../models/content_model.dart';
 import '../providers/tab_order_prefs_provider.dart';
 import '../repositories/feed_repository.dart';
@@ -130,6 +132,11 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
     final sourcesStateAsync = ref.watch(userSourcesStateProvider);
     final sourcesAsync = ref.watch(userSourcesProvider);
     final order = ref.watch(tabOrderPrefsProvider);
+    // Story 10.2 — appartenance exclusive : une source en mode « Essentiel »
+    // (clé dans `tournee_order_v1`) ne s'affiche pas en onglet Flâner.
+    final tourneeOrder = ref.watch(
+      tourneeOrderPrefsProvider.select((s) => s.order),
+    );
 
     final interests = interestsAsync.valueOrNull;
     final customTopics =
@@ -147,6 +154,7 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
       sourceFavorites: sourceFavorites,
       sourceById: sourceById,
       order: order,
+      tourneeOrder: tourneeOrder,
       items: widget.items,
       serverCounts: widget.serverCounts,
       selectedTopicSlug: widget.selectedTopicSlug,
@@ -229,6 +237,7 @@ List<FavoriteTabModel> buildFavoriteTabModelsForTest({
   List<SourceFavoriteRef> sourceFavorites = const [],
   Map<String, Source> sourceById = const {},
   List<String> order = const [],
+  List<String> tourneeOrder = const [],
   TabCounts? serverCounts,
   String? selectedTopicSlug,
   String? selectedThemeSlug,
@@ -242,6 +251,7 @@ List<FavoriteTabModel> buildFavoriteTabModelsForTest({
       sourceFavorites: sourceFavorites,
       sourceById: sourceById,
       order: order,
+      tourneeOrder: tourneeOrder,
       items: items,
       serverCounts: serverCounts,
       selectedTopicSlug: selectedTopicSlug,
@@ -274,6 +284,7 @@ List<FavoriteTabModel> _buildTabModels({
   required List<SourceFavoriteRef> sourceFavorites,
   required Map<String, Source> sourceById,
   required List<String> order,
+  List<String> tourneeOrder = const [],
   required List<Content> items,
   TabCounts? serverCounts,
   String? selectedTopicSlug,
@@ -367,9 +378,13 @@ List<FavoriteTabModel> _buildTabModels({
   // catalogue (logo/nom non résolus).
   final sortedSourceFavorites = [...sourceFavorites]
     ..sort((a, b) => a.position.compareTo(b.position));
+  // Story 10.2 — une source en mode « Essentiel » (clé dans `tournee_order_v1`)
+  // n'est pas un onglet Flâner. Même chaîne `source:<id>` que [tabOrderSourceKey].
+  final essentielSourceKeys = tourneeOrder.toSet();
   for (final ref in sortedSourceFavorites) {
     final source = sourceById[ref.sourceId];
     if (source == null) continue;
+    if (essentielSourceKeys.contains(tabOrderSourceKey(ref.sourceId))) continue;
     favoriteTabs.add((
       key: tabOrderSourceKey(ref.sourceId),
       tab: FavoriteTabModel(

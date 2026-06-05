@@ -215,6 +215,25 @@ void main() {
       expect(sourceTab.source, isNotNull);
     });
 
+    test(
+        'source en mode Essentiel (clé dans tournee_order) → exclue des onglets '
+        'Flâner (Story 10.2)', () {
+      final src = _source(id: 's1', name: 'Le Monde');
+
+      // La même source favorite, mais sa clé `source:s1` est dans l'ordre
+      // Tournée ⇒ mode « Essentiel » ⇒ pas d'onglet Flâner.
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: const [],
+        favorites: const [],
+        items: const [],
+        sourceFavorites: const [SourceFavoriteRef(sourceId: 's1', position: 0)],
+        sourceById: {'s1': src},
+        tourneeOrder: const ['source:s1'],
+      );
+
+      expect(tabs, isEmpty);
+    });
+
     test('source favorite absent from catalog → skipped', () {
       final tabs = buildFavoriteTabModelsForTest(
         topics: const [],

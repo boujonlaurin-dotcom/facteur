@@ -75,6 +75,20 @@ class TourneeOrderState {
   /// [hiddenKeys]. Les écritures doivent passer par [setHidden].
   bool get veilleHidden => hiddenKeys.contains(kTourneeVeilleKey);
 
+  /// Story 10.2 — clés `source:` présentes dans l'ordre. Une source y figure
+  /// ⇒ mode « Chaque jour dans l'Essentiel » (sinon mode « Flâner »). Source
+  /// unique de la règle d'appartenance, partagée par le provider Tournée, les
+  /// onglets Flâner et la sheet de gestion (évite la dérive entre chemins).
+  Set<String> get essentielSourceKeys => {
+        for (final key in order)
+          if (key.startsWith('source:')) key,
+      };
+
+  /// `true` ssi la source [sourceId] est livrée en mode « Essentiel » (sa clé
+  /// `source:<id>` est dans [order]). Voir [essentielSourceKeys].
+  bool sourceIsEssentiel(String sourceId) =>
+      order.contains(tourneeSourceKey(sourceId));
+
   TourneeOrderState copyWith({
     List<String>? order,
     Set<String>? hiddenKeys,

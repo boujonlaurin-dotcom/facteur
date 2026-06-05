@@ -543,6 +543,19 @@ void main() {
   test(
       'cap d\'affichage 5 : 3 thèmes + 3 sources + veille (7 candidats) → '
       'seulement 5 sections, veille (en queue par défaut) coupée', () async {
+    // Story 10.2 — les sources doivent être en mode « Essentiel » (clé dans
+    // l'ordre) pour entrer dans la Tournée ; on garde l'ordre par défaut
+    // (thèmes avant sources) en plaçant les clés thème d'abord.
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'tournee_order_v1': [
+        'theme:society',
+        'theme:culture',
+        'theme:economy',
+        'source:a',
+        'source:b',
+        'source:c',
+      ],
+    });
     stubFeed(
       themeIds: {
         'society': ['s1', 's2'],
@@ -644,8 +657,18 @@ void main() {
   test(
     'veille en tête d\'ordre : présente dans le cap, un autre item tombe',
     () async {
+      // Story 10.2 — sources en mode « Essentiel » (clés dans l'ordre) ; veille
+      // remontée en tête. 7 candidats → cap 5, veille première.
       SharedPreferences.setMockInitialValues(<String, Object>{
-        'tournee_order_v1': ['veille'],
+        'tournee_order_v1': [
+          'veille',
+          'theme:society',
+          'theme:culture',
+          'theme:economy',
+          'source:a',
+          'source:b',
+          'source:c',
+        ],
       });
       stubFeed(
         themeIds: {
@@ -835,6 +858,10 @@ void main() {
         '(Tournée source-only)', () async {
       // Une source favorite suffit à rendre la Tournée non vide → on ne pad
       // pas avec des thèmes canoniques que l'utilisateur n'a pas choisis.
+      // Story 10.2 — source en mode « Essentiel » pour qu'elle rende sa section.
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'tournee_order_v1': ['source:s1'],
+      });
       stubFeed(
         sourceIds: {
           's1': ['x1'],
