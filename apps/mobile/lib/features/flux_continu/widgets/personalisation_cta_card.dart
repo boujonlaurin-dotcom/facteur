@@ -22,6 +22,7 @@ class PersonalisationCtaCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final accent = colors.sectionEssentiel;
+    final isDark = context.isDarkMode;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -48,16 +49,18 @@ class PersonalisationCtaCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Illustration plein-largeur, fond accent doux.
-            Container(
-              color: accent.withValues(alpha: 0.07),
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Image.asset(
-                'assets/images/facteur_reparation_velo.png',
-                height: 132,
-                fit: BoxFit.contain,
+            // Illustration : fond blanc en light (pas de tinte orange), masquée
+            // en dark (fond blanc sur image PNG = rendu horrible en mode sombre).
+            if (!isDark)
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Image.asset(
+                  'assets/images/facteur_reparation_velo.png',
+                  height: 132,
+                  fit: BoxFit.contain,
+                ),
               ),
-            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
               child: Column(

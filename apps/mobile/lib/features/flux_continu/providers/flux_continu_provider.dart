@@ -1250,30 +1250,38 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     ];
     final favoriteKeys = [...themeKeys, ...sourceKeys, ...veilleKeys];
     final useSereneDefault = isSerene && !customized;
+    // La Grille n'est PAS réordonnable par l'utilisateur (cf. modal « Mes
+    // favoris ») : on l'exclut d'`applyOrder` et on l'épingle juste après les
+    // Actus plus bas. Sinon, comme sa clé est absente de `order` (compte
+    // personnalisé), `applyOrder` la reléguerait en fin de liste → coupée par
+    // le cap → la Grille disparaîtrait. Régression corrigée par hotfix.
     final defaultKeys = useSereneDefault
         ? <String>[
             kTourneeBonnesKey,
             ...favoriteKeys,
             kTourneeActusKey,
-            if (grilleAvailable) kTourneeGrilleKey,
           ]
         : <String>[
             kTourneeActusKey,
-            if (grilleAvailable) kTourneeGrilleKey,
             ...favoriteKeys,
             kTourneeBonnesKey,
           ];
     final availableKeys = [
       for (final key in defaultKeys)
-        if (!hiddenKeys.contains(key) &&
-            (key == kTourneeGrilleKey || sectionByKey.containsKey(key)))
-          key,
+        if (!hiddenKeys.contains(key) && sectionByKey.containsKey(key)) key,
     ];
-    return applyOrder(
-      availableKeys,
-      order,
-      (key) => key,
-    ).take(kTourneeVisibleCap).toList(growable: false);
+    final ordered = applyOrder(availableKeys, order, (key) => key).toList();
+
+    // Épingle la Grille immédiatement après les Actus du jour (ou en tête si
+    // les Actus sont masqués/absents). C'est le seul point qui fixe la position
+    // de la Grille — feed, sticky header (« Mot du jour ») et carte CTA en
+    // dérivent tous via `grilleSlotIndex`.
+    if (grilleAvailable && !hiddenKeys.contains(kTourneeGrilleKey)) {
+      final actusIndex = ordered.indexOf(kTourneeActusKey);
+      ordered.insert(actusIndex >= 0 ? actusIndex + 1 : 0, kTourneeGrilleKey);
+    }
+
+    return ordered.take(kTourneeVisibleCap).toList(growable: false);
   }
 
   int? _resolveGrilleSlotIndex({

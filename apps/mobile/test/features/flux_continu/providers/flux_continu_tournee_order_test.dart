@@ -505,7 +505,11 @@ void main() {
       },
     );
 
-    test('ordre utilisateur prime en mode serène', () async {
+    test('ordre utilisateur prime en mode serène (Grille épinglée après Actus)',
+        () async {
+      // La clé `grille` héritée d'un ordre legacy est ignorée pour le
+      // positionnement : la Grille n'est plus réordonnable et reste collée aux
+      // Actus. Le reste de l'ordre utilisateur (actus/bonnes) prime.
       SharedPreferences.setMockInitialValues(<String, Object>{
         'tournee_order_v1': [
           kTourneeActusKey,
@@ -537,7 +541,8 @@ void main() {
         kTourneeBonnesKey,
         'theme:society',
       ]);
-      expect(state.grilleSlotIndex, 2);
+      // Grille juste après les Actus (index 1), pas après les Bonnes.
+      expect(state.grilleSlotIndex, 1);
     });
   });
 
@@ -954,5 +959,58 @@ void main() {
       isNot(contains('theme:society')),
       reason: 'thème en mode Flâner absent des sections Essentiel',
     );
+  });
+
+  test(
+      'hotfix Grille — compte personnalisé sans clé grille dans order : la '
+      'Grille reste épinglée juste après les Actus (pas coupée par le cap)',
+      () async {
+    // Régression : la Grille n'étant plus réordonnable, sa clé `grille` est
+    // absente de `tournee_order_v1`. `applyOrder` la reléguait en fin de liste
+    // → coupée par le cap de 5 → disparition totale. Elle doit rester collée
+    // aux Actus.
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'tournee_customized_v1': true,
+      'tournee_order_v1': [
+        'essentiel',
+        'theme:society',
+        'theme:culture',
+        'theme:economy',
+        'theme:tech',
+      ],
+    });
+    stubDigest();
+    stubFeed(
+      themeIds: {
+        'society': ['s1'],
+        'culture': ['c1'],
+        'economy': ['e1'],
+        'tech': ['t1'],
+      },
+    );
+    final container = await buildContainer(
+      interests: _interestsState(
+        favorites: const [
+          ThemeFavoriteRef(slug: 'society'),
+          ThemeFavoriteRef(slug: 'culture'),
+          ThemeFavoriteRef(slug: 'economy'),
+          ThemeFavoriteRef(slug: 'tech'),
+        ],
+      ),
+      sourcesState: _sourcesState(),
+      catalog: const [],
+      grilleToday: _grilleToday(),
+    );
+    addTearDown(container.dispose);
+
+    final state = await container.read(fluxContinuProvider.future);
+
+    expect(
+      state.grilleSlotIndex,
+      1,
+      reason: 'La Grille est rendue juste après les Actus, malgré l\'absence '
+          'de sa clé dans l\'ordre personnalisé',
+    );
+    expect(sectionKey(state.sections.first), kTourneeActusKey);
   });
 }
