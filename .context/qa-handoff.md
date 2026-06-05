@@ -1,28 +1,81 @@
-# QA Handoff — UX Drag & Drop + bouton « Composer ma Tournée »
+# QA Handoff — Ajustements UX/UI de « L'Essentiel » (5 points)
 
-Branche : `boujonlaurin-dotcom/drag-drop-ux-tournee`
+> Rempli par l'agent dev. Input de `/validate-feature` (Chrome, viewport 390×844).
+
+## Feature développée
+5 frictions UX corrigées sur la page **L'Essentiel** (Flux Continu) et sa modal
+« Mes favoris » : carte de perso dédiée + inline lié au snap, Grille collée aux
+Actus, titres de sections plus clairs, thèmes livrables en onglet Flâner (modèle
+exclusif comme les sources), et cap max affiché entre parenthèses.
+
+## PR associée
+[#798 — feat(flux-continu): ajustements UX de L'Essentiel](https://github.com/boujonlaurin-dotcom/facteur/pull/798)
 
 ## Écrans impactés
-- **Sheet « Mes favoris » / « Composer ma Tournée »** (`manage_favorites_sheet.dart`) — sections Essentiel & Flâner, listes réordonnables.
-- **Bouton « Composer ma Tournée »** (`ComposeTourneeButton`) rendu dans `section_block.dart` (carte Essentiel + empty-state), `flux_continu_screen.dart`, `sources_screen.dart`, `my_interests_screen.dart`.
+| Écran | Route | Modifié / Nouveau |
+|-------|-------|-------------------|
+| L'Essentiel (Flux Continu) | `/` (flux continu) | Modifié |
+| Modal « Mes favoris » | bottom sheet (depuis l'Essentiel / Flâner) | Modifié |
+| Carte de perso | nouveau widget `PersonalisationCtaCard` | Nouveau |
 
-## Changements
-1. **Feedback visuel drag** : l'élément glissé est « soulevé » (scale 1.03 + ombre douce progressive). Vibration `mediumImpact` au pickup, `selectionClick` au dépôt.
-2. **Hit zone élargie** : toute la zone logo + label de chaque ligne démarre le drag (`ColoredBox` opaque), + poignée points portée à 44×44px. Boutons d'action (retirer/déplacer/veille) restent tappables.
-3. **Bouton** : tuile teintée douce (fond `primary` 12%, ombre subtile), plus grande (padding vertical 16, font 15, icône 18), ripple InkWell. Remplace l'ancien contour fin.
+## Scénarios de test
 
-## Scénarios de test (viewport 390×844)
-- **Happy path** : ouvrir « Composer ma Tournée » → nouveau bouton visible/élégant ; glisser une ligne par sa **zone label** (pas que la poignée) → vibration + élément soulevé + réordonnancement persiste après fermeture/réouverture.
-- **Edge** : taper retirer/déplacer/veille sur une ligne → action déclenchée SANS démarrer un drag.
-- **Edge** : tester les deux sections (Essentiel ⇄ Flâner), au-delà du cap (divider « Hors Tournée du jour »).
-- Console sans erreurs ; aucun 4xx/5xx réseau inattendu sur la persistance d'ordre.
+### Scénario 1 — Compte non personnalisé : grande carte de perso
+**Parcours** :
+1. Compte neuf (`tournee_customized_v1` absent / faux).
+2. Ouvrir l'Essentiel.
+**Résultat attendu** : juste après le hero « L'Essentiel du jour », une **grande
+carte** « Personnalise ton Essentiel » avec l'illustration
+(`facteur_reparation_velo.png`) et le bouton **« Composer ma Tournée »**. L'inline
+discret « Gérer / Tes N favoris » n'apparaît PAS. Taper le bouton → ouvre la sheet
+« Mes favoris ».
+
+### Scénario 2 — Compte personnalisé : inline lié au snap
+**Parcours** :
+1. Personnaliser la Tournée (ajouter/retirer un favori) puis revenir à l'Essentiel.
+2. Scroller (fling) à travers les sections.
+**Résultat attendu** : la grande carte disparaît ; l'**inline** « Gérer / Tes N
+favoris » réapparaît, embarqué en tête de la 1ʳᵉ section après le hero. Au snap, il
+n'est plus « sauté » entre deux blocs — il fait partie du bloc de cette section.
+
+### Scénario 3 — Modal : Grille, titres, caps
+**Parcours** :
+1. Ouvrir « Mes favoris ».
+**Résultat attendu** :
+- Sections nommées **« BLOCS DE TA PAGE L'ESSENTIEL »** et **« ONGLETS DE TA PAGE
+  FLÂNER »**.
+- **« Actus & Mot du jour »** présent ; **« La Grille du jour »** n'est PAS un bloc
+  drag&drop.
+- Au-delà du cap, les traits affichent **« Hors Tournée du jour (5) »** et **« Hors
+  onglets (10) »**.
+
+### Scénario 4 — Thème Essentiel ⇄ Flâner (modèle exclusif)
+**Parcours** :
+1. Dans « Mes favoris », sur un **thème** côté Essentiel, taper l'icône
+   « déplacer vers Flâner » (flèche bas).
+2. Fermer la modal, observer la barre d'onglets Flâner et la page Essentiel.
+**Résultat attendu** : le thème apparaît en **onglet Flâner** (taper l'onglet filtre
+le feed sur ce thème) et **disparaît des sections de l'Essentiel**. Le mouvement
+inverse (flèche haut, côté Flâner) le ramène dans l'Essentiel.
+
+### Scénario 5 — Cas limite : retrait d'un thème en mode Flâner
+**Parcours** :
+1. Thème en onglet Flâner → le retirer via la croix dans la modal.
+**Résultat attendu** : il disparaît des deux modes (clé retirée de `tournee_order_v1`
+et de `pinned_tabs_order_v1`), repasse en « suivi ». Pas de crash.
 
 ## Critères d'acceptation
-- [ ] Drag démarre depuis le corps de la ligne ET depuis la poignée.
-- [ ] Retour visuel (soulèvement) + vibration perceptibles.
-- [ ] Boutons d'action toujours fonctionnels.
-- [ ] Bouton « Composer ma Tournée » nettement plus visible.
+- [ ] Carte de perso (illustration + CTA) sous le hero quand non personnalisé.
+- [ ] Inline réapparaît une fois personnalisé et ne « saute » plus au snap.
+- [ ] Grille non draggable + libellé « Actus & Mot du jour ».
+- [ ] Titres « BLOCS DE TA PAGE L'ESSENTIEL » / « ONGLETS DE TA PAGE FLÂNER ».
+- [ ] Thème déplaçable Essentiel ⇄ Flâner (filtre feed OK, exclusion Essentiel OK).
+- [ ] Caps affichés « (5) » / « (10) ».
+- [ ] Console sans erreurs, réseau sans 4xx/5xx inattendus.
 
-## Vérifs auto déjà passées
-- `flutter analyze` (2 fichiers) : No issues.
-- `flutter test manage_favorites_sheet_test.dart tournee_composer_sheet_test.dart` : 11/11 ✓.
+## Notes techniques
+- Aucun changement backend / migration / requête feed (le filtre thème existait
+  déjà via `setTheme`).
+- Tests : `manage_favorites_sheet_test`, `favorite_topic_tabs_test`,
+  `flux_continu_tournee_order_test`, nouveau `personalisation_cta_card_test` — verts.
+- 3 échecs pré-existants dans `essentiel_hi_fi_card_test` (weather badge, non liés).

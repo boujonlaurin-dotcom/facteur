@@ -15,6 +15,9 @@ import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
 import '../../flux_continu/providers/tournee_order_prefs_provider.dart'
     show tourneeOrderPrefsProvider;
+import '../../flux_continu/utils/theme_color_mapping.dart' show visualFor;
+import '../../veille/providers/veille_themes_provider.dart'
+    show kVeilleFacteurThemes;
 import '../models/content_model.dart';
 import '../providers/tab_order_prefs_provider.dart';
 import '../repositories/feed_repository.dart';
@@ -273,11 +276,12 @@ CustomTopicInterest _customInterestFromProfile(UserTopicProfile topic) {
   );
 }
 
-/// Onglets Flâner = *sujets épinglés* (custom topics + entités favoris) **et**
-/// *sources épinglées* (favoris sources), mélangés selon l'ordre unifié
-/// [order] (cf. [tabOrderPrefsProvider]). Les *thèmes/veille* pilotent la
-/// Tournée du jour et ne sont donc pas rendus en onglet ici — ils restent
-/// filtrables via la chip thème.
+/// Onglets Flâner = *sujets épinglés* (custom topics + entités favoris),
+/// *sources épinglées* (favoris sources) **et** *thèmes livrés en Flâner*
+/// (modèle exclusif : un `ThemeFavoriteRef` dont la clé `theme:<slug>` est dans
+/// [order] vit en onglet plutôt que dans l'Essentiel). Tous mélangés selon
+/// l'ordre unifié [order] (cf. [tabOrderPrefsProvider]). Un thème *hors* [order]
+/// reste côté Essentiel (non rendu ici) ; la veille pilote toujours la Tournée.
 List<FavoriteTabModel> _buildTabModels({
   required List<CustomTopicInterest> customTopics,
   required List<FavoriteRef> favorites,
@@ -399,6 +403,28 @@ List<FavoriteTabModel> _buildTabModels({
     ));
   }
 
+  // Story Essentiel UX — thèmes livrés en onglet Flâner (modèle exclusif) : un
+  // `ThemeFavoriteRef` dont la clé `theme:<slug>` est dans l'ordre Flâner
+  // [order] produit un onglet (label/emoji via visualFor + kVeilleFacteurThemes,
+  // count 0 = pas de badge). Hors [order], le thème reste côté Essentiel.
+  final flanerThemeKeys = order.toSet();
+  for (final f in favorites) {
+    if (f is! ThemeFavoriteRef) continue;
+    final key = tabOrderThemeKey(f.slug);
+    if (!flanerThemeKeys.contains(key)) continue;
+    favoriteTabs.add((
+      key: key,
+      tab: FavoriteTabModel(
+        kind: FavoriteTabKind.theme,
+        slug: f.slug,
+        label: visualFor(f.slug).label,
+        emoji: _themeTabEmoji(f.slug),
+        count: 0,
+        active: selectedThemeSlug != null && selectedThemeSlug == f.slug,
+      ),
+    ));
+  }
+
   // Ordre unifié voulu par l'utilisateur (drag dans la modal d'épinglage). Plus
   // de tri par count : il reléguait les sources (count: 0 codé en dur) derrière
   // tout sujet ayant des non-lus → elles finissaient en fin de liste, cachées
@@ -419,6 +445,13 @@ List<FavoriteTabModel> _buildTabModels({
 
   tabs.addAll(capped.map((e) => e.tab));
   return tabs;
+}
+
+String _themeTabEmoji(String slug) {
+  for (final t in kVeilleFacteurThemes) {
+    if (t.slug == slug) return t.emoji;
+  }
+  return '📰';
 }
 
 int _countUnreadRecent(

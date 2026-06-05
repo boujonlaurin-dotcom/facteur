@@ -13,7 +13,6 @@ import '../../custom_topics/widgets/entity_add_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../feed/providers/tab_order_prefs_provider.dart';
 import '../../feed/widgets/favorite_topic_tabs.dart' show kMaxFavoriteTabs;
-import '../../grille/providers/grille_provider.dart';
 import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/models/user_sources_state.dart';
 import '../../my_interests/providers/user_interests_provider.dart';
@@ -43,9 +42,6 @@ const Color _kBonnesAccent = Color(0xFF2E7D32);
 
 /// Accent de la veille (aligné `FacteurColors.sectionVeille1`).
 const Color _kVeilleAccent = Color(0xFF2C3E50);
-
-/// Accent de La Grille du jour.
-const Color _kGrilleAccent = Color(0xFFD9A441);
 
 /// Ouvre la sheet unifiée de gestion des favoris. [entry] présélectionne le
 /// segment d'ajout (sources/thèmes côté Essentiel, sources/sujets côté Flâner).
@@ -124,8 +120,11 @@ class _ManageFavoritesContentState
   }
 
   Future<void> _removeTournee(String key) async {
-    final next =
-        ref.read(tourneeOrderPrefsProvider).order.where((k) => k != key).toList();
+    final next = ref
+        .read(tourneeOrderPrefsProvider)
+        .order
+        .where((k) => k != key)
+        .toList();
     await ref.read(tourneeOrderPrefsProvider.notifier).setOrder(next);
   }
 
@@ -136,7 +135,8 @@ class _ManageFavoritesContentState
   }
 
   Future<void> _removeTab(String key) async {
-    final next = ref.read(tabOrderPrefsProvider).where((k) => k != key).toList();
+    final next =
+        ref.read(tabOrderPrefsProvider).where((k) => k != key).toList();
     await ref.read(tabOrderPrefsProvider.notifier).setOrder(next);
   }
 
@@ -214,6 +214,24 @@ class _ManageFavoritesContentState
     NotificationService.showSuccess('Déplacé vers l\'Essentiel');
   }
 
+  // Thèmes : même modèle exclusif que les sources. La clé `theme:<slug>` est
+  // partagée entre `tournee_order_v1` (Essentiel) et `pinned_tabs_order_v1`
+  // (Flâner) ; la favorite reste un `ThemeFavoriteRef` (on ne touche pas à
+  // `setInterestState`).
+  Future<void> _moveThemeToFlaner(String slug) async {
+    await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
+    await _removeTournee(tourneeThemeKey(slug));
+    await _appendTab(tabOrderThemeKey(slug));
+    NotificationService.showSuccess('Déplacé vers Flâner');
+  }
+
+  Future<void> _moveThemeToEssentiel(String slug) async {
+    await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
+    await _removeTab(tabOrderThemeKey(slug));
+    await _appendTournee(tourneeThemeKey(slug));
+    NotificationService.showSuccess('Déplacé vers l\'Essentiel');
+  }
+
   // ── Retraits ────────────────────────────────────────────────────────────
 
   Future<void> _onRemove(_FavItem item) async {
@@ -221,6 +239,8 @@ class _ManageFavoritesContentState
       case _FavKind.theme:
         await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
         await _removeTournee(item.key);
+        // Modèle exclusif : la clé `theme:<slug>` peut être côté Flâner.
+        await _removeTab(item.key);
         try {
           await ref.read(userInterestsProvider.notifier).setInterestState(
                 ThemeFavoriteRef(slug: item.id),
@@ -358,8 +378,9 @@ class _ManageFavoritesContentState
     bool isEssentiel(String id) => tournee.sourceIsEssentiel(id);
     final reorderedSet = reorderedIds.toSet();
     final others = [
-      for (final f in [...sourcesState.favorites]
-        ..sort((a, b) => a.position.compareTo(b.position)))
+      for (final f in [
+        ...sourcesState.favorites
+      ]..sort((a, b) => a.position.compareTo(b.position)))
         if ((essentiel ? !isEssentiel(f.sourceId) : isEssentiel(f.sourceId)) &&
             !reorderedSet.contains(f.sourceId))
           f.sourceId,
@@ -371,9 +392,7 @@ class _ManageFavoritesContentState
         SourceFavoriteRef(sourceId: fullIds[i], position: i),
     ];
     try {
-      await ref
-          .read(userSourcesStateProvider.notifier)
-          .reorderFavorites(refs);
+      await ref.read(userSourcesStateProvider.notifier).reorderFavorites(refs);
     } catch (_) {
       // best-effort : l'ordre prefs reste appliqué.
     }
@@ -399,9 +418,6 @@ class _ManageFavoritesContentState
     final tournee = ref.watch(tourneeOrderPrefsProvider);
     final tabOrder = ref.watch(tabOrderPrefsProvider);
     final isSerene = ref.watch(sereinToggleProvider).enabled;
-    final grilleAvailable = ref.watch(
-      grilleProvider.select((v) => v.valueOrNull?.today != null),
-    );
 
     // ── Membership ────────────────────────────────────────────────────────
     final favoriteThemeSlugs = <String>[
@@ -422,7 +438,9 @@ class _ManageFavoritesContentState
       key: kTourneeActusKey,
       kind: _FavKind.actus,
       id: kTourneeActusKey,
-      label: 'Actus du jour',
+      // « Mot du jour » = la Grille, désormais implicitement rattachée aux Actus
+      // (plus un bloc drag&drop autonome).
+      label: 'Actus & Mot du jour',
       emoji: '🗞️',
       accent: _kEssentielAccent,
     );
@@ -434,26 +452,26 @@ class _ManageFavoritesContentState
       emoji: '🌱',
       accent: _kBonnesAccent,
     );
-    const grilleItem = _FavItem(
-      key: kTourneeGrilleKey,
-      kind: _FavKind.grille,
-      id: kTourneeGrilleKey,
-      label: 'La Grille du jour',
-      emoji: '🧩',
-      accent: _kGrilleAccent,
-    );
-
-    final themeItems = <_FavItem>[
-      for (final slug in favoriteThemeSlugs)
-        _FavItem(
-          key: tourneeThemeKey(slug),
-          kind: _FavKind.theme,
-          id: slug,
-          label: visualFor(slug).label,
-          emoji: _themeEmoji(slug),
-          accent: visualFor(slug).accent,
-        ),
-    ];
+    // Story Essentiel UX — thèmes en modèle exclusif (miroir des sources) : un
+    // thème dont la clé `theme:<slug>` est dans `pinned_tabs_order_v1` vit en
+    // **onglet Flâner** ; sinon dans l'**Essentiel** (défaut).
+    final essentielThemeItems = <_FavItem>[];
+    final flanerThemeItems = <_FavItem>[];
+    for (final slug in favoriteThemeSlugs) {
+      final item = _FavItem(
+        key: tourneeThemeKey(slug),
+        kind: _FavKind.theme,
+        id: slug,
+        label: visualFor(slug).label,
+        emoji: _themeEmoji(slug),
+        accent: visualFor(slug).accent,
+      );
+      if (tabOrder.contains(tourneeThemeKey(slug))) {
+        flanerThemeItems.add(item);
+      } else {
+        essentielThemeItems.add(item);
+      }
+    }
     final essentielSourceItems = <_FavItem>[];
     final flanerSourceItems = <_FavItem>[];
     for (final f in sourceFavorites) {
@@ -485,19 +503,19 @@ class _ManageFavoritesContentState
           );
 
     final useSereneDefault = isSerene && !tournee.customized;
+    // La Grille n'est plus un bloc drag&drop autonome : elle reste collée aux
+    // Actus (cf. `_orderedTourneeKeys` côté provider), donc absente d'ici.
     final essentielDefault = useSereneDefault
         ? <_FavItem>[
             bonnesItem,
-            ...themeItems,
+            ...essentielThemeItems,
             ...essentielSourceItems,
             if (veilleItem != null) veilleItem,
             actusItem,
-            if (grilleAvailable) grilleItem,
           ]
         : <_FavItem>[
             actusItem,
-            if (grilleAvailable) grilleItem,
-            ...themeItems,
+            ...essentielThemeItems,
             ...essentielSourceItems,
             if (veilleItem != null) veilleItem,
             bonnesItem,
@@ -522,7 +540,11 @@ class _ManageFavoritesContentState
             accent: colors.primary,
           ),
     ];
-    final flanerItems = [...subjectItems, ...flanerSourceItems];
+    final flanerItems = [
+      ...subjectItems,
+      ...flanerThemeItems,
+      ...flanerSourceItems,
+    ];
     final flanerOrdered = applyOrder(flanerItems, tabOrder, (e) => e.key);
 
     // ── AJOUTER : candidats ────────────────────────────────────────────────
@@ -544,7 +566,8 @@ class _ManageFavoritesContentState
       for (final t in customTopics)
         if (!favoriteTopicIds.contains(t.id)) t,
     ]..sort(
-        (a, b) => a.topicName.toLowerCase().compareTo(b.topicName.toLowerCase()),
+        (a, b) =>
+            a.topicName.toLowerCase().compareTo(b.topicName.toLowerCase()),
       );
 
     final interestsAtCap =
@@ -555,8 +578,6 @@ class _ManageFavoritesContentState
     final hiddenEditorialItems = <_FavItem>[
       if (tournee.hiddenKeys.contains(kTourneeActusKey)) actusItem,
       if (tournee.hiddenKeys.contains(kTourneeBonnesKey)) bonnesItem,
-      if (grilleAvailable && tournee.hiddenKeys.contains(kTourneeGrilleKey))
-        grilleItem,
     ];
     final canAddVeille =
         veilleCfg != null && tournee.hiddenKeys.contains(kTourneeVeilleKey);
@@ -610,7 +631,7 @@ class _ManageFavoritesContentState
 
                 // ── Section ESSENTIEL ───────────────────────────────────────
                 _SectionLabel(
-                  label: 'CHAQUE MATIN DANS TON ESSENTIEL',
+                  label: 'BLOCS DE TA PAGE L\'ESSENTIEL',
                   colors: colors,
                 ),
                 const SizedBox(height: 8),
@@ -624,7 +645,7 @@ class _ManageFavoritesContentState
                     items: essentielOrdered,
                     colors: colors,
                     cap: kTourneeVisibleCap,
-                    capLabel: 'Hors Tournée du jour',
+                    capLabel: 'Hors Tournée du jour ($kTourneeVisibleCap)',
                     onReorder: (oldIndex, newIndex) {
                       final reordered = [...essentielOrdered];
                       if (newIndex > oldIndex) newIndex -= 1;
@@ -632,21 +653,25 @@ class _ManageFavoritesContentState
                       _persistEssentielReorder(reordered);
                     },
                     onRemove: _onRemove,
-                    moveIcon: PhosphorIcons.arrowLineDown(PhosphorIconsStyle.bold),
+                    moveIcon:
+                        PhosphorIcons.arrowLineDown(PhosphorIconsStyle.bold),
                     moveTooltip: 'Déplacer vers Flâner',
-                    onMoveSource: (item) => _moveSourceToFlaner(item.id),
+                    onMove: (item) => item.kind == _FavKind.theme
+                        ? _moveThemeToFlaner(item.id)
+                        : _moveSourceToFlaner(item.id),
                   ),
                 const SizedBox(height: FacteurSpacing.space4),
 
                 // ── Section FLÂNER ──────────────────────────────────────────
                 _SectionLabel(
-                  label: 'TES ONGLETS POUR EXPLORER',
+                  label: 'ONGLETS DE TA PAGE FLÂNER',
                   colors: colors,
                 ),
                 const SizedBox(height: 8),
                 if (flanerOrdered.isEmpty)
                   _EmptyHint(
-                    label: 'Vide. Épingle des sujets ou des sources ci-dessous.',
+                    label:
+                        'Vide. Épingle des sujets ou des sources ci-dessous.',
                     colors: colors,
                   )
                 else
@@ -654,7 +679,7 @@ class _ManageFavoritesContentState
                     items: flanerOrdered,
                     colors: colors,
                     cap: kMaxFavoriteTabs,
-                    capLabel: 'Hors onglets',
+                    capLabel: 'Hors onglets ($kMaxFavoriteTabs)',
                     onReorder: (oldIndex, newIndex) {
                       final reordered = [...flanerOrdered];
                       if (newIndex > oldIndex) newIndex -= 1;
@@ -662,9 +687,12 @@ class _ManageFavoritesContentState
                       _persistFlanerReorder(reordered);
                     },
                     onRemove: _onRemove,
-                    moveIcon: PhosphorIcons.arrowLineUp(PhosphorIconsStyle.bold),
+                    moveIcon:
+                        PhosphorIcons.arrowLineUp(PhosphorIconsStyle.bold),
                     moveTooltip: 'Déplacer vers l\'Essentiel',
-                    onMoveSource: (item) => _moveSourceToEssentiel(item.id),
+                    onMove: (item) => item.kind == _FavKind.theme
+                        ? _moveThemeToEssentiel(item.id)
+                        : _moveSourceToEssentiel(item.id),
                     onSubjectVeille: (item) => _openVeilleConfig(),
                   ),
                 const SizedBox(height: FacteurSpacing.space4),
@@ -689,7 +717,8 @@ class _ManageFavoritesContentState
                       ButtonSegment(value: 2, label: Text('Sujets')),
                     ],
                     selected: {_addTab},
-                    onSelectionChanged: (s) => setState(() => _addTab = s.first),
+                    onSelectionChanged: (s) =>
+                        setState(() => _addTab = s.first),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -740,8 +769,8 @@ class _ManageFavoritesContentState
                   for (final item in hiddenEditorialItems)
                     _AddRow(
                       key: ValueKey('restore_${item.key}'),
-                      leading:
-                          Text(item.emoji, style: const TextStyle(fontSize: 14)),
+                      leading: Text(item.emoji,
+                          style: const TextStyle(fontSize: 14)),
                       label: 'Réafficher ${item.label}',
                       disabled: false,
                       colors: colors,
@@ -808,7 +837,7 @@ class _FavList extends StatelessWidget {
   final void Function(_FavItem item) onRemove;
   final IconData moveIcon;
   final String moveTooltip;
-  final void Function(_FavItem item) onMoveSource;
+  final void Function(_FavItem item) onMove;
   final void Function(_FavItem item)? onSubjectVeille;
 
   const _FavList({
@@ -820,7 +849,7 @@ class _FavList extends StatelessWidget {
     required this.onRemove,
     required this.moveIcon,
     required this.moveTooltip,
-    required this.onMoveSource,
+    required this.onMove,
     this.onSubjectVeille,
   });
 
@@ -853,7 +882,7 @@ class _FavList extends StatelessWidget {
               moveIcon: moveIcon,
               moveTooltip: moveTooltip,
               onRemove: () => onRemove(item),
-              onMoveSource: () => onMoveSource(item),
+              onMove: () => onMove(item),
               onSubjectVeille:
                   onSubjectVeille == null ? null : () => onSubjectVeille!(item),
             ),
@@ -913,7 +942,7 @@ class _FavRow extends StatelessWidget {
   final IconData moveIcon;
   final String moveTooltip;
   final VoidCallback onRemove;
-  final VoidCallback onMoveSource;
+  final VoidCallback onMove;
   final VoidCallback? onSubjectVeille;
 
   const _FavRow({
@@ -924,7 +953,7 @@ class _FavRow extends StatelessWidget {
     required this.moveIcon,
     required this.moveTooltip,
     required this.onRemove,
-    required this.onMoveSource,
+    required this.onMove,
     this.onSubjectVeille,
   });
 
@@ -932,6 +961,7 @@ class _FavRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final isSource = item.kind == _FavKind.source;
     final isSubject = item.kind == _FavKind.subject;
+    final isTheme = item.kind == _FavKind.theme;
     return Opacity(
       opacity: dimmed ? 0.45 : 1,
       child: Padding(
@@ -992,13 +1022,13 @@ class _FavRow extends StatelessWidget {
                   color: _kVeilleAccent,
                   onTap: onSubjectVeille!,
                 ),
-              // Source : déplacement de mode (Essentiel ⇄ Flâner).
-              if (isSource)
+              // Source ou thème : déplacement de mode (Essentiel ⇄ Flâner).
+              if (isSource || isTheme)
                 _RowIconButton(
                   icon: moveIcon,
                   tooltip: moveTooltip,
                   color: colors.textSecondary,
-                  onTap: onMoveSource,
+                  onTap: onMove,
                 ),
               _RowIconButton(
                 icon: PhosphorIcons.minusCircle(PhosphorIconsStyle.fill),
