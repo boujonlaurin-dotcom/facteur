@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -175,6 +178,7 @@ class _UpdateAvailableTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (kIsWeb || !Platform.isAndroid) return const SizedBox.shrink();
     final colors = context.facteurColors;
     final info = ref.watch(appUpdateProvider).valueOrNull;
     if (info == null || !info.updateAvailable) {
