@@ -3782,16 +3782,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(height: headerHeight),
-        // Extra breathing room so tag chips aren't clipped by the header overlay
-        const SizedBox(height: FacteurSpacing.space2),
-        if (content.entities.isNotEmpty || content.topics.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space4,
-              vertical: 6,
-            ),
-            child: _buildTagsWrap(context, content),
-          ),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
       ],
     );
