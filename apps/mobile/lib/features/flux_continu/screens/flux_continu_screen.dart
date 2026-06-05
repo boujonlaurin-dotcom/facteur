@@ -33,11 +33,14 @@ import '../../../shared/strings/loader_error_strings.dart';
 import '../../../shared/widgets/loaders/loading_view.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
+import '../providers/tournee_order_prefs_provider.dart'
+    show tourneeOrderPrefsProvider;
 import '../utils/section_snap.dart';
 import '../widgets/citation_du_jour_card.dart';
 import '../widgets/closing_card_v18.dart';
 import '../widgets/flux_continu_article_card.dart';
 import '../widgets/my_interests_intro.dart';
+import '../widgets/personalisation_cta_card.dart';
 import '../widgets/tournee_composer_sheet.dart';
 import '../widgets/geoloc_prompt_banner.dart';
 import '../widgets/section_block.dart';
@@ -53,7 +56,6 @@ const double _kStickyThreshold = 60.0;
 /// dropped from the sticky overlay: tabs row (48) + progress track (4) + a
 /// couple px of slack.
 const double _kStickyBarHeight = 54.0;
-
 
 // Section-snap tuning lives in `utils/section_snap.dart` (kSnapCaptureFraction,
 // kBoundaryCrossVelocity, kSnapEpsilon, kSnapSpring) so the resting-position
@@ -111,10 +113,10 @@ typedef _BoundaryApproach = ({int? dotIndex, double proximity});
 /// physics ([_SectionSnapPhysics._resolveTarget]) so the cue and the commit can
 /// never disagree on « which way am I going ».
 double _travelDirection(ScrollDirection d) => switch (d) {
-  ScrollDirection.reverse => 1.0,
-  ScrollDirection.forward => -1.0,
-  ScrollDirection.idle => 0.0,
-};
+      ScrollDirection.reverse => 1.0,
+      ScrollDirection.forward => -1.0,
+      ScrollDirection.idle => 0.0,
+    };
 
 class FluxContinuScreen extends ConsumerStatefulWidget {
   const FluxContinuScreen({super.key});
@@ -151,14 +153,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// pilotée par `FluxContinuState.grilleSlotIndex`. Wrappé dans un
   /// `KeyedSubtree(_grilleKey)` pour exposer la carte au suivi sticky.
   SliverToBoxAdapter get _grilleSliver => SliverToBoxAdapter(
-    child: KeyedSubtree(
-      key: _grilleKey,
-      child: const Padding(
-        padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
-        child: GrilleCtaCard(),
-      ),
-    ),
-  );
+        child: KeyedSubtree(
+          key: _grilleKey,
+          child: const Padding(
+            padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
+            child: GrilleCtaCard(),
+          ),
+        ),
+      );
 
   /// Articles swipe-dismissed and replaced by a [FeedbackInline] banner at
   /// the same position. The hide API has already fired (via
@@ -315,8 +317,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // majority-visible, which matches what the user is actually reading. Itère
     // la liste combinée (sections + Mot du jour + Citation).
     const viewportTop = _kStickyBarHeight;
-    final viewportBottom =
-        viewportTop +
+    final viewportBottom = viewportTop +
         (_scroll.hasClients ? _scroll.position.viewportDimension : 0.0);
     int activeAt = 0;
     double bestVisible = -1;
@@ -462,9 +463,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       _tallSections.value = const {};
       return;
     }
-    final scrollBox =
-        _scroll.position.context.notificationContext?.findRenderObject()
-            as RenderBox?;
+    final scrollBox = _scroll.position.context.notificationContext
+        ?.findRenderObject() as RenderBox?;
     if (scrollBox == null) return;
     final offset = _scroll.offset;
     // Visible bottom edge: the scroll area extends under the shared footer
@@ -549,9 +549,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (ctx == null) return;
     final box = ctx.findRenderObject();
     if (box is! RenderBox) return;
-    final scrollBox =
-        _scroll.position.context.notificationContext?.findRenderObject()
-            as RenderBox?;
+    final scrollBox = _scroll.position.context.notificationContext
+        ?.findRenderObject() as RenderBox?;
     if (scrollBox == null) {
       await Scrollable.ensureVisible(
         ctx,
@@ -560,8 +559,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       );
       return;
     }
-    final delta =
-        box.localToGlobal(Offset.zero, ancestor: scrollBox).dy -
+    final delta = box.localToGlobal(Offset.zero, ancestor: scrollBox).dy -
         _kStickyBarHeight;
     final target = (_scroll.offset + delta).clamp(
       0.0,
@@ -682,9 +680,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
   void _trackFeedbackSubmit(String contentId, String feedbackType) {
     unawaited(
-      ref
-          .read(analyticsServiceProvider)
-          .trackArticleFeedbackSubmitted(
+      ref.read(analyticsServiceProvider).trackArticleFeedbackSubmitted(
             contentId: contentId,
             feedbackType: feedbackType,
             origin: 'flux_continu',
@@ -879,9 +875,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 child: AnimatedSlide(
                   duration: const Duration(milliseconds: 220),
                   curve: Curves.easeOutCubic,
-                  offset: _showScrollTopFab
-                      ? Offset.zero
-                      : const Offset(0, 1.6),
+                  offset:
+                      _showScrollTopFab ? Offset.zero : const Offset(0, 1.6),
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 220),
                     opacity: _showScrollTopFab ? 1.0 : 0.0,
@@ -1071,28 +1066,28 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     required FluxContinuState state,
     required FluxContinuNotifier notifier,
   }) {
-    final firstFavoriteIndex = state.sections.indexWhere(_isFavoriteSection);
     final favoriteCount = state.sections.where(_isFavoriteSection).length;
     final swipeLeftHintSeen =
         ref.watch(swipeLeftHintSeenProvider).valueOrNull ?? true;
+
+    // Story Essentiel UX — la carte de perso (compte non personnalisé) et
+    // l'inline « Gérer / Tes N favoris » (compte personnalisé) s'excluent.
+    final customized =
+        ref.watch(tourneeOrderPrefsProvider.select((s) => s.customized));
+    final heroPresent =
+        state.sections.isNotEmpty && state.sections.first is EssentielSection;
+    // Cible de l'inline (mode personnalisé) : la 1ʳᵉ section de contenu après le
+    // hero. On l'embarque DANS le `KeyedSubtree` de cette section pour que son
+    // ancre de snap inclue l'inline — il n'est plus orphelin « entre deux
+    // snaps ». -1 = pas de cible (aucune section après le hero).
+    final inlineTargetIndex = heroPresent
+        ? (state.sections.length > 1 ? 1 : -1)
+        : (state.sections.isNotEmpty ? 0 : -1);
 
     final slivers = <SliverToBoxAdapter>[];
     for (var i = 0; i < state.sections.length; i++) {
       if (state.grilleSlotIndex == i) {
         slivers.add(_grilleSliver);
-      }
-      // Inject the "Mes intérêts" intro once, right before the first
-      // user-favorite section. Skipped when favorites are first (no system
-      // section above to separate from) or absent altogether.
-      if (i == firstFavoriteIndex && firstFavoriteIndex > 0) {
-        slivers.add(
-          SliverToBoxAdapter(
-            child: MyInterestsIntro(
-              favoriteCount: favoriteCount,
-              onTapManage: () => showTourneeComposerSheet(context),
-            ),
-          ),
-        );
       }
       if (i > 0) {
         slivers.add(
@@ -1107,56 +1102,79 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       }
       final section = state.sections[i];
       final isFavorite = _isFavoriteSection(section);
+      // Mode personnalisé : préfixe l'inline « Gérer / Tes N favoris » au-dessus
+      // du `SectionBlock`, à l'intérieur du subtree mesuré → l'inline fait
+      // partie du bloc de snap de cette section (cf. [inlineTargetIndex]).
+      final showInlineHere = customized && i == inlineTargetIndex;
       slivers.add(
         SliverToBoxAdapter(
           child: KeyedSubtree(
             key: _sectionKeys[i],
-            child: _FreeReadEdgeFade(
-              index: i,
-              tallSections: _tallSections,
-              child: SectionBlock(
-              section: section,
-              isOpen: state.isOpen(section),
-              onToggleMore: () => notifier.toggleMore(section),
-              onTapArticle: (a) => _openArticle(context, a),
-              onDismissArticle: _onSwipeDismiss,
-              pendingFeedbackIds: _pendingFeedback,
-              onSelectFeedbackChip: (id, chip) =>
-                  _onSelectFeedbackChip(context, id, chip),
-              onResolveFeedback: _resolveFeedback,
-              onUndoFeedback: _undoFeedback,
-              enableSwipeHintOnFirstCard: i == 0 && !swipeLeftHintSeen,
-              onSwipeHintComplete: () async {
-                await markSwipeLeftHintSeen();
-                if (mounted) ref.invalidate(swipeLeftHintSeenProvider);
-              },
-              onTapFavorite: isFavorite
-                  ? () => showTourneeComposerSheet(context)
-                  : null,
-              // Story 23.4 — bouton réglages (tune) sur la section veille →
-              // ouvre la config en édition. Réutilisé par le CTA d'état vide.
-              onTapSettings: section.kind == SectionKind.veille
-                  ? () => context.push('${RoutePaths.veilleConfig}?mode=edit')
-                  : null,
-              // Tournée bugs E2E — CTA « Ajouter des sources » de l'empty-state
-              // d'une section thème favorite vide → ouvre « Composer ma Tournée ».
-              onAddSources:
-                  section is FeedThemeSection &&
-                      section.kind == SectionKind.theme
-                  ? () => showTourneeComposerSheet(context)
-                  : null,
-              onSeeAll: section is FeedThemeSection
-                  ? (section.kind == SectionKind.source
-                        ? () => _openSourceSection(context, section)
-                        : () => _openThemeSection(context, section))
-                  : section is DigestTopicSection
-                  ? () => _openDigestSection(context, section)
-                  : null,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (showInlineHere)
+                  MyInterestsIntro(
+                    favoriteCount: favoriteCount,
+                    onTapManage: () => showTourneeComposerSheet(context),
+                  ),
+                _FreeReadEdgeFade(
+                  index: i,
+                  tallSections: _tallSections,
+                  child: SectionBlock(
+                    section: section,
+                    isOpen: state.isOpen(section),
+                    onToggleMore: () => notifier.toggleMore(section),
+                    onTapArticle: (a) => _openArticle(context, a),
+                    onDismissArticle: _onSwipeDismiss,
+                    pendingFeedbackIds: _pendingFeedback,
+                    onSelectFeedbackChip: (id, chip) =>
+                        _onSelectFeedbackChip(context, id, chip),
+                    onResolveFeedback: _resolveFeedback,
+                    onUndoFeedback: _undoFeedback,
+                    enableSwipeHintOnFirstCard: i == 0 && !swipeLeftHintSeen,
+                    onSwipeHintComplete: () async {
+                      await markSwipeLeftHintSeen();
+                      if (mounted) ref.invalidate(swipeLeftHintSeenProvider);
+                    },
+                    onTapFavorite: isFavorite
+                        ? () => showTourneeComposerSheet(context)
+                        : null,
+                    // Story 23.4 — bouton réglages (tune) sur la section veille →
+                    // ouvre la config en édition. Réutilisé par le CTA d'état vide.
+                    onTapSettings: section.kind == SectionKind.veille
+                        ? () =>
+                            context.push('${RoutePaths.veilleConfig}?mode=edit')
+                        : null,
+                    // Tournée bugs E2E — CTA « Ajouter des sources » de l'empty-state
+                    // d'une section thème favorite vide → ouvre « Composer ma Tournée ».
+                    onAddSources: section is FeedThemeSection &&
+                            section.kind == SectionKind.theme
+                        ? () => showTourneeComposerSheet(context)
+                        : null,
+                    onSeeAll: section is FeedThemeSection
+                        ? (section.kind == SectionKind.source
+                            ? () => _openSourceSection(context, section)
+                            : () => _openThemeSection(context, section))
+                        : section is DigestTopicSection
+                            ? () => _openDigestSection(context, section)
+                            : null,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       );
+      // Compte non personnalisé : carte de perso dédiée juste après le hero
+      // (son propre bloc de snap — destination volontaire), à la place de
+      // l'inline. Une fois personnalisée, c'est l'inline qui reprend (cf.
+      // [showInlineHere]).
+      if (!customized && heroPresent && i == 0) {
+        slivers.add(
+          const SliverToBoxAdapter(child: PersonalisationCtaCard()),
+        );
+      }
     }
     if (state.grilleSlotIndex == state.sections.length) {
       slivers.add(_grilleSliver);
@@ -1226,9 +1244,8 @@ class _SectionSnapPhysics extends ScrollPhysics {
     // own pull-to-refresh; never snap.
     if (position.pixels <= list.first.top) return null;
 
-    final landing = natural == null
-        ? position.pixels
-        : _simulationEndX(natural, position);
+    final landing =
+        natural == null ? position.pixels : _simulationEndX(natural, position);
     if (landing <= 0) return null;
 
     // Travel direction from the controller, not the lift velocity: a slow
@@ -1299,6 +1316,7 @@ class _SectionPassageDot extends StatefulWidget {
 class _SectionPassageDotState extends State<_SectionPassageDot>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulseController;
+
   /// Cached rebuild trigger (pulse OR drag-approach) so the merged listenable
   /// isn't re-allocated on every build. Rebuilt only if [approachListenable]
   /// identity changes.
@@ -1324,7 +1342,8 @@ class _SectionPassageDotState extends State<_SectionPassageDot>
       widget.pulseListenable.addListener(_onPulse);
     }
     if (oldWidget.approachListenable != widget.approachListenable) {
-      _repaint = Listenable.merge([_pulseController, widget.approachListenable]);
+      _repaint =
+          Listenable.merge([_pulseController, widget.approachListenable]);
     }
   }
 
@@ -1372,8 +1391,8 @@ class _SectionPassageDotState extends State<_SectionPassageDot>
               final approach = widget.approachListenable.value;
               final proximity =
                   (approach != null && approach.dotIndex == widget.index)
-                  ? approach.proximity
-                  : 0.0;
+                      ? approach.proximity
+                      : 0.0;
               final scale = 1 + pulseBump + 0.9 * proximity;
               final fillAlpha = (0.76 + 0.14 * glow + 0.20 * proximity).clamp(
                 0.0,

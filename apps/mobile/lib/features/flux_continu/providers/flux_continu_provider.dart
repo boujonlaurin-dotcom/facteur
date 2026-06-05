@@ -13,6 +13,8 @@ import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/repositories/digest_repository.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart' show feedRepositoryProvider;
+import '../../feed/providers/tab_order_prefs_provider.dart'
+    show tabOrderPrefsProvider;
 import '../../feed/repositories/feed_repository.dart';
 import '../../grille/providers/grille_provider.dart';
 import '../../my_interests/models/user_interests_state.dart';
@@ -185,12 +187,25 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
           setEquals(prev.hiddenKeys, next.hiddenKeys)) {
         return;
       }
-      final prevSourceKeys =
-          prev?.essentielSourceKeys ?? const <String>{};
+      final prevSourceKeys = prev?.essentielSourceKeys ?? const <String>{};
       if (!setEquals(prevSourceKeys, next.essentielSourceKeys)) {
         unawaited(_refetchSourcesOnly(_pickFavoriteSources()));
         return;
       }
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
+    });
+
+    // Story Essentiel UX — modèle exclusif thèmes : quand un thème entre/sort
+    // des onglets Flâner (`pinned_tabs_order_v1`), il doit (dis)paraître des
+    // sections Essentiel. On recompose seulement quand l'ensemble des clés
+    // `theme:` change (un réordre sujets/sources Flâner n'affecte pas la Tournée).
+    ref.listen<List<String>>(tabOrderPrefsProvider, (prev, next) {
+      if (!state.hasValue) return;
+      Set<String> themeKeys(List<String>? keys) => {
+            for (final k in keys ?? const <String>[])
+              if (k.startsWith('theme:')) k,
+          };
+      if (setEquals(themeKeys(prev), themeKeys(next))) return;
       state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
     });
 
@@ -1118,7 +1133,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       for (final f in favs)
         if (tournee.sourceIsEssentiel(f.sourceId)) f,
     ]..sort((a, b) => a.position.compareTo(b.position));
-    return inEssentiel.take(_kMaxFavoriteSourceSections).toList(growable: false);
+    return inEssentiel
+        .take(_kMaxFavoriteSourceSections)
+        .toList(growable: false);
   }
 
   /// Résout chaque source favorite en `Source` complet (nom + logo + thème)
@@ -1192,10 +1209,22 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }
 
   Map<String, FluxSection> _tourneeSectionByKey() {
+    // Story Essentiel UX — modèle exclusif thèmes : un thème dont la clé
+    // `theme:<slug>` figure dans `pinned_tabs_order_v1` est livré en **onglet
+    // Flâner** et donc exclu des sections Essentiel (miroir des sources). Un
+    // seul point de filtre suffit : `_orderedTourneeKeys` se base sur
+    // `sectionByKey.containsKey(key)`, donc ces thèmes disparaissent aussi de
+    // l'ordre Essentiel.
+    final flanerThemeKeys = <String>{
+      for (final key in ref.read(tabOrderPrefsProvider))
+        if (key.startsWith('theme:')) key,
+    };
     return {
       if (_actusDuJour != null) kTourneeActusKey: _actusDuJour!,
       if (_bonnes != null) kTourneeBonnesKey: _bonnes!,
-      for (final section in _themes) sectionKey(section): section,
+      for (final section in _themes)
+        if (!flanerThemeKeys.contains(sectionKey(section)))
+          sectionKey(section): section,
       for (final section in _sources) sectionKey(section): section,
     };
   }

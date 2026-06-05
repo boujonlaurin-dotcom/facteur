@@ -1,77 +1,81 @@
-# QA Handoff — Polish UX/UI « l'Essentiel » (Flux Continu)
+# QA Handoff — Ajustements UX/UI de « L'Essentiel » (5 points)
 
-> Rempli par l'agent dev. Input de `/validate-feature` (Chrome 390×844).
+> Rempli par l'agent dev. Input de `/validate-feature` (Chrome, viewport 390×844).
 
-Branche : `boujonlaurin-dotcom/essentiel-ux-scroll-haptics`
-Écran : **l'Essentiel** (Flux Continu) — `apps/mobile/lib/features/flux_continu/`
+## Feature développée
+5 frictions UX corrigées sur la page **L'Essentiel** (Flux Continu) et sa modal
+« Mes favoris » : carte de perso dédiée + inline lié au snap, Grille collée aux
+Actus, titres de sections plus clairs, thèmes livrables en onglet Flâner (modèle
+exclusif comme les sources), et cap max affiché entre parenthèses.
 
-3 ajustements UX/UI livrés en une PR. **Point 1 (haptique/snap) = validation device réel
-obligatoire** (non simulable en web). Points 2 & 3 testables via Chrome (viewport 390×844).
+## PR associée
+<!-- À compléter après /go -->
 
----
+## Écrans impactés
+| Écran | Route | Modifié / Nouveau |
+|-------|-------|-------------------|
+| L'Essentiel (Flux Continu) | `/` (flux continu) | Modifié |
+| Modal « Mes favoris » | bottom sheet (depuis l'Essentiel / Flâner) | Modifié |
+| Carte de perso | nouveau widget `PersonalisationCtaCard` | Nouveau |
 
-## Point 1 — Snap « jamais sauter une section » (one-step cap)
+## Scénarios de test
 
-**Changement** : `resolveSnapTarget` (`utils/section_snap.dart`) borne désormais la cible du snap
-au **point d'ancrage adjacent à la position de lever de doigt** (`currentPixels`), plus au
-*naturalLanding* du fling. Quelle que soit la force du geste, on n'avance/recule que d'**une**
-section → un seul flip d'onglet actif → **un seul haptique** par pas.
+### Scénario 1 — Compte non personnalisé : grande carte de perso
+**Parcours** :
+1. Compte neuf (`tournee_customized_v1` absent / faux).
+2. Ouvrir l'Essentiel.
+**Résultat attendu** : juste après le hero « L'Essentiel du jour », une **grande
+carte** « Personnalise ton Essentiel » avec l'illustration
+(`facteur_reparation_velo.png`) et le bouton **« Composer ma Tournée »**. L'inline
+discret « Gérer / Tes N favoris » n'apparaît PAS. Taper le bouton → ouvre la sheet
+« Mes favoris ».
 
-### Scénarios (device réel)
-- **Happy path** : scroller fort vers le bas → on ne descend que d'**une** section à la fois ;
-  enchaîner des scrolls rapides descend toute la tournée, un buzz net par pas.
-- Idem vers le haut (remonter une section par geste).
-- **Lecture libre conservée** : au milieu d'une section plus haute que l'écran, le scroll reste
-  libre (pas de snap), snap uniquement aux bords (haut/bas de section).
-- **Edge** : fling très violent depuis le haut → ne saute pas 2-3 sections, s'arrête à la suivante.
-- **Edge** : petit nudge (< 120 px d'inertie) → re-cadre la section courante (pull-back), pas de
-  switch.
-- **Edge bas de tournée** : sous « Fin de tournée », le rebond natif iOS reste propre (pas de
-  rebonds étagés / buzz répétés).
+### Scénario 2 — Compte personnalisé : inline lié au snap
+**Parcours** :
+1. Personnaliser la Tournée (ajouter/retirer un favori) puis revenir à l'Essentiel.
+2. Scroller (fling) à travers les sections.
+**Résultat attendu** : la grande carte disparaît ; l'**inline** « Gérer / Tes N
+favoris » réapparaît, embarqué en tête de la 1ʳᵉ section après le hero. Au snap, il
+n'est plus « sauté » entre deux blocs — il fait partie du bloc de cette section.
 
-> Si un fling très fort vers une cible proche dépasse légèrement : 1er levier = `kSectionEdgeMargin`
-> (120 px) ; 2e levier = caper la `velocity` transmise au spring dans `_SectionSnapPhysics`.
+### Scénario 3 — Modal : Grille, titres, caps
+**Parcours** :
+1. Ouvrir « Mes favoris ».
+**Résultat attendu** :
+- Sections nommées **« BLOCS DE TA PAGE L'ESSENTIEL »** et **« ONGLETS DE TA PAGE
+  FLÂNER »**.
+- **« Actus & Mot du jour »** présent ; **« La Grille du jour »** n'est PAS un bloc
+  drag&drop.
+- Au-delà du cap, les traits affichent **« Hors Tournée du jour (5) »** et **« Hors
+  onglets (10) »**.
 
-## Point 2 — Désaturation de la progress bar (sticky header)
+### Scénario 4 — Thème Essentiel ⇄ Flâner (modèle exclusif)
+**Parcours** :
+1. Dans « Mes favoris », sur un **thème** côté Essentiel, taper l'icône
+   « déplacer vers Flâner » (flèche bas).
+2. Fermer la modal, observer la barre d'onglets Flâner et la page Essentiel.
+**Résultat attendu** : le thème apparaît en **onglet Flâner** (taper l'onglet filtre
+le feed sur ce thème) et **disparaît des sections de l'Essentiel**. Le mouvement
+inverse (flèche haut, côté Flâner) le ramène dans l'Essentiel.
 
-**Changement** : `sticky_tab_bar.dart` — les 4 stops du dégradé saturés (rouge/orange/bleu/teal)
-remplacés par des tons **neutres/pastel** (rose poussiéreux → ocre doux → bleu ardoise → sauge) ;
-halo passé de alpha 0.35 → 0.10.
-
-### Scénarios (Chrome 390×844)
-- Scroller jusqu'à révéler le sticky header → la barre de progression doit être **nettement plus
-  discrète** (ne tire plus l'œil), tons neutres.
-- Vérifier la progression (le remplissage suit toujours le scroll, valeur inchangée).
-- Comparer light/dark si possible.
-- *(Valeurs facilement ajustables si encore trop/pas assez visibles.)*
-
-## Point 3 — Suppression complète du fold
-
-**Changement** : retrait total de la mécanique de repli des sections (repli auto scroll-past +
-chevrons manuels). Fichier `folded_section_card.dart` supprimé ; champs `folded`/
-`markedForNextSession` retirés du state ; chevron `expand_less` retiré de la bannière.
-
-### Scénarios (Chrome 390×844)
-- Plus **aucun chevron** de repli sur les bannières de section.
-- Les sections restent **toujours déployées**, même après avoir tout lu / scrollé au-delà /
-  rouvert l'écran.
-- **Non-régression à vérifier intactes** :
-  - « Voir plus » / « Voir tout » (overflow des sections) fonctionne.
-  - Carte de clôture « Fin de tournée » présente et ses CTA (Continuer / Refermer).
-  - Swipe-dismiss d'un article + feedback inline.
-  - Étoile favori (bannières thème) + bouton réglages (section veille) toujours tappables.
-
----
+### Scénario 5 — Cas limite : retrait d'un thème en mode Flâner
+**Parcours** :
+1. Thème en onglet Flâner → le retirer via la croix dans la modal.
+**Résultat attendu** : il disparaît des deux modes (clé retirée de `tournee_order_v1`
+et de `pinned_tabs_order_v1`), repasse en « suivi ». Pas de crash.
 
 ## Critères d'acceptation
-- [ ] (device) 1 geste = 1 section + 1 haptique, dans les deux sens ; lecture libre intra-section OK.
-- [ ] Progress bar désaturée, discrète, progression correcte.
-- [ ] Zéro chevron / repli ; sections toujours ouvertes ; « Voir plus » + clôture + swipe intacts.
+- [ ] Carte de perso (illustration + CTA) sous le hero quand non personnalisé.
+- [ ] Inline réapparaît une fois personnalisé et ne « saute » plus au snap.
+- [ ] Grille non draggable + libellé « Actus & Mot du jour ».
+- [ ] Titres « BLOCS DE TA PAGE L'ESSENTIEL » / « ONGLETS DE TA PAGE FLÂNER ».
+- [ ] Thème déplaçable Essentiel ⇄ Flâner (filtre feed OK, exclusion Essentiel OK).
+- [ ] Caps affichés « (5) » / « (10) ».
 - [ ] Console sans erreurs, réseau sans 4xx/5xx inattendus.
 
-## État technique
-- `flutter analyze` : propre sur flux_continu.
-- Tests unitaires : `section_snap_test` (15/15), `flux_continu_models_test`,
-  `section_banner_favorite_test` verts. `flux_continu_provider_test` échoue en local
-  (Hive/Supabase non-init — pré-existant) ; pas de régression (baseline 25 échecs, idem env).
-- Build APK debug : OK.
+## Notes techniques
+- Aucun changement backend / migration / requête feed (le filtre thème existait
+  déjà via `setTheme`).
+- Tests : `manage_favorites_sheet_test`, `favorite_topic_tabs_test`,
+  `flux_continu_tournee_order_test`, nouveau `personalisation_cta_card_test` — verts.
+- 3 échecs pré-existants dans `essentiel_hi_fi_card_test` (weather badge, non liés).
