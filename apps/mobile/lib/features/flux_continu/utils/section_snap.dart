@@ -22,7 +22,7 @@ const double kSectionEdgeMargin = 120.0;
 /// La **force / vitesse** du tir vers la cible. Plus haut ⇒ snap plus rapide et
 /// « net » (claque vers la section) ; plus bas ⇒ plus lent et mou. C'est le
 /// premier levier pour la « vitesse de switch ».
-const double kSnapStiffness = 550.0;
+const double kSnapStiffness = 700.0;
 
 /// L'**amortissement**. Plus haut ⇒ aucune oscillation, arrivée « posée » et
 /// smooth (mais trop haut = traînant) ; plus bas ⇒ vif, voire un léger rebond.
@@ -31,7 +31,7 @@ const double kSnapDamping = 40.0;
 
 /// L'**inertie** de la masse animée. Plus haut ⇒ démarrage plus pesant / lent ;
 /// plus bas ⇒ réaction plus immédiate. À laisser ≈ 0.5 sauf besoin précis.
-const double kSnapMass = 0.05;
+const double kSnapMass = 0.03;
 
 /// Ressort de pose du snap, assemblé depuis les 3 leviers ci-dessus. Visible
 /// « pose » (~250-350ms) sans wobble — le snap fait partie de la décélération
@@ -109,12 +109,7 @@ double? resolveSnapTarget({
 
   // Every framing offset is a snap point: each section top, plus the bottom of
   // each tall section (rest on its last cards). Sorted ascending.
-  final points = <double>[];
-  for (final f in frames) {
-    points.add(f.top);
-    if (f.bottom > f.top + kSnapEpsilon) points.add(f.bottom);
-  }
-  points.sort();
+  final points = snapPointsOf(frames);
 
   // Travel direction: controller first, then the fling sign (lift velocity).
   final dir = scrollDirection != 0 ? scrollDirection : velocity.sign;
@@ -140,6 +135,26 @@ double? resolveSnapTarget({
   }
   final prev = _lastStrictlyBefore(points, currentPixels);
   return _commit(prev ?? _nearest(points, currentPixels), currentPixels);
+}
+
+/// The snap points of a frame list, sorted ascending: each section [top], plus
+/// the [bottom] of every section taller than the viewport (its last-cards
+/// resting offset). A section shorter than the viewport collapses
+/// `bottom == top`, so it contributes a single point.
+///
+/// **Single source of truth** shared by [resolveSnapTarget] (which commits to
+/// one of these) and the screen's drag-time feedforward (which measures the
+/// distance to the next one). Keeping both off the same list guarantees the
+/// visual cue ramps against the exact offsets the snap actually lands on — no
+/// duplicated arithmetic, no drift. Pure, unit-testable.
+List<double> snapPointsOf(List<SectionFrame> frames) {
+  final points = <double>[];
+  for (final f in frames) {
+    points.add(f.top);
+    if (f.bottom > f.top + kSnapEpsilon) points.add(f.bottom);
+  }
+  points.sort();
+  return points;
 }
 
 /// `null` when [target] is already aligned with [currentPixels] (± epsilon).
