@@ -771,14 +771,22 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
               label: 'Ne plus afficher ${widget.content.source.name}',
               isDestructive: true,
               onTap: () async {
-                Navigator.pop(context);
+                // NE PAS pop() avant l'await : fermer la bottom sheet dispose
+                // ce ConsumerState, et `ref` lève alors StateError("Cannot use
+                // ref after the widget was disposed") au retour du await — même
+                // quand le backend a répondu 200. Le catch affichait donc
+                // "Impossible de masquer la source" sur un mute réussi.
+                // On suit le même ordre que le mute de sujet ci-dessus :
+                // await → garde `mounted` → invalidation → pop en dernier.
+                final sourceName = widget.content.source.name;
                 try {
                   final repo = ref.read(personalizationRepositoryProvider);
                   await repo.muteSource(widget.content.source.id);
+                  NotificationService.showInfo('Source $sourceName masquée');
+                  if (!mounted) return;
                   ref.invalidate(personalizationProvider);
                   ref.invalidate(fluxContinuProvider);
-                  NotificationService.showInfo(
-                      'Source ${widget.content.source.name} masquée');
+                  Navigator.pop(context);
                 } catch (e) {
                   NotificationService.showError(
                       'Impossible de masquer la source');
