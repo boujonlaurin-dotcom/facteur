@@ -91,6 +91,11 @@ const _closingTab = StickyTab(
   label: 'Fin de tournée',
   accent: Color(0xFF2E7D32),
 );
+// Carte de personnalisation (virtuelle — pas de section correspondante).
+const _persoCardTab = StickyTab(
+  label: 'Pour toi',
+  accent: Color(0xFFB0470A),
+);
 
 /// Drag-time feedforward payload for [_SectionPassageDot]. Computed live in
 /// [_FluxContinuScreenState._updateBoundaryApproach] and broadcast via a
@@ -142,6 +147,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   final GlobalKey _grilleKey = GlobalKey();
   final GlobalKey _citationKey = GlobalKey();
   final GlobalKey _closingKey = GlobalKey();
+  final GlobalKey _persoCardKey = GlobalKey();
 
   // Clés des « entrées sticky » dans l'ordre exact des slivers : sections +
   // Mot du jour + Citation + Fin de tournée. Source unique pour le suivi de
@@ -924,6 +930,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     }
     final citationPresent = state.quote != null && !state.closingDismissed;
     final grilleSlotIndex = state.grilleSlotIndex;
+    // La carte perso est une entrée virtuelle (pas de section correspondante)
+    // insérée juste après le hero tant que l'utilisateur n'a pas personnalisé.
+    final customized =
+        ref.watch(tourneeOrderPrefsProvider.select((s) => s.customized));
+    final heroPresent =
+        state.sections.isNotEmpty && state.sections.first is EssentielSection;
 
     final keys = <GlobalKey>[];
     final tabs = <StickyTab>[];
@@ -941,6 +953,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         _sectionKeys[i],
         StickyTab(label: section.label, accent: section.accent),
       );
+      // Destination de snap dédiée juste après le hero (entrée virtuelle,
+      // sans section réelle — retourne -1 dans _sectionIndexForStickyIndex).
+      if (!customized && heroPresent && i == 0) {
+        add(_persoCardKey, _persoCardTab);
+      }
     }
     if (grilleSlotIndex == state.sections.length) {
       add(_grilleKey, _motDuJourTab);
@@ -1172,7 +1189,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       // [showInlineHere]).
       if (!customized && heroPresent && i == 0) {
         slivers.add(
-          const SliverToBoxAdapter(child: PersonalisationCtaCard()),
+          SliverToBoxAdapter(
+            child: KeyedSubtree(
+              key: _persoCardKey,
+              child: const PersonalisationCtaCard(),
+            ),
+          ),
         );
       }
     }
