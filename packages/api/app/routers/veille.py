@@ -12,7 +12,7 @@ import sentry_sdk
 import structlog
 from cachetools import TTLCache
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import case, delete, or_, select
+from sqlalchemy import case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.data.veille_presets import get_presets
@@ -56,6 +56,7 @@ from app.schemas.veille import (
     VeilleUnconnectedSource,
 )
 from app.services.ml.topic_enrichment_service import get_topic_enrichment_service
+from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.rss_parser import RSSParser
 from app.services.search.smart_source_search import SmartSourceSearchService
 from app.services.source_service import SourceService
@@ -139,6 +140,9 @@ async def _hydrate_response(
 
     source_ids = [vs.source_id for vs in sources_rows]
     sources_by_id: dict[UUID, Source] = {}
+    # Santé du flux par source (badge config) : dernier article + nb d'articles
+    # sur la fenêtre Bloc A (30 j). Une seule requête agrégée groupée par source.
+    health_by_source: dict[UUID, tuple[datetime | None, int]] = {}
     if source_ids:
         for src in (
             (await db.execute(select(Source).where(Source.id.in_(source_ids))))
@@ -146,6 +150,25 @@ async def _hydrate_response(
             .all()
         ):
             sources_by_id[src.id] = src
+
+        recent_cutoff = datetime.now(UTC) - timedelta(
+            hours=ScoringWeights.VEILLE_CONFIGURED_RECENCY_HOURS
+        )
+        health_rows = (
+            await db.execute(
+                select(
+                    Content.source_id,
+                    func.max(Content.published_at),
+                    func.count(case((Content.published_at >= recent_cutoff, 1))),
+                )
+                .where(Content.source_id.in_(source_ids))
+                .group_by(Content.source_id)
+            )
+        ).all()
+        health_by_source = {
+            sid: (last_at, recent_count or 0)
+            for sid, last_at, recent_count in health_rows
+        }
 
     # Split mots-clés : globaux (veille_topic_id NULL) vs grappes d'angles.
     global_keywords = [kw for kw in keywords_rows if kw.veille_topic_id is None]
@@ -184,6 +207,8 @@ async def _hydrate_response(
                 kind=vs.kind,  # type: ignore[arg-type]
                 why=vs.why,
                 position=vs.position,
+                last_article_at=health_by_source.get(vs.source_id, (None, 0))[0],
+                recent_article_count=health_by_source.get(vs.source_id, (None, 0))[1],
             )
             for vs in sources_rows
             if vs.source_id in sources_by_id
@@ -653,8 +678,9 @@ async def get_feed(
                 topics=list(content.topics or []),
                 thumbnail_url=content.thumbnail_url,
                 matched_on=axes,  # type: ignore[arg-type]
+                group=group,  # type: ignore[arg-type]
             )
-            for content, axes in items_with_axes
+            for content, axes, group in items_with_axes
         ],
         total=len(items_with_axes),
         limit=limit,

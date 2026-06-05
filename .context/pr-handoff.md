@@ -1,86 +1,72 @@
-feat(flux-continu): ajustements UX de L'Essentiel (carte perso, Grille, titres, thèmes Flâner, caps)
+# Veille — refonte curation deux blocs + UX fin de config
 
-## Quoi
+## Résumé
 
-Cinq frictions UX corrigées sur la page **L'Essentiel** (Flux Continu) et sa modal
-« Mes favoris », sans toucher au backend ni à la physique du snap.
+Le feed veille (`GET /api/veille/feed`, section `SectionKind.veille` du flux continu)
+est refondu en **deux blocs** pour corriger deux bugs PO :
+1. sources configurées invisibles (fenêtre 7 j + règle « floor » tuaient les flux
+   niche/anglophones) ;
+2. sources externes parasites (prédicat OR aspirait tout le pool global matchant un
+   mot-clé).
 
-- **1 — Carte de perso dédiée (compte non personnalisé).** Tant que la Tournée
-  n'a pas été personnalisée (`!tournee.customized`), une **grande carte**
-  « Personnalise ton Essentiel » (illustration `facteur_reparation_velo.png` +
-  bouton « Composer ma Tournée ») s'affiche juste après le hero, dans son propre
-  bloc de snap. Nouveau widget `PersonalisationCtaCard`.
-- **2 — Inline lié au snap (compte personnalisé).** Une fois personnalisé, la
-  carte cède la place à l'inline discret `MyInterestsIntro` (« Gérer / Tes N
-  favoris »), désormais **embarqué DANS le `KeyedSubtree`** de la 1ʳᵉ section de
-  contenu après le hero → il fait partie du bloc de snap de cette section et
-  n'est plus « sauté » entre deux blocs. Les deux s'excluent.
-- **3 — Grille collée aux Actus + titres de sections clairs.** Dans la modal :
-  sections renommées **« BLOCS DE TA PAGE L'ESSENTIEL »** et **« ONGLETS DE TA
-  PAGE FLÂNER »** ; « Actus & Mot du jour » présent ; « La Grille du jour »
-  n'est plus un bloc drag&drop.
-- **4 — Thèmes livrables en onglet Flâner (modèle exclusif, miroir des sources).**
-  Un thème peut être déplacé Essentiel ⇄ Flâner. La clé `theme:<slug>` est
-  partagée entre `tournee_order_v1` (Essentiel) et `pinned_tabs_order_v1`
-  (Flâner) : présent dans Flâner ⇒ rendu en onglet **et** exclu des sections
-  Essentiel ; absent ⇒ reste côté Essentiel. La favorite reste un
-  `ThemeFavoriteRef` (pas de `setInterestState`).
-- **5 — Caps affichés entre parenthèses.** « Hors Tournée du jour (5) » et
-  « Hors onglets (10) ».
+## Backend (backward-safe — le mobile ignore `group` jusqu'au déploiement frontend)
 
-## Pourquoi
+- `scoring_config.py` : `VEILLE_CONFIGURED_RECENCY_HOURS=720` (30 j, Bloc A),
+  `VEILLE_SOURCE_DIVERSITY_CAP=3`.
+- `feed_filter.py` :
+  - `VeilleFilters.source_intents` (charge `VeilleSource.why`).
+  - `build_topic_keyword_predicate()` (= prédicat fort sans la clause source).
+  - `_score_and_rank` → `_score_block(..., *, apply_floor, apply_threshold, diversity_cap)`.
+  - `fetch_veille_feed()` : 2 requêtes (Bloc A `source_id IN` fenêtre 720 h, laisser-passer
+    + cap diversité ; Bloc B topic/keyword `NOTIN` sources, fenêtre 168 h, floor+seuil),
+    concaténées A→B, taguées `group`, paginées à plat. **Renvoie des 3-tuples
+    `(Content, axes, group)`.**
+- `scoring_context.py` : note d'intention `why` tokenisée (`_tokenize_intent`, stopwords FR
+  + len≥4) → angle « Intention » (réutilise le bonus mots-clés existant).
+- `schemas/veille.py` : `VeilleFeedArticle.group` (Literal sources/elargie, défaut
+  `sources`) ; `VeilleSourceResponse.last_article_at` + `recent_article_count`.
+- `routers/veille.py` : unpack 3-tuple + `group` ; agrégation santé source dans
+  `GET /config`. **Pas de migration** (`why` existe déjà).
 
-Décision PO (5 juin 2026) : lever 5 frictions UX repérées sur L'Essentiel —
-notamment l'inline favoris « subi » au snap et l'absence d'invitation claire à
-personnaliser pour les nouveaux comptes.
+### Tests backend
+- `tests/test_veille_curation.py` : Bloc A laisser-passer + cap diversité ; floor Bloc B ;
+  end-to-end deux blocs ; tokenisation intent.
+- `tests/services/test_veille_scoring.py` : intent `why` injecté ; split récence 30j/7j ;
+  unpacking 3-tuples mis à jour.
+- `tests/routers/test_veille_routes.py` : `group` par item ; ordre A→B ; pagination à la
+  frontière ; santé source dans `/config`.
+- **64 tests veille passent** ; suite backend complète **1524 passed** (la seule rouge —
+  `test_notification_preferences::test_patch_increments_refusal_count` — est pré-existante,
+  clock-dépendante, sans rapport).
 
-## Comment c'est construit (anti-duplication)
+## Frontend (dépend du backend)
 
-- **Un seul point de filtre** pour le modèle exclusif thèmes :
-  `_tourneeSectionByKey()` écarte les clés `theme:` présentes dans
-  `tabOrderPrefsProvider` ; comme `_orderedTourneeKeys` se base sur
-  `containsKey`, ces thèmes disparaissent aussi de l'ordre Essentiel.
-- Recompose **ciblée** : un `ref.listen(tabOrderPrefsProvider)` qui ne
-  recompose que si l'ensemble des clés `theme:` change (un réordre
-  sujets/sources Flâner n'affecte pas la Tournée).
-- Réutilise l'infra existante : `tourneeOrderPrefsProvider` /
-  `tabOrderPrefsProvider`, `visualFor` + `kVeilleFacteurThemes` pour
-  label/emoji d'onglet, `MyInterestsIntro`, `showTourneeComposerSheet`. Clé
-  `tabOrderThemeKey('theme:<slug>')` miroir de `tourneeThemeKey`.
-- Carte/inline pilotés par `tourneeOrderPrefsProvider.select((s) => s.customized)`
-  (rebuild ciblé) ; placement dérivé de deux booléens (`heroPresent`,
-  `inlineTargetIndex`).
-- `PersonalisationCtaCard` : gabarit visuel *aligné sur* la `CarteCta` de la
-  Grille mais widget distinct (CarteCta est couplée à l'état du jeu Grille —
-  la réutiliser imposerait de simuler `GrilleTodayResponse`).
+- `feed/models/content_model.dart` : `Content.veilleGroup` (parse `json['group']`,
+  copyWith, clearNote) — backward-safe nullable.
+- `flux_continu/repositories/flux_continu_repository.dart` : passe `group` dans le JSON
+  Content normalisé.
+- `flux_continu/widgets/veille_group_header.dart` (nouveau) : `buildVeilleFeedRows()`
+  (en-têtes dérivés au rendu sur transitions de group) + `VeilleGroupHeader`.
+- `section_block.dart` + `theme_section_screen.dart` : en-têtes « Tes sources » /
+  « Couverture élargie » pour `SectionKind.veille` (pagination plate inchangée — lignes
+  reconstruites depuis la liste accumulée).
+- `veille/screens/veille_config_screen.dart` : modal « Épingler à ta Tournée ? » en fin de
+  **création** → insertion #1 (`markCustomized` + `setHidden(false)` +
+  `setOrder([veille, ...rest])`).
+- `veille/models/veille_config_dto.dart` : parse `last_article_at`/`recent_article_count`
+  + getter `healthWarning`.
 
-## Comment ça a été vérifié
+### Tests frontend
+- `test/.../widgets/veille_group_header_test.dart` : transitions de group, backward-safe,
+  index préservé, rendu du libellé — **5 passent**.
+- `flutter analyze lib` : 0 erreur / 0 warning dans les fichiers touchés.
 
-- [x] `flutter analyze lib/features/flux_continu lib/features/feed` — **clean**
-      (aucun error/warning ; seulement des `info` `withOpacity` pré-existants
-      hors-scope).
-- [x] `flutter test test/features/flux_continu/ test/features/feed/widgets/favorite_topic_tabs_test.dart`
-      — verts **sauf 2 échecs pré-existants hors-scope** confirmés sur la
-      baseline `origin/main` : `section_block_test.dart` (ne compile pas vs
-      origin/main) + `essentiel_hi_fi_card_test.dart` (« Météo », carte hero non
-      touchée).
-- [x] Régression corrigée : `tournee_composer_sheet_test.dart` asseyait l'ancien
-      titre de section (`CHAQUE MATIN DANS TON ESSENTIEL`) → mis à jour vers
-      `BLOCS DE TA PAGE L'ESSENTIEL`.
-- [x] Tests ajoutés/MAJ : `personalisation_cta_card_test`,
-      `manage_favorites_sheet_test`, `favorite_topic_tabs_test`,
-      `flux_continu_tournee_order_test`.
-- [ ] Validation device/feel : à confirmer par le PO.
+## Reporté (follow-up, hors de ce lot)
+- Badge santé **visuel** dans la source card (DTO `healthWarning` prêt) + champs texte
+  « Préciser » (why source / reason angle) dans step2/step3 — nécessite du state provider
+  dans des écrans de 900+ lignes.
+- Expansion EN des mots-clés (`suggest_angles`) — PR-3 légère derrière flag.
 
-> CI = backend pytest only (pas de `flutter test`) → les 2 échecs mobiles
-> pré-existants ne bloquent pas la CI.
-
-## Zones à risque
-
-- `flux_continu_screen.dart` (écran central scroll/snap) : **aucune** modif de
-  `_SectionSnapPhysics`, `resolveSnapTarget`, ni des constantes de tuning. Les
-  changements sont additifs (carte/inline) + du reformatage `dart format`.
-- `flux_continu_provider.dart` : nouveau `ref.listen` ciblé + filtre exclusif
-  dans `_tourneeSectionByKey()` — aucun changement de requête feed (le filtre
-  thème existait déjà côté `setTheme`).
-- Aucun changement backend / migration.
+## Découpage proposé
+PR-1 backend (backward-safe) puis PR-2 frontend, OU un seul PR cohérent (PO préfère
+moins de PRs). À trancher au moment de la création.

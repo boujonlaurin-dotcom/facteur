@@ -15,6 +15,7 @@ import '../providers/theme_discovery_provider.dart';
 import '../widgets/flux_continu_article_card.dart';
 import '../widgets/section_banner.dart';
 import '../widgets/theme_detail_footer.dart';
+import '../widgets/veille_group_header.dart';
 
 /// Distance to the bottom (in px) at which we trigger the next page of
 /// articles for the current theme. Mirrors the threshold used on the main
@@ -199,18 +200,21 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
             illustrationAsset: section.illustrationAsset,
           ),
         ),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final item = section.items[index];
-              return FluxContinuArticleCard(
-                article: item,
-                onTap: () => _openArticle(context, item),
-              );
-            },
-            childCount: section.items.length,
+        if (section.kind == SectionKind.veille)
+          _buildVeilleSliverList(section)
+        else
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final item = section.items[index];
+                return FluxContinuArticleCard(
+                  article: item,
+                  onTap: () => _openArticle(context, item),
+                );
+              },
+              childCount: section.items.length,
+            ),
           ),
-        ),
         if (!scrollExhausted)
           SliverToBoxAdapter(
             child: _LoadingMoreIndicator(visible: section.isLoadingMore),
@@ -226,6 +230,29 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
         _buildFooterSliver(section),
         const SliverToBoxAdapter(child: SizedBox(height: 40)),
       ],
+    );
+  }
+
+  /// SliverList du feed veille avec en-têtes « Tes sources » / « Couverture
+  /// élargie » dérivés au rendu sur les transitions de `veilleGroup`. Les lignes
+  /// sont reconstruites depuis la liste accumulée → l'en-tête d'un bloc apparaît
+  /// une seule fois, même quand le bloc s'étale sur plusieurs pages.
+  Widget _buildVeilleSliverList(FeedThemeSection section) {
+    final rows = buildVeilleFeedRows(section.items);
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          final row = rows[index];
+          return switch (row) {
+            VeilleHeaderRow(:final label) => VeilleGroupHeader(label: label),
+            VeilleArticleRow(:final content) => FluxContinuArticleCard(
+                article: content,
+                onTap: () => _openArticle(context, content),
+              ),
+          };
+        },
+        childCount: rows.length,
+      ),
     );
   }
 

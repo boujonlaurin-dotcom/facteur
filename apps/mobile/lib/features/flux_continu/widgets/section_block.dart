@@ -7,6 +7,7 @@ import 'flux_continu_article_card.dart';
 import 'plus_de_button.dart';
 import 'section_banner.dart';
 import 'tournee_composer_sheet.dart';
+import 'veille_group_header.dart';
 
 /// Identifies which chip the user picked on a [FeedbackInline] banner.
 enum FluxFeedbackChip { source, topic, alreadySeen }
@@ -244,6 +245,34 @@ class SectionBlock extends StatelessWidget {
           ];
         }
         final visible = items.take(coreVisibleCount).toList();
+        // Section veille — en-têtes « Tes sources » / « Couverture élargie »
+        // dérivés au rendu sur les transitions de `veilleGroup`.
+        if (section.kind == SectionKind.veille) {
+          final rows = buildVeilleFeedRows(visible);
+          return [
+            for (final row in rows)
+              switch (row) {
+                VeilleHeaderRow(:final label) =>
+                  VeilleGroupHeader(label: label),
+                VeilleArticleRow(:final content, :final index) =>
+                  pendingFeedbackIds.contains(content.id)
+                      ? _feedbackInlineFor(content.id)
+                      : FluxContinuArticleCard(
+                          article: content,
+                          onTap: () => onTapArticle(content),
+                          onSwipeDismiss: onDismissArticle == null
+                              ? null
+                              : () => onDismissArticle!(content.id),
+                          enableSwipeHint:
+                              enableSwipeHintOnFirstCard && index == 0,
+                          onSwipeHintComplete:
+                              enableSwipeHintOnFirstCard && index == 0
+                                  ? onSwipeHintComplete
+                                  : null,
+                        ),
+              },
+          ];
+        }
         return [
           for (var i = 0; i < visible.length; i++)
             if (pendingFeedbackIds.contains(visible[i].id))

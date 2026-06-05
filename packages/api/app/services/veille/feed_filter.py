@@ -33,6 +33,7 @@ from app.services.recommendation.filter_presets import (
     apply_serein_filter,
     load_serein_preferences,
 )
+from app.services.recommendation.helpers.diversification import diversify
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import PillarScoringEngine
 from app.services.veille.scoring_context import build_veille_scoring_context
@@ -62,6 +63,10 @@ class VeilleFilters:
     angles: list[VeilleAngle] = field(default_factory=list)
     source_ids: list[UUID] = field(default_factory=list)
     global_keywords: list[str] = field(default_factory=list)
+    # Notes d'intention texte libre (`VeilleSource.why`) par source configurée.
+    # Tokenisées en mots-clés « Intention » côté scoring_context pour affiner le
+    # tri sans nouveau code de scoring (cf. plan refonte curation, étape 6).
+    source_intents: dict[UUID, str] = field(default_factory=dict)
 
     @property
     def topic_slugs(self) -> list[str]:
@@ -141,23 +146,24 @@ async def load_veille_filters(
         for row_id, topic_id, label in topic_rows
     ]
 
-    sources = (
-        (
-            await session.execute(
-                select(VeilleSource.source_id).where(
-                    VeilleSource.veille_config_id == config.id
-                )
+    source_rows = (
+        await session.execute(
+            select(VeilleSource.source_id, VeilleSource.why).where(
+                VeilleSource.veille_config_id == config.id
             )
         )
-        .scalars()
-        .all()
-    )
+    ).all()
+    source_ids = [sid for sid, _why in source_rows]
+    source_intents = {
+        sid: why.strip() for sid, why in source_rows if why and why.strip()
+    }
 
     return VeilleFilters(
         theme_id=config.theme_id or None,
         angles=angles,
-        source_ids=list(sources),
+        source_ids=source_ids,
         global_keywords=global_keywords,
+        source_intents=source_intents,
     )
 
 
@@ -182,6 +188,28 @@ def build_strong_predicate(filters: VeilleFilters):
         clauses.append(Content.source_id.in_(filters.source_ids))
     for kw in filters.all_keywords:
         # `\m` / `\M` = bornes de mot Postgres (équivalent SQL de `\b…\b`).
+        pattern = r"\m" + re.escape(kw) + r"\M"
+        clauses.append(Content.title.op("~*")(pattern))
+        clauses.append(Content.description.op("~*")(pattern))
+    return or_(*clauses) if clauses else None
+
+
+def build_topic_keyword_predicate(filters: VeilleFilters):
+    r"""Clause `OR` SQL sur les axes **topic + mots-clés uniquement** (Bloc B).
+
+    Identique à `build_strong_predicate` mais **sans** la clause `source_id IN`.
+    C'est le prédicat du Bloc B « Couverture élargie » : il ratisse le pool
+    global sur les topics/mots-clés ; l'appelant le combine avec
+    `source_id NOTIN config_sources` pour ne garder que les **autres** sources
+    (les sources configurées vivent dans le Bloc A, fenêtre 30 j, laisser-passer).
+
+    Renvoie `None` si aucun axe topic/mot-clé → pas de Bloc B (p.ex. config
+    source-seule).
+    """
+    clauses = []
+    if filters.topic_slugs:
+        clauses.append(Content.topics.overlap(filters.topic_slugs))
+    for kw in filters.all_keywords:
         pattern = r"\m" + re.escape(kw) + r"\M"
         clauses.append(Content.title.op("~*")(pattern))
         clauses.append(Content.description.op("~*")(pattern))
@@ -215,29 +243,35 @@ def _matched_axes(
     return axes
 
 
-def _score_and_rank(
+def _score_block(
     candidates: list[Content],
     context,
     filters: VeilleFilters,
+    *,
+    apply_floor: bool,
+    apply_threshold: bool,
+    diversity_cap: int | None = None,
+    block: str = "?",
 ) -> list[tuple[Content, float, list[str]]]:
-    """Score chaque candidat, applique le floor + le seuil, trie par score.
+    """Score chaque candidat, trie par score, et applique floor/seuil/cap selon le bloc.
 
-    Pipeline (Story 23.4) :
+    Refonte curation deux blocs — un seul moteur de scoring (`PillarScoringEngine`),
+    deux politiques de filtrage paramétrées :
 
-    1. **Floor** — « la source est un boost, pas un free-pass » : tout candidat
-       dont les axes qualifiants ⊆ ``{source}`` (ni topic ni mot-clé) est écarté
-       *avant* le seuil. Plus chirurgical qu'un narrow-predicate : on préserve
-       l'UX ``matched_on`` et les articles on-topic venant d'une source suivie.
-       Le floor **ne s'active que si la config définit un axe topic/keyword** à
-       gater : une config *source-seule* (aucun topic, aucun mot-clé) garde son
-       comportement historique — ses sources **sont** le filtre, leurs articles
-       passent.
-    2. **Seuil** — parmi les candidats on-axis, on garde ceux dont le score
-       final ≥ ``VEILLE_RELEVANCE_THRESHOLD``.
-    3. **Anti-starvation** — si moins de ``VEILLE_MIN_FEED_SIZE`` passent ET que
-       des candidats on-axis ont été coupés par le *seuil* (jamais par le floor),
-       on relâche le seuil d'un cran (``max(threshold-8, 40)``) et on réadmet
-       ceux qui repassent — sans jamais réadmettre un article floor-pruned.
+    - **Bloc A « Tes sources »** (`apply_floor=False`, `apply_threshold=False`,
+      `diversity_cap=N`) : laisser-passer. Tout article d'une source configurée
+      (fenêtre 30 j en amont) entre, scoré + trié, puis **cap de diversité** à
+      `N`/source via `diversify()` pour qu'une source bavarde ne monopolise pas.
+    - **Bloc B « Couverture élargie »** (`apply_floor=True`,
+      `apply_threshold=True`) : comportement historique (Story 23.4) —
+
+      1. **Floor** : « la source est un boost, pas un free-pass » — tout candidat
+         dont les axes ⊆ ``{source}`` est écarté. N'agit que si un axe
+         topic/keyword existe.
+      2. **Seuil** : on garde score ≥ ``VEILLE_RELEVANCE_THRESHOLD``.
+      3. **Anti-starvation** : sous ``VEILLE_MIN_FEED_SIZE`` passants ET des
+         candidats coupés par le *seuil* (jamais le floor), on relâche d'un cran
+         (``max(threshold-8, 40)``) — scopée au bloc courant.
     """
     engine = PillarScoringEngine()
     # Pré-calcul hors boucle : ces dérivations sont stables sur tout le fetch.
@@ -247,7 +281,7 @@ def _score_and_rank(
     threshold = ScoringWeights.VEILLE_RELEVANCE_THRESHOLD
     # Le floor n'a de sens que s'il existe un axe topic/keyword à côté de la
     # source. Sans cela (config source-seule), la source est l'unique filtre.
-    floor_active = bool(topic_slugs or keywords)
+    floor_active = apply_floor and bool(topic_slugs or keywords)
 
     passing: list[tuple[Content, float, list[str]]] = []
     # Candidats on-axis sous le seuil — réservés à l'anti-starvation.
@@ -264,13 +298,17 @@ def _score_and_rank(
         score = result.final_score
         if score > max_score:
             max_score = score
-        if score >= threshold:
+        if not apply_threshold or score >= threshold:
             passing.append((content, score, axes))
         else:
             below_threshold.append((content, score, axes))
 
     threshold_pruned_count = len(below_threshold)
-    if len(passing) < ScoringWeights.VEILLE_MIN_FEED_SIZE and below_threshold:
+    if (
+        apply_threshold
+        and len(passing) < ScoringWeights.VEILLE_MIN_FEED_SIZE
+        and below_threshold
+    ):
         relaxed = max(threshold - 8.0, 40.0)
         if relaxed < threshold:
             readmitted = [item for item in below_threshold if item[1] >= relaxed]
@@ -282,8 +320,20 @@ def _score_and_rank(
         key=lambda t: (t[1], t[0].published_at or _epoch),
         reverse=True,
     )
+
+    if diversity_cap is not None:
+        # Cap par source — préserve l'ordre par score (déjà trié), pas de
+        # fallback : on veut un plafond strict, pas une cible de taille.
+        passing = diversify(
+            passing,
+            key_fn=lambda t: t[0].source_id,
+            max_per_key=diversity_cap,
+            fallback_ok=False,
+        )
+
     logger.info(
         "veille.feed_scored",
+        block=block,
         candidate_count=len(candidates),
         pass_count=len(passing),
         max_score=round(max_score, 1),
@@ -300,27 +350,33 @@ async def fetch_veille_feed(
     limit: int = 20,
     offset: int = 0,
     serein: bool = False,
-) -> tuple[list[tuple[Content, list[str]]], bool]:
-    """Récupère le feed veille curé pour `user_id`.
+) -> tuple[list[tuple[Content, list[str], str]], bool]:
+    """Récupère le feed veille curé pour `user_id`, en **deux blocs**.
 
-    Returns (items_with_axes, has_more). Pipeline : prefilter SQL sur axes
-    forts (≤ CANDIDATE_CAP) → scoring piliers → seuil → tri par score, puis
-    pagination sur l'ensemble scoré. Contrat API (limit/offset/has_more)
-    inchangé.
+    Returns (items_with_axes_and_group, has_more). Chaque item est un triple
+    ``(Content, matched_on, group)`` où ``group`` ∈ ``{"sources", "elargie"}`` :
 
-    Si aucune config active OU aucun axe fort (thème seul) → liste vide.
+    - **Bloc A « Tes sources »** (``group="sources"``) : articles des sources
+      configurées, fenêtre 30 j, scoring complet, **laisser-passer** (pas de
+      floor ni de seuil), cap de diversité 3/source.
+    - **Bloc B « Couverture élargie »** (``group="elargie"``) : articles
+      topic/mots-clés **hors** sources configurées, fenêtre 7 j, comportement
+      historique (floor + seuil + anti-starvation).
+
+    Les deux blocs scorés sont concaténés (A puis B), tagués, puis paginés sur
+    l'ensemble — la pagination offset/limit reste plate côté API.
+
+    Si aucune config active OU aucun axe fort → liste vide.
     """
     config = await _get_active_config(session, user_id)
     if config is None:
         return [], False
 
     filters = await load_veille_filters(session, config)
-    predicate = build_strong_predicate(filters)
-    if predicate is None:
+    if not filters.has_strong_axis():
         return [], False
 
     now = datetime.now(UTC)
-    cutoff = now - timedelta(hours=ScoringWeights.VEILLE_RECENCY_HOURS)
 
     exclude_user_status = exists().where(
         UserContentStatus.content_id == Content.id,
@@ -331,35 +387,82 @@ async def fetch_veille_feed(
         ),
     )
 
-    query = (
-        select(Content)
-        .join(Content.source)
-        .options(selectinload(Content.source))
-        .where(~exclude_user_status)
-        .where(predicate)
-        .where(Source.is_active.is_(True))
-        .where(Content.published_at >= cutoff)
-    )
-
+    serein_prefs = None
     if serein:
         serein_prefs = await load_serein_preferences(session, user_id)
-        query = apply_serein_filter(
-            query,
-            sensitive_themes=serein_prefs.sensitive_themes,
-            excluded_topics=serein_prefs.excluded_topics,
+
+    def _base_query():
+        q = (
+            select(Content)
+            .join(Content.source)
+            .options(selectinload(Content.source))
+            .where(~exclude_user_status)
+            .where(Source.is_active.is_(True))
         )
-
-    query = query.order_by(Content.published_at.desc()).limit(
-        ScoringWeights.VEILLE_CANDIDATE_CAP
-    )
-
-    candidates = (await session.execute(query)).scalars().all()
-    if not candidates:
-        return [], False
+        if serein_prefs is not None:
+            q = apply_serein_filter(
+                q,
+                sensitive_themes=serein_prefs.sensitive_themes,
+                excluded_topics=serein_prefs.excluded_topics,
+            )
+        return q
 
     context = await build_veille_scoring_context(session, config, filters, now)
-    scored = _score_and_rank(list(candidates), context, filters)
 
-    page = scored[offset : offset + limit]
-    has_more = len(scored) > offset + limit
-    return [(content, axes) for content, _score, axes in page], has_more
+    # ─── Bloc A « Tes sources » — fenêtre 30 j, laisser-passer ───────────────
+    block_a: list[tuple[Content, float, list[str]]] = []
+    if filters.source_ids:
+        cutoff_a = now - timedelta(hours=ScoringWeights.VEILLE_CONFIGURED_RECENCY_HOURS)
+        query_a = (
+            _base_query()
+            .where(Content.source_id.in_(filters.source_ids))
+            .where(Content.published_at >= cutoff_a)
+            .order_by(Content.published_at.desc())
+            .limit(ScoringWeights.VEILLE_CANDIDATE_CAP)
+        )
+        candidates_a = (await session.execute(query_a)).scalars().all()
+        if candidates_a:
+            block_a = _score_block(
+                list(candidates_a),
+                context,
+                filters,
+                apply_floor=False,
+                apply_threshold=False,
+                diversity_cap=ScoringWeights.VEILLE_SOURCE_DIVERSITY_CAP,
+                block="sources",
+            )
+
+    # ─── Bloc B « Couverture élargie » — fenêtre 7 j, hors sources config ────
+    block_b: list[tuple[Content, float, list[str]]] = []
+    topic_kw_predicate = build_topic_keyword_predicate(filters)
+    if topic_kw_predicate is not None:
+        cutoff_b = now - timedelta(hours=ScoringWeights.VEILLE_RECENCY_HOURS)
+        query_b = (
+            _base_query()
+            .where(topic_kw_predicate)
+            .where(Content.published_at >= cutoff_b)
+        )
+        if filters.source_ids:
+            query_b = query_b.where(Content.source_id.notin_(filters.source_ids))
+        query_b = query_b.order_by(Content.published_at.desc()).limit(
+            ScoringWeights.VEILLE_CANDIDATE_CAP
+        )
+        candidates_b = (await session.execute(query_b)).scalars().all()
+        if candidates_b:
+            block_b = _score_block(
+                list(candidates_b),
+                context,
+                filters,
+                apply_floor=True,
+                apply_threshold=True,
+                block="elargie",
+            )
+
+    # Concaténation A→B, tag du groupe, puis pagination plate sur l'ensemble.
+    tagged: list[tuple[Content, list[str], str]] = [
+        (content, axes, "sources") for content, _s, axes in block_a
+    ] + [(content, axes, "elargie") for content, _s, axes in block_b]
+
+    page = tagged[offset : offset + limit]
+    has_more = len(tagged) > offset + limit
+    return page, has_more
