@@ -159,9 +159,7 @@ async def _hydrate_response(
                 select(
                     Content.source_id,
                     func.max(Content.published_at),
-                    func.count(
-                        case((Content.published_at >= recent_cutoff, 1))
-                    ),
+                    func.count(case((Content.published_at >= recent_cutoff, 1))),
                 )
                 .where(Content.source_id.in_(source_ids))
                 .group_by(Content.source_id)

@@ -412,9 +412,7 @@ async def fetch_veille_feed(
     # ─── Bloc A « Tes sources » — fenêtre 30 j, laisser-passer ───────────────
     block_a: list[tuple[Content, float, list[str]]] = []
     if filters.source_ids:
-        cutoff_a = now - timedelta(
-            hours=ScoringWeights.VEILLE_CONFIGURED_RECENCY_HOURS
-        )
+        cutoff_a = now - timedelta(hours=ScoringWeights.VEILLE_CONFIGURED_RECENCY_HOURS)
         query_a = (
             _base_query()
             .where(Content.source_id.in_(filters.source_ids))
