@@ -12,6 +12,7 @@ import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/repositories/personalization_repository.dart';
+import '../../flux_continu/providers/flux_continu_provider.dart';
 import '../../my_interests/widgets/interest_state_pill.dart';
 import '../../sources/widgets/premium_source_connection.dart';
 import '../models/topic_models.dart';
@@ -775,6 +776,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                   final repo = ref.read(personalizationRepositoryProvider);
                   await repo.muteSource(widget.content.source.id);
                   ref.invalidate(personalizationProvider);
+                  ref.invalidate(fluxContinuProvider);
                   NotificationService.showInfo(
                       'Source ${widget.content.source.name} masquée');
                 } catch (e) {
