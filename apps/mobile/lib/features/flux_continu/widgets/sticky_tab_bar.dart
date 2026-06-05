@@ -29,15 +29,15 @@ class StickyTab {
 ///   "lu = checked, pas barré"), and a marker-style highlight on the active
 ///   tab's label text (calque du highlight "Couverture médiatique" — cf.
 ///   DiffTitle ; remplace l'ancien wash pleine-chip + le point),
-/// - 4-px progress track with a 4-stop gradient fill (essentiel → bonnes
-///   → veille1 → veille2) and a soft accent glow,
+/// - 4-px **segmented** progress track — one rounded pip per section (done /
+///   current / upcoming), driven by [activeIndex], so the bar reads as discrete
+///   « pages » matching the section snap rather than a continuous gauge,
 /// - when [showFilterBar] is true (Explorer mode), [FeedFilterBar] is
 ///   inserted below the tabs so the filter chips morph in under the same
 ///   parchment surface rather than swapping the whole sticky.
 class StickyTabBar extends StatelessWidget {
   final List<StickyTab> tabs;
   final int activeIndex;
-  final double progress;
   final ValueChanged<int> onTapTab;
   final ScrollController? tabsController;
   final bool showFilterBar;
@@ -46,7 +46,6 @@ class StickyTabBar extends StatelessWidget {
     super.key,
     required this.tabs,
     required this.activeIndex,
-    required this.progress,
     required this.onTapTab,
     this.tabsController,
     this.showFilterBar = false,
@@ -73,7 +72,10 @@ class StickyTabBar extends StatelessWidget {
             height: 4,
             child: CustomPaint(
               painter: _ProgressPainter(
-                progress: progress.clamp(0.0, 1.0),
+                // Track segmenté (un pip par section) : modèle mental « pages »
+                // qui correspond au snap discret, au lieu d'une jauge continue.
+                segmentCount: tabs.length,
+                currentIndex: activeIndex,
                 // Désaturation forte (PO 2026-06) : on garde l'ordre/identité
                 // chromatique (rouge → ocre → bleu → sauge) mais saturation
                 // abaissée ~65 % + luminosité remontée vers des tons pastel,
@@ -299,42 +301,87 @@ class _MarkerHighlight extends CustomPainter {
   bool shouldRepaint(_MarkerHighlight old) => old.color != color;
 }
 
+/// Segmented progress track — one rounded pip per section, mirroring the
+/// discrete section-snap ("pages") instead of a continuous gauge. State is read
+/// from [currentIndex] (same source as the tabs' `isDone` check, so the bar and
+/// the checkmarks never disagree):
+/// - `i < currentIndex` → **done**: filled with the section's own desaturated
+///   identity colour (preserves the per-section hue ordering);
+/// - `i == currentIndex` → **current**: full-opacity segment colour + the soft
+///   accent [glow], scoped to that segment;
+/// - `i > currentIndex` → **upcoming**: the muted [trackColor].
+///
+/// The current segment is filled whole (no sub-fill by scroll fraction) for
+/// maximal discrete reading, so a repaint is only needed when the active
+/// section, the count, or the colours change.
 class _ProgressPainter extends CustomPainter {
-  final double progress;
+  final int segmentCount;
+  final int currentIndex;
   final List<Color> gradient;
   final Color glow;
   final Color trackColor;
 
   _ProgressPainter({
-    required this.progress,
+    required this.segmentCount,
+    required this.currentIndex,
     required this.gradient,
     required this.glow,
     required this.trackColor,
   });
 
+  /// ~3 px gutter between pips so they read as distinct pages.
+  static const double _gutter = 3.0;
+
   @override
   void paint(Canvas canvas, Size size) {
-    final fullRect = Offset.zero & size;
-    final trackPaint = Paint()..color = trackColor;
-    canvas.drawRect(fullRect, trackPaint);
+    if (segmentCount <= 0) return;
+    final segWidth =
+        (size.width - _gutter * (segmentCount - 1)) / segmentCount;
+    // Degenerate (too many sections for the width): fall back to a plain track
+    // rather than painting negative-width pips.
+    if (segWidth <= 0) {
+      canvas.drawRect(Offset.zero & size, Paint()..color = trackColor);
+      return;
+    }
+    final radius = Radius.circular(size.height / 2);
+    for (var i = 0; i < segmentCount; i++) {
+      final left = i * (segWidth + _gutter);
+      final rrect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(left, 0, segWidth, size.height),
+        radius,
+      );
+      if (i == currentIndex) {
+        canvas.drawRRect(
+          rrect,
+          Paint()
+            ..color = glow
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+        );
+        canvas.drawRRect(rrect, Paint()..color = _segmentColor(i));
+      } else if (i < currentIndex) {
+        canvas.drawRRect(rrect, Paint()..color = _segmentColor(i));
+      } else {
+        canvas.drawRRect(rrect, Paint()..color = trackColor);
+      }
+    }
+  }
 
-    if (progress <= 0) return;
-    final clipped = Rect.fromLTWH(0, 0, size.width * progress, size.height);
-    final glowPaint = Paint()
-      ..color = glow
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
-    canvas.drawRect(clipped, glowPaint);
-    final fillPaint = Paint()
-      ..shader = LinearGradient(
-        colors: gradient,
-        stops: const [0.0, 0.4, 0.7, 1.0],
-      ).createShader(fullRect);
-    canvas.drawRect(clipped, fillPaint);
+  /// Maps a segment to a colour along [gradient], so each section keeps its
+  /// chromatic identity even when the section count differs from the number of
+  /// gradient stops (lerped across the stops).
+  Color _segmentColor(int i) {
+    if (gradient.isEmpty) return trackColor;
+    if (gradient.length == 1 || segmentCount == 1) return gradient.first;
+    final scaled = (i / (segmentCount - 1)) * (gradient.length - 1);
+    final lo = scaled.floor().clamp(0, gradient.length - 1);
+    final hi = math.min(lo + 1, gradient.length - 1);
+    return Color.lerp(gradient[lo], gradient[hi], scaled - lo) ?? gradient[lo];
   }
 
   @override
   bool shouldRepaint(_ProgressPainter old) =>
-      old.progress != progress ||
+      old.segmentCount != segmentCount ||
+      old.currentIndex != currentIndex ||
       old.gradient != gradient ||
       old.glow != glow ||
       old.trackColor != trackColor;

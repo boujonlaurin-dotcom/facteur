@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart'
-    show ValueListenable, defaultTargetPlatform, TargetPlatform;
+    show ValueListenable, defaultTargetPlatform, setEquals, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -90,6 +90,32 @@ const _closingTab = StickyTab(
   accent: Color(0xFF2E7D32),
 );
 
+/// Drag-time feedforward payload for [_SectionPassageDot]. Computed live in
+/// [_FluxContinuScreenState._updateBoundaryApproach] and broadcast via a
+/// [ValueNotifier] so the dots rebuild without a per-frame `setState`.
+/// - [dotIndex] : the passage dot sitting at the boundary the gesture is
+///   approaching (= the section index *before* it, same `k-1` convention as
+///   [_FluxContinuScreenState._pulsePassageForStickyIndex]), or `null` when the
+///   next snap point in the travel direction is **not** an inter-section
+///   boundary (a tall section's free-reading bottom) — so no « va snapper » cue
+///   appears inside the free interior, matching the physics which returns `null`
+///   there too.
+/// - [proximity] : ramps 0→1 as the lift point nears that boundary, reaching 1
+///   exactly at [kSectionEdgeMargin] (the deadband where the snap commits), so
+///   the dot peaks precisely at the switch threshold.
+typedef _BoundaryApproach = ({int? dotIndex, double proximity});
+
+/// Signed *travel* direction from a [ScrollDirection]: +1 scrolling down (offset
+/// increasing), -1 up, 0 idle/unknown. Single mapping shared by the drag-time
+/// feedforward ([_FluxContinuScreenState._updateBoundaryApproach]) and the snap
+/// physics ([_SectionSnapPhysics._resolveTarget]) so the cue and the commit can
+/// never disagree on « which way am I going ».
+double _travelDirection(ScrollDirection d) => switch (d) {
+  ScrollDirection.reverse => 1.0,
+  ScrollDirection.forward => -1.0,
+  ScrollDirection.idle => 0.0,
+};
+
 class FluxContinuScreen extends ConsumerStatefulWidget {
   const FluxContinuScreen({super.key});
 
@@ -101,7 +127,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   final ScrollController _scroll = ScrollController();
   final ScrollController _tabsScroll = ScrollController();
   final ValueNotifier<bool> _stickyVisible = ValueNotifier(false);
-  final ValueNotifier<double> _scrollProgress = ValueNotifier(0);
   final ValueNotifier<int> _activeIndex = ValueNotifier(0);
   final ValueNotifier<_SectionPassagePulse?> _sectionPassagePulse =
       ValueNotifier(null);
@@ -153,6 +178,33 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   final _SnapAnchors _snapAnchors = _SnapAnchors();
   bool _snapAnchorsRecomputeScheduled = false;
 
+  /// Drag-time « distance to the next boundary » cue, written by
+  /// [_updateBoundaryApproach] on every scroll frame (quantized) and read by the
+  /// in-flow [_SectionPassageDot]s. Feedforward twin of [_sectionPassagePulse]
+  /// (the post-validation pulse) — both ride the same dot so the gesture reads
+  /// as a single continuous « j'approche un seuil → je l'ai franchi ».
+  final ValueNotifier<_BoundaryApproach?> _boundaryApproach =
+      ValueNotifier(null);
+
+  /// Sorted snap points of [_snapAnchors], cached once per layout (frames only
+  /// change on layout, never per scroll frame) so the per-frame
+  /// [_updateBoundaryApproach] doesn't re-allocate + re-sort them every frame.
+  List<double> _snapPoints = const [];
+
+  /// Maps a section *top* (an inter-section boundary) to the passage dot above
+  /// it (section index − 1). Rebuilt alongside the snap anchors in
+  /// [_recomputeSnapAnchors]; [_updateBoundaryApproach] looks up an approached
+  /// snap point here directly (the offsets are bit-identical to the stored
+  /// frame tops). Tops absent here (a tall section's bottom, the first section,
+  /// the virtual cards) carry no « va snapper » cue.
+  final Map<double, int> _dotIndexByTop = {};
+
+  /// (A3) Indices (into `state.sections`) of sections taller than the viewport —
+  /// the ones with a free-reading interior (`bottom > top`, same predicate as
+  /// the physics' free zone). Drives the [_FreeReadEdgeFade] « lecture libre »
+  /// signifier. Rebuilt in [_recomputeSnapAnchors].
+  final ValueNotifier<Set<int>> _tallSections = ValueNotifier(const {});
+
   /// Total bottom overlay height (app nav bar + system insets), captured from
   /// [MediaQuery.paddingOf] in [build]. With [extendBody: true] on the outer
   /// Scaffold, padding.bottom reflects the actual rendered height of
@@ -192,9 +244,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     _scroll.dispose();
     _tabsScroll.dispose();
     _stickyVisible.dispose();
-    _scrollProgress.dispose();
     _activeIndex.dispose();
     _sectionPassagePulse.dispose();
+    _boundaryApproach.dispose();
+    _tallSections.dispose();
     _pullHintTimer?.cancel();
     super.dispose();
   }
@@ -207,14 +260,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (_stickyVisible.value != showSticky) {
       _stickyVisible.value = showSticky;
     }
-    final maxExtent = pos.maxScrollExtent;
-    final nextProgress = maxExtent > 0
-        ? (currentScroll / maxExtent).clamp(0.0, 1.0).toDouble()
-        : 0.0;
-    if (_scrollProgress.value != nextProgress) {
-      _scrollProgress.value = nextProgress;
-    }
     _updateActiveSection();
+    _updateBoundaryApproach(pos);
 
     if (currentScroll > _maxScrollDepthPx) {
       _maxScrollDepthPx = currentScroll;
@@ -325,6 +372,68 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     return false;
   }
 
+  /// (A1) Feedforward: as the reader drags toward a section boundary, ramp the
+  /// in-flow passage dot that sits there so the snap reads as « j'approche un
+  /// seuil marqué » *before* the finger lifts — not a post-hoc surprise. Runs
+  /// inside [_onScroll] (already firing every frame); reuses the live snap
+  /// anchors and the shared [snapPointsOf], so the cue is mechanically true to
+  /// where the snap commits. Cheap: writes a quantized value to
+  /// [_boundaryApproach] only when it changes.
+  void _updateBoundaryApproach(ScrollPosition pos) {
+    final points = _snapPoints;
+    final currentScroll = pos.pixels;
+    // Header zone (above the first section): the sticky is hidden anyway ⇒ no
+    // boundary cue.
+    if (points.isEmpty || currentScroll <= points.first) {
+      if (_boundaryApproach.value != null) _boundaryApproach.value = null;
+      return;
+    }
+    // Travel direction (shared mapping with the physics). On idle, keep the
+    // previous value so a pause mid-drag doesn't flicker the cue off.
+    final dir = _travelDirection(pos.userScrollDirection);
+    if (dir == 0) return;
+
+    // The next snap point strictly in the travel direction.
+    double? edge;
+    if (dir > 0) {
+      for (final p in points) {
+        if (p > currentScroll + kSnapEpsilon) {
+          edge = p;
+          break;
+        }
+      }
+    } else {
+      for (var i = points.length - 1; i >= 0; i--) {
+        if (points[i] < currentScroll - kSnapEpsilon) {
+          edge = points[i];
+          break;
+        }
+      }
+    }
+    if (edge == null) {
+      if (_boundaryApproach.value != null) _boundaryApproach.value = null;
+      return;
+    }
+
+    // Proximity ramps to 1 across the deadband where the snap commits, so the
+    // dot peaks exactly at the switch threshold. The cue rides a dot only when
+    // the approached point is an inter-section boundary (present in
+    // [_dotIndexByTop]); a tall section's bottom maps to null ⇒ no « va snapper »
+    // cue inside the free interior.
+    final dist = (edge - currentScroll).abs();
+    final proximity = (1 - dist / kSectionEdgeMargin).clamp(0.0, 1.0);
+    // Quantize (~20 steps) so the small dot rebuilds only a handful of times
+    // per gesture rather than every frame.
+    final quantized = (proximity * 20).round() / 20;
+    final next = (dotIndex: _dotIndexByTop[edge], proximity: quantized);
+    final cur = _boundaryApproach.value;
+    if (cur == null ||
+        cur.dotIndex != next.dotIndex ||
+        cur.proximity != next.proximity) {
+      _boundaryApproach.value = next;
+    }
+  }
+
   Future<void> _triggerSectionChangeHaptic() async {
     try {
       await Haptics.vibrate(HapticsType.medium, usage: HapticsUsage.touch);
@@ -348,6 +457,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   void _recomputeSnapAnchors() {
     if (!_scroll.hasClients) {
       _snapAnchors.values = const [];
+      _snapPoints = const [];
+      _dotIndexByTop.clear();
+      _tallSections.value = const {};
       return;
     }
     final scrollBox =
@@ -361,8 +473,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // truncated.
     final visibleBottom = scrollBox.size.height - _safeAreaBottom;
     final result = <SectionFrame>[];
-    for (final key in _stickyEntryKeys) {
-      final ctx = key.currentContext;
+    _dotIndexByTop.clear();
+    final tall = <int>{};
+    for (var k = 0; k < _stickyEntryKeys.length; k++) {
+      final ctx = _stickyEntryKeys[k].currentContext;
       if (ctx == null) continue;
       final box = ctx.findRenderObject();
       if (box is! RenderBox || !box.attached) continue;
@@ -374,9 +488,23 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       // free-reading zone.
       final bottom = offset + (topGlobal + box.size.height) - visibleBottom;
       result.add((top: top, bottom: bottom));
+      // Map this entry to its real section index (virtual cards ⇒ −1) for the
+      // A1 passage-dot cue and the A3 free-read fade. Same convention as
+      // [_pulsePassageForStickyIndex].
+      final sectionIndex = _sectionIndexForStickyIndex(k);
+      if (sectionIndex > 0) {
+        _dotIndexByTop[top] = sectionIndex - 1;
+      }
+      if (sectionIndex >= 0 && bottom > top + kSnapEpsilon) {
+        tall.add(sectionIndex);
+      }
     }
     result.sort((a, b) => a.top.compareTo(b.top));
     _snapAnchors.values = result;
+    _snapPoints = snapPointsOf(result);
+    if (!setEquals(_tallSections.value, tall)) {
+      _tallSections.value = tall;
+    }
   }
 
   /// Defers an anchor recompute to the next post-frame (when layout is settled),
@@ -737,7 +865,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             ),
             _StickyHostOverlay(
               stickyVisible: _stickyVisible,
-              scrollProgress: _scrollProgress,
               activeIndex: _activeIndex,
               tabs: stickyTabs,
               onTapTab: _scrollToSection,
@@ -973,6 +1100,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             child: _SectionPassageDot(
               index: i - 1,
               pulseListenable: _sectionPassagePulse,
+              approachListenable: _boundaryApproach,
             ),
           ),
         );
@@ -983,7 +1111,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         SliverToBoxAdapter(
           child: KeyedSubtree(
             key: _sectionKeys[i],
-            child: SectionBlock(
+            child: _FreeReadEdgeFade(
+              index: i,
+              tallSections: _tallSections,
+              child: SectionBlock(
               section: section,
               isOpen: state.isOpen(section),
               onToggleMore: () => notifier.toggleMore(section),
@@ -1021,6 +1152,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                   : section is DigestTopicSection
                   ? () => _openDigestSection(context, section)
                   : null,
+              ),
             ),
           ),
         ),
@@ -1101,14 +1233,9 @@ class _SectionSnapPhysics extends ScrollPhysics {
 
     // Travel direction from the controller, not the lift velocity: a slow
     // drag-to-read down ends at ≈ 0 velocity, which would misread as "going
-    // up". ScrollDirection.reverse = scrolling down (offset increasing) ⇒ +1;
-    // .forward = up ⇒ -1.
+    // up". Shared mapping with the drag-time feedforward via [_travelDirection].
     final scrollDirection = position is ScrollPosition
-        ? switch (position.userScrollDirection) {
-            ScrollDirection.reverse => 1.0,
-            ScrollDirection.forward => -1.0,
-            ScrollDirection.idle => 0.0,
-          }
+        ? _travelDirection(position.userScrollDirection)
         : 0.0;
 
     final raw = resolveSnapTarget(
@@ -1154,8 +1281,16 @@ class _SectionPassageDot extends StatefulWidget {
   final int index;
   final ValueListenable<_SectionPassagePulse?> pulseListenable;
 
-  _SectionPassageDot({required this.index, required this.pulseListenable})
-    : super(key: ValueKey('section_passage_dot_$index'));
+  /// (A1) Drag-time feedforward: when `value.dotIndex == index`, the dot grows
+  /// and brightens with `value.proximity` *before* the snap commits, fusing
+  /// feedforward and the post-validation [pulseListenable] pulse in one object.
+  final ValueListenable<_BoundaryApproach?> approachListenable;
+
+  _SectionPassageDot({
+    required this.index,
+    required this.pulseListenable,
+    required this.approachListenable,
+  }) : super(key: ValueKey('section_passage_dot_$index'));
 
   @override
   State<_SectionPassageDot> createState() => _SectionPassageDotState();
@@ -1164,6 +1299,10 @@ class _SectionPassageDot extends StatefulWidget {
 class _SectionPassageDotState extends State<_SectionPassageDot>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulseController;
+  /// Cached rebuild trigger (pulse OR drag-approach) so the merged listenable
+  /// isn't re-allocated on every build. Rebuilt only if [approachListenable]
+  /// identity changes.
+  late Listenable _repaint;
   int _lastSequence = -1;
 
   @override
@@ -1173,6 +1312,7 @@ class _SectionPassageDotState extends State<_SectionPassageDot>
       vsync: this,
       duration: const Duration(milliseconds: 360),
     );
+    _repaint = Listenable.merge([_pulseController, widget.approachListenable]);
     widget.pulseListenable.addListener(_onPulse);
   }
 
@@ -1182,6 +1322,9 @@ class _SectionPassageDotState extends State<_SectionPassageDot>
     if (oldWidget.pulseListenable != widget.pulseListenable) {
       oldWidget.pulseListenable.removeListener(_onPulse);
       widget.pulseListenable.addListener(_onPulse);
+    }
+    if (oldWidget.approachListenable != widget.approachListenable) {
+      _repaint = Listenable.merge([_pulseController, widget.approachListenable]);
     }
   }
 
@@ -1216,12 +1359,26 @@ class _SectionPassageDotState extends State<_SectionPassageDot>
         child: Align(
           alignment: const Alignment(0, -0.68),
           child: AnimatedBuilder(
-            animation: _pulseController,
+            // Rebuild on either the post-validation pulse OR the drag-time
+            // approach cue — both feed the same dot (cached merged listenable).
+            animation: _repaint,
             builder: (context, _) {
               final t = Curves.easeOutCubic.transform(_pulseController.value);
-              final scale =
-                  1 + (0.30 * (1 - (2 * t - 1).abs()).clamp(0.0, 1.0));
+              final pulseBump = 0.30 * (1 - (2 * t - 1).abs()).clamp(0.0, 1.0);
               final glow = (1 - t).clamp(0.0, 1.0);
+              // Feedforward proximity (0 when this dot isn't the one being
+              // approached). Folded into the same scale/alpha/shadow as the
+              // pulse so the two cues read as one continuous gesture.
+              final approach = widget.approachListenable.value;
+              final proximity =
+                  (approach != null && approach.dotIndex == widget.index)
+                  ? approach.proximity
+                  : 0.0;
+              final scale = 1 + pulseBump + 0.9 * proximity;
+              final fillAlpha = (0.76 + 0.14 * glow + 0.20 * proximity).clamp(
+                0.0,
+                1.0,
+              );
               return Transform.scale(
                 scale: scale,
                 child: Container(
@@ -1229,12 +1386,14 @@ class _SectionPassageDotState extends State<_SectionPassageDot>
                   height: 2.5,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: dotColor.withValues(alpha: 0.76 + 0.14 * glow),
+                    color: dotColor.withValues(alpha: fillAlpha),
                     boxShadow: [
                       BoxShadow(
-                        color: dotColor.withValues(alpha: 0.13 * glow),
-                        blurRadius: 5,
-                        spreadRadius: 0.5,
+                        color: dotColor.withValues(
+                          alpha: 0.13 * glow + 0.30 * proximity,
+                        ),
+                        blurRadius: 5 + 4 * proximity,
+                        spreadRadius: 0.5 + proximity,
                       ),
                     ],
                     border: Border.all(
@@ -1252,9 +1411,61 @@ class _SectionPassageDotState extends State<_SectionPassageDot>
   }
 }
 
+/// (A3) « Carte haute = lecture libre » signifier. A section taller than the
+/// viewport (its index is in [tallSections]) gets a subtle bottom fade
+/// (`backgroundPrimary` → transparent, ~24 px), reading as « ce contenu coule
+/// sous le bord, tu peux scroller librement » — coherent with the physics
+/// leaving that interior un-snapped and with A1 emitting no « va snapper » dot
+/// there. Short/snapping sections render the child untouched. Painted by the
+/// screen (Stack overlay) so [SectionBlock]'s signature stays unchanged.
+class _FreeReadEdgeFade extends StatelessWidget {
+  final int index;
+  final ValueListenable<Set<int>> tallSections;
+  final Widget child;
+
+  const _FreeReadEdgeFade({
+    required this.index,
+    required this.tallSections,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<Set<int>>(
+      valueListenable: tallSections,
+      child: child,
+      builder: (context, tall, child) {
+        if (!tall.contains(index)) return child!;
+        final base = context.facteurColors.backgroundPrimary;
+        return Stack(
+          children: [
+            child!,
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: 24,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [base.withValues(alpha: 0), base],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _StickyHostOverlay extends StatelessWidget {
   final ValueNotifier<bool> stickyVisible;
-  final ValueNotifier<double> scrollProgress;
   final ValueNotifier<int> activeIndex;
 
   /// Descripteurs d'onglets (label+accent) dans l'ordre des slivers, calculés
@@ -1266,7 +1477,6 @@ class _StickyHostOverlay extends StatelessWidget {
 
   const _StickyHostOverlay({
     required this.stickyVisible,
-    required this.scrollProgress,
     required this.activeIndex,
     required this.tabs,
     required this.onTapTab,
@@ -1286,18 +1496,16 @@ class _StickyHostOverlay extends StatelessWidget {
           if (!showSticky) {
             return const SizedBox.shrink();
           }
+          // The progress track is now segmented and driven solely by the
+          // discrete active index — no continuous scroll-fraction needed.
           return ValueListenableBuilder<int>(
             valueListenable: activeIndex,
-            builder: (context, idx, _) => ValueListenableBuilder<double>(
-              valueListenable: scrollProgress,
-              builder: (context, progress, _) => StickyTabBar(
-                tabs: tabs,
-                activeIndex: idx.clamp(0, tabs.length - 1),
-                progress: progress,
-                onTapTab: onTapTab,
-                tabsController: tabsController,
-                showFilterBar: false,
-              ),
+            builder: (context, idx, _) => StickyTabBar(
+              tabs: tabs,
+              activeIndex: idx.clamp(0, tabs.length - 1),
+              onTapTab: onTapTab,
+              tabsController: tabsController,
+              showFilterBar: false,
             ),
           );
         },

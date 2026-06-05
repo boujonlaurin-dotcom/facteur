@@ -17,6 +17,36 @@ void main() {
   const within = kSectionEdgeMargin - 10; // inside the deadband
   const beyond = kSectionEdgeMargin + 10; // past it ⇒ commit
 
+  group('snapPointsOf', () {
+    test('canonical frames yield each top + each tall bottom, sorted', () {
+      // Short@0 (no bottom), tall 300…600 (both), short@1200 (no bottom).
+      expect(snapPointsOf(frames), [0.0, 300.0, 600.0, 1200.0]);
+    });
+
+    test('a short section contributes a single point (bottom == top)', () {
+      expect(snapPointsOf(const [(top: 50.0, bottom: 50.0)]), [50.0]);
+    });
+
+    test('empty frames yield no points', () {
+      expect(snapPointsOf(const []), isEmpty);
+    });
+
+    test('is the source of truth resolveSnapTarget commits to', () {
+      // Every committed target must be one of the published snap points — the
+      // guarantee that the drag-time cue (which reads snapPointsOf) ramps to
+      // exactly where the snap lands.
+      final points = snapPointsOf(frames);
+      final target = resolveSnapTarget(
+        currentPixels: 10,
+        naturalLanding: 5000,
+        velocity: 9000,
+        scrollDirection: 1,
+        frames: frames,
+      );
+      expect(points, contains(target));
+    });
+  });
+
   group('resolveSnapTarget', () {
     test('free while inside a tall section (it fills the screen)', () {
       // Landing at 450, inside the (300, 600) interior: no edge shows ⇒ free,
