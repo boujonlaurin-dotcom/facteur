@@ -28,29 +28,50 @@ class ComposeTourneeButton extends StatelessWidget {
       padding: padding ?? EdgeInsets.zero,
       child: SizedBox(
         width: double.infinity,
-        child: OutlinedButton.icon(
-          onPressed: () {
-            HapticFeedback.mediumImpact();
-            showTourneeComposerSheet(context);
-          },
-          icon: Icon(
-            PhosphorIcons.slidersHorizontal(PhosphorIconsStyle.bold),
-            size: 16,
-            color: colors.primary,
+        // Tuile teintée douce : fond primary léger + ombre subtile pour la
+        // détacher du fond crème, plus grande et plus visible que le contour.
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(FacteurRadius.medium),
+            boxShadow: [
+              BoxShadow(
+                color: colors.primary.withValues(alpha: 0.18),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          label: Text(
-            'Composer ma Tournée',
-            style: TextStyle(
-              color: colors.primary,
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-            ),
-          ),
-          style: OutlinedButton.styleFrom(
-            side: BorderSide(color: colors.primary.withValues(alpha: 0.5)),
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(FacteurRadius.medium),
+          child: Material(
+            color: colors.primary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(FacteurRadius.medium),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () {
+                HapticFeedback.mediumImpact();
+                showTourneeComposerSheet(context);
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      PhosphorIcons.slidersHorizontal(PhosphorIconsStyle.bold),
+                      size: 18,
+                      color: colors.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Composer ma Tournée',
+                      style: TextStyle(
+                        color: colors.primary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

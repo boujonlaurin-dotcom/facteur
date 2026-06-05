@@ -1,18 +1,18 @@
-// Story 10.2 — `showTourneeComposerSheet` / `ComposeTourneeButton` sont devenus
-// des shims vers la sheet unifiée [showManageFavoritesSheet] (porte Essentiel).
-// La couverture détaillée du contenu vit dans `manage_favorites_sheet_test.dart`.
+// Story Essentiel UX — carte de perso affichée sous le hero tant que la Tournée
+// n'est pas personnalisée. Rendu (titre + illustration + CTA) et tap → la sheet
+// unifiée « Mes favoris » s'ouvre.
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
-import 'package:facteur/features/flux_continu/widgets/tournee_composer_sheet.dart';
-import 'package:facteur/features/grille/models/grille_models.dart';
+import 'package:facteur/features/flux_continu/widgets/personalisation_cta_card.dart';
 import 'package:facteur/features/grille/providers/grille_provider.dart';
 import 'package:facteur/features/grille/repositories/grille_repository.dart';
+import 'package:facteur/features/grille/models/grille_models.dart';
 import 'package:facteur/features/my_interests/models/user_interests_state.dart';
 import 'package:facteur/features/my_interests/models/user_sources_state.dart';
 import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
 import 'package:facteur/features/my_interests/providers/user_sources_state_provider.dart';
-import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:facteur/features/sources/providers/sources_providers.dart';
+import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:facteur/features/veille/models/veille_config_dto.dart';
 import 'package:facteur/features/veille/providers/veille_active_config_provider.dart';
 import 'package:flutter/material.dart';
@@ -51,9 +51,10 @@ class _StubVeille extends VeilleActiveConfigNotifier {
   Future<VeilleConfigDto?> build() async => null;
 }
 
-class _NoGrille implements GrilleRepository {
+class _FakeGrilleRepository implements GrilleRepository {
   @override
-  Future<GrilleTodayResponse> getToday() => throw Exception('no grille');
+  Future<GrilleTodayResponse> getToday() async =>
+      throw Exception('mock: no grille');
   @override
   Future<GrilleLeaderboardResponse> getLeaderboard() =>
       throw UnimplementedError();
@@ -70,53 +71,49 @@ class _StubSerein extends SereinToggleNotifier {
   }
 }
 
-Widget _host(Widget child) => ProviderScope(
-      overrides: [
-        userInterestsProvider.overrideWith(() => _StubInterests()),
-        userSourcesStateProvider.overrideWith(() => _StubSources()),
-        userSourcesProvider.overrideWith(() => _StubCatalog()),
-        veilleActiveConfigProvider.overrideWith(() => _StubVeille()),
-        grilleRepositoryProvider.overrideWithValue(_NoGrille()),
-        sereinToggleProvider.overrideWith((ref) => _StubSerein(ref)),
-      ],
-      child: MaterialApp(
-        theme: ThemeData(extensions: [FacteurPalettes.light]),
-        home: Scaffold(body: child),
-      ),
-    );
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
 
-  testWidgets('ComposeTourneeButton ouvre la sheet unifiée « Mes favoris »',
-      (tester) async {
-    await tester.pumpWidget(_host(const ComposeTourneeButton()));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Composer ma Tournée'), findsOneWidget);
-
-    await tester.tap(find.text('Composer ma Tournée'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Mes favoris'), findsOneWidget);
-    expect(find.text('BLOCS DE TA PAGE L\'ESSENTIEL'), findsOneWidget);
-  });
-
-  testWidgets('showTourneeComposerSheet ouvre la sheet unifiée',
-      (tester) async {
-    await tester.pumpWidget(
-      _host(
-        Builder(
-          builder: (context) => ElevatedButton(
-            onPressed: () => showTourneeComposerSheet(context),
-            child: const Text('open'),
+  Widget host() => ProviderScope(
+        overrides: [
+          userInterestsProvider.overrideWith(() => _StubInterests()),
+          userSourcesStateProvider.overrideWith(() => _StubSources()),
+          userSourcesProvider.overrideWith(() => _StubCatalog()),
+          veilleActiveConfigProvider.overrideWith(() => _StubVeille()),
+          grilleRepositoryProvider.overrideWithValue(_FakeGrilleRepository()),
+          sereinToggleProvider.overrideWith((ref) => _StubSerein(ref)),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(
+            extensions: [FacteurPalettes.light],
+            splashFactory: NoSplash.splashFactory,
+          ),
+          home: const Scaffold(
+            body: SingleChildScrollView(child: PersonalisationCtaCard()),
           ),
         ),
-      ),
-    );
+      );
+
+  testWidgets('rend le titre, l\'illustration et le CTA', (tester) async {
+    await tester.pumpWidget(host());
     await tester.pumpAndSettle();
-    await tester.tap(find.text('open'));
+
+    expect(find.text('Personnalise ton Essentiel'), findsOneWidget);
+    expect(find.text('Composer ma Tournée'), findsOneWidget);
+    expect(
+      find.image(
+        const AssetImage('assets/images/facteur_reparation_velo.png'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('tap sur le CTA ouvre la sheet « Mes favoris »', (tester) async {
+    await tester.pumpWidget(host());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Composer ma Tournée'));
     await tester.pumpAndSettle();
 
     expect(find.text('Mes favoris'), findsOneWidget);

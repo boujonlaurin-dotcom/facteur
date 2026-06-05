@@ -20,6 +20,12 @@ String tabOrderTopicKey(String topicId) => 'topic:$topicId';
 /// Préfixe de clé d'une source épinglée dans l'ordre unifié.
 String tabOrderSourceKey(String sourceId) => 'source:$sourceId';
 
+/// Préfixe de clé d'un thème livré en onglet Flâner. Identique à
+/// `tourneeThemeKey` (chaîne partagée `theme:<slug>`) : un thème vit *soit* dans
+/// l'Essentiel (clé dans `tournee_order_v1`) *soit* en onglet Flâner (clé ici),
+/// modèle exclusif miroir des sources.
+String tabOrderThemeKey(String slug) => 'theme:$slug';
+
 /// Trie [items] selon [order] (liste de clés). Les items dont la clé figure
 /// dans [order] viennent en premier, dans l'ordre de [order] ; les autres
 /// suivent en conservant leur ordre relatif d'entrée (tri stable). Si [order]

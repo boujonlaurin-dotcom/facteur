@@ -11,6 +11,7 @@ import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
 import 'package:facteur/features/digest/repositories/digest_repository.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/providers/feed_provider.dart';
+import 'package:facteur/features/feed/providers/tab_order_prefs_provider.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
@@ -916,5 +917,42 @@ void main() {
       reason: 'favori explicite jamais coupé même sous 2 items',
     );
     expect(society.single.items, hasLength(1));
+  });
+
+  test(
+      'thème livré en Flâner (clé theme: dans pinned_tabs_order) est exclu des '
+      'sections Essentiel', () async {
+    // Le thème `society` est favori MAIS sa clé `theme:society` est dans
+    // l'ordre Flâner ⇒ modèle exclusif ⇒ il vit en onglet, pas dans l'Essentiel.
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'pinned_tabs_order_v1': ['theme:society'],
+    });
+    stubDigest();
+    stubFeed(
+      themeIds: {
+        'society': ['t1'],
+      },
+    );
+    final container = await buildContainer(
+      interests: _interestsState(
+        favorites: const [ThemeFavoriteRef(slug: 'society')],
+      ),
+      sourcesState: _sourcesState(),
+      catalog: const [],
+    );
+    addTearDown(container.dispose);
+
+    // S'assure que `tabOrderPrefsProvider` a chargé l'ordre seedé avant le
+    // `build` du FluxContinuNotifier (cf. tourneeOrderPrefsProvider).
+    container.read(tabOrderPrefsProvider);
+    await pumpEventQueue();
+
+    final state = await container.read(fluxContinuProvider.future);
+
+    expect(
+      state.sections.map(sectionKey),
+      isNot(contains('theme:society')),
+      reason: 'thème en mode Flâner absent des sections Essentiel',
+    );
   });
 }
