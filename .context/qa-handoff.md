@@ -9,7 +9,7 @@ Actus, titres de sections plus clairs, thèmes livrables en onglet Flâner (mod�
 exclusif comme les sources), et cap max affiché entre parenthèses.
 
 ## PR associée
-<!-- À compléter après /go -->
+[#798 — feat(flux-continu): ajustements UX de L'Essentiel](https://github.com/boujonlaurin-dotcom/facteur/pull/798)
 
 ## Écrans impactés
 | Écran | Route | Modifié / Nouveau |
