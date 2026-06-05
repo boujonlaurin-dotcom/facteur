@@ -1,42 +1,73 @@
-fix(mot-du-jour): anti-freeze + dico élargi + lien Actu + reveal article réel
+feat(flux-continu): rendre le snap *lisible* — signifiants feedforward (A1+A2+A3)
 
-« Mot du jour » (La Grille) — 2 bugs + 2 améliorations remontés en prod par le PO,
-livrés en **une seule PR groupée** (décision PO). Détail : `docs/bugs/bug-mot-du-jour-bugs.md`.
+## Quoi
 
-## Part A — Anti-freeze (critique)
-- Timeout dédié 12 s sur `POST grille/today/guess` (override le 30 s global).
-- `submitGuess` : suppression du `rethrow` (source du hang silencieux) → état
-  `networkError` ré-essayable + self-heal `_reconcileToday()` ; clavier réactivé.
-- `_submitGuess` (écran) : plus de future non gérée ; pas de tracking « valide »
-  sur erreur réseau.
-- Backend **idempotent** : re-submit du même dernier mot (partie en cours) ne
-  double-compte pas → retry réseau sûr.
+Le scroll-snap section-par-section frustrait certains users (« coupé dans mon
+geste », mouvement « subi » et imprévisible). Diagnostic : **la mécanique du snap
+est bonne** — c'est un manque de *lisibilité*. On ajoute des **signifiants**, sans
+toucher à la physique ni à une seule constante de tuning.
 
-## Part B — Dictionnaire élargi
-- Asset curé `grille_proper_nouns_fr.txt` (pays/villes/prénoms) → ITALIE, RUSSIE…
-  acceptés. Conjugaisons déjà couvertes par la source existante (vérifié) → pas
-  de 2ᵉ source (Lexique383 écarté : CC BY-SA share-alike). Dico régénéré committé.
+- **A1 — Feedforward pendant le drag.** Le `_SectionPassageDot` existant (déjà à
+  chaque frontière, déjà porteur du pulse de validation) **grossit/brille à
+  l'approche du bord**, pic pile au seuil de bascule (`kSectionEdgeMargin`). Le
+  même dot fusionne désormais feedforward (avant) + feedback (pulse après) →
+  lecture « j'approche un seuil → je l'ai franchi », un seul cue continu.
+- **A2 — Progress track *segmenté*.** Le track 4 px passe d'un dégradé continu à
+  **un pip par section** (fait rempli-désaturé / courant éclairé+glow / à venir
+  gris), piloté par `activeIndex` (même source que les checks d'onglets) → modèle
+  mental « pages » cohérent avec le snap discret.
+- **A3 — Signifiant « carte haute = lecture libre ».** Les sections plus hautes
+  que l'écran (qui autorisent un scroll libre *silencieusement*) reçoivent un
+  **fade bas subtil** (`backgroundPrimary` → transparent, 24 px), peint par
+  l'écran (zéro modif de signature `SectionBlock`).
 
-## Part C — Lien Actu du jour
-- `_goToActus` → page complète `…/section/essentiel`.
-- CTA « Lire l'actu du jour » toujours visible dans le jeu.
+## Pourquoi
 
-## Part D — Reveal lié à un vrai article (auto-matching)
-- Migration additive `gr02_grille_featured_article` (nullable, FK ON DELETE SET NULL).
-- `grille_matcher.py` accroche l'article du digest qui matche le mot (best-effort,
-  hooké dans le job digest, non bloquant, idempotent).
-- `featured*` gated fin de partie ; mobile affiche vrai titre/extrait/source +
-  bouton « Lire l'article » (détail in-app), fallback `pourquoi`.
+Décision PO (5 juin 2026) : garder le snap, le rendre lisible — priorité au
+« coupé dans mon geste ». Le défaut était l'absence de **feedforward** : tout le
+feedback existant (`_SectionPassageDot`, track, haptique) était *post-hoc*.
 
-## Vérif
-- 62 tests backend verts + 43 mobile verts. `ruff check/format app/` clean.
-- Alembic : 1 head (`gr02`), upgrade/downgrade round-trip OK sur DB vide.
-- `flutter analyze` clean (hors warning pré-existant carte_cta.dart).
+## Comment c'est construit (anti-duplication)
 
-## Notes review
-- Migration = zone à risque DB : additive + nullable + FK SET NULL, testée en
-  round-trip. Le Dockerfile rejoue `alembic upgrade head` au boot Railway.
-- Suite mobile complète a ~27 échecs pré-existants hors-scope (Hive/Supabase) ;
-  CI = pytest backend only.
+- **Une seule source de vérité** : `snapPointsOf(List<SectionFrame>)` extrait de
+  `resolveSnapTarget` (comportement strictement inchangé) — la rampe visuelle de
+  A1 ramène donc *exactement* aux offsets où le snap commit.
+- Tout s'accroche à l'infra existante : listener `_onScroll`, anchors
+  `_snapAnchors`, `ValueNotifier` (rebuilds ciblés, **zéro `setState`/frame**).
+- Mapping direction `ScrollDirection → ±1` factorisé (`_travelDirection`) et
+  partagé entre le feedforward (A1) et la physique → impossible qu'ils
+  divergent.
+- Hot path propre : snap points **cachés une fois par layout** (plus de
+  re-`sort()` par frame) ; lookup dot via `Map<double,int>` exact (offsets
+  bit-identiques aux frame tops) ; proximity quantizée (~20 paliers) ; merged
+  `Listenable` du dot mis en cache.
+- **Nettoyage** : la prop `progress` continue de `StickyTabBar` + le
+  `ValueNotifier _scrollProgress` (écrit chaque frame) sont supprimés — le track
+  segmenté n'a besoin que de `activeIndex`.
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+## Comment ça a été vérifié
+
+- [x] `flutter analyze` — **clean** (lib/features/flux_continu + tests modifiés).
+- [x] `flutter test test/features/flux_continu/` — tous verts **sauf** 1 échec
+      **pré-existant hors-scope** (`section_block_test.dart` ne compile pas :
+      `onTapArticle: (_, __)` vs signature 1-arg de `SectionBlock`, inchangé vs
+      `origin/main`, dernier touché par #785).
+- [x] Tests ajoutés : `snapPointsOf()` (frames canon ⇒ `{0,300,600,1200}`,
+      single-point, vide, + « tout target commit ∈ snapPointsOf ») ; les tests
+      `resolveSnapTarget` existants **restent verts** (preuve de non-régression de
+      la physique). Track A2 : capture image + sampling pixels (1 fait + 1
+      courant remplis / 1 à venir muté ; un segment à-venir se remplit quand il
+      devient courant).
+- [ ] Validation device/feel : à confirmer par le PO (le « grain » du snap se
+      juge sur device ; aucune constante de physique n'a bougé).
+
+> CI = backend pytest only (pas de `flutter test`) → l'échec mobile pré-existant
+> ne bloque pas la CI.
+
+## Zones à risque
+
+- `flux_continu_screen.dart` (Router/scroll feature, fichier central) : aucune
+  modif de `_SectionSnapPhysics`, `resolveSnapTarget`, ni des constantes de
+  tuning. Changements additifs (notifiers + overlay) sur l'infra existante.
+- A3 (`_FreeReadEdgeFade`) = ligne de coupe nette ; son absence ne créerait
+  aucune incohérence (la lecture libre est silencieuse aujourd'hui).
