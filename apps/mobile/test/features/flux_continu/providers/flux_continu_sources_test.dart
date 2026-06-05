@@ -162,7 +162,15 @@ void main() {
     required UserInterestsState interests,
     required UserSourcesState sourcesState,
     required List<Source> catalog,
+    List<String> tourneeOrder = const [],
   }) async {
+    // Story 10.2 — une source ne s'affiche dans la Tournée que si sa clé
+    // `source:<id>` est en mode « Essentiel » (dans `tournee_order_v1`).
+    if (tourneeOrder.isNotEmpty) {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'tournee_order_v1': tourneeOrder,
+      });
+    }
     final container = ProviderContainer(
       overrides: [
         digestRepositoryProvider.overrideWithValue(digestRepo),
@@ -221,6 +229,7 @@ void main() {
       catalog: [
         _source('src1', theme: 'society', logoUrl: 'https://logo.test/x.png'),
       ],
+      tourneeOrder: const ['theme:tech', 'source:src1'],
     );
     addTearDown(container.dispose);
 
@@ -258,6 +267,7 @@ void main() {
         favorites: [SourceFavoriteRef(sourceId: 'src1', position: 0)],
       ),
       catalog: [_source('src1', theme: 'society')],
+      tourneeOrder: const ['theme:tech', 'source:src1'],
     );
     addTearDown(container.dispose);
 
@@ -285,6 +295,7 @@ void main() {
         favorites: [SourceFavoriteRef(sourceId: 'src1', position: 0)],
       ),
       catalog: [_source('src1', theme: 'society')],
+      tourneeOrder: const ['theme:tech', 'source:src1'],
     );
     addTearDown(container.dispose);
 
@@ -329,6 +340,14 @@ void main() {
         _source('d'),
         _source('e'),
         _source('f'),
+      ],
+      tourneeOrder: const [
+        'source:a',
+        'source:b',
+        'source:c',
+        'source:d',
+        'source:e',
+        'source:f',
       ],
     );
     addTearDown(container.dispose);
