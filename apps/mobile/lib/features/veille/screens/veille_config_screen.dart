@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../flux_continu/providers/tournee_order_prefs_provider.dart';
 import '../providers/veille_active_config_provider.dart';
 import '../providers/veille_config_provider.dart';
 import '../repositories/veille_repository.dart';
@@ -87,6 +88,13 @@ class VeilleConfigScreen extends ConsumerWidget {
             ),
           );
           return;
+        }
+        // À la **création** (pas en édition), on propose d'épingler la veille en
+        // tête de la Tournée. Si oui → insertion en position #1 (réutilise le
+        // pattern `_onAddVeille` de manage_favorites_sheet).
+        if (!editMode) {
+          await _maybePromptPinTournee(context, ref);
+          if (!context.mounted) return;
         }
         showProgressToast(
           context,
@@ -177,6 +185,67 @@ class VeilleConfigScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Propose d'épingler la veille en **tête** de la Tournée du jour, juste après
+/// sa création. Sur « Oui » : `markCustomized()` + `setHidden(false)` +
+/// `setOrder([veille, ...reste])` → la veille passe en position #1. Sur « Non »
+/// ou dismiss : no-op (la veille reste accessible via « Mes intérêts »).
+Future<void> _maybePromptPinTournee(BuildContext context, WidgetRef ref) async {
+  final pin = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: const Color(0xFFF2E8D5),
+      title: Text(
+        'Épingler à ta Tournée ?',
+        style: GoogleFonts.fraunces(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          color: const Color(0xFF2C2A29),
+        ),
+      ),
+      content: Text(
+        'Ta veille apparaîtra en tête de ta Tournée du jour, avant les autres '
+        'sections.',
+        style: GoogleFonts.dmSans(
+          fontSize: 14,
+          height: 1.4,
+          color: const Color(0xFF5D5B5A),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: Text(
+            'Plus tard',
+            style: GoogleFonts.dmSans(color: const Color(0xFF5D5B5A)),
+          ),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: Text(
+            'Épingler',
+            style: GoogleFonts.dmSans(
+              fontWeight: FontWeight.w700,
+              color: FacteurColors.veille,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  if (pin != true) return;
+
+  final notifier = ref.read(tourneeOrderPrefsProvider.notifier);
+  await notifier.markCustomized();
+  await notifier.setHidden(kTourneeVeilleKey, false);
+  final rest = ref
+      .read(tourneeOrderPrefsProvider)
+      .order
+      .where((k) => k != kTourneeVeilleKey)
+      .toList();
+  await notifier.setOrder([kTourneeVeilleKey, ...rest]);
 }
 
 /// Story 23.4 — écran d'erreur (mode édition) quand `GET /config` échoue.

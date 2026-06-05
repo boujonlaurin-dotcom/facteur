@@ -352,7 +352,21 @@ class ScoringWeights:
     VEILLE_CANDIDATE_CAP = 300
 
     # Fenêtre de récence (heures) du prédicat veille — aligné sur le digest.
+    # S'applique au **Bloc B « Couverture élargie »** (topics/mots-clés, sources
+    # non configurées).
     VEILLE_RECENCY_HOURS = 168
+
+    # Fenêtre de récence (heures) du **Bloc A « Tes sources »** : 30 j. Les
+    # sources niche configurées ont souvent des flux RSS lents/peu fréquents —
+    # une fenêtre 7 j les rend invisibles alors qu'elles sont le cœur de la
+    # veille. On élargit donc à 30 j *uniquement* pour les sources explicitement
+    # ajoutées (laisser-passer), bornées par le cap de diversité ci-dessous.
+    VEILLE_CONFIGURED_RECENCY_HOURS = 720
+
+    # Cap de diversité du Bloc A : au plus N articles par source configurée, afin
+    # qu'une source bavarde (flux dense) ne monopolise pas le bloc malgré la
+    # fenêtre 30 j. Appliqué via `diversify()` après tri par score.
+    VEILLE_SOURCE_DIVERSITY_CAP = 3
 
     # --- TOPIC-AWARE FEED DIVERSIFICATION (Phase 2 — Budget Neutre) ---
 

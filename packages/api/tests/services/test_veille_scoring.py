@@ -22,7 +22,8 @@ from app.models.veille import (
     VeilleStatus,
     VeilleTopic,
 )
-from app.services.veille.feed_filter import fetch_veille_feed
+from app.services.veille.feed_filter import VeilleFilters, fetch_veille_feed
+from app.services.veille.scoring_context import build_veille_scoring_context
 
 pytestmark = pytest.mark.asyncio
 
@@ -139,7 +140,7 @@ async def _make_config(
 
 async def _titles(db_session, user):
     items, _ = await fetch_veille_feed(db_session, user.user_id, limit=20, offset=0)
-    return [c.title for c, _axes in items], items
+    return [c.title for c, _axes, _group in items], items
 
 
 async def test_theme_only_article_never_enters_pool(db_session, user, source):
@@ -197,6 +198,7 @@ async def test_keyword_only_present(db_session, user, source):
     await _make_config(db_session, user, global_keywords=["vélo"])
     titles, items = await _titles(db_session, user)
     assert "Vélo électrique nouveau modèle" in titles
+    # items[i] = (content, axes, group) → axes en position 1.
     assert "keyword" in items[0][1]
 
 
@@ -279,6 +281,69 @@ async def test_pagination_over_scored_set(db_session, user, source):
     assert has_more1 is True
     assert len(page2) == 2
     assert has_more2 is True
-    titles1 = {c.title for c, _ in page1}
-    titles2 = {c.title for c, _ in page2}
+    titles1 = {c.title for c, _axes, _group in page1}
+    titles2 = {c.title for c, _axes, _group in page2}
     assert titles1.isdisjoint(titles2)
+
+
+# ─── Note d'intention `why` + split de récence deux blocs (refonte curation) ──
+
+
+async def test_intent_why_injected_as_custom_topic(db_session, user):
+    """`build_veille_scoring_context` injecte un angle « Intention » depuis `why`."""
+    sid = uuid4()
+    config = VeilleConfig(
+        id=uuid4(),
+        user_id=user.user_id,
+        theme_id="culture",
+        theme_label="Bière",
+        status=VeilleStatus.ACTIVE.value,
+    )
+    filters = VeilleFilters(
+        theme_id="culture",
+        source_ids=[sid],
+        source_intents={sid: "brasserie artisanale houblon"},
+    )
+    ctx = await build_veille_scoring_context(db_session, config, filters, _now())
+    intention = [t for t in ctx.user_custom_topics if t.topic_name == "Intention"]
+    assert len(intention) == 1
+    assert {"brasserie", "artisanale", "houblon"} <= set(intention[0].keywords)
+
+
+async def test_recency_split_configured_30d_external_7d(db_session, user, source):
+    """Configuré de 20 j visible (Bloc A) ; externe on-topic de 20 j absent (Bloc B)."""
+    external = Source(
+        id=uuid4(),
+        name="External",
+        url="https://ext.example.com",
+        feed_url=f"https://ext.example.com/{uuid4()}.xml",
+        type=SourceType.ARTICLE,
+        theme="tech",
+        is_active=True,
+        is_curated=True,
+    )
+    db_session.add(external)
+    await db_session.commit()
+
+    # Bloc A : source configurée, 20 j → dans la fenêtre 30 j.
+    await _add_content(
+        db_session, source, title="Configured 20d", topics=["ai"], hours=20 * 24
+    )
+    # Bloc B : externe on-topic, 20 j → hors fenêtre 7 j → exclu.
+    await _add_content(
+        db_session, external, title="External 20d", topics=["ai"], hours=20 * 24
+    )
+    # Bloc B : externe on-topic, 2 j → dans la fenêtre 7 j → visible.
+    await _add_content(
+        db_session, external, title="External 2d", topics=["ai"], hours=2 * 24
+    )
+
+    await _make_config(
+        db_session, user, topics=[("ai", "IA", [])], source_ids=[source.id]
+    )
+
+    items, _ = await fetch_veille_feed(db_session, user.user_id, limit=50)
+    by_title = {c.title: group for c, _axes, group in items}
+    assert by_title.get("Configured 20d") == "sources"
+    assert "External 20d" not in by_title
+    assert by_title.get("External 2d") == "elargie"

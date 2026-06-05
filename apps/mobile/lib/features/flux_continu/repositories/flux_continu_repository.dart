@@ -148,6 +148,9 @@ class FluxContinuRepository {
       'thumbnail_url': article['thumbnail_url'],
       'source': article['source'],
       'topics': article['topics'] ?? const <String>[],
+      // Bloc de curation (« sources » / « elargie ») — dérive les en-têtes de
+      // section veille au rendu. Absent sur clients/backends pré-refonte → null.
+      'group': article['group'],
       // Content.fromJson tolère ces champs absents — fallback to defaults.
     };
   }

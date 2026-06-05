@@ -37,10 +37,17 @@ from app.services.veille.feed_filter import (
     VeilleAngle,
     VeilleFilters,
     _matched_axes,
-    _score_and_rank,
+    _score_block,
     fetch_veille_feed,
 )
-from app.services.veille.scoring_context import VeilleAngleTopic
+
+
+def _score_and_rank(candidates, context, filters):
+    """Shim Bloc B (floor + seuil + anti-starvation) — comportement historique."""
+    return _score_block(
+        candidates, context, filters, apply_floor=True, apply_threshold=True
+    )
+from app.services.veille.scoring_context import VeilleAngleTopic, _tokenize_intent
 
 # ─── Helpers légers pour le pilier Pertinence ────────────────────────────────
 
@@ -288,6 +295,59 @@ def test_anti_starvation_never_readmits_floor_pruned():
         assert f.id not in kept_ids
 
 
+# ─── Note d'intention `why` : tokenisation ───────────────────────────────────
+
+
+def test_tokenize_intent_strips_stopwords_and_short_tokens():
+    """Stopwords FR + tokens < 4 caractères retirés ; dédup ordre stable."""
+    tokens = _tokenize_intent(["Je veux suivre la brasserie artisanale et le houblon"])
+    assert {"brasserie", "artisanale", "houblon"} <= set(tokens)
+    assert "la" not in tokens
+    assert "et" not in tokens
+
+
+def test_tokenize_intent_dedupes():
+    assert _tokenize_intent(["houblon houblon HOUBLON"]).count("houblon") == 1
+
+
+# ─── Bloc A « Tes sources » : laisser-passer + cap diversité ─────────────────
+
+
+def test_block_a_keeps_source_only_off_angle():
+    """Bloc A (apply_floor=False) : un article source-seul off-angle est gardé."""
+    src = _make_source()
+    source_only = _make_content(src, topics=["sport"], title="Résultats du PSG")
+    flt = _veille_filters([src.id])
+    ctx = _veille_context([src.id])
+
+    kept = _score_block(
+        [source_only], ctx, flt, apply_floor=False, apply_threshold=False
+    )
+    assert {c.id for c, _s, _a in kept} == {source_only.id}
+
+
+def test_block_a_diversity_cap_limits_per_source():
+    """Bloc A : au plus VEILLE_SOURCE_DIVERSITY_CAP articles par source."""
+    src = _make_source()
+    cap = ScoringWeights.VEILLE_SOURCE_DIVERSITY_CAP
+    contents = [
+        _make_content(src, topics=["ai"], title=f"Article IA #{i}", mins=10 + i)
+        for i in range(cap + 4)
+    ]
+    flt = _veille_filters([src.id])
+    ctx = _veille_context([src.id])
+
+    kept = _score_block(
+        contents,
+        ctx,
+        flt,
+        apply_floor=False,
+        apply_threshold=False,
+        diversity_cap=cap,
+    )
+    assert len(kept) == cap
+
+
 # ─── DB end-to-end (`fetch_veille_feed`) ─────────────────────────────────────
 
 
@@ -328,12 +388,20 @@ async def _insert_content(db_session, source_id, *, topics, title) -> UUID:
 
 
 @pytest.mark.asyncio
-async def test_fetch_veille_feed_excludes_source_only(db_session):
-    """End-to-end : la veille remonte l'on-topic et exclut le source-seul off-angle."""
+async def test_fetch_veille_feed_two_blocks(db_session):
+    """End-to-end (refonte deux blocs) :
+
+    - Bloc A « Tes sources » : un article off-angle d'une source **configurée**
+      passe (laisser-passer), tagué ``group="sources"``.
+    - Bloc B « Couverture élargie » : un article off-angle d'une source **non
+      configurée** est élagué par le floor (source = boost, pas free-pass).
+    - Un on-topic d'une source externe entre dans le Bloc B.
+    """
     user_id = uuid4()
     db_session.add(UserProfile(user_id=user_id, onboarding_completed=True))
     await db_session.commit()
-    src = await _insert_source(db_session)
+    configured = await _insert_source(db_session, name="Configurée")
+    external = await _insert_source(db_session, name="Externe")
 
     cfg = VeilleConfig(
         id=uuid4(),
@@ -356,20 +424,27 @@ async def test_fetch_veille_feed_excludes_source_only(db_session):
     )
     db_session.add(
         VeilleSource(
-            veille_config_id=cfg.id, source_id=src.id, kind="curated", position=0
+            veille_config_id=cfg.id, source_id=configured.id, kind="curated", position=0
         )
     )
     await db_session.commit()
 
-    on_topic = await _insert_content(
-        db_session, src.id, topics=["ai"], title="Avancées en IA"
+    # Bloc A : off-angle mais source configurée → passe (laisser-passer).
+    block_a_off_angle = await _insert_content(
+        db_session, configured.id, topics=["sport"], title="Résultats du match"
     )
-    source_only = await _insert_content(
-        db_session, src.id, topics=["sport"], title="Résultats du match"
+    # Bloc B : on-topic d'une source externe → passe (topic = axe qualifiant).
+    block_b_on_topic = await _insert_content(
+        db_session, external.id, topics=["ai"], title="Avancées en IA"
+    )
+    # Bloc B : off-angle d'une source externe → floor-pruned.
+    external_source_only = await _insert_content(
+        db_session, external.id, topics=["sport"], title="Transfert record au PSG"
     )
 
     items, _has_more = await fetch_veille_feed(db_session, user_id, limit=20)
-    returned_ids = {content.id for content, _axes in items}
+    by_id = {content.id: group for content, _axes, group in items}
 
-    assert on_topic in returned_ids
-    assert source_only not in returned_ids
+    assert by_id.get(block_a_off_angle) == "sources"
+    assert by_id.get(block_b_on_topic) == "elargie"
+    assert external_source_only not in by_id

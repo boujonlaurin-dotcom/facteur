@@ -146,7 +146,7 @@ def _filters_and_context(src_ids):
 
 
 def main() -> int:
-    from app.services.veille.feed_filter import _matched_axes, _score_and_rank
+    from app.services.veille.feed_filter import _matched_axes, _score_block
 
     contents, src_ids = _build()
     filters, context = _filters_and_context(src_ids)
@@ -155,7 +155,9 @@ def main() -> int:
     source_ids = set(filters.source_ids)
     keywords = filters.all_keywords
 
-    kept = _score_and_rank(list(contents), context, filters)
+    kept = _score_block(
+        list(contents), context, filters, apply_floor=True, apply_threshold=True
+    )
     kept_ids = {c.id for c, _s, _a in kept}
 
     print("=" * 92)

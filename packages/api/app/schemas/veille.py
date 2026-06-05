@@ -65,6 +65,11 @@ class VeilleSourceResponse(BaseModel):
     kind: Literal["followed", "niche"]
     why: str | None = None
     position: int = 0
+    # Santé du flux (alimente le badge « flux inactif / aucun article récent »
+    # côté config). `last_article_at` = date du dernier article ingéré ;
+    # `recent_article_count` = nb d'articles sur la fenêtre Bloc A (30 j).
+    last_article_at: datetime | None = None
+    recent_article_count: int = 0
 
 
 class VeilleKeywordResponse(BaseModel):
@@ -242,6 +247,11 @@ class VeilleFeedArticle(BaseModel):
     matched_on: list[Literal["theme", "topic", "source", "keyword"]] = Field(
         default_factory=list
     )
+    # Bloc de curation auquel appartient l'article (refonte deux blocs) :
+    # « sources » = Bloc A « Tes sources » ; « elargie » = Bloc B « Couverture
+    # élargie ». Le mobile dérive les en-têtes de section au rendu sur les
+    # transitions de `group`. Défaut backward-safe (clients pré-refonte).
+    group: Literal["sources", "elargie"] = "sources"
 
 
 class VeilleFeedResponse(BaseModel):

@@ -93,6 +93,12 @@ class VeilleSourceDto {
   final String kind;
   final String? why;
   final int position;
+  // Santé du flux (refonte curation) : date du dernier article ingéré +
+  // nombre d'articles sur la fenêtre Bloc A (30 j). Alimentent le badge
+  // « flux inactif / aucun article récent » côté config. Nullable/0 par défaut
+  // (backend pré-refonte → champs absents).
+  final DateTime? lastArticleAt;
+  final int recentArticleCount;
 
   const VeilleSourceDto({
     required this.id,
@@ -100,6 +106,8 @@ class VeilleSourceDto {
     required this.kind,
     required this.why,
     required this.position,
+    this.lastArticleAt,
+    this.recentArticleCount = 0,
   });
 
   factory VeilleSourceDto.fromJson(Map<String, dynamic> json) {
@@ -111,7 +119,21 @@ class VeilleSourceDto {
       kind: json['kind'] as String,
       why: json['why'] as String?,
       position: (json['position'] as num?)?.toInt() ?? 0,
+      lastArticleAt: json['last_article_at'] != null
+          ? DateTime.tryParse(json['last_article_at'] as String)
+          : null,
+      recentArticleCount: (json['recent_article_count'] as num?)?.toInt() ?? 0,
     );
+  }
+
+  /// Santé éditoriale du flux pour le badge config. `null` → flux sain (assez
+  /// d'articles récents). Sinon un libellé court à afficher en avertissement.
+  String? get healthWarning {
+    if (recentArticleCount > 0) return null;
+    if (lastArticleAt == null) return 'aucun article';
+    final days = DateTime.now().difference(lastArticleAt!).inDays;
+    if (days >= 30) return 'flux inactif';
+    return 'aucun article récent';
   }
 }
 
