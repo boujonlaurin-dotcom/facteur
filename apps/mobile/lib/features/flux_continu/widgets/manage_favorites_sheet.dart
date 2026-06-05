@@ -859,7 +859,11 @@ class _FavList extends StatelessWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       buildDefaultDragHandles: false,
-      proxyDecorator: (child, index, animation) => child,
+      proxyDecorator: (child, index, animation) =>
+          _DragProxy(animation: animation, child: child),
+      // Vibration au « soulèvement » (cohérent cartes) + dépôt discret.
+      onReorderStart: (_) => HapticFeedback.mediumImpact(),
+      onReorderEnd: (_) => HapticFeedback.selectionClick(),
       itemCount: items.length,
       onReorder: onReorder,
       itemBuilder: (context, index) {
@@ -883,6 +887,47 @@ class _FavList extends StatelessWidget {
                   onSubjectVeille == null ? null : () => onSubjectVeille!(item),
             ),
           ],
+        );
+      },
+    );
+  }
+}
+
+/// Décorateur de drag : « soulève » l'élément (léger scale + ombre douce qui
+/// apparaît progressivement) pour un feedback visuel subtil et élégant.
+class _DragProxy extends StatelessWidget {
+  final Animation<double> animation;
+  final Widget child;
+
+  const _DragProxy({required this.animation, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: animation,
+      child: child,
+      builder: (context, child) {
+        final t = Curves.easeInOut.transform(animation.value.clamp(0.0, 1.0));
+        return Transform.scale(
+          scale: 1 + 0.03 * t,
+          child: Material(
+            type: MaterialType.transparency,
+            child: Container(
+              // L'ombre épouse le radius de la tuile _FavRow (12) ; le padding
+              // bas (8) déjà présent dans _FavRow reste transparent.
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18 * t),
+                    blurRadius: 16 * t,
+                    offset: Offset(0, 4 * t),
+                  ),
+                ],
+              ),
+              child: child,
+            ),
+          ),
         );
       },
     );
@@ -930,21 +975,42 @@ class _FavRow extends StatelessWidget {
           ),
           child: Row(
             children: [
-              if (isSource && item.source != null)
-                SourceLogoAvatar(source: item.source!, size: 28, radius: 6)
-              else
-                Text(item.emoji, style: const TextStyle(fontSize: 16)),
-              const SizedBox(width: 10),
+              // Hit zone : toute la zone logo + label initie le drag (en plus
+              // de la poignée), ce qui agrandit nettement la cible tactile.
               Expanded(
-                child: Text(
-                  item.label,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: colors.textPrimary,
+                child: ReorderableDragStartListener(
+                  index: index,
+                  child: Container(
+                    // color transparent → la ligne entière (gaps inclus) reste
+                    // hit-testable pour démarrer le drag.
+                    color: Colors.transparent,
+                    child: Row(
+                      children: [
+                        if (isSource && item.source != null)
+                          SourceLogoAvatar(
+                            source: item.source!,
+                            size: 28,
+                            radius: 6,
+                          )
+                        else
+                          Text(item.emoji,
+                              style: const TextStyle(fontSize: 16)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            item.label,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: colors.textPrimary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 4),
@@ -971,10 +1037,16 @@ class _FavRow extends StatelessWidget {
                 onTap: onRemove,
               ),
               const SizedBox(width: 2),
+              // Poignée explicite — affordance visuelle ; cible tactile ≥44px.
+              // Container(color) = ColoredBox (hit opaque) → toute la zone 44px
+              // démarre le drag, pas seulement le glyphe 18px.
               ReorderableDragStartListener(
                 index: index,
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  color: Colors.transparent,
+                  alignment: Alignment.center,
                   child: Icon(
                     PhosphorIcons.dotsSixVertical(PhosphorIconsStyle.bold),
                     size: 18,
