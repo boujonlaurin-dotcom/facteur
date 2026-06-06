@@ -63,6 +63,23 @@ android {
             isShrinkResources = false
         }
     }
+
+    // Deux environnements cohabitant sur un même device :
+    //  - prod    -> com.example.facteur          (vrais users, releases hebdo "release-*")
+    //  - staging -> com.example.facteur.staging   (env continu testé en interne, builds "beta-*")
+    // Le signingConfig vit sur buildTypes.release (ci-dessus) -> flavor-agnostic.
+    flavorDimensions += "env"
+    productFlavors {
+        create("prod") {
+            dimension = "env"
+            manifestPlaceholders["appLabel"] = "Facteur"
+        }
+        create("staging") {
+            dimension = "env"
+            applicationIdSuffix = ".staging"
+            manifestPlaceholders["appLabel"] = "Facteur STG"
+        }
+    }
 }
 
 dependencies {

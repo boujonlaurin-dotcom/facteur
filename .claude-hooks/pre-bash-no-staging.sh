@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Hook: Block any gh pr create that targets staging instead of main.
-# staging is deprecated — all PRs must target main.
+# Hook: Block any gh pr create that does not target main.
+# main = continuous staging env; all PRs must target main (never production/staging).
 
 set -euo pipefail
 
@@ -17,10 +17,11 @@ if echo "$COMMAND" | grep -qE -- '--base\s+main'; then
   exit 0
 fi
 
-# Block: either no --base flag (defaults to staging) or explicit --base staging
-echo "BLOCKED: PR targets staging (the deprecated default branch)."
+# Block: no --base main (PR would target the wrong branch)
+echo "BLOCKED: PR sans --base main."
 echo ""
-echo "staging est déprécié. Toutes les PRs doivent cibler main."
+echo "main = env staging continu : toutes les PRs doivent cibler main."
+echo "production est avancée seulement par le bouton hebdo (jamais une cible de PR)."
 echo "Ajoute --base main à ta commande gh pr create."
 echo ""
 echo "Exemple : gh pr create --base main --title '...' --body '...'"

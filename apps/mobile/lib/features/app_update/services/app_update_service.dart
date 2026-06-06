@@ -9,6 +9,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../../config/constants.dart';
 import '../../../core/api/api_client.dart';
 
 /// Snapshot of the current update download.
@@ -171,7 +172,10 @@ class AppUpdateService {
     _bind();
     _installTriggered = false;
 
-    final urlResponse = await apiClient.get('app/update/download-url');
+    final urlResponse = await apiClient.get(
+      'app/update/download-url',
+      queryParameters: {'channel': AppUpdateConstants.updateChannel},
+    );
     final downloadUrl = (urlResponse as Map<String, dynamic>)['url'] as String;
 
     final dir = await getTemporaryDirectory();
