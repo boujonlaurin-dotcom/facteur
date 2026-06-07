@@ -2,6 +2,17 @@
 
 > App mobile digest quotidien (5 articles, "moment de fermeture"). Flutter + FastAPI + PostgreSQL (Supabase) + Railway.
 
+## HANDOFF ACTIF — RELEASE iOS
+
+Avant toute action liée à iOS, Codemagic, TestFlight, App Store Connect,
+Bundle ID, signature ou provisioning, lire obligatoirement :
+
+- [Handoff release iOS / App Store](docs/handoffs/handoff-ios-app-store-release.md)
+- [Guide Codemagic iOS](docs/codemagic-ios-release.md)
+
+Le handoff distingue les tâches techniques qui appartiennent aux agents des
+actions manuelles, légales ou authentifiées qui appartiennent au Product Owner.
+
 ---
 
 ## BRANCHE PAR DÉFAUT — RÈGLE ABSOLUE

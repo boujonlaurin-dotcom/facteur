@@ -1,5 +1,12 @@
 # Codemagic iOS Release
 
+> **Current status (June 8, 2026):** this workflow has not produced a verified
+> unsigned IPA yet. Read the
+> [active iOS/App Store handoff](handoffs/handoff-ios-app-store-release.md)
+> before running or modifying it. In particular, the canonical checkout does
+> not currently contain a tracked `apps/mobile/ios/Podfile`, while the workflow
+> explicitly runs `pod install`.
+
 `codemagic.yaml` lives at the repository root because this repository is a monorepo.
 
 The iOS release workflow uses `APP_DIR=apps/mobile`, which is the Flutter mobile project directory. This directory contains `pubspec.yaml`, declares the Flutter SDK dependency, and includes the expected `ios/`, `android/`, and `lib/` folders.

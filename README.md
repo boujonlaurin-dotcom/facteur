@@ -2,6 +2,13 @@
 
 Facteur est une application mobile (Flutter) et une API (FastAPI) permettant de gérer et de consommer des flux de contenus personnalisés.
 
+## iOS / App Store
+
+La release iOS est en cours de préparation et n'est pas encore prête pour la
+signature ou la soumission. Le contexte vérifié, les blocages techniques, les
+prochaines tâches agents et la checklist manuelle Product Owner sont dans le
+[handoff iOS / App Store](docs/handoffs/handoff-ios-app-store-release.md).
+
 ## 🚀 Démarrage Rapide
 
 Pour configurer votre environnement de développement et commencer à contribuer, veuillez consulter le guide détaillé :
