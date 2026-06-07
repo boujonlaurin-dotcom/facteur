@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart'
     show ValueListenable, defaultTargetPlatform, setEquals, TargetPlatform;
@@ -9,7 +8,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:haptic_feedback/haptic_feedback.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
@@ -63,13 +61,9 @@ const double _kStickyBarHeight = 50.0;
 // arithmetic stays a pure, unit-testable function. The snap itself is woven
 // into the fling's ballistic phase by [_SectionSnapPhysics] below.
 
-/// Minimum delta (px) before the scroll-up FAB toggles, to avoid flicker
+/// Minimum delta (px) before the footer auto-hide toggles, to avoid flicker
 /// on tiny inertia bounces. Matches the legacy FeedScreen behaviour.
 const double _kScrollDirThreshold = 12.0;
-
-/// Below this scroll offset, the scroll-up FAB stays hidden even when the
-/// user reverses direction (we're effectively already at the top).
-const double _kFabHideAboveScroll = 380.0;
 
 /// Min depth (px) the user must reach before we surface the
 /// pull-to-refresh hint pill — avoids nudging after a tiny inertia scroll.
@@ -175,7 +169,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// `confirmDismiss` or `undoHide` on the provider.
   final Set<String> _pendingFeedback = <String>{};
 
-  bool _showScrollTopFab = false;
   double _lastScrollPos = 0;
   int _passagePulseSequence = 0;
 
@@ -281,19 +274,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // legacy feed used so the UX feels identical between the two screens.
     final delta = currentScroll - _lastScrollPos;
     if (delta.abs() >= _kScrollDirThreshold) {
-      bool nextFab = _showScrollTopFab;
-      if (currentScroll < _kFabHideAboveScroll) {
-        nextFab = false;
-      } else if (delta < 0) {
-        nextFab = true;
-      } else if (delta > 0) {
-        nextFab = false;
-      }
-      if (nextFab != _showScrollTopFab) {
-        setState(() => _showScrollTopFab = nextFab);
-      }
       // Footer auto-hide (app-wide) : visible vers le haut / près du sommet,
-      // caché vers le bas. Même seuil directionnel que le FAB.
+      // caché vers le bas.
       updateFooterVisibility(
         ref,
         delta < 0 || currentScroll < _kStickyThreshold,
@@ -916,25 +898,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
               tabs: stickyTabs,
               onTapTab: _scrollToSection,
               tabsController: _tabsScroll,
-            ),
-            // Floating "back to top" button — reveals on upward scroll above
-            // the hide threshold, fades down on reverse / near top.
-            Positioned(
-              right: 16,
-              bottom: 24,
-              child: SafeArea(
-                child: AnimatedSlide(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  offset:
-                      _showScrollTopFab ? Offset.zero : const Offset(0, 1.6),
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 220),
-                    opacity: _showScrollTopFab ? 1.0 : 0.0,
-                    child: _ScrollToTopButton(onTap: _scrollToTop),
-                  ),
-                ),
-              ),
             ),
             // Pull-to-refresh discoverability pill.
             Positioned(
@@ -1595,79 +1558,6 @@ class _StickyHostOverlay extends StatelessWidget {
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _ScrollToTopButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _ScrollToTopButton({required this.onTap});
-
-  static const _kRadius = BorderRadius.all(Radius.circular(22));
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final isDark = context.isDarkMode;
-    // Same liquidglass mix as StickyBackdrop so the pill reads as part of the
-    // same surface family (parchment in light, dark-surface tint in dark).
-    final fillColor = isDark
-        ? colors.backgroundPrimary.withValues(alpha: 0.78)
-        : const Color.fromRGBO(242, 232, 213, 0.82);
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.10)
-        : const Color.fromRGBO(0, 0, 0, 0.08);
-
-    return ClipRRect(
-      borderRadius: _kRadius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: _kRadius,
-            onTap: onTap,
-            child: Container(
-              height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: fillColor,
-                borderRadius: _kRadius,
-                border: Border.all(color: borderColor, width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.10),
-                    blurRadius: 12,
-                    spreadRadius: -4,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
-                    size: 16,
-                    color: colors.textPrimary,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Remonter',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.1,
-                      color: colors.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

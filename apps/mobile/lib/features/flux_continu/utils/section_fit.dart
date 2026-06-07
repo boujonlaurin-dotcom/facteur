@@ -24,13 +24,14 @@ library;
 
 // ── Regular section (banner + N article cards + « Tout lire » footer) ─────────
 
-/// Conservative height (px) of one regular article card
-/// ([FluxContinuArticleCard]) with its title at the 4-line ellipsis ceiling.
-/// Breakdown: outer padding (0+12) + inner padding (14+14) + title 4 lines
-/// (DM Sans 18 · height 1.3 ≈ 94) + gap 10 + footer row ≈ 20. The 78px thumb
-/// floors the head row, so a short-title card is never shorter than this minus
-/// the title slack — kept generous on purpose (overestimate ⇒ fit, never spill).
-const double kRegularCardHeight = 164;
+/// Realistic height (px) of one regular article card
+/// ([FluxContinuArticleCard]). The 78px thumbnail **floors the head row**, so a
+/// typical ≤3-line title is dominated by the thumb, not the text — modelling the
+/// 4-line worst case (the old 164) over-cut articles and left screens too empty.
+/// Breakdown: outer padding (0+12) + inner padding (14+14) + thumb-floored head
+/// row 78 + gap 10 + footer row ≈ 20 = 148. A rare 4-line title spills a few px
+/// past this; the runtime snap net (`[fit-net]`) flags it if it ever does.
+const double kRegularCardHeight = 148;
 
 /// Banner height (px) for a section **without** a blurb (theme / source):
 /// `minHeight 60` + vertical margin (3+5).
@@ -52,15 +53,17 @@ const double kSectionFooterHeight = 70;
 /// post-compaction) + the SectionBlock trailing 16px gap.
 const double kHeroChromeHeight = 208;
 
-/// Lead tile height (px), title at the 4-line ceiling (post-compaction):
-/// padding (12+12) + chips row ≈ 22 + gap 8 + title 4 lines (Fraunces 19 ·
-/// height 1.3 ≈ 99) + gap 8 + source row ≈ 20.
-const double kHeroLeadHeight = 181;
+/// Lead tile height (px), title at a **realistic 3-line height** (post-compaction)
+/// rather than the 4-line worst case (the old 181, which over-cut the hero):
+/// padding (12+12) + chips row ≈ 22 + gap 8 + title 3 lines (Fraunces 19 ·
+/// height 1.3 ≈ 74) + gap 8 + source row ≈ 20 = 160.
+const double kHeroLeadHeight = 160;
 
-/// One medium tile height (px) **including its hairline separators**, title at
-/// the 3-line ceiling (post-compaction): gaps 8+0.6+8 + tile (pad 4 + meta row
-/// 18 + gap 4 + title 3 lines Fraunces 16 · height 1.3 ≈ 62).
-const double kHeroMediumHeight = 105;
+/// One medium tile height (px) **including its hairline separators**, title at a
+/// **realistic 2-line height** (post-compaction) rather than the 3-line worst
+/// case (the old 105): gaps 8+0.6+8 + tile (pad 4 + meta row 18 + gap 4 + title
+/// 2 lines Fraunces 16 · height 1.3 ≈ 42) ≈ 88.
+const double kHeroMediumHeight = 88;
 
 /// Conservative height of one regular article card. Exposed as a function (not
 /// just the constant) so call sites read intent and a future per-card refinement
