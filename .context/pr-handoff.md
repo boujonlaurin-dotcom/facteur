@@ -1,72 +1,56 @@
-# Veille — refonte curation deux blocs + UX fin de config
+# L'Essentiel : cartes qui ne dépassent jamais l'écran (+ footer auto-hide)
 
 ## Résumé
 
-Le feed veille (`GET /api/veille/feed`, section `SectionKind.veille` du flux continu)
-est refondu en **deux blocs** pour corriger deux bugs PO :
-1. sources configurées invisibles (fenêtre 7 j + règle « floor » tuaient les flux
-   niche/anglophones) ;
-2. sources externes parasites (prédicat OR aspirait tout le pool global matchant un
-   mot-clé).
+Dans **Flux Continu / L'Essentiel**, une carte plus haute que l'écran gagnait une
+« free-read interior » qui se battait avec le snap inter-sections. Cette PR
+garantit qu'**aucune carte ne dépasse la hauteur utile de l'écran** (bouton
+« Lire plus » inclus) → `_tallSections` vide → 1 point de snap par section, feel
+cohérent page par page. **1 seule PR** (validée PO).
 
-## Backend (backward-safe — le mobile ignore `group` jusqu'au déploiement frontend)
+## Décision d'architecture — « estimer pour contrôler, mesurer pour vérifier »
 
-- `scoring_config.py` : `VEILLE_CONFIGURED_RECENCY_HOURS=720` (30 j, Bloc A),
-  `VEILLE_SOURCE_DIVERSITY_CAP=3`.
-- `feed_filter.py` :
-  - `VeilleFilters.source_intents` (charge `VeilleSource.why`).
-  - `build_topic_keyword_predicate()` (= prédicat fort sans la clause source).
-  - `_score_and_rank` → `_score_block(..., *, apply_floor, apply_threshold, diversity_cap)`.
-  - `fetch_veille_feed()` : 2 requêtes (Bloc A `source_id IN` fenêtre 720 h, laisser-passer
-    + cap diversité ; Bloc B topic/keyword `NOTIN` sources, fenêtre 168 h, floor+seuil),
-    concaténées A→B, taguées `group`, paginées à plat. **Renvoie des 3-tuples
-    `(Content, axes, group)`.**
-- `scoring_context.py` : note d'intention `why` tokenisée (`_tokenize_intent`, stopwords FR
-  + len≥4) → angle « Intention » (réutilise le bonus mots-clés existant).
-- `schemas/veille.py` : `VeilleFeedArticle.group` (Literal sources/elargie, défaut
-  `sources`) ; `VeilleSourceResponse.last_article_at` + `recent_article_count`.
-- `routers/veille.py` : unpack 3-tuple + `group` ; agrégation santé source dans
-  `GET /config`. **Pas de migration** (`why` existe déjà).
+Le « combien d'articles tiennent » est décidé **côté provider** par une estimation
+de hauteur **conservatrice** (titre à son `maxLines` max), pas de mesure runtime
+qui pilote le rendu. La mesure post-frame (`_recomputeSnapAnchors` /
+`_tallSections`) sert de **filet QA**. Budget **identique au snap** :
+`usableHeight = scrollViewportHeight − safeAreaBottom − _kStickyBarHeight`.
 
-### Tests backend
-- `tests/test_veille_curation.py` : Bloc A laisser-passer + cap diversité ; floor Bloc B ;
-  end-to-end deux blocs ; tokenisation intent.
-- `tests/services/test_veille_scoring.py` : intent `why` injecté ; split récence 30j/7j ;
-  unpacking 3-tuples mis à jour.
-- `tests/routers/test_veille_routes.py` : `group` par item ; ordre A→B ; pagination à la
-  frontière ; santé source dans `/config`.
-- **64 tests veille passent** ; suite backend complète **1524 passed** (la seule rouge —
-  `test_notification_preferences::test_patch_increments_refusal_count` — est pré-existante,
-  clock-dépendante, sans rapport).
+« Le héros qui ne tient pas sort du pool et réapparaît ailleurs » est gratuit :
+trimmer la liste du héros **avant** le dédup inter-sections relâche les articles
+éjectés vers les sections aval qui portent le même `contentId`.
 
-## Frontend (dépend du backend)
+## Changements
 
-- `feed/models/content_model.dart` : `Content.veilleGroup` (parse `json['group']`,
-  copyWith, clearNote) — backward-safe nullable.
-- `flux_continu/repositories/flux_continu_repository.dart` : passe `group` dans le JSON
-  Content normalisé.
-- `flux_continu/widgets/veille_group_header.dart` (nouveau) : `buildVeilleFeedRows()`
-  (en-têtes dérivés au rendu sur transitions de group) + `VeilleGroupHeader`.
-- `section_block.dart` + `theme_section_screen.dart` : en-têtes « Tes sources » /
-  « Couverture élargie » pour `SectionKind.veille` (pagination plate inchangée — lignes
-  reconstruites depuis la liste accumulée).
-- `veille/screens/veille_config_screen.dart` : modal « Épingler à ta Tournée ? » en fin de
-  **création** → insertion #1 (`markCustomized` + `setHidden(false)` +
-  `setOrder([veille, ...rest])`).
-- `veille/models/veille_config_dto.dart` : parse `last_article_at`/`recent_article_count`
-  + getter `healthWarning`.
+- **A. Footer auto-hide app-wide** : `footerVisibleProvider` + `AnimatedSlide`/
+  `IgnorePointer` sur `MainBottomNav` ; `_onScroll` (Essentiel + Flâner) ;
+  re-visible au changement d'onglet / scroll-to-top.
+- **B. Compaction légère** : héros `maxLines 5→4` (lead) / `4→3` (medium) + paddings
+  resserrés (pastille date/météo conservée) ; sticky `48→44` + `_kStickyBarHeight
+  54→50`.
+- **C. Fit dynamique** : `utils/section_fit.dart` (pur) ; `usableViewportHeightProvider`
+  écrit par l'écran (anti-boucle) ; `_compose` trim héros + cap sections aval
+  (`min(défaut, fit)`, plancher 1) ; `FeedThemeSection.copyWith` +param
+  `coreVisibleCount`.
+- **D. Filet** : `assert` debug dans `_recomputeSnapAnchors` qui logge toute
+  section multi-articles restée « tall ».
 
-### Tests frontend
-- `test/.../widgets/veille_group_header_test.dart` : transitions de group, backward-safe,
-  index préservé, rendu du libellé — **5 passent**.
-- `flutter analyze lib` : 0 erreur / 0 warning dans les fichiers touchés.
+## Tests
+- `section_fit_test.dart` (12) : bornes `fitVisibleCount`/`fitHeroCount` (3/2/1,
+  jamais 0 ; héros garde le lead).
+- `flux_continu_provider_test.dart` (+4) : trim héros, réapparition aval de l'id
+  éjecté, cap aval ≤ défaut & ≥ 1, `+N` correct, cap survit au dismiss, copyWith
+  préserve `coreVisibleCount`.
+- `section_block_test.dart` : `+N` à `coreVisibleCount` réduit (+ correction des
+  lambdas `onTapArticle` héritées de #787 → fichier re-compilable, net positif).
+- `flutter analyze` : 0 issue sur les fichiers touchés.
+- ⚠️ Échec pré-existant non lié : `essentiel_hi_fi_card_test` « flips to the
+  weather badge » (échoue déjà sur `main`).
 
-## Reporté (follow-up, hors de ce lot)
-- Badge santé **visuel** dans la source card (DTO `healthWarning` prêt) + champs texte
-  « Préciser » (why source / reason angle) dans step2/step3 — nécessite du state provider
-  dans des écrans de 900+ lignes.
-- Expansion EN des mots-clés (`suggest_angles`) — PR-3 légère derrière flag.
+## QA visuelle
+Voir `.context/qa-handoff.md` — Chrome/Playwright **390×844** ET **360×640**
+(cartes ≤ écran, footer slide, snap+haptique non régressés).
 
-## Découpage proposé
-PR-1 backend (backward-safe) puis PR-2 frontend, OU un seul PR cohérent (PO préfère
-moins de PRs). À trancher au moment de la création.
+## Hors périmètre
+Grille / Citation / carte « Pour toi » / closing card (slivers virtuels) ; cartes
+article standard inchangées (choix PO « héros uniquement »).

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart'
     show ValueListenable, defaultTargetPlatform, setEquals, TargetPlatform;
@@ -9,7 +8,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:haptic_feedback/haptic_feedback.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
@@ -52,23 +50,16 @@ const double _kStickyThreshold = 60.0;
 
 /// Vertical offset the sticky bar consumes — used as a landing buffer
 /// when scrolling a section into view so its banner doesn't disappear
-/// behind the bar. Trimmed from 90 → 54 after the head title (~36px) was
-/// dropped from the sticky overlay: tabs row (48) + progress track (4) + a
-/// couple px of slack.
-const double _kStickyBarHeight = 54.0;
+/// behind the bar. Trimmed 90 → 54 (head title dropped) then 54 → 50 after the
+/// tabs row was compacted 48 → 44 (« cartes ≤ écran »): tabs row (44) + progress
+/// track (4) + refresh strip (2). **Must mirror the real sticky bar height** —
+/// it feeds the snap framing AND the fit budget ([usableViewportHeightProvider]).
+const double _kStickyBarHeight = 50.0;
 
 // Section-snap tuning lives in `utils/section_snap.dart` (kSnapCaptureFraction,
 // kBoundaryCrossVelocity, kSnapEpsilon, kSnapSpring) so the resting-position
 // arithmetic stays a pure, unit-testable function. The snap itself is woven
 // into the fling's ballistic phase by [_SectionSnapPhysics] below.
-
-/// Minimum delta (px) before the scroll-up FAB toggles, to avoid flicker
-/// on tiny inertia bounces. Matches the legacy FeedScreen behaviour.
-const double _kScrollDirThreshold = 12.0;
-
-/// Below this scroll offset, the scroll-up FAB stays hidden even when the
-/// user reverses direction (we're effectively already at the top).
-const double _kFabHideAboveScroll = 380.0;
 
 /// Min depth (px) the user must reach before we surface the
 /// pull-to-refresh hint pill — avoids nudging after a tiny inertia scroll.
@@ -174,8 +165,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// `confirmDismiss` or `undoHide` on the provider.
   final Set<String> _pendingFeedback = <String>{};
 
-  bool _showScrollTopFab = false;
-  double _lastScrollPos = 0;
   int _passagePulseSequence = 0;
 
   /// Mutable, stable holder of the section-start anchors (absolute scroll
@@ -275,23 +264,19 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       _maxScrollDepthPx = currentScroll;
     }
 
-    // Scroll-up FAB: surfaces when the user reverses direction above the
-    // hide threshold, hides on scroll-down or near the top. Same logic the
-    // legacy feed used so the UX feels identical between the two screens.
-    final delta = currentScroll - _lastScrollPos;
-    if (delta.abs() >= _kScrollDirThreshold) {
-      bool nextFab = _showScrollTopFab;
-      if (currentScroll < _kFabHideAboveScroll) {
-        nextFab = false;
-      } else if (delta < 0) {
-        nextFab = true;
-      } else if (delta > 0) {
-        nextFab = false;
-      }
-      if (nextFab != _showScrollTopFab) {
-        setState(() => _showScrollTopFab = nextFab);
-      }
-      _lastScrollPos = currentScroll;
+    // Footer auto-hide (app-wide) : ne se cache QUE sur un scroll-down
+    // utilisateur réel. On lit `userScrollDirection` (et non un delta de
+    // position) car le snap est une activité balistique qui conserve la
+    // dernière direction utilisateur : un settle qui ré-ajuste la carte vers le
+    // bas après un scroll-up reste `forward` → le footer ne disparaît jamais
+    // tant que l'utilisateur n'a pas effectivement scrollé vers le bas. `idle`
+    // (settle terminé / programmatique) ne touche pas à la visibilité.
+    if (currentScroll < _kStickyThreshold) {
+      updateFooterVisibility(ref, true);
+    } else if (pos.userScrollDirection == ScrollDirection.reverse) {
+      updateFooterVisibility(ref, false);
+    } else if (pos.userScrollDirection == ScrollDirection.forward) {
+      updateFooterVisibility(ref, true);
     }
 
     // Pull-to-refresh hint pill — discoverability cue when the user scrolls
@@ -478,6 +463,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // footer bar + bottom safe-area, else the last cards (« Lire plus ») are
     // truncated.
     final visibleBottom = scrollBox.size.height - _safeAreaBottom;
+    // « Estimer pour contrôler, mesurer pour vérifier » : on publie le budget
+    // de hauteur utile (identique à la frontière tall/free du snap ci-dessous)
+    // pour que le provider décide combien d'articles tiennent. Anti-boucle :
+    // écriture seulement si la valeur arrondie change.
+    _publishUsableHeight(visibleBottom - _kStickyBarHeight);
     final result = <SectionFrame>[];
     _dotIndexByTop.clear();
     final tall = <int>{};
@@ -511,6 +501,37 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (!setEquals(_tallSections.value, tall)) {
       _tallSections.value = tall;
     }
+    // Filet de vérification (pas de pilotage) : en debug, signale toute section
+    // multi-articles qui reste « tall » malgré le fit côté provider — c'est le
+    // symptôme d'une estimation `section_fit` trop généreuse (constantes à
+    // régler). `_FreeReadEdgeFade` ne devrait plus jamais s'afficher dessus.
+    assert(() {
+      if (tall.isEmpty) return true;
+      final sections = ref.read(fluxContinuProvider).valueOrNull?.sections;
+      if (sections == null) return true;
+      for (final idx in tall) {
+        if (idx < 0 || idx >= sections.length) continue;
+        debugPrint(
+          '[fit-net] section "${sections[idx].label}" dépasse l\'écran '
+          '(reste tall) — estimation section_fit trop généreuse, à régler.',
+        );
+      }
+      return true;
+    }());
+  }
+
+  /// Threads the measured usable scroll height to [usableViewportHeightProvider]
+  /// so the provider can decide how many articles each section may show. Same
+  /// budget the snap uses (viewport − safe-area-bottom − sticky bar). Anti-boucle :
+  /// only writes when the rounded value actually moves, so the provider recompose
+  /// it triggers (→ screen rebuild → this runs again, same value) terminates.
+  void _publishUsableHeight(double height) {
+    if (height <= 0) return;
+    final rounded = height.roundToDouble();
+    final notifier = ref.read(usableViewportHeightProvider.notifier);
+    final current = notifier.state;
+    if (current != null && (current - rounded).abs() < 1.0) return;
+    notifier.state = rounded;
   }
 
   /// Defers an anchor recompute to the next post-frame (when layout is settled),
@@ -581,6 +602,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   Future<void> _scrollToTop() async {
     if (!_scroll.hasClients) return;
     unawaited(HapticFeedback.lightImpact());
+    // Remonter doit toujours révéler le footer (jamais « collé » masqué).
+    updateFooterVisibility(ref, true);
     await _scroll.animateTo(
       0,
       duration: const Duration(milliseconds: 900),
@@ -871,25 +894,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
               tabs: stickyTabs,
               onTapTab: _scrollToSection,
               tabsController: _tabsScroll,
-            ),
-            // Floating "back to top" button — reveals on upward scroll above
-            // the hide threshold, fades down on reverse / near top.
-            Positioned(
-              right: 16,
-              bottom: 24,
-              child: SafeArea(
-                child: AnimatedSlide(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  offset:
-                      _showScrollTopFab ? Offset.zero : const Offset(0, 1.6),
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 220),
-                    opacity: _showScrollTopFab ? 1.0 : 0.0,
-                    child: _ScrollToTopButton(onTap: _scrollToTop),
-                  ),
-                ),
-              ),
             ),
             // Pull-to-refresh discoverability pill.
             Positioned(
@@ -1550,79 +1554,6 @@ class _StickyHostOverlay extends StatelessWidget {
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _ScrollToTopButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _ScrollToTopButton({required this.onTap});
-
-  static const _kRadius = BorderRadius.all(Radius.circular(22));
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final isDark = context.isDarkMode;
-    // Same liquidglass mix as StickyBackdrop so the pill reads as part of the
-    // same surface family (parchment in light, dark-surface tint in dark).
-    final fillColor = isDark
-        ? colors.backgroundPrimary.withValues(alpha: 0.78)
-        : const Color.fromRGBO(242, 232, 213, 0.82);
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.10)
-        : const Color.fromRGBO(0, 0, 0, 0.08);
-
-    return ClipRRect(
-      borderRadius: _kRadius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: _kRadius,
-            onTap: onTap,
-            child: Container(
-              height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: fillColor,
-                borderRadius: _kRadius,
-                border: Border.all(color: borderColor, width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.10),
-                    blurRadius: 12,
-                    spreadRadius: -4,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
-                    size: 16,
-                    color: colors.textPrimary,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Remonter',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.1,
-                      color: colors.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

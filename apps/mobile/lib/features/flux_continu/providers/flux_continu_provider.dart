@@ -32,6 +32,7 @@ import '../repositories/flux_continu_repository.dart';
 import '../services/flux_continu_cache_service.dart';
 import '../services/tournee_progress_service.dart';
 import '../utils/notif_teasers.dart';
+import '../utils/section_fit.dart';
 import '../utils/theme_color_mapping.dart';
 import 'tournee_order_prefs_provider.dart'; // tourneeOrderPrefsProvider, TourneeOrderState, applyOrder (réexporté)
 
@@ -77,6 +78,21 @@ const int _kMaxFavoriteSourceSections = 5;
 /// no subsequent page can exist regardless of what the backend's
 /// pagination.hasNext (computed from a pre-compression candidate count) says.
 const int _kThemeSectionPageLimit = 10;
+
+/// Usable scroll height (px) of the Flux Continu viewport, threaded from
+/// [FluxContinuScreen] (the only place that can measure it post-layout):
+/// ```
+/// usableViewportHeight = scrollViewportHeight − safeAreaBottom − kStickyBarHeight
+/// ```
+/// — the **exact same budget** the section snap uses to decide whether a
+/// section is "tall". `null` on the first frame (no measure yet) ⇒ the provider
+/// keeps the default visible counts and recomposes once the measure lands
+/// (masked by the loading skeleton). The screen writes it only when the rounded
+/// value changes (anti-boucle). Consumed by [FluxContinuNotifier._compose] to
+/// trim the hero and cap each downstream section so no card stack ever exceeds
+/// the screen. The footer auto-hide does **not** change this budget (the snap
+/// already subtracts only `safeAreaBottom`, not the footer height).
+final usableViewportHeightProvider = StateProvider<double?>((ref) => null);
 
 /// Riverpod provider for the Flux Continu V1.8 home screen.
 ///
@@ -143,6 +159,16 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       if (prev?.enabled != next.enabled && state.hasValue) {
         ref.invalidateSelf();
       }
+    });
+
+    // La hauteur utile mesurée par l'écran pilote le « combien d'articles
+    // tiennent » (trim héros + cap des sections aval). On recompose à chaque
+    // changement, comme pour le toggle sérène — un simple recompose suffit, les
+    // sections sont déjà fetchées (on ne refait que le découpage d'affichage).
+    ref.listen<double?>(usableViewportHeightProvider, (prev, next) {
+      if (prev == next) return;
+      if (!state.hasValue) return;
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
     });
 
     // React to favorite reorders / additions / removals without rebuilding
@@ -377,13 +403,25 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       order: tournee.order,
     );
 
+    // « Cartes ≤ écran » : décidé côté provider par estimation conservatrice
+    // (pas de mesure runtime qui pilote le rendu). `null` au 1ᵉʳ frame ⇒ on
+    // garde les défauts, on recompose à l'arrivée de la mesure.
+    final usableHeight = ref.read(usableViewportHeightProvider);
+
     final rawOrdered = <FluxSection>[
-      if (_essentiel != null) _essentiel!,
+      // Héros trimmé AVANT le dédup : les articles éjectés ne sont jamais
+      // ajoutés à `seen` par [_dedupeSectionsInOrder] → ils sont relâchés vers
+      // les sections aval (digest/thème) qui portent le même contentId. Aucune
+      // plomberie de feedback à écrire — c'est « gratuit » via le dédup ordonné.
+      if (_essentiel != null) _fitHeroSection(_essentiel!, usableHeight),
       for (final key in orderedKeys)
         if (key != kTourneeGrilleKey && sectionByKey[key] != null)
           sectionByKey[key]!,
     ];
-    final finalSections = _dedupeSectionsInOrder(_filterSections(rawOrdered));
+    final finalSections = _capSectionsToFit(
+      _dedupeSectionsInOrder(_filterSections(rawOrdered)),
+      usableHeight,
+    );
     final grilleSlotIndex = _resolveGrilleSlotIndex(
       orderedKeys: orderedKeys,
       finalSections: finalSections,
@@ -411,6 +449,73 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       quote: _quote,
       isLoading: false,
     );
+  }
+
+  /// Trims the hero (« Ton Essentiel ») to the number of articles that fit the
+  /// usable viewport, keeping the lead. Returns the section untouched when the
+  /// height isn't measured yet (`null`) or everything already fits. The lead is
+  /// never dropped. The ejected articles leave the hero's `articles` list, so
+  /// the dedup downstream no longer claims them (cf. [_compose] rawOrdered).
+  FluxSection _fitHeroSection(FluxSection essentiel, double? usableHeight) {
+    if (essentiel is! EssentielSection || usableHeight == null) {
+      return essentiel;
+    }
+    final len = essentiel.articles.length;
+    final maxCount = len < 5 ? len : 5;
+    if (maxCount <= 1) return essentiel;
+    final fit = fitHeroCount(
+      usableHeight: usableHeight,
+      chromeHeight: kHeroChromeHeight,
+      leadHeight: kHeroLeadHeight,
+      mediumHeight: kHeroMediumHeight,
+      maxCount: maxCount,
+    );
+    if (fit >= len) return essentiel;
+    // Reconstruit comme [_filterSections]/[_dedupeSectionsInOrder] : seuls
+    // articles/blurb/illustration sont portés (label/accent = défauts canon).
+    return EssentielSection(
+      articles: essentiel.articles.take(fit).toList(growable: false),
+      blurb: essentiel.blurb,
+      illustrationAsset: essentiel.illustrationAsset,
+    );
+  }
+
+  /// Caps each downstream section's `coreVisibleCount` to what fits the usable
+  /// viewport (`min(défaut, fitVisibleCount)`, plancher 1). The defaults stay
+  /// the **ceiling** — fit can only reduce. No-op when the height isn't measured
+  /// yet. The hero is handled upstream (trim de la liste), so it passes through.
+  List<FluxSection> _capSectionsToFit(
+    List<FluxSection> sections,
+    double? usableHeight,
+  ) {
+    if (usableHeight == null) return sections;
+    return [for (final s in sections) _capSectionToFit(s, usableHeight)];
+  }
+
+  FluxSection _capSectionToFit(FluxSection s, double usableHeight) {
+    if (s is EssentielSection) return s;
+    final hasBlurb = s.blurb?.trim().isNotEmpty ?? false;
+    final fitCap = fitVisibleCount(
+      usableHeight: usableHeight,
+      bannerHeight: hasBlurb ? kBannerHeightWithBlurb : kBannerHeightNoBlurb,
+      footerHeight: kSectionFooterHeight,
+      cardHeight: estimateRegularCardHeight(),
+      maxCount: s.coreVisibleCount,
+    );
+    if (fitCap >= s.coreVisibleCount) return s;
+    return switch (s) {
+      EssentielSection() => s,
+      DigestTopicSection() => DigestTopicSection(
+          kind: s.kind,
+          label: s.label,
+          accent: s.accent,
+          coreVisibleCount: fitCap,
+          blurb: s.blurb,
+          illustrationAsset: s.illustrationAsset,
+          topics: s.topics,
+        ),
+      FeedThemeSection() => s.copyWith(coreVisibleCount: fitCap),
+    };
   }
 
   /// Fires the backend "hide" API for the article without touching local
