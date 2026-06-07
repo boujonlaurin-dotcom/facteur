@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -25,7 +26,6 @@ import '../widgets/follow_keyword_suggestion_card.dart';
 import '../widgets/pin_subjects_sheet.dart';
 
 const double _kLoadMoreLeadingPx = 800.0;
-const double _kScrollDirThreshold = 12.0;
 
 /// Sous ce seuil le footer reste révélé même en scrollant vers le bas
 /// (on est effectivement « près du sommet »).
@@ -42,7 +42,6 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
   final ScrollController _scroll = ScrollController();
   final Set<String> _visibleContentIds = <String>{};
   bool _loadingMore = false;
-  double _lastScrollPos = 0;
 
   @override
   void initState() {
@@ -62,15 +61,16 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
     final pos = _scroll.position;
     final currentScroll = pos.pixels;
 
-    final delta = currentScroll - _lastScrollPos;
-    if (delta.abs() >= _kScrollDirThreshold) {
-      // Footer auto-hide (app-wide) : les deux branches du StatefulShellRoute
-      // partagent ce footer → même logique que L'Essentiel.
-      updateFooterVisibility(
-        ref,
-        delta < 0 || currentScroll < _kFooterRevealNearTop,
-      );
-      _lastScrollPos = currentScroll;
+    // Footer auto-hide (app-wide) : ne se cache QUE sur un scroll-down
+    // utilisateur réel (`userScrollDirection`), pas sur un delta de position —
+    // sinon un ré-ajustement programmatique du scroll masquerait le footer sans
+    // intention de l'utilisateur. Même logique que L'Essentiel.
+    if (currentScroll < _kFooterRevealNearTop) {
+      updateFooterVisibility(ref, true);
+    } else if (pos.userScrollDirection == ScrollDirection.reverse) {
+      updateFooterVisibility(ref, false);
+    } else if (pos.userScrollDirection == ScrollDirection.forward) {
+      updateFooterVisibility(ref, true);
     }
 
     if (pos.maxScrollExtent - currentScroll >= _kLoadMoreLeadingPx) return;

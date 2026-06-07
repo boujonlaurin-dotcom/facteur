@@ -61,10 +61,6 @@ const double _kStickyBarHeight = 50.0;
 // arithmetic stays a pure, unit-testable function. The snap itself is woven
 // into the fling's ballistic phase by [_SectionSnapPhysics] below.
 
-/// Minimum delta (px) before the footer auto-hide toggles, to avoid flicker
-/// on tiny inertia bounces. Matches the legacy FeedScreen behaviour.
-const double _kScrollDirThreshold = 12.0;
-
 /// Min depth (px) the user must reach before we surface the
 /// pull-to-refresh hint pill — avoids nudging after a tiny inertia scroll.
 const double _kPullHintMinDepthPx = 800.0;
@@ -169,7 +165,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// `confirmDismiss` or `undoHide` on the provider.
   final Set<String> _pendingFeedback = <String>{};
 
-  double _lastScrollPos = 0;
   int _passagePulseSequence = 0;
 
   /// Mutable, stable holder of the section-start anchors (absolute scroll
@@ -269,18 +264,19 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       _maxScrollDepthPx = currentScroll;
     }
 
-    // Scroll-up FAB: surfaces when the user reverses direction above the
-    // hide threshold, hides on scroll-down or near the top. Same logic the
-    // legacy feed used so the UX feels identical between the two screens.
-    final delta = currentScroll - _lastScrollPos;
-    if (delta.abs() >= _kScrollDirThreshold) {
-      // Footer auto-hide (app-wide) : visible vers le haut / près du sommet,
-      // caché vers le bas.
-      updateFooterVisibility(
-        ref,
-        delta < 0 || currentScroll < _kStickyThreshold,
-      );
-      _lastScrollPos = currentScroll;
+    // Footer auto-hide (app-wide) : ne se cache QUE sur un scroll-down
+    // utilisateur réel. On lit `userScrollDirection` (et non un delta de
+    // position) car le snap est une activité balistique qui conserve la
+    // dernière direction utilisateur : un settle qui ré-ajuste la carte vers le
+    // bas après un scroll-up reste `forward` → le footer ne disparaît jamais
+    // tant que l'utilisateur n'a pas effectivement scrollé vers le bas. `idle`
+    // (settle terminé / programmatique) ne touche pas à la visibilité.
+    if (currentScroll < _kStickyThreshold) {
+      updateFooterVisibility(ref, true);
+    } else if (pos.userScrollDirection == ScrollDirection.reverse) {
+      updateFooterVisibility(ref, false);
+    } else if (pos.userScrollDirection == ScrollDirection.forward) {
+      updateFooterVisibility(ref, true);
     }
 
     // Pull-to-refresh hint pill — discoverability cue when the user scrolls
