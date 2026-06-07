@@ -15,7 +15,11 @@ from app.models.cluster_title_annotation import ClusterTitleAnnotation
 from app.models.content import Content
 from app.models.enums import ContentType, SourceType
 from app.models.source import Source
-from app.services.title_annotation_service import TitleAnnotationService
+from app.services.title_annotation_service import (
+    TitleAnnotationService,
+    _is_real_word,
+    spans_overlap,
+)
 from tests.fixtures.fake_spacy import (
     FakeDoc,
     FakeEnt,
@@ -99,6 +103,60 @@ def test_compute_strong_tokens_filters_against_project_stopword_list():
 def test_compute_strong_tokens_returns_empty_when_nlp_missing():
     svc = service_with_nlp(None)
     assert svc.compute_strong_tokens("Un titre quelconque") == []
+
+
+# --- _is_real_word (structural validity guard) ------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("UE", True),      # 2 alpha → real word
+        ("IA", True),
+        ("réforme", True),
+        ("an", True),
+        ("%", False),      # the « % » in « 18% »
+        ("-", False),      # « - Le Monde » suffix separator
+        ("|", False),
+        ("04/06", False),  # date
+        ("105", False),    # bare number
+        ("1.0", False),
+        ("🔥", False),      # emoji mis-tagged VERB in prod
+        ("", False),
+        ("A", False),      # single letter
+    ],
+)
+def test_is_real_word(text, expected):
+    assert _is_real_word(text) is expected
+
+
+def test_doc_to_tokens_drops_non_word_tokens():
+    """spaCy mis-tags « % » as NOUN and « - » as PROPN — both must be dropped
+    at the single tokenisation choke-point so neither cache nor live path
+    can surface them."""
+    title = "Hausse de 18% - BFMTV"
+    doc = FakeDoc(
+        tokens=[
+            FakeToken("Hausse", 0, "NOUN", "hausse"),
+            FakeToken("%", 12, "NOUN", "%"),     # mis-tagged content POS
+            FakeToken("-", 14, "PROPN", "-"),    # source-suffix separator
+            FakeToken("BFMTV", 16, "PROPN", "bfmtv"),
+        ]
+    )
+    svc = service_with_nlp(FakeNlp({title: doc}))
+
+    texts = [t["text"] for t in svc.compute_strong_tokens(title)]
+    assert texts == ["Hausse", "BFMTV"]
+    assert "%" not in texts and "-" not in texts
+
+
+# --- spans_overlap (shared predicate) ---------------------------------------
+
+
+def test_spans_overlap_predicate():
+    assert spans_overlap((0, 5), (3, 7)) is True
+    assert spans_overlap((0, 5), (5, 7)) is False  # touching, not overlapping
+    assert spans_overlap((0, 5), (10, 12)) is False
 
 
 # --- diff_spans -------------------------------------------------------------
@@ -191,6 +249,54 @@ def test_diff_spans_preserves_offsets():
     spans = svc.diff_spans(ref, alt, "left")
     assert spans[0]["start"] == 15
     assert spans[0]["end"] == 21
+
+
+# --- diff_spans off-cluster D2 (keyword-only max_spans / allowed_pos) --------
+
+
+def test_diff_spans_off_cluster_caps_at_2_and_keeps_adj_verb_only():
+    """Off-cluster live floor: only ADJ/VERB, hard cap 2 (PO decision D2)."""
+    ref: list[dict] = []
+    alt = [
+        _tok("Bombardement", "bombardement", pos="NOUN", start=0),
+        _tok("meurtrier", "meurtrier", pos="ADJ", start=13),
+        _tok("vise", "viser", pos="VERB", start=23),
+        _tok("Macron", "macron", pos="PROPN", start=28, entity_kind="PER"),
+    ]
+    svc = service_with_nlp(None)
+    spans = svc.diff_spans(
+        ref, alt, "left",
+        max_spans=svc.OFF_CLUSTER_MAX_SPANS,
+        allowed_pos=svc.OFF_CLUSTER_ALLOWED_POS,
+    )
+    texts = {s["text"] for s in spans}
+    assert len(spans) <= 2
+    assert texts == {"meurtrier", "vise"}  # NOUN + PROPN filtered out
+
+
+def test_diff_spans_default_in_cluster_policy_unchanged():
+    """Regression: default kwargs keep cap-4 / all-KEEP_POS behaviour."""
+    ref: list[dict] = []
+    alt = [
+        _tok("Bombardement", "bombardement", pos="NOUN", start=0),
+        _tok("meurtrier", "meurtrier", pos="ADJ", start=13),
+        _tok("vise", "viser", pos="VERB", start=23),
+        _tok("Gaza", "gaza", pos="PROPN", start=28),
+    ]
+    svc = service_with_nlp(None)
+    spans = svc.diff_spans(ref, alt, "left")
+    assert len(spans) == 4
+    assert {"Bombardement", "Gaza"} <= {s["text"] for s in spans}
+
+
+def test_diff_spans_d1_returns_empty_when_cap_zero():
+    """Flipping OFF_CLUSTER_MAX_SPANS to 0 (policy D1) suppresses everything."""
+    ref: list[dict] = []
+    alt = [_tok("vise", "viser", pos="VERB", start=0)]
+    svc = service_with_nlp(None)
+    assert svc.diff_spans(
+        ref, alt, "left", max_spans=0, allowed_pos=svc.OFF_CLUSTER_ALLOWED_POS
+    ) == []
 
 
 # --- compute_shared_tokens --------------------------------------------------
@@ -338,7 +444,7 @@ async def test_get_or_compute_inserts_on_first_call_and_reads_cache_second(
         )
     ).scalars().all()
     assert len(rows) == 3
-    assert all(r.model_version == "v1-spacy-fr_md" for r in rows)
+    assert all(r.model_version == TitleAnnotationService.MODEL_VERSION for r in rows)
     assert all(r.semantic_equiv is None for r in rows)
 
     nlp.call_count = 0
@@ -394,7 +500,7 @@ async def test_get_or_compute_does_not_raise_on_partial_cache(
         content_id=contents[0].id,
         strong_tokens=[{"start": 0, "end": 5, "text": "seed",
                         "lemma": "seed", "pos": "NOUN"}],
-        model_version="v1-spacy-fr_md",
+        model_version=TitleAnnotationService.MODEL_VERSION,
     )
     db_session.add(pre_seeded)
     await db_session.commit()
@@ -454,7 +560,7 @@ async def cluster_with_spacy_rows(db_session, cluster_fixture):
                 cluster_id=cluster_fixture["cluster_id"],
                 content_id=c.id,
                 strong_tokens=[],
-                model_version="v1-spacy-fr_md",
+                model_version=TitleAnnotationService.MODEL_VERSION,
             )
         )
     await db_session.commit()

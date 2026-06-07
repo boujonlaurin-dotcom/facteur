@@ -704,7 +704,11 @@ class _PerspectiveCard extends ConsumerWidget {
                     children: [
                       Expanded(
                         child: DiffTitle(
-                          title: perspective.title.trim(),
+                          // No .trim(): highlight offsets are computed server-
+                          // side on the untrimmed title, so trimming here would
+                          // shift every span by the leading-whitespace count
+                          // (frequent on live RSS titles). Story 7.4 (B).
+                          title: perspective.title,
                           highlightSpans: perspective.highlightSpans,
                           sharedTokens: perspective.sharedTokens,
                           biasColor: perspective.getBiasColor(colors),

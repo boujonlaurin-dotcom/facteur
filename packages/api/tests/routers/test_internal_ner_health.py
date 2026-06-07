@@ -46,7 +46,7 @@ async def test_ner_health_reports_available_when_nlp_loaded(client):
     assert response.status_code == 200
     body = response.json()
     assert body["nlp_available"] is True
-    assert body["model_version"] == "v1-spacy-fr_md"
+    assert body["model_version"] == "v2-spacy-fr_md"
     assert body["sample_title"] == "Tsahal frappe Gaza"
     token_texts = [t["text"] for t in body["sample_tokens"]]
     assert "Tsahal" in token_texts

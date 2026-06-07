@@ -17,7 +17,12 @@ from app.models.cluster_title_annotation import ClusterTitleAnnotation
 from app.models.content import Content
 from app.models.enums import ContentType, SourceType
 from app.models.source import Source
-from app.routers.contents import _attach_highlight_spans
+from app.routers.contents import (
+    MIN_DISPLAY_WEIGHT,
+    _attach_highlight_spans,
+    _enforce_offset_invariant,
+    _refine_llm_target_spans,
+)
 from app.services.llm_bias_annotation_service import LLM_VERSION as LLM_BIAS_VERSION
 from app.services.title_annotation_service import TitleAnnotationService
 from tests.fixtures.fake_spacy import (
@@ -92,7 +97,9 @@ async def test_attach_highlight_spans_computes_for_content_without_cluster(db_se
 
     Regression for the prod incident where clustering was never activated,
     so the early-return on `not content.cluster_id` silently disabled the
-    feature for every article.
+    feature for every article. Off-cluster is governed by policy D2: only
+    divergent ADJ/VERB are surfaced (cap 2), the conservative deterministic
+    floor — a divergent NOUN like « morts » is intentionally NOT highlighted.
     """
     source = Source(
         id=uuid4(),
@@ -127,11 +134,14 @@ async def test_attach_highlight_spans_computes_for_content_without_cluster(db_se
                 FakeToken("Gaza", 14, "PROPN", "Gaza"),
             ],
         ),
-        "Une frappe sur Gaza fait 20 morts": FakeDoc(
+        # "Bombardement meurtrier vise Gaza" → divergent NOUN + ADJ + VERB,
+        # plus the shared PROPN Gaza.
+        "Bombardement meurtrier vise Gaza": FakeDoc(
             tokens=[
-                FakeToken("frappe", 4, "NOUN", "frappe"),
-                FakeToken("Gaza", 14, "PROPN", "Gaza"),
-                FakeToken("morts", 25, "NOUN", "mort"),
+                FakeToken("Bombardement", 0, "NOUN", "bombardement"),
+                FakeToken("meurtrier", 13, "ADJ", "meurtrier"),
+                FakeToken("vise", 23, "VERB", "viser"),
+                FakeToken("Gaza", 28, "PROPN", "Gaza"),
             ],
         ),
     }
@@ -139,7 +149,7 @@ async def test_attach_highlight_spans_computes_for_content_without_cluster(db_se
 
     perspectives = [
         {
-            "title": "Une frappe sur Gaza fait 20 morts",
+            "title": "Bombardement meurtrier vise Gaza",
             "url": "https://other.fr/x",
             "bias_stance": "left",
         }
@@ -151,7 +161,10 @@ async def test_attach_highlight_spans_computes_for_content_without_cluster(db_se
         pivot, _ = await _attach_highlight_spans(db_session, standalone, perspectives)
 
     texts = {s["text"] for s in perspectives[0]["highlight_spans"]}
-    assert "morts" in texts  # diverges from ref (lemma not in {Tsahal, frapper, Gaza})
+    # D2: ADJ + VERB surfaced, NOUN « Bombardement » and shared « Gaza » are not.
+    assert texts == {"meurtrier", "vise"}
+    assert "Bombardement" not in texts
+    assert len(perspectives[0]["highlight_spans"]) <= 2
     assert all(s["bias"] == "left" for s in perspectives[0]["highlight_spans"])
     # Reference pivot still resolves to the ref title's first VERB.
     assert pivot == {"start": 7, "end": 13, "text": "frappe"}
@@ -250,7 +263,8 @@ async def test_attach_highlight_spans_uses_cache_for_in_cluster_perspectives(
 async def test_attach_highlight_spans_computes_on_fly_for_google_news_url(
     db_session, cluster_setup
 ):
-    """Google News perspective URL absent from the cluster → spaCy invoked at call time."""
+    """Google News perspective URL absent from the cluster → spaCy invoked at
+    call time, under the off-cluster D2 floor (ADJ/VERB only, cap 2)."""
     docs = {
         "Tsahal frappe Gaza": FakeDoc(
             tokens=[
@@ -267,11 +281,12 @@ async def test_attach_highlight_spans_computes_on_fly_for_google_news_url(
                 FakeToken("Gaza", 27, "PROPN", "Gaza"),
             ],
         ),
-        "Une frappe sur Gaza fait 20 morts": FakeDoc(
+        "Bombardement meurtrier vise Gaza": FakeDoc(
             tokens=[
-                FakeToken("frappe", 4, "NOUN", "frappe"),
-                FakeToken("Gaza", 14, "PROPN", "Gaza"),
-                FakeToken("morts", 25, "NOUN", "mort"),
+                FakeToken("Bombardement", 0, "NOUN", "bombardement"),
+                FakeToken("meurtrier", 13, "ADJ", "meurtrier"),
+                FakeToken("vise", 23, "VERB", "viser"),
+                FakeToken("Gaza", 28, "PROPN", "Gaza"),
             ],
         ),
     }
@@ -279,7 +294,7 @@ async def test_attach_highlight_spans_computes_on_fly_for_google_news_url(
 
     perspectives = [
         {
-            "title": "Une frappe sur Gaza fait 20 morts",
+            "title": "Bombardement meurtrier vise Gaza",
             "url": "https://google-news-only-source.com/x",  # not in cluster
             "bias_stance": "unknown",
         }
@@ -292,7 +307,9 @@ async def test_attach_highlight_spans_computes_on_fly_for_google_news_url(
 
     spans = perspectives[0]["highlight_spans"]
     texts = {s["text"] for s in spans}
-    assert "morts" in texts  # diverges from ref
+    # D2: divergent ADJ + VERB only; the divergent NOUN « Bombardement » is dropped.
+    assert texts == {"meurtrier", "vise"}
+    assert len(spans) <= 2
     assert all(s["bias"] == "unknown" for s in spans)
 
 
@@ -845,3 +862,164 @@ async def test_build_cluster_perspectives_propagates_content_language(db_session
     # Single perspective per source_id — keep the one that landed first.
     assert len(perspectives) == 1
     assert perspectives[0].language == "en"
+
+
+# --- Structural refinement (Story 7.4 highlight-quality, pure functions) -----
+
+
+def _span(start: int, end: int, text: str, **extra) -> dict:
+    return {"start": start, "end": end, "text": text, **extra}
+
+
+# B — offset invariant -------------------------------------------------------
+
+
+def test_enforce_offset_invariant_keeps_aligned_span():
+    title = "Armée bombarde Gaza"
+    spans = [_span(6, 14, "bombarde")]
+    assert _enforce_offset_invariant(spans, title) == spans
+
+
+def test_enforce_offset_invariant_relocates_shifted_span():
+    """A leading RSS space shifts every offset by one → relocate via find_span."""
+    title = " Armée bombarde Gaza"  # offsets below were computed on the trimmed title
+    spans = [_span(5, 13, "bombarde")]
+    out = _enforce_offset_invariant(spans, title)
+    assert len(out) == 1
+    assert title[out[0]["start"] : out[0]["end"]] == "bombarde"
+
+
+def test_enforce_offset_invariant_drops_absent_text():
+    title = "Armée bombarde Gaza"
+    spans = [_span(0, 6, "Tsahal")]  # text not present in the served title
+    assert _enforce_offset_invariant(spans, title) == []
+
+
+def test_enforce_offset_invariant_drops_out_of_bounds_and_empty():
+    title = "Armée bombarde Gaza"  # 19 chars
+    spans = [
+        _span(30, 42, "- Le Monde"),  # past the end, text absent → drop
+        _span(-1, 5, "junk"),         # negative start, text absent → drop
+        _span(5, 5, ""),              # zero-width → drop
+    ]
+    assert _enforce_offset_invariant(spans, title) == []
+
+
+# C — _refine_llm_target_spans ----------------------------------------------
+
+
+def test_refine_trims_punctuation_edges():
+    title = 'Macron juge "l\'arrêt complet" inacceptable'
+    start = title.index('"')
+    end = title.index('"', start + 1) + 1  # span wraps the surrounding quotes
+    spans = [
+        _span(start, end, title[start:end], weight=1.0,
+              category="multi_token_expression")
+    ]
+    out = _refine_llm_target_spans(spans, title)
+    assert len(out) == 1
+    assert out[0]["text"] == "l'arrêt complet"  # edge quotes trimmed, elision kept
+
+
+def test_refine_denests_overlapping_spans_keeps_widest():
+    """« restitutions » ⊂ « restitutions de biens » → keep the enclosing span."""
+    title = "Réclame restitutions de biens au musée"
+    narrow_s = title.index("restitutions")
+    narrow_e = narrow_s + len("restitutions")
+    wide_s = narrow_s
+    wide_e = title.index("biens") + len("biens")
+    spans = [
+        _span(narrow_s, narrow_e, "restitutions", weight=1.0, category="framing_noun"),
+        _span(wide_s, wide_e, "restitutions de biens", weight=1.0,
+              category="multi_token_expression"),
+    ]
+    out = _refine_llm_target_spans(spans, title)
+    assert len(out) == 1
+    assert out[0]["text"] == "restitutions de biens"
+
+
+def test_refine_drops_low_weight_span():
+    title = "Macron impose une réforme brutale"
+    s = title.index("brutale")
+    spans = [_span(s, s + len("brutale"), "brutale", weight=0.25,
+                   category="editorial_angle")]
+    assert _refine_llm_target_spans(spans, title) == []
+
+
+def test_refine_keeps_weight_at_display_threshold():
+    title = "Macron impose une réforme brutale"
+    s = title.index("brutale")
+    spans = [_span(s, s + len("brutale"), "brutale", weight=MIN_DISPLAY_WEIGHT,
+                   category="editorial_angle")]
+    out = _refine_llm_target_spans(spans, title)
+    assert [x["text"] for x in out] == ["brutale"]
+
+
+def test_refine_drops_structurally_invalid_span():
+    title = "Hausse de 18% au compteur"
+    s = title.index("%")
+    spans = [_span(s, s + 1, "%", weight=1.0, category="fact")]
+    assert _refine_llm_target_spans(spans, title) == []
+
+
+def test_refine_preserves_llm_fields_on_kept_span():
+    title = "Israël pilonne Gaza"
+    s = title.index("pilonne")
+    spans = [_span(s, s + len("pilonne"), "pilonne", weight=1.0,
+                   category="editorial_angle", justification="verbe chargé",
+                   bias="left")]
+    out = _refine_llm_target_spans(spans, title)
+    assert len(out) == 1
+    assert out[0]["category"] == "editorial_angle"
+    assert out[0]["weight"] == 1.0
+    assert out[0]["justification"] == "verbe chargé"
+    assert out[0]["bias"] == "left"
+
+
+@pytest.mark.asyncio
+async def test_attach_highlight_spans_drops_low_weight_llm_span_end_to_end(
+    db_session, cluster_setup
+):
+    """End-to-end: a 0.25-weight LLM span is gated out at serve while the
+    1.0-weight span survives (structural cleanup C runs in the loop)."""
+    await _seed_strong_tokens_cache(
+        db_session, cluster_setup, _REF_TOKENS_GAZA, _ALT_TOKENS_GAZA
+    )
+    served_title = "Armée israélienne bombarde Gaza"
+    signature = _cluster_signature(cluster_setup)
+    spans = [
+        {  # strong editorialisation → displayed
+            "start": 18, "end": 26, "text": "bombarde",
+            "category": "editorial_angle", "weight": 1.0, "justification": "ok",
+        },
+        {  # weak → gated out by MIN_DISPLAY_WEIGHT
+            "start": 6, "end": 17, "text": "israélienne",
+            "category": "fact", "weight": 0.25, "justification": "gentilé",
+        },
+    ]
+    alt_row = await db_session.get(
+        ClusterTitleAnnotation,
+        (cluster_setup["cluster_id"], cluster_setup["alt_a"].id),
+    )
+    alt_row.semantic_equiv = _llm_payload(spans, signature)
+    await db_session.commit()
+
+    fake_svc = service_with_nlp(FakeNlp({}))
+    perspectives = [
+        {
+            "title": served_title,
+            "url": cluster_setup["alt_a"].url,
+            "bias_stance": "left",
+        }
+    ]
+    with patch(
+        "app.routers.contents.get_title_annotation_service",
+        return_value=fake_svc,
+    ):
+        _, source = await _attach_highlight_spans(
+            db_session, cluster_setup["ref"], perspectives
+        )
+
+    assert source == "llm"
+    out = perspectives[0]["highlight_spans"]
+    assert [s["text"] for s in out] == ["bombarde"]

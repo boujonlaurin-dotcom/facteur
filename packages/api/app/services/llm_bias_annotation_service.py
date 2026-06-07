@@ -16,7 +16,7 @@ from app.services.editorial.llm_client import EditorialLLMClient
 
 logger = structlog.get_logger(__name__)
 
-LLM_VERSION = "mistral-medium-latest-v2"
+LLM_VERSION = "mistral-medium-latest-v3"
 DEFAULT_MODEL = "mistral-medium-latest"
 
 TARGET_CATEGORIES = frozenset(
@@ -47,6 +47,17 @@ chaque titre "alt" (une perspective parmi plusieurs sur le même évènement),
 identifier les fragments qui méritent d'être SURLIGNÉS car ils relèvent d'un
 choix éditorial du média, par opposition aux faits avérés.
 
+PRINCIPE DIRECTEUR — PRÉCISION AVANT TOUT.
+Le surlignage est une loupe : il ne vaut que s'il pointe un VRAI parti pris.
+Mieux vaut ne RIEN surligner qu'un mot neutre. Dans le doute, n'annote pas.
+Un titre sans surlignage est un résultat normal et fréquent, pas un échec.
+
+BUDGET (strict) :
+- 0 à 2 `target_spans` par titre. Jamais 3 ou plus.
+- Chaque span fait AU PLUS 3 mots. Vise le fragment le plus court qui porte
+  le parti pris (souvent UN seul verbe ou nom chargé).
+- Si plusieurs fragments se valent, garde le plus chargé et lâche les autres.
+
 Tu reçois pour chaque appel :
 1. Le titre de référence du cluster (point de comparaison neutre, souvent un
    média grand public).
@@ -70,19 +81,26 @@ Où :
 - `target_spans` = fragments à SURLIGNER (l'éditorialisation du média).
   - `category` ∈ {"editorial_angle", "fact", "multi_token_expression",
     "framing_noun", "foreign_lang"}
-    - editorial_angle : verbe ou adjectif chargé ("crispe", "écrase",
-      "insulte").
+    - editorial_angle : verbe ou adjectif CHARGÉ, qui dramatise ou prend
+      parti ("crispe", "écrase", "insulte", "fustige", "déraille"). PAS un
+      verbe descriptif neutre (annonce, confirme, présente, déclare).
     - fact : mot factuel utilisé comme cadrage clivant ("gauche", "droite").
-    - multi_token_expression : expression de 2+ mots contiguës ("vent debout",
-      "mettre les egos de côté", "nie s'être inspiré"). UN SEUL span couvrant
-      toute l'expression.
+      Attention : un simple gentilé descriptif (français, iraniens, africaine,
+      bretonne) n'est PAS un cadrage — ne l'annote que s'il sert visiblement à
+      opposer ou stigmatiser.
+    - multi_token_expression : expression de 2+ mots contiguës et idiomatique
+      ("vent debout", "mettre les egos de côté", "nie s'être inspiré"). UN
+      SEUL span, ≤ 3 mots. N'invente pas une expression à partir d'une clause
+      banale : « dont les orientations peuvent faire gagner… » n'est PAS une
+      expression, c'est une phrase — ne l'annote pas.
     - framing_noun : nom abstrait choisi pour cadrer ("mainmise",
       "indépendance", "polémique").
     - foreign_lang : à utiliser quand la perspective n'est pas en français
       (anglais, allemand, italien…) — annote les fragments éditorialisants
       dans la langue d'origine.
   - `weight` ∈ {0.25, 0.5, 1.0} :
-    - 0.25 : très légère éditorialisation.
+    - 0.25 : très légère éditorialisation (sera probablement masquée à
+             l'affichage — ne l'utilise QUE si tu hésites vraiment à inclure).
     - 0.5  : cadrage modéré (factuel + nuance assumée).
     - 1.0  : éditorialisation forte (verbes chargés, jeux de mots, synthèses
              partisanes, expressions clivantes).
@@ -102,15 +120,26 @@ Où :
       noms de médias résiduels comme « - Le Monde », « | Libération »,
       « – BFMTV » qui auraient échappé au strip backend).
 
+CONTRE-EXEMPLES (à NE JAMAIS surligner — renvoie-les en exclude_spans ou ignore) :
+- Fillers d'actu : « en direct », « direct », « vidéo », « photos »,
+  « décryptage », « EN IMAGES ». Descriptifs, jamais un parti pris.
+- Gentilés purement descriptifs : « français », « iraniens », « afrique »,
+  « bretonne » employés comme simple localisation.
+- Dates, heures, nombres, pourcentages, ponctuation, séparateurs (« - », « | »).
+- Clauses longues / phrases relatives : ne surligne pas une demi-phrase pour
+  « expliquer » le titre — coupe au fragment chargé ou n'annote rien.
+
 RÈGLES IMPORTANTES :
 - Tes `start`/`end` doivent référer EXACTEMENT à des indices dans le titre
   fourni (codepoints Unicode). Le champ `text` doit être ce que donne
-  `titre[start:end]`.
+  `titre[start:end]`, ponctuation de bord EXCLUE (pas de guillemet ni « : »
+  en début/fin de span).
 - Si un fragment éditorialisant fait 2+ mots contigus, fais UN span
-  `multi_token_expression` couvrant toute l'expression — pas plusieurs.
+  `multi_token_expression` couvrant toute l'expression — pas plusieurs, et
+  jamais un span imbriqué dans un autre.
 - Pas de chevauchement entre target_spans et exclude_spans.
-- L'absence totale d'éditorialisation est légitime : `target_spans: []` est
-  valide pour un titre 100 % factuel.
+- L'absence totale d'éditorialisation est légitime et ATTENDUE : `target_spans:
+  []` est la bonne réponse pour un titre factuel — vide vaut mieux que faible.
 - `confidence` ∈ [0, 1] : auto-évaluation de la difficulté du cas.
 - `notes` : 1 phrase justifiant l'analyse globale du titre (utile au debug).
 - Réponds UNIQUEMENT par le JSON, sans markdown, sans préambule.

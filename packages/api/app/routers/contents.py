@@ -30,7 +30,9 @@ from app.services.feed_cache import FEED_CACHE
 from app.services.title_annotation_service import (
     ClusterAnnotations,
     TitleAnnotationService,
+    _is_real_word,
     get_title_annotation_service,
+    spans_overlap,
 )
 
 logger = structlog.get_logger()
@@ -1045,6 +1047,121 @@ async def _refresh_perspectives_cache_background(
         _perspectives_refresh_inflight.discard(content_id)
 
 
+# --------------------------------------------------------------------------- #
+# Serve-time STRUCTURAL refinement of highlight spans (Story 7.4 —             #
+# highlight-quality, precision-first). Every helper below is context-FREE:     #
+# it fixes offsets, trims punctuation, drops non-words and de-nests overlaps.  #
+# Editorial, context-dependent decisions (is « en direct » filler? is a        #
+# gentilé framing? where to cut a clause?) are NOT made here — they live in    #
+# the LLM prompt and are measured by the benchmark. Keep it that way.          #
+# --------------------------------------------------------------------------- #
+
+# Display gate on the LLM's own 0.25/0.5/1.0 weight: surface only spans the
+# model already rated as moderate-or-stronger editorialisation. Not a business
+# rule — it reuses the existing LLM signal. Lower the constant to widen recall.
+MIN_DISPLAY_WEIGHT = 0.5
+
+# Characters trimmed from a span's edges: quotes + punctuation + whitespace.
+# Edge-only — internal elision apostrophes (l'arrêt) and hyphens (Jean-Pierre)
+# survive because their neighbours are letters.
+_EDGE_STRIP = frozenset(" \t\"'«»“”‘’„:;,.!?()[]{}…–—-·•|/\\")
+
+
+def _passes_weight_gate(span: dict) -> bool:
+    """Keep spans whose LLM weight ≥ MIN_DISPLAY_WEIGHT (missing weight = keep)."""
+    try:
+        return float(span.get("weight", 1.0)) >= MIN_DISPLAY_WEIGHT
+    except (TypeError, ValueError):
+        return True
+
+
+def _trim_span_edges(start: int, end: int, title: str) -> tuple[int, int]:
+    """Shrink [start, end) past leading/trailing edge punctuation/quotes."""
+    while start < end and title[start] in _EDGE_STRIP:
+        start += 1
+    while end > start and title[end - 1] in _EDGE_STRIP:
+        end -= 1
+    return start, end
+
+
+def _enforce_offset_invariant(spans: list[dict], title: str) -> list[dict]:
+    """Drop or re-anchor every span so that ``title[start:end] == text`` (B).
+
+    A span whose stored offsets land on the wrong characters of the *served*
+    title (cache computed on a different title, an RSS leading space, a stale
+    source suffix) is re-localised via `find_span`; if its text is absent from
+    the served title it is dropped. precision-first: a mis-placed highlight is
+    worse than no highlight.
+    """
+    if not spans:
+        return spans
+    # Lazy import: `llm_bias_annotation_service` pulls in the editorial package
+    # which imports back here → a top-level import would be circular.
+    from app.services.llm_bias_annotation_service import find_span
+
+    out: list[dict] = []
+    n = len(title)
+    for span in spans:
+        start = span.get("start", 0)
+        end = span.get("end", 0)
+        text = span.get("text", "")
+        if (
+            isinstance(start, int)
+            and isinstance(end, int)
+            and 0 <= start < end <= n
+            and title[start:end] == text
+        ):
+            out.append(span)
+            continue
+        located = find_span(title, text)
+        if located is None:
+            continue
+        out.append(
+            {
+                **span,
+                "start": located[0],
+                "end": located[1],
+                "text": title[located[0] : located[1]],
+            }
+        )
+    return out
+
+
+def _refine_llm_target_spans(spans: list[dict], title: str) -> list[dict]:
+    """Structural-only refinement of LLM target_spans at serve time (C).
+
+    Order: re-anchor (offset invariant) → weight gate → edge trim → structural
+    validity → de-nest (keep the widest of overlapping spans). NO editorial /
+    content rule — that is strictly the prompt's job (PR2 + benchmark).
+    """
+    # 1. Re-anchor to the served title (drops the unfindable / out-of-bounds).
+    refined = _enforce_offset_invariant(spans, title)
+
+    # 2. Display gate on the LLM's own weight signal.
+    refined = [s for s in refined if _passes_weight_gate(s)]
+
+    # 3. Trim quote/punctuation edges, recompute text from the served title.
+    trimmed: list[dict] = []
+    for s in refined:
+        start, end = _trim_span_edges(s["start"], s["end"], title)
+        if start >= end:
+            continue
+        trimmed.append({**s, "start": start, "end": end, "text": title[start:end]})
+
+    # 4. Structural validity (drops « % », « - », dates, bare numbers, emoji).
+    valid = [s for s in trimmed if _is_real_word(s["text"])]
+
+    # 5. De-nest: keep the widest span of any overlapping/duplicated group
+    #    (« restitutions » ⊂ « restitutions de biens » → keep the latter).
+    kept: list[dict] = []
+    for s in sorted(valid, key=lambda s: s["end"] - s["start"], reverse=True):
+        rng = (s["start"], s["end"])
+        if any(spans_overlap(rng, (k["start"], k["end"])) for k in kept):
+            continue
+        kept.append(s)
+    return sorted(kept, key=lambda s: s["start"])
+
+
 async def _attach_highlight_spans(
     db: AsyncSession,
     content: Content,
@@ -1129,26 +1246,41 @@ async def _attach_highlight_spans(
                 else tokens_by_index.get(i, [])
             )
             bias = p.get("bias_stance") or BiasStance.UNKNOWN.value
+            title_str = p.get("title") or ""
 
             llm_payload = llm_cache.get(alt_id) if alt_id is not None else None
             if llm_payload is not None:
                 # Inject `bias` per span for clients pre-PR-6 that read it
-                # alongside the new `weight`/`category`/`justification`.
-                # Clamp spans against the served title length: legacy rows
-                # stored positions on the raw RSS title before the source
-                # suffix was stripped at ingestion, so an end > len(title)
-                # would crash the Flutter DiffTitle layout.
-                title_len = len(p.get("title") or "")
-                p["highlight_spans"] = [
+                # alongside the new `weight`/`category`/`justification`, then
+                # run the structural-only refinement: offset invariant (B) +
+                # edge trim + validity + de-nest + weight gate (C). Editorial
+                # judgment stays in the prompt, never here.
+                raw_spans = [
                     {**span, "bias": bias}
                     for span in (llm_payload.get("target_spans") or [])
-                    if span.get("start", 0) >= 0
-                    and span.get("end", 0) <= title_len
-                    and span.get("start", 0) < span.get("end", 0)
                 ]
+                p["highlight_spans"] = _refine_llm_target_spans(raw_spans, title_str)
                 llm_used += 1
+            elif alt_id is not None:
+                # In-cluster perspective without an LLM annotation yet → default
+                # spaCy diff (cap 4, every KEEP_POS — unchanged), guarded by the
+                # offset invariant against the served title.
+                p["highlight_spans"] = _enforce_offset_invariant(
+                    svc.diff_spans(ref_tokens, alt_tokens, bias), title_str
+                )
             else:
-                p["highlight_spans"] = svc.diff_spans(ref_tokens, alt_tokens, bias)
+                # Off-cluster live perspective → conservative D2 floor
+                # (ADJ/VERB only, cap 2), then the offset invariant.
+                p["highlight_spans"] = _enforce_offset_invariant(
+                    svc.diff_spans(
+                        ref_tokens,
+                        alt_tokens,
+                        bias,
+                        max_spans=svc.OFF_CLUSTER_MAX_SPANS,
+                        allowed_pos=svc.OFF_CLUSTER_ALLOWED_POS,
+                    ),
+                    title_str,
+                )
             p["shared_tokens"] = svc.compute_shared_tokens(ref_tokens, alt_tokens)
 
         return (
