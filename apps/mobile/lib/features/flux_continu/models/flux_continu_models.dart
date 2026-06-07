@@ -295,12 +295,17 @@ class FeedThemeSection extends FluxSection {
     int? currentPage,
     bool? hasMore,
     bool? isLoadingMore,
+    // Story « cartes ≤ écran » : le compte d'affichage fitté (min(défaut, fit))
+    // est porté par la section. Sans ce paramètre, le dédup/`_filterSections`/
+    // `loadMoreTheme` (qui recopient via copyWith) réinitialiseraient le compte
+    // au défaut à chaque recompose — le piège le plus facile à introduire.
+    int? coreVisibleCount,
   }) {
     return FeedThemeSection(
       kind: kind,
       label: label,
       accent: accent,
-      coreVisibleCount: coreVisibleCount,
+      coreVisibleCount: coreVisibleCount ?? this.coreVisibleCount,
       items: items ?? this.items,
       themeSlug: themeSlug,
       customTopicId: customTopicId,

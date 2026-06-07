@@ -52,10 +52,11 @@ const double _kStickyThreshold = 60.0;
 
 /// Vertical offset the sticky bar consumes — used as a landing buffer
 /// when scrolling a section into view so its banner doesn't disappear
-/// behind the bar. Trimmed from 90 → 54 after the head title (~36px) was
-/// dropped from the sticky overlay: tabs row (48) + progress track (4) + a
-/// couple px of slack.
-const double _kStickyBarHeight = 54.0;
+/// behind the bar. Trimmed 90 → 54 (head title dropped) then 54 → 50 after the
+/// tabs row was compacted 48 → 44 (« cartes ≤ écran »): tabs row (44) + progress
+/// track (4) + refresh strip (2). **Must mirror the real sticky bar height** —
+/// it feeds the snap framing AND the fit budget ([usableViewportHeightProvider]).
+const double _kStickyBarHeight = 50.0;
 
 // Section-snap tuning lives in `utils/section_snap.dart` (kSnapCaptureFraction,
 // kBoundaryCrossVelocity, kSnapEpsilon, kSnapSpring) so the resting-position
@@ -291,6 +292,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       if (nextFab != _showScrollTopFab) {
         setState(() => _showScrollTopFab = nextFab);
       }
+      // Footer auto-hide (app-wide) : visible vers le haut / près du sommet,
+      // caché vers le bas. Même seuil directionnel que le FAB.
+      updateFooterVisibility(
+        ref,
+        delta < 0 || currentScroll < _kStickyThreshold,
+      );
       _lastScrollPos = currentScroll;
     }
 
@@ -478,6 +485,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // footer bar + bottom safe-area, else the last cards (« Lire plus ») are
     // truncated.
     final visibleBottom = scrollBox.size.height - _safeAreaBottom;
+    // « Estimer pour contrôler, mesurer pour vérifier » : on publie le budget
+    // de hauteur utile (identique à la frontière tall/free du snap ci-dessous)
+    // pour que le provider décide combien d'articles tiennent. Anti-boucle :
+    // écriture seulement si la valeur arrondie change.
+    _publishUsableHeight(visibleBottom - _kStickyBarHeight);
     final result = <SectionFrame>[];
     _dotIndexByTop.clear();
     final tall = <int>{};
@@ -511,6 +523,37 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (!setEquals(_tallSections.value, tall)) {
       _tallSections.value = tall;
     }
+    // Filet de vérification (pas de pilotage) : en debug, signale toute section
+    // multi-articles qui reste « tall » malgré le fit côté provider — c'est le
+    // symptôme d'une estimation `section_fit` trop généreuse (constantes à
+    // régler). `_FreeReadEdgeFade` ne devrait plus jamais s'afficher dessus.
+    assert(() {
+      if (tall.isEmpty) return true;
+      final sections = ref.read(fluxContinuProvider).valueOrNull?.sections;
+      if (sections == null) return true;
+      for (final idx in tall) {
+        if (idx < 0 || idx >= sections.length) continue;
+        debugPrint(
+          '[fit-net] section "${sections[idx].label}" dépasse l\'écran '
+          '(reste tall) — estimation section_fit trop généreuse, à régler.',
+        );
+      }
+      return true;
+    }());
+  }
+
+  /// Threads the measured usable scroll height to [usableViewportHeightProvider]
+  /// so the provider can decide how many articles each section may show. Same
+  /// budget the snap uses (viewport − safe-area-bottom − sticky bar). Anti-boucle :
+  /// only writes when the rounded value actually moves, so the provider recompose
+  /// it triggers (→ screen rebuild → this runs again, same value) terminates.
+  void _publishUsableHeight(double height) {
+    if (height <= 0) return;
+    final rounded = height.roundToDouble();
+    final notifier = ref.read(usableViewportHeightProvider.notifier);
+    final current = notifier.state;
+    if (current != null && (current - rounded).abs() < 1.0) return;
+    notifier.state = rounded;
   }
 
   /// Defers an anchor recompute to the next post-frame (when layout is settled),
@@ -581,6 +624,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   Future<void> _scrollToTop() async {
     if (!_scroll.hasClients) return;
     unawaited(HapticFeedback.lightImpact());
+    // Remonter doit toujours révéler le footer (jamais « collé » masqué).
+    updateFooterVisibility(ref, true);
     await _scroll.animateTo(
       0,
       duration: const Duration(milliseconds: 900),

@@ -19,6 +19,7 @@ import 'package:facteur/features/grille/repositories/grille_repository.dart';
 import 'package:facteur/features/my_interests/models/user_interests_state.dart';
 import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
+import 'package:flutter/material.dart' show Color;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
@@ -920,6 +921,161 @@ void main() {
       );
     });
   });
+
+  group('FluxContinuNotifier — fit dynamique « cartes ≤ écran »', () {
+    EssentielArticle essArticle(String id) => EssentielArticle(
+          contentId: id,
+          title: 'Essentiel $id',
+          url: 'https://x.test/$id',
+          publishedAt: DateTime(2026, 1, 1),
+          sourceName: 'Source',
+          sourceLetter: 'S',
+          sectionLabel: 'Tech',
+          rank: 1,
+        );
+
+    /// Container with a hero of [essentielIds] and a single 'tech' theme
+    /// favorite whose feed carries [themeFeedIds]. [usableHeight] threads the
+    /// fit budget (null = pas encore mesuré ⇒ défauts).
+    ProviderContainer makeFitContainer({
+      required List<String> essentielIds,
+      required List<String> themeFeedIds,
+      double? usableHeight,
+    }) {
+      when(
+        () => feedRepo.getFeed(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+          theme: any(named: 'theme'),
+          serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
+        ),
+      ).thenAnswer(
+        (_) async => _feedResponseWithIds(themeFeedIds, hasNext: false),
+      );
+      return ProviderContainer(
+        overrides: [
+          digestRepositoryProvider.overrideWithValue(digestRepo),
+          feedRepositoryProvider.overrideWithValue(feedRepo),
+          fluxContinuRepositoryProvider.overrideWithValue(fluxRepo),
+          essentielRepositoryProvider.overrideWithValue(
+            _FixedEssentielRepository(essentielIds.map(essArticle).toList()),
+          ),
+          grilleRepositoryProvider.overrideWithValue(_NoGrilleRepository()),
+          userInterestsProvider.overrideWith(
+            () => _StubUserInterestsNotifier(
+              _interestsState(favorites: const [ThemeFavoriteRef(slug: 'tech')]),
+            ),
+          ),
+          sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+          if (usableHeight != null)
+            usableViewportHeightProvider.overrideWith((ref) => usableHeight),
+        ],
+      );
+    }
+
+    test(
+      'small usable height trims the hero AND releases ejected ids downstream',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        // 4 hero articles ; the 'tech' feed carries the two that would be
+        // ejected (e3, e4) plus its own items.
+        final container = makeFitContainer(
+          essentielIds: const ['e1', 'e2', 'e3', 'e4'],
+          themeFeedIds: const ['e3', 'e4', 'x1', 'x2'],
+          usableHeight: 500,
+        );
+        addTearDown(container.dispose);
+
+        final state = await container.read(fluxContinuProvider.future);
+
+        // (a) hero trimmed to the lead + one medium (fitHeroCount(500) == 2).
+        final hero = state.sections.whereType<EssentielSection>().single;
+        expect(hero.articles.map((a) => a.contentId), ['e1', 'e2']);
+
+        // (b) the ejected ids reappear in the next section (« sortent du pool »).
+        final theme = state.sections.whereType<FeedThemeSection>().single;
+        expect(theme.items.map((c) => c.id), containsAll(['e3', 'e4']));
+
+        // (c) downstream cap ≤ default (3) and ≥ 1 — fitVisibleCount(500) == 2.
+        expect(theme.coreVisibleCount, 2);
+
+        // (d) the "+N" footer count derives correctly (totalCount − cap).
+        expect(theme.totalCount - theme.coreVisibleCount, 2);
+      },
+    );
+
+    test(
+      'no measure yet (null height) keeps defaults — hero & dedup untouched',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        final container = makeFitContainer(
+          essentielIds: const ['e1', 'e2', 'e3', 'e4'],
+          themeFeedIds: const ['e3', 'e4', 'x1', 'x2'],
+          // usableHeight null ⇒ provider default (no fit applied).
+        );
+        addTearDown(container.dispose);
+
+        final state = await container.read(fluxContinuProvider.future);
+
+        final hero = state.sections.whereType<EssentielSection>().single;
+        expect(hero.articles.map((a) => a.contentId), ['e1', 'e2', 'e3', 'e4']);
+        // Hero kept all 4 ⇒ dedup strips e3/e4 from the theme section.
+        final theme = state.sections.whereType<FeedThemeSection>().single;
+        expect(theme.items.map((c) => c.id), ['x1', 'x2']);
+        expect(theme.coreVisibleCount, 3);
+      },
+    );
+
+    test('the dynamic cap survives a dismiss (copyWith preserves it)', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final container = makeFitContainer(
+        essentielIds: const ['e1', 'e2'],
+        themeFeedIds: const ['x1', 'x2', 'x3', 'x4'],
+        usableHeight: 500,
+      );
+      addTearDown(container.dispose);
+
+      final state = await container.read(fluxContinuProvider.future);
+      final theme = state.sections.whereType<FeedThemeSection>().single;
+      expect(theme.coreVisibleCount, 2);
+
+      // Dismissing an item routes through _filterSections → copyWith, which must
+      // NOT reset the capped coreVisibleCount back to the default 3.
+      container.read(fluxContinuProvider.notifier).confirmDismiss('x4');
+      await pumpEventQueue(times: 2);
+
+      final after = container.read(fluxContinuProvider).requireValue;
+      final themeAfter = after.sections.whereType<FeedThemeSection>().single;
+      expect(themeAfter.coreVisibleCount, 2);
+      expect(themeAfter.items.map((c) => c.id), isNot(contains('x4')));
+    });
+  });
+
+  group('FeedThemeSection.copyWith', () {
+    test('preserves coreVisibleCount and the source/theme/pagination fields',
+        () {
+      const section = FeedThemeSection(
+        kind: SectionKind.theme,
+        label: 'Tech',
+        accent: Color(0xFF000000),
+        coreVisibleCount: 3,
+        themeSlug: 'tech',
+        items: <Content>[],
+        currentPage: 2,
+        hasMore: true,
+      );
+
+      // Untouched copy keeps the dynamic count.
+      expect(section.copyWith(hasMore: false).coreVisibleCount, 3);
+
+      // Explicit override sets the capped count while keeping other fields.
+      final capped = section.copyWith(coreVisibleCount: 1);
+      expect(capped.coreVisibleCount, 1);
+      expect(capped.themeSlug, 'tech');
+      expect(capped.currentPage, 2);
+    });
+  });
 }
 
 /// Stub EssentielRepository returning exactly one [EssentielArticle] so the
@@ -930,4 +1086,13 @@ class _OneArticleEssentielRepository implements EssentielRepository {
 
   @override
   Future<List<EssentielArticle>?> fetch() async => [_article];
+}
+
+/// Stub EssentielRepository returning a fixed list — drives the hero-fit tests.
+class _FixedEssentielRepository implements EssentielRepository {
+  _FixedEssentielRepository(this._articles);
+  final List<EssentielArticle> _articles;
+
+  @override
+  Future<List<EssentielArticle>?> fetch() async => _articles;
 }

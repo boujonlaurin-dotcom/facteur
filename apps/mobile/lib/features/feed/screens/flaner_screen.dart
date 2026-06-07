@@ -29,6 +29,10 @@ const double _kLoadMoreLeadingPx = 800.0;
 const double _kScrollDirThreshold = 12.0;
 const double _kFabHideAboveScroll = 380.0;
 
+/// Sous ce seuil le footer reste révélé même en scrollant vers le bas
+/// (on est effectivement « près du sommet »).
+const double _kFooterRevealNearTop = 60.0;
+
 class FlanerScreen extends ConsumerStatefulWidget {
   const FlanerScreen({super.key});
 
@@ -74,6 +78,12 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
       if (nextFab != _showScrollTopFab) {
         setState(() => _showScrollTopFab = nextFab);
       }
+      // Footer auto-hide (app-wide) : les deux branches du StatefulShellRoute
+      // partagent ce footer → même logique que L'Essentiel.
+      updateFooterVisibility(
+        ref,
+        delta < 0 || currentScroll < _kFooterRevealNearTop,
+      );
       _lastScrollPos = currentScroll;
     }
 
@@ -111,6 +121,7 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
   Future<void> _scrollToTop() async {
     if (!_scroll.hasClients) return;
     unawaited(HapticFeedback.lightImpact());
+    updateFooterVisibility(ref, true);
     await _scroll.animateTo(
       0,
       duration: const Duration(milliseconds: 700),
