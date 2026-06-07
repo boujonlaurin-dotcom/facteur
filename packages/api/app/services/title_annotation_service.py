@@ -40,6 +40,31 @@ def _strip_accents(s: str) -> str:
     )
 
 
+def _is_real_word(text: str) -> bool:
+    """Structural validity guard: a highlightable fragment must carry ≥ 2
+    alphabetic characters.
+
+    Context-independent by construction — it makes NO editorial judgment, it
+    only rejects fragments that cannot be a word in *any* context: ``%``, ``-``,
+    ``|``, dates like ``04/06``, bare numbers (``105``, ``1.0``) and emoji.
+    spaCy's `fr_core_news_md` routinely mis-tags these as content POS, so they
+    pass `KEEP_POS` and surface as highlights (the « % » in « 18% », the « - »
+    from a « - Le Monde » suffix). Real short words (``UE``, ``IA``) keep their
+    two letters and pass.
+    """
+    return sum(c.isalpha() for c in text) >= 2
+
+
+def spans_overlap(a: tuple[int, int], b: tuple[int, int]) -> bool:
+    """True when half-open intervals ``[a0, a1)`` and ``[b0, b1)`` share a position.
+
+    Single source of truth shared by the offline evaluator
+    (`scripts/evaluate_title_annotations.py`, which re-exports it) and the
+    serve-time span de-nesting in `routers/contents.py` — keep them in lock-step.
+    """
+    return not (a[1] <= b[0] or b[1] <= a[0])
+
+
 @dataclass
 class ClusterAnnotations:
     """Container holding both the cached tokens and the URL→content_id map.
@@ -54,9 +79,21 @@ class ClusterAnnotations:
 
 
 class TitleAnnotationService:
-    MODEL_VERSION = "v1-spacy-fr_md"
+    # v2 bumped (2026-06-07) so the structural `_is_real_word` guard purges the
+    # `strong_tokens` cache polluted with « % », « - », « | », dates and bare
+    # numbers. Filtered by `model_version` at read time → no DB migration.
+    MODEL_VERSION = "v2-spacy-fr_md"
     KEEP_POS = frozenset({"NOUN", "PROPN", "ADJ", "VERB"})
     MAX_HIGHLIGHTED_PER_TITLE = 4
+
+    # Off-cluster (live Google News) deterministic floor — policy D2 (PO
+    # decision 2026-06-07). Without an LLM pass we cannot make the
+    # context-dependent editorial calls, so the spaCy path is restricted to the
+    # two POS least likely to be neutral (loaded verbs + adjectives) and capped
+    # hard at 2. Flip to D1 (no highlight at all off-cluster) by setting
+    # OFF_CLUSTER_MAX_SPANS = 0. In-cluster behaviour is unchanged.
+    OFF_CLUSTER_MAX_SPANS = 2
+    OFF_CLUSTER_ALLOWED_POS = frozenset({"ADJ", "VERB"})
     # Lower number = higher priority when capping at MAX_HIGHLIGHTED_PER_TITLE.
     # Entities are demoted to last resort: cluster pivots (Trump, ChatGPT,
     # Cannes…) used to consume the top-4 slots and crowd out the editorial
@@ -106,6 +143,11 @@ class TitleAnnotationService:
                 or _strip_accents(lemma) in FRENCH_STOP_WORDS
             ):
                 continue
+            # Structural guard at the single tokenisation choke-point — protects
+            # BOTH the cluster cache and the live path from spaCy mis-tagging
+            # punctuation / numbers / dates / emoji as content POS.
+            if not _is_real_word(text):
+                continue
             token: dict = {
                 "start": tok.idx,
                 "end": tok.idx + len(tok.text),
@@ -150,17 +192,32 @@ class TitleAnnotationService:
         return [self._doc_to_tokens(doc) for doc in docs]
 
     def diff_spans(
-        self, ref_tokens: list[dict], alt_tokens: list[dict], alt_bias: str
+        self,
+        ref_tokens: list[dict],
+        alt_tokens: list[dict],
+        alt_bias: str,
+        *,
+        max_spans: int | None = None,
+        allowed_pos: frozenset[str] | None = None,
     ) -> list[dict]:
         """Return spans of `alt_tokens` whose lemma is absent from `ref_tokens`.
 
-        Capped at `MAX_HIGHLIGHTED_PER_TITLE`, ordered by PRIORITY (ADJ,
-        then VERB, then NOUN, then PROPN, with NER entities pushed to last
-        resort). `alt_bias` is passed through unchanged to each span as
-        `bias` — the Dart side maps it to a color via `getBiasColor`.
+        Ordered by PRIORITY (ADJ, then VERB, then NOUN, then PROPN, with NER
+        entities pushed to last resort). `alt_bias` is passed through unchanged
+        to each span as `bias` — the Dart side maps it to a color via
+        `getBiasColor`.
+
+        `max_spans` / `allowed_pos` are keyword-only and default to the
+        in-cluster policy (cap `MAX_HIGHLIGHTED_PER_TITLE`, every `KEEP_POS`).
+        The off-cluster live path passes the conservative D2 floor
+        (`OFF_CLUSTER_MAX_SPANS` / `OFF_CLUSTER_ALLOWED_POS`); `max_spans=0`
+        yields the empty list (policy D1).
         """
+        cap = self.MAX_HIGHLIGHTED_PER_TITLE if max_spans is None else max_spans
         ref_lemmas = {t["lemma"] for t in ref_tokens}
         divergent = [t for t in alt_tokens if t["lemma"] not in ref_lemmas]
+        if allowed_pos is not None:
+            divergent = [t for t in divergent if t["pos"] in allowed_pos]
         ranked = sorted(
             divergent,
             key=lambda t: self.PRIORITY.get(
@@ -174,7 +231,7 @@ class TitleAnnotationService:
                 "text": t["text"],
                 "bias": alt_bias,
             }
-            for t in ranked[: self.MAX_HIGHLIGHTED_PER_TITLE]
+            for t in ranked[:cap]
         ]
 
     def compute_shared_tokens(

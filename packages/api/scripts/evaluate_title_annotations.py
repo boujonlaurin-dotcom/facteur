@@ -40,9 +40,10 @@ from pathlib import Path
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-from app.services.title_annotation_service import (  # noqa: E402
+from app.services.title_annotation_service import (  # noqa: E402,F401
     TitleAnnotationService,
     get_title_annotation_service,
+    spans_overlap,  # re-exported: single source of truth for the overlap predicate
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -74,8 +75,9 @@ def fuse_spans(spans: list[dict], gap: int = 1) -> list[tuple[int, int]]:
     return fused
 
 
-def spans_overlap(a: tuple[int, int], b: tuple[int, int]) -> bool:
-    return not (a[1] <= b[0] or b[1] <= a[0])
+# `spans_overlap` is imported from `app.services.title_annotation_service`
+# (re-exported above) so the evaluator and the serve-time refinement in
+# `routers/contents.py` share one predicate.
 
 
 # ---------------------------------------------------------------------------
