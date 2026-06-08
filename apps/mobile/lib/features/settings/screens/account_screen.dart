@@ -98,6 +98,72 @@ class AccountScreen extends ConsumerWidget {
               ),
             ),
 
+            // Section Abonnements (médias payants connectés)
+            const SizedBox(height: FacteurSpacing.space6),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(FacteurSpacing.space4),
+              decoration: BoxDecoration(
+                color: colors.surface,
+                borderRadius: BorderRadius.circular(FacteurRadius.large),
+                border: Border.all(color: colors.surfaceElevated),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'ABONNEMENTS',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: colors.textTertiary,
+                          letterSpacing: 1.5,
+                        ),
+                  ),
+                  const SizedBox(height: FacteurSpacing.space3),
+                  InkWell(
+                    onTap: () => context.push(RoutePaths.subscriptions),
+                    borderRadius: BorderRadius.circular(FacteurRadius.medium),
+                    child: Row(
+                      children: [
+                        Icon(
+                          PhosphorIcons.link(PhosphorIconsStyle.regular),
+                          color: colors.primary,
+                          size: 20,
+                        ),
+                        const SizedBox(width: FacteurSpacing.space3),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Mes abonnements',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(fontWeight: FontWeight.w500),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Gère tes médias payants connectés',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: colors.textSecondary),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(
+                          PhosphorIcons.caretRight(),
+                          color: colors.textTertiary,
+                          size: 18,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
             // Section Widget (Android uniquement, masquée sur Web)
             if (!kIsWeb && Platform.isAndroid) ...[
               const SizedBox(height: FacteurSpacing.space6),

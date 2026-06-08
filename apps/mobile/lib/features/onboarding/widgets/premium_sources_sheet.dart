@@ -291,21 +291,14 @@ class _PremiumSourcesSheetState extends ConsumerState<PremiumSourcesSheet> {
   }
 
   Future<void> _connectSource(BuildContext context, Source source) async {
-    await HapticFeedback.lightImpact();
-    // Source validée sans connecteur premium : un simple toggle « abonné »
-    // suffit (persisté via updateSourceSubscription), sans ouvrir l'écran de
-    // connexion premium qui n'aurait rien à connecter.
-    if (source.premiumConnection == null) {
-      await ref
-          .read(userSourcesProvider.notifier)
-          .connectSubscription(source.id);
-      if (mounted) {
-        setState(() => _subscribed.add(source.id));
-      }
-      return;
-    }
-    if (!mounted) return;
+    // Toujours passer par le flow de connexion premium. On ne fait plus de
+    // `connectSubscription` direct (il levait un 400 PremiumConnectionNotEnabled
+    // quand la config premium était absente). Depuis le fallback générique
+    // backend, premiumConnection est non-null pour toute source payante.
+    if (source.premiumConnection == null) return;
     final navigator = Navigator.of(context);
+    await HapticFeedback.lightImpact();
+    if (!mounted) return;
     await navigator.push<void>(
       MaterialPageRoute(
         builder: (_) => PremiumSourceConnection(
