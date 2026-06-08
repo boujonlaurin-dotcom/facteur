@@ -27,7 +27,7 @@ class _StubInterests extends UserInterestsNotifier {
         customTopics: [],
         favorites: [],
         favoriteCount: 0,
-        favoriteCap: 5,
+        favoriteCap: 7,
       );
 }
 
@@ -37,7 +37,7 @@ class _StubSources extends UserSourcesStateNotifier {
         sources: [],
         favorites: [],
         favoriteCount: 0,
-        favoriteCap: 5,
+        favoriteCap: 7,
       );
 }
 
