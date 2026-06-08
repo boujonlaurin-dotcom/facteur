@@ -213,6 +213,9 @@ async def _get_rows(user_id: UUID, db: AsyncSession) -> dict[str, UserLetterProg
 
 async def _init_progress(user_id: UUID, db: AsyncSession) -> None:
     """Crée les 3 rows initiales pour un nouveau user."""
+    from app.services.user_service import UserService
+
+    await UserService(db).get_or_create_profile(str(user_id))
     now = datetime.now(UTC)
     for catalog in LETTERS_ORDER:
         default_status = catalog["default_status"]
