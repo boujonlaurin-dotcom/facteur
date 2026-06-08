@@ -17,6 +17,10 @@ from app.models.source import Source, UserSource
 from app.models.user import UserInterest
 from app.models.user_personalization import UserPersonalization
 from app.schemas.source import PremiumConnectionResponse, SourceResponse
+from app.services.premium_curated_sources import (
+    PREMIUM_CURATED_MAP,
+    is_paywalled_source,
+)
 
 logger = structlog.get_logger()
 
@@ -195,8 +199,9 @@ class PepiteService:
                 score_ux=s.score_ux,
                 recommended_by=getattr(s, "recommended_by", None),
                 recommendation_reason=getattr(s, "recommendation_reason", None),
-                premium_connection=PremiumConnectionResponse.from_config(
-                    getattr(s, "premium_connection_config", None)
+                has_paywall=is_paywalled_source(s, curated_map=PREMIUM_CURATED_MAP),
+                premium_connection=PremiumConnectionResponse.from_source(
+                    s, curated_map=PREMIUM_CURATED_MAP
                 ),
             )
             for s, follower_count in selected

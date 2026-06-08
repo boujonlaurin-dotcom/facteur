@@ -39,6 +39,10 @@ from app.schemas.source import (
 )
 from app.services.feed_cache import FEED_CACHE
 from app.services.pepite_service import PepiteService
+from app.services.premium_curated_sources import (
+    PREMIUM_CURATED_MAP,
+    is_paywalled_source,
+)
 from app.services.search.smart_source_search import (
     SmartSourceSearchService,
     mark_search_abandoned,
@@ -263,8 +267,9 @@ def _source_to_response(
         score_ux=s.score_ux,
         recommended_by=getattr(s, "recommended_by", None),
         recommendation_reason=getattr(s, "recommendation_reason", None),
-        premium_connection=PremiumConnectionResponse.from_config(
-            getattr(s, "premium_connection_config", None)
+        has_paywall=is_paywalled_source(s, curated_map=PREMIUM_CURATED_MAP),
+        premium_connection=PremiumConnectionResponse.from_source(
+            s, curated_map=PREMIUM_CURATED_MAP
         ),
     )
 
