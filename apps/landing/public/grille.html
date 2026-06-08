@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facteur — Le mot du jour</title>
+    <meta name="description" content="Ouvre le défi Mot du jour dans l'app Facteur.">
+
+    <link rel="icon" href="/favicon.ico">
+    <link rel="stylesheet" href="/css/style.css?v=3">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        .grille-redirect {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 60vh;
+            text-align: center;
+            padding: 2rem;
+        }
+        .grille-redirect__emoji {
+            font-size: 4rem;
+            margin-bottom: 1.5rem;
+        }
+        .grille-redirect__title {
+            font-size: 1.75rem;
+            font-weight: 800;
+            margin-bottom: 0.75rem;
+        }
+        .grille-redirect__subtitle {
+            font-size: 1.1rem;
+            color: #666;
+            margin-bottom: 2rem;
+            max-width: 360px;
+        }
+        .grille-redirect__btn {
+            display: inline-block;
+            background: #111;
+            color: #fff;
+            font-weight: 700;
+            font-size: 1rem;
+            padding: 0.9rem 2rem;
+            border-radius: 12px;
+            text-decoration: none;
+            margin-bottom: 1rem;
+            cursor: pointer;
+            border: none;
+        }
+        .grille-redirect__btn:hover {
+            background: #333;
+        }
+        .grille-redirect__stores {
+            display: none;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin-top: 1rem;
+        }
+        .grille-redirect__stores a {
+            font-size: 0.95rem;
+            color: #0a58ca;
+            text-decoration: underline;
+        }
+        .grille-redirect__status {
+            font-size: 0.9rem;
+            color: #999;
+            margin-top: 1.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <header class="section hero legal-page__hero" style="min-height: auto; padding: 2rem 0 1rem;">
+        <div class="container">
+            <a href="/" class="section-nav__item" style="font-size:0.9rem;">← Facteur</a>
+        </div>
+    </header>
+
+    <main>
+        <div class="grille-redirect">
+            <div class="grille-redirect__emoji">🔡</div>
+            <h1 class="grille-redirect__title">Le mot du jour</h1>
+            <p class="grille-redirect__subtitle">Ouverture de Facteur en cours…</p>
+
+            <button class="grille-redirect__btn" id="open-btn" onclick="tryOpen()">
+                Ouvrir dans Facteur
+            </button>
+
+            <div class="grille-redirect__stores" id="stores">
+                <p style="font-size:0.9rem; color:#555; margin:0">Facteur n'est pas installé ?</p>
+                <!-- TODO: remplacer par les vraies URLs App Store / Play Store une fois les IDs connus -->
+                <a href="https://apps.apple.com/fr/app/facteur" id="ios-link">Télécharger sur l'App Store</a>
+                <a href="https://play.google.com/store/apps/details?id=com.example.facteur" id="android-link">Télécharger sur Google Play</a>
+            </div>
+
+            <p class="grille-redirect__status" id="status"></p>
+        </div>
+    </main>
+
+    <script>
+        const DEEP_LINK = 'io.supabase.facteur://grille';
+        const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        const ANDROID = /android/i.test(navigator.userAgent);
+
+        function tryOpen() {
+            document.getElementById('status').textContent = 'Tentative d\'ouverture…';
+
+            // Masquer le bouton, tenter le deep link
+            document.getElementById('open-btn').disabled = true;
+            window.location.href = DEEP_LINK;
+
+            // Si l'app n'est pas installée, la page reste visible après ~1.5s
+            setTimeout(function () {
+                // Si la page est toujours active (pas de changement de focusen arrière-plan),
+                // l'app n'a pas été ouverte → afficher les stores
+                document.getElementById('stores').style.display = 'flex';
+                document.getElementById('status').textContent =
+                    'L\'app ne s\'est pas ouverte automatiquement.';
+                document.getElementById('open-btn').disabled = false;
+
+                // Masquer le lien store non pertinent
+                if (IOS) {
+                    document.getElementById('android-link').style.display = 'none';
+                } else if (ANDROID) {
+                    document.getElementById('ios-link').style.display = 'none';
+                }
+            }, 1500);
+        }
+
+        // Lancer automatiquement au chargement
+        window.addEventListener('load', function () {
+            tryOpen();
+        });
+    </script>
+</body>
+
+</html>
