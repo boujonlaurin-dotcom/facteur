@@ -1,56 +1,54 @@
-# L'Essentiel : cartes qui ne dépassent jamais l'écran (+ footer auto-hide)
+# Tournée — clarifier les limites + affordance du bouton de passage + auto-scroll
 
 ## Résumé
 
-Dans **Flux Continu / L'Essentiel**, une carte plus haute que l'écran gagnait une
-« free-read interior » qui se battait avec le snap inter-sections. Cette PR
-garantit qu'**aucune carte ne dépasse la hauteur utile de l'écran** (bouton
-« Lire plus » inclus) → `_tallSections` vide → 1 point de snap par section, feel
-cohérent page par page. **1 seule PR** (validée PO).
-
-## Décision d'architecture — « estimer pour contrôler, mesurer pour vérifier »
-
-Le « combien d'articles tiennent » est décidé **côté provider** par une estimation
-de hauteur **conservatrice** (titre à son `maxLines` max), pas de mesure runtime
-qui pilote le rendu. La mesure post-frame (`_recomputeSnapAnchors` /
-`_tallSections`) sert de **filet QA**. Budget **identique au snap** :
-`usableHeight = scrollViewportHeight − safeAreaBottom − _kStickyBarHeight`.
-
-« Le héros qui ne tient pas sort du pool et réapparaît ailleurs » est gratuit :
-trimmer la liste du héros **avant** le dédup inter-sections relâche les articles
-éjectés vers les sections aval qui portent le même `contentId`.
+Refonte de la modal « Mes favoris » (`manage_favorites_sheet.dart`, ouverte depuis
+L'Essentiel et les onglets Flâner) pour lever la confusion entre les trois
+mécanismes de limite, et élargissement du cap Tournée **5 → 7**.
 
 ## Changements
 
-- **A. Footer auto-hide app-wide** : `footerVisibleProvider` + `AnimatedSlide`/
-  `IgnorePointer` sur `MainBottomNav` ; `_onScroll` (Essentiel + Flâner) ;
-  re-visible au changement d'onglet / scroll-to-top.
-- **B. Compaction légère** : héros `maxLines 5→4` (lead) / `4→3` (medium) + paddings
-  resserrés (pastille date/météo conservée) ; sticky `48→44` + `_kStickyBarHeight
-  54→50`.
-- **C. Fit dynamique** : `utils/section_fit.dart` (pur) ; `usableViewportHeightProvider`
-  écrit par l'écran (anti-boucle) ; `_compose` trim héros + cap sections aval
-  (`min(défaut, fit)`, plancher 1) ; `FeedThemeSection.copyWith` +param
-  `coreVisibleCount`.
-- **D. Filet** : `assert` debug dans `_recomputeSnapAnchors` qui logge toute
-  section multi-articles restée « tall ».
+### 1. Cap Tournée 5 → 7 (mirrors synchronisés, aucune migration)
+- `tournee_order_prefs_provider.dart` : `kTourneeVisibleCap` 5 → 7.
+- `flux_continu_provider.dart` : `_kMaxFavoriteSections` & `_kMaxFavoriteSourceSections`
+  5 → 7 (sous-caps par catégorie, avant le `take(kTourneeVisibleCap)`).
+- `config/constants.dart` : `InterestConstants.favoriteCap` 5 → 7 (mirror).
+- `packages/api/app/constants.py` : `FAVORITE_CAP` 5 → 7 (mirror, constante produit —
+  pas de DDL/Alembic). `get_top_themes` borne juste un peu plus large la perso éditoriale.
+- Cap Flâner `kMaxFavoriteTabs = 10` : **inchangé**.
 
-## Tests
-- `section_fit_test.dart` (12) : bornes `fitVisibleCount`/`fitHeroCount` (3/2/1,
-  jamais 0 ; héros garde le lead).
-- `flux_continu_provider_test.dart` (+4) : trim héros, réapparition aval de l'id
-  éjecté, cap aval ≤ défaut & ≥ 1, `+N` correct, cap survit au dismiss, copyWith
-  préserve `coreVisibleCount`.
-- `section_block_test.dart` : `+N` à `coreVisibleCount` réduit (+ correction des
-  lambdas `onTapArticle` héritées de #787 → fichier re-compilable, net positif).
-- `flutter analyze` : 0 issue sur les fichiers touchés.
-- ⚠️ Échec pré-existant non lié : `essentiel_hi_fi_card_test` « flips to the
-  weather badge » (échoue déjà sur `main`).
+### 2. Suppression des blocages « max » par type
+Le backend n'impose aucun cap dur (`FavoriteCapReached` = code mort). Retiré côté
+modal : `interestsAtCap`/`sourcesAtCap`, le paramètre `atCap` des add-lists, les
+`_CapHint(« Maximum … atteint »)`, la classe `_CapHint`, les `catch
+(FavoriteCapReachedException)` et l'import devenu inutile. L'ajout n'est plus jamais
+bloqué ; le surplus reste grisé sous le trait `_CapDivider` existant.
 
-## QA visuelle
-Voir `.context/qa-handoff.md` — Chrome/Playwright **390×844** ET **360×640**
-(cartes ≤ écran, footer slide, snap+haptique non régressés).
+### 3. Compteurs dans les en-têtes
+`_SectionLabel` accepte un `counter` optionnel rendu en pill discret (`· X/7`,
+`· X/10`). Essentiel = `clamp(0, 7)/7`, Flâner = `clamp(0, 10)/10`.
 
-## Hors périmètre
-Grille / Citation / carte « Pour toi » / closing card (slivers virtuels) ; cartes
-article standard inchangées (choix PO « héros uniquement »).
+### 4. Affordance du bouton de passage
+Nouvelle puce `_MoveChip` (icône directionnelle + libellé de destination
+« Flâner » / « Essentiel », bord/fond accentués via `item.accent`, cible ≥ 44px,
+haptique conservée) en remplacement de la flèche seule, pour sources et thèmes.
+
+### 5. Bonus — auto-scroll vers Flâner
+`ScrollController` + `GlobalKey` sur l'en-tête Flâner ; en `initState`, si
+`entry == ManageFavoritesEntry.flaner`, `Scrollable.ensureVisible` (300 ms, easeOut).
+Entrée Essentiel → pas de scroll (déjà en tête).
+
+## Fichiers modifiés
+- `apps/mobile/lib/features/flux_continu/providers/tournee_order_prefs_provider.dart`
+- `apps/mobile/lib/features/flux_continu/providers/flux_continu_provider.dart`
+- `apps/mobile/lib/features/flux_continu/widgets/manage_favorites_sheet.dart`
+- `apps/mobile/lib/config/constants.dart`
+- `packages/api/app/constants.py`
+- Tests : `manage_favorites_sheet_test.dart`, `flux_continu_tournee_order_test.dart`,
+  `flux_continu_sources_test.dart`, `flux_continu_provider_test.dart`,
+  `tournee_composer_sheet_test.dart` (caps 5 → 7, scénarios de coupe ré-équilibrés).
+
+## Vérification
+- Backend : `pytest` complet → **1525 passed, 1 skipped, 2 xfailed** (DB test 54322).
+- Mobile : `flutter analyze` (aucune issue sur les fichiers touchés) + tests
+  flux_continu touchés → **tous verts**.

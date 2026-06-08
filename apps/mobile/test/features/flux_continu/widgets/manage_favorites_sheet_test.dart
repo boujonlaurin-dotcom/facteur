@@ -1,7 +1,7 @@
 // Story 10.2 — sheet unifiée « Mes favoris » : deux sections (Essentiel /
 // Flâner), appartenance exclusive des sources (la clé `source:` dans
 // `tournee_order_v1` ⇒ Essentiel, sinon Flâner), déplacement de mode, funnel
-// veille sur les sujets, et caps 5/10 par section.
+// veille sur les sujets, et caps 7/10 par section.
 import 'package:facteur/config/routes.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
@@ -109,7 +109,7 @@ UserInterestsState _interests({
       customTopics: customTopics,
       favorites: favorites,
       favoriteCount: favorites.length,
-      favoriteCap: 5,
+      favoriteCap: 7,
     );
 
 UserSourcesState _sources({
@@ -129,7 +129,7 @@ UserSourcesState _sources({
       ],
       favorites: favorites,
       favoriteCount: favorites.length,
-      favoriteCap: 5,
+      favoriteCap: 7,
     );
 
 CustomTopicInterest _topic(String id, String name,
@@ -346,7 +346,7 @@ void main() {
   });
 
   testWidgets(
-      '« Hors Tournée du jour (5) » apparaît au-delà de 5 sections Essentiel',
+      '« Hors Tournée du jour (7) » apparaît au-delà de 7 sections Essentiel',
       (tester) async {
     await _openSheet(
       tester,
@@ -357,12 +357,16 @@ void main() {
         ThemeFavoriteRef(slug: 'politics'),
         ThemeFavoriteRef(slug: 'environment'),
         ThemeFavoriteRef(slug: 'international'),
+        ThemeFavoriteRef(slug: 'economy'),
+        ThemeFavoriteRef(slug: 'culture'),
       ]),
       sources: _sources(),
     );
 
-    // Item 5 — le cap est explicité entre parenthèses.
-    expect(find.text('Hors Tournée du jour (5)'), findsOneWidget);
+    // Le cap (élargi 5 → 7) est explicité entre parenthèses.
+    expect(find.text('Hors Tournée du jour (7)'), findsOneWidget);
+    // Le compteur de l'en-tête reflète aussi le cap.
+    expect(find.text('· 7/7'), findsOneWidget);
   });
 
   testWidgets(

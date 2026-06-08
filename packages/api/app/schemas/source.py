@@ -39,6 +39,7 @@ class SourceResponse(BaseModel):
     score_ux: float | None = None
     recommended_by: str | None = None
     recommendation_reason: str | None = None
+    has_paywall: bool = False
     premium_connection: "PremiumConnectionResponse | None" = None
 
     class Config:
@@ -52,6 +53,10 @@ class PremiumConnectionResponse(BaseModel):
     login_url: str
     test_url: str
     display_hint: str | None = None
+    # True quand la config est dérivée d'un fallback générique (URL = home de la
+    # source) plutôt que d'une config curée/explicite. Le mobile adapte le label
+    # du CTA ("Associer" vs "Connecter").
+    is_generic: bool = False
 
     @classmethod
     def from_config(cls, config: object) -> "PremiumConnectionResponse | None":
@@ -74,6 +79,65 @@ class PremiumConnectionResponse(BaseModel):
             if isinstance(display_hint, str) and display_hint.strip()
             else None,
         )
+
+    @classmethod
+    def from_source(
+        cls, source: object, *, curated_map: dict
+    ) -> "PremiumConnectionResponse | None":
+        """Résout la config de connexion premium d'une source, par priorité.
+
+        1. config explicite (``premium_connection_config``) si présente ;
+        2. sinon match domaine dans ``curated_map`` → config curée
+           (``is_generic=False``) ;
+        3. sinon, si la source est payante (paywall_config / map) et possède une
+           URL http(s) valide → fallback générique (login=test=home de la source,
+           ``is_generic=True``) ;
+        4. sinon ``None``.
+        """
+        # Import local : évite un cycle schemas → services au chargement.
+        from app.services.premium_curated_sources import (
+            domain_key,
+            is_paywalled_source,
+        )
+
+        explicit = cls.from_config(getattr(source, "premium_connection_config", None))
+        if explicit is not None:
+            return explicit
+
+        url = getattr(source, "url", None)
+        domain = domain_key(url)
+
+        curated = curated_map.get(domain) if domain else None
+        if isinstance(curated, dict):
+            login_url = str(curated.get("login_url", "")).strip()
+            test_url = str(curated.get("test_url", "")).strip()
+            if login_url and test_url:
+                hint = curated.get("display_hint")
+                return cls(
+                    enabled=True,
+                    login_url=login_url,
+                    test_url=test_url,
+                    display_hint=hint.strip()
+                    if isinstance(hint, str) and hint.strip()
+                    else None,
+                    is_generic=False,
+                )
+
+        if is_paywalled_source(source, curated_map=curated_map):
+            clean_url = url.strip() if isinstance(url, str) else ""
+            if clean_url.startswith(("http://", "https://")):
+                return cls(
+                    enabled=True,
+                    login_url=clean_url,
+                    test_url=clean_url,
+                    display_hint=(
+                        "Connecte-toi à ton compte sur le site du média, "
+                        "puis reviens lire tes articles."
+                    ),
+                    is_generic=True,
+                )
+
+        return None
 
 
 class SourceCreate(BaseModel):
