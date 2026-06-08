@@ -338,7 +338,7 @@ def main() -> None:
     parser.add_argument("--min-shared-entities", type=int, default=2)
     parser.add_argument(
         "--model-version",
-        default="v1-spacy-fr_md",
+        default="v2-spacy-fr_md",
         help="Annoté dans le JSON pour aligner sur la pipeline",
     )
     args = parser.parse_args()

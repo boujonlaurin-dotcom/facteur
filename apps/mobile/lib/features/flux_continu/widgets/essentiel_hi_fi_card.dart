@@ -62,9 +62,11 @@ class EssentielHiFiCard extends StatelessWidget {
         ],
       ),
       child: Padding(
+        // Compaction « cartes ≤ écran » : top resserré space4→space3 pour
+        // gagner ~4px sans toucher la pastille date/météo (choix PO).
         padding: const EdgeInsets.fromLTRB(
           FacteurSpacing.space4,
-          FacteurSpacing.space4,
+          FacteurSpacing.space3,
           FacteurSpacing.space4,
           FacteurSpacing.space3,
         ),
@@ -72,7 +74,8 @@ class EssentielHiFiCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _Header(accent: accent, onTapPersonalize: onTapPersonalize),
-            const SizedBox(height: FacteurSpacing.space4),
+            // Compaction : gap header→lead resserré space4→space3.
+            const SizedBox(height: FacteurSpacing.space3),
             if (lead != null)
               _LeadTile(
                 article: lead,
@@ -503,7 +506,9 @@ class _LeadTile extends StatelessWidget {
                     const SizedBox(height: FacteurSpacing.space2),
                     Text(
                       article.title,
-                      maxLines: 5,
+                      // Compaction « cartes ≤ écran » : plafond 5→4 lignes pour
+                      // borner la hauteur du lead (cohérent avec section_fit).
+                      maxLines: 4,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.fraunces(
                         fontSize: 19,
@@ -581,7 +586,8 @@ class _MediumTile extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       article.title,
-                      maxLines: 4,
+                      // Compaction « cartes ≤ écran » : plafond 4→3 lignes.
+                      maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.fraunces(
                         fontSize: 16,
