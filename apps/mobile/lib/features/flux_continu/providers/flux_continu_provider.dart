@@ -62,14 +62,14 @@ const String _kActusDuJourBlurb = 'Les sujets les + couverts en France.';
 const String _kBonnesBlurb = 'Un peu de douceur...';
 
 /// Hard cap on the number of favorite theme sections rendered in the tournée.
-/// Mirrors `kFavoriteCap = 5` in the my_interests provider — the value is
+/// Mirrors `kFavoriteCap = 7` in the my_interests provider — the value is
 /// duplicated here only because the maps key by sectionKey and we slice the
 /// favorite list during composition. Keep aligned with the backend constant.
-const int _kMaxFavoriteSections = 5;
+const int _kMaxFavoriteSections = 7;
 
 /// Hard cap on the number of favorite SOURCE sections rendered in the tournée
 /// (PR « Sources dans la Tournée »). Parité avec les thèmes.
-const int _kMaxFavoriteSourceSections = 5;
+const int _kMaxFavoriteSourceSections = 7;
 
 /// Number of items requested per page for each theme section of the Tournée
 /// (initial load + each "loadMoreTheme" call). When the backend returns

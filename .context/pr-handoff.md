@@ -1,72 +1,54 @@
-# Veille — refonte curation deux blocs + UX fin de config
+# Tournée — clarifier les limites + affordance du bouton de passage + auto-scroll
 
 ## Résumé
 
-Le feed veille (`GET /api/veille/feed`, section `SectionKind.veille` du flux continu)
-est refondu en **deux blocs** pour corriger deux bugs PO :
-1. sources configurées invisibles (fenêtre 7 j + règle « floor » tuaient les flux
-   niche/anglophones) ;
-2. sources externes parasites (prédicat OR aspirait tout le pool global matchant un
-   mot-clé).
+Refonte de la modal « Mes favoris » (`manage_favorites_sheet.dart`, ouverte depuis
+L'Essentiel et les onglets Flâner) pour lever la confusion entre les trois
+mécanismes de limite, et élargissement du cap Tournée **5 → 7**.
 
-## Backend (backward-safe — le mobile ignore `group` jusqu'au déploiement frontend)
+## Changements
 
-- `scoring_config.py` : `VEILLE_CONFIGURED_RECENCY_HOURS=720` (30 j, Bloc A),
-  `VEILLE_SOURCE_DIVERSITY_CAP=3`.
-- `feed_filter.py` :
-  - `VeilleFilters.source_intents` (charge `VeilleSource.why`).
-  - `build_topic_keyword_predicate()` (= prédicat fort sans la clause source).
-  - `_score_and_rank` → `_score_block(..., *, apply_floor, apply_threshold, diversity_cap)`.
-  - `fetch_veille_feed()` : 2 requêtes (Bloc A `source_id IN` fenêtre 720 h, laisser-passer
-    + cap diversité ; Bloc B topic/keyword `NOTIN` sources, fenêtre 168 h, floor+seuil),
-    concaténées A→B, taguées `group`, paginées à plat. **Renvoie des 3-tuples
-    `(Content, axes, group)`.**
-- `scoring_context.py` : note d'intention `why` tokenisée (`_tokenize_intent`, stopwords FR
-  + len≥4) → angle « Intention » (réutilise le bonus mots-clés existant).
-- `schemas/veille.py` : `VeilleFeedArticle.group` (Literal sources/elargie, défaut
-  `sources`) ; `VeilleSourceResponse.last_article_at` + `recent_article_count`.
-- `routers/veille.py` : unpack 3-tuple + `group` ; agrégation santé source dans
-  `GET /config`. **Pas de migration** (`why` existe déjà).
+### 1. Cap Tournée 5 → 7 (mirrors synchronisés, aucune migration)
+- `tournee_order_prefs_provider.dart` : `kTourneeVisibleCap` 5 → 7.
+- `flux_continu_provider.dart` : `_kMaxFavoriteSections` & `_kMaxFavoriteSourceSections`
+  5 → 7 (sous-caps par catégorie, avant le `take(kTourneeVisibleCap)`).
+- `config/constants.dart` : `InterestConstants.favoriteCap` 5 → 7 (mirror).
+- `packages/api/app/constants.py` : `FAVORITE_CAP` 5 → 7 (mirror, constante produit —
+  pas de DDL/Alembic). `get_top_themes` borne juste un peu plus large la perso éditoriale.
+- Cap Flâner `kMaxFavoriteTabs = 10` : **inchangé**.
 
-### Tests backend
-- `tests/test_veille_curation.py` : Bloc A laisser-passer + cap diversité ; floor Bloc B ;
-  end-to-end deux blocs ; tokenisation intent.
-- `tests/services/test_veille_scoring.py` : intent `why` injecté ; split récence 30j/7j ;
-  unpacking 3-tuples mis à jour.
-- `tests/routers/test_veille_routes.py` : `group` par item ; ordre A→B ; pagination à la
-  frontière ; santé source dans `/config`.
-- **64 tests veille passent** ; suite backend complète **1524 passed** (la seule rouge —
-  `test_notification_preferences::test_patch_increments_refusal_count` — est pré-existante,
-  clock-dépendante, sans rapport).
+### 2. Suppression des blocages « max » par type
+Le backend n'impose aucun cap dur (`FavoriteCapReached` = code mort). Retiré côté
+modal : `interestsAtCap`/`sourcesAtCap`, le paramètre `atCap` des add-lists, les
+`_CapHint(« Maximum … atteint »)`, la classe `_CapHint`, les `catch
+(FavoriteCapReachedException)` et l'import devenu inutile. L'ajout n'est plus jamais
+bloqué ; le surplus reste grisé sous le trait `_CapDivider` existant.
 
-## Frontend (dépend du backend)
+### 3. Compteurs dans les en-têtes
+`_SectionLabel` accepte un `counter` optionnel rendu en pill discret (`· X/7`,
+`· X/10`). Essentiel = `clamp(0, 7)/7`, Flâner = `clamp(0, 10)/10`.
 
-- `feed/models/content_model.dart` : `Content.veilleGroup` (parse `json['group']`,
-  copyWith, clearNote) — backward-safe nullable.
-- `flux_continu/repositories/flux_continu_repository.dart` : passe `group` dans le JSON
-  Content normalisé.
-- `flux_continu/widgets/veille_group_header.dart` (nouveau) : `buildVeilleFeedRows()`
-  (en-têtes dérivés au rendu sur transitions de group) + `VeilleGroupHeader`.
-- `section_block.dart` + `theme_section_screen.dart` : en-têtes « Tes sources » /
-  « Couverture élargie » pour `SectionKind.veille` (pagination plate inchangée — lignes
-  reconstruites depuis la liste accumulée).
-- `veille/screens/veille_config_screen.dart` : modal « Épingler à ta Tournée ? » en fin de
-  **création** → insertion #1 (`markCustomized` + `setHidden(false)` +
-  `setOrder([veille, ...rest])`).
-- `veille/models/veille_config_dto.dart` : parse `last_article_at`/`recent_article_count`
-  + getter `healthWarning`.
+### 4. Affordance du bouton de passage
+Nouvelle puce `_MoveChip` (icône directionnelle + libellé de destination
+« Flâner » / « Essentiel », bord/fond accentués via `item.accent`, cible ≥ 44px,
+haptique conservée) en remplacement de la flèche seule, pour sources et thèmes.
 
-### Tests frontend
-- `test/.../widgets/veille_group_header_test.dart` : transitions de group, backward-safe,
-  index préservé, rendu du libellé — **5 passent**.
-- `flutter analyze lib` : 0 erreur / 0 warning dans les fichiers touchés.
+### 5. Bonus — auto-scroll vers Flâner
+`ScrollController` + `GlobalKey` sur l'en-tête Flâner ; en `initState`, si
+`entry == ManageFavoritesEntry.flaner`, `Scrollable.ensureVisible` (300 ms, easeOut).
+Entrée Essentiel → pas de scroll (déjà en tête).
 
-## Reporté (follow-up, hors de ce lot)
-- Badge santé **visuel** dans la source card (DTO `healthWarning` prêt) + champs texte
-  « Préciser » (why source / reason angle) dans step2/step3 — nécessite du state provider
-  dans des écrans de 900+ lignes.
-- Expansion EN des mots-clés (`suggest_angles`) — PR-3 légère derrière flag.
+## Fichiers modifiés
+- `apps/mobile/lib/features/flux_continu/providers/tournee_order_prefs_provider.dart`
+- `apps/mobile/lib/features/flux_continu/providers/flux_continu_provider.dart`
+- `apps/mobile/lib/features/flux_continu/widgets/manage_favorites_sheet.dart`
+- `apps/mobile/lib/config/constants.dart`
+- `packages/api/app/constants.py`
+- Tests : `manage_favorites_sheet_test.dart`, `flux_continu_tournee_order_test.dart`,
+  `flux_continu_sources_test.dart`, `flux_continu_provider_test.dart`,
+  `tournee_composer_sheet_test.dart` (caps 5 → 7, scénarios de coupe ré-équilibrés).
 
-## Découpage proposé
-PR-1 backend (backward-safe) puis PR-2 frontend, OU un seul PR cohérent (PO préfère
-moins de PRs). À trancher au moment de la création.
+## Vérification
+- Backend : `pytest` complet → **1525 passed, 1 skipped, 2 xfailed** (DB test 54322).
+- Mobile : `flutter analyze` (aucune issue sur les fichiers touchés) + tests
+  flux_continu touchés → **tous verts**.
