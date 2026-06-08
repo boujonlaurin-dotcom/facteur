@@ -794,3 +794,63 @@ class TestLetter2Idempotence:
         assert r1.json()["status"] == "archived"
         assert r2.json()["status"] == "archived"
         assert len(r1.json()["completed_actions"]) == 5
+
+
+# ─── Fixture sans profil ────────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture
+async def auth_user_no_profile(db_session):
+    """User JWT valide mais sans ligne dans user_profiles."""
+    user_id = uuid4()
+
+    async def _fake_user():
+        return str(user_id)
+
+    async def _fake_db():
+        yield db_session
+
+    app.dependency_overrides[get_current_user_id] = _fake_user
+    app.dependency_overrides[get_db] = _fake_db
+    try:
+        yield user_id
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+        app.dependency_overrides.pop(get_db, None)
+
+
+class TestProvisioningGap:
+    """Régression : user JWT valide sans profil → FK violation sur _init_progress."""
+
+    async def test_new_user_without_profile_gets_200(
+        self, auth_user_no_profile, db_session
+    ):
+        async with _client() as ac:
+            resp = await ac.get("/api/letters")
+
+        assert resp.status_code == 200
+        assert len(resp.json()) == 3
+
+        from sqlalchemy import select as sa_select
+
+        from app.models.user import UserProfile
+
+        profile = (
+            await db_session.execute(
+                sa_select(UserProfile).where(
+                    UserProfile.user_id == auth_user_no_profile
+                )
+            )
+        ).scalar_one_or_none()
+        assert profile is not None
+
+        from app.models.user_letter_progress import UserLetterProgress
+
+        rows = (
+            await db_session.execute(
+                sa_select(UserLetterProgress).where(
+                    UserLetterProgress.user_id == auth_user_no_profile
+                )
+            )
+        ).scalars().all()
+        assert len(rows) == 3
