@@ -13,6 +13,7 @@ signing, or provisioning work, read:
 
 - [iOS/App Store release handoff](docs/handoffs/handoff-ios-app-store-release.md)
 - [Codemagic iOS release guide](docs/codemagic-ios-release.md)
+- [Prompt for a new remote agent](docs/handoffs/prompt-new-agent-ios-release.md)
 
 The handoff is the source of truth for:
 

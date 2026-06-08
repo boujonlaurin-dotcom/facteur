@@ -13,6 +13,11 @@ sessions and replaces their stale worktree-specific instructions. It is the
 starting point for any agent working on iOS release, Codemagic, TestFlight,
 App Store Connect, bundle identifiers, signing, or provisioning.
 
+For a new agent running in another environment, use the
+[remote-agent recovery prompt](prompt-new-agent-ios-release.md). It starts by
+fetching this handoff from GitHub and does not rely on local filesystem paths
+or prior chat history.
+
 ## Executive Summary
 
 The repository has an initial `codemagic.yaml`, but the release pipeline has
