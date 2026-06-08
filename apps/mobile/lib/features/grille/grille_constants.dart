@@ -76,9 +76,8 @@ class GrilleConstants {
   static const Duration shakeDuration = Duration(milliseconds: 250);
 
   // ── Lien de partage ─────────────────────────────────────────────────────
-  /// Lien de partage (sans spoiler) : **deep-link** custom-scheme qui ouvre
-  /// directement « Le mot du jour » dans l'app (cf. `DeepLinkService` +
-  /// redirect GoRouter), au lieu de retomber sur le site facteur.app. C'est le
-  /// même schéma que les autres deep-links de l'app (widgets, notifs).
-  static const String shareBaseUrl = 'io.supabase.facteur://grille';
+  /// Lien de partage (sans spoiler) : page web sur facteur.app qui redirige
+  /// automatiquement vers l'app via deep-link (`io.supabase.facteur://grille`).
+  /// Fallback store si l'app n'est pas installée.
+  static const String shareBaseUrl = 'https://facteur.app/grille';
 }

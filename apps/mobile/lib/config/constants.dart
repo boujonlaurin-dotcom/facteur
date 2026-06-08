@@ -320,14 +320,16 @@ class ExternalLinks {
       'https://chat.whatsapp.com/Fq4oKgSDEgc9AmAyZR9uhJ?mode=gi_t';
 }
 
-/// Liens légaux et support — exposés via le backend FastAPI (`/legal/*`).
-/// Synchronisés avec `packages/api/app/routers/legal.py`.
+/// Liens légaux et support — pages statiques servies par le landing facteur.app.
 class LegalLinks {
   LegalLinks._();
 
-  static const String privacy = 'https://api.facteur.app/legal/privacy';
-  static const String terms = 'https://api.facteur.app/legal/terms';
-  static const String supportEmail = 'mailto:support@facteur.app';
+  static const String privacy =
+      'https://facteur.app/politique-confidentialite.html';
+  static const String terms = 'https://facteur.app/conditions-utilisation.html';
+  static const String accountDeletion =
+      'https://facteur.app/supprimer-mon-compte.html';
+  static const String supportEmail = 'mailto:boujon.laurin@gmail.com';
 }
 
 /// Contact direct du créateur — utilisé par le fallback "Quelques pépins"
