@@ -27,6 +27,7 @@ import '../features/sources/screens/add_source_screen.dart';
 import '../features/sources/screens/theme_sources_screen.dart';
 import '../features/settings/screens/profile_screen.dart';
 import '../features/settings/screens/account_screen.dart';
+import '../features/settings/screens/subscriptions_screen.dart';
 import '../features/settings/screens/notifications_screen.dart';
 import '../features/settings/screens/about_screen.dart';
 import '../features/settings/widgets/settings_sheet.dart';
@@ -81,6 +82,7 @@ class RouteNames {
   static const String addSource = 'add-source';
   static const String settings = 'settings';
   static const String account = 'account';
+  static const String subscriptions = 'subscriptions';
   static const String notifications = 'notifications';
   static const String about = 'about';
   static const String profile = 'profile';
@@ -118,6 +120,7 @@ class RoutePaths {
   // static const String addSource = '/sources/add'; // Removed for V0
   static const String settings = '/settings';
   static const String account = '/settings/account';
+  static const String subscriptions = '/settings/subscriptions';
   static const String notifications = '/settings/notifications';
   static const String about = '/settings/about';
   static const String profile = '/settings/profile';
@@ -528,6 +531,12 @@ final routerProvider = Provider<GoRouter>((ref) {
             name: RouteNames.account,
             pageBuilder: (context, state) =>
                 const FullSwipeCupertinoPage(child: AccountScreen()),
+          ),
+          GoRoute(
+            path: 'subscriptions', // /settings/subscriptions
+            name: RouteNames.subscriptions,
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: SubscriptionsScreen()),
           ),
           GoRoute(
             path: 'notifications', // /settings/notifications

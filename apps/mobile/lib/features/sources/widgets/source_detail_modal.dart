@@ -302,6 +302,25 @@ class SourceDetailModal extends ConsumerWidget {
               ),
             ],
           ] else ...[
+            // CTA abonnement premium — proéminent (primary, en tête) pour les
+            // sources payantes. Label selon l'état : déjà abonné / config
+            // générique (« Associer ») / config curée (« Connecter »).
+            if (displaySource.premiumConnection != null) ...[
+              FacteurButton(
+                onPressed: () =>
+                    _openPremiumConnectionFlow(context, ref, displaySource),
+                label: displaySource.hasSubscription
+                    ? 'Reconnecter cet abonnement'
+                    : (displaySource.premiumConnection!.isGeneric
+                        ? 'Associer mon abonnement'
+                        : 'Connecter mon abonnement'),
+                type: displaySource.hasPaywall
+                    ? FacteurButtonType.primary
+                    : FacteurButtonType.secondary,
+                icon: PhosphorIcons.link(PhosphorIconsStyle.regular),
+              ),
+              const SizedBox(height: 8),
+            ],
             // Trust/Untrust button
             FacteurButton(
               onPressed: () {
@@ -311,7 +330,9 @@ class SourceDetailModal extends ConsumerWidget {
               label: displaySource.isTrusted
                   ? 'Ne plus suivre'
                   : 'Ajouter comme source de confiance',
-              type: !displaySource.isTrusted
+              type: (!displaySource.isTrusted &&
+                      !(displaySource.premiumConnection != null &&
+                          displaySource.hasPaywall))
                   ? FacteurButtonType.primary
                   : FacteurButtonType.secondary,
               icon: displaySource.isTrusted
@@ -358,18 +379,6 @@ class SourceDetailModal extends ConsumerWidget {
                 );
               }),
             ],
-            if (displaySource.premiumConnection != null) ...[
-              const SizedBox(height: 8),
-              FacteurButton(
-                onPressed: () =>
-                    _openPremiumConnectionFlow(context, ref, displaySource),
-                label: displaySource.hasSubscription
-                    ? 'Reconnecter cet abonnement'
-                    : 'Connecter mon abonnement',
-                type: FacteurButtonType.secondary,
-                icon: PhosphorIcons.link(PhosphorIconsStyle.regular),
-              ),
-            ],
             if (displaySource.hasSubscription) ...[
               const SizedBox(height: 8),
               FacteurButton(
@@ -378,6 +387,11 @@ class SourceDetailModal extends ConsumerWidget {
                     await ref
                         .read(userSourcesProvider.notifier)
                         .disconnectSubscription(displaySource.id);
+                    // Purge la session persistée (cookies média) — le paywall
+                    // doit réapparaître après dissociation.
+                    await ref
+                        .read(premiumSessionStoreProvider)
+                        .clearForSource(displaySource);
                     if (context.mounted) Navigator.pop(context);
                   } catch (_) {
                     if (!context.mounted) return;

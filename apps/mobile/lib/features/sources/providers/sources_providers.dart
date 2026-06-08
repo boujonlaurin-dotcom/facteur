@@ -10,9 +10,28 @@ import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../models/theme_source_model.dart';
 import '../repositories/sources_repository.dart';
+import '../services/premium_session_store.dart';
 
 final sourcesRepositoryProvider = Provider<SourcesRepository>((ref) {
   return SourcesRepository(ApiClient(Supabase.instance.client));
+});
+
+/// Store de persistance des sessions des sources payantes (cookies média).
+/// Singleton app-wide : un seul `CookieManager`/secure storage partagé entre
+/// le flow de connexion et le reader.
+final premiumSessionStoreProvider = Provider<PremiumSessionStore>((ref) {
+  return PremiumSessionStore(
+    jar: InAppPremiumCookieJar(),
+    secureStore: FlutterSecureKeyValueStore(),
+  );
+});
+
+/// Sources auxquelles l'utilisateur a associé un abonnement (dérivé).
+/// Alimente l'écran « Mes abonnements ».
+final subscribedSourcesProvider = Provider<List<Source>>((ref) {
+  final sources =
+      ref.watch(userSourcesProvider).valueOrNull ?? const <Source>[];
+  return sources.where((s) => s.hasSubscription).toList();
 });
 
 typedef SmartSearchQuery = ({String query, String? contentType, bool expand});

@@ -1,6 +1,8 @@
 # Bug Report: Sources payantes — session non persistée + découvrabilité cassée
 
-**Status:** EN COURS — PR 1 (backend découvrabilité) prête ; PR 2 (session + UI) à suivre
+**Status:** PRÊT POUR REVIEW — backend découvrabilité + session persistante + UI
+(une seule PR, décision PO du 2026-06-08 : « lancer les 2 en même temps »).
+Validation device (cookies natifs) restant à faire manuellement.
 **Severity:** HIGH (lecture des sources payantes inutilisable + CTA invisible)
 **Created:** 2026-06-08
 **Branch:** `boujonlaurin-dotcom/webview-credentials-not-saving`
@@ -59,14 +61,44 @@ dans `PREMIUM_CURATED_MAP`. On n'utilise **pas** `source_tier` (faux signal).
 
 ---
 
-## PR 2 — Session persistante + UI (après merge PR 1) — ⏳ à faire
+## PR 2 — Session persistante + UI — ✅ implémentée
 
-`premium_session_store.dart` (CookieManager + secure storage), `premium_web_view.dart`
-(InAppWebView calqué sur `youtube_player_widget.dart`, ScrollBridge porté), migration du
-flow de connexion + du chemin premium du reader, détection paywall/expiration → bandeau
-« Reconnecter », écran « Mes abonnements » (+ route + carte Compte), CTA reader, proéminence
-CTA modal, nettoyage `premium_sources_sheet.dart`, tests mobile.
+**Session (A+B) — mobile**
+- `apps/mobile/lib/features/sources/services/premium_session_store.dart` (nouveau) —
+  `PremiumSessionStore` (capture/restore/clear/hasSession) adossé à `CookieManager`
+  (inappwebview) + `FlutterSecureStorage`, via abstractions `PremiumCookieJar` /
+  `SecureKeyValueStore` (testabilité). Clé `premium_session::<sourceId>::<eTLD+1>` ;
+  `premiumDomainKey` miroir Dart de `domain_key`.
+- `apps/mobile/lib/features/sources/widgets/premium_web_view.dart` (nouveau) —
+  `InAppWebView` calqué sur `youtube_player_widget.dart` (UA Chrome, `incognito:false`,
+  `clearCache:false`, store partagé). `onWebViewCreated → await restore → loadUrl`.
+  ScrollBridge porté (`callHandler` au lieu de `postMessage`, messages identiques) ;
+  sonde paywall (mots-clés FR) → `PaywallDetected`.
+- Providers : `premiumSessionStoreProvider`, `subscribedSourcesProvider`
+  (`sources_providers.dart`).
+- Flow de connexion (`premium_source_connection.dart`) → `ConsumerStatefulWidget` +
+  `PremiumWebView` ; capture au `_confirm()` (`captureForSource(testUrl)`). Hooks de test
+  `webViewBuilder`/`openExternal` conservés.
+- Reader (`content_detail_screen.dart`) : **seul** le chemin premium migre
+  (`InAppWebViewController? _premiumWebController` + `PremiumWebView`) ; le scroll-to-site
+  gratuit reste sur `webview_flutter`. Progression partagée (`_applyWebReadingProgress`).
+  Paywall détecté → bandeau non-bloquant « Session expirée — Reconnecter » (jamais de
+  dissociation auto).
 
-**Validation device (non testable Playwright)** : connecter Le Monde → autre article LM →
-kill+relance app → toujours connecté → Dissocier → paywall revient. iOS **et** Android
+**Découvrabilité — UI**
+- `apps/mobile/lib/features/settings/screens/subscriptions_screen.dart` (nouveau) +
+  route `/settings/subscriptions` + carte « ABONNEMENTS » sur le Compte. Par source :
+  logo, statut session (`hasSession`), Reconnecter / Dissocier (`+ clearForSource`).
+- CTA reader « Lire avec mon abonnement » (source payante non connectée).
+- CTA modal proéminent (primary + en tête quand `hasPaywall`) ; label par état
+  (Reconnecter / Associer générique / Connecter curé).
+- `premium_sources_sheet.dart` : branche `connectSubscription` directe supprimée (le 400).
+
+**Tests mobile (verts)** : `premium_session_store_test.dart` (capture→restore→clear,
+domain key), `premium_source_connection_test.dart` (PremiumWebView injecté + capture au
+confirm), `subscriptions_screen_test.dart`, `source_model_test.dart`. `flutter analyze` :
+0 erreur / 0 warning introduits.
+
+**Validation device (non testable Playwright/CI)** : connecter Le Monde → autre article LM
+→ kill+relance app → toujours connecté → Dissocier → paywall revient. iOS **et** Android
 (WKWebView vs Android WebView diffèrent sur les cookies de session).
