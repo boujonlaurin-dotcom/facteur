@@ -30,7 +30,10 @@ PERSPECTIVE_TITLE_JACCARD_MIN = 0.30
 # Empêche qu'un seul topic générique ("politics") suffise à valider deux articles
 # sur des sujets radicalement différents (ex: Congo/prisonniers vs Ukraine/trêve)
 # partageant seulement un nom propre omniprésent (Trump, Macron…).
-PERSPECTIVE_MIN_JACCARD_FLOOR = 0.08
+# Calibré sur le gold « event_membership » (Iter 1, 2026-06-09) : 0.08 → 0.12
+# coupe ~36% des FP « weak double signal » (contamination −24%) pour −7,6% de
+# rappel. Cf. docs/maintenance/maintenance-clustering-calibration.md.
+PERSPECTIVE_MIN_JACCARD_FLOOR = 0.12
 PERSPECTIVE_MIN_VALID_RESULTS = 2
 PERSPECTIVE_MIN_BIAS_GROUPS = 2
 # Entités jugées suffisamment discriminantes (LOCATION exclu : trop générique)
