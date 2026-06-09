@@ -248,7 +248,7 @@ a:hover {
 
 .section__lede {
     max-width: 640px;
-    margin: calc(-1 * var(--space-md)) auto var(--space-xl);
+    margin: calc(-1 * var(--space-md)) auto var(--space-2xl);
     text-align: center;
     font-size: var(--font-size-md);
     line-height: 1.55;
@@ -633,6 +633,14 @@ a:hover {
 
 .hero__visual .phone-mockup {
     animation: phoneFloat 6s ease-in-out infinite;
+}
+
+/* Cadre un peu plus en longueur sur le visuel principal : on recentre le
+   contenu (cover) sans déformer la capture, pour un rendu moins écrasé. */
+.hero__visual .phone-mockup__img {
+    aspect-ratio: 9 / 17.4;
+    object-fit: cover;
+    object-position: center top;
 }
 
 /* ═══════════════════════════════════════════
