@@ -825,6 +825,7 @@ a:hover {
 
 .sources-showcase {
     background: var(--color-accent-light);
+    padding: var(--space-xl) 0;
 }
 
 .sources-showcase__title {
@@ -833,19 +834,20 @@ a:hover {
 
 .sources-showcase__lede {
     color: var(--color-text-muted);
+    margin-bottom: var(--space-lg);
 }
 
 .sources-groups {
     display: flex;
     flex-direction: column;
-    gap: var(--space-md);
+    gap: var(--space-sm);
     max-width: 940px;
     margin: 0 auto;
 }
 
 .source-group {
     border-top: 1px solid var(--color-border);
-    padding-top: var(--space-md);
+    padding-top: var(--space-sm);
 }
 
 .source-group:first-child {
@@ -928,6 +930,21 @@ a:hover {
     border-radius: 50%;
     background: var(--color-accent);
     flex-shrink: 0;
+}
+
+/* Pastille "+N" : couleur accent pleine pour signaler qu'il y a
+   beaucoup d'autres sources disponibles dans chaque catégorie. */
+.source-chip--more {
+    padding-left: 0.9rem;
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: #fff;
+    font-weight: 600;
+}
+
+.source-chip--more:hover {
+    background: var(--color-accent-hover);
+    border-color: var(--color-accent-hover);
 }
 
 .sources-showcase__foot {
