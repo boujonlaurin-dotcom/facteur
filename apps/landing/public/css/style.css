@@ -248,7 +248,7 @@ a:hover {
 
 .section__lede {
     max-width: 640px;
-    margin: calc(-1 * var(--space-md)) auto var(--space-xl);
+    margin: calc(-1 * var(--space-md)) auto var(--space-2xl);
     text-align: center;
     font-size: var(--font-size-md);
     line-height: 1.55;
@@ -635,6 +635,14 @@ a:hover {
     animation: phoneFloat 6s ease-in-out infinite;
 }
 
+/* Cadre un peu plus en longueur sur le visuel principal : on recentre le
+   contenu (cover) sans déformer la capture, pour un rendu moins écrasé. */
+.hero__visual .phone-mockup__img {
+    aspect-ratio: 9 / 17.4;
+    object-fit: cover;
+    object-position: center top;
+}
+
 /* ═══════════════════════════════════════════
    SECTION 2 — Testimonials
    ═══════════════════════════════════════════ */
@@ -807,6 +815,143 @@ a:hover {
 .pillar__visuals .phone-mockup:not(:first-child) {
     width: 230px;
     opacity: 0.82;
+}
+
+/* ═══════════════════════════════════════════
+   SECTION — Sources showcase (ce que l'app contient)
+   Fond orange très léger (token DS --color-accent-light) :
+   se distingue en douceur des piliers blancs, 100% dans la charte.
+   ═══════════════════════════════════════════ */
+
+.sources-showcase {
+    background: var(--color-accent-light);
+    padding: var(--space-xl) 0;
+}
+
+.sources-showcase__title {
+    color: var(--color-text);
+}
+
+.sources-showcase__lede {
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-md);
+}
+
+.sources-groups {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    max-width: 940px;
+    margin: 0 auto;
+}
+
+.source-group {
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-sm);
+}
+
+.source-group:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.source-group__head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-xs);
+}
+
+.source-group__icon {
+    display: inline-flex;
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    color: var(--color-accent);
+}
+
+.source-group__icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.source-group__label {
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+.source-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+}
+
+.source-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.28rem 0.7rem 0.28rem 0.38rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    font-size: var(--font-size-xs);
+    color: var(--color-text);
+    transition: box-shadow var(--duration-fast) var(--ease-out),
+                transform var(--duration-fast) var(--ease-out);
+}
+
+.source-chip:hover {
+    box-shadow: var(--shadow-card);
+    transform: translateY(-1px);
+}
+
+.source-chip__logo {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: #fff;
+    padding: 2px;
+    object-fit: contain;
+    flex-shrink: 0;
+    border: 1px solid var(--color-border);
+}
+
+/* Pastilles sans logo (plateformes) : le logo de type est dans l'en-tête,
+   on ajoute juste un point accent pour garder du rythme. */
+.source-chip--text {
+    padding-left: 0.7rem;
+}
+
+.source-chip--text::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-accent);
+    flex-shrink: 0;
+}
+
+/* Pastille "+N" : style secondaire (contour accent, fond transparent) pour
+   signaler qu'il y a bien plus de sources, sans concurrencer les vraies. */
+.source-chip--more {
+    padding-left: 0.7rem;
+    background: transparent;
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    font-weight: 600;
+}
+
+.source-chip--more:hover {
+    background: rgba(212, 101, 42, 0.1);
+    box-shadow: none;
+}
+
+.sources-showcase__foot {
+    text-align: center;
+    margin-top: var(--space-lg);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
 }
 
 /* ═══════════════════════════════════════════
