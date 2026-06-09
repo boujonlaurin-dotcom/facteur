@@ -21,6 +21,7 @@ import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/swipe_hint_provider.dart';
+import '../../feed/widgets/explore_section.dart' show ExploreDiscoverySkeleton;
 import '../../feed/widgets/feedback_inline.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
 import '../../notifications/widgets/notification_activation_modal.dart';
@@ -28,7 +29,6 @@ import '../../notifications/widgets/notification_renudge_banner.dart';
 import '../../onboarding/widgets/theme_choice_bottom_sheet.dart';
 import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../../../shared/strings/loader_error_strings.dart';
-import '../../../shared/widgets/loaders/loading_view.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart'
@@ -41,6 +41,7 @@ import '../widgets/my_interests_intro.dart';
 import '../widgets/personalisation_cta_card.dart';
 import '../widgets/tournee_composer_sheet.dart';
 import '../widgets/geoloc_prompt_banner.dart';
+import '../widgets/section_banner.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
 import '../../grille/widgets/grille_cta_card.dart';
@@ -847,29 +848,42 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(fluxContinuProvider);
+    final data = state.valueOrNull;
+    // Squelette : fenêtre de loading initiale (avant 1ère peinture) OU état
+    // squelette explicite émis par le provider (cache d'hier invalidé / cold
+    // start). On rend alors un scaffold placeholder, jamais le spinner plein
+    // écran ni le vrai `_buildContent`.
+    final isSkeleton = state is AsyncLoading || (data?.isSkeleton ?? false);
     // Re-tap de l'onglet actif (depuis le shell) → remonter en haut.
     ref.listen(essentielScrollTriggerProvider, (_, __) => _scrollToTop());
     // Flow post-onboarding : joué une seule fois quand Essentiel a chargé ses
-    // données (derrière les modales thème & notifications). Couvre la
-    // transition loading→data (via le listen) et le cas où l'état est déjà
-    // `data` au montage (check direct planifié en post-frame).
+    // **vraies** données (derrière les modales thème & notifications). On exclut
+    // l'état squelette : le flow attend du contenu réel. Couvre la transition
+    // loading→data (via le listen) et le cas où l'état est déjà `data` au
+    // montage (check direct planifié en post-frame).
     ref.listen<AsyncValue<FluxContinuState>>(fluxContinuProvider, (_, next) {
       if (next is AsyncData<FluxContinuState> &&
+          !next.value.isSkeleton &&
           ref.read(postOnboardingFlowPendingProvider) != null) {
         _schedulePostOnboardingFlow();
       }
     });
-    if (state is AsyncData<FluxContinuState> &&
+    if (!isSkeleton &&
+        state is AsyncData<FluxContinuState> &&
         ref.read(postOnboardingFlowPendingProvider) != null) {
       _schedulePostOnboardingFlow();
     }
     // Source unique : aligne [_sectionKeys] + [_stickyEntryKeys] sur les slivers
     // et dérive les descripteurs d'onglets (label+accent), dans le même ordre.
-    final stickyTabs = _syncStickyEntries(state.valueOrNull);
-    // Sections don't resize mid-session, so we refresh the snap anchors only on
-    // these content/layout-driven rebuilds — never per scroll frame.
-    _safeAreaBottom = MediaQuery.paddingOf(context).bottom;
-    _scheduleAnchorRecompute();
+    // Hors squelette uniquement : le scaffold placeholder n'attache pas les
+    // GlobalKeys de section ni la physics de snap.
+    final stickyTabs = isSkeleton ? const <StickyTab>[] : _syncStickyEntries(data);
+    if (!isSkeleton) {
+      // Sections don't resize mid-session, so we refresh the snap anchors only
+      // on these content/layout-driven rebuilds — never per scroll frame.
+      _safeAreaBottom = MediaQuery.paddingOf(context).bottom;
+      _scheduleAnchorRecompute();
+    }
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
       // Header & footer vivent dans le scaffold de page partagé :
@@ -880,21 +894,26 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         bottom: false,
         child: Stack(
           children: [
-            state.when(
-              loading: () => const LoadingView(),
-              error: (e, _) => _ErrorView(
-                error: e,
-                onRetry: () => ref.read(fluxContinuProvider.notifier).refresh(),
+            if (isSkeleton)
+              _FluxContinuSkeleton(sections: data?.sections ?? const [])
+            else
+              state.when(
+                loading: () => const _FluxContinuSkeleton(sections: []),
+                error: (e, _) => _ErrorView(
+                  error: e,
+                  onRetry: () =>
+                      ref.read(fluxContinuProvider.notifier).refresh(),
+                ),
+                data: (data) => _buildContent(context, data),
               ),
-              data: (data) => _buildContent(context, data),
-            ),
-            _StickyHostOverlay(
-              stickyVisible: _stickyVisible,
-              activeIndex: _activeIndex,
-              tabs: stickyTabs,
-              onTapTab: _scrollToSection,
-              tabsController: _tabsScroll,
-            ),
+            if (!isSkeleton)
+              _StickyHostOverlay(
+                stickyVisible: _stickyVisible,
+                activeIndex: _activeIndex,
+                tabs: stickyTabs,
+                onTapTab: _scrollToSection,
+                tabsController: _tabsScroll,
+              ),
             // Pull-to-refresh discoverability pill.
             Positioned(
               top: 0,
@@ -1206,6 +1225,87 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       slivers.add(_grilleSliver);
     }
     return slivers;
+  }
+}
+
+/// Scaffold squelette du démarrage matinal : en-têtes de sections **réels**
+/// (label/accent/illustration dérivés des prefs locales, portés par [sections])
+/// + cartes placeholder, au lieu du `LoadingView` plein écran. Évite tout saut
+/// de layout quand le contenu réel arrive : la structure est déjà en place, on
+/// ne fait que remplir.
+///
+/// Volontairement **non scrollable** (NeverScrollableScrollPhysics) et sans la
+/// physics de snap : le squelette est transitoire (≈ 1 round-trip), l'user est
+/// en haut de page, et on ne touche pas au système snap/settle délicat. Reçoit
+/// les coquilles de sections du provider ([FluxContinuState.sections] avec
+/// `isSkeleton:true`) ; liste vide pendant la brève fenêtre de loading initiale
+/// → on rend un hero + quelques placeholders génériques.
+class _FluxContinuSkeleton extends StatelessWidget {
+  final List<FluxSection> sections;
+
+  const _FluxContinuSkeleton({required this.sections});
+
+  @override
+  Widget build(BuildContext context) {
+    final children = <Widget>[
+      // Hero « L'Essentiel du jour » — placeholder pleine largeur en tête.
+      const _HeroSkeleton(),
+    ];
+    if (sections.isEmpty) {
+      // Fenêtre de loading initiale (pas encore de coquilles) → placeholders
+      // génériques pour occuper l'espace sans labels.
+      for (var i = 0; i < 3; i++) {
+        children.add(const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: ExploreDiscoverySkeleton(),
+        ));
+      }
+    } else {
+      for (final section in sections) {
+        // Le hero est déjà rendu au-dessus.
+        if (section is EssentielSection) continue;
+        final isSource =
+            section is FeedThemeSection && section.kind == SectionKind.source;
+        children.add(SectionBanner(
+          title: section.label,
+          accent: section.accent,
+          blurb: section.blurb,
+          illustrationAsset: isSource ? null : section.illustrationAsset,
+          logoUrl: isSource ? section.sourceLogoUrl : null,
+        ));
+        children.add(const ExploreDiscoverySkeleton());
+        children.add(const SizedBox(height: 16));
+      }
+    }
+    return ListView(
+      // Le squelette ne défile pas — il est remplacé dès l'arrivée du contenu.
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(top: 8, bottom: 92),
+      children: children,
+    );
+  }
+}
+
+/// Placeholder du hero « L'Essentiel du jour » (carte hi-fi) pendant le
+/// squelette : un grand bloc neutre arrondi qui réserve l'espace au-dessus de
+/// la ligne de flottaison.
+class _HeroSkeleton extends StatelessWidget {
+  const _HeroSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+      child: Container(
+        height: 260,
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
+        ),
+      ),
+    );
   }
 }
 

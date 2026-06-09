@@ -1,54 +1,87 @@
-# Tournée — clarifier les limites + affordance du bouton de passage + auto-scroll
+# PR A — Mobile : démarrage perçu quasi-instantané (squelette + auth non-bloquant + rendu progressif)
 
 ## Résumé
 
-Refonte de la modal « Mes favoris » (`manage_favorites_sheet.dart`, ouverte depuis
-L'Essentiel et les onglets Flâner) pour lever la confusion entre les trois
-mécanismes de limite, et élargissement du cap Tournée **5 → 7**.
+À l'ouverture matinale, le temps perçu tap→contenu était >5s (jusqu'à 20s+ si
+`/api/digest` renvoie 202). Le matin est structurellement différent des
+ré-ouvertures : le cache local est invalidé chaque nuit (jamais de SWR matinal),
+le JWT (TTL 1h) est mort et un `await refresh()` **bloquant** gatait le splash,
+et rien ne s'affichait avant le retour de **tous** les endpoints (3 de base +
+jusqu'à 14 feeds thèmes/sources). Cette PR (mobile only, aucune nouvelle
+dépendance) supprime ces trois gates.
 
 ## Changements
 
-### 1. Cap Tournée 5 → 7 (mirrors synchronisés, aucune migration)
-- `tournee_order_prefs_provider.dart` : `kTourneeVisibleCap` 5 → 7.
-- `flux_continu_provider.dart` : `_kMaxFavoriteSections` & `_kMaxFavoriteSourceSections`
-  5 → 7 (sous-caps par catégorie, avant le `take(kTourneeVisibleCap)`).
-- `config/constants.dart` : `InterestConstants.favoriteCap` 5 → 7 (mirror).
-- `packages/api/app/constants.py` : `FAVORITE_CAP` 5 → 7 (mirror, constante produit —
-  pas de DDL/Alembic). `get_top_themes` borne juste un peu plus large la perso éditoriale.
-- Cap Flâner `kMaxFavoriteTabs = 10` : **inchangé**.
+- **A1 — Auth refresh non-bloquant** (`core/auth/auth_state.dart`)
+  - `_init` peint l'état authentifié **immédiatement** ; le refresh tourne en
+    arrière-plan, exposé via `AuthStateNotifier.initialRefresh`.
+  - `.catchError` ne gère que l'`AuthException` (refresh token mort → signout +
+    `sessionExpired`, identique à l'ancien chemin bloquant). On ne re-pose
+    **jamais** `lastTokenRefreshAt` à la main : l'event SDK `tokenRefreshed`
+    reste l'unique signal d'invalidation (cf. `bug-feed-403-auth-recovery.md`).
+    Single-flight conservé via `SessionRefresher` (cf.
+    `bug-android-disconnect-race.md`).
 
-### 2. Suppression des blocages « max » par type
-Le backend n'impose aucun cap dur (`FavoriteCapReached` = code mort). Retiré côté
-modal : `interestsAtCap`/`sourcesAtCap`, le paramètre `atCap` des add-lists, les
-`_CapHint(« Maximum … atteint »)`, la classe `_CapHint`, les `catch
-(FavoriteCapReachedException)` et l'import devenu inutile. L'ajout n'est plus jamais
-bloqué ; le surplus reste grisé sous le trait `_CapDivider` existant.
+- **A2 — Cache → squelette fidèle** (`services/flux_continu_cache_service.dart`)
+  - `readLatest()` ne jette plus sur day mismatch — pose `isStale` + lit
+    `savedAt`. `readToday()` devient un wrapper « du jour uniquement ». Le cache
+    d'hier sert à dessiner la structure, **jamais** à afficher du contenu périmé.
 
-### 3. Compteurs dans les en-têtes
-`_SectionLabel` accepte un `counter` optionnel rendu en pill discret (`· X/7`,
-`· X/10`). Essentiel = `clamp(0, 7)/7`, Flâner = `clamp(0, 10)/10`.
+- **A3 — Provider squelette + rendu progressif 2 phases**
+  (`providers/flux_continu_provider.dart`)
+  - `build()` peint un **squelette** (sections dérivées des prefs locales :
+    favoris thèmes/sources, ordre Tournée, veille) sur cache d'hier/cold, ou le
+    **vrai** contenu sur snapshot du jour (SWR in-day).
+  - **Garde anti-tempête 401** : `await initialRefresh` borné (~3s) avant le
+    batch → les ~3+14 appels partent avec un JWT frais ; sinon l'intercepteur 401
+    single-flight reste le filet.
+  - `_fetchAll` (via `_buildStateFromPayload`) émet en 2 phases :
+    hero/Essentiel/Actus/Bonnes d'abord (≈ 1 round-trip de base), puis les
+    sections thèmes/sources. L'émission progressive ne se fait QUE quand un
+    squelette est monté (pas de blink en SWR / pull-to-refresh).
+  - Flag `isSkeleton` sur `FluxContinuState`. Garde `_bootstrapping` : neutralise
+    les listeners de prefs pendant le bootstrap (le 1er `_fetchAll` lit déjà les
+    prefs fraîches) — restaure l'invariant « aucune réaction de listener avant le
+    1er build complet ».
 
-### 4. Affordance du bouton de passage
-Nouvelle puce `_MoveChip` (icône directionnelle + libellé de destination
-« Flâner » / « Essentiel », bord/fond accentués via `item.accent`, cible ≥ 44px,
-haptique conservée) en remplacement de la flèche seule, pour sources et thèmes.
+- **A4 — Squelette par section** (`screens/flux_continu_screen.dart`)
+  - Remplace le `LoadingView()` plein écran par `_FluxContinuSkeleton`
+    (en-têtes réels via `SectionBanner` + corps `ExploreDiscoverySkeleton`),
+    non scrollable, hors physics de snap. **Pas** de lazy-load au scroll
+    (garde-fou snap/haptique, cf. mémoire `flux_snap_haptic_feel`).
 
-### 5. Bonus — auto-scroll vers Flâner
-`ScrollController` + `GlobalKey` sur l'en-tête Flâner ; en `initState`, si
-`entry == ManageFavoritesEntry.flaner`, `Scrollable.ensureVisible` (300 ms, easeOut).
-Entrée Essentiel → pas de scroll (déjà en tête).
+- **A5 — Micro-opt Sentry** : non inclus (optionnel, gain à confirmer au
+  profiling ; réordonner l'init Sentry touche la capture des crashs de boot).
 
-## Fichiers modifiés
-- `apps/mobile/lib/features/flux_continu/providers/tournee_order_prefs_provider.dart`
-- `apps/mobile/lib/features/flux_continu/providers/flux_continu_provider.dart`
-- `apps/mobile/lib/features/flux_continu/widgets/manage_favorites_sheet.dart`
-- `apps/mobile/lib/config/constants.dart`
-- `packages/api/app/constants.py`
-- Tests : `manage_favorites_sheet_test.dart`, `flux_continu_tournee_order_test.dart`,
-  `flux_continu_sources_test.dart`, `flux_continu_provider_test.dart`,
-  `tournee_composer_sheet_test.dart` (caps 5 → 7, scénarios de coupe ré-équilibrés).
+## Note d'archi (Riverpod) — important pour la review
+
+`provider.future` se résout à la **1ère** émission mid-build (vérifié). Comme
+`build()` émet désormais squelette → base-only → complet, les tests attendent
+l'état stabilisé via un helper `settle()` au lieu de `.future`. Migration
+appliquée aux 3 suites flux provider (comportement final inchangé).
 
 ## Vérification
-- Backend : `pytest` complet → **1525 passed, 1 skipped, 2 xfailed** (DB test 54322).
-- Mobile : `flutter analyze` (aucune issue sur les fichiers touchés) + tests
-  flux_continu touchés → **tous verts**.
+
+- `flutter analyze` : **clean** sur les 5 fichiers lib touchés ; 0 erreur projet.
+- Tests : `flutter test test/features/flux_continu/ test/features/auth/ test/core/auth/`
+  → `+272 -3`. Les **3 échecs sont pré-existants** (baseline pristine = `+266 -3` :
+  `essentiel_hi_fi_card` badge Météo/layout — flaky, et `router_redirection`
+  EmailConfirmationScreen — Hive/Supabase non init en widget test). **Aucun
+  nouvel échec dans les zones touchées.**
+- Tests ajoutés :
+  - `flux_continu_cache_service_test.dart` (nouveau) : `readLatest` isStale/savedAt,
+    `readToday` null sur périmé, JSON corrompu → null.
+  - `flux_continu_provider_test.dart` : cache d'hier → 1ère peinture squelette
+    (jamais de contenu périmé) ; cold → base-only émis avant les sections thèmes.
+
+## À faire côté review / suivi (hors PR)
+
+- **Profiling cold-launch sur device réel** + simulation d'un matin (cache d'hier)
+  pour mesurer splash→1ère frame avant/après (le plancher moteur Flutter domine
+  l'absolu ; on prouve la suppression des gates refresh + fan-out). Logs
+  `[PERF] fluxContinu.build mode=content_fresh|skeleton_stale|cold` ajoutés.
+- **PR B (backend)** recommandée juste après : tuer le 202 du chemin critique
+  (cas nouveau-user post-store), caches courts, payload allégé. Voir
+  `docs/maintenance/maintenance-quick-start-boot-perf.md`.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
