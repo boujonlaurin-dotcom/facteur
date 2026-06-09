@@ -1,0 +1,15 @@
+{
+  "unreleased": [],
+  "released": [
+    {
+      "version": "1.0.0",
+      "date": "2026-06-09",
+      "entries": [
+        {
+          "tag": "Quoi de neuf",
+          "summary": "Découvrez les nouveautés de chaque mise à jour directement dans l'app."
+        }
+      ]
+    }
+  ]
+}
