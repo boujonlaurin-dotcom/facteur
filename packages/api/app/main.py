@@ -86,7 +86,6 @@ from app.routers import (
     grille,
     images,
     internal,
-
     letters,
     notification_preferences,
     personalization,
