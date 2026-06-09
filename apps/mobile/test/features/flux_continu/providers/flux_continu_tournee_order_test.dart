@@ -36,6 +36,8 @@ import 'package:hive/hive.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'flux_continu_settle.dart';
+
 class _MockDigestRepository extends Mock implements DigestRepository {}
 
 class _MockFeedRepository extends Mock implements FeedRepository {}
@@ -366,7 +368,7 @@ void main() {
         );
         addTearDown(container.dispose);
 
-        final state = await container.read(fluxContinuProvider.future);
+        final state = await settle(container);
 
         expect(state.sections.map(sectionKey).toList(), [
           kTourneeActusKey,
@@ -408,7 +410,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      final state = await container.read(fluxContinuProvider.future);
+      final state = await settle(container);
 
       expect(state.sections.map(sectionKey).toList(), [
         kTourneeActusKey,
@@ -441,7 +443,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      final state = await container.read(fluxContinuProvider.future);
+      final state = await settle(container);
 
       expect(state.sections.map(sectionKey), [kTourneeBonnesKey]);
       expect(state.grilleSlotIndex, isNull);
@@ -467,7 +469,7 @@ void main() {
         );
         addTearDown(container.dispose);
 
-        final state = await container.read(fluxContinuProvider.future);
+        final state = await settle(container);
 
         expect(state.sections.map(sectionKey).toList(), [
           kTourneeBonnesKey,
@@ -501,7 +503,7 @@ void main() {
         );
         addTearDown(container.dispose);
 
-        final state = await container.read(fluxContinuProvider.future);
+        final state = await settle(container);
 
         expect(state.sections.map(sectionKey).toList(), [
           kTourneeActusKey,
@@ -541,7 +543,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      final state = await container.read(fluxContinuProvider.future);
+      final state = await settle(container);
 
       expect(state.sections.map(sectionKey).toList(), [
         kTourneeActusKey,
@@ -604,7 +606,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    await container.read(fluxContinuProvider.future);
+    await settle(container);
     final sections = favoriteSections(container);
 
     expect(
@@ -658,7 +660,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    await container.read(fluxContinuProvider.future);
+    await settle(container);
     final sections = favoriteSections(container);
 
     final sourceIdx = sections.indexWhere((s) => s.kind == SectionKind.source);
@@ -723,7 +725,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
       final sections = favoriteSections(container);
 
       expect(sections, hasLength(7));
@@ -758,7 +760,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
       final sections = favoriteSections(container);
 
       expect(
@@ -795,7 +797,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
       final sections = favoriteSections(container);
 
       expect(
@@ -826,7 +828,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
       final slugs = favoriteSections(container)
           .where((s) => s.kind == SectionKind.theme)
           .map((s) => s.themeSlug)
@@ -854,7 +856,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
       expect(
         favoriteSections(container).where((s) => s.kind == SectionKind.theme),
         isEmpty,
@@ -897,7 +899,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
       final sections = favoriteSections(container);
       expect(
         sections.where((s) => s.kind == SectionKind.theme),
@@ -927,7 +929,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    await container.read(fluxContinuProvider.future);
+    await settle(container);
     final society = favoriteSections(
       container,
     ).where((s) => s.themeSlug == 'society').toList();
@@ -967,7 +969,7 @@ void main() {
     container.read(tabOrderPrefsProvider);
     await pumpEventQueue();
 
-    final state = await container.read(fluxContinuProvider.future);
+    final state = await settle(container);
 
     expect(
       state.sections.map(sectionKey),
@@ -1018,7 +1020,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    final state = await container.read(fluxContinuProvider.future);
+    final state = await settle(container);
 
     expect(
       state.grilleSlotIndex,

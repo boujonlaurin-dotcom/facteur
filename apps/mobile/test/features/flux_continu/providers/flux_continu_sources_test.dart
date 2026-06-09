@@ -27,6 +27,8 @@ import 'package:hive/hive.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'flux_continu_settle.dart';
+
 class _MockDigestRepository extends Mock implements DigestRepository {}
 
 class _MockFeedRepository extends Mock implements FeedRepository {}
@@ -105,6 +107,7 @@ FeedResponse _feedWithIds(List<String> ids, {String sourceId = 's'}) {
     carousels: const [],
   );
 }
+
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -233,7 +236,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    await container.read(fluxContinuProvider.future);
+    await settle(container);
     final sections = feedSections(container);
 
     final themeIdx = sections.indexWhere((s) => s.kind == SectionKind.theme);
@@ -271,7 +274,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    await container.read(fluxContinuProvider.future);
+    await settle(container);
     final sections = feedSections(container);
 
     final theme = sections.firstWhere((s) => s.kind == SectionKind.theme);
@@ -299,7 +302,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    await container.read(fluxContinuProvider.future);
+    await settle(container);
     final sections = feedSections(container);
 
     final source = sections.where((s) => s.kind == SectionKind.source).toList();
@@ -360,7 +363,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    await container.read(fluxContinuProvider.future);
+    await settle(container);
     final sources = feedSections(container)
         .where((s) => s.kind == SectionKind.source)
         .map((s) => s.sourceId)

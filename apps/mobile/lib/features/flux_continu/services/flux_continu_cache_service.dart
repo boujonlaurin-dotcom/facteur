@@ -13,10 +13,23 @@ class FluxContinuSnapshot {
   final List<TopTheme> topThemes;
   final List<EssentielArticle> essentielArticles;
 
+  /// `true` quand le snapshot a été écrit un **autre jour** que celui passé à
+  /// [FluxContinuCacheService.readLatest] (cache d'hier, invalidé chaque nuit).
+  /// Le provider ne peint alors **jamais** ce contenu comme réel : il sert
+  /// uniquement à confirmer qu'un snapshot existe. `false` = snapshot du jour
+  /// (SWR in-day, peut être affiché tel quel puis revalidé).
+  final bool isStale;
+
+  /// Horodatage d'écriture (`saved_at`), lu pour le profiling / debug. `null`
+  /// si absent ou illisible.
+  final DateTime? savedAt;
+
   const FluxContinuSnapshot({
     required this.dual,
     required this.topThemes,
     required this.essentielArticles,
+    this.isStale = false,
+    this.savedAt,
   });
 }
 
@@ -29,7 +42,13 @@ class FluxContinuCacheService {
     return Hive.openBox<String>(boxName);
   }
 
-  Future<FluxContinuSnapshot?> readToday({DateTime? now}) async {
+  /// Lit le dernier snapshot persisté **sans** le jeter sur un day mismatch :
+  /// pose [FluxContinuSnapshot.isStale] = `(day_key != aujourd'hui)`. Le matin,
+  /// le cache d'hier reste lisible (isStale:true) pour dessiner un squelette
+  /// fidèle, mais le contenu n'est jamais affiché tel quel (cf. provider).
+  /// Renvoie `null` uniquement si rien n'est persisté ou si le payload est
+  /// corrompu.
+  Future<FluxContinuSnapshot?> readLatest({DateTime? now}) async {
     try {
       final box = await _box();
       final raw = box.get(_snapshotKey);
@@ -37,9 +56,8 @@ class FluxContinuCacheService {
       final json = jsonDecode(raw);
       if (json is! Map<String, dynamic>) return null;
       final dayKey = json['day_key'] as String?;
-      if (dayKey != TourneeProgressService.dayKey(now ?? DateTime.now())) {
-        return null;
-      }
+      final isStale =
+          dayKey != TourneeProgressService.dayKey(now ?? DateTime.now());
       final dualJson = json['dual'];
       if (dualJson is! Map<String, dynamic>) return null;
       final topThemeJson = (json['top_themes'] as List?) ?? const [];
@@ -54,11 +72,22 @@ class FluxContinuCacheService {
             .whereType<Map<String, dynamic>>()
             .map(EssentielArticle.fromJson)
             .toList(growable: false),
+        isStale: isStale,
+        savedAt: DateTime.tryParse(json['saved_at'] as String? ?? ''),
       );
     } catch (e) {
       debugPrint('FluxContinuCache: read failed: $e');
       return null;
     }
+  }
+
+  /// Snapshot **du jour** uniquement (SWR in-day) — wrapper sur [readLatest]
+  /// qui renvoie `null` dès que le snapshot est périmé (cache d'hier). Conservé
+  /// pour les appelants qui ne veulent jamais de contenu périmé.
+  Future<FluxContinuSnapshot?> readToday({DateTime? now}) async {
+    final snapshot = await readLatest(now: now);
+    if (snapshot == null || snapshot.isStale) return null;
+    return snapshot;
   }
 
   Future<void> write({
