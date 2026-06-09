@@ -14,6 +14,7 @@ import '../../../shared/widgets/loaders/loading_view.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../flux_continu/widgets/flux_continu_article_card.dart';
 import '../../flux_continu/widgets/section_banner.dart';
+import '../../release_notes/widgets/changelog_banner.dart';
 import '../../sources/widgets/pepites_carousel.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
@@ -168,6 +169,7 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
               large: true,
             ),
           ),
+          const SliverToBoxAdapter(child: ChangelogBanner()),
           const SliverPersistentHeader(
             pinned: true,
             delegate: _FilterHeaderDelegate(child: _FilterSurface()),

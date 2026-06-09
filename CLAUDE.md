@@ -71,6 +71,19 @@ Après le GO utilisateur, implémente et teste en autonomie :
 | `pre-bash-no-staging.sh` | Avant Bash | Bloque `gh pr create` sans `--base main` |
 | `stop-verify-tests.sh` | Avant fin réponse | Bloque si tests échouent |
 
+## Changelog utilisateur
+
+Si ta PR dépasse **400 lignes de diff** OU si elle livre un changement user-visible important (nouvelle feature, refonte UX, fix d'un bug bloquant connu), ajoute une entrée dans `apps/mobile/assets/changelog.json` (clé `unreleased`) :
+
+```json
+{ "tag": "Perspectives", "summary": "Clustering plus pertinent dans les perspectives." }
+```
+
+- `tag` : **1-2 mots max**, orienté feature (ex: « Perspectives », « Tournée », « Onboarding »). Sert au bandeau cumulatif en haut du Flâner.
+- `summary` : **1 phrase courte** sur la **valeur user** (pas la techno). Sert à la modal « Quoi de neuf » (bullet point).
+
+L'agent peut **by-passer la règle des 400 lignes** si elle ne reflète pas l'impact réel (gros refactor invisible / petit fix UX très visible). Le script `scripts/promote_changelog.py --version X.Y.Z` déplace `unreleased` → `released` au moment du bump de version.
+
 ## MCP Servers
 
 | Serveur | Usage |
