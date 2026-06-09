@@ -818,6 +818,132 @@ a:hover {
 }
 
 /* ═══════════════════════════════════════════
+   SECTION — Sources showcase (ce que l'app contient)
+   Bande sombre, tranche avec les piliers blancs.
+   ═══════════════════════════════════════════ */
+
+.sources-showcase {
+    background: var(--color-dark-bg);
+}
+
+.sources-showcase__title {
+    color: var(--color-dark-text);
+}
+
+.sources-showcase__lede {
+    color: var(--color-dark-muted);
+}
+
+.sources-groups {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    max-width: 940px;
+    margin: 0 auto;
+}
+
+.source-group {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: var(--space-md);
+}
+
+.source-group:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.source-group__head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-sm);
+}
+
+.source-group__icon {
+    display: inline-flex;
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    color: var(--color-accent);
+}
+
+.source-group__icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.source-group__icon--youtube {
+    color: #ff3d3d;
+}
+
+.source-group__icon--reddit {
+    color: #ff6a3d;
+}
+
+.source-group__label {
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    color: var(--color-dark-text);
+}
+
+.source-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+}
+
+.source-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.9rem 0.4rem 0.45rem;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    font-size: var(--font-size-sm);
+    color: var(--color-dark-text);
+    transition: background var(--duration-fast) var(--ease-out),
+                transform var(--duration-fast) var(--ease-out);
+}
+
+.source-chip:hover {
+    background: rgba(255, 255, 255, 0.11);
+    transform: translateY(-1px);
+}
+
+.source-chip__logo {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: #fff;
+    padding: 2px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
+/* Pastilles sans logo (plateformes) : le logo de type est dans l'en-tête,
+   on ajoute juste un point accent pour garder du rythme. */
+.source-chip--text {
+    padding-left: 0.9rem;
+}
+
+.source-chip--text::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-accent);
+    flex-shrink: 0;
+}
+
+.sources-showcase__foot {
+    text-align: center;
+    margin-top: var(--space-lg);
+    color: var(--color-dark-muted);
+    font-size: var(--font-size-sm);
+}
+
+/* ═══════════════════════════════════════════
    SECTION 5 — Founder
    ═══════════════════════════════════════════ */
 
