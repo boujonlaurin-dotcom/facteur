@@ -819,19 +819,20 @@ a:hover {
 
 /* ═══════════════════════════════════════════
    SECTION — Sources showcase (ce que l'app contient)
-   Bande orange chaude, tranche avec les piliers blancs.
+   Fond orange très léger (token DS --color-accent-light) :
+   se distingue en douceur des piliers blancs, 100% dans la charte.
    ═══════════════════════════════════════════ */
 
 .sources-showcase {
-    background: linear-gradient(160deg, #c85a28 0%, #a23f17 100%);
+    background: var(--color-accent-light);
 }
 
 .sources-showcase__title {
-    color: #fff;
+    color: var(--color-text);
 }
 
 .sources-showcase__lede {
-    color: rgba(255, 244, 236, 0.85);
+    color: var(--color-text-muted);
 }
 
 .sources-groups {
@@ -843,7 +844,7 @@ a:hover {
 }
 
 .source-group {
-    border-top: 1px solid rgba(255, 255, 255, 0.18);
+    border-top: 1px solid var(--color-border);
     padding-top: var(--space-md);
 }
 
@@ -864,7 +865,7 @@ a:hover {
     width: 30px;
     height: 30px;
     flex-shrink: 0;
-    color: #ffe9dc;
+    color: var(--color-accent);
 }
 
 .source-group__icon svg {
@@ -875,7 +876,7 @@ a:hover {
 .source-group__label {
     font-size: var(--font-size-lg);
     font-weight: 700;
-    color: var(--color-dark-text);
+    color: var(--color-text);
 }
 
 .source-chips {
@@ -889,17 +890,17 @@ a:hover {
     align-items: center;
     gap: 0.5rem;
     padding: 0.4rem 0.9rem 0.4rem 0.45rem;
-    background: rgba(255, 255, 255, 0.14);
-    border: 1px solid rgba(255, 255, 255, 0.24);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
     border-radius: 999px;
     font-size: var(--font-size-sm);
-    color: #fff;
-    transition: background var(--duration-fast) var(--ease-out),
+    color: var(--color-text);
+    transition: box-shadow var(--duration-fast) var(--ease-out),
                 transform var(--duration-fast) var(--ease-out);
 }
 
 .source-chip:hover {
-    background: rgba(255, 255, 255, 0.22);
+    box-shadow: var(--shadow-card);
     transform: translateY(-1px);
 }
 
@@ -911,10 +912,11 @@ a:hover {
     padding: 2px;
     object-fit: contain;
     flex-shrink: 0;
+    border: 1px solid var(--color-border);
 }
 
 /* Pastilles sans logo (plateformes) : le logo de type est dans l'en-tête,
-   on ajoute juste un point clair pour garder du rythme. */
+   on ajoute juste un point accent pour garder du rythme. */
 .source-chip--text {
     padding-left: 0.9rem;
 }
@@ -924,14 +926,14 @@ a:hover {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: #ffe1d0;
+    background: var(--color-accent);
     flex-shrink: 0;
 }
 
 .sources-showcase__foot {
     text-align: center;
     margin-top: var(--space-lg);
-    color: rgba(255, 244, 236, 0.85);
+    color: var(--color-text-muted);
     font-size: var(--font-size-sm);
 }
 
