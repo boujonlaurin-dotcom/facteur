@@ -819,19 +819,19 @@ a:hover {
 
 /* ═══════════════════════════════════════════
    SECTION — Sources showcase (ce que l'app contient)
-   Bande sombre, tranche avec les piliers blancs.
+   Bande orange chaude, tranche avec les piliers blancs.
    ═══════════════════════════════════════════ */
 
 .sources-showcase {
-    background: var(--color-dark-bg);
+    background: linear-gradient(160deg, #c85a28 0%, #a23f17 100%);
 }
 
 .sources-showcase__title {
-    color: var(--color-dark-text);
+    color: #fff;
 }
 
 .sources-showcase__lede {
-    color: var(--color-dark-muted);
+    color: rgba(255, 244, 236, 0.85);
 }
 
 .sources-groups {
@@ -843,7 +843,7 @@ a:hover {
 }
 
 .source-group {
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid rgba(255, 255, 255, 0.18);
     padding-top: var(--space-md);
 }
 
@@ -864,20 +864,12 @@ a:hover {
     width: 30px;
     height: 30px;
     flex-shrink: 0;
-    color: var(--color-accent);
+    color: #ffe9dc;
 }
 
 .source-group__icon svg {
     width: 100%;
     height: 100%;
-}
-
-.source-group__icon--youtube {
-    color: #ff3d3d;
-}
-
-.source-group__icon--reddit {
-    color: #ff6a3d;
 }
 
 .source-group__label {
@@ -897,17 +889,17 @@ a:hover {
     align-items: center;
     gap: 0.5rem;
     padding: 0.4rem 0.9rem 0.4rem 0.45rem;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.24);
     border-radius: 999px;
     font-size: var(--font-size-sm);
-    color: var(--color-dark-text);
+    color: #fff;
     transition: background var(--duration-fast) var(--ease-out),
                 transform var(--duration-fast) var(--ease-out);
 }
 
 .source-chip:hover {
-    background: rgba(255, 255, 255, 0.11);
+    background: rgba(255, 255, 255, 0.22);
     transform: translateY(-1px);
 }
 
@@ -922,7 +914,7 @@ a:hover {
 }
 
 /* Pastilles sans logo (plateformes) : le logo de type est dans l'en-tête,
-   on ajoute juste un point accent pour garder du rythme. */
+   on ajoute juste un point clair pour garder du rythme. */
 .source-chip--text {
     padding-left: 0.9rem;
 }
@@ -932,14 +924,14 @@ a:hover {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--color-accent);
+    background: #ffe1d0;
     flex-shrink: 0;
 }
 
 .sources-showcase__foot {
     text-align: center;
     margin-top: var(--space-lg);
-    color: var(--color-dark-muted);
+    color: rgba(255, 244, 236, 0.85);
     font-size: var(--font-size-sm);
 }
 
