@@ -246,6 +246,15 @@ a:hover {
     border-radius: 1px;
 }
 
+.section__lede {
+    max-width: 640px;
+    margin: calc(-1 * var(--space-md)) auto var(--space-xl);
+    text-align: center;
+    font-size: var(--font-size-md);
+    line-height: 1.55;
+    color: var(--color-text-muted, #5a5a5a);
+}
+
 /* ═══════════════════════════════════════════
    Animations
    ═══════════════════════════════════════════ */
@@ -511,20 +520,19 @@ a:hover {
 .store-badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.625rem;
-    padding: 0.5rem 1rem;
+    gap: 0.75rem;
+    padding: 0.55rem 1.1rem;
     border-radius: var(--radius-md);
     background: var(--color-dark-bg);
     color: var(--color-dark-text);
     cursor: default;
     user-select: none;
-    opacity: 0.55;
-    filter: grayscale(0.6);
+    opacity: 0.92;
 }
 
 .store-badge__icon {
-    width: 22px;
-    height: 22px;
+    width: 26px;
+    height: 26px;
     flex-shrink: 0;
     fill: currentColor;
 }
