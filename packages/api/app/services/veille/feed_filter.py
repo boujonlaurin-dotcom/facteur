@@ -34,6 +34,7 @@ from app.services.recommendation.filter_presets import (
     load_serein_preferences,
 )
 from app.services.recommendation.helpers.diversification import diversify
+from app.services.recommendation.helpers.keyword_match import matches_word_boundary
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import PillarScoringEngine
 from app.services.veille.scoring_context import build_veille_scoring_context
@@ -238,7 +239,13 @@ def _matched_axes(
     if keywords:
         title_lower = (content.title or "").lower()
         desc_lower = (content.description or "").lower()
-        if any(kw in title_lower or kw in desc_lower for kw in keywords):
+        # Mot-entier (réutilise `matches_word_boundary`, déjà la primitive du
+        # pilier Pertinence et du prédicat SQL `\m…\M`) et non plus sous-chaîne :
+        # sinon un mot-clé générique survit sur un fragment (« nets » ⊂
+        # « internets ») et fait passer un article hors-sujet au-dessus du floor
+        # dans le Bloc A (où la requête par source court-circuite le prédicat
+        # SQL). Aligne l'axe `keyword` exposé sur le scoring et le prédicat.
+        if any(matches_word_boundary(kw, title_lower, desc_lower) for kw in keywords):
             axes.append("keyword")
     return axes
 
@@ -258,10 +265,17 @@ def _score_block(
     Refonte curation deux blocs — un seul moteur de scoring (`PillarScoringEngine`),
     deux politiques de filtrage paramétrées :
 
-    - **Bloc A « Tes sources »** (`apply_floor=False`, `apply_threshold=False`,
-      `diversity_cap=N`) : laisser-passer. Tout article d'une source configurée
-      (fenêtre 30 j en amont) entre, scoré + trié, puis **cap de diversité** à
-      `N`/source via `diversify()` pour qu'une source bavarde ne monopolise pas.
+    - **Bloc A « Tes sources »** (`apply_floor=True`, `apply_threshold=True`,
+      `diversity_cap=N`) : **gate-all** (ajustements « released »). Les articles
+      d'une source configurée (fenêtre 30 j) sont scorés + triés, puis filtrés
+      par le **floor** (« la source est un boost, pas un free-pass ») et le
+      **seuil**, enfin **cap de diversité** à `N`/source via `diversify()`. Le
+      floor ne mord que si la config porte un axe topic/mot-clé
+      (`floor_active`) : une config **purement source** garde donc le
+      laisser-passer (la source est l'unique filtre voulu). Avant les
+      ajustements « released », le Bloc A était en laisser-passer total
+      (`apply_floor=False`) — c'est ce qui inondait une veille étroite (NBA)
+      d'articles hors-sujet d'une source large (The Athletic).
     - **Bloc B « Couverture élargie »** (`apply_floor=True`,
       `apply_threshold=True`) : comportement historique (Story 23.4) —
 
@@ -357,8 +371,10 @@ async def fetch_veille_feed(
     ``(Content, matched_on, group)`` où ``group`` ∈ ``{"sources", "elargie"}`` :
 
     - **Bloc A « Tes sources »** (``group="sources"``) : articles des sources
-      configurées, fenêtre 30 j, scoring complet, **laisser-passer** (pas de
-      floor ni de seuil), cap de diversité 3/source.
+      configurées, fenêtre 30 j, scoring complet, **gate-all** (floor + seuil —
+      ajustements « released »), cap de diversité 3/source. Le floor n'agit que
+      si la config porte un axe topic/mot-clé ; une config purement source garde
+      le laisser-passer.
     - **Bloc B « Couverture élargie »** (``group="elargie"``) : articles
       topic/mots-clés **hors** sources configurées, fenêtre 7 j, comportement
       historique (floor + seuil + anti-starvation).
@@ -422,12 +438,16 @@ async def fetch_veille_feed(
         )
         candidates_a = (await session.execute(query_a)).scalars().all()
         if candidates_a:
+            # Gate-all (ajustements « released ») : floor + seuil aussi sur les
+            # sources configurées. Le floor ne mord que si la config a un axe
+            # topic/mot-clé (cf. `floor_active`) ; une config purement source
+            # garde le laisser-passer.
             block_a = _score_block(
                 list(candidates_a),
                 context,
                 filters,
-                apply_floor=False,
-                apply_threshold=False,
+                apply_floor=True,
+                apply_threshold=True,
                 diversity_cap=ScoringWeights.VEILLE_SOURCE_DIVERSITY_CAP,
                 block="sources",
             )

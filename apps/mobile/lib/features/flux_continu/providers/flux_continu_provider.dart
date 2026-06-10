@@ -587,7 +587,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (activeCfg == null) return null;
     return FeedThemeSection(
       kind: SectionKind.veille,
-      label: 'Ma veille — ${activeCfg.themeLabel}',
+      label: 'Ma veille — ${activeCfg.sectionLabel}',
       blurb: 'Les derniers articles de ta veille personnalisée.',
       accent: _kVeilleAccent,
       illustrationAsset: _kVeilleIllustration,
@@ -1437,7 +1437,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     );
     return FeedThemeSection(
       kind: SectionKind.veille,
-      label: 'Ma veille — ${activeCfg.themeLabel}',
+      label: 'Ma veille — ${activeCfg.sectionLabel}',
       blurb: 'Les derniers articles de ta veille personnalisée.',
       accent: _kVeilleAccent,
       illustrationAsset: _kVeilleIllustration,

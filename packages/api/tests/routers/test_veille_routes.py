@@ -557,11 +557,23 @@ class TestFeedTwoBlocks:
     async def test_feed_pagination_across_block_boundary(
         self, auth_user, curated_tech_source, tech_content, external_ai_content
     ):
+        # Gate-all « released » : le Bloc A filtre désormais aussi les sources
+        # configurées (floor + seuil). Pour garder 3 articles on-angle dans le
+        # Bloc A, on qualifie les 3 articles de la source configurée par un axe
+        # (topic « ai » pour GPT-5, mots-clés « bourse »/« vélo » pour les deux
+        # autres) — sinon ils seraient floor-pruned comme source-seuls.
+        payload = {
+            "theme_id": "tech",
+            "theme_label": "Tech",
+            "topics": [{"topic_id": "ai", "label": "IA", "kind": "preset"}],
+            "keywords": [{"keyword": "bourse"}, {"keyword": "vélo"}],
+            "source_selections": [
+                {"kind": "followed", "source_id": str(curated_tech_source.id)}
+            ],
+        }
         async with _client() as c:
-            await c.post(
-                "/api/veille/config", json=self._payload(curated_tech_source.id)
-            )
-            # Bloc A = 3 articles (source configurée), Bloc B = 1 (externe).
+            await c.post("/api/veille/config", json=payload)
+            # Bloc A = 3 articles on-angle (source configurée), Bloc B = 1 (externe).
             page1 = (await c.get("/api/veille/feed?limit=3&offset=0")).json()
             page2 = (await c.get("/api/veille/feed?limit=3&offset=3")).json()
         assert len(page1["items"]) == 3
