@@ -1,5 +1,10 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    {
+      "tag": "Veille",
+      "summary": "Veille plus précise (moins de hors-sujet) et plus facile à retrouver dans les réglages."
+    }
+  ],
   "released": [
     {
       "version": "1.0.0",

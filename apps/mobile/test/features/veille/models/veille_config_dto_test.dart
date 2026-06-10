@@ -198,4 +198,34 @@ void main() {
       expect(dto.failed.single.reason, 'Aucun flux RSS.');
     });
   });
+
+  group('VeilleConfigDto.sectionLabel', () {
+    Map<String, dynamic> baseJson(List<Map<String, dynamic>> topics) => {
+          'id': 'cfg-1',
+          'user_id': 'u-1',
+          'theme_id': 'sport',
+          'theme_label': 'Sport',
+          'status': 'active',
+          'created_at': '2026-06-09T10:00:00Z',
+          'updated_at': '2026-06-09T10:00:00Z',
+          'topics': topics,
+          'sources': <Map<String, dynamic>>[],
+          'keywords': <Map<String, dynamic>>[],
+        };
+
+    test('prend le libellé du premier angle (topic granulaire, pas le thème)',
+        () {
+      final dto = VeilleConfigDto.fromJson(baseJson([
+        {'id': 't1', 'topic_id': 'nba', 'label': 'NBA', 'kind': 'preset'},
+        {'id': 't2', 'topic_id': 'nfl', 'label': 'NFL', 'kind': 'preset'},
+      ]));
+      // Corrige « Ma veille — Sport » alors que la veille porte sur la NBA.
+      expect(dto.sectionLabel, 'NBA');
+    });
+
+    test('retombe sur le thème macro quand aucun angle', () {
+      final dto = VeilleConfigDto.fromJson(baseJson(const []));
+      expect(dto.sectionLabel, 'Sport');
+    });
+  });
 }

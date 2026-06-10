@@ -1,87 +1,76 @@
-# PR A — Mobile : démarrage perçu quasi-instantané (squelette + auth non-bloquant + rendu progressif)
+## Veille — ajustements finaux (« released »)
 
-## Résumé
+Rend la Veille « release-ready » en corrigeant les 3 griefs PO (compte NBA,
+`laurin_boujon@proton.me`) : faux-positifs massifs, point d'entrée disparu,
+veille éparpillée + bouton hors design-system.
 
-À l'ouverture matinale, le temps perçu tap→contenu était >5s (jusqu'à 20s+ si
-`/api/digest` renvoie 202). Le matin est structurellement différent des
-ré-ouvertures : le cache local est invalidé chaque nuit (jamais de SWR matinal),
-le JWT (TTL 1h) est mort et un `await refresh()` **bloquant** gatait le splash,
-et rien ne s'affichait avant le retour de **tous** les endpoints (3 de base +
-jusqu'à 14 feeds thèmes/sources). Cette PR (mobile only, aucune nouvelle
-dépendance) supprime ces trois gates.
+### Partie 1 — [critical] Fix des faux-positifs + banc de mesure (backend)
 
-## Changements
+**Cause racine.** Le **Bloc A « Tes sources »** de `fetch_veille_feed` était en
+**laisser-passer total** (`apply_floor=False`) : tout article récent (30 j) d'une
+source configurée entrait sans filtre de pertinence. Une source large (The
+Athletic, tous les sports) inondait une veille étroite (NBA) de
+cricket/hockey/baseball. Le floor « la source est un boost, pas un free-pass » ne
+tournait jamais en prod pour les sources configurées.
 
-- **A1 — Auth refresh non-bloquant** (`core/auth/auth_state.dart`)
-  - `_init` peint l'état authentifié **immédiatement** ; le refresh tourne en
-    arrière-plan, exposé via `AuthStateNotifier.initialRefresh`.
-  - `.catchError` ne gère que l'`AuthException` (refresh token mort → signout +
-    `sessionExpired`, identique à l'ancien chemin bloquant). On ne re-pose
-    **jamais** `lastTokenRefreshAt` à la main : l'event SDK `tokenRefreshed`
-    reste l'unique signal d'invalidation (cf. `bug-feed-403-auth-recovery.md`).
-    Single-flight conservé via `SessionRefresher` (cf.
-    `bug-android-disconnect-race.md`).
+**Fix (gate-all, décision PO « le plus strict »).**
+- `feed_filter.py` Bloc A : `apply_floor=True, apply_threshold=True`. Le floor ne
+  mord que si la config a un axe topic/mot-clé (`floor_active`) → une config
+  **purement source** garde le laisser-passer (fallback voulu).
+- `_matched_axes` : matching mot-entier (`matches_word_boundary`) au lieu de
+  sous-chaîne — aligne l'axe `keyword` exposé sur le scoring/prédicat SQL et
+  empêche un mot-clé générique de survivre sur un fragment (« nets » ⊂
+  « internets ») dans le Bloc A.
 
-- **A2 — Cache → squelette fidèle** (`services/flux_continu_cache_service.dart`)
-  - `readLatest()` ne jette plus sur day mismatch — pose `isStale` + lit
-    `savedAt`. `readToday()` devient un wrapper « du jour uniquement ». Le cache
-    d'hier sert à dessiner la structure, **jamais** à afficher du contenu périmé.
+**Banc de mesure (le « dataset de test » demandé, sans LLM).**
+- `tests/fixtures/veille_curation_gold.json` — gold écrit à la main (27 articles,
+  configs NBA topic-ML-mort + IA topic-ML-vivant), encode le repro.
+- `scripts/evaluate_veille_curation.py` — rejoue la **vraie** porte
+  (`_score_block`/`_matched_axes`, anti-drift) : P/R/F1, FP par bloc/chemin, FN
+  par raison, couverture d'axe, `--sweep`, `--compare`.
+- `tests/scripts/test_evaluate_veille_curation.py` + toy fixture — anti-drift +
+  confusion connue (FP Bloc A `source_only` planté tué par le floor ; FN
+  mot-clé-absent ; mot-entier « agentic »).
+- `docs/maintenance/maintenance-veille-curation-calibration.md` — doc + journal.
 
-- **A3 — Provider squelette + rendu progressif 2 phases**
-  (`providers/flux_continu_provider.dart`)
-  - `build()` peint un **squelette** (sections dérivées des prefs locales :
-    favoris thèmes/sources, ordre Tournée, veille) sur cache d'hier/cold, ou le
-    **vrai** contenu sur snapshot du jour (SWR in-day).
-  - **Garde anti-tempête 401** : `await initialRefresh` borné (~3s) avant le
-    batch → les ~3+14 appels partent avec un JWT frais ; sinon l'intercepteur 401
-    single-flight reste le filet.
-  - `_fetchAll` (via `_buildStateFromPayload`) émet en 2 phases :
-    hero/Essentiel/Actus/Bonnes d'abord (≈ 1 round-trip de base), puis les
-    sections thèmes/sources. L'émission progressive ne se fait QUE quand un
-    squelette est monté (pas de blink en SWR / pull-to-refresh).
-  - Flag `isSkeleton` sur `FluxContinuState`. Garde `_bootstrapping` : neutralise
-    les listeners de prefs pendant le bootstrap (le 1er `_fetchAll` lit déjà les
-    prefs fraîches) — restaure l'invariant « aucune réaction de listener avant le
-    1er build complet ».
+**Résultat mesuré (baseline laisser-passer → gate-all) :** précision **0.786 →
+1.000** (+0.214), **FP Bloc A `source_only` 3 → 0**, **rappel inchangé** (0.846 ;
+les 2 FN paraphrases étaient déjà perdues au cap de diversité). La config IA
+(topic ML vivant) reste à P=R=1.0 — le gate ne coûte rien quand le topic porte le
+rappel.
 
-- **A4 — Squelette par section** (`screens/flux_continu_screen.dart`)
-  - Remplace le `LoadingView()` plein écran par `_FluxContinuSkeleton`
-    (en-têtes réels via `SectionBanner` + corps `ExploreDiscoverySkeleton`),
-    non scrollable, hors physics de snap. **Pas** de lazy-load au scroll
-    (garde-fou snap/haptique, cf. mémoire `flux_snap_haptic_feel`).
+### Partie 2 — Onglet veille dédié dans les réglages
 
-- **A5 — Micro-opt Sentry** : non inclus (optionnel, gain à confirmer au
-  profiling ; réordonner l'init Sentry touche la capture des crashs de boot).
+`settings_sheet.dart` : nouvelle tuile **« Ma veille »** (icône jumelles), état
+adaptatif (veille active → menu modifier/archiver ; sinon → « Crée ta veille » →
+flow de création). Restaure le point d'entrée découvrable retiré au commit
+`dbb6aa20`. Le menu modifier/**archiver** (seul chemin d'archivage de l'app) est
+**déplacé** ici depuis Mes intérêts (pas perdu).
 
-## Note d'archi (Riverpod) — important pour la review
+### Partie 3 — Cleanup « Mes intérêts » + alignement bouton
 
-`provider.future` se résout à la **1ère** émission mid-build (vérifié). Comme
-`build()` émet désormais squelette → base-only → complet, les tests attendent
-l'état stabilisé via un helper `settle()` au lieu de `.future`. Migration
-appliquée aux 3 suites flux provider (comportement final inchangé).
+- `my_interests_screen.dart` : retrait des CTAs veille autonomes
+  (`_CreateVeilleCta` + bouton/menu « Gérer ma veille ») qui doublonnaient.
+- `tournee_composer_sheet.dart` : `ComposeTourneeButton` passe au composant
+  canonique **`PrimaryButton`** (terracotta plein, `elevation:0`) au lieu de la
+  tuile teintée + ombre (« dégradé étrange »). Haptique conservée.
+- Libellé section : `VeilleConfigDto.sectionLabel` = **premier angle** (topic
+  granulaire « NBA ») au lieu du thème macro (« Sport »). Appliqué aux 4 sites
+  (`flux_continu_provider.dart`, `manage_favorites_sheet.dart`).
 
-## Vérification
+### Tests / vérif
 
-- `flutter analyze` : **clean** sur les 5 fichiers lib touchés ; 0 erreur projet.
-- Tests : `flutter test test/features/flux_continu/ test/features/auth/ test/core/auth/`
-  → `+272 -3`. Les **3 échecs sont pré-existants** (baseline pristine = `+266 -3` :
-  `essentiel_hi_fi_card` badge Météo/layout — flaky, et `router_redirection`
-  EmailConfirmationScreen — Hive/Supabase non init en widget test). **Aucun
-  nouvel échec dans les zones touchées.**
-- Tests ajoutés :
-  - `flux_continu_cache_service_test.dart` (nouveau) : `readLatest` isStale/savedAt,
-    `readToday` null sur périmé, JSON corrompu → null.
-  - `flux_continu_provider_test.dart` : cache d'hier → 1ère peinture squelette
-    (jamais de contenu périmé) ; cold → base-only émis avant les sections thèmes.
+- Backend : suite complète verte (**1617 passed**, 1 skipped, 2 xfailed) ;
+  `prove_veille_curation.py` → VERDICT GLOBAL OK ; ruff clean.
+  `test_feed_pagination_across_block_boundary` mis à jour (comportement gate-all
+  assumé). Les DB tests exigent `DATABASE_URL` vers `facteur_test`.
+- Mobile : `flutter analyze` clean (info-only, déjà présents) ; tests veille DTO
+  (+ `sectionLabel`), flux_continu, manage_favorites, my_interests, settings
+  verts. Le test de régression #639 (CTA my_interests) est retiré (CTA déplacé
+  vers les réglages) ; un test `sectionLabel` est ajouté. **À valider via
+  `/validate-feature`** (onglet « Ma veille », bouton primary, section « Ma
+  veille — NBA »).
 
-## À faire côté review / suivi (hors PR)
+**Aucune migration Alembic** (pas de changement de schéma).
 
-- **Profiling cold-launch sur device réel** + simulation d'un matin (cache d'hier)
-  pour mesurer splash→1ère frame avant/après (le plancher moteur Flutter domine
-  l'absolu ; on prouve la suppression des gates refresh + fan-out). Logs
-  `[PERF] fluxContinu.build mode=content_fresh|skeleton_stale|cold` ajoutés.
-- **PR B (backend)** recommandée juste après : tuer le 202 du chemin critique
-  (cas nouveau-user post-store), caches courts, payload allégé. Voir
-  `docs/maintenance/maintenance-quick-start-boot-perf.md`.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+Changelog : entrée `unreleased` « Veille ».

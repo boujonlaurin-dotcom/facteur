@@ -522,7 +522,7 @@ class _ManageFavoritesContentState
             key: kTourneeVeilleKey,
             kind: _FavKind.veille,
             id: veilleCfg.id,
-            label: 'Ma veille — ${veilleCfg.themeLabel}',
+            label: 'Ma veille — ${veilleCfg.sectionLabel}',
             emoji: '🔭',
             accent: _kVeilleAccent,
           );
@@ -807,7 +807,7 @@ class _ManageFavoritesContentState
                 const SizedBox(height: FacteurSpacing.space3),
                 if (canAddVeille)
                   _VeilleTile(
-                    label: 'Ajouter ma veille — ${veilleCfg.themeLabel}',
+                    label: 'Ajouter ma veille — ${veilleCfg.sectionLabel}',
                     colors: colors,
                     onTap: _onAddVeille,
                   )
