@@ -19,6 +19,7 @@ from app.models.host_feed_resolution import HostFeedResolution
 from app.models.source import Source
 from app.models.source_search_log import SourceSearchLog
 from app.models.user import UserInterest
+from app.services.observability.usage_recorder import track_api_call
 from app.services.rss_parser import RSSParser
 from app.services.search.cache import (
     normalize_query,
@@ -988,7 +989,9 @@ class SmartSourceSearchService:
         article URL nor the host root expose a feed — Facteur cannot ingest
         a "source" without a feed.
         """
-        brave_results = await self.brave.search(query)
+        async with track_api_call("brave", "smart_search_brave") as _call:
+            brave_results = await self.brave.search(query)
+            _call.status = "ok"
         # First pass: collect non-listicle candidates from the top 8.
         raw_candidates: list[tuple[str, str, str]] = []
         for br in brave_results[:8]:
@@ -1067,6 +1070,7 @@ class SmartSourceSearchService:
                 model="mistral-small-latest",
                 temperature=0.2,
                 max_tokens=500,
+                call_site="smart_search_mistral",
             )
             await llm.close()
 

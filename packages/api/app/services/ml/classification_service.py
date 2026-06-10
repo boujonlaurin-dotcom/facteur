@@ -17,6 +17,7 @@ import httpx
 import structlog
 
 from app.config import get_settings
+from app.services.observability.usage_recorder import track_api_call
 
 log = structlog.get_logger()
 
@@ -383,58 +384,65 @@ class ClassificationService:
         Returns parsed JSON response dict, or None on failure.
         """
         client = self._get_client()
-        for attempt in range(max_retries):
-            try:
-                response = await client.post(MISTRAL_API_URL, json=payload)
-                response.raise_for_status()
-                data = response.json()
+        async with track_api_call(
+            "mistral", "classification_pass1", model=payload.get("model")
+        ) as _call:
+            for attempt in range(max_retries):
+                try:
+                    response = await client.post(MISTRAL_API_URL, json=payload)
+                    response.raise_for_status()
+                    data = response.json()
 
-                # Log usage tokens + truncation detection
-                usage = data.get("usage", {})
-                max_tokens = payload.get("max_tokens")
-                completion_tokens = usage.get("completion_tokens")
-                log.info(
-                    "classification.api_usage",
-                    model=payload.get("model"),
-                    prompt_tokens=usage.get("prompt_tokens"),
-                    completion_tokens=completion_tokens,
-                )
-                if max_tokens and completion_tokens == max_tokens:
-                    log.warning(
-                        "classification.truncated",
-                        max_tokens=max_tokens,
+                    # Log usage tokens + truncation detection
+                    usage = data.get("usage", {})
+                    max_tokens = payload.get("max_tokens")
+                    completion_tokens = usage.get("completion_tokens")
+                    log.info(
+                        "classification.api_usage",
+                        model=payload.get("model"),
+                        prompt_tokens=usage.get("prompt_tokens"),
                         completion_tokens=completion_tokens,
                     )
+                    if max_tokens and completion_tokens == max_tokens:
+                        log.warning(
+                            "classification.truncated",
+                            max_tokens=max_tokens,
+                            completion_tokens=completion_tokens,
+                        )
 
-                return data
+                    _call.status = "ok"
+                    return data
 
-            except httpx.HTTPStatusError as e:
-                status = e.response.status_code
-                if status == 429 and attempt < max_retries - 1:
-                    delay = 2**attempt  # 1s, 2s, 4s
-                    log.warning(
-                        "classification.rate_limited",
-                        attempt=attempt,
-                        delay=delay,
+                except httpx.HTTPStatusError as e:
+                    status = e.response.status_code
+                    if status == 429 and attempt < max_retries - 1:
+                        _call.status = "rate_limited"
+                        delay = 2**attempt  # 1s, 2s, 4s
+                        log.warning(
+                            "classification.rate_limited",
+                            attempt=attempt,
+                            delay=delay,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    if status == 429:
+                        _call.status = "rate_limited"
+                    log.error(
+                        "classification.http_error",
+                        status_code=status,
+                        body=e.response.text[:300],
                     )
-                    await asyncio.sleep(delay)
-                    continue
-                log.error(
-                    "classification.http_error",
-                    status_code=status,
-                    body=e.response.text[:300],
-                )
-                return None
-            except json.JSONDecodeError as e:
-                log.error("classification.json_error", error=str(e))
-                return None
-            except httpx.TimeoutException:
-                log.error("classification.timeout", attempt=attempt)
-                return None
-            except Exception as e:
-                log.error("classification.unexpected", error=str(e))
-                return None
-        return None
+                    return None
+                except json.JSONDecodeError as e:
+                    log.error("classification.json_error", error=str(e))
+                    return None
+                except httpx.TimeoutException:
+                    log.error("classification.timeout", attempt=attempt)
+                    return None
+                except Exception as e:
+                    log.error("classification.unexpected", error=str(e))
+                    return None
+            return None
 
     async def classify_async(
         self,

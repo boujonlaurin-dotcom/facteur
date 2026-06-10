@@ -625,42 +625,23 @@ async def pool_metrics() -> dict[str, Any]:
     agrégées.
     """
     from app.database import engine
+    from app.observability.pool_stats import read_pool_stats
 
-    pool = engine.pool
-    size = getattr(pool, "size", lambda: None)()
-    checked_in = getattr(pool, "checkedin", lambda: None)()
-    checked_out = getattr(pool, "checkedout", lambda: None)()
-    overflow = getattr(pool, "overflow", lambda: None)()
+    metrics: dict[str, Any] = read_pool_stats(engine)
 
-    saturated = (
-        checked_out is not None
-        and size is not None
-        and checked_out >= size + max(overflow or 0, 0)
-    )
-
-    metrics: dict[str, Any] = {
-        "status": "saturated" if saturated else "ok",
-        "pool_class": type(pool).__name__,
-        "size": size,
-        "checked_in": checked_in,
-        "checked_out": checked_out,
-        "overflow": overflow,
-    }
-
-    # Signal warning à Sentry dès que la saturation est proche (> 75 %). Permet
+    # Signal warning à Sentry dès que la saturation est proche (>= 75 %). Permet
     # de corréler pics de latence et pool pressure sans avoir à déployer de
-    # l'instrumentation supplémentaire.
-    if checked_out is not None and size is not None and size > 0:
-        usage_pct = checked_out / (size + max(overflow or 0, 0))
-        metrics["usage_pct"] = round(usage_pct * 100, 1)
-        if usage_pct >= 0.75:
-            logger.warning(
-                "db_pool_pressure_high",
-                checked_out=checked_out,
-                size=size,
-                overflow=overflow,
-                usage_pct=round(usage_pct * 100, 1),
-            )
+    # l'instrumentation supplémentaire. (La sonde périodique du scheduler
+    # alerte au seuil configurable `pool_alert_threshold_pct`, défaut 80 %.)
+    usage_pct = metrics.get("usage_pct")
+    if usage_pct is not None and usage_pct >= 75:
+        logger.warning(
+            "db_pool_pressure_high",
+            checked_out=metrics.get("checked_out"),
+            size=metrics.get("size"),
+            overflow=metrics.get("overflow"),
+            usage_pct=usage_pct,
+        )
 
     logger.info("pool_metrics_probed", **metrics)
     return metrics

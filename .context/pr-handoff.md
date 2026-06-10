@@ -1,42 +1,31 @@
-fix(mot-du-jour): anti-freeze + dico élargi + lien Actu + reveal article réel
+feat(observabilité): instrumentation API externes + sonde pool + résumé digest (scaling WP-E)
 
-« Mot du jour » (La Grille) — 2 bugs + 2 améliorations remontés en prod par le PO,
-livrés en **une seule PR groupée** (décision PO). Détail : `docs/bugs/bug-mot-du-jour-bugs.md`.
+Enabler scaling **purement additif** (aucun impact user-facing, aucun changement de comportement métier). Phase 1 de l'investigation scaling 200 users — *mesurer avant de remédier*. Débloque WP-D (quotas/coûts Mistral), WP-B (digest), WP-A (pool). Doc : `docs/maintenance/maintenance-observabilite-scaling.md`.
 
-## Part A — Anti-freeze (critique)
-- Timeout dédié 12 s sur `POST grille/today/guess` (override le 30 s global).
-- `submitGuess` : suppression du `rethrow` (source du hang silencieux) → état
-  `networkError` ré-essayable + self-heal `_reconcileToday()` ; clavier réactivé.
-- `_submitGuess` (écran) : plus de future non gérée ; pas de tracking « valide »
-  sur erreur réseau.
-- Backend **idempotent** : re-submit du même dernier mot (partie en cours) ne
-  double-compte pas → retry réseau sûr.
+## Volet 1 — Tracking persistant des appels API externes
+- Nouvelle table append-only **`api_usage_events`** (`provider`, `model`, `call_site`, `user_id`, `status`, `latency_ms`, `created_at` + 2 index). Pas de contrainte d'unicité → zéro hot-row contention.
+- Recorder best-effort **`record_api_call`** (`app/services/observability/usage_recorder.py`) : session courte dédiée (`safe_async_session`), jamais bloquant, ne lève jamais, gated par le kill-switch `usage_tracking_enabled`.
+- 6 call sites instrumentés en `try/finally` (capte aussi `error`/`rate_limited`) : `classification_pass1`, `good_news_pass2`, `editorial` (chokepoint unique curation/pipeline/deep/perspective), `veille_suggester`, `smart_search_mistral`, `smart_search_brave`. Compteurs in-memory veille existants **laissés en place** (pas de rebranchement d'enforcement → WP-D).
 
-## Part B — Dictionnaire élargi
-- Asset curé `grille_proper_nouns_fr.txt` (pays/villes/prénoms) → ITALIE, RUSSIE…
-  acceptés. Conjugaisons déjà couvertes par la source existante (vérifié) → pas
-  de 2ᵉ source (Lexique383 écarté : CC BY-SA share-alike). Dico régénéré committé.
+## Volet 2 — Résumé de run digest always-on
+- `compute_digest_coverage(session, target_date)` factorisé depuis le watchdog (source unique de la couverture, partagée scheduler ↔ job).
+- Log always-on `digest_run_summary` (`duration_seconds`, `total_users`, `success`, `failed`, `coverage_pct`) + `coverage_pct` ajouté à l'event PostHog `digest_generated`. Couverture lue dans une session dédiée best-effort. Aucune nouvelle table.
 
-## Part C — Lien Actu du jour
-- `_goToActus` → page complète `…/section/essentiel`.
-- CTA « Lire l'actu du jour » toujours visible dans le jeu.
+## Volet 3 — Sonde pool périodique + métrique idle-in-tx
+- `read_pool_stats(engine)` factorisé (`app/observability/pool_stats.py`), réutilisé par `/api/health/pool` (comportement inchangé) **et** par la nouvelle sonde.
+- Job APScheduler `_pool_health_probe` (interval 5 min) : alerte `db_pool_pressure_high` + `sentry_sdk.capture_message(level="warning")` au seuil `pool_alert_threshold_pct` (défaut 80).
+- `zombie_session_sweeper` émet désormais `db_idle_in_transaction_swept{count}` always-on (idle-in-tx requêtable même à 0).
 
-## Part D — Reveal lié à un vrai article (auto-matching)
-- Migration additive `gr02_grille_featured_article` (nullable, FK ON DELETE SET NULL).
-- `grille_matcher.py` accroche l'article du digest qui matche le mot (best-effort,
-  hooké dans le job digest, non bloquant, idempotent).
-- `featured*` gated fin de partie ; mobile affiche vrai titre/extrait/source +
-  bouton « Lire l'article » (détail in-app), fallback `pourquoi`.
+## Config (kill-switches)
+`usage_tracking_enabled: bool = True` · `pool_alert_threshold_pct: int = 80`.
 
-## Vérif
-- 62 tests backend verts + 43 mobile verts. `ruff check/format app/` clean.
-- Alembic : 1 head (`gr02`), upgrade/downgrade round-trip OK sur DB vide.
-- `flutter analyze` clean (hors warning pré-existant carte_cta.dart).
+## Migration
+`au01_api_usage_events`, `down_revision = gr02_grille_featured_article` (head courant ; `vf02` du plan était dépassé depuis #784). **1 seul head** confirmé via `alembic heads`. Additive pure (CREATE TABLE + 2 index), rollback trivial. `upgrade head` + `downgrade -1` rejoués sur **DB vide** → OK.
 
-## Notes review
-- Migration = zone à risque DB : additive + nullable + FK SET NULL, testée en
-  round-trip. Le Dockerfile rejoue `alembic upgrade head` au boot Railway.
-- Suite mobile complète a ~27 échecs pré-existants hors-scope (Hive/Supabase) ;
-  CI = pytest backend only.
+## Tests & VERIFY
+- Nouveaux : `tests/test_usage_recorder.py` (kill-switch, best-effort never-raises, coercition user_id, call_site inconnu), `tests/test_pool_observability.py` (`read_pool_stats` saturé/ok/NullPool + sonde alerte/quiet/registration).
+- Non-régression : `tests/ml/`, `tests/editorial/`, `tests/workers/`, `tests/test_digest_generation_job.py`, `tests/test_health_pool.py`, `tests/services/search/` → **tout vert** (~355 tests sur les modules touchés).
+- Intégration live (Postgres) : 1 ligne/appel écrite (Mistral + Brave), kill-switch ⇒ 0 insert, requête WP-D `GROUP BY provider, model, day` OK.
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+## Risques & rollback
+Write amplification négligeable (append-only + best-effort + flag, ~3k/j). Rollback à chaud : `usage_tracking_enabled=False` (sans redéploiement schéma) ou `alembic downgrade -1`. Pas de changelog user (PR backend sans impact visible).
