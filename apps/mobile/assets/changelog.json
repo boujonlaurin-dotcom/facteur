@@ -7,6 +7,10 @@
     {
       "tag": "Onboarding",
       "summary": "Questionnaire plus court et plus fluide, fin du blocage en sortie."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Ajoutez n'importe quelle source et voyez ses derniers articles arriver instantanément."
     }
   ],
   "released": [

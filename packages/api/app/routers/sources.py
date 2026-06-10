@@ -14,17 +14,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
+from app.models.content import Content
 from app.models.enums import InterestState
 from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.source import Source, UserSource
 from app.models.user import UserInterest
 from app.schemas.source import (
     PremiumConnectionResponse,
+    RecentItemsRequest,
+    RecentItemsResponse,
     SearchAbandonedRequest,
     SmartSearchRecentItem,
     SmartSearchRequest,
     SmartSearchResponse,
     SmartSearchResultItem,
+    SourceRecentItems,
     SourceCatalogResponse,
     SourceCreate,
     SourceDetectRequest,
@@ -360,6 +364,70 @@ async def log_search_abandoned(
         input_type="keyword",
         endpoint="smart-search",
     )
+
+
+@router.post("/recent-items", response_model=RecentItemsResponse)
+async def get_recent_items(
+    data: RecentItemsRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> RecentItemsResponse:
+    """Derniers contenus par source, groupés (animation de conclusion onboarding).
+
+    Bornes anti-abus via le schéma : max 30 sources, max 5 items par source.
+    """
+    if not data.source_ids:
+        return RecentItemsResponse(sources=[])
+
+    rn = (
+        func.row_number()
+        .over(
+            partition_by=Content.source_id,
+            order_by=Content.published_at.desc(),
+        )
+        .label("rn")
+    )
+    ranked = (
+        select(Content.source_id, Content.title, Content.published_at, rn)
+        .where(Content.source_id.in_(data.source_ids))
+        .subquery()
+    )
+    rows = (
+        await db.execute(
+            select(ranked.c.source_id, ranked.c.title, ranked.c.published_at)
+            .where(ranked.c.rn <= data.per_source)
+            .order_by(ranked.c.source_id, ranked.c.published_at.desc())
+        )
+    ).all()
+
+    items_by_source: dict[UUID, list[SmartSearchRecentItem]] = defaultdict(list)
+    for row in rows:
+        items_by_source[row.source_id].append(
+            SmartSearchRecentItem(
+                title=row.title,
+                published_at=row.published_at.isoformat() if row.published_at else "",
+            )
+        )
+
+    sources_result = await db.execute(
+        select(Source.id, Source.name, Source.logo_url).where(
+            Source.id.in_(items_by_source.keys())
+        )
+    )
+    source_meta = {row.id: row for row in sources_result.all()}
+
+    # Ordre de la requête préservé pour un rendu déterministe côté mobile.
+    grouped = [
+        SourceRecentItems(
+            source_id=source_id,
+            name=source_meta[source_id].name,
+            logo_url=source_meta[source_id].logo_url,
+            items=items_by_source[source_id],
+        )
+        for source_id in dict.fromkeys(data.source_ids)
+        if source_id in source_meta
+    ]
+    return RecentItemsResponse(sources=grouped)
 
 
 @router.get("/by-theme/{slug}", response_model=ThemeSourcesResponse)
