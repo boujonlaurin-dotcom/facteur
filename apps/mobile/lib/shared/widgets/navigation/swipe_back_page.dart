@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 
+const double wideBackGestureWidthFraction = 0.35;
+
 enum FullSwipePageTransition { horizontal, verticalFromBottom }
 
 /// A [Page] that uses the standard Cupertino slide-from-right transition
