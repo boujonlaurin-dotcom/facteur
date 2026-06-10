@@ -186,8 +186,6 @@ class OnboardingStrings {
   static const String q9Title = 'Vos sources, sur mesure.';
   static const String q9Subtitle =
       'Basé sur vos réponses, voici les médias que Facteur vous recommande.';
-  static const String q9HelperText =
-      'Ajoutez vos sources ! Jetez un oeil à vos feeds et boîtes mails préférées.'; // kept for reference but no longer shown in onboarding
   static const String q9SearchHint = 'Rechercher une source...';
   static const String q9LoadingError = 'Erreur de chargement des sources';
   static const String q9EmptyList = 'Aucune source disponible';
@@ -198,11 +196,7 @@ class OnboardingStrings {
   static const String q9PreselectionTitle =
       'Modifiez cette liste à tout moment.';
 
-  // Sources Page 2
-  static const String sourcesPage2Title = 'Allez plus loin.';
-  static const String sourcesPage2Subtitle =
-      'Explorez le catalogue complet et ajoutez vos propres sources.';
-  static const String addAnySourceButton = 'Ajouter n\'importe quelle source';
+  // Sources : abonnements presse
   static const String premiumSubscriptionsButton =
       'Ajouter vos abonnements presse';
   static const String premiumSheetTitle = 'Vos abonnements presse';
@@ -236,12 +230,6 @@ class OnboardingStrings {
       'Indique quels sujets tu veux le plus voir apparaitre dans ton feed.';
   static const String addCustomTopicHint = 'Ajouter un sujet';
   static const String maxCustomTopicsReached = 'Maximum 3 sujets par thème';
-
-  // Sources Reaction (after source selection)
-  static const String sourcesReactionTitle = 'Vos sources, votre contrôle.';
-  static const String sourcesReactionMessage =
-      'Modifiez ou ajoutez n\'importe quelle autre source à Facteur (newsletters, sites web, etc) depuis vos paramètres.\n\nFacteur est fait pour s\'adapter à vous.';
-  static const String addSourceButton = 'Ajouter une source';
 
   // Finalize
   static const String finalizeTitle = 'Votre essentiel est prêt.';
