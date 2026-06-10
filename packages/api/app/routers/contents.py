@@ -181,13 +181,17 @@ async def update_content_status(
     service = ContentService(db)
     user_uuid = UUID(current_user_id)
 
-    updated_status = await service.update_content_status(
+    updated_status, transitioned_to_consumed = await service.update_content_status(
         user_id=user_uuid, content_id=content_id, update_data=update_data
     )
 
     await db.commit()
     FEED_CACHE.invalidate(user_uuid)
-    return {"status": "ok", "current_status": updated_status.status}
+    return {
+        "status": "ok",
+        "current_status": updated_status.status,
+        "transitioned_to_consumed": transitioned_to_consumed,
+    }
 
 
 @router.post("/{content_id}/save", status_code=status.HTTP_200_OK)

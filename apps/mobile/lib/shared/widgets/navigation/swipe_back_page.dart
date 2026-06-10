@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 
+enum FullSwipePageTransition { horizontal, verticalFromBottom }
+
 /// A [Page] that uses the standard Cupertino slide-from-right transition
 /// but with a wider swipe-back gesture zone (left ~35% of screen) instead
 /// of the default edge-only (20px) gesture area.
@@ -9,10 +11,12 @@ import 'package:flutter/gestures.dart';
 class FullSwipeCupertinoPage<T> extends Page<T> {
   final Widget child;
   final Duration? transitionDurationOverride;
+  final FullSwipePageTransition transition;
 
   const FullSwipeCupertinoPage({
     required this.child,
     this.transitionDurationOverride,
+    this.transition = FullSwipePageTransition.horizontal,
     super.key,
     super.name,
   });
@@ -30,8 +34,7 @@ class _FullSwipePageRoute<T> extends PageRoute<T>
   _FullSwipePageRoute({required FullSwipeCupertinoPage<T> page})
       : super(settings: page);
 
-  FullSwipeCupertinoPage<T> get _page =>
-      settings as FullSwipeCupertinoPage<T>;
+  FullSwipeCupertinoPage<T> get _page => settings as FullSwipeCupertinoPage<T>;
 
   @override
   Widget buildContent(BuildContext context) => _page.child;
@@ -53,6 +56,21 @@ class _FullSwipePageRoute<T> extends PageRoute<T>
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
+    if (_page.transition == FullSwipePageTransition.verticalFromBottom) {
+      final curvedAnimation = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 1),
+          end: Offset.zero,
+        ).animate(curvedAnimation),
+        child: child,
+      );
+    }
+
     return CupertinoPageTransition(
       primaryRouteAnimation: animation,
       secondaryRouteAnimation: secondaryAnimation,
@@ -117,7 +135,8 @@ class _BackGestureController {
         navigator.pop();
       }
       if (controller.isAnimating) {
-        controller.animateBack(0.0, duration: dropDuration, curve: animationCurve);
+        controller.animateBack(0.0,
+            duration: dropDuration, curve: animationCurve);
       }
     }
 

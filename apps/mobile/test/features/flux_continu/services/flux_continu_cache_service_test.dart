@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:facteur/features/digest/models/dual_digest_response.dart';
 import 'package:facteur/features/flux_continu/repositories/flux_continu_repository.dart';
@@ -99,5 +100,41 @@ void main() {
     await b.put('latest_snapshot', '{"day_key":"2026-06-09"}');
     final service = FluxContinuCacheService();
     expect(await service.readLatest(now: DateTime(2026, 6, 9, 12)), isNull);
+  });
+
+  test('patchContentConsumed updates nested digest and feed items', () async {
+    final b = await box();
+    await b.put(
+      'latest_snapshot',
+      jsonEncode({
+        'dual': {
+          'topics': [
+            {
+              'articles': [
+                {'content_id': 'article-1', 'is_read': false},
+              ],
+            },
+          ],
+        },
+        'feed': {
+          'items': [
+            {'id': 'article-1', 'status': 'unseen'},
+          ],
+        },
+      }),
+    );
+
+    final patched =
+        await FluxContinuCacheService().patchContentConsumed('article-1');
+    final decoded = jsonDecode(b.get('latest_snapshot')!) as Map;
+    final digestTopic =
+        ((decoded['dual'] as Map)['topics'] as List).first as Map;
+    final digestArticle = (digestTopic['articles'] as List).first as Map;
+    final feedArticle =
+        ((decoded['feed'] as Map)['items'] as List).first as Map;
+
+    expect(patched, isTrue);
+    expect(digestArticle['is_read'], isTrue);
+    expect(feedArticle['status'], 'consumed');
   });
 }

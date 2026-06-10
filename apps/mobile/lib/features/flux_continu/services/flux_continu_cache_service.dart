@@ -112,4 +112,44 @@ class FluxContinuCacheService {
       debugPrint('FluxContinuCache: write failed: $e');
     }
   }
+
+  Future<bool> patchContentConsumed(String contentId) async {
+    try {
+      final box = await _box();
+      final raw = box.get(_snapshotKey);
+      if (raw == null || raw.isEmpty) return false;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return false;
+      var patched = false;
+
+      void visit(dynamic value) {
+        if (value is List) {
+          for (final item in value) {
+            visit(item);
+          }
+          return;
+        }
+        if (value is! Map<String, dynamic>) return;
+
+        final id = value['id'] ?? value['content_id'];
+        if (id == contentId) {
+          if (value.containsKey('status')) value['status'] = 'consumed';
+          if (value.containsKey('is_read')) value['is_read'] = true;
+          if (value.containsKey('consumed')) value['consumed'] = true;
+          patched = true;
+        }
+        for (final child in value.values) {
+          visit(child);
+        }
+      }
+
+      visit(decoded);
+      if (!patched) return false;
+      await box.put(_snapshotKey, jsonEncode(decoded));
+      return true;
+    } catch (e) {
+      debugPrint('FluxContinuCache: patch consumed failed: $e');
+      return false;
+    }
+  }
 }

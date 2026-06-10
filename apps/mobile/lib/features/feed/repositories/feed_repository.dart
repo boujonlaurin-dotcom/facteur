@@ -895,6 +895,17 @@ class FeedRepository {
     }
   }
 
+  /// Reliable variant used by the persistent read queue.
+  ///
+  /// Unlike [updateContentStatus], errors are deliberately propagated so the
+  /// queue only removes an entry after a confirmed backend response.
+  Future<void> syncConsumedStatus(String contentId) async {
+    await _apiClient.dio.post<void>(
+      'contents/$contentId/status',
+      data: {'status': ContentStatus.consumed.name},
+    );
+  }
+
   Future<TabCounts> getTabCounts() async {
     try {
       final response = await _apiClient.dio.get<Map<String, dynamic>>(

@@ -966,20 +966,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
                   ),
               ],
             ),
-          FeedThemeSection(
-            :final items,
-            :final themeSlug,
-            :final customTopicId,
-          ) =>
-            FeedThemeSection(
-              kind: s.kind,
-              label: s.label,
-              accent: s.accent,
-              coreVisibleCount: s.coreVisibleCount,
-              blurb: s.blurb,
-              illustrationAsset: s.illustrationAsset,
-              themeSlug: themeSlug,
-              customTopicId: customTopicId,
+          FeedThemeSection(:final items) => s.copyWith(
               items: [
                 for (final c in items)
                   if (c.id == contentId)

@@ -74,7 +74,7 @@ class ContentService:
 
     async def update_content_status(
         self, user_id: UUID, content_id: UUID, update_data: ContentStatusUpdate
-    ) -> UserContentStatus:
+    ) -> tuple[UserContentStatus, bool]:
         """
         Met à jour le statut d'un contenu pour un utilisateur (Lu, Vu, Sauvegardé).
         Gère l'upsert (création ou mise à jour).
@@ -114,21 +114,44 @@ class ContentService:
             )
 
         # Upsert statement
-        stmt = (
-            insert(UserContentStatus)
-            .values(**values)
-            .on_conflict_do_update(
-                index_elements=["user_id", "content_id"],
-                set_=conflict_set,
-            )
-            .returning(UserContentStatus)
+        insert_stmt = insert(UserContentStatus).values(**values)
+        # Atomic idempotence guard: on a retry (including two concurrent
+        # requests), PostgreSQL locks the conflicting row and skips the update
+        # once its status is already consumed. Only the statement that creates
+        # the real transition returns a row.
+        conflict_where = (
+            UserContentStatus.status != ContentStatus.CONSUMED
+            if update_data.status == ContentStatus.CONSUMED
+            else None
+        )
+        conflict_update = insert_stmt.on_conflict_do_update(
+            index_elements=["user_id", "content_id"],
+            set_=conflict_set,
+            where=conflict_where,
         )
 
-        result = await self.session.scalars(stmt)
-        updated_status = result.one()
+        stmt = conflict_update.returning(UserContentStatus)
 
-        # Trigger Streak if CONSUMED
-        if update_data.status == ContentStatus.CONSUMED:
+        result = await self.session.scalars(stmt)
+        updated_status = result.one_or_none()
+        transitioned_to_consumed = (
+            update_data.status == ContentStatus.CONSUMED
+            and updated_status is not None
+        )
+
+        if updated_status is None:
+            updated_status = await self.session.scalar(
+                select(UserContentStatus).where(
+                    UserContentStatus.user_id == user_id,
+                    UserContentStatus.content_id == content_id,
+                )
+            )
+            if updated_status is None:
+                raise RuntimeError("content status upsert returned no row")
+
+        # Trigger progression/recommendation effects only for the real
+        # transition. Retries remain successful but side-effect free.
+        if transitioned_to_consumed:
             # We use str(user_id) because StreakService expects a string ID (usually) or modify StreakService to accept UUID
             # Looking at StreakService, it takes str and converts to UUID.
             streak_service = StreakService(self.session)
@@ -158,7 +181,7 @@ class ContentService:
                 user_id, content_id
             )
 
-        return updated_status
+        return updated_status, transitioned_to_consumed
 
     async def _adjust_interest_weight(
         self, user_id: UUID, content_id: UUID, time_spent: int | None
