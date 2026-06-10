@@ -283,10 +283,51 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
 
 /// Bloc météo compact du header : icône condition, min/max, et un indice
 /// discret signalant qu'un tap ouvre la modal détaillée 5 jours.
-class _WeatherBadge extends StatelessWidget {
+class _WeatherBadge extends StatefulWidget {
   final WeatherForecast forecast;
 
   const _WeatherBadge({required this.forecast});
+
+  @override
+  State<_WeatherBadge> createState() => _WeatherBadgeState();
+}
+
+class _WeatherBadgeState extends State<_WeatherBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _temperatureController;
+  late final Animation<double> _temperatureScale;
+
+  @override
+  void initState() {
+    super.initState();
+    _temperatureController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 450),
+    );
+    _temperatureScale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(
+          begin: 0.94,
+          end: 1.06,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 55,
+      ),
+      TweenSequenceItem(
+        tween: Tween(
+          begin: 1.06,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeInOutCubic)),
+        weight: 45,
+      ),
+    ]).animate(_temperatureController);
+    _temperatureController.forward();
+  }
+
+  @override
+  void dispose() {
+    _temperatureController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -294,29 +335,33 @@ class _WeatherBadge extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        WeatherConditionIcon(condition: forecast.condition, size: 95),
+        WeatherConditionIcon(condition: widget.forecast.condition, size: 80),
         const SizedBox(height: 2),
-        RichText(
-          text: TextSpan(
-            style: GoogleFonts.courierPrime(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              height: 1.0,
+        ScaleTransition(
+          key: const ValueKey('weather_temperatures'),
+          scale: _temperatureScale,
+          child: RichText(
+            text: TextSpan(
+              style: GoogleFonts.courierPrime(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                height: 1.0,
+              ),
+              children: [
+                TextSpan(
+                  text: '${widget.forecast.minC}°',
+                  style: TextStyle(color: colors.info),
+                ),
+                TextSpan(
+                  text: '/',
+                  style: TextStyle(color: colors.textSecondary),
+                ),
+                TextSpan(
+                  text: '${widget.forecast.maxC}°',
+                  style: TextStyle(color: colors.error),
+                ),
+              ],
             ),
-            children: [
-              TextSpan(
-                text: '${forecast.minC}°',
-                style: TextStyle(color: colors.info),
-              ),
-              TextSpan(
-                text: '/',
-                style: TextStyle(color: colors.textSecondary),
-              ),
-              TextSpan(
-                text: '${forecast.maxC}°',
-                style: TextStyle(color: colors.error),
-              ),
-            ],
           ),
         ),
         const SizedBox(height: 2),
@@ -575,7 +620,8 @@ class _MediumTile extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: FacteurTypography.labelSmall(
-                                colors.textTertiary),
+                              colors.textTertiary,
+                            ),
                           ),
                         ),
                         // Réserve l'espace de la coche pour qu'elle ne

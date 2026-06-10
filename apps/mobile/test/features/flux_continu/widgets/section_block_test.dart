@@ -8,6 +8,7 @@ import 'package:facteur/features/digest/models/digest_models.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/widgets/flux_continu_article_card.dart';
+import 'package:facteur/features/feed/widgets/feedback_inline.dart';
 import 'package:facteur/features/flux_continu/widgets/plus_de_button.dart';
 import 'package:facteur/features/flux_continu/widgets/section_block.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
@@ -180,6 +181,32 @@ void main() {
   });
 
   group('SectionBlock — coreVisibleCount slice', () {
+    testWidgets('nudge anchor targets first card not pending feedback',
+        (tester) async {
+      final anchor = GlobalKey();
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 3),
+          isOpen: false,
+          onToggleMore: () {},
+          onTapArticle: (_) {},
+          onDismissArticle: (_) {},
+          pendingFeedbackIds: const {'c0'},
+          firstSwipeableCardAnchor: anchor,
+        ),
+      ));
+
+      expect(find.byType(FeedbackInline), findsOneWidget);
+      expect(anchor.currentContext, isNotNull);
+      expect(
+        find.descendant(
+          of: find.byKey(anchor),
+          matching: find.text('title-c1'),
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets(
         'FeedThemeSection renders only coreVisibleCount cards when closed',
         (tester) async {

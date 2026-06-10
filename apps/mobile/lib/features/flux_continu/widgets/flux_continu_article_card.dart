@@ -101,6 +101,9 @@ class FluxContinuArticleCard extends ConsumerStatefulWidget {
   final VoidCallback? onSwipeDismiss;
   final bool enableSwipeHint;
   final VoidCallback? onSwipeHintComplete;
+  final GlobalKey? nudgeAnchor;
+  final VoidCallback? onSwipeConversion;
+  final VoidCallback? onLongPressConversion;
   final bool isEssentiel;
   final int pressReviewCount;
   final List<SourceMini> perspectiveSources;
@@ -113,6 +116,9 @@ class FluxContinuArticleCard extends ConsumerStatefulWidget {
     this.onSwipeDismiss,
     this.enableSwipeHint = false,
     this.onSwipeHintComplete,
+    this.nudgeAnchor,
+    this.onSwipeConversion,
+    this.onLongPressConversion,
     this.isEssentiel = false,
     this.pressReviewCount = 0,
     this.perspectiveSources = const [],
@@ -155,10 +161,13 @@ class _FluxContinuArticleCardState
               borderRadius: cardRadius,
               elevation: 0,
               child: GestureDetector(
-                onLongPressStart: (_) => ArticlePreviewOverlay.show(
-                  context,
-                  articleToContent(widget.article),
-                ),
+                onLongPressStart: (_) {
+                  widget.onLongPressConversion?.call();
+                  ArticlePreviewOverlay.show(
+                    context,
+                    articleToContent(widget.article),
+                  );
+                },
                 onLongPressMoveUpdate: (details) =>
                     ArticlePreviewOverlay.updateScroll(
                   details.localOffsetFromOrigin.dy,
@@ -247,15 +256,19 @@ class _FluxContinuArticleCardState
 
     if (widget.onTap != null) {
       card = SwipeToOpenCard(
+        key: ValueKey('swipe_${vm.contentId}'),
         onSwipeOpen: widget.onTap!,
         onSwipeDismiss: widget.onSwipeDismiss,
         enableHintAnimation: widget.enableSwipeHint,
         onHintAnimationComplete: widget.onSwipeHintComplete,
+        onSwipeGesture: widget.onSwipeConversion,
         child: card,
       );
     }
 
-    return card;
+    return widget.nudgeAnchor == null
+        ? card
+        : KeyedSubtree(key: widget.nudgeAnchor, child: card);
   }
 
   bool _isVideo(ContentType type) =>

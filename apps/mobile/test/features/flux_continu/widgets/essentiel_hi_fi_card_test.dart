@@ -295,11 +295,10 @@ void main() {
 
       // Advance 2 s → badge flips to weather (icon + min/max visible).
       await tester.pump(const Duration(seconds: 2));
-      await tester.pumpAndSettle();
+      await tester.pump();
 
       expect(find.byType(SvgPicture), findsOneWidget);
       expect(find.text('Météo'), findsOneWidget);
-      expect(find.byIcon(Icons.keyboard_return_rounded), findsNothing);
       expect(
         find.byWidgetPredicate(
           (widget) =>
@@ -307,6 +306,23 @@ void main() {
         ),
         findsOneWidget,
       );
+      final temperatures = tester.widget<ScaleTransition>(
+        find.byKey(const ValueKey('weather_temperatures')),
+      );
+      expect(temperatures.scale.value, closeTo(0.94, 0.01));
+      final richText = tester.widget<RichText>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is RichText && widget.text.toPlainText() == '12°/21°',
+        ),
+      );
+      expect((richText.text as TextSpan).style?.fontSize, 16);
+
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(temperatures.scale.value, greaterThan(1));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(temperatures.scale.value, closeTo(1, 0.001));
+      expect(find.byIcon(Icons.keyboard_return_rounded), findsNothing);
 
       // Tap the weather badge → opens the detail sheet (5-day forecast).
       await tester.tap(find.byType(SvgPicture), warnIfMissed: false);
