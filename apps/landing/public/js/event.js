@@ -39,7 +39,7 @@
         btn.textContent = '...';
         if (error) error.hidden = true;
 
-        var payload = { email: email };
+        var payload = { email: email, source: 'soiree-prelancement' };
         if (utmData.utm_source) payload.utm_source = utmData.utm_source;
         if (utmData.utm_medium) payload.utm_medium = utmData.utm_medium;
         if (utmData.utm_campaign) payload.utm_campaign = utmData.utm_campaign;
