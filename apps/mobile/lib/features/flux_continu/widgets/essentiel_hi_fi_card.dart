@@ -246,7 +246,7 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
     // Fixed slot: the header never reflows when flipping between date/weather.
     return SizedBox(
       width: 110,
-      height: 132,
+      height: 140,
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 320),
         switchInCurve: Curves.easeInOut,
@@ -337,11 +337,12 @@ class _WeatherBadgeState extends State<_WeatherBadge>
       children: [
         WeatherConditionIcon(
           condition: widget.forecast.condition,
-          size: 82,
+          size: 88,
           badgeSize: 30,
           emojiSize: 18,
           badgeInset: 4,
         ),
+        const SizedBox(height: 2),
         ScaleTransition(
           key: const ValueKey('weather_temperatures'),
           scale: _temperatureScale,
