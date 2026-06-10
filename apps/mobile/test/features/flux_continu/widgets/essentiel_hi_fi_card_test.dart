@@ -316,7 +316,7 @@ void main() {
               widget is RichText && widget.text.toPlainText() == '12°/21°',
         ),
       );
-      expect((richText.text as TextSpan).style?.fontSize, 16);
+      expect((richText.text as TextSpan).style?.fontSize, 17);
 
       await tester.pump(const Duration(milliseconds: 250));
       expect(temperatures.scale.value, greaterThan(1));

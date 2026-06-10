@@ -336,14 +336,14 @@ class _WeatherBadgeState extends State<_WeatherBadge>
       mainAxisSize: MainAxisSize.min,
       children: [
         WeatherConditionIcon(condition: widget.forecast.condition, size: 80),
-        const SizedBox(height: 2),
+        const SizedBox(height: 1),
         ScaleTransition(
           key: const ValueKey('weather_temperatures'),
           scale: _temperatureScale,
           child: RichText(
             text: TextSpan(
               style: GoogleFonts.courierPrime(
-                fontSize: 16,
+                fontSize: 17,
                 fontWeight: FontWeight.w700,
                 height: 1.0,
               ),
@@ -364,7 +364,7 @@ class _WeatherBadgeState extends State<_WeatherBadge>
             ),
           ),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 1),
         Icon(
           Icons.keyboard_arrow_down_rounded,
           size: 16,
