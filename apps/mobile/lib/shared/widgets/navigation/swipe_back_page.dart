@@ -1,7 +1,61 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show Factory;
 import 'package:flutter/gestures.dart';
 
 const double wideBackGestureWidthFraction = 0.35;
+
+/// Horizontal recognizer for embedded platform views that should yield
+/// rightward drags in the wide back-gesture zone to the enclosing route.
+class BackGestureCompatibleHorizontalDragGestureRecognizer
+    extends HorizontalDragGestureRecognizer {
+  BackGestureCompatibleHorizontalDragGestureRecognizer({
+    required this.viewportWidth,
+    super.debugOwner,
+  });
+
+  final double viewportWidth;
+  bool _startedInBackGestureZone = false;
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    _startedInBackGestureZone =
+        event.localPosition.dx <= viewportWidth * wideBackGestureWidthFraction;
+    super.addAllowedPointer(event);
+  }
+
+  @override
+  bool hasSufficientGlobalDistanceToAccept(
+    PointerDeviceKind pointerDeviceKind,
+    double? deviceTouchSlop,
+  ) {
+    if (_startedInBackGestureZone && globalDistanceMoved > 0) {
+      return false;
+    }
+    return super.hasSufficientGlobalDistanceToAccept(
+      pointerDeviceKind,
+      deviceTouchSlop,
+    );
+  }
+}
+
+/// Gesture set for article WebViews nested inside [FullSwipeCupertinoPage].
+///
+/// Vertical drags remain owned by the WebView. Horizontal drags work normally,
+/// except rightward drags starting in the left 35%, which remain available to
+/// the route's swipe-back recognizer.
+Set<Factory<OneSequenceGestureRecognizer>>
+    backGestureCompatibleWebViewRecognizers(double viewportWidth) {
+  return {
+    Factory<VerticalDragGestureRecognizer>(
+      () => VerticalDragGestureRecognizer(),
+    ),
+    Factory<HorizontalDragGestureRecognizer>(
+      () => BackGestureCompatibleHorizontalDragGestureRecognizer(
+        viewportWidth: viewportWidth,
+      ),
+    ),
+  };
+}
 
 enum FullSwipePageTransition { horizontal, verticalFromBottom }
 

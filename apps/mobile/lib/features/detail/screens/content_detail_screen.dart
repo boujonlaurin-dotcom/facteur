@@ -1,7 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:facteur/core/utils/html_utils.dart';
 import 'package:flutter/foundation.dart'
-    show Factory, defaultTargetPlatform, kIsWeb, visibleForTesting;
+    show defaultTargetPlatform, kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,7 +14,6 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart'
     show InAppWebViewController, WebUri;
 import 'package:flutter/services.dart';
-import 'package:flutter/gestures.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -3181,14 +3180,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     return WebViewWidget(
       controller: _webViewController!,
       gestureRecognizers: _isWebViewActive
-          ? {
-              Factory<VerticalDragGestureRecognizer>(
-                () => VerticalDragGestureRecognizer(),
-              ),
-              Factory<HorizontalDragGestureRecognizer>(
-                () => HorizontalDragGestureRecognizer(),
-              ),
-            }
+          ? backGestureCompatibleWebViewRecognizers(
+              MediaQuery.sizeOf(context).width,
+            )
           : const {},
     );
   }
@@ -3822,6 +3816,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         onScrollY: (y) => _webScrollY = y,
         onProgress: _applyWebReadingProgress,
         onPaywallDetected: _onPremiumPaywallDetected,
+        gestureRecognizers: backGestureCompatibleWebViewRecognizers(
+          MediaQuery.sizeOf(context).width,
+        ),
       );
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3862,7 +3859,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           _PremiumConnectBanner(
             onConnect: () => _openPremiumConnectionFromReader(source),
           ),
-        Expanded(child: WebViewWidget(controller: _webViewController!)),
+        Expanded(
+          child: WebViewWidget(
+            controller: _webViewController!,
+            gestureRecognizers: backGestureCompatibleWebViewRecognizers(
+              MediaQuery.sizeOf(context).width,
+            ),
+          ),
+        ),
       ],
     );
   }

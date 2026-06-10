@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show Factory;
+import 'package:flutter/gestures.dart' show OneSequenceGestureRecognizer;
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
@@ -44,6 +46,7 @@ class PremiumWebView extends StatefulWidget {
     this.onProgress,
     this.onScrollY,
     this.onPaywallDetected,
+    this.gestureRecognizers,
   });
 
   final Source source;
@@ -66,6 +69,7 @@ class PremiumWebView extends StatefulWidget {
   final ValueChanged<double>? onProgress;
   final ValueChanged<double>? onScrollY;
   final VoidCallback? onPaywallDetected;
+  final Set<Factory<OneSequenceGestureRecognizer>>? gestureRecognizers;
 
   @override
   State<PremiumWebView> createState() => _PremiumWebViewState();
@@ -96,6 +100,7 @@ class _PremiumWebViewState extends State<PremiumWebView> {
 
     return InAppWebView(
       initialSettings: settings,
+      gestureRecognizers: widget.gestureRecognizers,
       onWebViewCreated: _handleCreated,
       onLoadStop: _handleLoadStop,
     );
