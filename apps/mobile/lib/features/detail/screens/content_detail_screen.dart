@@ -21,6 +21,7 @@ import 'dart:math' as math;
 import '../../../config/theme.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../../shared/widgets/navigation/swipe_back_page.dart';
 import '../../feed/models/content_model.dart';
 import '../../sources/models/source_model.dart';
 import '../../../core/providers/navigation_providers.dart';
@@ -3185,7 +3186,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 () => VerticalDragGestureRecognizer(),
               ),
               Factory<HorizontalDragGestureRecognizer>(
-                () => HorizontalDragGestureRecognizer(),
+                () => BackGestureCompatibleHorizontalDragGestureRecognizer(
+                  viewportWidth: MediaQuery.sizeOf(context).width,
+                ),
               ),
             }
           : const {},

@@ -196,7 +196,10 @@ class _FullScreenBackGestureDetectorState
   }
 
   void _handlePointerDown(PointerDownEvent event) {
-    if (widget.enabledCallback()) {
+    final width = context.size?.width;
+    if (width != null &&
+        event.localPosition.dx <= width * wideBackGestureWidthFraction &&
+        widget.enabledCallback()) {
       _recognizer.addPointer(event);
     }
   }
@@ -234,29 +237,12 @@ class _FullScreenBackGestureDetectorState
     }
   }
 
-  /// Fraction of screen width from the left edge where the gesture is active.
-  static const double _gestureWidthFraction = 0.35;
-
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    return Stack(
-      fit: StackFit.passthrough,
-      children: [
-        widget.child,
-        // Left-third overlay — wide enough for easy swiping,
-        // narrow enough to not fight vertical scroll in content.
-        Positioned(
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: screenWidth * _gestureWidthFraction,
-          child: Listener(
-            onPointerDown: _handlePointerDown,
-            behavior: HitTestBehavior.translucent,
-          ),
-        ),
-      ],
+    return Listener(
+      onPointerDown: _handlePointerDown,
+      behavior: HitTestBehavior.translucent,
+      child: widget.child,
     );
   }
 }
