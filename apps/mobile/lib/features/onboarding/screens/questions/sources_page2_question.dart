@@ -90,6 +90,7 @@ class _SourcesPage2QuestionState extends ConsumerState<SourcesPage2Question> {
       builder: (context) => SourceDetailModal(
         source: source,
         onToggleTrust: () => _toggleSource(source.id),
+        isSelectedOverride: _selectedSourceIds.contains(source.id),
       ),
     );
   }

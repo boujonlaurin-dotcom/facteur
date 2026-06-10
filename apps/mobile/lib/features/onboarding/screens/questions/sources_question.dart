@@ -85,6 +85,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       builder: (context) => SourceDetailModal(
         source: source,
         onToggleTrust: () => _toggleSource(source.id),
+        isSelectedOverride: _selectedSourceIds.contains(source.id),
       ),
     );
   }

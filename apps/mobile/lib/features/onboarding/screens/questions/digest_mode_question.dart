@@ -119,6 +119,17 @@ class DigestModeQuestion extends ConsumerWidget {
                     ),
                   ),
 
+                  const SizedBox(height: FacteurSpacing.space4),
+
+                  Text(
+                    OnboardingStrings.digestModeAnytimeNote,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: colors.textTertiary),
+                    textAlign: TextAlign.center,
+                  ),
+
                   const SizedBox(height: FacteurSpacing.space2),
 
                   TextButton(

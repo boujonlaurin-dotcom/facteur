@@ -17,6 +17,13 @@ class AuthState {
   final User? user;
   final bool isLoading;
   final bool needsOnboarding;
+
+  /// `true` une fois que le statut d'onboarding a été résolu (cache Hive OU DB)
+  /// pour l'utilisateur courant. Démarre `false` : tant qu'il l'est, le router
+  /// garde l'utilisateur sur le splash plutôt que de monter le shell puis de
+  /// rebondir vers /onboarding (le rebond démontait le shell → écran gris
+  /// FLUTTER-2). Reset au signOut.
+  final bool onboardingStatusKnown;
   final String? error;
 
   /// Email en attente de confirmation après signup
@@ -40,6 +47,7 @@ class AuthState {
     this.user,
     this.isLoading = false,
     this.needsOnboarding = false,
+    this.onboardingStatusKnown = false,
     this.error,
     this.pendingEmailConfirmation,
     this.forceUnconfirmed = false,
@@ -77,6 +85,7 @@ class AuthState {
     User? user,
     bool? isLoading,
     bool? needsOnboarding,
+    bool? onboardingStatusKnown,
     String? error,
     bool clearError = false,
     String? pendingEmailConfirmation,
@@ -89,6 +98,8 @@ class AuthState {
       user: user ?? this.user,
       isLoading: isLoading ?? this.isLoading,
       needsOnboarding: needsOnboarding ?? this.needsOnboarding,
+      onboardingStatusKnown:
+          onboardingStatusKnown ?? this.onboardingStatusKnown,
       error: clearError ? null : (error ?? this.error),
       pendingEmailConfirmation: clearPendingEmail
           ? null
@@ -418,8 +429,12 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       final cachedCompleted = box.get('onboarding_completed') as bool?;
 
       if (cachedCompleted != null) {
-        // Utiliser le cache pour une décision instantanée
-        state = state.copyWith(needsOnboarding: !cachedCompleted);
+        // Utiliser le cache pour une décision instantanée — le statut est
+        // désormais connu, le router peut quitter le splash.
+        state = state.copyWith(
+          needsOnboarding: !cachedCompleted,
+          onboardingStatusKnown: true,
+        );
       }
 
       // 2. Vérifier avec la base de données (source de vérité)
@@ -435,13 +450,24 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       // 3. Mettre à jour le cache avec la valeur de la DB
       await box.put('onboarding_completed', !needsOnboarding);
 
-      // 4. Mettre à jour l'état si différent du cache
-      if (state.needsOnboarding != needsOnboarding) {
-        state = state.copyWith(needsOnboarding: needsOnboarding);
+      // 4. Mettre à jour l'état si différent du cache (ou si le statut n'était
+      //    pas encore marqué connu — cas cache vide).
+      if (state.needsOnboarding != needsOnboarding ||
+          !state.onboardingStatusKnown) {
+        state = state.copyWith(
+          needsOnboarding: needsOnboarding,
+          onboardingStatusKnown: true,
+        );
       }
     } catch (e) {
       debugPrint('AuthState: _checkOnboardingStatus error: $e');
-      // Don't override existing state on error — keep whatever was cached
+      // Don't override existing state on error — keep whatever was cached.
+      // On marque tout de même le statut comme connu pour ne JAMAIS bloquer
+      // l'utilisateur sur le splash (cache vide + DB injoignable). On retombe
+      // alors sur needsOnboarding courant (défaut false → home).
+      if (!state.onboardingStatusKnown) {
+        state = state.copyWith(onboardingStatusKnown: true);
+      }
     }
   }
 
@@ -636,14 +662,14 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   }
 
   Future<void> setOnboardingCompleted() async {
-    state = state.copyWith(needsOnboarding: false);
+    state = state.copyWith(needsOnboarding: false, onboardingStatusKnown: true);
     final box = await Hive.openBox<dynamic>('user_profile');
     await box.put('onboarding_completed', true);
   }
 
   /// Change le statut d'onboarding (utilisé pour reset/refaire)
   Future<void> setNeedsOnboarding(bool value) async {
-    state = state.copyWith(needsOnboarding: value);
+    state = state.copyWith(needsOnboarding: value, onboardingStatusKnown: true);
     final box = await Hive.openBox<dynamic>('user_profile');
     await box.put('onboarding_completed', !value);
   }

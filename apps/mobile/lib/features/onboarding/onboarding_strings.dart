@@ -142,6 +142,10 @@ class OnboardingStrings {
   static const String digestModeSereinPart4 =
       ' grâce au bouton dédié en haut de votre essentiel et du flux.';
 
+  // Réassurance affichée sous les choix du mode serein (sans tiret em).
+  static const String digestModeAnytimeNote =
+      'Vous pourrez activer ou désactiver le mode serein à tout moment depuis Mes intérêts.';
+
   // Personalised serein CTA (shown on the DigestMode question).
   static const String personalizeSereinCta =
       'Personnaliser mon mode serein';

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
@@ -8,7 +7,8 @@ import '../data/source_recommender.dart';
 
 /// Card widget for a recommended source in the onboarding sources screen.
 ///
-/// Tap on the card toggles selection. Tap on the (i) icon opens the detail modal.
+/// Tap on the card opens the detail modal (compréhension par défaut). Tap on the
+/// selection circle toggles selection (hit area ≥44px).
 /// Shows recommendation tags (topic matches, anti-bruit, fiable, serein) as chips.
 class SourceRecommendationCard extends StatelessWidget {
   final RecommendedSource recommendation;
@@ -34,7 +34,7 @@ class SourceRecommendationCard extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         HapticFeedback.lightImpact();
-        onToggle();
+        onInfoTap();
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
@@ -145,41 +145,33 @@ class SourceRecommendationCard extends StatelessWidget {
 
             const SizedBox(width: FacteurSpacing.space2),
 
-            // Info button
+            // Selection indicator — propre zone de tap (≥44px) pour toggler la
+            // sélection, indépendante du tap carte (qui ouvre la modal).
             GestureDetector(
               onTap: () {
                 HapticFeedback.lightImpact();
-                onInfoTap();
+                onToggle();
               },
               behavior: HitTestBehavior.opaque,
               child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Icon(
-                  PhosphorIcons.info(PhosphorIconsStyle.regular),
-                  size: 20,
-                  color: colors.textTertiary,
+                padding: const EdgeInsets.all(10),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: isSelected ? colors.primary : Colors.transparent,
+                    border: Border.all(
+                      color: isSelected ? colors.primary : colors.textTertiary,
+                      width: isSelected ? 0 : 1.5,
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: isSelected
+                      ? const Icon(Icons.check, size: 16, color: Colors.white)
+                      : null,
                 ),
               ),
-            ),
-
-            const SizedBox(width: FacteurSpacing.space2),
-
-            // Selection indicator
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: isSelected ? colors.primary : Colors.transparent,
-                border: Border.all(
-                  color: isSelected ? colors.primary : colors.textTertiary,
-                  width: isSelected ? 0 : 1.5,
-                ),
-                shape: BoxShape.circle,
-              ),
-              child: isSelected
-                  ? const Icon(Icons.check, size: 16, color: Colors.white)
-                  : null,
             ),
           ],
         ),

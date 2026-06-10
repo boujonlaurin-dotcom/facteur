@@ -28,6 +28,9 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
   final Map<String, List<String>> _customTopics = {};
   String? _addingForTheme;
   final TextEditingController _customController = TextEditingController();
+  // Clé sur le champ « sujet custom » pour le faire défiler au-dessus du clavier
+  // dès son apparition (cf. _startAddingCustom).
+  final GlobalKey _customFieldKey = GlobalKey();
   bool _saving = false;
 
   late final PageController _pageController;
@@ -124,6 +127,20 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
     setState(() {
       _addingForTheme = themeSlug;
       _customController.clear();
+    });
+    // Le champ vient d'apparaître (autofocus → clavier qui monte). On attend que
+    // le clavier soit en place puis on fait défiler le champ au-dessus de lui.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 250), () {
+        final ctx = _customFieldKey.currentContext;
+        if (!mounted || ctx == null) return;
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.4,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      });
     });
   }
 
@@ -270,6 +287,12 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: SingleChildScrollView(
                           physics: const BouncingScrollPhysics(),
+                          // Extent supplémentaire quand le clavier monte, sinon
+                          // le champ « sujet custom » reste caché derrière lui.
+                          padding: EdgeInsets.only(
+                            bottom: MediaQuery.viewInsetsOf(context).bottom +
+                                FacteurSpacing.space6,
+                          ),
                           child: _buildThemeCard(theme, includeHeader: false),
                         ),
                       );
@@ -277,6 +300,10 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
                   )
                 : SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.viewInsetsOf(context).bottom +
+                          FacteurSpacing.space6,
+                    ),
                     child: currentTheme != null
                         ? _buildThemeCard(currentTheme, includeHeader: true)
                         : const SizedBox.shrink(),
@@ -530,9 +557,10 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
               children: [
                 Expanded(
                   child: TextField(
+                    key: _customFieldKey,
                     controller: _customController,
                     autofocus: true,
-                    scrollPadding: const EdgeInsets.all(100),
+                    scrollPadding: const EdgeInsets.only(bottom: 240),
                     decoration: InputDecoration(
                       hintText: AvailableSubtopics
                               .customTopicPlaceholders[theme.slug] ??
