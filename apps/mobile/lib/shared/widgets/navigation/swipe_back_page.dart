@@ -1,6 +1,42 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 
+const double wideBackGestureWidthFraction = 0.35;
+
+/// Horizontal recognizer for children, such as a WebView, that should yield
+/// rightward drags in the wide back-gesture zone to the enclosing route.
+class BackGestureCompatibleHorizontalDragGestureRecognizer
+    extends HorizontalDragGestureRecognizer {
+  BackGestureCompatibleHorizontalDragGestureRecognizer({
+    required this.viewportWidth,
+    super.debugOwner,
+  });
+
+  final double viewportWidth;
+  bool _startedInBackGestureZone = false;
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    _startedInBackGestureZone =
+        event.localPosition.dx <= viewportWidth * wideBackGestureWidthFraction;
+    super.addAllowedPointer(event);
+  }
+
+  @override
+  bool hasSufficientGlobalDistanceToAccept(
+    PointerDeviceKind pointerDeviceKind,
+    double? deviceTouchSlop,
+  ) {
+    if (_startedInBackGestureZone && globalDistanceMoved > 0) {
+      return false;
+    }
+    return super.hasSufficientGlobalDistanceToAccept(
+      pointerDeviceKind,
+      deviceTouchSlop,
+    );
+  }
+}
+
 /// A [Page] that uses the standard Cupertino slide-from-right transition
 /// but with a wider swipe-back gesture zone (left ~35% of screen) instead
 /// of the default edge-only (20px) gesture area.
@@ -177,7 +213,10 @@ class _FullScreenBackGestureDetectorState
   }
 
   void _handlePointerDown(PointerDownEvent event) {
-    if (widget.enabledCallback()) {
+    final width = context.size?.width;
+    if (width != null &&
+        event.localPosition.dx <= width * wideBackGestureWidthFraction &&
+        widget.enabledCallback()) {
       _recognizer.addPointer(event);
     }
   }
@@ -215,29 +254,12 @@ class _FullScreenBackGestureDetectorState
     }
   }
 
-  /// Fraction of screen width from the left edge where the gesture is active.
-  static const double _gestureWidthFraction = 0.35;
-
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    return Stack(
-      fit: StackFit.passthrough,
-      children: [
-        widget.child,
-        // Left-third overlay — wide enough for easy swiping,
-        // narrow enough to not fight vertical scroll in content.
-        Positioned(
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: screenWidth * _gestureWidthFraction,
-          child: Listener(
-            onPointerDown: _handlePointerDown,
-            behavior: HitTestBehavior.translucent,
-          ),
-        ),
-      ],
+    return Listener(
+      onPointerDown: _handlePointerDown,
+      behavior: HitTestBehavior.translucent,
+      child: widget.child,
     );
   }
 }
