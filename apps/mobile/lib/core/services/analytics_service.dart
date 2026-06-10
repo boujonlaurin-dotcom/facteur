@@ -284,6 +284,17 @@ class AnalyticsService {
     await _capturePostHog('onboarding_sources_registered', props);
   }
 
+  /// Réponse à « Avec quels médias préférez-vous partir ? » (curious / knows).
+  /// Route la variante de la page sources de l'onboarding.
+  Future<void> trackOnboardingSourcesIntent(String intent) async {
+    final props = {
+      'session_id': _sessionId,
+      'intent': intent,
+    };
+    await _logEvent('onboarding_sources_intent', props);
+    await _capturePostHog('onboarding_sources_intent', props);
+  }
+
   // ──────────────────────────────────────────────────────────────
   // Sprint 2 — feature-by-feature events (PR1)
   // ──────────────────────────────────────────────────────────────

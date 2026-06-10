@@ -20,21 +20,23 @@ void main() {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // Ordre des enums — garde-fou contre la réindexation (v4) qui casserait la
+  // Ordre des enums — garde-fou contre la réindexation (v5) qui casserait la
   // reprise Hive et le routage des questions.
   // ──────────────────────────────────────────────────────────────────────
-  group('Enum order (v4)', () {
+  group('Enum order (v5)', () {
     test('Section2Question = {approach, responseStyle}', () {
       expect(Section2Question.values, hasLength(2));
       expect(Section2Question.approach.index, 0);
       expect(Section2Question.responseStyle.index, 1);
     });
 
-    test('Section3Question insère digestMode avant finalize', () {
+    test('Section3Question : sourcesIntent avant sources, digestMode avant finalize',
+        () {
+      expect(Section3Question.values, hasLength(6));
       expect(Section3Question.themes.index, 0);
       expect(Section3Question.subtopics.index, 1);
-      expect(Section3Question.sources.index, 2);
-      expect(Section3Question.sourcesReaction.index, 3);
+      expect(Section3Question.sourcesIntent.index, 2);
+      expect(Section3Question.sources.index, 3);
       expect(Section3Question.digestMode.index, 4);
       expect(Section3Question.finalize.index, 5);
     });
@@ -111,16 +113,17 @@ void main() {
       );
     });
 
-    test('themes/subtopics/digestMode skippables, pas sources/finalize', () {
+    test('themes/subtopics/sourcesIntent/digestMode skippables, pas sources/finalize',
+        () {
       OnboardingState s3(Section3Question q) => OnboardingState(
             currentSection: OnboardingSection.sourcePreferences,
             currentQuestionIndex: q.index,
           );
       expect(s3(Section3Question.themes).isSkippable, isTrue);
       expect(s3(Section3Question.subtopics).isSkippable, isTrue);
+      expect(s3(Section3Question.sourcesIntent).isSkippable, isTrue);
       expect(s3(Section3Question.digestMode).isSkippable, isTrue);
       expect(s3(Section3Question.sources).isSkippable, isFalse);
-      expect(s3(Section3Question.sourcesReaction).isSkippable, isFalse);
       expect(s3(Section3Question.finalize).isSkippable, isFalse);
     });
   });
@@ -178,7 +181,8 @@ void main() {
       expect(s.answers.responseStyle, 'nuanced');
     });
 
-    test('themes → sources (saute subtopics) avec thèmes vides', () async {
+    test('themes → sourcesIntent (saute subtopics) avec thèmes vides',
+        () async {
       final c = ProviderContainer();
       addTearDown(c.dispose);
       await _settle();
@@ -187,11 +191,28 @@ void main() {
       n.continueAfterReaction();
       n.skipCurrentQuestion(); // → responseStyle
       n.skipCurrentQuestion(); // → Section 3 themes
-      n.skipCurrentQuestion(); // themes → sources
+      n.skipCurrentQuestion(); // themes → sourcesIntent
+
+      final s = c.read(onboardingProvider);
+      expect(s.currentQuestionIndex, Section3Question.sourcesIntent.index);
+      expect(s.answers.themes, isEmpty);
+    });
+
+    test('sourcesIntent → sources avec défaut curious', () async {
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      await _settle();
+      final n = c.read(onboardingProvider.notifier);
+
+      n.continueAfterReaction();
+      n.skipCurrentQuestion(); // → responseStyle
+      n.skipCurrentQuestion(); // → Section 3 themes
+      n.skipCurrentQuestion(); // themes → sourcesIntent
+      n.skipCurrentQuestion(); // sourcesIntent → sources
 
       final s = c.read(onboardingProvider);
       expect(s.currentQuestionIndex, Section3Question.sources.index);
-      expect(s.answers.themes, isEmpty);
+      expect(s.answers.sourcesIntent, 'curious');
     });
 
     test('digestMode → finalize avec défaut pour_vous', () async {
@@ -204,7 +225,7 @@ void main() {
       n.continueAfterReaction();
       n.skipCurrentQuestion(); // → responseStyle
       n.skipCurrentQuestion(); // → Section 3 themes (anxiety préservé)
-      n.continueFromSourcesPage2(['s1']); // anxiety → digestMode
+      n.selectSources(['s1']); // anxiety → digestMode
       await _settle();
       expect(
         c.read(onboardingProvider).currentQuestionIndex,
@@ -220,9 +241,47 @@ void main() {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // continueFromSourcesPage2 : routage selon l'objectif anxiety.
+  // selectSourcesIntent : routage vers la page sources + réponse persistée.
   // ──────────────────────────────────────────────────────────────────────
-  group('continueFromSourcesPage2', () {
+  group('selectSourcesIntent', () {
+    test('subtopics → sourcesIntent → sources, intent enregistré', () async {
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      await _settle();
+      final n = c.read(onboardingProvider.notifier);
+
+      n.continueAfterReaction();
+      n.skipCurrentQuestion(); // → responseStyle
+      n.skipCurrentQuestion(); // → Section 3 themes
+      n.selectThemes(['tech']);
+      await _settle();
+      expect(
+        c.read(onboardingProvider).currentQuestionIndex,
+        Section3Question.subtopics.index,
+      );
+
+      n.selectSubtopics(['ai']);
+      await _settle();
+      expect(
+        c.read(onboardingProvider).currentQuestionIndex,
+        Section3Question.sourcesIntent.index,
+      );
+
+      n.selectSourcesIntent('knows');
+      expect(c.read(onboardingProvider).answers.sourcesIntent, 'knows');
+      await _settle();
+      expect(
+        c.read(onboardingProvider).currentQuestionIndex,
+        Section3Question.sources.index,
+      );
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // selectSources : routage de fin de parcours selon l'objectif anxiety
+  // (logique reprise de l'ex-continueFromSourcesPage2).
+  // ──────────────────────────────────────────────────────────────────────
+  group('selectSources (gating anxiety)', () {
     test('sans anxiety : pose pour_vous et saute au final', () async {
       final c = ProviderContainer();
       addTearDown(c.dispose);
@@ -233,7 +292,7 @@ void main() {
       n.continueAfterReaction();
       n.skipCurrentQuestion();
       n.skipCurrentQuestion(); // → Section 3 themes
-      n.continueFromSourcesPage2(['s1']);
+      n.selectSources(['s1']);
 
       // digestMode posé immédiatement (synchrone)
       expect(c.read(onboardingProvider).answers.digestMode, 'pour_vous');
@@ -255,7 +314,7 @@ void main() {
       n.continueAfterReaction();
       n.skipCurrentQuestion();
       n.skipCurrentQuestion(); // → Section 3 themes
-      n.continueFromSourcesPage2(['s1']);
+      n.selectSources(['s1']);
 
       // digestMode pas forcé : laissé au choix de l'utilisateur
       expect(c.read(onboardingProvider).answers.digestMode, isNull);
@@ -264,6 +323,48 @@ void main() {
       expect(
         c.read(onboardingProvider).currentQuestionIndex,
         Section3Question.digestMode.index,
+      );
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // goBack : navigation arrière sur la séquence active de la Section 3.
+  // ──────────────────────────────────────────────────────────────────────
+  group('goBack (Section 3)', () {
+    test('depuis sources, goBack remonte la séquence sans digestMode',
+        () async {
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      await _settle();
+      final n = c.read(onboardingProvider.notifier);
+
+      n.selectObjectives(['noise']);
+      n.continueAfterReaction();
+      n.skipCurrentQuestion();
+      n.skipCurrentQuestion(); // → Section 3 themes
+      n.skipCurrentQuestion(); // themes → sourcesIntent
+      n.skipCurrentQuestion(); // sourcesIntent → sources
+      expect(
+        c.read(onboardingProvider).currentQuestionIndex,
+        Section3Question.sources.index,
+      );
+
+      n.goBack();
+      expect(
+        c.read(onboardingProvider).currentQuestionIndex,
+        Section3Question.sourcesIntent.index,
+      );
+
+      n.goBack();
+      expect(
+        c.read(onboardingProvider).currentQuestionIndex,
+        Section3Question.subtopics.index,
+      );
+
+      n.goBack();
+      expect(
+        c.read(onboardingProvider).currentQuestionIndex,
+        Section3Question.themes.index,
       );
     });
   });
@@ -281,6 +382,21 @@ void main() {
       expect(restored.themes, equals(['tech', 'science']));
       expect(restored.subtopics, equals(['ai', 'climate']));
       expect(restored.preferredSources, equals(['source-1', 'source-2']));
+    });
+
+    test('toJson (payload API) n\'expose pas sources_intent', () {
+      const answers = OnboardingAnswers(sourcesIntent: 'knows');
+      expect(answers.toJson().containsKey('sources_intent'), isFalse);
+    });
+
+    test('toLocalJson/fromJson roundtrip préserve sourcesIntent', () {
+      const answers = OnboardingAnswers(
+        sourcesIntent: 'knows',
+        themes: ['tech'],
+      );
+      final restored = OnboardingAnswers.fromJson(answers.toLocalJson());
+      expect(restored.sourcesIntent, 'knows');
+      expect(restored.themes, equals(['tech']));
     });
   });
 }

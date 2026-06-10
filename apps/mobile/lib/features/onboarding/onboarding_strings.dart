@@ -150,6 +150,38 @@ class OnboardingStrings {
   static const String personalizeSereinCta =
       'Personnaliser mon mode serein';
 
+  // Q9c: Intent sources (routage de la page sources)
+  static const String sourcesIntentTitle =
+      'Avec quels médias préférez-vous partir ?';
+  static const String sourcesIntentCuriousLabel = 'Plutôt curieux';
+  static const String sourcesIntentCuriousSubtitle =
+      'Découvrir des médias selon mes thèmes';
+  static const String sourcesIntentKnowsLabel =
+      'Repartir de ce que je connais';
+  static const String sourcesIntentKnowsSubtitle =
+      'Je sais déjà quels médias je suis';
+
+  // Q10: Page sources adaptative
+  static const String sourcesSuggestionsTitle = 'Nos suggestions pour vous';
+  static const String sourcesAlreadyFollowTitle =
+      'Vous suivez déjà un média ?';
+  static const String sourcesKnowsTitle =
+      'Quels médias suivez-vous déjà ?';
+  static const String sourcesGuideMeTitle = 'Ou laissez-vous guider';
+  static const String sourcesSeeAllCatalog = 'Voir tout le catalogue';
+  static const String sourcesSeeMore = 'Voir plus';
+
+  // Preuve instantanée à l'ajout (Wow #1)
+  static const String sourceProofConnected = 'Connecté';
+  static const String sourceProofEmptyFallback =
+      'Ses prochains articles arrivent dans votre tournée.';
+
+  // Conclusion vivante (Wow #2)
+  static String conclusionLiveCounter(int articles, int sources) {
+    return '$articles article${articles > 1 ? 's' : ''} récupéré${articles > 1 ? 's' : ''} '
+        'depuis vos $sources source${sources > 1 ? 's' : ''}';
+  }
+
   // Q9: Sources
   static const String q9Title = 'Vos sources, sur mesure.';
   static const String q9Subtitle =
