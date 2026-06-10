@@ -335,8 +335,13 @@ class _WeatherBadgeState extends State<_WeatherBadge>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        WeatherConditionIcon(condition: widget.forecast.condition, size: 80),
-        const SizedBox(height: 1),
+        WeatherConditionIcon(
+          condition: widget.forecast.condition,
+          size: 82,
+          badgeSize: 30,
+          emojiSize: 18,
+          badgeInset: 4,
+        ),
         ScaleTransition(
           key: const ValueKey('weather_temperatures'),
           scale: _temperatureScale,
@@ -364,7 +369,6 @@ class _WeatherBadgeState extends State<_WeatherBadge>
             ),
           ),
         ),
-        const SizedBox(height: 1),
         Icon(
           Icons.keyboard_arrow_down_rounded,
           size: 16,

@@ -7,11 +7,17 @@ import '../models/weather_snapshot.dart';
 class WeatherConditionIcon extends StatelessWidget {
   final WeatherCondition condition;
   final double size;
+  final double badgeSize;
+  final double emojiSize;
+  final double badgeInset;
 
   const WeatherConditionIcon({
     super.key,
     required this.condition,
     required this.size,
+    this.badgeSize = 28,
+    this.emojiSize = 17,
+    this.badgeInset = 5,
   });
 
   @override
@@ -24,11 +30,11 @@ class WeatherConditionIcon extends StatelessWidget {
           height: size,
         ),
         Positioned(
-          bottom: 5,
-          right: 5,
+          bottom: badgeInset,
+          right: badgeInset,
           child: Container(
-            width: 28,
-            height: 28,
+            width: badgeSize,
+            height: badgeSize,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
@@ -43,7 +49,7 @@ class WeatherConditionIcon extends StatelessWidget {
             ),
             child: Text(
               _emoji(condition),
-              style: const TextStyle(fontSize: 17, height: 1),
+              style: TextStyle(fontSize: emojiSize, height: 1),
             ),
           ),
         ),
