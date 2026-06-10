@@ -3180,9 +3180,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     return WebViewWidget(
       controller: _webViewController!,
       gestureRecognizers: _isWebViewActive
-          ? backGestureCompatibleWebViewRecognizers(
-              MediaQuery.sizeOf(context).width,
-            )
+          ? swipeBackCompatiblePlatformViewGestureRecognizers()
           : const {},
     );
   }
@@ -3816,9 +3814,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         onScrollY: (y) => _webScrollY = y,
         onProgress: _applyWebReadingProgress,
         onPaywallDetected: _onPremiumPaywallDetected,
-        gestureRecognizers: backGestureCompatibleWebViewRecognizers(
-          MediaQuery.sizeOf(context).width,
-        ),
+        gestureRecognizers: swipeBackCompatiblePlatformViewGestureRecognizers(),
       );
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3862,9 +3858,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         Expanded(
           child: WebViewWidget(
             controller: _webViewController!,
-            gestureRecognizers: backGestureCompatibleWebViewRecognizers(
-              MediaQuery.sizeOf(context).width,
-            ),
+            gestureRecognizers:
+                swipeBackCompatiblePlatformViewGestureRecognizers(),
           ),
         ),
       ],
