@@ -113,6 +113,21 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   /// repeated 403s and avoid redirect loops.
   DateTime? _lastForceUnconfirmedAt;
 
+  /// Refresh **non-bloquant** lancé par [_init] quand une session est restaurée
+  /// au cold start (le JWT d'accès expire en 1h → mort chaque matin). Exposé via
+  /// [initialRefresh] pour que les data providers (ex. `FluxContinuNotifier`)
+  /// puissent l'attendre — borné par un timeout court — AVANT de partir en
+  /// rafale d'appels, garantissant un JWT frais et zéro tempête de 401
+  /// (single-flight via [SessionRefresher]). `null` quand aucune session n'a été
+  /// restaurée ou avant que [_init] ne l'ait lancé.
+  Future<Session?>? _initialRefresh;
+
+  /// Le refresh initial en cours (cf. [_initialRefresh]), ou `null`. Les
+  /// consommateurs l'attendent avec leur propre `timeout` puis tombent sur le
+  /// filet single-flight de l'intercepteur 401 si besoin — ils ne doivent
+  /// jamais bloquer l'UI dessus.
+  Future<Session?>? get initialRefresh => _initialRefresh;
+
   Future<void> _init() async {
     try {
       WidgetsBinding.instance.addObserver(this);
@@ -148,54 +163,8 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         session = null;
       }
 
-      // 4. Refresh bloquant : rafraîchir le token AVANT de set l'état authentifié.
-      // Le token d'accès Supabase expire après 1h. Si l'app est relancée après,
-      // le token stocké est mort. On le rafraîchit ici pour éviter des 401 immédiats.
-      // Single-flight via SessionRefresher pour éviter la race "double-refresh"
-      // (cf. docs/bugs/bug-android-disconnect-race.md).
-      if (session != null) {
-        debugPrint(
-            'AuthStateNotifier: Session found, attempting blocking refresh...');
-        try {
-          final refreshed = await SessionRefresher.instance.refresh();
-          if (refreshed != null) {
-            session = refreshed;
-            debugPrint('AuthStateNotifier: ✅ Session refreshed successfully.');
-          }
-        } on AuthException catch (e) {
-          debugPrint(
-              'AuthStateNotifier: Refresh failed (AuthException): ${e.message}');
-          // Si SessionRefresher a propagé une AuthException, c'est qu'il a déjà
-          // vérifié que `currentSession` est null/expirée. La session est morte.
-          unawaited(PostHogService().capture(
-            event: 'auth_session_expired',
-            properties: {'reason': 'init_refresh_failed'},
-          ));
-          unawaited(Sentry.captureException(
-            e,
-            withScope: (scope) =>
-                scope.setTag('auth_event', 'init_refresh_failed'),
-          ));
-          session = null;
-          await _supabase.auth.signOut().timeout(
-            const Duration(seconds: 3),
-            onTimeout: () {},
-          );
-          state = state.copyWith(isLoading: false, sessionExpired: true);
-          _setupAuthListener();
-          return;
-        } on TimeoutException {
-          debugPrint(
-              'AuthStateNotifier: Refresh timed out. Using existing session.');
-          // Réseau lent → garder session existante, SDK auto-refresh prendra le relais
-        } catch (e) {
-          debugPrint(
-              'AuthStateNotifier: Refresh failed (unknown): $e. Using existing session.');
-          // Erreur réseau → garder session existante
-        }
-      }
-
-      // 5. Verification stricte de l'email confirmé (Fix mismatch 403)
+      // 4. Verification stricte de l'email confirmé (Fix mismatch 403) — log
+      // uniquement, AVANT de peindre (synchrone, ne bloque rien).
       if (session != null) {
         final user = session.user;
         final isConfirmed = user.emailConfirmedAt != null ||
@@ -211,7 +180,58 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         }
       }
 
-      // 6. Mettre à jour l'état initial (avec session fraîche).
+      // 5. Refresh NON-BLOQUANT : le token d'accès Supabase expire après 1h, donc
+      // le token restauré est mort chaque matin. Auparavant on le rafraîchissait
+      // de façon BLOQUANTE avant de peindre → gate du splash de plusieurs
+      // secondes. On le lance désormais en arrière-plan (single-flight via
+      // SessionRefresher, cf. docs/bugs/bug-android-disconnect-race.md) et on
+      // l'expose via [initialRefresh] : les data providers l'attendent avec un
+      // timeout court avant leur 1er batch (garde anti-tempête 401) sans gater
+      // les pixels. On le lance AVANT de set l'état (étape 6) pour qu'il soit
+      // disponible dès que le router montera le home.
+      if (session != null) {
+        final refreshFuture = SessionRefresher.instance.refresh();
+        _initialRefresh = refreshFuture;
+        // Le seul cas traité ici est l'AuthException (refresh token réellement
+        // mort) → chemin signout + sessionExpired identique à l'ancien blocage.
+        // Le succès ne fait RIEN : l'event SDK `tokenRefreshed` (listener) reste
+        // l'unique source du signal d'invalidation (cf.
+        // bug-feed-403-auth-recovery.md) — on ne re-pose pas `lastTokenRefreshAt`.
+        unawaited(refreshFuture.then((_) {
+          debugPrint('AuthStateNotifier: ✅ Initial refresh done.');
+        }).catchError((Object e) async {
+          if (e is! AuthException) {
+            // Réseau lent / timeout → garder la session ; le SDK auto-refresh
+            // (et l'intercepteur 401 single-flight) prendront le relais.
+            debugPrint(
+                'AuthStateNotifier: Initial refresh failed (non-auth): $e. Using existing session.');
+            return;
+          }
+          debugPrint(
+              'AuthStateNotifier: Initial refresh failed (AuthException): ${e.message}');
+          unawaited(PostHogService().capture(
+            event: 'auth_session_expired',
+            properties: {'reason': 'init_refresh_failed'},
+          ));
+          unawaited(Sentry.captureException(
+            e,
+            withScope: (scope) =>
+                scope.setTag('auth_event', 'init_refresh_failed'),
+          ));
+          await _supabase.auth.signOut().timeout(
+            const Duration(seconds: 3),
+            onTimeout: () {},
+          );
+          // Clear user + isLoading + pose sessionExpired (le state authentifié a
+          // déjà été peint à l'étape 6 ; la garde `_fetchAll` des data providers
+          // maintient le squelette jusqu'à cette résolution).
+          state = const AuthState(sessionExpired: true);
+        }));
+      }
+
+      // 6. Mettre à jour l'état initial AVEC la session restaurée (le refresh
+      // tourne en arrière-plan). Plus de gate bloquant : l'utilisateur voit la
+      // structure immédiatement.
       // forceUnconfirmed est reset systématiquement : flag volatile qui ne doit
       // pas survivre à un restart (si l'email est réellement non-confirmé, le
       // prochain appel API renverra 403 et le flag sera re-set proprement).

@@ -65,33 +65,6 @@
     window.addEventListener('scroll', updateActiveSection, { passive: true });
     updateActiveSection();
 
-    // ── Waitlist Count (social proof) ─────────────
-    (function loadWaitlistCount() {
-        var badge = document.getElementById('social-proof');
-        var countEl = document.getElementById('waitlist-count');
-        if (!badge || !countEl) return;
-
-        fetch(API_URL + '/api/waitlist/count')
-            .then(function (res) { return res.json(); })
-            .then(function (data) {
-                var realCount = data.count || 0;
-                if (realCount < 3) return;
-                var displayed = realCount * 3 + 1;
-                badge.hidden = false;
-                // Animate count up
-                var duration = 1200;
-                var start = performance.now();
-                function step(now) {
-                    var progress = Math.min((now - start) / duration, 1);
-                    var eased = 1 - Math.pow(1 - progress, 3);
-                    countEl.textContent = Math.round(eased * displayed);
-                    if (progress < 1) requestAnimationFrame(step);
-                }
-                requestAnimationFrame(step);
-            })
-            .catch(function () { /* silently ignore */ });
-    })();
-
     // ── Scroll Reveal ─────────────────────────────
     var observer = new IntersectionObserver(
         function (entries) {
@@ -284,7 +257,7 @@
                 })
                 .then(function (data) {
                     input.value = '';
-                    btn.textContent = 'Rejoindre la waitlist';
+                    btn.textContent = 'Être prévenu·e au lancement';
                     btn.disabled = true;
 
                     // Show survey unless backend explicitly says duplicate
@@ -299,7 +272,7 @@
                         ? 'Une erreur est survenue. Réessaie.'
                         : err.message;
                     error.hidden = false;
-                    btn.textContent = 'Rejoindre la waitlist';
+                    btn.textContent = 'Être prévenu·e au lancement';
                     btn.disabled = false;
                 });
         });

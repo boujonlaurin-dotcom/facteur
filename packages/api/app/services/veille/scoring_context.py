@@ -16,6 +16,7 @@ Aucune affinité/multiplicateur/mute en V1 — seuls ces 4 leviers pilotent le t
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -25,10 +26,38 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import InterestState
 from app.models.user import UserProfile
+from app.services.recommendation.french_stopwords import FRENCH_STOP_WORDS
+from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import ScoringContext
 
 if TYPE_CHECKING:  # éviter un import circulaire feed_filter ↔ scoring_context
     from app.services.veille.feed_filter import VeilleFilters
+
+# Longueur min d'un token d'intention (aligné sur KEYWORD_MIN_LENGTH = 4) :
+# en-deçà les mots sont trop génériques pour discriminer.
+_INTENT_MIN_TOKEN_LEN = ScoringWeights.KEYWORD_MIN_LENGTH
+_INTENT_TOKEN_RE = re.compile(r"[a-zàâäéèêëîïôöùûüÿç0-9]+", re.IGNORECASE)
+
+
+def _tokenize_intent(texts: list[str]) -> list[str]:
+    """Tokenise des notes d'intention libres en mots-clés discriminants.
+
+    Stopwords FR retirés, longueur ≥ 4, dédupliqués (ordre stable), bornés à
+    ``VEILLE_KEYWORD_CAP`` tokens — au-delà le bonus mots-clés est de toute
+    façon plafonné côté pilier Pertinence.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for text in texts:
+        for raw in _INTENT_TOKEN_RE.findall(text.lower()):
+            if (
+                len(raw) >= _INTENT_MIN_TOKEN_LEN
+                and raw not in FRENCH_STOP_WORDS
+                and raw not in seen
+            ):
+                seen.add(raw)
+                out.append(raw)
+    return out[: int(ScoringWeights.VEILLE_KEYWORD_CAP)]
 
 
 @dataclass(frozen=True)
@@ -97,6 +126,20 @@ async def build_veille_scoring_context(
                     k.lower().strip() for k in filters.global_keywords if k.strip()
                 ],
                 topic_name="Mots-clés",
+            )
+        )
+
+    # Notes d'intention texte libre (`why` des sources) → angle « Intention » :
+    # leurs tokens deviennent des mots-clés ordinaires qui affinent le tri via
+    # le bonus mots-clés existant (zéro nouveau code de scoring, borné par le
+    # cap). Aucun slug → ne matche que par sa grappe.
+    intent_tokens = _tokenize_intent(list(filters.source_intents.values()))
+    if intent_tokens:
+        custom_topics.append(
+            VeilleAngleTopic(
+                slug_parent="",
+                keywords=intent_tokens,
+                topic_name="Intention",
             )
         )
 

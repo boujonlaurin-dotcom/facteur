@@ -11,6 +11,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart'
+    show InAppWebViewController, WebUri;
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import 'dart:async';
@@ -30,6 +32,8 @@ import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../my_interests/repositories/user_interests_repository.dart'
     show FavoriteCapReachedException;
 import '../../sources/providers/sources_providers.dart';
+import '../../sources/widgets/premium_source_connection.dart';
+import '../../sources/widgets/premium_web_view.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
 import '../../../widgets/sunflower_icon.dart';
 import '../providers/nudge_provider.dart' show NudgeTracker;
@@ -205,6 +209,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _linkCopiedHeaderTimer;
   late DateTime _startTime;
   WebViewController? _webViewController;
+  // Chemin premium (source payante connectée) : WebView sur flutter_inappwebview
+  // pour réutiliser la session du média (cookies). Distinct du WebView
+  // webview_flutter du scroll-to-site des sources gratuites.
+  InAppWebViewController? _premiumWebController;
+  // Bandeau non-bloquant « Session expirée — Reconnecter » (paywall détecté en
+  // mode reader sur une source connectée).
+  bool _premiumSessionExpired = false;
   // Mutable: flipped to `true` from `_onReadOnSiteTap` when the in-app
   // reader could not enter scroll-to-site mode (htmlContent missing or
   // too short on Android race conditions). Forces `_buildWebViewFallback`
@@ -645,21 +656,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
     if (msg.startsWith('progress:')) {
       final pct = double.tryParse(msg.substring(9));
-      if (pct != null) {
-        // For partial content: WebView scroll maps to 25%-100% of total progress
-        // For full content: WebView scroll maps to the full 0%-100%
-        final double normalized;
-        if (_isPartialContent) {
-          normalized = 0.25 + (pct / 100.0) * 0.75;
-        } else {
-          normalized = pct / 100.0;
-        }
-        final clamped = normalized.clamp(0.0, 1.0);
-        _readingProgress.value = clamped;
-        if (clamped > _maxReadingProgress) {
-          _maxReadingProgress = clamped;
-        }
-      }
+      if (pct != null) _applyWebReadingProgress(pct);
+    }
+  }
+
+  /// Normalisation partagée de la progression de lecture en WebView : utilisée
+  /// par le canal webview_flutter (scroll-to-site gratuit) ET par le callback
+  /// `onProgress` de [PremiumWebView] (chemin premium inappwebview).
+  ///
+  /// For partial content: WebView scroll maps to 25%-100% of total progress.
+  /// For full content: WebView scroll maps to the full 0%-100%.
+  void _applyWebReadingProgress(double pct) {
+    final double normalized =
+        _isPartialContent ? 0.25 + (pct / 100.0) * 0.75 : pct / 100.0;
+    final clamped = normalized.clamp(0.0, 1.0);
+    _readingProgress.value = clamped;
+    if (clamped > _maxReadingProgress) {
+      _maxReadingProgress = clamped;
     }
   }
 
@@ -1830,7 +1843,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     ? _buildScrollToSiteContent(context, content)
                     : useInAppReading
                     ? _buildInAppContent(context, content)
-                    : _buildWebViewFallback(content),
+                    : _buildWebViewFallback(
+                        content,
+                        isConnectedPremiumSource: isConnectedPremiumSource,
+                      ),
               ),
             ),
             // Header — pinned at the top of the screen; no scroll-driven
@@ -3755,13 +3771,50 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  Widget _buildWebViewFallback(Content content) {
+  Widget _buildWebViewFallback(
+    Content content, {
+    bool isConnectedPremiumSource = false,
+  }) {
     final colors = context.facteurColors;
 
     // Legacy web fallback — unreachable since build() auto-redirects
     // and footer CTA opens externally on web. Kept as safety net.
     if (kIsWeb) {
       return Center(child: CircularProgressIndicator(color: colors.primary));
+    }
+
+    final topInset = MediaQuery.of(context).padding.top;
+    final headerHeight = topInset + _kHeaderContentHeight;
+
+    // Chemin premium (source payante connectée) : flutter_inappwebview pour
+    // réutiliser la session du média + détecter l'expiration. Les sources
+    // gratuites restent sur webview_flutter (pas de cookies, moindre risque).
+    if (isConnectedPremiumSource) {
+      final webView = PremiumWebView(
+        source: content.source,
+        url: WebUri(content.url),
+        sessionStore: ref.read(premiumSessionStoreProvider),
+        enableScrollBridge: true,
+        detectPaywall: true,
+        onWebViewCreated: (c) => _premiumWebController = c,
+        onGestureStart: _onGestureStart,
+        onGestureDelta: _onGestureDelta,
+        onGestureEnd: _onGestureEnd,
+        onScrollY: (y) => _webScrollY = y,
+        onProgress: _applyWebReadingProgress,
+        onPaywallDetected: _onPremiumPaywallDetected,
+      );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(height: headerHeight),
+          if (_premiumSessionExpired)
+            _PremiumSessionExpiredBanner(
+              onReconnect: () => _reconnectPremium(content),
+            ),
+          Expanded(child: webView),
+        ],
+      );
     }
 
     // Mobile: Use native WebView with ScrollBridge for progress + auto-hide
@@ -3776,24 +3829,151 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       )
       ..loadRequest(Uri.parse(content.url));
 
-    final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + _kHeaderContentHeight;
+    // CTA discret : source payante non connectée → proposer de lire avec son
+    // abonnement (ouvre le flow de connexion).
+    final source = content.source;
+    final showConnectCta =
+        source.hasPaywall && source.premiumConnection != null;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(height: headerHeight),
-        // Extra breathing room so tag chips aren't clipped by the header overlay
-        const SizedBox(height: FacteurSpacing.space2),
-        if (content.entities.isNotEmpty || content.topics.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space4,
-              vertical: 6,
-            ),
-            child: _buildTagsWrap(context, content),
+        if (showConnectCta)
+          _PremiumConnectBanner(
+            onConnect: () => _openPremiumConnectionFromReader(source),
           ),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
       ],
+    );
+  }
+
+  /// Ouvre le flow de connexion premium depuis le reader (source payante non
+  /// connectée). Le provider bascule en connecté → rebuild → chemin premium.
+  Future<void> _openPremiumConnectionFromReader(Source source) async {
+    if (source.premiumConnection == null) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PremiumSourceConnection(
+          source: source,
+          onConnected: () => ref
+              .read(userSourcesProvider.notifier)
+              .connectSubscription(source.id),
+        ),
+      ),
+    );
+  }
+
+  void _onPremiumPaywallDetected() {
+    if (!mounted || _premiumSessionExpired) return;
+    setState(() => _premiumSessionExpired = true);
+  }
+
+  /// Rouvre le flow de connexion pour re-loguer le média (session expirée),
+  /// puis recharge la WebView premium. Ne dissocie jamais l'abonnement.
+  Future<void> _reconnectPremium(Content content) async {
+    final userSources = ref.read(userSourcesProvider).valueOrNull ?? const [];
+    final source = userSources.firstWhere(
+      (s) => s.id == content.source.id,
+      orElse: () => content.source,
+    );
+    if (source.premiumConnection == null) return;
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PremiumSourceConnection(
+          source: source,
+          onConnected: () => ref
+              .read(userSourcesProvider.notifier)
+              .connectSubscription(source.id),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _premiumSessionExpired = false);
+    await _premiumWebController?.reload();
+  }
+}
+
+/// Bandeau non-bloquant affiché en mode reader premium quand un paywall est
+/// détecté (session du média expirée). Propose de se reconnecter sans
+/// dissocier l'abonnement.
+class _PremiumSessionExpiredBanner extends StatelessWidget {
+  final VoidCallback onReconnect;
+
+  const _PremiumSessionExpiredBanner({required this.onReconnect});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Material(
+      color: colors.surfaceElevated,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        child: Row(
+          children: [
+            Icon(
+              PhosphorIcons.warningCircle(PhosphorIconsStyle.fill),
+              size: 18,
+              color: colors.warning,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Session expirée chez ce média',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
+                    ),
+              ),
+            ),
+            TextButton(
+              onPressed: onReconnect,
+              child: const Text('Reconnecter'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// CTA discret affiché en haut du reader pour une source payante non connectée :
+/// propose de lire l'article avec son abonnement.
+class _PremiumConnectBanner extends StatelessWidget {
+  final VoidCallback onConnect;
+
+  const _PremiumConnectBanner({required this.onConnect});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Material(
+      color: colors.surfaceElevated,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        child: Row(
+          children: [
+            Icon(
+              PhosphorIcons.lockKey(PhosphorIconsStyle.regular),
+              size: 18,
+              color: colors.primary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Article réservé aux abonnés',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
+                    ),
+              ),
+            ),
+            TextButton(
+              onPressed: onConnect,
+              child: const Text('Lire avec mon abonnement'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

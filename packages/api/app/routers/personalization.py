@@ -108,15 +108,12 @@ async def mute_source(
 ):
     """Ajoute une source à la liste des sources mutées."""
     user_uuid = UUID(current_user_id)
-    # Garantir l'existence du profil utilisateur (requis pour la FK)
-
-    # Garantir l'existence du profil utilisateur (requis pour la FK)
     user_service = UserService(db)
-    # Ensure profile exists to satisfy FK constraint
-    await user_service.get_or_create_profile(current_user_id)
-    await db.commit()  # S'assurer que le profil est persisté et visible pour la FK
 
     try:
+        await user_service.get_or_create_profile(current_user_id)
+        await db.commit()
+
         # Upsert: Insert if not exists, update if exists
         # Use COALESCE to handle case where muted_sources is NULL
         stmt = (

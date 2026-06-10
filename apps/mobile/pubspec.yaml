@@ -152,4 +152,5 @@ flutter:
     - assets/icons/
     - assets/loaders/
     - assets/notifications/
+    - assets/changelog.json
 

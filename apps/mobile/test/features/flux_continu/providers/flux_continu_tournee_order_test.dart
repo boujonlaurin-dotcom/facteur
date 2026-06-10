@@ -1,6 +1,6 @@
 // PR 2 — couverture du bloc favori UNIFIÉ de la Tournée composé par le
 // FluxContinuNotifier : ordre 100 % libre (thèmes + sources + veille mélangés
-// via « Composer ma Tournée »), cap d'affichage 5, exclusion des sujets perso,
+// via « Composer ma Tournée »), cap d'affichage 7, exclusion des sujets perso,
 // et masquage de la veille (veilleHidden).
 import 'dart:io';
 
@@ -11,6 +11,7 @@ import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
 import 'package:facteur/features/digest/repositories/digest_repository.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/providers/feed_provider.dart';
+import 'package:facteur/features/feed/providers/tab_order_prefs_provider.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
@@ -34,6 +35,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'flux_continu_settle.dart';
 
 class _MockDigestRepository extends Mock implements DigestRepository {}
 
@@ -105,7 +108,7 @@ UserInterestsState _interestsState({List<FavoriteRef> favorites = const []}) {
     customTopics: const [],
     favorites: favorites,
     favoriteCount: favorites.length,
-    favoriteCap: 5,
+    favoriteCap: 7,
   );
 }
 
@@ -122,7 +125,7 @@ UserSourcesState _sourcesState({List<SourceFavoriteRef> favorites = const []}) {
         .toList(),
     favorites: favorites,
     favoriteCount: favorites.length,
-    favoriteCap: 5,
+    favoriteCap: 7,
   );
 }
 
@@ -365,7 +368,7 @@ void main() {
         );
         addTearDown(container.dispose);
 
-        final state = await container.read(fluxContinuProvider.future);
+        final state = await settle(container);
 
         expect(state.sections.map(sectionKey).toList(), [
           kTourneeActusKey,
@@ -380,13 +383,15 @@ void main() {
       },
     );
 
-    test('cap 5 unifié : Actus + Grille + 3 thèmes coupent Bonnes', () async {
+    test('cap 7 unifié : Actus + Grille + 5 thèmes coupent Bonnes', () async {
       stubDigest();
       stubFeed(
         themeIds: {
           'society': ['s1'],
           'culture': ['c1'],
           'economy': ['e1'],
+          'politics': ['p1'],
+          'tech': ['t1'],
         },
       );
       final container = await buildContainer(
@@ -395,6 +400,8 @@ void main() {
             ThemeFavoriteRef(slug: 'society'),
             ThemeFavoriteRef(slug: 'culture'),
             ThemeFavoriteRef(slug: 'economy'),
+            ThemeFavoriteRef(slug: 'politics'),
+            ThemeFavoriteRef(slug: 'tech'),
           ],
         ),
         sourcesState: _sourcesState(),
@@ -403,19 +410,22 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      final state = await container.read(fluxContinuProvider.future);
+      final state = await settle(container);
 
       expect(state.sections.map(sectionKey).toList(), [
         kTourneeActusKey,
         'theme:society',
         'theme:culture',
         'theme:economy',
+        'theme:politics',
+        'theme:tech',
       ]);
       expect(state.grilleSlotIndex, 1);
       expect(
         state.sections.map(sectionKey),
         isNot(contains(kTourneeBonnesKey)),
-        reason: 'Bonnes est 6e dans la liste unifiée et tombe sous le cap',
+        reason: 'Bonnes est 8e dans la liste unifiée (Actus+Grille+5 thèmes) '
+            'et tombe sous le cap de 7',
       );
     });
 
@@ -433,7 +443,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      final state = await container.read(fluxContinuProvider.future);
+      final state = await settle(container);
 
       expect(state.sections.map(sectionKey), [kTourneeBonnesKey]);
       expect(state.grilleSlotIndex, isNull);
@@ -459,7 +469,7 @@ void main() {
         );
         addTearDown(container.dispose);
 
-        final state = await container.read(fluxContinuProvider.future);
+        final state = await settle(container);
 
         expect(state.sections.map(sectionKey).toList(), [
           kTourneeBonnesKey,
@@ -493,7 +503,7 @@ void main() {
         );
         addTearDown(container.dispose);
 
-        final state = await container.read(fluxContinuProvider.future);
+        final state = await settle(container);
 
         expect(state.sections.map(sectionKey).toList(), [
           kTourneeActusKey,
@@ -504,7 +514,11 @@ void main() {
       },
     );
 
-    test('ordre utilisateur prime en mode serène', () async {
+    test('ordre utilisateur prime en mode serène (Grille épinglée après Actus)',
+        () async {
+      // La clé `grille` héritée d'un ordre legacy est ignorée pour le
+      // positionnement : la Grille n'est plus réordonnable et reste collée aux
+      // Actus. Le reste de l'ordre utilisateur (actus/bonnes) prime.
       SharedPreferences.setMockInitialValues(<String, Object>{
         'tournee_order_v1': [
           kTourneeActusKey,
@@ -529,25 +543,41 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      final state = await container.read(fluxContinuProvider.future);
+      final state = await settle(container);
 
       expect(state.sections.map(sectionKey).toList(), [
         kTourneeActusKey,
         kTourneeBonnesKey,
         'theme:society',
       ]);
-      expect(state.grilleSlotIndex, 2);
+      // Grille juste après les Actus (index 1), pas après les Bonnes.
+      expect(state.grilleSlotIndex, 1);
     });
   });
 
   test(
-      'cap d\'affichage 5 : 3 thèmes + 3 sources + veille (7 candidats) → '
-      'seulement 5 sections, veille (en queue par défaut) coupée', () async {
+      'cap d\'affichage 7 : 4 thèmes + 3 sources + veille (8 candidats) → '
+      'seulement 7 sections, veille (en queue par défaut) coupée', () async {
+    // Story 10.2 — les sources doivent être en mode « Essentiel » (clé dans
+    // l'ordre) pour entrer dans la Tournée ; on garde l'ordre par défaut
+    // (thèmes avant sources) en plaçant les clés thème d'abord.
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'tournee_order_v1': [
+        'theme:society',
+        'theme:culture',
+        'theme:economy',
+        'theme:politics',
+        'source:a',
+        'source:b',
+        'source:c',
+      ],
+    });
     stubFeed(
       themeIds: {
         'society': ['s1', 's2'],
         'culture': ['c1', 'c2'],
         'economy': ['e1', 'e2'],
+        'politics': ['p1', 'p2'],
       },
       sourceIds: {
         'a': ['a1'],
@@ -561,6 +591,7 @@ void main() {
           ThemeFavoriteRef(slug: 'society'),
           ThemeFavoriteRef(slug: 'culture'),
           ThemeFavoriteRef(slug: 'economy'),
+          ThemeFavoriteRef(slug: 'politics'),
         ],
       ),
       sourcesState: _sourcesState(
@@ -575,24 +606,26 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    await container.read(fluxContinuProvider.future);
+    await settle(container);
     final sections = favoriteSections(container);
 
     expect(
       sections,
-      hasLength(5),
-      reason: 'cap d\'affichage de la Tournée = 5',
+      hasLength(7),
+      reason: 'cap d\'affichage de la Tournée = 7',
     );
     expect(
       sections.where((s) => s.kind == SectionKind.veille),
       isEmpty,
-      reason: 'ordre par défaut thèmes→sources→veille → veille en 7e, coupée',
+      reason: 'ordre par défaut thèmes→sources→veille → veille en 8e, coupée',
     );
-    // Ordre par défaut : 3 thèmes puis 2 sources (a, b) ; c et veille tombent.
+    // Ordre par défaut : 4 thèmes puis 3 sources (a, b, c) ; veille tombe.
     expect(sections.map((s) => s.kind).toList(), [
       SectionKind.theme,
       SectionKind.theme,
       SectionKind.theme,
+      SectionKind.theme,
+      SectionKind.source,
       SectionKind.source,
       SectionKind.source,
     ]);
@@ -600,7 +633,7 @@ void main() {
       sections
           .where((s) => s.kind == SectionKind.source)
           .map((s) => s.sourceId),
-      ['a', 'b'],
+      ['a', 'b', 'c'],
     );
   });
 
@@ -627,7 +660,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    await container.read(fluxContinuProvider.future);
+    await settle(container);
     final sections = favoriteSections(container);
 
     final sourceIdx = sections.indexWhere((s) => s.kind == SectionKind.source);
@@ -644,14 +677,26 @@ void main() {
   test(
     'veille en tête d\'ordre : présente dans le cap, un autre item tombe',
     () async {
+      // Story 10.2 — sources en mode « Essentiel » (clés dans l'ordre) ; veille
+      // remontée en tête. 8 candidats → cap 7, veille première (source c tombe).
       SharedPreferences.setMockInitialValues(<String, Object>{
-        'tournee_order_v1': ['veille'],
+        'tournee_order_v1': [
+          'veille',
+          'theme:society',
+          'theme:culture',
+          'theme:economy',
+          'theme:politics',
+          'source:a',
+          'source:b',
+          'source:c',
+        ],
       });
       stubFeed(
         themeIds: {
           'society': ['s1', 's2'],
           'culture': ['c1', 'c2'],
           'economy': ['e1', 'e2'],
+          'politics': ['p1', 'p2'],
         },
         sourceIds: {
           'a': ['a1'],
@@ -665,6 +710,7 @@ void main() {
             ThemeFavoriteRef(slug: 'society'),
             ThemeFavoriteRef(slug: 'culture'),
             ThemeFavoriteRef(slug: 'economy'),
+            ThemeFavoriteRef(slug: 'politics'),
           ],
         ),
         sourcesState: _sourcesState(
@@ -679,10 +725,10 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
       final sections = favoriteSections(container);
 
-      expect(sections, hasLength(5));
+      expect(sections, hasLength(7));
       expect(
         sections.first.kind,
         SectionKind.veille,
@@ -714,7 +760,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
       final sections = favoriteSections(container);
 
       expect(
@@ -751,7 +797,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
       final sections = favoriteSections(container);
 
       expect(
@@ -782,7 +828,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
       final slugs = favoriteSections(container)
           .where((s) => s.kind == SectionKind.theme)
           .map((s) => s.themeSlug)
@@ -810,7 +856,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
       expect(
         favoriteSections(container).where((s) => s.kind == SectionKind.theme),
         isEmpty,
@@ -835,6 +881,10 @@ void main() {
         '(Tournée source-only)', () async {
       // Une source favorite suffit à rendre la Tournée non vide → on ne pad
       // pas avec des thèmes canoniques que l'utilisateur n'a pas choisis.
+      // Story 10.2 — source en mode « Essentiel » pour qu'elle rende sa section.
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'tournee_order_v1': ['source:s1'],
+      });
       stubFeed(
         sourceIds: {
           's1': ['x1'],
@@ -849,7 +899,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
       final sections = favoriteSections(container);
       expect(
         sections.where((s) => s.kind == SectionKind.theme),
@@ -879,7 +929,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    await container.read(fluxContinuProvider.future);
+    await settle(container);
     final society = favoriteSections(
       container,
     ).where((s) => s.themeSlug == 'society').toList();
@@ -889,5 +939,95 @@ void main() {
       reason: 'favori explicite jamais coupé même sous 2 items',
     );
     expect(society.single.items, hasLength(1));
+  });
+
+  test(
+      'thème livré en Flâner (clé theme: dans pinned_tabs_order) est exclu des '
+      'sections Essentiel', () async {
+    // Le thème `society` est favori MAIS sa clé `theme:society` est dans
+    // l'ordre Flâner ⇒ modèle exclusif ⇒ il vit en onglet, pas dans l'Essentiel.
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'pinned_tabs_order_v1': ['theme:society'],
+    });
+    stubDigest();
+    stubFeed(
+      themeIds: {
+        'society': ['t1'],
+      },
+    );
+    final container = await buildContainer(
+      interests: _interestsState(
+        favorites: const [ThemeFavoriteRef(slug: 'society')],
+      ),
+      sourcesState: _sourcesState(),
+      catalog: const [],
+    );
+    addTearDown(container.dispose);
+
+    // S'assure que `tabOrderPrefsProvider` a chargé l'ordre seedé avant le
+    // `build` du FluxContinuNotifier (cf. tourneeOrderPrefsProvider).
+    container.read(tabOrderPrefsProvider);
+    await pumpEventQueue();
+
+    final state = await settle(container);
+
+    expect(
+      state.sections.map(sectionKey),
+      isNot(contains('theme:society')),
+      reason: 'thème en mode Flâner absent des sections Essentiel',
+    );
+  });
+
+  test(
+      'hotfix Grille — compte personnalisé sans clé grille dans order : la '
+      'Grille reste épinglée juste après les Actus (pas coupée par le cap)',
+      () async {
+    // Régression : la Grille n'étant plus réordonnable, sa clé `grille` est
+    // absente de `tournee_order_v1`. `applyOrder` la reléguait en fin de liste
+    // → coupée par le cap → disparition totale. Elle doit rester collée
+    // aux Actus.
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'tournee_customized_v1': true,
+      'tournee_order_v1': [
+        'essentiel',
+        'theme:society',
+        'theme:culture',
+        'theme:economy',
+        'theme:tech',
+      ],
+    });
+    stubDigest();
+    stubFeed(
+      themeIds: {
+        'society': ['s1'],
+        'culture': ['c1'],
+        'economy': ['e1'],
+        'tech': ['t1'],
+      },
+    );
+    final container = await buildContainer(
+      interests: _interestsState(
+        favorites: const [
+          ThemeFavoriteRef(slug: 'society'),
+          ThemeFavoriteRef(slug: 'culture'),
+          ThemeFavoriteRef(slug: 'economy'),
+          ThemeFavoriteRef(slug: 'tech'),
+        ],
+      ),
+      sourcesState: _sourcesState(),
+      catalog: const [],
+      grilleToday: _grilleToday(),
+    );
+    addTearDown(container.dispose);
+
+    final state = await settle(container);
+
+    expect(
+      state.grilleSlotIndex,
+      1,
+      reason: 'La Grille est rendue juste après les Actus, malgré l\'absence '
+          'de sa clé dans l\'ordre personnalisé',
+    );
+    expect(sectionKey(state.sections.first), kTourneeActusKey);
   });
 }

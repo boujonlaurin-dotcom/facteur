@@ -19,11 +19,14 @@ import 'package:facteur/features/grille/repositories/grille_repository.dart';
 import 'package:facteur/features/my_interests/models/user_interests_state.dart';
 import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
+import 'package:flutter/material.dart' show Color;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'flux_continu_settle.dart';
 
 class _MockDigestRepository extends Mock implements DigestRepository {}
 
@@ -80,7 +83,7 @@ UserInterestsState _interestsState({
     customTopics: customTopics,
     favorites: favorites,
     favoriteCount: favorites.length,
-    favoriteCap: 5,
+    favoriteCap: 7,
   );
 }
 
@@ -222,7 +225,7 @@ void main() {
         final container = makeContainer();
         addTearDown(container.dispose);
 
-        await container.read(fluxContinuProvider.future);
+        await settle(container);
         // Purge runs as `unawaited` — give the microtask queue a beat.
         await Future<void>.delayed(Duration.zero);
         await Future<void>.delayed(Duration.zero);
@@ -246,7 +249,7 @@ void main() {
         final container = makeContainer();
         addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 
@@ -263,7 +266,7 @@ void main() {
       final container = makeContainer();
       addTearDown(container.dispose);
 
-      final state = await container.read(fluxContinuProvider.future);
+      final state = await settle(container);
 
       expect(state.closingDismissed, isFalse);
       expect(state.moreOpen, isEmpty);
@@ -289,7 +292,7 @@ void main() {
         final container = makeContainer(); // 0 favorites in stub
         addTearDown(container.dispose);
 
-        await container.read(fluxContinuProvider.future);
+        await settle(container);
 
         // 3 fallback canonical theme fetches (tech, environment, science).
         final captured = verify(
@@ -324,7 +327,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
 
       verify(
         () => feedRepo.getFeed(
@@ -357,7 +360,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      final state = await container.read(fluxContinuProvider.future);
+      final state = await settle(container);
 
       verifyNever(
         () => feedRepo.getFeed(
@@ -395,7 +398,7 @@ void main() {
       final container = makeContainer(interestsNotifier: interestsNotifier);
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
       clearInteractions(feedRepo);
 
       interestsNotifier.setState(
@@ -437,7 +440,7 @@ void main() {
       );
     });
 
-    test('5 favorites cap (6th ignored)', () async {
+    test('7 favorites cap (8th ignored)', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       when(
         () => feedRepo.getFeed(
@@ -457,18 +460,28 @@ void main() {
             ThemeFavoriteRef(slug: 'culture'),
             ThemeFavoriteRef(slug: 'economy'),
             ThemeFavoriteRef(slug: 'politics'),
-            ThemeFavoriteRef(slug: 'sport'), // 6th — must be dropped
+            ThemeFavoriteRef(slug: 'sport'),
+            ThemeFavoriteRef(slug: 'environment'),
+            ThemeFavoriteRef(slug: 'society'), // 8th — must be dropped
           ],
         ),
       );
       addTearDown(container.dispose);
 
-      final state = await container.read(fluxContinuProvider.future);
+      final state = await settle(container);
       final slugs = state.sections
           .whereType<FeedThemeSection>()
           .map((s) => s.themeSlug)
           .toList();
-      expect(slugs, ['tech', 'science', 'culture', 'economy', 'politics']);
+      expect(slugs, [
+        'tech',
+        'science',
+        'culture',
+        'economy',
+        'politics',
+        'sport',
+        'environment',
+      ]);
     });
   });
 
@@ -492,7 +505,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      await container.read(fluxContinuProvider.future);
+      await settle(container);
 
       // The Tournée du jour theme sections opt in to the backend curation
       // (followed sources only + 24h window + user_subtopics boost).
@@ -529,7 +542,7 @@ void main() {
         );
         addTearDown(container.dispose);
 
-        await container.read(fluxContinuProvider.future);
+        await settle(container);
 
         verifyNever(
           () => feedRepo.getFeed(
@@ -588,7 +601,7 @@ void main() {
         );
         addTearDown(container.dispose);
 
-        final initial = await container.read(fluxContinuProvider.future);
+        final initial = await settle(container);
         final themeSection =
             initial.sections.whereType<FeedThemeSection>().single;
         expect(themeSection.items.map((c) => c.id), pageOneIds);
@@ -642,7 +655,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      final initial = await container.read(fluxContinuProvider.future);
+      final initial = await settle(container);
       final themeSection =
           initial.sections.whereType<FeedThemeSection>().single;
       expect(themeSection.items.length, 3);
@@ -677,7 +690,7 @@ void main() {
         );
         addTearDown(container.dispose);
 
-        final initial = await container.read(fluxContinuProvider.future);
+        final initial = await settle(container);
         final themeSection =
             initial.sections.whereType<FeedThemeSection>().single;
         expect(themeSection.hasMore, false);
@@ -775,7 +788,7 @@ void main() {
         );
         addTearDown(container.dispose);
 
-        final state = await container.read(fluxContinuProvider.future);
+        final state = await settle(container);
 
         // Both must be present, with distinct sectionKeys.
         final essentielV3 =
@@ -874,7 +887,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      final state = await container.read(fluxContinuProvider.future);
+      final state = await settle(container);
 
       // Essentiel keeps the shared article.
       final essentiel = state.sections.whereType<EssentielSection>().single;
@@ -908,7 +921,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      final state = await container.read(fluxContinuProvider.future);
+      final state = await settle(container);
 
       expect(state.sections.whereType<EssentielSection>(), hasLength(1));
       expect(
@@ -918,6 +931,335 @@ void main() {
         isEmpty,
         reason: 'A fully-deduped "Actus du jour" must be dropped, not orphaned',
       );
+    });
+  });
+
+  group('FluxContinuNotifier — fit dynamique « cartes ≤ écran »', () {
+    EssentielArticle essArticle(String id) => EssentielArticle(
+          contentId: id,
+          title: 'Essentiel $id',
+          url: 'https://x.test/$id',
+          publishedAt: DateTime(2026, 1, 1),
+          sourceName: 'Source',
+          sourceLetter: 'S',
+          sectionLabel: 'Tech',
+          rank: 1,
+        );
+
+    /// Container with a hero of [essentielIds] and a single 'tech' theme
+    /// favorite whose feed carries [themeFeedIds]. [usableHeight] threads the
+    /// fit budget (null = pas encore mesuré ⇒ défauts).
+    ProviderContainer makeFitContainer({
+      required List<String> essentielIds,
+      required List<String> themeFeedIds,
+      double? usableHeight,
+    }) {
+      when(
+        () => feedRepo.getFeed(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+          theme: any(named: 'theme'),
+          serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
+        ),
+      ).thenAnswer(
+        (_) async => _feedResponseWithIds(themeFeedIds, hasNext: false),
+      );
+      return ProviderContainer(
+        overrides: [
+          digestRepositoryProvider.overrideWithValue(digestRepo),
+          feedRepositoryProvider.overrideWithValue(feedRepo),
+          fluxContinuRepositoryProvider.overrideWithValue(fluxRepo),
+          essentielRepositoryProvider.overrideWithValue(
+            _FixedEssentielRepository(essentielIds.map(essArticle).toList()),
+          ),
+          grilleRepositoryProvider.overrideWithValue(_NoGrilleRepository()),
+          userInterestsProvider.overrideWith(
+            () => _StubUserInterestsNotifier(
+              _interestsState(favorites: const [ThemeFavoriteRef(slug: 'tech')]),
+            ),
+          ),
+          sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+          if (usableHeight != null)
+            usableViewportHeightProvider.overrideWith((ref) => usableHeight),
+        ],
+      );
+    }
+
+    test(
+      'small usable height trims the hero AND releases ejected ids downstream',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        // 4 hero articles ; the 'tech' feed carries the two that would be
+        // ejected (e3, e4) plus its own items.
+        final container = makeFitContainer(
+          essentielIds: const ['e1', 'e2', 'e3', 'e4'],
+          themeFeedIds: const ['e3', 'e4', 'x1', 'x2'],
+          usableHeight: 500,
+        );
+        addTearDown(container.dispose);
+
+        final state = await settle(container);
+
+        // (a) hero trimmed to the lead + one medium (fitHeroCount(500) == 2).
+        final hero = state.sections.whereType<EssentielSection>().single;
+        expect(hero.articles.map((a) => a.contentId), ['e1', 'e2']);
+
+        // (b) the ejected ids reappear in the next section (« sortent du pool »).
+        final theme = state.sections.whereType<FeedThemeSection>().single;
+        expect(theme.items.map((c) => c.id), containsAll(['e3', 'e4']));
+
+        // (c) downstream cap ≤ default (3) and ≥ 1 — fitVisibleCount(500) == 2.
+        expect(theme.coreVisibleCount, 2);
+
+        // (d) the "+N" footer count derives correctly (totalCount − cap).
+        expect(theme.totalCount - theme.coreVisibleCount, 2);
+      },
+    );
+
+    test(
+      'no measure yet (null height) keeps defaults — hero & dedup untouched',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        final container = makeFitContainer(
+          essentielIds: const ['e1', 'e2', 'e3', 'e4'],
+          themeFeedIds: const ['e3', 'e4', 'x1', 'x2'],
+          // usableHeight null ⇒ provider default (no fit applied).
+        );
+        addTearDown(container.dispose);
+
+        final state = await settle(container);
+
+        final hero = state.sections.whereType<EssentielSection>().single;
+        expect(hero.articles.map((a) => a.contentId), ['e1', 'e2', 'e3', 'e4']);
+        // Hero kept all 4 ⇒ dedup strips e3/e4 from the theme section.
+        final theme = state.sections.whereType<FeedThemeSection>().single;
+        expect(theme.items.map((c) => c.id), ['x1', 'x2']);
+        expect(theme.coreVisibleCount, 3);
+      },
+    );
+
+    test('the dynamic cap survives a dismiss (copyWith preserves it)', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final container = makeFitContainer(
+        essentielIds: const ['e1', 'e2'],
+        themeFeedIds: const ['x1', 'x2', 'x3', 'x4'],
+        usableHeight: 500,
+      );
+      addTearDown(container.dispose);
+
+      final state = await settle(container);
+      final theme = state.sections.whereType<FeedThemeSection>().single;
+      expect(theme.coreVisibleCount, 2);
+
+      // Dismissing an item routes through _filterSections → copyWith, which must
+      // NOT reset the capped coreVisibleCount back to the default 3.
+      container.read(fluxContinuProvider.notifier).confirmDismiss('x4');
+      await pumpEventQueue(times: 2);
+
+      final after = container.read(fluxContinuProvider).requireValue;
+      final themeAfter = after.sections.whereType<FeedThemeSection>().single;
+      expect(themeAfter.coreVisibleCount, 2);
+      expect(themeAfter.items.map((c) => c.id), isNot(contains('x4')));
+    });
+  });
+
+  group('FluxContinuNotifier — démarrage matinal (squelette + 2 phases)', () {
+    EssentielArticle essArticle(String id) => EssentielArticle(
+          contentId: id,
+          title: 'Essentiel $id',
+          url: 'https://x.test/$id',
+          publishedAt: DateTime(2026, 1, 1),
+          sourceName: 'Source',
+          sourceLetter: 'S',
+          sectionLabel: 'Tech',
+          rank: 1,
+        );
+
+    DigestResponse digestWithTopics() => DigestResponse(
+          digestId: 'd1',
+          userId: 'u1',
+          targetDate: DateTime(2026, 5, 23),
+          generatedAt: DateTime(2026, 5, 23),
+          topics: const [
+            DigestTopic(
+              topicId: 't1',
+              label: 'Topic A',
+              articles: [DigestItem(contentId: 'topic-a-1', title: 'A')],
+            ),
+          ],
+        );
+
+    test(
+      'cache d\'hier → 1ère peinture = squelette fidèle, jamais de contenu périmé',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        when(
+          () => feedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          ),
+        ).thenAnswer((_) async => _feedResponseWith(3));
+
+        // Snapshot d'HIER en cache, avec un contenu distinctif.
+        await FluxContinuCacheService().write(
+          dual: DualDigestResponse(
+            normal: DigestResponse(
+              digestId: 'old',
+              userId: 'u1',
+              targetDate: DateTime(2020, 1, 1),
+              generatedAt: DateTime(2020, 1, 1),
+              topics: const [
+                DigestTopic(
+                  topicId: 'old-t',
+                  label: 'Vieux sujet',
+                  articles: [DigestItem(contentId: 'stale-topic-1', title: 'X')],
+                ),
+              ],
+            ),
+            sereinEnabled: false,
+          ),
+          topThemes: const [],
+          essentielArticles: [essArticle('stale-essentiel-1')],
+          now: DateTime(2020, 1, 1, 12), // périmé
+        );
+
+        final container = makeContainer(
+          interests: _interestsState(
+            favorites: const [ThemeFavoriteRef(slug: 'tech')],
+          ),
+        );
+        addTearDown(container.dispose);
+
+        final captured = <AsyncValue<FluxContinuState>>[];
+        container.listen<AsyncValue<FluxContinuState>>(
+          fluxContinuProvider,
+          (_, next) => captured.add(next),
+          fireImmediately: true,
+        );
+
+        final finalState = await settle(container);
+
+        // 1ère donnée émise = squelette.
+        final firstData = captured
+                .whereType<AsyncData<FluxContinuState>>()
+                .first
+                .value;
+        expect(firstData.isSkeleton, isTrue,
+            reason: 'le matin, on peint d\'abord un squelette');
+
+        // Le squelette ne porte AUCUN contenu (ni périmé ni frais).
+        expect(renderedContentIds(firstData.sections), isEmpty);
+        // …mais il a la STRUCTURE dérivée des prefs : une coquille thème 'tech'.
+        final techShell = firstData.sections
+            .whereType<FeedThemeSection>()
+            .where((s) => s.themeSlug == 'tech');
+        expect(techShell, hasLength(1));
+        expect(techShell.single.items, isEmpty);
+
+        // État final = vrai contenu, plus squelette.
+        expect(finalState.isSkeleton, isFalse);
+        expect(
+          finalState.sections
+              .whereType<FeedThemeSection>()
+              .where((s) => s.items.isNotEmpty),
+          isNotEmpty,
+        );
+      },
+    );
+
+    test(
+      'cold start → base-only (hero/digest) émis AVANT les sections thèmes',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        when(() => digestRepo.fetchBothDigests()).thenAnswer(
+          (_) async =>
+              DualDigestResponse(normal: digestWithTopics(), sereinEnabled: false),
+        );
+        when(
+          () => feedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          ),
+        ).thenAnswer((_) async => _feedResponseWith(3));
+
+        // Pas de cache → chemin cold → squelette puis rendu progressif.
+        final container = makeContainer(
+          interests: _interestsState(
+            favorites: const [ThemeFavoriteRef(slug: 'tech')],
+          ),
+        );
+        addTearDown(container.dispose);
+
+        final captured = <FluxContinuState>[];
+        container.listen<AsyncValue<FluxContinuState>>(
+          fluxContinuProvider,
+          (_, next) {
+            final v = next.valueOrNull;
+            if (v != null) captured.add(v);
+          },
+          fireImmediately: true,
+        );
+
+        final finalState = await settle(container);
+
+        // Séquence attendue : squelette → base-only → complet.
+        final skeletonIdx = captured.indexWhere((s) => s.isSkeleton);
+        expect(skeletonIdx, greaterThanOrEqualTo(0));
+
+        // base-only : contenu réel (Actus du jour) mais ENCORE aucune section
+        // thème (le fan-out de phase 2 n'a pas répondu).
+        final baseIdx = captured.indexWhere(
+          (s) =>
+              !s.isSkeleton &&
+              s.sections.isNotEmpty &&
+              s.sections.whereType<FeedThemeSection>().isEmpty,
+        );
+        expect(baseIdx, greaterThan(skeletonIdx),
+            reason: 'le haut de page réel remplace le squelette avant le fan-out');
+
+        // complet : la section thème 'tech' est présente, après le base-only.
+        final fullIdx = captured.lastIndexWhere(
+          (s) => s.sections.whereType<FeedThemeSection>().isNotEmpty,
+        );
+        expect(fullIdx, greaterThan(baseIdx));
+        expect(finalState.isSkeleton, isFalse);
+        expect(
+          finalState.sections.whereType<FeedThemeSection>(),
+          isNotEmpty,
+        );
+      },
+    );
+  });
+
+  group('FeedThemeSection.copyWith', () {
+    test('preserves coreVisibleCount and the source/theme/pagination fields',
+        () {
+      const section = FeedThemeSection(
+        kind: SectionKind.theme,
+        label: 'Tech',
+        accent: Color(0xFF000000),
+        coreVisibleCount: 3,
+        themeSlug: 'tech',
+        items: <Content>[],
+        currentPage: 2,
+        hasMore: true,
+      );
+
+      // Untouched copy keeps the dynamic count.
+      expect(section.copyWith(hasMore: false).coreVisibleCount, 3);
+
+      // Explicit override sets the capped count while keeping other fields.
+      final capped = section.copyWith(coreVisibleCount: 1);
+      expect(capped.coreVisibleCount, 1);
+      expect(capped.themeSlug, 'tech');
+      expect(capped.currentPage, 2);
     });
   });
 }
@@ -930,4 +1272,13 @@ class _OneArticleEssentielRepository implements EssentielRepository {
 
   @override
   Future<List<EssentielArticle>?> fetch() async => [_article];
+}
+
+/// Stub EssentielRepository returning a fixed list — drives the hero-fit tests.
+class _FixedEssentielRepository implements EssentielRepository {
+  _FixedEssentielRepository(this._articles);
+  final List<EssentielArticle> _articles;
+
+  @override
+  Future<List<EssentielArticle>?> fetch() async => _articles;
 }

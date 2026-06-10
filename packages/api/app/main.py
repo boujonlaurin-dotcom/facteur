@@ -86,7 +86,6 @@ from app.routers import (
     grille,
     images,
     internal,
-    legal,
     letters,
     notification_preferences,
     personalization,
@@ -523,7 +522,7 @@ app.include_router(
     prefix="/api/user/sources",
     tags=["UserSourcesState"],
 )
-app.include_router(legal.router, prefix="/legal", tags=["Legal"])
+
 
 
 @app.exception_handler(Exception)

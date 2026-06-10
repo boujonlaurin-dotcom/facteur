@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +14,7 @@ import '../../../shared/widgets/loaders/loading_view.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../flux_continu/widgets/flux_continu_article_card.dart';
 import '../../flux_continu/widgets/section_banner.dart';
+import '../../release_notes/widgets/changelog_banner.dart';
 import '../../sources/widgets/pepites_carousel.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
@@ -26,8 +27,10 @@ import '../widgets/follow_keyword_suggestion_card.dart';
 import '../widgets/pin_subjects_sheet.dart';
 
 const double _kLoadMoreLeadingPx = 800.0;
-const double _kScrollDirThreshold = 12.0;
-const double _kFabHideAboveScroll = 380.0;
+
+/// Sous ce seuil le footer reste révélé même en scrollant vers le bas
+/// (on est effectivement « près du sommet »).
+const double _kFooterRevealNearTop = 60.0;
 
 class FlanerScreen extends ConsumerStatefulWidget {
   const FlanerScreen({super.key});
@@ -40,8 +43,6 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
   final ScrollController _scroll = ScrollController();
   final Set<String> _visibleContentIds = <String>{};
   bool _loadingMore = false;
-  bool _showScrollTopFab = false;
-  double _lastScrollPos = 0;
 
   @override
   void initState() {
@@ -61,20 +62,16 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
     final pos = _scroll.position;
     final currentScroll = pos.pixels;
 
-    final delta = currentScroll - _lastScrollPos;
-    if (delta.abs() >= _kScrollDirThreshold) {
-      bool nextFab = _showScrollTopFab;
-      if (currentScroll < _kFabHideAboveScroll) {
-        nextFab = false;
-      } else if (delta < 0) {
-        nextFab = true;
-      } else if (delta > 0) {
-        nextFab = false;
-      }
-      if (nextFab != _showScrollTopFab) {
-        setState(() => _showScrollTopFab = nextFab);
-      }
-      _lastScrollPos = currentScroll;
+    // Footer auto-hide (app-wide) : ne se cache QUE sur un scroll-down
+    // utilisateur réel (`userScrollDirection`), pas sur un delta de position —
+    // sinon un ré-ajustement programmatique du scroll masquerait le footer sans
+    // intention de l'utilisateur. Même logique que L'Essentiel.
+    if (currentScroll < _kFooterRevealNearTop) {
+      updateFooterVisibility(ref, true);
+    } else if (pos.userScrollDirection == ScrollDirection.reverse) {
+      updateFooterVisibility(ref, false);
+    } else if (pos.userScrollDirection == ScrollDirection.forward) {
+      updateFooterVisibility(ref, true);
     }
 
     if (pos.maxScrollExtent - currentScroll >= _kLoadMoreLeadingPx) return;
@@ -111,6 +108,7 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
   Future<void> _scrollToTop() async {
     if (!_scroll.hasClients) return;
     unawaited(HapticFeedback.lightImpact());
+    updateFooterVisibility(ref, true);
     await _scroll.animateTo(
       0,
       duration: const Duration(milliseconds: 700),
@@ -144,23 +142,6 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
               ),
               data: (state) => _buildContent(context, state),
             ),
-            Positioned(
-              right: 16,
-              bottom: 24,
-              child: SafeArea(
-                child: AnimatedSlide(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  offset:
-                      _showScrollTopFab ? Offset.zero : const Offset(0, 1.6),
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 220),
-                    opacity: _showScrollTopFab ? 1.0 : 0.0,
-                    child: _ScrollToTopButton(onTap: _scrollToTop),
-                  ),
-                ),
-              ),
-            ),
           ],
         ),
       ),
@@ -188,6 +169,7 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
               large: true,
             ),
           ),
+          const SliverToBoxAdapter(child: ChangelogBanner()),
           const SliverPersistentHeader(
             pinned: true,
             delegate: _FilterHeaderDelegate(child: _FilterSurface()),
@@ -427,53 +409,6 @@ class _LoadingMoreIndicator extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ScrollToTopButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _ScrollToTopButton({required this.onTap});
-
-  static const _kRadius = BorderRadius.all(Radius.circular(22));
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final isDark = context.isDarkMode;
-    final fillColor = isDark
-        ? colors.backgroundPrimary.withValues(alpha: 0.78)
-        : const Color.fromRGBO(242, 232, 213, 0.82);
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.10)
-        : const Color.fromRGBO(0, 0, 0, 0.08);
-
-    return ClipRRect(
-      borderRadius: _kRadius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: _kRadius,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: fillColor,
-                borderRadius: _kRadius,
-                border: Border.all(color: borderColor),
-              ),
-              child: Icon(
-                Icons.keyboard_arrow_up_rounded,
-                color: colors.textPrimary,
-                size: 24,
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

@@ -18,6 +18,10 @@ from app.schemas.source import (
     SourceResponse,
 )
 from app.services.language_user_filter import recompute_auto_pref
+from app.services.premium_curated_sources import (
+    PREMIUM_CURATED_MAP,
+    is_paywalled_source,
+)
 from app.services.rss_parser import RSSParser
 
 logger = structlog.get_logger()
@@ -37,9 +41,11 @@ class SourceService:
 
     @staticmethod
     def _premium_connection(s: Source) -> PremiumConnectionResponse | None:
-        return PremiumConnectionResponse.from_config(
-            getattr(s, "premium_connection_config", None)
-        )
+        return PremiumConnectionResponse.from_source(s, curated_map=PREMIUM_CURATED_MAP)
+
+    @staticmethod
+    def _has_paywall(s: Source) -> bool:
+        return is_paywalled_source(s, curated_map=PREMIUM_CURATED_MAP)
 
     async def _load_user_source_context(
         self, user_id: UUID
@@ -108,6 +114,7 @@ class SourceService:
             score_ux=s.score_ux,
             recommended_by=getattr(s, "recommended_by", None),
             recommendation_reason=getattr(s, "recommendation_reason", None),
+            has_paywall=self._has_paywall(s),
             premium_connection=self._premium_connection(s),
         )
 
@@ -398,6 +405,7 @@ class SourceService:
             score_ux=source.score_ux,
             recommended_by=getattr(source, "recommended_by", None),
             recommendation_reason=getattr(source, "recommendation_reason", None),
+            has_paywall=self._has_paywall(source),
             premium_connection=self._premium_connection(source),
         )
 
@@ -568,6 +576,7 @@ class SourceService:
             score_ux=source.score_ux,
             recommended_by=getattr(source, "recommended_by", None),
             recommendation_reason=getattr(source, "recommendation_reason", None),
+            has_paywall=self._has_paywall(source),
             premium_connection=self._premium_connection(source),
         )
 

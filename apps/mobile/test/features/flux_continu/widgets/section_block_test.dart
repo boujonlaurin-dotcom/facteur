@@ -96,7 +96,7 @@ void main() {
           section: _sourceSection(items: 3),
           isOpen: false,
           onToggleMore: () {},
-          onTapArticle: (_, __) {},
+          onTapArticle: (_) {},
           onSeeAll: () {},
         ),
       ));
@@ -117,7 +117,7 @@ void main() {
           section: _sourceSection(items: 0),
           isOpen: false,
           onToggleMore: () {},
-          onTapArticle: (_, __) {},
+          onTapArticle: (_) {},
           onSeeAll: () {},
         ),
       ));
@@ -139,7 +139,7 @@ void main() {
           section: _themeSection(items: 0),
           isOpen: false,
           onToggleMore: () {},
-          onTapArticle: (_, __) {},
+          onTapArticle: (_) {},
           onSeeAll: () {},
           onAddSources: () => tapped = true,
         ),
@@ -165,7 +165,7 @@ void main() {
           section: _themeSection(items: 1),
           isOpen: false,
           onToggleMore: () {},
-          onTapArticle: (_, __) {},
+          onTapArticle: (_) {},
           onSeeAll: () {},
           onAddSources: () {},
         ),
@@ -185,7 +185,7 @@ void main() {
           section: _themeSection(items: 7, coreVisibleCount: 3),
           isOpen: false,
           onToggleMore: () {},
-          onTapArticle: (_, __) {},
+          onTapArticle: (_) {},
           onSeeAll: () {},
         ),
       ));
@@ -201,13 +201,32 @@ void main() {
           section: _themeSection(items: 7, coreVisibleCount: 3),
           isOpen: false,
           onToggleMore: () {},
-          onTapArticle: (_, __) {},
+          onTapArticle: (_) {},
           onSeeAll: () {},
         ),
       ));
 
       // 7 items - 3 visible = +4 hidden.
       expect(find.text('Tout lire (+4)'), findsOneWidget);
+    });
+
+    testWidgets(
+        'a dynamically reduced coreVisibleCount renders fewer cards and a '
+        'larger (+N) — « cartes ≤ écran »', (tester) async {
+      // On a small screen the provider caps coreVisibleCount (e.g. 3 → 2). The
+      // block must render only 2 cards and surface the remaining 5 behind +N.
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 7, coreVisibleCount: 2),
+          isOpen: false,
+          onToggleMore: () {},
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      expect(find.byType(FluxContinuArticleCard), findsNWidgets(2));
+      expect(find.text('Tout lire (+5)'), findsOneWidget);
     });
 
     testWidgets(
@@ -219,7 +238,7 @@ void main() {
           section: _themeSection(items: 2, coreVisibleCount: 3),
           isOpen: false,
           onToggleMore: () {},
-          onTapArticle: (_, __) {},
+          onTapArticle: (_) {},
           onSeeAll: () {},
         ),
       ));
@@ -238,7 +257,7 @@ void main() {
           section: _themeSection(items: 3, coreVisibleCount: 3, hasMore: true),
           isOpen: false,
           onToggleMore: () {},
-          onTapArticle: (_, __) {},
+          onTapArticle: (_) {},
           onSeeAll: () {},
         ),
       ));
@@ -257,7 +276,7 @@ void main() {
           section: _digestTopicSection(topics: 5, coreVisibleCount: 3),
           isOpen: false,
           onToggleMore: () {},
-          onTapArticle: (_, __) {},
+          onTapArticle: (_) {},
           onSeeAll: () {},
         ),
       ));
@@ -274,7 +293,7 @@ void main() {
           section: _themeSection(items: 7, coreVisibleCount: 3),
           isOpen: false,
           onToggleMore: () {},
-          onTapArticle: (_, __) {},
+          onTapArticle: (_) {},
           onSeeAll: () {},
         ),
       ));

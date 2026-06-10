@@ -215,6 +215,68 @@ void main() {
       expect(sourceTab.source, isNotNull);
     });
 
+    test(
+        'source en mode Essentiel (clé dans tournee_order) → exclue des onglets '
+        'Flâner (Story 10.2)', () {
+      final src = _source(id: 's1', name: 'Le Monde');
+
+      // La même source favorite, mais sa clé `source:s1` est dans l'ordre
+      // Tournée ⇒ mode « Essentiel » ⇒ pas d'onglet Flâner.
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: const [],
+        favorites: const [],
+        items: const [],
+        sourceFavorites: const [SourceFavoriteRef(sourceId: 's1', position: 0)],
+        sourceById: {'s1': src},
+        tourneeOrder: const ['source:s1'],
+      );
+
+      expect(tabs, isEmpty);
+    });
+
+    test(
+        'thème favori avec clé theme: dans order → onglet Flâner (modèle '
+        'exclusif)', () {
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: const [],
+        favorites: const [ThemeFavoriteRef(slug: 'tech')],
+        items: const [],
+        order: const ['theme:tech'],
+      );
+
+      expect(tabs.map((t) => t.kind).toList(), [FavoriteTabKind.theme]);
+      final themeTab = tabs.firstWhere((t) => t.kind == FavoriteTabKind.theme);
+      expect(themeTab.slug, 'tech');
+      expect(themeTab.label, 'Technologie');
+      expect(themeTab.count, 0);
+    });
+
+    test('thème favori SANS clé dans order → pas d\'onglet (reste Essentiel)',
+        () {
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: const [],
+        favorites: const [ThemeFavoriteRef(slug: 'tech')],
+        items: const [],
+      );
+
+      expect(tabs, isEmpty);
+    });
+
+    test('selectedThemeSlug marque l\'onglet thème comme actif', () {
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: const [],
+        favorites: const [ThemeFavoriteRef(slug: 'tech')],
+        items: const [],
+        order: const ['theme:tech'],
+        selectedThemeSlug: 'tech',
+      );
+
+      expect(
+        tabs.firstWhere((t) => t.kind == FavoriteTabKind.theme).active,
+        isTrue,
+      );
+    });
+
     test('source favorite absent from catalog → skipped', () {
       final tabs = buildFavoriteTabModelsForTest(
         topics: const [],

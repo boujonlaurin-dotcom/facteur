@@ -295,12 +295,17 @@ class FeedThemeSection extends FluxSection {
     int? currentPage,
     bool? hasMore,
     bool? isLoadingMore,
+    // Story « cartes ≤ écran » : le compte d'affichage fitté (min(défaut, fit))
+    // est porté par la section. Sans ce paramètre, le dédup/`_filterSections`/
+    // `loadMoreTheme` (qui recopient via copyWith) réinitialiseraient le compte
+    // au défaut à chaque recompose — le piège le plus facile à introduire.
+    int? coreVisibleCount,
   }) {
     return FeedThemeSection(
       kind: kind,
       label: label,
       accent: accent,
-      coreVisibleCount: coreVisibleCount,
+      coreVisibleCount: coreVisibleCount ?? this.coreVisibleCount,
       items: items ?? this.items,
       themeSlug: themeSlug,
       customTopicId: customTopicId,
@@ -409,6 +414,14 @@ class FluxContinuState {
   final bool isLoading;
   final Object? error;
 
+  /// True quand l'état n'est qu'un **squelette** : structure de sections
+  /// (en-têtes réels dérivés des prefs locales) sans contenu réel encore
+  /// chargé. Émis au démarrage matinal (cache d'hier invalidé / cold start)
+  /// pour afficher une page fidèle instantanément, jamais du contenu périmé.
+  /// Le rendu réel (`_buildContent`) ne s'active que lorsque ce flag est
+  /// `false` ; le screen rend un scaffold placeholder tant qu'il est `true`.
+  final bool isSkeleton;
+
   const FluxContinuState({
     this.sections = const [],
     this.grilleSlotIndex,
@@ -419,6 +432,7 @@ class FluxContinuState {
     this.quote,
     this.isLoading = true,
     this.error,
+    this.isSkeleton = false,
   });
 
   FluxContinuState copyWith({
@@ -432,6 +446,7 @@ class FluxContinuState {
     bool? isLoading,
     Object? error,
     bool clearError = false,
+    bool? isSkeleton,
   }) {
     return FluxContinuState(
       sections: sections ?? this.sections,
@@ -443,6 +458,7 @@ class FluxContinuState {
       quote: quote ?? this.quote,
       isLoading: isLoading ?? this.isLoading,
       error: clearError ? null : (error ?? this.error),
+      isSkeleton: isSkeleton ?? this.isSkeleton,
     );
   }
 

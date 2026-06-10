@@ -474,6 +474,130 @@ class TestFeed:
         assert "keyword" in velo["matched_on"]
 
 
+@pytest_asyncio.fixture
+async def external_ai_content(db_session):
+    """Source NON configurée + article on-topic 'ai' → peuple le Bloc B."""
+    src = Source(
+        id=uuid4(),
+        name="External AI",
+        url="https://ext.example.com",
+        feed_url=f"https://ext.example.com/feed-{uuid4()}.xml",
+        type=SourceType.ARTICLE,
+        theme="tech",
+        is_active=True,
+        is_curated=True,
+    )
+    db_session.add(src)
+    await db_session.commit()
+    article = Content(
+        id=uuid4(),
+        source_id=src.id,
+        title="Percée IA dans un labo externe",
+        url=f"https://ext.example.com/{uuid4()}",
+        description="Une avancée majeure en intelligence artificielle",
+        published_at=datetime.now(UTC) - timedelta(hours=2),
+        content_type=ContentType.ARTICLE,
+        guid=f"ext-ai-{uuid4()}",
+        theme="tech",
+        topics=["ai"],
+    )
+    db_session.add(article)
+    await db_session.commit()
+    return article
+
+
+class TestFeedTwoBlocks:
+    """Refonte curation : deux blocs (group) + pagination plate à la frontière."""
+
+    def _payload(self, source_id):
+        return {
+            "theme_id": "tech",
+            "theme_label": "Tech",
+            "topics": [{"topic_id": "ai", "label": "IA", "kind": "preset"}],
+            "source_selections": [
+                {"kind": "followed", "source_id": str(source_id)}
+            ],
+        }
+
+    async def test_feed_exposes_group_per_item(
+        self, auth_user, curated_tech_source, tech_content, external_ai_content
+    ):
+        async with _client() as c:
+            await c.post(
+                "/api/veille/config", json=self._payload(curated_tech_source.id)
+            )
+            r = await c.get("/api/veille/feed?limit=50")
+        assert r.status_code == 200
+        items = r.json()["items"]
+        groups = {it["group"] for it in items}
+        assert groups == {"sources", "elargie"}
+        # Articles de la source configurée → Bloc A "sources".
+        for it in items:
+            if "GPT-5" in it["title"]:
+                assert it["group"] == "sources"
+        # Article externe on-topic → Bloc B "elargie".
+        ext = next(it for it in items if "labo externe" in it["title"])
+        assert ext["group"] == "elargie"
+
+    async def test_feed_block_a_before_block_b(
+        self, auth_user, curated_tech_source, tech_content, external_ai_content
+    ):
+        async with _client() as c:
+            await c.post(
+                "/api/veille/config", json=self._payload(curated_tech_source.id)
+            )
+            r = await c.get("/api/veille/feed?limit=50")
+        items = r.json()["items"]
+        groups = [it["group"] for it in items]
+        # Tous les "sources" précèdent tous les "elargie" (concaténation A→B).
+        last_sources = max(i for i, g in enumerate(groups) if g == "sources")
+        first_elargie = min(i for i, g in enumerate(groups) if g == "elargie")
+        assert last_sources < first_elargie
+
+    async def test_feed_pagination_across_block_boundary(
+        self, auth_user, curated_tech_source, tech_content, external_ai_content
+    ):
+        # Gate-all « released » : le Bloc A filtre désormais aussi les sources
+        # configurées (floor + seuil). Pour garder 3 articles on-angle dans le
+        # Bloc A, on qualifie les 3 articles de la source configurée par un axe
+        # (topic « ai » pour GPT-5, mots-clés « bourse »/« vélo » pour les deux
+        # autres) — sinon ils seraient floor-pruned comme source-seuls.
+        payload = {
+            "theme_id": "tech",
+            "theme_label": "Tech",
+            "topics": [{"topic_id": "ai", "label": "IA", "kind": "preset"}],
+            "keywords": [{"keyword": "bourse"}, {"keyword": "vélo"}],
+            "source_selections": [
+                {"kind": "followed", "source_id": str(curated_tech_source.id)}
+            ],
+        }
+        async with _client() as c:
+            await c.post("/api/veille/config", json=payload)
+            # Bloc A = 3 articles on-angle (source configurée), Bloc B = 1 (externe).
+            page1 = (await c.get("/api/veille/feed?limit=3&offset=0")).json()
+            page2 = (await c.get("/api/veille/feed?limit=3&offset=3")).json()
+        assert len(page1["items"]) == 3
+        assert all(it["group"] == "sources" for it in page1["items"])
+        assert page1["has_more"] is True
+        assert len(page2["items"]) == 1
+        assert page2["items"][0]["group"] == "elargie"
+        assert page2["has_more"] is False
+
+    async def test_config_exposes_source_health(
+        self, auth_user, curated_tech_source, tech_content
+    ):
+        """GET /config remonte la santé du flux (last_article_at + count récent)."""
+        async with _client() as c:
+            await c.post(
+                "/api/veille/config", json=self._payload(curated_tech_source.id)
+            )
+            r = await c.get("/api/veille/config")
+        assert r.status_code == 200
+        source = r.json()["sources"][0]
+        assert source["last_article_at"] is not None
+        assert source["recent_article_count"] == 3
+
+
 class TestSuggestEndpoints:
     """POST /api/veille/suggest/{angles,sources} (Story 23.3)."""
 

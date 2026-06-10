@@ -13,6 +13,11 @@ import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
+import '../../flux_continu/providers/tournee_order_prefs_provider.dart'
+    show tourneeOrderPrefsProvider;
+import '../../flux_continu/utils/theme_color_mapping.dart' show visualFor;
+import '../../veille/providers/veille_themes_provider.dart'
+    show kVeilleFacteurThemes;
 import '../models/content_model.dart';
 import '../providers/tab_order_prefs_provider.dart';
 import '../repositories/feed_repository.dart';
@@ -130,6 +135,11 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
     final sourcesStateAsync = ref.watch(userSourcesStateProvider);
     final sourcesAsync = ref.watch(userSourcesProvider);
     final order = ref.watch(tabOrderPrefsProvider);
+    // Story 10.2 — appartenance exclusive : une source en mode « Essentiel »
+    // (clé dans `tournee_order_v1`) ne s'affiche pas en onglet Flâner.
+    final tourneeOrder = ref.watch(
+      tourneeOrderPrefsProvider.select((s) => s.order),
+    );
 
     final interests = interestsAsync.valueOrNull;
     final customTopics =
@@ -147,6 +157,7 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
       sourceFavorites: sourceFavorites,
       sourceById: sourceById,
       order: order,
+      tourneeOrder: tourneeOrder,
       items: widget.items,
       serverCounts: widget.serverCounts,
       selectedTopicSlug: widget.selectedTopicSlug,
@@ -229,6 +240,7 @@ List<FavoriteTabModel> buildFavoriteTabModelsForTest({
   List<SourceFavoriteRef> sourceFavorites = const [],
   Map<String, Source> sourceById = const {},
   List<String> order = const [],
+  List<String> tourneeOrder = const [],
   TabCounts? serverCounts,
   String? selectedTopicSlug,
   String? selectedThemeSlug,
@@ -242,6 +254,7 @@ List<FavoriteTabModel> buildFavoriteTabModelsForTest({
       sourceFavorites: sourceFavorites,
       sourceById: sourceById,
       order: order,
+      tourneeOrder: tourneeOrder,
       items: items,
       serverCounts: serverCounts,
       selectedTopicSlug: selectedTopicSlug,
@@ -263,17 +276,19 @@ CustomTopicInterest _customInterestFromProfile(UserTopicProfile topic) {
   );
 }
 
-/// Onglets Flâner = *sujets épinglés* (custom topics + entités favoris) **et**
-/// *sources épinglées* (favoris sources), mélangés selon l'ordre unifié
-/// [order] (cf. [tabOrderPrefsProvider]). Les *thèmes/veille* pilotent la
-/// Tournée du jour et ne sont donc pas rendus en onglet ici — ils restent
-/// filtrables via la chip thème.
+/// Onglets Flâner = *sujets épinglés* (custom topics + entités favoris),
+/// *sources épinglées* (favoris sources) **et** *thèmes livrés en Flâner*
+/// (modèle exclusif : un `ThemeFavoriteRef` dont la clé `theme:<slug>` est dans
+/// [order] vit en onglet plutôt que dans l'Essentiel). Tous mélangés selon
+/// l'ordre unifié [order] (cf. [tabOrderPrefsProvider]). Un thème *hors* [order]
+/// reste côté Essentiel (non rendu ici) ; la veille pilote toujours la Tournée.
 List<FavoriteTabModel> _buildTabModels({
   required List<CustomTopicInterest> customTopics,
   required List<FavoriteRef> favorites,
   required List<SourceFavoriteRef> sourceFavorites,
   required Map<String, Source> sourceById,
   required List<String> order,
+  List<String> tourneeOrder = const [],
   required List<Content> items,
   TabCounts? serverCounts,
   String? selectedTopicSlug,
@@ -367,9 +382,13 @@ List<FavoriteTabModel> _buildTabModels({
   // catalogue (logo/nom non résolus).
   final sortedSourceFavorites = [...sourceFavorites]
     ..sort((a, b) => a.position.compareTo(b.position));
+  // Story 10.2 — une source en mode « Essentiel » (clé dans `tournee_order_v1`)
+  // n'est pas un onglet Flâner. Même chaîne `source:<id>` que [tabOrderSourceKey].
+  final essentielSourceKeys = tourneeOrder.toSet();
   for (final ref in sortedSourceFavorites) {
     final source = sourceById[ref.sourceId];
     if (source == null) continue;
+    if (essentielSourceKeys.contains(tabOrderSourceKey(ref.sourceId))) continue;
     favoriteTabs.add((
       key: tabOrderSourceKey(ref.sourceId),
       tab: FavoriteTabModel(
@@ -380,6 +399,28 @@ List<FavoriteTabModel> _buildTabModels({
         count: 0,
         active: selectedSourceId != null && selectedSourceId == ref.sourceId,
         source: source,
+      ),
+    ));
+  }
+
+  // Story Essentiel UX — thèmes livrés en onglet Flâner (modèle exclusif) : un
+  // `ThemeFavoriteRef` dont la clé `theme:<slug>` est dans l'ordre Flâner
+  // [order] produit un onglet (label/emoji via visualFor + kVeilleFacteurThemes,
+  // count 0 = pas de badge). Hors [order], le thème reste côté Essentiel.
+  final flanerThemeKeys = order.toSet();
+  for (final f in favorites) {
+    if (f is! ThemeFavoriteRef) continue;
+    final key = tabOrderThemeKey(f.slug);
+    if (!flanerThemeKeys.contains(key)) continue;
+    favoriteTabs.add((
+      key: key,
+      tab: FavoriteTabModel(
+        kind: FavoriteTabKind.theme,
+        slug: f.slug,
+        label: visualFor(f.slug).label,
+        emoji: _themeTabEmoji(f.slug),
+        count: 0,
+        active: selectedThemeSlug != null && selectedThemeSlug == f.slug,
       ),
     ));
   }
@@ -404,6 +445,13 @@ List<FavoriteTabModel> _buildTabModels({
 
   tabs.addAll(capped.map((e) => e.tab));
   return tabs;
+}
+
+String _themeTabEmoji(String slug) {
+  for (final t in kVeilleFacteurThemes) {
+    if (t.slug == slug) return t.emoji;
+  }
+  return '📰';
 }
 
 int _countUnreadRecent(

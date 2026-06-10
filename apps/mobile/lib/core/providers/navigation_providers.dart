@@ -12,3 +12,23 @@ final feedScrollTriggerProvider = StateProvider<int>((ref) => 0);
 /// Miroir de [feedScrollTriggerProvider] : incrémenté par `MainShell` au re-tap
 /// de l'onglet actif, écouté par `FluxContinuScreen`.
 final essentielScrollTriggerProvider = StateProvider<int>((ref) => 0);
+
+/// Visibilité du footer (MainBottomNav) — masqué au scroll vers le bas, révélé
+/// au scroll vers le haut, partout dans l'app (comportement LinkedIn).
+///
+/// Écrit par les écrans scrollables (`FluxContinuScreen`, `FlanerScreen`) dans
+/// leur `_onScroll` ; lu par `MainTabPageScaffold` qui glisse la barre hors
+/// écran (`AnimatedSlide` + `IgnorePointer`). Reconquiert ~50px + safe-area en
+/// lecture et garantit que le bas de carte (« Lire plus ») n'est jamais couvert
+/// par le footer. Toujours remis à `true` au changement d'onglet / retour haut
+/// pour qu'il ne reste pas « collé » masqué.
+final footerVisibleProvider = StateProvider<bool>((ref) => true);
+
+/// Met à jour [footerVisibleProvider] uniquement sur un vrai changement (le
+/// footer partagé le lit via `MainTabPageScaffold`). Appelé depuis les
+/// `_onScroll` des écrans scrollables (`FluxContinuScreen`, `FlanerScreen`) :
+/// le no-op quand inchangé évite d'écrire à chaque frame de scroll.
+void updateFooterVisibility(WidgetRef ref, bool visible) {
+  final notifier = ref.read(footerVisibleProvider.notifier);
+  if (notifier.state != visible) notifier.state = visible;
+}

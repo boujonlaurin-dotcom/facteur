@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +14,9 @@ import '../../../config/theme.dart';
 import '../../app_update/providers/app_update_provider.dart';
 import '../../app_update/widgets/update_bottom_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
+import '../../my_interests/providers/user_interests_provider.dart';
+import '../../veille/providers/veille_active_config_provider.dart';
+import '../../veille/providers/veille_repository_provider.dart';
 import '../providers/user_profile_provider.dart';
 import 'feedback_modal.dart';
 
@@ -175,6 +181,7 @@ class _UpdateAvailableTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (kIsWeb || !Platform.isAndroid) return const SizedBox.shrink();
     final colors = context.facteurColors;
     final info = ref.watch(appUpdateProvider).valueOrNull;
     if (info == null || !info.updateAvailable) {
@@ -305,11 +312,15 @@ class _SereinSwitchTile extends ConsumerWidget {
   }
 }
 
-class _ContentShortcuts extends StatelessWidget {
+class _ContentShortcuts extends ConsumerWidget {
   const _ContentShortcuts();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Point d'entrée veille dédié et découvrable (restauré après le retrait au
+    // commit dbb6aa20). État adaptatif : veille active → « Ma veille » (édition) ;
+    // sinon → libellé incitatif vers la création.
+    final hasVeille = ref.watch(veilleActiveConfigProvider).valueOrNull != null;
     return _SheetCard(
       child: Column(
         children: [
@@ -335,12 +346,103 @@ class _ContentShortcuts extends StatelessWidget {
           ),
           const _Divider(),
           _ShortcutTile(
+            icon: PhosphorIcons.binoculars(PhosphorIconsStyle.regular),
+            label: hasVeille ? 'Ma veille' : 'Crée ta veille',
+            // Même destination que l'ancien « Gérer ma veille » de Mes intérêts :
+            // veille active → menu modifier/archiver ; sinon → flow de création.
+            onTap: () => hasVeille
+                ? _showVeilleManageMenu(context, ref)
+                : context.pushNamed(RouteNames.veilleConfig),
+          ),
+          const _Divider(),
+          _ShortcutTile(
             icon: PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.regular),
             label: 'Sauvegardés',
             onTap: () => context.pushNamed(RouteNames.saved),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Menu de gestion de la veille (modifier / archiver) — déplacé depuis Mes
+/// intérêts vers le point d'entrée dédié des réglages (« Ma veille »).
+Future<void> _showVeilleManageMenu(BuildContext context, WidgetRef ref) async {
+  final choice = await showModalBottomSheet<String>(
+    context: context,
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: Icon(PhosphorIcons.pencilSimple()),
+            title: const Text('Modifier la veille'),
+            onTap: () => Navigator.of(sheetContext).pop('edit'),
+          ),
+          ListTile(
+            leading: Icon(
+              PhosphorIcons.archive(),
+              color: Colors.red.shade700,
+            ),
+            title: Text(
+              'Archiver',
+              style: TextStyle(color: Colors.red.shade700),
+            ),
+            onTap: () => Navigator.of(sheetContext).pop('archive'),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (!context.mounted) return;
+  if (choice == 'edit') {
+    await context.pushNamed(
+      RouteNames.veilleConfig,
+      queryParameters: const {'mode': 'edit'},
+    );
+  } else if (choice == 'archive') {
+    await _confirmAndArchiveVeille(context, ref);
+  }
+}
+
+Future<void> _confirmAndArchiveVeille(BuildContext context, WidgetRef ref) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Archiver la veille ?'),
+      content: const Text(
+        'Ta veille sera retirée de Mes intérêts et de ta Tournée. '
+        'Tu pourras en créer une nouvelle à tout moment.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Annuler'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
+          child: const Text('Archiver'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  try {
+    await ref.read(veilleRepositoryProvider).deleteConfig();
+    // La config active devient null → le libellé de la tuile repasse à
+    // « Crée ta veille » et le favori veille disparaît de Mes intérêts.
+    ref.invalidate(veilleActiveConfigProvider);
+    ref.invalidate(userInterestsProvider);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Veille archivée')),
+    );
+  } catch (_) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Impossible d'archiver la veille.")),
     );
   }
 }
