@@ -3186,9 +3186,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 () => VerticalDragGestureRecognizer(),
               ),
               Factory<HorizontalDragGestureRecognizer>(
-                () => BackGestureCompatibleHorizontalDragGestureRecognizer(
-                  viewportWidth: MediaQuery.sizeOf(context).width,
-                ),
+                () => HorizontalDragGestureRecognizer(),
               ),
             }
           : const {},
