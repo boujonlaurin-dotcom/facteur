@@ -29,19 +29,21 @@ class _NudgeHostState extends ConsumerState<NudgeHost> {
   TutorialCoachMark? _current;
   String? _shownForId;
 
+  // Caché en champ pour ne JAMAIS toucher `ref` dans dispose() : le shell peut
+  // se démonter pendant finalizeTree (sortie d'onboarding), moment où ref.read
+  // lève StateError et corrompt l'arbre (écran gris — Sentry FLUTTER-2).
+  late final NudgeCoordinator _coordinator;
+
   @override
   void initState() {
     super.initState();
-    final coordinator = ref.read(nudgeCoordinatorProvider);
-    coordinator.activeListenable.addListener(_onActiveChanged);
+    _coordinator = ref.read(nudgeCoordinatorProvider);
+    _coordinator.activeListenable.addListener(_onActiveChanged);
   }
 
   @override
   void dispose() {
-    ref
-        .read(nudgeCoordinatorProvider)
-        .activeListenable
-        .removeListener(_onActiveChanged);
+    _coordinator.activeListenable.removeListener(_onActiveChanged);
     _current?.finish();
     _current = null;
     super.dispose();

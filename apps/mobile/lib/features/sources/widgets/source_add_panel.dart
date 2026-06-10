@@ -11,6 +11,7 @@ import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
+import '../repositories/sources_repository.dart';
 import 'catalog_sources_strip.dart';
 import 'community_gems_strip.dart';
 import 'example_chips.dart';
@@ -68,10 +69,14 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   late final TextEditingController _searchController;
   late final FocusNode _searchFocusNode;
   bool _searchActive = false;
+  // Caché en champ : dispose() ne doit jamais lire `ref` (StateError pendant
+  // un démontage de shell — même classe de bug que NudgeHost / FLUTTER-2).
+  late final SourcesRepository _sourcesRepository;
 
   @override
   void initState() {
     super.initState();
+    _sourcesRepository = ref.read(sourcesRepositoryProvider);
     _searchController = TextEditingController();
     _searchFocusNode = FocusNode();
     _searchFocusNode.addListener(_handleSearchActivity);
@@ -92,7 +97,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   void dispose() {
     final query = _currentQuery.trim();
     if (query.isNotEmpty && !_sourceAdded) {
-      ref.read(sourcesRepositoryProvider).logSearchAbandoned(query);
+      _sourcesRepository.logSearchAbandoned(query);
     }
     _searchFocusNode.removeListener(_handleSearchActivity);
     _searchController.removeListener(_handleSearchActivity);

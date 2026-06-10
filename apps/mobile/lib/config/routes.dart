@@ -217,6 +217,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         return RoutePaths.emailConfirmation;
       }
 
+      // 2b. Statut d'onboarding pas encore résolu (cache Hive + DB async) :
+      // garder l'utilisateur sur le splash plutôt que de monter le shell puis de
+      // rebondir vers /onboarding. Ce rebond démontait le shell en plein
+      // finalizeTree → écran gris fatal (Sentry FLUTTER-2). `needsOnboarding`
+      // n'est fiable qu'une fois `onboardingStatusKnown == true`.
+      if (!authState.onboardingStatusKnown) {
+        return isOnSplash ? null : RoutePaths.splash;
+      }
+
       // 3. Les utilisateurs confirmés ne doivent pas être sur login, confirmation ou splash
       if (isOnLoginPage || isOnEmailConfirmation || isOnSplash) {
         return authState.needsOnboarding

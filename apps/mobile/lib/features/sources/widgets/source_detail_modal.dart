@@ -19,6 +19,15 @@ class SourceDetailModal extends ConsumerWidget {
   final VoidCallback? onCopyFeedUrl;
   final List<SmartSearchRecentItem>? recentItems;
 
+  /// Contexte onboarding : quand non-null, le bouton principal reflète l'état de
+  /// sélection du questionnaire (et non l'état « confiance » global), avec un
+  /// libellé « Sélectionner / Retirer de ma sélection ».
+  final bool? isSelectedOverride;
+
+  /// Libellé du bouton principal quand la source n'est pas sélectionnée
+  /// (contexte onboarding). Défaut : « Sélectionner cette source ».
+  final String? selectLabel;
+
   const SourceDetailModal({
     super.key,
     required this.source,
@@ -26,6 +35,8 @@ class SourceDetailModal extends ConsumerWidget {
     this.onToggleMute,
     this.onCopyFeedUrl,
     this.recentItems,
+    this.isSelectedOverride,
+    this.selectLabel,
   });
 
   @override
@@ -321,24 +332,33 @@ class SourceDetailModal extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
             ],
-            // Trust/Untrust button
-            FacteurButton(
-              onPressed: () {
-                onToggleTrust();
-                Navigator.pop(context);
-              },
-              label: displaySource.isTrusted
-                  ? 'Ne plus suivre'
-                  : 'Ajouter comme source de confiance',
-              type: (!displaySource.isTrusted &&
-                      !(displaySource.premiumConnection != null &&
-                          displaySource.hasPaywall))
-                  ? FacteurButtonType.primary
-                  : FacteurButtonType.secondary,
-              icon: displaySource.isTrusted
-                  ? PhosphorIcons.check()
-                  : PhosphorIcons.shieldCheck(),
-            ),
+            // Bouton principal : confiance (global) ou sélection (onboarding).
+            Builder(builder: (context) {
+              final bool inOnboarding = isSelectedOverride != null;
+              final bool isSelected =
+                  isSelectedOverride ?? displaySource.isTrusted;
+              return FacteurButton(
+                onPressed: () {
+                  onToggleTrust();
+                  Navigator.pop(context);
+                },
+                label: inOnboarding
+                    ? (isSelected
+                        ? 'Retirer de ma sélection'
+                        : (selectLabel ?? 'Sélectionner cette source'))
+                    : (isSelected
+                        ? 'Ne plus suivre'
+                        : 'Ajouter comme source de confiance'),
+                type: (!isSelected &&
+                        !(displaySource.premiumConnection != null &&
+                            displaySource.hasPaywall))
+                    ? FacteurButtonType.primary
+                    : FacteurButtonType.secondary,
+                icon: isSelected
+                    ? PhosphorIcons.check()
+                    : PhosphorIcons.shieldCheck(),
+              );
+            }),
             if (displaySource.isTrusted) ...[
               const SizedBox(height: 8),
               Builder(builder: (context) {
