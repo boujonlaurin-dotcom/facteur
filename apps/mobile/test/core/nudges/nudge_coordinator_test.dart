@@ -84,23 +84,6 @@ void main() {
     });
   });
 
-  group('NudgeCoordinator — prerequisites', () {
-    test('nudge with unmet prerequisite is rejected', () async {
-      final c = _makeCoordinator();
-      // feedPreviewLongpress requires feedBadgeLongpress to be seen.
-      final active = await c.request(NudgeIds.feedPreviewLongpress);
-      expect(active, isNull);
-    });
-
-    test('nudge becomes eligible once prerequisite marked seen', () async {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('nudge.feed_badge_longpress.seen', true);
-      final c = _makeCoordinator();
-      final active = await c.request(NudgeIds.feedPreviewLongpress);
-      expect(active, NudgeIds.feedPreviewLongpress);
-    });
-  });
-
   group('NudgeCoordinator — session budget & global cooldown', () {
     test('high priority nudges do NOT consume the session budget', () async {
       final c = _makeCoordinator();
@@ -124,7 +107,8 @@ void main() {
     test('24h cooldown blocks a 2nd non-critical within the same session',
         () async {
       final c = _makeCoordinator();
-      await c.request(NudgeIds.articleSaveNotes); // normal, consumes budget + cooldown
+      await c.request(
+          NudgeIds.articleSaveNotes); // normal, consumes budget + cooldown
       await c.dismiss(markSeen: true);
       final blocked = await c.request(NudgeIds.prioritySliderExplainer);
       expect(blocked, isNull);
@@ -214,6 +198,30 @@ void main() {
       final result = await c.markConverted(NudgeIds.articleSaveNotes);
       expect(result, NudgeIds.widgetPinAndroid);
       expect(c.activeId, NudgeIds.widgetPinAndroid);
+    });
+
+    test('gesture conversion restarts its 14-day cooldown', () async {
+      final base = DateTime(2026, 6, 1, 10);
+      var now = base;
+      final c = _makeCoordinator(clock: () => now);
+
+      await c.recordConversion(NudgeIds.feedSwipeHint);
+      expect(await c.request(NudgeIds.feedSwipeHint), isNull);
+
+      now = base.add(const Duration(days: 14));
+      c.resetSession();
+      expect(
+        await c.request(NudgeIds.feedSwipeHint),
+        NudgeIds.feedSwipeHint,
+      );
+    });
+
+    test('preview long-press no longer requires badge nudge', () async {
+      final c = _makeCoordinator();
+      expect(
+        await c.request(NudgeIds.feedPreviewLongpress),
+        NudgeIds.feedPreviewLongpress,
+      );
     });
   });
 }

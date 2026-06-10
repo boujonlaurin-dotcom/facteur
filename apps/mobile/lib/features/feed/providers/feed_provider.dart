@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/providers.dart';
@@ -712,9 +713,8 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       // Deduplicate by content ID: stale cache on page 1 + fresh API on page 2
       // can produce overlapping articles when new content was ingested in between.
       final existingIds = Set<String>.from(currentItems.map((c) => c.id));
-      final dedupedNewItems = newItems
-          .where((c) => !existingIds.contains(c.id))
-          .toList();
+      final dedupedNewItems =
+          newItems.where((c) => !existingIds.contains(c.id)).toList();
 
       if (dedupedNewItems.isEmpty && newItems.isNotEmpty) {
         // All items were duplicates — pagination is fully misaligned (e.g. stale
@@ -957,9 +957,8 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
 
     // Si l'index est -1, l'item a été archivé (ou absent)
     final bool currentlyInList = index != -1;
-    final bool oldIsSaved = currentlyInList
-        ? currentItems[index].isSaved
-        : true;
+    final bool oldIsSaved =
+        currentlyInList ? currentItems[index].isSaved : true;
     final bool newIsSaved = !oldIsSaved;
 
     final updatedItems = List<Content>.from(currentItems);
@@ -1008,9 +1007,8 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     final index = currentItems.indexWhere((c) => c.id == content.id);
 
     final bool currentlyInList = index != -1;
-    final bool oldIsLiked = currentlyInList
-        ? currentItems[index].isLiked
-        : true;
+    final bool oldIsLiked =
+        currentlyInList ? currentItems[index].isLiked : true;
     final bool newIsLiked = !oldIsLiked;
 
     final updatedItems = List<Content>.from(currentItems);
@@ -1088,6 +1086,36 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     } catch (e) {
       // Silent failure — optimistic remove stays
       print('FeedNotifier: swipeDismiss failed for ${content.id}: $e');
+    }
+  }
+
+  /// Hides remotely while retaining the article in local state so the screen
+  /// can replace its exact row with inline feedback.
+  Future<void> markHiddenRemote(Content content) async {
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.hideContent(content.id);
+      FeedRepository.clearDefaultViewCache();
+    } catch (e) {
+      debugPrint(
+        'FeedNotifier: markHiddenRemote failed for ${content.id}: $e',
+      );
+    }
+  }
+
+  /// Confirms removal after the inline feedback has been resolved.
+  void confirmDismiss(String contentId) {
+    removeFromState(contentId);
+  }
+
+  /// Cancels a remote hide while the retained local article stays in place.
+  Future<void> undoHide(Content content) async {
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.unhideContent(content.id);
+      FeedRepository.clearDefaultViewCache();
+    } catch (e) {
+      debugPrint('FeedNotifier: undoHide failed for ${content.id}: $e');
     }
   }
 
@@ -1209,9 +1237,8 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     if (currentState == null) return;
 
     // Optimistic remove of all content from this source
-    final updatedItems = currentState.items
-        .where((c) => c.source.id != sourceId)
-        .toList();
+    final updatedItems =
+        currentState.items.where((c) => c.source.id != sourceId).toList();
     state = AsyncData(
       FeedState(
         items: updatedItems,
@@ -1234,9 +1261,8 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     if (currentState == null) return;
 
     // Optimistic remove of all content from this theme
-    final updatedItems = currentState.items
-        .where((c) => c.source.theme != theme)
-        .toList();
+    final updatedItems =
+        currentState.items.where((c) => c.source.theme != theme).toList();
     state = AsyncData(
       FeedState(
         items: updatedItems,

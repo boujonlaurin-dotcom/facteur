@@ -14,13 +14,15 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/nudges/nudge_counters.dart';
+import '../../../core/nudges/nudge_coordinator.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/widgets/feed_nudge_anchors.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
-import '../../feed/providers/swipe_hint_provider.dart';
 import '../../feed/widgets/explore_section.dart' show ExploreDiscoverySkeleton;
 import '../../feed/widgets/feedback_inline.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
@@ -162,6 +164,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// `markHiddenRemote`); resolution (chip / X / undo) drives
   /// `confirmDismiss` or `undoHide` on the provider.
   final Set<String> _pendingFeedback = <String>{};
+  bool _gestureNudgeRequested = false;
+  bool _showSwipeHint = false;
 
   int _passagePulseSequence = 0;
 
@@ -613,11 +617,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// Pull-to-refresh handler. Wraps the provider's refresh + clears pending
   /// feedback (the new state replaces yesterday's session) + scrolls to top.
   Future<void> _handleRefresh() async {
-    await ref.read(fluxContinuProvider.notifier).refresh();
-    if (!mounted) return;
     if (_pendingFeedback.isNotEmpty) {
       setState(_pendingFeedback.clear);
     }
+    await ref.read(fluxContinuProvider.notifier).refresh();
+    if (!mounted) return;
     if (_scroll.hasClients) {
       unawaited(
         _scroll.animateTo(
@@ -712,6 +716,58 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final notifier = ref.read(fluxContinuProvider.notifier);
     unawaited(notifier.markHiddenRemote(contentId));
     setState(() => _pendingFeedback.add(contentId));
+  }
+
+  void _scheduleGestureNudge() {
+    if (_gestureNudgeRequested) return;
+    _gestureNudgeRequested = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final location =
+          GoRouter.of(context).routerDelegate.currentConfiguration.uri.path;
+      if (!location.startsWith(RoutePaths.fluxContinu)) {
+        _gestureNudgeRequested = false;
+        return;
+      }
+      final coordinator = ref.read(nudgeCoordinatorProvider);
+      if (coordinator.activeId != null) return;
+      final swipe = await coordinator.request(NudgeIds.feedSwipeHint);
+      if (!mounted) return;
+      if (swipe == NudgeIds.feedSwipeHint) {
+        setState(() => _showSwipeHint = true);
+        return;
+      }
+      if (coordinator.activeId == null) {
+        await coordinator.request(NudgeIds.feedPreviewLongpress);
+      }
+    });
+  }
+
+  void _onSwipeHintComplete() {
+    if (mounted) setState(() => _showSwipeHint = false);
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    if (coordinator.activeId == NudgeIds.feedSwipeHint) {
+      unawaited(coordinator.dismiss(markSeen: false));
+    }
+  }
+
+  void _recordSwipeConversion() {
+    if (_showSwipeHint && mounted) {
+      setState(() => _showSwipeHint = false);
+    }
+    unawaited(
+      ref
+          .read(nudgeCoordinatorProvider)
+          .recordConversion(NudgeIds.feedSwipeHint),
+    );
+  }
+
+  void _recordLongPressConversion() {
+    unawaited(
+      ref
+          .read(nudgeCoordinatorProvider)
+          .recordConversion(NudgeIds.feedPreviewLongpress),
+    );
   }
 
   void _resolveFeedback(String contentId) {
@@ -1133,8 +1189,21 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     required FluxContinuNotifier notifier,
   }) {
     final favoriteCount = state.sections.where(_isFavoriteSection).length;
-    final swipeLeftHintSeen =
-        ref.watch(swipeLeftHintSeenProvider).valueOrNull ?? true;
+    final firstSwipeableSectionIndex = state.sections.indexWhere(
+      (section) => switch (section) {
+        EssentielSection() => false,
+        DigestTopicSection(:final topics) => topics.any(
+            (topic) =>
+                !_pendingFeedback.contains(pickTopicLead(topic).contentId),
+          ),
+        FeedThemeSection(:final items) => items.any(
+            (content) => !_pendingFeedback.contains(content.id),
+          ),
+      },
+    );
+    if (firstSwipeableSectionIndex >= 0) {
+      _scheduleGestureNudge();
+    }
 
     // Story Essentiel UX — la carte de perso (compte non personnalisé) et
     // l'inline « Gérer / Tes N favoris » (compte personnalisé) s'excluent.
@@ -1199,11 +1268,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                         _onSelectFeedbackChip(context, id, chip),
                     onResolveFeedback: _resolveFeedback,
                     onUndoFeedback: _undoFeedback,
-                    enableSwipeHintOnFirstCard: i == 0 && !swipeLeftHintSeen,
-                    onSwipeHintComplete: () async {
-                      await markSwipeLeftHintSeen();
-                      if (mounted) ref.invalidate(swipeLeftHintSeenProvider);
-                    },
+                    enableSwipeHintOnFirstCard:
+                        i == firstSwipeableSectionIndex && _showSwipeHint,
+                    onSwipeHintComplete: _onSwipeHintComplete,
+                    firstSwipeableCardAnchor: i == firstSwipeableSectionIndex
+                        ? fluxContinuFirstCardKey
+                        : null,
+                    onSwipeConversion: _recordSwipeConversion,
+                    onLongPressConversion: _recordLongPressConversion,
                     onTapFavorite: isFavorite
                         ? () => showTourneeComposerSheet(context)
                         : null,
