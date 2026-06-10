@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../core/providers/navigation_providers.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
@@ -54,7 +55,7 @@ class SourceSectionScreen extends ConsumerStatefulWidget {
 }
 
 class _SourceSectionScreenState extends ConsumerState<SourceSectionScreen> {
-  final ScrollController _scroll = ScrollController();
+  final ScrollController _scroll = ScrollController(keepScrollOffset: false);
 
   /// Curation complète chronologique, paginée localement (indépendante du
   /// top-3 classé de la section inline).
@@ -67,6 +68,11 @@ class _SourceSectionScreenState extends ConsumerState<SourceSectionScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(tourneeLastDedicatedSectionProvider.notifier).state =
+          widget.sectionKeyValue;
+    });
     // Peinture instantanée avec le top classé de la section inline.
     _items = widget.initialSection?.items ?? const <Content>[];
     _scroll.addListener(_onScroll);
@@ -160,11 +166,12 @@ class _SourceSectionScreenState extends ConsumerState<SourceSectionScreen> {
     return widget.initialSection;
   }
 
-  void _openArticle(BuildContext context, Content article) {
-    context.push(
+  Future<void> _openArticle(BuildContext context, Content article) async {
+    await context.push(
       '${RoutePaths.fluxContinu}/content/${article.id}',
       extra: article,
     );
+    if (mounted) setState(() {});
   }
 
   void _onBackToTournee() {
@@ -172,6 +179,9 @@ class _SourceSectionScreenState extends ConsumerState<SourceSectionScreen> {
   }
 
   void _onTapNextSection(FluxSection next) {
+    ref.read(tourneeLastDedicatedSectionProvider.notifier).state = sectionKey(
+      next,
+    );
     final key = Uri.encodeComponent(sectionKey(next));
     final String path;
     if (next is FeedThemeSection && next.kind == SectionKind.source) {
@@ -182,12 +192,15 @@ class _SourceSectionScreenState extends ConsumerState<SourceSectionScreen> {
       path = '${RoutePaths.fluxContinu}/section/$key';
     }
     // pushReplacement so chaining "suivant" doesn't stack N detail pages.
-    context.pushReplacement(path, extra: next);
+    context.pushReplacement(tourneeNextSectionLocation(path), extra: next);
   }
 
   /// Carrousel restreint aux items de CETTE source. Retourne `null` sous 2
   /// items (un carrousel mono-item ressemble à du remplissage ici).
-  FeedCarouselData? _filterCarousel(FeedCarouselData carousel, String sourceId) {
+  FeedCarouselData? _filterCarousel(
+    FeedCarouselData carousel,
+    String sourceId,
+  ) {
     final filtered = <Content>[];
     final filteredBadges = <CarouselItemBadge>[];
     for (var i = 0; i < carousel.items.length; i++) {
@@ -260,16 +273,13 @@ class _SourceSectionScreenState extends ConsumerState<SourceSectionScreen> {
           ),
         ),
         SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final item = _items[index];
-              return FluxContinuArticleCard(
-                article: item,
-                onTap: () => _openArticle(context, item),
-              );
-            },
-            childCount: _items.length,
-          ),
+          delegate: SliverChildBuilderDelegate((context, index) {
+            final item = _items[index];
+            return FluxContinuArticleCard(
+              article: item,
+              onTap: () => _openArticle(context, item),
+            );
+          }, childCount: _items.length),
         ),
         if (_hasMore || !_initialLoaded)
           SliverToBoxAdapter(
@@ -279,9 +289,7 @@ class _SourceSectionScreenState extends ConsumerState<SourceSectionScreen> {
         // Pas de bloc « Explorer de nouvelles sources » (décision PO). Carte de
         // clôture quand la curation est épuisée ET aucun carrousel source.
         if (scrollExhausted && sourceCarousels.isEmpty)
-          SliverToBoxAdapter(
-            child: _SourceClosingCard(label: section.label),
-          ),
+          SliverToBoxAdapter(child: _SourceClosingCard(label: section.label)),
         _buildFooterSliver(section),
         const SliverToBoxAdapter(child: SizedBox(height: 40)),
       ],
@@ -410,9 +418,7 @@ class _SourceClosingCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.black.withValues(alpha: 0.05),
-        ),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -10,6 +11,7 @@ import '../../../widgets/design/facteur_image.dart';
 import '../../digest/models/digest_models.dart';
 import '../../digest/widgets/divergence_inline_badge.dart';
 import '../../feed/models/content_model.dart';
+import '../../feed/services/read_sync_service.dart';
 import '../../feed/widgets/swipe_to_open_card.dart';
 import '../../sources/models/source_model.dart';
 
@@ -56,8 +58,8 @@ class FluxArticleVM {
         sourceLogoUrl: article.source?.logoUrl,
         themeLabel:
             (article.source?.theme != null && article.source!.theme!.isNotEmpty)
-            ? getTopicLabel(article.source!.theme!)
-            : null,
+                ? getTopicLabel(article.source!.theme!)
+                : null,
         contentType: article.contentType,
         durationSeconds: article.durationSeconds,
         publishedAt: article.publishedAt,
@@ -77,8 +79,7 @@ class FluxArticleVM {
         durationSeconds: article.durationSeconds,
         publishedAt: article.publishedAt,
         isFollowedSource: article.isFollowedSource,
-        isRead:
-            article.status == ContentStatus.consumed ||
+        isRead: article.status == ContentStatus.consumed ||
             article.readingProgress > 0,
       );
     }
@@ -94,7 +95,7 @@ class FluxArticleVM {
 ///   the right (radius 10).
 /// - Footer row (single-line) : source dot + name · theme pill · clock·time
 ///   · optional press-review trailing (Essentiel sections only).
-class FluxContinuArticleCard extends StatefulWidget {
+class FluxContinuArticleCard extends ConsumerStatefulWidget {
   final Object article;
   final VoidCallback? onTap;
   final VoidCallback? onSwipeDismiss;
@@ -119,21 +120,26 @@ class FluxContinuArticleCard extends StatefulWidget {
   });
 
   @override
-  State<FluxContinuArticleCard> createState() => _FluxContinuArticleCardState();
+  ConsumerState<FluxContinuArticleCard> createState() =>
+      _FluxContinuArticleCardState();
 }
 
-class _FluxContinuArticleCardState extends State<FluxContinuArticleCard> {
+class _FluxContinuArticleCardState
+    extends ConsumerState<FluxContinuArticleCard> {
   bool _thumbErrored = false;
 
   @override
   Widget build(BuildContext context) {
     final vm = FluxArticleVM.from(widget.article);
+    final wasConsumedThisSession = ref.watch(
+      consumedContentIdsProvider.select((ids) => ids.contains(vm.contentId)),
+    );
+    final hasBeenRead = vm.hasBeenRead || wasConsumedThisSession;
     final colors = context.facteurColors;
     // Reclaim the thumb slot when the network image fails — avoids the
     // grey/broken visual reported on many Reporterre articles (cached
     // vignettes that 404 or load empty).
-    final hasThumb =
-        vm.thumbnailUrl != null &&
+    final hasThumb = vm.thumbnailUrl != null &&
         vm.thumbnailUrl!.isNotEmpty &&
         !_thumbErrored;
     const cardRadius = BorderRadius.all(Radius.circular(FacteurRadius.large));
@@ -141,7 +147,7 @@ class _FluxContinuArticleCardState extends State<FluxContinuArticleCard> {
     Widget card = Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Opacity(
-        opacity: vm.hasBeenRead ? 0.6 : 1.0,
+        opacity: hasBeenRead ? 0.6 : 1.0,
         child: Stack(
           children: [
             Material(
@@ -155,8 +161,8 @@ class _FluxContinuArticleCardState extends State<FluxContinuArticleCard> {
                 ),
                 onLongPressMoveUpdate: (details) =>
                     ArticlePreviewOverlay.updateScroll(
-                      details.localOffsetFromOrigin.dy,
-                    ),
+                  details.localOffsetFromOrigin.dy,
+                ),
                 onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
                 child: InkWell(
                   onTap: widget.onTap,
@@ -215,8 +221,7 @@ class _FluxContinuArticleCardState extends State<FluxContinuArticleCard> {
                           _Footer(
                             vm: vm,
                             colors: colors,
-                            showPressReview:
-                                widget.isEssentiel &&
+                            showPressReview: widget.isEssentiel &&
                                 widget.pressReviewCount > 0,
                             pressReviewCount: widget.pressReviewCount,
                             perspectiveSources: widget.perspectiveSources,
@@ -229,7 +234,7 @@ class _FluxContinuArticleCardState extends State<FluxContinuArticleCard> {
                 ),
               ),
             ),
-            if (vm.hasBeenRead)
+            if (hasBeenRead)
               Positioned(
                 top: 4,
                 right: 4,
@@ -551,9 +556,8 @@ class _Initial extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final trimmed = name.trim();
-    final initial = trimmed.isEmpty
-        ? '?'
-        : trimmed.characters.first.toUpperCase();
+    final initial =
+        trimmed.isEmpty ? '?' : trimmed.characters.first.toUpperCase();
     return Text(
       initial,
       style: GoogleFonts.dmSans(

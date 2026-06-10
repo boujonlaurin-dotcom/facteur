@@ -49,6 +49,8 @@ import '../core/services/deep_link_service.dart';
 import '../core/ui/notification_service.dart';
 import '../shared/widgets/navigation/modal_bottom_sheet_page.dart';
 
+const tourneeSectionTransitionDuration = Duration(milliseconds: 420);
+
 /// Clés de navigator des deux branches du shell principal (Essentiel / Flâner).
 ///
 /// Chaque branche d'un `StatefulShellRoute` possède son propre navigator pour
@@ -187,15 +189,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isOnLoginPage = matchedLocation == RoutePaths.login;
       final isOnEmailConfirmation =
           matchedLocation == RoutePaths.emailConfirmation;
-      final isOnOnboarding =
-          matchedLocation == RoutePaths.onboarding ||
+      final isOnOnboarding = matchedLocation == RoutePaths.onboarding ||
           matchedLocation == RoutePaths.onboardingConclusion;
       // Escape hatch: the onboarding "Personnaliser mon mode serein" CTA pushes
       // the interests screen with ?serein=1. Let that through so the user can
       // configure their exclusions before completing onboarding.
       final isOnInterestsFromOnboarding =
           matchedLocation == RoutePaths.myInterests &&
-          state.uri.queryParameters['serein'] == '1';
+              state.uri.queryParameters['serein'] == '1';
 
       // 1. Les utilisateurs non connectés
       if (!isLoggedIn) {
@@ -269,8 +270,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final authState = ref.read(authStateProvider);
           return EmailConfirmationScreen(
-            email:
-                authState.user?.email ??
+            email: authState.user?.email ??
                 authState.pendingEmailConfirmation ??
                 '',
           );
@@ -302,9 +302,9 @@ final routerProvider = Provider<GoRouter>((ref) {
             MainShell(navigationShell: navigationShell),
         navigatorContainerBuilder: (context, navigationShell, children) =>
             BranchPageView(
-              navigationShell: navigationShell,
-              children: children,
-            ),
+          navigationShell: navigationShell,
+          children: children,
+        ),
         branches: [
           // Branche 0 — L'Essentiel (Flux Continu, home post-auth Story 21.1).
           StatefulShellBranch(
@@ -342,6 +342,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                       final key = state.pathParameters['key']!;
                       final section = state.extra as FeedThemeSection?;
                       return FullSwipeCupertinoPage(
+                        key: state.pageKey,
+                        transitionDurationOverride:
+                            tourneeSectionTransitionDuration,
+                        transition: tourneeSectionTransition(state.uri),
                         child: ThemeSectionScreen(
                           sectionKeyValue: key,
                           initialSection: section,
@@ -356,6 +360,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                       final key = state.pathParameters['key']!;
                       final section = state.extra as DigestTopicSection?;
                       return FullSwipeCupertinoPage(
+                        key: state.pageKey,
+                        transitionDurationOverride:
+                            tourneeSectionTransitionDuration,
+                        transition: tourneeSectionTransition(state.uri),
                         child: DigestSectionScreen(
                           sectionKeyValue: key,
                           initialSection: section,
@@ -373,6 +381,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                       final id = state.pathParameters['id']!;
                       final section = state.extra as FeedThemeSection?;
                       return FullSwipeCupertinoPage(
+                        key: state.pageKey,
+                        transitionDurationOverride:
+                            tourneeSectionTransitionDuration,
+                        transition: tourneeSectionTransition(state.uri),
                         child: SourceSectionScreen(
                           sectionKeyValue: id,
                           initialSection: section,
@@ -666,3 +678,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         Scaffold(body: Center(child: Text('Page non trouvée: ${state.uri}'))),
   );
 });
+FullSwipePageTransition tourneeSectionTransition(Uri uri) {
+  return uri.queryParameters['transition'] == 'next'
+      ? FullSwipePageTransition.verticalFromBottom
+      : FullSwipePageTransition.horizontal;
+}
+
+String tourneeNextSectionLocation(String path) {
+  final separator = path.contains('?') ? '&' : '?';
+  return '$path${separator}transition=next';
+}

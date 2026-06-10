@@ -13,6 +13,15 @@ final feedScrollTriggerProvider = StateProvider<int>((ref) => 0);
 /// de l'onglet actif, écouté par `FluxContinuScreen`.
 final essentielScrollTriggerProvider = StateProvider<int>((ref) => 0);
 
+/// Last dedicated Tournée section visited during the current app session.
+///
+/// Detail pages update it as they are opened/replaced. When the route chain
+/// closes, FluxContinuScreen consumes the key and scrolls to the matching
+/// existing section anchor.
+final tourneeLastDedicatedSectionProvider = StateProvider<String?>(
+  (ref) => null,
+);
+
 /// Visibilité du footer (MainBottomNav) — masqué au scroll vers le bas, révélé
 /// au scroll vers le haut, partout dans l'app (comportement LinkedIn).
 ///

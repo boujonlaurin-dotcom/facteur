@@ -84,10 +84,7 @@ const _closingTab = StickyTab(
   accent: Color(0xFF2E7D32),
 );
 // Carte de personnalisation (virtuelle — pas de section correspondante).
-const _persoCardTab = StickyTab(
-  label: 'Pour toi',
-  accent: Color(0xFFB0470A),
-);
+const _persoCardTab = StickyTab(label: 'Pour toi', accent: Color(0xFFB0470A));
 
 /// Drag-time feedforward payload for [_SectionPassageDot]. Computed live in
 /// [_FluxContinuScreenState._updateBoundaryApproach] and broadcast via a
@@ -181,8 +178,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// in-flow [_SectionPassageDot]s. Feedforward twin of [_sectionPassagePulse]
   /// (the post-validation pulse) — both ride the same dot so the gesture reads
   /// as a single continuous « j'approche un seuil → je l'ai franchi ».
-  final ValueNotifier<_BoundaryApproach?> _boundaryApproach =
-      ValueNotifier(null);
+  final ValueNotifier<_BoundaryApproach?> _boundaryApproach = ValueNotifier(
+    null,
+  );
 
   /// Sorted snap points of [_snapAnchors], cached once per layout (frames only
   /// change on layout, never per scroll frame) so the per-frame
@@ -636,7 +634,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// the cached items immediately rather than waiting on the provider.
   void _openThemeSection(BuildContext context, FeedThemeSection section) {
     final key = Uri.encodeComponent(sectionKey(section));
-    context.push('${RoutePaths.fluxContinu}/theme/$key', extra: section);
+    ref.read(tourneeLastDedicatedSectionProvider.notifier).state = sectionKey(
+      section,
+    );
+    context
+        .push('${RoutePaths.fluxContinu}/theme/$key', extra: section)
+        .then((_) => _restoreLastDedicatedSection());
   }
 
   /// PR « Sources dans la Tournée » — ouvre la vue détail d'une section source
@@ -644,44 +647,60 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// `/flux-continu/source/:id` (id = sectionKey = `source:<uuid>`).
   void _openSourceSection(BuildContext context, FeedThemeSection section) {
     final key = Uri.encodeComponent(sectionKey(section));
-    context.push('${RoutePaths.fluxContinu}/source/$key', extra: section);
+    ref.read(tourneeLastDedicatedSectionProvider.notifier).state = sectionKey(
+      section,
+    );
+    context
+        .push('${RoutePaths.fluxContinu}/source/$key', extra: section)
+        .then((_) => _restoreLastDedicatedSection());
   }
 
   /// Opens the dedicated full-page view for a [DigestTopicSection]
   /// (Actus du jour, Bonnes Nouvelles). Mirrors [_openThemeSection].
   void _openDigestSection(BuildContext context, DigestTopicSection section) {
-    context.push(
-      '${RoutePaths.fluxContinu}/section/${sectionKey(section)}',
-      extra: section,
+    ref.read(tourneeLastDedicatedSectionProvider.notifier).state = sectionKey(
+      section,
     );
+    context
+        .push(
+          '${RoutePaths.fluxContinu}/section/${sectionKey(section)}',
+          extra: section,
+        )
+        .then((_) => _restoreLastDedicatedSection());
   }
 
-  /// Opens an article and, on return, marks it read in local state so the
-  /// card immediately shows the grey + check badge without waiting for a
-  /// pull-to-refresh.
+  void _restoreLastDedicatedSection() {
+    if (!mounted) return;
+    final key = ref.read(tourneeLastDedicatedSectionProvider);
+    final sections = ref.read(fluxContinuProvider).valueOrNull?.sections;
+    if (key == null || sections == null) return;
+    final sectionIndex = sections.indexWhere((s) => sectionKey(s) == key);
+    if (sectionIndex < 0 || sectionIndex >= _sectionKeys.length) return;
+    final stickyIndex = _stickyEntryKeys.indexOf(_sectionKeys[sectionIndex]);
+    if (stickyIndex >= 0) {
+      unawaited(_scrollToSection(stickyIndex));
+    }
+  }
+
+  /// Opens an article. ReadSyncService propagates the read state after the
+  /// one-second threshold; returning sooner must leave the card unread.
   Future<void> _openArticle(BuildContext context, Object article) async {
-    String? openedContentId;
     if (article is DigestItem) {
-      openedContentId = article.contentId;
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.contentId}',
       );
     } else if (article is Content) {
-      openedContentId = article.id;
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.id}',
         extra: article,
       );
     } else if (article is EssentielArticle) {
-      openedContentId = article.contentId;
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.contentId}',
       );
     } else {
       return;
     }
-    if (!mounted) return;
-    ref.read(fluxContinuProvider.notifier).markArticleRead(openedContentId);
   }
 
   // ---------------------------------------------------------------------------
@@ -856,6 +875,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final isSkeleton = state is AsyncLoading || (data?.isSkeleton ?? false);
     // Re-tap de l'onglet actif (depuis le shell) → remonter en haut.
     ref.listen(essentielScrollTriggerProvider, (_, __) => _scrollToTop());
+    ref.listen(tourneeLastDedicatedSectionProvider, (_, __) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _restoreLastDedicatedSection();
+      });
+    });
     // Flow post-onboarding : joué une seule fois quand Essentiel a chargé ses
     // **vraies** données (derrière les modales thème & notifications). On exclut
     // l'état squelette : le flow attend du contenu réel. Couvre la transition
@@ -877,7 +901,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // et dérive les descripteurs d'onglets (label+accent), dans le même ordre.
     // Hors squelette uniquement : le scaffold placeholder n'attache pas les
     // GlobalKeys de section ni la physics de snap.
-    final stickyTabs = isSkeleton ? const <StickyTab>[] : _syncStickyEntries(data);
+    final stickyTabs =
+        isSkeleton ? const <StickyTab>[] : _syncStickyEntries(data);
     if (!isSkeleton) {
       // Sections don't resize mid-session, so we refresh the snap anchors only
       // on these content/layout-driven rebuilds — never per scroll frame.
@@ -955,8 +980,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final grilleSlotIndex = state.grilleSlotIndex;
     // La carte perso est une entrée virtuelle (pas de section correspondante)
     // insérée juste après le hero tant que l'utilisateur n'a pas personnalisé.
-    final customized =
-        ref.watch(tourneeOrderPrefsProvider.select((s) => s.customized));
+    final customized = ref.watch(
+      tourneeOrderPrefsProvider.select((s) => s.customized),
+    );
     final heroPresent =
         state.sections.isNotEmpty && state.sections.first is EssentielSection;
 
@@ -1112,8 +1138,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
     // Story Essentiel UX — la carte de perso (compte non personnalisé) et
     // l'inline « Gérer / Tes N favoris » (compte personnalisé) s'excluent.
-    final customized =
-        ref.watch(tourneeOrderPrefsProvider.select((s) => s.customized));
+    final customized = ref.watch(
+      tourneeOrderPrefsProvider.select((s) => s.customized),
+    );
     final heroPresent =
         state.sections.isNotEmpty && state.sections.first is EssentielSection;
     // Cible de l'inline (mode personnalisé) : la 1ʳᵉ section de contenu après le
@@ -1183,8 +1210,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                     // Story 23.4 — bouton réglages (tune) sur la section veille →
                     // ouvre la config en édition. Réutilisé par le CTA d'état vide.
                     onTapSettings: section.kind == SectionKind.veille
-                        ? () =>
-                            context.push('${RoutePaths.veilleConfig}?mode=edit')
+                        ? () => context.push(
+                              '${RoutePaths.veilleConfig}?mode=edit',
+                            )
                         : null,
                     // Tournée bugs E2E — CTA « Ajouter des sources » de l'empty-state
                     // d'une section thème favorite vide → ouvre « Composer ma Tournée ».
@@ -1255,10 +1283,12 @@ class _FluxContinuSkeleton extends StatelessWidget {
       // Fenêtre de loading initiale (pas encore de coquilles) → placeholders
       // génériques pour occuper l'espace sans labels.
       for (var i = 0; i < 3; i++) {
-        children.add(const Padding(
-          padding: EdgeInsets.only(top: 8),
-          child: ExploreDiscoverySkeleton(),
-        ));
+        children.add(
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: ExploreDiscoverySkeleton(),
+          ),
+        );
       }
     } else {
       for (final section in sections) {
@@ -1266,13 +1296,15 @@ class _FluxContinuSkeleton extends StatelessWidget {
         if (section is EssentielSection) continue;
         final isSource =
             section is FeedThemeSection && section.kind == SectionKind.source;
-        children.add(SectionBanner(
-          title: section.label,
-          accent: section.accent,
-          blurb: section.blurb,
-          illustrationAsset: isSource ? null : section.illustrationAsset,
-          logoUrl: isSource ? section.sourceLogoUrl : null,
-        ));
+        children.add(
+          SectionBanner(
+            title: section.label,
+            accent: section.accent,
+            blurb: section.blurb,
+            illustrationAsset: isSource ? null : section.illustrationAsset,
+            logoUrl: isSource ? section.sourceLogoUrl : null,
+          ),
+        );
         children.add(const ExploreDiscoverySkeleton());
         children.add(const SizedBox(height: 16));
       }
@@ -1468,8 +1500,10 @@ class _SectionPassageDotState extends State<_SectionPassageDot>
       widget.pulseListenable.addListener(_onPulse);
     }
     if (oldWidget.approachListenable != widget.approachListenable) {
-      _repaint =
-          Listenable.merge([_pulseController, widget.approachListenable]);
+      _repaint = Listenable.merge([
+        _pulseController,
+        widget.approachListenable,
+      ]);
     }
   }
 
