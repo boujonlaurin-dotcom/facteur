@@ -3,6 +3,10 @@
     {
       "tag": "Veille",
       "summary": "Veille plus précise (moins de hors-sujet) et plus facile à retrouver dans les réglages."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Questionnaire plus court et plus fluide, fin du blocage en sortie."
     }
   ],
   "released": [
