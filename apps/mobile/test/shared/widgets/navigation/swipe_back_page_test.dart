@@ -1,4 +1,5 @@
 import 'package:facteur/shared/widgets/navigation/swipe_back_page.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -9,7 +10,6 @@ void main() {
     WidgetTester tester, {
     ScrollController? controller,
     VoidCallback? onLeftTap,
-    bool handlesHorizontalDrags = false,
   }) async {
     await tester.binding.setSurfaceSize(viewportSize);
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -26,7 +26,6 @@ void main() {
                       child: _ScrollableTestPage(
                         controller: controller,
                         onLeftTap: onLeftTap,
-                        handlesHorizontalDrags: handlesHorizontalDrags,
                       ),
                     ).createRoute(context),
                   );
@@ -64,7 +63,6 @@ void main() {
       await openScrollablePage(
         tester,
         controller: controller,
-        handlesHorizontalDrags: true,
       );
 
       for (final x in <double>[40, 400, 760]) {
@@ -106,17 +104,6 @@ void main() {
       expect(find.text('Ouvrir'), findsOneWidget);
     });
 
-    testWidgets('pops over content that also handles horizontal drags', (
-      tester,
-    ) async {
-      await openScrollablePage(tester, handlesHorizontalDrags: true);
-
-      await dragFrom(tester, const Offset(40, 300), const Offset(500, 0));
-
-      expect(find.text('Page scrollable'), findsNothing);
-      expect(find.text('Ouvrir'), findsOneWidget);
-    });
-
     testWidgets('does not pop when the right swipe starts outside the zone', (
       tester,
     ) async {
@@ -139,6 +126,15 @@ void main() {
       expect(tapCount, 1);
       expect(find.text('Page scrollable'), findsOneWidget);
     });
+
+    test('platform views claim vertical drags only', () {
+      final recognizers = swipeBackCompatiblePlatformViewGestureRecognizers();
+      expect(recognizers, hasLength(1));
+      expect(
+        recognizers.single.type,
+        VerticalDragGestureRecognizer,
+      );
+    });
   });
 }
 
@@ -146,12 +142,10 @@ class _ScrollableTestPage extends StatelessWidget {
   const _ScrollableTestPage({
     this.controller,
     this.onLeftTap,
-    this.handlesHorizontalDrags = false,
   });
 
   final ScrollController? controller;
   final VoidCallback? onLeftTap;
-  final bool handlesHorizontalDrags;
 
   @override
   Widget build(BuildContext context) {
@@ -159,28 +153,11 @@ class _ScrollableTestPage extends StatelessWidget {
       appBar: AppBar(title: const Text('Page scrollable')),
       body: Stack(
         children: [
-          RawGestureDetector(
-            gestures: handlesHorizontalDrags
-                ? {
-                    BackGestureCompatibleHorizontalDragGestureRecognizer:
-                        GestureRecognizerFactoryWithHandlers<
-                            BackGestureCompatibleHorizontalDragGestureRecognizer>(
-                      () =>
-                          BackGestureCompatibleHorizontalDragGestureRecognizer(
-                        viewportWidth: MediaQuery.sizeOf(context).width,
-                      ),
-                      (recognizer) {
-                        recognizer.onUpdate = (_) {};
-                      },
-                    ),
-                  }
-                : const {},
-            child: ListView.builder(
-              controller: controller,
-              itemExtent: 80,
-              itemCount: 30,
-              itemBuilder: (context, index) => Text('Ligne $index'),
-            ),
+          ListView.builder(
+            controller: controller,
+            itemExtent: 80,
+            itemCount: 30,
+            itemBuilder: (context, index) => Text('Ligne $index'),
           ),
           Positioned(
             left: 8,
