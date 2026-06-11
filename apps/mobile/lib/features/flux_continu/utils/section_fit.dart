@@ -31,7 +31,8 @@ library;
 /// Breakdown: outer padding (0+12) + inner padding (14+14) + thumb-floored head
 /// row 78 + gap 10 + footer row ≈ 20 = 148. A rare 4-line title spills a few px
 /// past this; the runtime snap net (`[fit-net]`) flags it if it ever does.
-const double kRegularCardHeight = 148;
+/// Réglé au plancher réel mesuré (146) pour fitter 3 cartes plus souvent.
+const double kRegularCardHeight = 146;
 
 /// Banner height (px) for a section **without** a blurb (theme / source):
 /// `minHeight 60` + vertical margin (3+5).
@@ -41,17 +42,20 @@ const double kBannerHeightNoBlurb = 68;
 /// Nouvelles, veille): `minHeight 92` + vertical margin (3+5).
 const double kBannerHeightWithBlurb = 100;
 
-/// Footer height (px): the always-present "Tout lire (+N)" CTA (≈54) plus the
-/// section's trailing 16px gap.
-const double kSectionFooterHeight = 70;
+/// Footer height (px): the always-present "Tout lire (+N)" CTA (≈48) plus the
+/// section's trailing ~10px gap. Réduit (était 70) pour fitter 3 cartes plus
+/// souvent sans toucher au rendu réel ; le filet snap `[fit-net]` reste le
+/// backstop pour le rare titre 4 lignes (~162px).
+const double kSectionFooterHeight = 58;
 
 // ── Hero card (« Ton Essentiel » — lead + up to 4 mediums) ────────────────────
 
 /// Non-tile chrome of the hi-fi hero card (px): card margins (8+16) + container
 /// padding (12+12, post-compaction) + the fixed 132px date/weather badge slot
 /// that drives the header height (kept per PO) + header→lead gap (12,
-/// post-compaction) + the SectionBlock trailing 16px gap.
-const double kHeroChromeHeight = 208;
+/// post-compaction) + the SectionBlock trailing 16px gap. Réduit (était 208)
+/// après compaction du header (titre 18, tiret 24×2, paddings resserrés).
+const double kHeroChromeHeight = 196;
 
 /// Lead tile height (px), title at a **realistic 3-line height** (post-compaction)
 /// rather than the 4-line worst case (the old 181, which over-cut the hero):

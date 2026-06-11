@@ -4,7 +4,7 @@ import 'package:facteur/features/flux_continu/utils/section_fit.dart';
 void main() {
   group('fitVisibleCount', () {
     // Section chrome = banner + footer. With the no-blurb banner that is
-    // 68 + 70 = 138 px of fixed chrome, then each card is 148 px.
+    // 68 + 58 = 126 px of fixed chrome, then each card is 146 px.
     const banner = kBannerHeightNoBlurb;
     const footer = kSectionFooterHeight;
     final card = estimateRegularCardHeight();
@@ -24,7 +24,7 @@ void main() {
     });
 
     test('a mid screen drops to 2', () {
-      // 138 + 2·148 = 434 fits, 138 + 3·148 = 582 does not.
+      // 126 + 2·146 = 418 fits, 126 + 3·146 = 564 does not.
       expect(fit(500), 2);
     });
 
@@ -50,8 +50,8 @@ void main() {
     test('a blurb banner reserves more chrome, so it can fit fewer cards', () {
       // Same usable height, the with-blurb banner (100) leaves 32 px less.
       // Pick a height where the extra 32 px tips 3 → 2.
-      // no-blurb: 138 + 3·148 = 582 ; with-blurb: 170 + 3·148 = 614.
-      const usable = 600.0;
+      // no-blurb: 126 + 3·146 = 564 ; with-blurb: 158 + 3·146 = 596.
+      const usable = 590.0;
       final noBlurb = fitVisibleCount(
         usableHeight: usable,
         bannerHeight: kBannerHeightNoBlurb,
@@ -87,13 +87,13 @@ void main() {
     });
 
     test('a mid screen keeps the lead + one medium (2)', () {
-      // chrome 208 + lead 160 = 368 ; one medium = 88.
-      // 368 + 88 = 456 fits, 368 + 2·88 = 544 does not.
-      expect(fit(540), 2);
+      // chrome 196 + lead 160 = 356 ; one medium = 88.
+      // 356 + 88 = 444 fits, 356 + 2·88 = 532 does not.
+      expect(fit(500), 2);
     });
 
     test('a small screen keeps the lead alone — never 0', () {
-      // Below chrome + lead (368) there is no room for any medium.
+      // Below chrome + lead (356) there is no room for any medium.
       expect(fit(360), 1);
       expect(fit(100), 1);
     });
