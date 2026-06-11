@@ -1,25 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../providers/personalisation_cta_provider.dart';
 import 'tournee_composer_sheet.dart';
 
 /// Carte d'invitation à composer sa Tournée, affichée juste sous le hero
-/// « L'Essentiel du jour » tant que l'utilisateur **n'a pas encore personnalisé**
-/// sa Tournée (`!tournee.customized`). Une fois personnalisée, elle est
-/// remplacée par l'inline discret [MyInterestsIntro] (cf. `flux_continu_screen`).
+/// « L'Essentiel du jour » au plus une fois tous les 30 jours. Après activation,
+/// elle est remplacée par l'inline discret [MyInterestsIntro] pour les comptes
+/// qui ont déjà personnalisé leur Tournée (cf. `flux_continu_screen`).
 ///
 /// Gabarit visuel aligné sur la `CarteCta` de la Grille : carte pleine largeur,
-/// fond accent doux, illustration (`facteur_reparation_velo.png`), titre +
+/// fond accent doux, illustration (`facteur_reparation_cropped.svg`), titre +
 /// sous-titre incitatif, bouton primaire « Composer ma Tournée » → ouvre la
 /// sheet unifiée via [showTourneeComposerSheet].
-class PersonalisationCtaCard extends StatelessWidget {
+class PersonalisationCtaCard extends ConsumerWidget {
   const PersonalisationCtaCard({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     final accent = colors.sectionEssentiel;
     final isDark = context.isDarkMode;
@@ -49,14 +52,14 @@ class PersonalisationCtaCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Illustration : fond blanc en light (pas de tinte orange), masquée
-            // en dark (fond blanc sur image PNG = rendu horrible en mode sombre).
+            // Illustration : fond blanc en light, masquée en dark pour conserver
+            // le comportement historique de l'asset à fond clair.
             if (!isDark)
               Container(
                 color: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Image.asset(
-                  'assets/images/facteur_reparation_velo.png',
+                child: SvgPicture.asset(
+                  'assets/images/facteur_reparation_cropped.svg',
                   height: 132,
                   fit: BoxFit.contain,
                 ),
@@ -92,6 +95,9 @@ class PersonalisationCtaCard extends StatelessWidget {
                     accent: accent,
                     onTap: () {
                       HapticFeedback.mediumImpact();
+                      ref
+                          .read(personalisationCtaShouldShowProvider.notifier)
+                          .activate();
                       showTourneeComposerSheet(context);
                     },
                   ),

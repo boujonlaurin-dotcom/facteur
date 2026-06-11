@@ -1,8 +1,9 @@
-// Story Essentiel UX — carte de perso affichée sous le hero tant que la Tournée
-// n'est pas personnalisée. Rendu (titre + illustration + CTA) et tap → la sheet
-// unifiée « Mes favoris » s'ouvre.
+// Carte mensuelle de personnalisation : rendu SVG et tap → retrait immédiat,
+// cooldown persistant, puis ouverture de la sheet unifiée « Mes favoris ».
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/core/nudges/nudge_ids.dart';
 import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
+import 'package:facteur/features/flux_continu/providers/personalisation_cta_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/personalisation_cta_card.dart';
 import 'package:facteur/features/grille/providers/grille_provider.dart';
 import 'package:facteur/features/grille/repositories/grille_repository.dart';
@@ -17,6 +18,7 @@ import 'package:facteur/features/veille/models/veille_config_dto.dart';
 import 'package:facteur/features/veille/providers/veille_active_config_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -75,7 +77,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
 
-  Widget host() => ProviderScope(
+  Widget host({bool conditionallyRender = false}) => ProviderScope(
         overrides: [
           userInterestsProvider.overrideWith(() => _StubInterests()),
           userSourcesStateProvider.overrideWith(() => _StubSources()),
@@ -89,8 +91,12 @@ void main() {
             extensions: [FacteurPalettes.light],
             splashFactory: NoSplash.splashFactory,
           ),
-          home: const Scaffold(
-            body: SingleChildScrollView(child: PersonalisationCtaCard()),
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: conditionallyRender
+                  ? const _ConditionalPersonalisationCard()
+                  : const PersonalisationCtaCard(),
+            ),
           ),
         ),
       );
@@ -101,21 +107,36 @@ void main() {
 
     expect(find.text('Personnalise ton Essentiel'), findsOneWidget);
     expect(find.text('Composer ma Tournée'), findsOneWidget);
-    expect(
-      find.image(
-        const AssetImage('assets/images/facteur_reparation_velo.png'),
-      ),
-      findsOneWidget,
-    );
+    expect(find.byType(SvgPicture), findsOneWidget);
   });
 
   testWidgets('tap sur le CTA ouvre la sheet « Mes favoris »', (tester) async {
-    await tester.pumpWidget(host());
+    await tester.pumpWidget(host(conditionallyRender: true));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Composer ma Tournée'));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
+    expect(find.text('Personnalise ton Essentiel'), findsNothing);
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getInt('nudge.${NudgeIds.personalisationCta}.lastShown'),
+      isNotNull,
+    );
+    await tester.pumpAndSettle();
     expect(find.text('Mes favoris'), findsOneWidget);
   });
+}
+
+class _ConditionalPersonalisationCard extends ConsumerWidget {
+  const _ConditionalPersonalisationCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final shouldShow =
+        ref.watch(personalisationCtaShouldShowProvider).valueOrNull ?? false;
+    return shouldShow
+        ? const PersonalisationCtaCard()
+        : const SizedBox.shrink();
+  }
 }
