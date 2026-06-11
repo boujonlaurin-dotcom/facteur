@@ -39,12 +39,12 @@
         btn.textContent = '...';
         if (error) error.hidden = true;
 
-        var payload = { email: email, source: 'soiree-prelancement' };
+        var payload = { email: email, event_slug: 'soiree-prelancement' };
         if (utmData.utm_source) payload.utm_source = utmData.utm_source;
         if (utmData.utm_medium) payload.utm_medium = utmData.utm_medium;
         if (utmData.utm_campaign) payload.utm_campaign = utmData.utm_campaign;
 
-        fetch(API_URL + '/api/waitlist', {
+        fetch(API_URL + '/api/events/rsvp', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),

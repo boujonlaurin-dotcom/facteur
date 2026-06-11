@@ -61,7 +61,10 @@ final appUpdateProvider =
 
   try {
     final apiClient = ref.read(apiClientProvider);
-    final data = await apiClient.get('app/update');
+    final data = await apiClient.get(
+      'app/update',
+      queryParameters: {'channel': AppUpdateConstants.updateChannel},
+    );
     return AppUpdateInfo.fromJson(data as Map<String, dynamic>);
   } catch (e) {
     // Fail silently — update check should never block the app

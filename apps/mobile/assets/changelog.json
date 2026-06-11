@@ -1,8 +1,12 @@
 {
   "unreleased": [
     {
-      "tag": "Essentiel",
-      "summary": "Tes 5 articles du jour toujours affichés en entier, et des cartes plus lisibles sans rognage."
+      "tag": "Flâner",
+      "summary": "Nouveau carrousel « Tes sources discrètes » : ne ratez plus les sources que vous suivez et qui publient rarement."
+    },
+    {
+      "tag": "Flâner",
+      "summary": "Carrousels plus fréquents dans le fil, et « Actu chaude » regroupe désormais des articles qui couvrent vraiment le même sujet."
     },
     {
       "tag": "Veille",
