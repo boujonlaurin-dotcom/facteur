@@ -1,6 +1,7 @@
 class OnboardingStrings {
   // Common
   static const String continueButton = 'Continuer';
+  static const String nextButton = 'Suivant';
   static const String skipButton = 'Passer cette étape';
   static const String backButtonTooltip = 'Retour';
 
@@ -150,12 +151,42 @@ class OnboardingStrings {
   static const String personalizeSereinCta =
       'Personnaliser mon mode serein';
 
+  // Q9c: Intent sources (routage de la page sources)
+  static const String sourcesIntentTitle =
+      'Avec quels médias préférez-vous partir ?';
+  static const String sourcesIntentCuriousLabel = 'Plutôt curieux';
+  static const String sourcesIntentCuriousSubtitle =
+      'Découvrir des médias selon mes thèmes';
+  static const String sourcesIntentKnowsLabel =
+      'Repartir de ce que je connais';
+  static const String sourcesIntentKnowsSubtitle =
+      'Je sais déjà quels médias je suis';
+
+  // Q10: Page sources adaptative
+  static const String sourcesSuggestionsTitle = 'Nos suggestions pour vous';
+  static const String sourcesAlreadyFollowTitle =
+      'Vous suivez déjà un média ?';
+  static const String sourcesKnowsTitle =
+      'Quels médias suivez-vous déjà ?';
+  static const String sourcesGuideMeTitle = 'Ou laissez-vous guider';
+  static const String sourcesSeeAllCatalog = 'Voir tout le catalogue';
+  static const String sourcesSeeMore = 'Voir plus';
+
+  // Preuve instantanée à l'ajout (Wow #1)
+  static const String sourceProofConnected = 'Connecté';
+  static const String sourceProofEmptyFallback =
+      'Ses prochains articles arrivent dans votre tournée.';
+
+  // Conclusion vivante (Wow #2)
+  static String conclusionLiveCounter(int articles, int sources) {
+    return '$articles article${articles > 1 ? 's' : ''} récupéré${articles > 1 ? 's' : ''} '
+        'depuis vos $sources source${sources > 1 ? 's' : ''}';
+  }
+
   // Q9: Sources
   static const String q9Title = 'Vos sources, sur mesure.';
   static const String q9Subtitle =
       'Basé sur vos réponses, voici les médias que Facteur vous recommande.';
-  static const String q9HelperText =
-      'Ajoutez vos sources ! Jetez un oeil à vos feeds et boîtes mails préférées.'; // kept for reference but no longer shown in onboarding
   static const String q9SearchHint = 'Rechercher une source...';
   static const String q9LoadingError = 'Erreur de chargement des sources';
   static const String q9EmptyList = 'Aucune source disponible';
@@ -166,13 +197,17 @@ class OnboardingStrings {
   static const String q9PreselectionTitle =
       'Modifiez cette liste à tout moment.';
 
-  // Sources Page 2
-  static const String sourcesPage2Title = 'Allez plus loin.';
-  static const String sourcesPage2Subtitle =
-      'Explorez le catalogue complet et ajoutez vos propres sources.';
-  static const String addAnySourceButton = 'Ajouter n\'importe quelle source';
+  // Sources : abonnements presse
   static const String premiumSubscriptionsButton =
       'Ajouter vos abonnements presse';
+
+  // Carte d'ajout d'abonnement (style CTA Essentiel) sur la page sources.
+  static const String addSubscriptionCardTitle =
+      'Abonné à un média payant ?';
+  static const String addSubscriptionCardSubtitle =
+      'Le Monde, Mediapart, L\'Équipe... Connectez vos abonnements pour lire '
+      'les articles en entier, directement dans Facteur.';
+  static const String addSubscriptionCardButton = 'Ajouter mes abonnements';
   static const String premiumSheetTitle = 'Vos abonnements presse';
   static const String premiumSheetSubtitle =
       'Si vous êtes abonné à un média payant (Le Monde, Mediapart...), '
@@ -204,12 +239,6 @@ class OnboardingStrings {
       'Indique quels sujets tu veux le plus voir apparaitre dans ton feed.';
   static const String addCustomTopicHint = 'Ajouter un sujet';
   static const String maxCustomTopicsReached = 'Maximum 3 sujets par thème';
-
-  // Sources Reaction (after source selection)
-  static const String sourcesReactionTitle = 'Vos sources, votre contrôle.';
-  static const String sourcesReactionMessage =
-      'Modifiez ou ajoutez n\'importe quelle autre source à Facteur (newsletters, sites web, etc) depuis vos paramètres.\n\nFacteur est fait pour s\'adapter à vous.';
-  static const String addSourceButton = 'Ajouter une source';
 
   // Finalize
   static const String finalizeTitle = 'Votre essentiel est prêt.';

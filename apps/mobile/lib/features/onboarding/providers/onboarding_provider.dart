@@ -21,6 +21,7 @@ class OnboardingAnswers {
   // Section 3
   final List<String>? themes;
   final List<String>? subtopics;
+  final String? sourcesIntent; // curious, knows (local uniquement, hors API)
   final List<String>? preferredSources;
   final String? formatPreference; // short, long, audio, video
   final String? personalGoal; // culture, work, conversations, learning
@@ -38,6 +39,7 @@ class OnboardingAnswers {
     this.digestMode,
     this.themes,
     this.subtopics,
+    this.sourcesIntent,
     this.preferredSources,
     this.formatPreference,
     this.personalGoal,
@@ -56,6 +58,7 @@ class OnboardingAnswers {
     String? digestMode,
     List<String>? themes,
     List<String>? subtopics,
+    String? sourcesIntent,
     List<String>? preferredSources,
     String? formatPreference,
     String? personalGoal,
@@ -73,6 +76,7 @@ class OnboardingAnswers {
       digestMode: digestMode ?? this.digestMode,
       themes: themes ?? this.themes,
       subtopics: subtopics ?? this.subtopics,
+      sourcesIntent: sourcesIntent ?? this.sourcesIntent,
       preferredSources: preferredSources ?? this.preferredSources,
       formatPreference: formatPreference ?? this.formatPreference,
       personalGoal: personalGoal ?? this.personalGoal,
@@ -97,6 +101,13 @@ class OnboardingAnswers {
         'personal_goal': personalGoal,
       };
 
+  /// Sérialisation locale (Hive) : ajoute les champs hors payload API.
+  /// `toJson()` reste le contrat exact de POST /users/onboarding.
+  Map<String, dynamic> toLocalJson() => {
+        ...toJson(),
+        'sources_intent': sourcesIntent,
+      };
+
   factory OnboardingAnswers.fromJson(Map<String, dynamic> json) {
     // Parse objective: could be comma-separated string (new) or single string (old)
     List<String>? objectives;
@@ -118,6 +129,7 @@ class OnboardingAnswers {
       digestMode: json['digest_mode'] as String?,
       themes: (json['themes'] as List<dynamic>?)?.cast<String>(),
       subtopics: (json['subtopics'] as List<dynamic>?)?.cast<String>(),
+      sourcesIntent: json['sources_intent'] as String?,
       preferredSources:
           (json['preferred_sources'] as List<dynamic>?)?.cast<String>(),
       formatPreference: json['format_preference'] as String?,
@@ -154,14 +166,14 @@ enum Section2Question {
 }
 
 /// Questions de la Section 3 (Source Preferences)
-/// Ordre : Thèmes → Subtopics → Sources → Réaction sources → [Mode serein] → Finalize
+/// Ordre : Thèmes → Subtopics → Intent sources → Sources → [Mode serein] → Finalize
 /// `digestMode` n'apparaît que si l'objectif « anxiety » est coché (mode serein
 /// conditionnel, placé juste avant le final).
 enum Section3Question {
   themes, // Q9: Vos thèmes préférés (cloud pur)
   subtopics, // Q9b: Affine tes centres d'intérêt (cards structurées)
-  sources, // Q10: Vos sources préférées (avec pré-sélection basée sur thèmes)
-  sourcesReaction, // Réaction: vous pourrez ajouter vos propres sources
+  sourcesIntent, // Q9c: Avec quels médias préférez-vous partir ? (curious/knows)
+  sources, // Q10: Page sources adaptative (suggestions / recherche selon intent)
   digestMode, // Mode serein (conditionnel : objectif « anxiety » uniquement)
   finalize, // Écran de finalisation
 }
@@ -275,9 +287,12 @@ class OnboardingState {
         return currentSection2Question == Section2Question.approach ||
             currentSection2Question == Section2Question.responseStyle;
       case OnboardingSection.sourcePreferences:
+        // Thèmes + sous-thèmes ne sont plus skippables (décision PO) : ces deux
+        // étapes structurent toute la perso et ont déjà un gate « >=1 sélection »
+        // côté bouton Continuer. Seuls l'intent sources et le mode digest gardent
+        // un défaut sain et restent passables.
         final q = currentSection3Question;
-        return q == Section3Question.themes ||
-            q == Section3Question.subtopics ||
+        return q == Section3Question.sourcesIntent ||
             q == Section3Question.digestMode;
     }
   }
@@ -312,10 +327,10 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   static const String _sectionKey = 'section';
   static const String _questionKey = 'question';
   static const String _versionKey = 'onboarding_version';
-  // v4 : retrait des questions gamification/articles + déménagement de digestMode
-  // en Section 3 → les index d'enum changent, on doit wiper les positions
-  // sauvegardées (sinon reprise Hive sur un index invalide).
-  static const int _currentVersion = 4;
+  // v5 : sourcesReaction (page 2 sources) supprimé, sourcesIntent inséré →
+  // les index d'enum changent, on doit wiper les positions sauvegardées
+  // (sinon reprise Hive sur un index invalide).
+  static const int _currentVersion = 5;
 
   /// Charge les réponses sauvegardées en cas de reprise
   Future<void> _loadSavedAnswers() async {
@@ -373,7 +388,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   Future<void> _saveAnswers() async {
     try {
       final box = await Hive.openBox(_hiveBoxName);
-      await box.put(_answersKey, state.answers.toJson());
+      await box.put(_answersKey, state.answers.toLocalJson());
       await box.put(_sectionKey, state.currentSection.index);
       await box.put(_questionKey, state.currentQuestionIndex);
       await box.put(_versionKey, _currentVersion);
@@ -596,15 +611,22 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
       case OnboardingSection.sourcePreferences:
         switch (state.currentSection3Question) {
           case Section3Question.themes:
-            // pas de thèmes → saut direct sources (pas de subtopics sans thème)
+            // pas de thèmes → saut direct intent (pas de subtopics sans thème)
             state = state.copyWith(
               answers: state.answers.copyWith(themes: const []),
-              currentQuestionIndex: Section3Question.sources.index,
+              currentQuestionIndex: Section3Question.sourcesIntent.index,
             );
             _saveAnswers();
           case Section3Question.subtopics:
             state = state.copyWith(
               answers: state.answers.copyWith(subtopics: const []),
+              currentQuestionIndex: Section3Question.sourcesIntent.index,
+            );
+            _saveAnswers();
+          case Section3Question.sourcesIntent:
+            // défaut PO : variante « curieux » (suggestions guidées)
+            state = state.copyWith(
+              answers: state.answers.copyWith(sourcesIntent: 'curious'),
               currentQuestionIndex: Section3Question.sources.index,
             );
             _saveAnswers();
@@ -615,7 +637,6 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
             );
             _saveAnswers();
           case Section3Question.sources:
-          case Section3Question.sourcesReaction:
           case Section3Question.finalize:
             break;
         }
@@ -653,10 +674,27 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     });
   }
 
-  /// Sélectionne les sous-thèmes (Q9b) → Sources
+  /// Sélectionne les sous-thèmes (Q9b) → Intent sources
   void selectSubtopics(List<String> subtopics) {
     state = state.copyWith(
       answers: state.answers.copyWith(subtopics: subtopics),
+      isTransitioning: true,
+    );
+    _saveAnswers();
+
+    Future.delayed(const Duration(milliseconds: 300), () {
+      state = state.copyWith(
+        currentQuestionIndex: Section3Question.sourcesIntent.index,
+        isTransitioning: false,
+      );
+    });
+  }
+
+  /// Sélectionne l'intent sources (Q9c : curious / knows) → page sources.
+  /// Détermine la variante de la page sources (suggestions vs recherche).
+  void selectSourcesIntent(String intent) {
+    state = state.copyWith(
+      answers: state.answers.copyWith(sourcesIntent: intent),
       isTransitioning: true,
     );
     _saveAnswers();
@@ -669,29 +707,11 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     });
   }
 
-  /// Sélectionne les sources (Q10) - multi-sélection
-  /// Ordre: Thèmes → Subtopics → Sources → Sources Page 2 → Finalize
-  void selectSources(List<String> sources) {
-    state = state.copyWith(
-      answers: state.answers.copyWith(preferredSources: sources),
-      isTransitioning: true,
-    );
-    _saveAnswers();
-
-    // Aller vers Page 2 (sourcesReaction = "Allez plus loin")
-    Future.delayed(const Duration(milliseconds: 300), () {
-      state = state.copyWith(
-        currentQuestionIndex: Section3Question.sourcesReaction.index,
-        isTransitioning: false,
-      );
-    });
-  }
-
-  /// Continue après la page 2 des sources, en sauvegardant les sélections.
+  /// Sélectionne les sources (Q10) puis route vers la fin de parcours.
   /// Mode serein conditionnel : si l'objectif « anxiety » est coché → on insère
   /// la question digestMode juste avant le final ; sinon on pose le défaut
   /// neutre `pour_vous` et on saute directement au final.
-  void continueFromSourcesPage2(List<String> sources) {
+  void selectSources(List<String> sources) {
     final hasAnxiety = state.hasAnxietyObjective;
     state = state.copyWith(
       answers: state.answers.copyWith(
@@ -747,6 +767,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
         dailyArticleCount: 5,
         digestMode: 'pour_vous',
         themes: ['tech', 'international'],
+        sourcesIntent: 'curious',
         formatPreference: 'short',
         personalGoal: 'learning',
       ),

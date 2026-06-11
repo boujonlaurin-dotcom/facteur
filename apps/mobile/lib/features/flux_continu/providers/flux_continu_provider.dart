@@ -1573,7 +1573,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       for (final section in _themes)
         if (section.kind == SectionKind.veille) sectionKey(section),
     ];
-    final favoriteKeys = [...themeKeys, ...sourceKeys, ...veilleKeys];
+    // Tant que l'utilisateur n'a pas personnalisé l'ordre de sa Tournée, on
+    // remonte en tête des thèmes celui auquel il a rattaché le plus de sujets
+    // favoris (signal d'intérêt le plus fort, capté à l'onboarding). Un ordre
+    // personnalisé (`customized`) est respecté tel quel par `applyOrder`.
+    final orderedThemeKeys =
+        customized ? themeKeys : _biasThemeKeysByMostFollowed(themeKeys);
+    final favoriteKeys = [...orderedThemeKeys, ...sourceKeys, ...veilleKeys];
     final useSereneDefault = isSerene && !customized;
     // La Grille n'est PAS réordonnable par l'utilisateur (cf. modal « Mes
     // favoris ») : on l'exclut d'`applyOrder` et on l'épingle juste après les
@@ -1607,6 +1613,50 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     }
 
     return ordered.take(kTourneeVisibleCap).toList(growable: false);
+  }
+
+  /// Renvoie [themeKeys] avec, en tête, la clé du thème auquel l'utilisateur a
+  /// rattaché le plus de **sujets favoris** (`customTopics` à l'état favori).
+  /// No-op si < 2 thèmes, aucun sujet favori, ou si le thème dominant n'a pas de
+  /// section thème rendue. N'est appelé que quand l'ordre n'est pas personnalisé.
+  List<String> _biasThemeKeysByMostFollowed(List<String> themeKeys) {
+    if (themeKeys.length < 2) return themeKeys;
+    final interests = ref.read(userInterestsProvider).valueOrNull;
+    if (interests == null) return themeKeys;
+
+    final counts = <String, int>{};
+    for (final t in interests.customTopics) {
+      if (t.state != InterestState.favorite) continue;
+      counts[t.slugParent] = (counts[t.slugParent] ?? 0) + 1;
+    }
+    if (counts.isEmpty) return themeKeys;
+
+    String? topSlug;
+    var topCount = 0;
+    for (final entry in counts.entries) {
+      if (entry.value > topCount) {
+        topCount = entry.value;
+        topSlug = entry.key;
+      }
+    }
+    if (topSlug == null) return themeKeys;
+
+    // slugParent → clé `theme:<slug>` de la section thème correspondante.
+    String? topKey;
+    for (final section in _themes) {
+      if (section.kind == SectionKind.theme && section.themeSlug == topSlug) {
+        topKey = sectionKey(section);
+        break;
+      }
+    }
+    if (topKey == null) return themeKeys;
+
+    final idx = themeKeys.indexOf(topKey);
+    if (idx <= 0) return themeKeys; // absent ou déjà en tête
+    final reordered = [...themeKeys];
+    reordered.removeAt(idx);
+    reordered.insert(0, topKey);
+    return reordered;
   }
 
   int? _resolveGrilleSlotIndex({

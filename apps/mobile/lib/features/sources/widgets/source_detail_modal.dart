@@ -10,6 +10,7 @@ import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
 import '../../../widgets/design/facteur_button.dart';
 import 'premium_source_connection.dart';
+import 'recent_articles_list.dart';
 import 'source_logo_avatar.dart';
 
 class SourceDetailModal extends ConsumerWidget {
@@ -124,7 +125,7 @@ class SourceDetailModal extends ConsumerWidget {
 
           // Recent articles (only shown when provided, e.g. from smart search)
           if (recentItems != null && recentItems!.isNotEmpty) ...[
-            _buildRecentArticles(context, colors),
+            RecentArticlesList(items: recentItems!),
             const SizedBox(height: 16),
           ],
 
@@ -474,65 +475,6 @@ class SourceDetailModal extends ConsumerWidget {
               .read(userSourcesProvider.notifier)
               .connectSubscription(source.id),
         ),
-      ),
-    );
-  }
-
-  Widget _buildRecentArticles(BuildContext context, FacteurColors colors) {
-    final items = recentItems!.take(3).toList();
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colors.backgroundSecondary,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colors.textTertiary.withValues(alpha: 0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(PhosphorIcons.newspaperClipping(PhosphorIconsStyle.regular),
-                  size: 18, color: colors.primary),
-              const SizedBox(width: 8),
-              Text(
-                'Derniers articles',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: colors.textPrimary,
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ...items.map((item) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Icon(
-                          PhosphorIcons.dotOutline(PhosphorIconsStyle.fill),
-                          size: 12,
-                          color: colors.primary),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        item.title,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: colors.textSecondary,
-                              height: 1.4,
-                            ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              )),
-        ],
       ),
     );
   }
