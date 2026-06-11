@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -46,6 +48,9 @@ class _NudgeHostState extends ConsumerState<NudgeHost> {
   @override
   void dispose() {
     _coordinator.activeListenable.removeListener(_onActiveChanged);
+    // Vider _shownForId AVANT finish() : le onFinish réentrant ne doit surtout
+    // pas toucher `ref` pendant dispose (cf. note sur _coordinator).
+    _shownForId = null;
     _current?.finish();
     _current = null;
     super.dispose();
@@ -93,8 +98,40 @@ class _NudgeHostState extends ConsumerState<NudgeHost> {
         return;
       }
       final anchor = _anchorFor(id, currentLocation);
-      if (anchor?.currentContext != null) {
-        _showSpotlight(id, anchor!);
+      // N'afficher que si l'ancre est réellement visible à l'écran : un
+      // spotlight sur une cible hors viewport peint le voile plein écran sans
+      // trou ni bulle accessibles → utilisateur bloqué derrière un voile
+      // uniforme (freeze au refresh de l'Essentiel).
+      if (anchor != null && _isAnchorOnScreen(anchor)) {
+        _showSpotlight(id, anchor);
+        unawaited(_watchAnchorWhileShown(id, anchor));
+        return;
+      }
+    }
+  }
+
+  /// Vrai si la cible est montée, mesurée et entièrement visible verticalement
+  /// (il faut aussi la place pour le trou du spotlight et la bulle).
+  bool _isAnchorOnScreen(GlobalKey anchor) {
+    final ctx = anchor.currentContext;
+    if (ctx == null || !mounted) return false;
+    final box = ctx.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return false;
+    final topLeft = box.localToGlobal(Offset.zero);
+    final screen = MediaQuery.sizeOf(context);
+    return topLeft.dy >= 0 && topLeft.dy + box.size.height <= screen.height;
+  }
+
+  /// Tant que le spotlight est affiché, vérifie que sa cible existe toujours :
+  /// un pull-to-refresh peut démonter la carte ancrée (rebuild des sections),
+  /// laissant le voile orphelin. On ferme alors proprement (sans markSeen :
+  /// l'utilisateur n'a pas eu le temps de lire).
+  Future<void> _watchAnchorWhileShown(String id, GlobalKey anchor) async {
+    while (mounted && _current != null && _shownForId == id) {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      if (!mounted || _current == null || _shownForId != id) return;
+      if (anchor.currentContext == null) {
+        _closeSpotlight(id, markSeen: false);
         return;
       }
     }
@@ -124,7 +161,10 @@ class _NudgeHostState extends ConsumerState<NudgeHost> {
       keyTarget: target,
       shape: ShapeLightFocus.RRect,
       radius: 14,
-      enableOverlayTab: false,
+      // Échappatoire : un tap sur le voile ferme le spotlight. Sans ça, si la
+      // bulle devient inaccessible (cible démontée/déplacée), l'utilisateur
+      // reste bloqué derrière le voile (pas de route → Échap inopérant).
+      enableOverlayTab: true,
       enableTargetTab: false,
       contents: [
         TargetContent(
@@ -145,8 +185,39 @@ class _NudgeHostState extends ConsumerState<NudgeHost> {
       hideSkip: true,
       focusAnimationDuration: const Duration(milliseconds: 250),
       pulseAnimationDuration: const Duration(milliseconds: 400),
+      // Tap sur le voile (cf. enableOverlayTab) : la lib avance puis appelle
+      // onFinish — on synchronise le coordinator pour ne pas laisser le nudge
+      // « actif » fantôme.
+      onFinish: () => _onSpotlightClosedExternally(id),
     )..show(context: context);
     _shownForId = id;
+  }
+
+  /// Fermeture initiée par la lib (tap voile / fin de tutorial). `_shownForId`
+  /// sert de garde d'idempotence : les fermetures initiées par nous
+  /// (`_closeSpotlight`, `_onActiveChanged`, `dispose`) le vident AVANT
+  /// d'appeler `finish()`, donc on ne traite ici que le tap voile.
+  void _onSpotlightClosedExternally(String id) {
+    _current = null;
+    if (_shownForId != id) return;
+    _shownForId = null;
+    if (!mounted) return;
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    if (coordinator.activeId == id) {
+      coordinator.dismiss(markSeen: true);
+    }
+  }
+
+  /// Fermeture initiée par nous (bouton de la bulle, watchdog d'ancre
+  /// démontée) : état local vidé d'abord pour neutraliser le onFinish réentrant.
+  void _closeSpotlight(String id, {required bool markSeen}) {
+    if (_shownForId == id) _shownForId = null;
+    _dismissCurrent();
+    if (!mounted) return;
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    if (coordinator.activeId == id) {
+      coordinator.dismiss(markSeen: markSeen);
+    }
   }
 
   String _copyFor(String id) {
@@ -161,11 +232,7 @@ class _NudgeHostState extends ConsumerState<NudgeHost> {
   }
 
   void _onDismissTapped(String id) {
-    final coordinator = ref.read(nudgeCoordinatorProvider);
-    if (coordinator.activeId == id) {
-      coordinator.dismiss(markSeen: true);
-    }
-    _dismissCurrent();
+    _closeSpotlight(id, markSeen: true);
   }
 
   void _dismissCurrent() {

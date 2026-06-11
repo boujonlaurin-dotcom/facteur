@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Essentiel",
+      "summary": "Tes 5 articles du jour toujours affichés en entier, et des cartes plus lisibles sans rognage."
+    },
+    {
       "tag": "Veille",
       "summary": "Veille plus précise (moins de hors-sujet) et plus facile à retrouver dans les réglages."
     },

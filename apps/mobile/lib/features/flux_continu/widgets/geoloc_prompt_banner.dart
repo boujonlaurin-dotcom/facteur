@@ -63,6 +63,10 @@ class _GeolocPromptBannerState extends ConsumerState<GeolocPromptBanner> {
         ref.read(nudgeConsumedThisSessionProvider.notifier).state = true;
         final displayCount =
             await ref.read(geolocPromptControllerProvider).recordShown();
+        // Re-garde après l'await : la bannière peut s'être démontée pendant
+        // l'écriture Hive (recompose Essentiel / auto-dismiss) → ne jamais
+        // toucher `ref` sur un widget disposé (cf. bug-modal-ref-disposed).
+        if (!mounted) return;
         unawaited(
           ref
               .read(analyticsServiceProvider)

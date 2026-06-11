@@ -642,10 +642,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final usableHeight = ref.read(usableViewportHeightProvider);
 
     final rawOrdered = <FluxSection>[
-      // Héros trimmé AVANT le dédup : les articles éjectés ne sont jamais
-      // ajoutés à `seen` par [_dedupeSectionsInOrder] → ils sont relâchés vers
-      // les sections aval (digest/thème) qui portent le même contentId. Aucune
-      // plomberie de feedback à écrire — c'est « gratuit » via le dédup ordonné.
+      // Héros jamais tronqué (PO) : ses 5 articles entrent tous dans `seen` via
+      // [_dedupeSectionsInOrder] → les sections aval portant le même contentId
+      // les retirent correctement (pas de doublon).
       if (_essentiel != null) _fitHeroSection(_essentiel!, usableHeight),
       for (final key in orderedKeys)
         if (key != kTourneeGrilleKey && sectionByKey[key] != null)
@@ -684,33 +683,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     );
   }
 
-  /// Trims the hero (« Ton Essentiel ») to the number of articles that fit the
-  /// usable viewport, keeping the lead. Returns the section untouched when the
-  /// height isn't measured yet (`null`) or everything already fits. The lead is
-  /// never dropped. The ejected articles leave the hero's `articles` list, so
-  /// the dedup downstream no longer claims them (cf. [_compose] rawOrdered).
+  /// La carte héros « Ton Essentiel » n'est **jamais tronquée** (PO) : ses
+  /// 5 articles du jour sont toujours affichés, quel que soit le viewport.
+  /// No-op conservé comme seam (appelé par [_compose]).
   FluxSection _fitHeroSection(FluxSection essentiel, double? usableHeight) {
-    if (essentiel is! EssentielSection || usableHeight == null) {
-      return essentiel;
-    }
-    final len = essentiel.articles.length;
-    final maxCount = len < 5 ? len : 5;
-    if (maxCount <= 1) return essentiel;
-    final fit = fitHeroCount(
-      usableHeight: usableHeight,
-      chromeHeight: kHeroChromeHeight,
-      leadHeight: kHeroLeadHeight,
-      mediumHeight: kHeroMediumHeight,
-      maxCount: maxCount,
-    );
-    if (fit >= len) return essentiel;
-    // Reconstruit comme [_filterSections]/[_dedupeSectionsInOrder] : seuls
-    // articles/blurb/illustration sont portés (label/accent = défauts canon).
-    return EssentielSection(
-      articles: essentiel.articles.take(fit).toList(growable: false),
-      blurb: essentiel.blurb,
-      illustrationAsset: essentiel.illustrationAsset,
-    );
+    return essentiel;
   }
 
   /// Caps each downstream section's `coreVisibleCount` to what fits the usable

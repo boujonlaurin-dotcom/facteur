@@ -87,6 +87,10 @@ class _NotificationActivationModalState
     _goodNewsTimeSlot = current.goodNewsTimeSlot;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Garde anti-« ref après dispose » : si la modal est démontée avant que
+      // ce post-frame ne s'exécute (apparition très brève), ne touche jamais
+      // `ref` (mêmes garde-fous que NotificationRenudgeBanner).
+      if (!mounted) return;
       ref.read(analyticsServiceProvider).trackModalNotifShown(
             trigger: widget.trigger,
           );
