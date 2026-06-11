@@ -1,81 +1,88 @@
-# QA Handoff — Ajustements UX/UI de « L'Essentiel » (5 points)
+# QA Handoff — PR-A Stabilité du questionnaire d'onboarding
 
-> Rempli par l'agent dev. Input de `/validate-feature` (Chrome, viewport 390×844).
+> Salve pré-Stores. PR-A = stabilité + simplification du questionnaire.
+> PR-B (Refonte sources + Wow) est gérée séparément, plus tard.
 
 ## Feature développée
-5 frictions UX corrigées sur la page **L'Essentiel** (Flux Continu) et sa modal
-« Mes favoris » : carte de perso dédiée + inline lié au snap, Grille collée aux
-Actus, titres de sections plus clairs, thèmes livrables en onglet Flâner (modèle
-exclusif comme les sources), et cap max affiché entre parenthèses.
+Correction de l'écran gris fatal en fin/abandon de questionnaire (Sentry FLUTTER-2)
+et refonte de fluidité : questionnaire raccourci (suppression des questions
+articles/jour + gamification), tap carte source = modal de compréhension par défaut,
+mode serein conditionnel déplacé juste avant le final, bouton « Passer » avec défauts
+sains, et fix du champ sujet custom caché par le clavier.
 
 ## PR associée
-[#798 — feat(flux-continu): ajustements UX de L'Essentiel](https://github.com/boujonlaurin-dotcom/facteur/pull/798)
+À créer vers `main` (`--base main`).
 
 ## Écrans impactés
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| L'Essentiel (Flux Continu) | `/` (flux continu) | Modifié |
-| Modal « Mes favoris » | bottom sheet (depuis l'Essentiel / Flâner) | Modifié |
-| Carte de perso | nouveau widget `PersonalisationCtaCard` | Nouveau |
+| Splash (gate anti-rebond) | /splash | Modifié (logique redirect) |
+| Onboarding (questionnaire) | /onboarding | Modifié |
+| Conclusion onboarding | /onboarding/conclusion | Inchangé (vérif non-régression) |
+| Essentiel / Flux Continu (sortie) | /flux-continu | Cible de sortie (vérif pas de gris) |
+| Modal détail source | (bottom sheet) | Modifié (libellés sélection onboarding) |
 
 ## Scénarios de test
 
-### Scénario 1 — Compte non personnalisé : grande carte de perso
-**Parcours** :
-1. Compte neuf (`tournee_customized_v1` absent / faux).
-2. Ouvrir l'Essentiel.
-**Résultat attendu** : juste après le hero « L'Essentiel du jour », une **grande
-carte** « Personnalise ton Essentiel » avec l'illustration
-(`facteur_reparation_velo.png`) et le bouton **« Composer ma Tournée »**. L'inline
-discret « Gérer / Tes N favoris » n'apparaît PAS. Taper le bouton → ouvre la sheet
-« Mes favoris ».
+### Scénario 1 : Happy path — signup → fin du questionnaire
+1. Créer un nouveau compte → confirmer email → arriver sur l'onboarding.
+2. Répondre à toutes les questions jusqu'au bout (animation de conclusion).
+**Résultat attendu** : atterrissage sur l'Essentiel, modals post-onboarding OK,
+**aucun écran gris**.
 
-### Scénario 2 — Compte personnalisé : inline lié au snap
-**Parcours** :
-1. Personnaliser la Tournée (ajouter/retirer un favori) puis revenir à l'Essentiel.
-2. Scroller (fling) à travers les sections.
-**Résultat attendu** : la grande carte disparaît ; l'**inline** « Gérer / Tes N
-favoris » réapparaît, embarqué en tête de la 1ʳᵉ section après le hero. Au snap, il
-n'est plus « sauté » entre deux blocs — il fait partie du bloc de cette section.
+### Scénario 2 : Abandon en cours de questionnaire
+1. Démarrer l'onboarding, avancer de quelques questions.
+2. Taper la croix « Quitter » → confirmer « Quitter ».
+**Résultat attendu** : atterrissage sur l'Essentiel, **aucun écran gris**.
 
-### Scénario 3 — Modal : Grille, titres, caps
-**Parcours** :
-1. Ouvrir « Mes favoris ».
-**Résultat attendu** :
-- Sections nommées **« BLOCS DE TA PAGE L'ESSENTIEL »** et **« ONGLETS DE TA PAGE
-  FLÂNER »**.
-- **« Actus & Mot du jour »** présent ; **« La Grille du jour »** n'est PAS un bloc
-  drag&drop.
-- Au-delà du cap, les traits affichent **« Hors Tournée du jour (5) »** et **« Hors
-  onglets (10) »**.
+### Scénario 3 : Refaire le questionnaire depuis les réglages
+1. Depuis Réglages, relancer le questionnaire.
+2. Le terminer (fin) **puis** (autre run) l'abandonner.
+**Résultat attendu** : les deux chemins atterrissent proprement, **aucun écran gris**.
 
-### Scénario 4 — Thème Essentiel ⇄ Flâner (modèle exclusif)
-**Parcours** :
-1. Dans « Mes favoris », sur un **thème** côté Essentiel, taper l'icône
-   « déplacer vers Flâner » (flèche bas).
-2. Fermer la modal, observer la barre d'onglets Flâner et la page Essentiel.
-**Résultat attendu** : le thème apparaît en **onglet Flâner** (taper l'onglet filtre
-le feed sur ce thème) et **disparaît des sections de l'Essentiel**. Le mouvement
-inverse (flèche haut, côté Flâner) le ramène dans l'Essentiel.
+### Scénario 4 : « Passer » tout le questionnaire
+1. Sur chaque question proposant « Passer cette étape », taper « Passer ».
+**Résultat attendu** : le parcours avance avec des défauts sains (objectifs vides →
+Section 2 ; approach=detailed ; responseStyle=nuanced ; thèmes vides → sources
+directement ; digestMode=pour_vous). Les suggestions de sources restent ≥ 5 même sans
+thème sélectionné.
 
-### Scénario 5 — Cas limite : retrait d'un thème en mode Flâner
-**Parcours** :
-1. Thème en onglet Flâner → le retirer via la croix dans la modal.
-**Résultat attendu** : il disparaît des deux modes (clé retirée de `tournee_order_v1`
-et de `pinned_tabs_order_v1`), repasse en « suivi ». Pas de crash.
+### Scénario 5 : Mode serein conditionnel
+1. Run A : ne PAS cocher « La négativité » dans les objectifs → terminer.
+   **Attendu** : la question « Rester serein ? » **n'apparaît pas** ; on passe direct au final.
+2. Run B : cocher « La négativité » → terminer.
+   **Attendu** : la question « Rester serein ? » apparaît **juste avant** le final, avec la
+   mention « Vous pourrez activer ou désactiver le mode serein à tout moment depuis Mes
+   intérêts. »
+
+### Scénario 6 : Tap carte source vs sélection
+1. Sur la page sources, taper le **corps** d'une carte source.
+   **Attendu** : ouverture de la modal de compréhension (libellé bouton
+   « Sélectionner cette source » / « Retirer de ma sélection »).
+2. Taper le **cercle** de sélection à droite.
+   **Attendu** : toggle de la sélection (zone de tap ≥ 44px), sans ouvrir la modal.
+
+### Scénario 7 : Champ sujet custom + clavier (edge)
+1. Sur « Affine tes centres d'intérêt », taper « + ajouter » pour saisir un sujet custom.
+2. Observer pendant que le clavier monte (tester mono-thème ET multi-thème PageView, petit device).
+**Résultat attendu** : le champ de saisie reste **visible au-dessus du clavier**.
 
 ## Critères d'acceptation
-- [ ] Carte de perso (illustration + CTA) sous le hero quand non personnalisé.
-- [ ] Inline réapparaît une fois personnalisé et ne « saute » plus au snap.
-- [ ] Grille non draggable + libellé « Actus & Mot du jour ».
-- [ ] Titres « BLOCS DE TA PAGE L'ESSENTIEL » / « ONGLETS DE TA PAGE FLÂNER ».
-- [ ] Thème déplaçable Essentiel ⇄ Flâner (filtre feed OK, exclusion Essentiel OK).
-- [ ] Caps affichés « (5) » / « (10) ».
-- [ ] Console sans erreurs, réseau sans 4xx/5xx inattendus.
+- [ ] Aucun écran gris en fin **ni** en abandon (FLUTTER-2 éteint sur la release suivante).
+- [ ] Questionnaire raccourci : plus de question « articles/jour » ni « gamification ».
+- [ ] Mode serein affiché uniquement si objectif « négativité » coché, et placé avant le final.
+- [ ] Tap carte = modal ; tap cercle = sélection.
+- [ ] Bouton « Passer » présent sur les questions skippables, défauts sains appliqués.
+- [ ] Champ sujet custom visible au clavier.
 
-## Notes techniques
-- Aucun changement backend / migration / requête feed (le filtre thème existait
-  déjà via `setTheme`).
-- Tests : `manage_favorites_sheet_test`, `favorite_topic_tabs_test`,
-  `flux_continu_tournee_order_test`, nouveau `personalisation_cta_card_test` — verts.
-- 3 échecs pré-existants dans `essentiel_hi_fi_card_test` (weather badge, non liés).
+## Zones de risque
+- **Redirect / splash gate** : tester la matrice — déconnecté / email non confirmé /
+  nouveau compte / utilisateur existant. Le shell ne doit pas se monter avant la résolution
+  du statut d'onboarding.
+- **Reprise Hive** : bump `_currentVersion` 3→4 → les positions sauvegardées sont wipées ;
+  un utilisateur en cours de questionnaire au moment de la MAJ redémarre proprement.
+- **Barre de progression** : Section 2 = 2 étapes, Section 3 = 5 (ou 6 si serein).
+
+## Dépendances
+- Aucun changement backend. Defaults `dailyArticleCount=5` / `gamification=true` /
+  `digest_mode=pour_vous` envoyés via les fallbacks existants (`user_api_service`).

@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../core/providers/navigation_providers.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/widgets/explore_section.dart';
@@ -44,17 +45,21 @@ class ThemeSectionScreen extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<ThemeSectionScreen> createState() =>
-      _ThemeSectionScreenState();
+  ConsumerState<ThemeSectionScreen> createState() => _ThemeSectionScreenState();
 }
 
 class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
-  final ScrollController _scroll = ScrollController();
+  final ScrollController _scroll = ScrollController(keepScrollOffset: false);
   bool _loadingMore = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(tourneeLastDedicatedSectionProvider.notifier).state =
+          widget.sectionKeyValue;
+    });
     _scroll.addListener(_onScroll);
   }
 
@@ -90,11 +95,12 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
     return widget.initialSection;
   }
 
-  void _openArticle(BuildContext context, Content article) {
-    context.push(
+  Future<void> _openArticle(BuildContext context, Content article) async {
+    await context.push(
       '${RoutePaths.fluxContinu}/content/${article.id}',
       extra: article,
     );
+    if (mounted) setState(() {});
   }
 
   void _onBackToTournee() {
@@ -102,26 +108,34 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
   }
 
   void _onTapNextSection(FluxSection next) {
+    ref.read(tourneeLastDedicatedSectionProvider.notifier).state = sectionKey(
+      next,
+    );
     final key = Uri.encodeComponent(sectionKey(next));
-    final path = next is FeedThemeSection
-        ? '${RoutePaths.fluxContinu}/theme/$key'
-        : '${RoutePaths.fluxContinu}/section/$key';
+    final path = next is FeedThemeSection && next.kind == SectionKind.source
+        ? '${RoutePaths.fluxContinu}/source/$key'
+        : next is FeedThemeSection
+            ? '${RoutePaths.fluxContinu}/theme/$key'
+            : '${RoutePaths.fluxContinu}/section/$key';
     // pushReplacement so chaining "Sujet suivant" doesn't stack N detail pages.
     // The back arrow always falls back to the Tournée.
-    context.pushReplacement(path, extra: next);
+    context.pushReplacement(tourneeNextSectionLocation(path), extra: next);
   }
 
   /// Builds a carousel restricted to items tagged with [themeSlug] (either
   /// via [Content.topics] or via the source's macro-theme). Returns `null`
   /// when fewer than 2 items match — single-item carousels feel like padding
   /// in this context.
-  FeedCarouselData? _filterCarousel(FeedCarouselData carousel, String themeSlug) {
+  FeedCarouselData? _filterCarousel(
+    FeedCarouselData carousel,
+    String themeSlug,
+  ) {
     final filtered = <Content>[];
     final filteredBadges = <CarouselItemBadge>[];
     for (var i = 0; i < carousel.items.length; i++) {
       final item = carousel.items[i];
-      final matches = item.topics.contains(themeSlug) ||
-          item.source.theme == themeSlug;
+      final matches =
+          item.topics.contains(themeSlug) || item.source.theme == themeSlug;
       if (!matches) continue;
       filtered.add(item);
       if (i < carousel.badges.length) {
@@ -204,16 +218,13 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
           _buildVeilleSliverList(section)
         else
           SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final item = section.items[index];
-                return FluxContinuArticleCard(
-                  article: item,
-                  onTap: () => _openArticle(context, item),
-                );
-              },
-              childCount: section.items.length,
-            ),
+            delegate: SliverChildBuilderDelegate((context, index) {
+              final item = section.items[index];
+              return FluxContinuArticleCard(
+                article: item,
+                onTap: () => _openArticle(context, item),
+              );
+            }, childCount: section.items.length),
           ),
         if (!scrollExhausted)
           SliverToBoxAdapter(
@@ -240,19 +251,16 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
   Widget _buildVeilleSliverList(FeedThemeSection section) {
     final rows = buildVeilleFeedRows(section.items);
     return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (context, index) {
-          final row = rows[index];
-          return switch (row) {
-            VeilleHeaderRow(:final label) => VeilleGroupHeader(label: label),
-            VeilleArticleRow(:final content) => FluxContinuArticleCard(
-                article: content,
-                onTap: () => _openArticle(context, content),
-              ),
-          };
-        },
-        childCount: rows.length,
-      ),
+      delegate: SliverChildBuilderDelegate((context, index) {
+        final row = rows[index];
+        return switch (row) {
+          VeilleHeaderRow(:final label) => VeilleGroupHeader(label: label),
+          VeilleArticleRow(:final content) => FluxContinuArticleCard(
+              article: content,
+              onTap: () => _openArticle(context, content),
+            ),
+        };
+      }, childCount: rows.length),
     );
   }
 
@@ -306,16 +314,13 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
               child: ExploreBlockHeader(label: 'Explorer de nouvelles sources'),
             ),
             SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final article = discovery[index];
-                  return FluxContinuArticleCard(
-                    article: article,
-                    onTap: () => _openArticle(context, article),
-                  );
-                },
-                childCount: discovery.length,
-              ),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final article = discovery[index];
+                return FluxContinuArticleCard(
+                  article: article,
+                  onTap: () => _openArticle(context, article),
+                );
+              }, childCount: discovery.length),
             ),
           ];
         }
@@ -326,9 +331,7 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
         // d'autres pages d'articles peuvent encore charger.
         if (scrollExhausted && !hasThemeCarousels) {
           return [
-            SliverToBoxAdapter(
-              child: _ThemeClosingCard(label: section.label),
-            ),
+            SliverToBoxAdapter(child: _ThemeClosingCard(label: section.label)),
           ];
         }
 
@@ -379,8 +382,7 @@ class _LoadingMoreIndicator extends StatelessWidget {
             height: 14,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              valueColor:
-                  AlwaysStoppedAnimation<Color>(colors.textSecondary),
+              valueColor: AlwaysStoppedAnimation<Color>(colors.textSecondary),
             ),
           ),
           const SizedBox(width: 8),
@@ -416,9 +418,7 @@ class _ThemeClosingCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.black.withValues(alpha: 0.05),
-        ),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

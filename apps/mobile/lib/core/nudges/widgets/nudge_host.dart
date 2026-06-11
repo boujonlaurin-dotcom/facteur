@@ -28,20 +28,24 @@ class NudgeHost extends ConsumerStatefulWidget {
 class _NudgeHostState extends ConsumerState<NudgeHost> {
   TutorialCoachMark? _current;
   String? _shownForId;
+  int _anchorWaitGeneration = 0;
+
+  // Caché en champ pour ne JAMAIS toucher `ref` dans dispose() : le shell peut
+  // se démonter pendant finalizeTree (sortie d'onboarding), moment où ref.read
+  // lève StateError et corrompt l'arbre (écran gris — Sentry FLUTTER-2).
+  late final NudgeCoordinator _coordinator;
 
   @override
   void initState() {
     super.initState();
-    final coordinator = ref.read(nudgeCoordinatorProvider);
-    coordinator.activeListenable.addListener(_onActiveChanged);
+    _coordinator = ref.read(nudgeCoordinatorProvider);
+    _coordinator.activeListenable.addListener(_onActiveChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onActiveChanged());
   }
 
   @override
   void dispose() {
-    ref
-        .read(nudgeCoordinatorProvider)
-        .activeListenable
-        .removeListener(_onActiveChanged);
+    _coordinator.activeListenable.removeListener(_onActiveChanged);
     _current?.finish();
     _current = null;
     super.dispose();
@@ -52,6 +56,7 @@ class _NudgeHostState extends ConsumerState<NudgeHost> {
     final coordinator = ref.read(nudgeCoordinatorProvider);
     final id = coordinator.activeId;
     if (id == null) {
+      _anchorWaitGeneration += 1;
       _dismissCurrent();
       _shownForId = null;
       return;
@@ -60,11 +65,26 @@ class _NudgeHostState extends ConsumerState<NudgeHost> {
 
     final nudge = NudgeRegistry.get(id);
     if (!_isFeedSpotlight(nudge)) {
+      _anchorWaitGeneration += 1;
+      _dismissCurrent();
+      _shownForId = null;
       return;
     }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+    final generation = ++_anchorWaitGeneration;
+    _waitForAnchor(id, generation);
+  }
+
+  Future<void> _waitForAnchor(String id, int generation) async {
+    for (var attempt = 0; attempt < 60; attempt++) {
+      await Future<void>.delayed(
+        attempt == 0 ? Duration.zero : const Duration(milliseconds: 100),
+      );
+      if (!mounted ||
+          generation != _anchorWaitGeneration ||
+          _coordinator.activeId != id) {
+        return;
+      }
       final currentLocation = GoRouter.of(
         context,
       ).routerDelegate.currentConfiguration.uri.path;
@@ -72,12 +92,12 @@ class _NudgeHostState extends ConsumerState<NudgeHost> {
           !currentLocation.startsWith(RoutePaths.flaner)) {
         return;
       }
-
-      final anchor = _anchorFor(id);
-      if (anchor?.currentContext == null) return;
-
-      _showSpotlight(id, anchor!);
-    });
+      final anchor = _anchorFor(id, currentLocation);
+      if (anchor?.currentContext != null) {
+        _showSpotlight(id, anchor!);
+        return;
+      }
+    }
   }
 
   bool _isFeedSpotlight(Nudge nudge) {
@@ -85,12 +105,12 @@ class _NudgeHostState extends ConsumerState<NudgeHost> {
         nudge.placement == NudgePlacement.tooltip;
   }
 
-  GlobalKey? _anchorFor(String id) {
+  GlobalKey? _anchorFor(String id, String currentLocation) {
     switch (id) {
-      case NudgeIds.feedBadgeLongpress:
-        return feedFirstBadgeKey;
       case NudgeIds.feedPreviewLongpress:
-        return feedFirstCardKey;
+        return currentLocation.startsWith(RoutePaths.flaner)
+            ? flanerFirstCardKey
+            : fluxContinuFirstCardKey;
       default:
         return null;
     }

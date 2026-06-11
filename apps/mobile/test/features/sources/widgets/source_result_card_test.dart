@@ -26,6 +26,7 @@ void main() {
     VoidCallback? onAdd,
     VoidCallback? onPreview,
     bool isAdded = false,
+    bool showProof = false,
   }) {
     return MaterialApp(
       theme: FacteurTheme.lightTheme,
@@ -36,6 +37,7 @@ void main() {
             onAdd: onAdd ?? () {},
             onPreview: onPreview ?? () {},
             isAdded: isAdded,
+            showProof: showProof,
           ),
         ),
       ),
@@ -123,6 +125,56 @@ void main() {
 
       expect(find.text('Empty Source'), findsOneWidget);
       expect(find.text('Derniers articles :'), findsNothing);
+    });
+  });
+
+  group('SourceResultCard — mode preuve (showProof)', () {
+    testWidgets('added + showProof : vue « Connecté » avec les 3 titres',
+        (tester) async {
+      await tester
+          .pumpWidget(buildTestWidget(isAdded: true, showProof: true));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Connecté'), findsOneWidget);
+      expect(find.text('Le Monde'), findsOneWidget);
+      expect(find.text('Premier article'), findsOneWidget);
+      expect(find.text('Deuxieme article'), findsOneWidget);
+      expect(find.text('Troisieme article'), findsOneWidget);
+      // Plus de CTA en mode preuve.
+      expect(find.text('Ajouter'), findsNothing);
+      expect(find.text('Ajoutee'), findsNothing);
+      expect(find.text('Apercu'), findsNothing);
+    });
+
+    testWidgets('proof sans recent items : fallback tournée', (tester) async {
+      final noItemsResult = SmartSearchResult(
+        name: 'Empty Source',
+        type: 'rss',
+        url: 'https://empty.com',
+        feedUrl: 'https://empty.com/feed',
+        sourceId: 'empty-id',
+      );
+
+      await tester.pumpWidget(buildTestWidget(
+        result: noItemsResult,
+        isAdded: true,
+        showProof: true,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Connecté'), findsOneWidget);
+      expect(
+        find.text('Ses prochains articles arrivent dans votre tournée.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('showProof sans isAdded : vue normale inchangée',
+        (tester) async {
+      await tester.pumpWidget(buildTestWidget(showProof: true));
+
+      expect(find.text('Connecté'), findsNothing);
+      expect(find.text('Ajouter'), findsOneWidget);
     });
   });
 }

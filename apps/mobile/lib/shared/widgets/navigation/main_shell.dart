@@ -47,25 +47,43 @@ class MainTabPageScaffold extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Footer auto-hide (LinkedIn) : glisse hors écran au scroll vers le bas,
+    // revient au scroll vers le haut. `IgnorePointer` quand caché pour ne pas
+    // capter de tap fantôme sous l'écran. Durée/courbe alignées sur le FAB
+    // « Remonter » (220 ms easeOutCubic).
+    final footerVisible = ref.watch(footerVisibleProvider);
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
       // Le contenu passe sous le footer glassmorphique pour que le flou révèle
       // les cartes qui défilent derrière (chaque écran réserve un padding bas).
       extendBody: true,
-      bottomNavigationBar: MainBottomNav(
-        currentIndex: currentIndex,
-        onSelect: (index) {
-          if (index == currentIndex) {
-            // Re-tap de l'onglet actif → scroll-to-top, sans navigation (donc
-            // sans slide). L'écran concerné écoute son trigger.
-            final trigger = index == 0
-                ? essentielScrollTriggerProvider
-                : feedScrollTriggerProvider;
-            ref.read(trigger.notifier).state++;
-          } else {
-            context.go(index == 0 ? RoutePaths.fluxContinu : RoutePaths.flaner);
-          }
-        },
+      bottomNavigationBar: IgnorePointer(
+        ignoring: !footerVisible,
+        child: AnimatedSlide(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          offset: footerVisible ? Offset.zero : const Offset(0, 1),
+          child: MainBottomNav(
+            currentIndex: currentIndex,
+            onSelect: (index) {
+              // Tout tap d'onglet redonne le footer (évite un footer « collé »
+              // masqué au changement de page).
+              ref.read(footerVisibleProvider.notifier).state = true;
+              if (index == currentIndex) {
+                // Re-tap de l'onglet actif → scroll-to-top, sans navigation
+                // (donc sans slide). L'écran concerné écoute son trigger.
+                final trigger = index == 0
+                    ? essentielScrollTriggerProvider
+                    : feedScrollTriggerProvider;
+                ref.read(trigger.notifier).state++;
+              } else {
+                context.go(
+                  index == 0 ? RoutePaths.fluxContinu : RoutePaths.flaner,
+                );
+              }
+            },
+          ),
+        ),
       ),
       body: Column(
         children: [

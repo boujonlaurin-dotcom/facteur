@@ -8,9 +8,7 @@ import 'nudge_ids.dart';
 class NudgeRegistry {
   NudgeRegistry._();
 
-  static final Map<String, Nudge> _byId = {
-    for (final n in _all) n.id: n,
-  };
+  static final Map<String, Nudge> _byId = {for (final n in _all) n.id: n};
 
   static Nudge get(String id) {
     final nudge = _byId[id];
@@ -59,7 +57,8 @@ class NudgeRegistry {
       surface: NudgeSurface.feed,
       placement: NudgePlacement.hintAnimation,
       priority: NudgePriority.high,
-      frequency: NudgeFrequency.once,
+      frequency: NudgeFrequency.cooldown,
+      cooldown: Duration(days: 14),
       legacySeenKey: 'feed_swipe_hint_seen',
     ),
     const Nudge(
@@ -74,8 +73,8 @@ class NudgeRegistry {
       surface: NudgeSurface.feed,
       placement: NudgePlacement.tooltip,
       priority: NudgePriority.normal,
-      frequency: NudgeFrequency.once,
-      prerequisites: [NudgeIds.feedBadgeLongpress],
+      frequency: NudgeFrequency.cooldown,
+      cooldown: Duration(days: 14),
     ),
     const Nudge(
       id: NudgeIds.prioritySliderExplainer,

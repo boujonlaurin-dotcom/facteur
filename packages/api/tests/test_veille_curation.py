@@ -25,7 +25,6 @@ from app.models.source import Source, SourceType
 from app.models.user import UserProfile
 from app.models.veille import (
     VeilleConfig,
-    VeilleKeyword,
     VeilleSource,
     VeilleStatus,
     VeilleTopic,
@@ -36,7 +35,6 @@ from app.services.recommendation.scoring_engine import ScoringContext
 from app.services.veille.feed_filter import (
     VeilleAngle,
     VeilleFilters,
-    _matched_axes,
     _score_block,
     fetch_veille_feed,
 )
@@ -310,20 +308,52 @@ def test_tokenize_intent_dedupes():
     assert _tokenize_intent(["houblon houblon HOUBLON"]).count("houblon") == 1
 
 
-# ─── Bloc A « Tes sources » : laisser-passer + cap diversité ─────────────────
+# ─── Bloc A « Tes sources » : gate-all + cap diversité ───────────────────────
 
 
-def test_block_a_keeps_source_only_off_angle():
-    """Bloc A (apply_floor=False) : un article source-seul off-angle est gardé."""
+def test_block_a_gates_source_only_off_angle():
+    """Bloc A gate-all (ajustements « released », apply_floor=True) : un article
+    source-seul off-angle est **écarté** dès que la config porte un axe
+    topic/mot-clé.
+
+    C'est le fix du #1 (faux-positifs) : avant, le Bloc A était en
+    laisser-passer total et déversait tout le flux d'une source large
+    (The Athletic → cricket/hockey/baseball) dans une veille étroite (NBA).
+    """
     src = _make_source()
     source_only = _make_content(src, topics=["sport"], title="Résultats du PSG")
-    flt = _veille_filters([src.id])
+    flt = _veille_filters([src.id])  # config a un topic 'ai' + des mots-clés
     ctx = _veille_context([src.id])
 
     kept = _score_block(
-        [source_only], ctx, flt, apply_floor=False, apply_threshold=False
+        [source_only], ctx, flt, apply_floor=True, apply_threshold=True
     )
-    assert {c.id for c, _s, _a in kept} == {source_only.id}
+    assert kept == []
+
+
+def test_block_a_source_only_config_keeps_passthrough():
+    """Config **purement source** (aucun topic ni mot-clé) : floor inactif →
+    l'article source-seul reste, même en gate-all (la source est le seul filtre
+    voulu — fallback documenté du plan « released »)."""
+    src = _make_source()
+    art = _make_content(src, topics=["sport"], title="Résultats du PSG")
+    flt = VeilleFilters(
+        theme_id="tech", angles=[], source_ids=[src.id], global_keywords=[]
+    )
+    ctx = ScoringContext(
+        user_profile=None,
+        user_interests={"tech"},
+        user_interest_weights={},
+        followed_source_ids={src.id},
+        user_prefs={},
+        now=datetime(2026, 6, 2, 10, 0, tzinfo=UTC),
+        user_subtopics=set(),
+        user_subtopic_weights={},
+        user_custom_topics=[],
+    )
+
+    kept = _score_block([art], ctx, flt, apply_floor=True, apply_threshold=True)
+    assert {c.id for c, _s, _a in kept} == {art.id}
 
 
 def test_block_a_diversity_cap_limits_per_source():
@@ -389,10 +419,12 @@ async def _insert_content(db_session, source_id, *, topics, title) -> UUID:
 
 @pytest.mark.asyncio
 async def test_fetch_veille_feed_two_blocks(db_session):
-    """End-to-end (refonte deux blocs) :
+    """End-to-end (deux blocs, gate-all « released ») :
 
-    - Bloc A « Tes sources » : un article off-angle d'une source **configurée**
-      passe (laisser-passer), tagué ``group="sources"``.
+    - Bloc A « Tes sources » : un article **on-angle** (topic ``ai``) d'une
+      source **configurée** passe, tagué ``group="sources"`` ; un article
+      **off-angle** de la même source configurée est désormais **floor-pruned**
+      (la config porte un axe topic → le Bloc A gate aussi les sources suivies).
     - Bloc B « Couverture élargie » : un article off-angle d'une source **non
       configurée** est élagué par le floor (source = boost, pas free-pass).
     - Un on-topic d'une source externe entre dans le Bloc B.
@@ -429,7 +461,12 @@ async def test_fetch_veille_feed_two_blocks(db_session):
     )
     await db_session.commit()
 
-    # Bloc A : off-angle mais source configurée → passe (laisser-passer).
+    # Bloc A : on-angle (topic ai) d'une source configurée → passe.
+    block_a_on_topic = await _insert_content(
+        db_session, configured.id, topics=["ai"], title="Avancées en IA générale"
+    )
+    # Bloc A : off-angle d'une source configurée → désormais floor-pruned
+    # (la config a un axe topic « ai » → le gate mord aussi sur les sources).
     block_a_off_angle = await _insert_content(
         db_session, configured.id, topics=["sport"], title="Résultats du match"
     )
@@ -445,6 +482,46 @@ async def test_fetch_veille_feed_two_blocks(db_session):
     items, _has_more = await fetch_veille_feed(db_session, user_id, limit=20)
     by_id = {content.id: group for content, _axes, group in items}
 
-    assert by_id.get(block_a_off_angle) == "sources"
+    assert by_id.get(block_a_on_topic) == "sources"
+    assert block_a_off_angle not in by_id
     assert by_id.get(block_b_on_topic) == "elargie"
     assert external_source_only not in by_id
+
+
+@pytest.mark.asyncio
+async def test_fetch_veille_feed_source_only_config_passthrough(db_session):
+    """Config **purement source** (aucun topic ni mot-clé) : le Bloc A garde le
+    laisser-passer (floor inactif) — un article off-angle de la source
+    configurée reste visible. Fallback voulu : la veille est intentionnellement
+    pilotée par la source.
+    """
+    user_id = uuid4()
+    db_session.add(UserProfile(user_id=user_id, onboarding_completed=True))
+    await db_session.commit()
+    configured = await _insert_source(db_session, name="Source pilote")
+
+    cfg = VeilleConfig(
+        id=uuid4(),
+        user_id=user_id,
+        theme_id="tech",
+        theme_label="Tech",
+        status=VeilleStatus.ACTIVE.value,
+    )
+    db_session.add(cfg)
+    await db_session.commit()
+    # Une source, AUCUN topic ni mot-clé → config source-seule.
+    db_session.add(
+        VeilleSource(
+            veille_config_id=cfg.id, source_id=configured.id, kind="curated", position=0
+        )
+    )
+    await db_session.commit()
+
+    off_angle = await _insert_content(
+        db_session, configured.id, topics=["sport"], title="Un sujet quelconque"
+    )
+
+    items, _has_more = await fetch_veille_feed(db_session, user_id, limit=20)
+    by_id = {content.id: group for content, _axes, group in items}
+
+    assert by_id.get(off_angle) == "sources"

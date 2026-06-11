@@ -249,6 +249,13 @@ class VeilleConfigDto {
           .toList(),
     );
   }
+
+  /// Libellé de section : le **premier angle** (topic granulaire, ex. « NBA »)
+  /// plutôt que le thème macro (« Sport »). Corrige le « Ma veille — Sport »
+  /// affiché alors que la veille porte sur la NBA. Retombe sur `themeLabel`
+  /// quand aucun angle n'est défini (veille pilotée par la source).
+  String get sectionLabel =>
+      topics.isNotEmpty ? topics.first.label : themeLabel;
 }
 
 // ─── Bodies (POST) ────────────────────────────────────────────────────────

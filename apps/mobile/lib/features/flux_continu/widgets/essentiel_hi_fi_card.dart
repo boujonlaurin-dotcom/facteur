@@ -62,9 +62,11 @@ class EssentielHiFiCard extends StatelessWidget {
         ],
       ),
       child: Padding(
+        // Compaction « cartes ≤ écran » : top resserré space4→space3 pour
+        // gagner ~4px sans toucher la pastille date/météo (choix PO).
         padding: const EdgeInsets.fromLTRB(
           FacteurSpacing.space4,
-          FacteurSpacing.space4,
+          FacteurSpacing.space3,
           FacteurSpacing.space4,
           FacteurSpacing.space3,
         ),
@@ -72,7 +74,8 @@ class EssentielHiFiCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _Header(accent: accent, onTapPersonalize: onTapPersonalize),
-            const SizedBox(height: FacteurSpacing.space4),
+            // Compaction : gap header→lead resserré space4→space3.
+            const SizedBox(height: FacteurSpacing.space3),
             if (lead != null)
               _LeadTile(
                 article: lead,
@@ -243,7 +246,7 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
     // Fixed slot: the header never reflows when flipping between date/weather.
     return SizedBox(
       width: 110,
-      height: 132,
+      height: 140,
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 320),
         switchInCurve: Curves.easeInOut,
@@ -280,10 +283,51 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
 
 /// Bloc météo compact du header : icône condition, min/max, et un indice
 /// discret signalant qu'un tap ouvre la modal détaillée 5 jours.
-class _WeatherBadge extends StatelessWidget {
+class _WeatherBadge extends StatefulWidget {
   final WeatherForecast forecast;
 
   const _WeatherBadge({required this.forecast});
+
+  @override
+  State<_WeatherBadge> createState() => _WeatherBadgeState();
+}
+
+class _WeatherBadgeState extends State<_WeatherBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _temperatureController;
+  late final Animation<double> _temperatureScale;
+
+  @override
+  void initState() {
+    super.initState();
+    _temperatureController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 450),
+    );
+    _temperatureScale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(
+          begin: 0.94,
+          end: 1.06,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 55,
+      ),
+      TweenSequenceItem(
+        tween: Tween(
+          begin: 1.06,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeInOutCubic)),
+        weight: 45,
+      ),
+    ]).animate(_temperatureController);
+    _temperatureController.forward();
+  }
+
+  @override
+  void dispose() {
+    _temperatureController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -291,32 +335,41 @@ class _WeatherBadge extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        WeatherConditionIcon(condition: forecast.condition, size: 95),
-        const SizedBox(height: 2),
-        RichText(
-          text: TextSpan(
-            style: GoogleFonts.courierPrime(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              height: 1.0,
-            ),
-            children: [
-              TextSpan(
-                text: '${forecast.minC}°',
-                style: TextStyle(color: colors.info),
-              ),
-              TextSpan(
-                text: '/',
-                style: TextStyle(color: colors.textSecondary),
-              ),
-              TextSpan(
-                text: '${forecast.maxC}°',
-                style: TextStyle(color: colors.error),
-              ),
-            ],
-          ),
+        WeatherConditionIcon(
+          condition: widget.forecast.condition,
+          size: 88,
+          badgeSize: 30,
+          emojiSize: 18,
+          badgeInset: 4,
         ),
         const SizedBox(height: 2),
+        ScaleTransition(
+          key: const ValueKey('weather_temperatures'),
+          scale: _temperatureScale,
+          child: RichText(
+            text: TextSpan(
+              style: GoogleFonts.courierPrime(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                height: 1.0,
+              ),
+              children: [
+                TextSpan(
+                  text: '${widget.forecast.minC}°',
+                  style: TextStyle(color: colors.info),
+                ),
+                TextSpan(
+                  text: '/',
+                  style: TextStyle(color: colors.textSecondary),
+                ),
+                TextSpan(
+                  text: '${widget.forecast.maxC}°',
+                  style: TextStyle(color: colors.error),
+                ),
+              ],
+            ),
+          ),
+        ),
         Icon(
           Icons.keyboard_arrow_down_rounded,
           size: 16,
@@ -503,7 +556,9 @@ class _LeadTile extends StatelessWidget {
                     const SizedBox(height: FacteurSpacing.space2),
                     Text(
                       article.title,
-                      maxLines: 5,
+                      // Compaction « cartes ≤ écran » : plafond 5→4 lignes pour
+                      // borner la hauteur du lead (cohérent avec section_fit).
+                      maxLines: 4,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.fraunces(
                         fontSize: 19,
@@ -570,7 +625,8 @@ class _MediumTile extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: FacteurTypography.labelSmall(
-                                colors.textTertiary),
+                              colors.textTertiary,
+                            ),
                           ),
                         ),
                         // Réserve l'espace de la coche pour qu'elle ne
@@ -581,7 +637,8 @@ class _MediumTile extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       article.title,
-                      maxLines: 4,
+                      // Compaction « cartes ≤ écran » : plafond 4→3 lignes.
+                      maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.fraunces(
                         fontSize: 16,

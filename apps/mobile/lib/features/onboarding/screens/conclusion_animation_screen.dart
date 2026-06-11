@@ -8,9 +8,12 @@ import '../../../core/auth/auth_state.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../../shared/strings/loader_error_strings.dart';
 import '../../../shared/widgets/states/laurin_fallback_view.dart';
+import '../providers/conclusion_live_feed_provider.dart';
 import '../providers/conclusion_notifier.dart';
+import '../providers/onboarding_proof_cache_provider.dart';
 import '../providers/onboarding_provider.dart';
 import '../widgets/animated_message_text.dart';
+import '../widgets/conclusion_live_feed.dart';
 import '../widgets/minimal_loader.dart';
 
 /// Écran d'animation de conclusion de l'onboarding
@@ -75,6 +78,7 @@ class _ConclusionAnimationScreenState
     // Effacer les données locales temporaires
     ref.read(onboardingProvider.notifier).clearSavedData();
     ref.read(onboardingProvider.notifier).clearFailedCustomTopics();
+    ref.read(onboardingProofCacheProvider.notifier).state = {};
 
     // Armer le flow post-onboarding (dialog customs échoués + modales thème &
     // notifications) AVANT de basculer l'auth state : on le veut posé avant la
@@ -96,28 +100,44 @@ class _ConclusionAnimationScreenState
   }
 }
 
-/// Vue de chargement avec animation centrée
-class _LoadingView extends StatelessWidget {
+/// Vue de chargement : feed vivant (vrais titres des sources choisies) quand
+/// des données sont disponibles, sinon loader minimaliste classique.
+class _LoadingView extends ConsumerWidget {
   const _LoadingView();
 
   @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Animation minimaliste et élégante
-            MinimalLoader(),
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watch = garde aussi le FutureProvider autoDispose en vie pendant
+    // toute l'animation (le fetch démarre au premier build).
+    final entries = ref.watch(conclusionLiveFeedEntriesProvider);
 
-            SizedBox(height: FacteurSpacing.space4),
+    if (entries.isEmpty) {
+      // Aucune source / endpoint pas encore répondu / erreur réseau :
+      // fallback sur l'animation historique.
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Animation minimaliste et élégante
+              MinimalLoader(),
 
-            // Messages animés
-            AnimatedMessageText(),
-          ],
+              SizedBox(height: FacteurSpacing.space4),
+
+              // Messages animés
+              AnimatedMessageText(),
+            ],
+          ),
         ),
+      );
+    }
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
+        child: ConclusionLiveFeed(entries: entries),
       ),
     );
   }

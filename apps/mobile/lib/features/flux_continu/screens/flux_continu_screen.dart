@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart'
     show ValueListenable, defaultTargetPlatform, setEquals, TargetPlatform;
@@ -9,20 +8,22 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:haptic_feedback/haptic_feedback.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/nudges/nudge_counters.dart';
+import '../../../core/nudges/nudge_coordinator.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/widgets/feed_nudge_anchors.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
-import '../../feed/providers/swipe_hint_provider.dart';
+import '../../feed/widgets/explore_section.dart' show ExploreDiscoverySkeleton;
 import '../../feed/widgets/feedback_inline.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
 import '../../notifications/widgets/notification_activation_modal.dart';
@@ -30,7 +31,6 @@ import '../../notifications/widgets/notification_renudge_banner.dart';
 import '../../onboarding/widgets/theme_choice_bottom_sheet.dart';
 import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../../../shared/strings/loader_error_strings.dart';
-import '../../../shared/widgets/loaders/loading_view.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart'
@@ -43,6 +43,7 @@ import '../widgets/my_interests_intro.dart';
 import '../widgets/personalisation_cta_card.dart';
 import '../widgets/tournee_composer_sheet.dart';
 import '../widgets/geoloc_prompt_banner.dart';
+import '../widgets/section_banner.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
 import '../../grille/widgets/grille_cta_card.dart';
@@ -52,23 +53,16 @@ const double _kStickyThreshold = 60.0;
 
 /// Vertical offset the sticky bar consumes — used as a landing buffer
 /// when scrolling a section into view so its banner doesn't disappear
-/// behind the bar. Trimmed from 90 → 54 after the head title (~36px) was
-/// dropped from the sticky overlay: tabs row (48) + progress track (4) + a
-/// couple px of slack.
-const double _kStickyBarHeight = 54.0;
+/// behind the bar. Trimmed 90 → 54 (head title dropped) then 54 → 50 after the
+/// tabs row was compacted 48 → 44 (« cartes ≤ écran »): tabs row (44) + progress
+/// track (4) + refresh strip (2). **Must mirror the real sticky bar height** —
+/// it feeds the snap framing AND the fit budget ([usableViewportHeightProvider]).
+const double _kStickyBarHeight = 50.0;
 
 // Section-snap tuning lives in `utils/section_snap.dart` (kSnapCaptureFraction,
 // kBoundaryCrossVelocity, kSnapEpsilon, kSnapSpring) so the resting-position
 // arithmetic stays a pure, unit-testable function. The snap itself is woven
 // into the fling's ballistic phase by [_SectionSnapPhysics] below.
-
-/// Minimum delta (px) before the scroll-up FAB toggles, to avoid flicker
-/// on tiny inertia bounces. Matches the legacy FeedScreen behaviour.
-const double _kScrollDirThreshold = 12.0;
-
-/// Below this scroll offset, the scroll-up FAB stays hidden even when the
-/// user reverses direction (we're effectively already at the top).
-const double _kFabHideAboveScroll = 380.0;
 
 /// Min depth (px) the user must reach before we surface the
 /// pull-to-refresh hint pill — avoids nudging after a tiny inertia scroll.
@@ -92,10 +86,7 @@ const _closingTab = StickyTab(
   accent: Color(0xFF2E7D32),
 );
 // Carte de personnalisation (virtuelle — pas de section correspondante).
-const _persoCardTab = StickyTab(
-  label: 'Pour toi',
-  accent: Color(0xFFB0470A),
-);
+const _persoCardTab = StickyTab(label: 'Pour toi', accent: Color(0xFFB0470A));
 
 /// Drag-time feedforward payload for [_SectionPassageDot]. Computed live in
 /// [_FluxContinuScreenState._updateBoundaryApproach] and broadcast via a
@@ -173,9 +164,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// `markHiddenRemote`); resolution (chip / X / undo) drives
   /// `confirmDismiss` or `undoHide` on the provider.
   final Set<String> _pendingFeedback = <String>{};
+  bool _gestureNudgeRequested = false;
+  bool _showSwipeHint = false;
 
-  bool _showScrollTopFab = false;
-  double _lastScrollPos = 0;
   int _passagePulseSequence = 0;
 
   /// Mutable, stable holder of the section-start anchors (absolute scroll
@@ -191,8 +182,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// in-flow [_SectionPassageDot]s. Feedforward twin of [_sectionPassagePulse]
   /// (the post-validation pulse) — both ride the same dot so the gesture reads
   /// as a single continuous « j'approche un seuil → je l'ai franchi ».
-  final ValueNotifier<_BoundaryApproach?> _boundaryApproach =
-      ValueNotifier(null);
+  final ValueNotifier<_BoundaryApproach?> _boundaryApproach = ValueNotifier(
+    null,
+  );
 
   /// Sorted snap points of [_snapAnchors], cached once per layout (frames only
   /// change on layout, never per scroll frame) so the per-frame
@@ -275,23 +267,19 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       _maxScrollDepthPx = currentScroll;
     }
 
-    // Scroll-up FAB: surfaces when the user reverses direction above the
-    // hide threshold, hides on scroll-down or near the top. Same logic the
-    // legacy feed used so the UX feels identical between the two screens.
-    final delta = currentScroll - _lastScrollPos;
-    if (delta.abs() >= _kScrollDirThreshold) {
-      bool nextFab = _showScrollTopFab;
-      if (currentScroll < _kFabHideAboveScroll) {
-        nextFab = false;
-      } else if (delta < 0) {
-        nextFab = true;
-      } else if (delta > 0) {
-        nextFab = false;
-      }
-      if (nextFab != _showScrollTopFab) {
-        setState(() => _showScrollTopFab = nextFab);
-      }
-      _lastScrollPos = currentScroll;
+    // Footer auto-hide (app-wide) : ne se cache QUE sur un scroll-down
+    // utilisateur réel. On lit `userScrollDirection` (et non un delta de
+    // position) car le snap est une activité balistique qui conserve la
+    // dernière direction utilisateur : un settle qui ré-ajuste la carte vers le
+    // bas après un scroll-up reste `forward` → le footer ne disparaît jamais
+    // tant que l'utilisateur n'a pas effectivement scrollé vers le bas. `idle`
+    // (settle terminé / programmatique) ne touche pas à la visibilité.
+    if (currentScroll < _kStickyThreshold) {
+      updateFooterVisibility(ref, true);
+    } else if (pos.userScrollDirection == ScrollDirection.reverse) {
+      updateFooterVisibility(ref, false);
+    } else if (pos.userScrollDirection == ScrollDirection.forward) {
+      updateFooterVisibility(ref, true);
     }
 
     // Pull-to-refresh hint pill — discoverability cue when the user scrolls
@@ -478,6 +466,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // footer bar + bottom safe-area, else the last cards (« Lire plus ») are
     // truncated.
     final visibleBottom = scrollBox.size.height - _safeAreaBottom;
+    // « Estimer pour contrôler, mesurer pour vérifier » : on publie le budget
+    // de hauteur utile (identique à la frontière tall/free du snap ci-dessous)
+    // pour que le provider décide combien d'articles tiennent. Anti-boucle :
+    // écriture seulement si la valeur arrondie change.
+    _publishUsableHeight(visibleBottom - _kStickyBarHeight);
     final result = <SectionFrame>[];
     _dotIndexByTop.clear();
     final tall = <int>{};
@@ -511,6 +504,37 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (!setEquals(_tallSections.value, tall)) {
       _tallSections.value = tall;
     }
+    // Filet de vérification (pas de pilotage) : en debug, signale toute section
+    // multi-articles qui reste « tall » malgré le fit côté provider — c'est le
+    // symptôme d'une estimation `section_fit` trop généreuse (constantes à
+    // régler). `_FreeReadEdgeFade` ne devrait plus jamais s'afficher dessus.
+    assert(() {
+      if (tall.isEmpty) return true;
+      final sections = ref.read(fluxContinuProvider).valueOrNull?.sections;
+      if (sections == null) return true;
+      for (final idx in tall) {
+        if (idx < 0 || idx >= sections.length) continue;
+        debugPrint(
+          '[fit-net] section "${sections[idx].label}" dépasse l\'écran '
+          '(reste tall) — estimation section_fit trop généreuse, à régler.',
+        );
+      }
+      return true;
+    }());
+  }
+
+  /// Threads the measured usable scroll height to [usableViewportHeightProvider]
+  /// so the provider can decide how many articles each section may show. Same
+  /// budget the snap uses (viewport − safe-area-bottom − sticky bar). Anti-boucle :
+  /// only writes when the rounded value actually moves, so the provider recompose
+  /// it triggers (→ screen rebuild → this runs again, same value) terminates.
+  void _publishUsableHeight(double height) {
+    if (height <= 0) return;
+    final rounded = height.roundToDouble();
+    final notifier = ref.read(usableViewportHeightProvider.notifier);
+    final current = notifier.state;
+    if (current != null && (current - rounded).abs() < 1.0) return;
+    notifier.state = rounded;
   }
 
   /// Defers an anchor recompute to the next post-frame (when layout is settled),
@@ -581,6 +605,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   Future<void> _scrollToTop() async {
     if (!_scroll.hasClients) return;
     unawaited(HapticFeedback.lightImpact());
+    // Remonter doit toujours révéler le footer (jamais « collé » masqué).
+    updateFooterVisibility(ref, true);
     await _scroll.animateTo(
       0,
       duration: const Duration(milliseconds: 900),
@@ -591,11 +617,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// Pull-to-refresh handler. Wraps the provider's refresh + clears pending
   /// feedback (the new state replaces yesterday's session) + scrolls to top.
   Future<void> _handleRefresh() async {
-    await ref.read(fluxContinuProvider.notifier).refresh();
-    if (!mounted) return;
     if (_pendingFeedback.isNotEmpty) {
       setState(_pendingFeedback.clear);
     }
+    await ref.read(fluxContinuProvider.notifier).refresh();
+    if (!mounted) return;
     if (_scroll.hasClients) {
       unawaited(
         _scroll.animateTo(
@@ -612,7 +638,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// the cached items immediately rather than waiting on the provider.
   void _openThemeSection(BuildContext context, FeedThemeSection section) {
     final key = Uri.encodeComponent(sectionKey(section));
-    context.push('${RoutePaths.fluxContinu}/theme/$key', extra: section);
+    ref.read(tourneeLastDedicatedSectionProvider.notifier).state = sectionKey(
+      section,
+    );
+    context
+        .push('${RoutePaths.fluxContinu}/theme/$key', extra: section)
+        .then((_) => _restoreLastDedicatedSection());
   }
 
   /// PR « Sources dans la Tournée » — ouvre la vue détail d'une section source
@@ -620,44 +651,60 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// `/flux-continu/source/:id` (id = sectionKey = `source:<uuid>`).
   void _openSourceSection(BuildContext context, FeedThemeSection section) {
     final key = Uri.encodeComponent(sectionKey(section));
-    context.push('${RoutePaths.fluxContinu}/source/$key', extra: section);
+    ref.read(tourneeLastDedicatedSectionProvider.notifier).state = sectionKey(
+      section,
+    );
+    context
+        .push('${RoutePaths.fluxContinu}/source/$key', extra: section)
+        .then((_) => _restoreLastDedicatedSection());
   }
 
   /// Opens the dedicated full-page view for a [DigestTopicSection]
   /// (Actus du jour, Bonnes Nouvelles). Mirrors [_openThemeSection].
   void _openDigestSection(BuildContext context, DigestTopicSection section) {
-    context.push(
-      '${RoutePaths.fluxContinu}/section/${sectionKey(section)}',
-      extra: section,
+    ref.read(tourneeLastDedicatedSectionProvider.notifier).state = sectionKey(
+      section,
     );
+    context
+        .push(
+          '${RoutePaths.fluxContinu}/section/${sectionKey(section)}',
+          extra: section,
+        )
+        .then((_) => _restoreLastDedicatedSection());
   }
 
-  /// Opens an article and, on return, marks it read in local state so the
-  /// card immediately shows the grey + check badge without waiting for a
-  /// pull-to-refresh.
+  void _restoreLastDedicatedSection() {
+    if (!mounted) return;
+    final key = ref.read(tourneeLastDedicatedSectionProvider);
+    final sections = ref.read(fluxContinuProvider).valueOrNull?.sections;
+    if (key == null || sections == null) return;
+    final sectionIndex = sections.indexWhere((s) => sectionKey(s) == key);
+    if (sectionIndex < 0 || sectionIndex >= _sectionKeys.length) return;
+    final stickyIndex = _stickyEntryKeys.indexOf(_sectionKeys[sectionIndex]);
+    if (stickyIndex >= 0) {
+      unawaited(_scrollToSection(stickyIndex));
+    }
+  }
+
+  /// Opens an article. ReadSyncService propagates the read state after the
+  /// one-second threshold; returning sooner must leave the card unread.
   Future<void> _openArticle(BuildContext context, Object article) async {
-    String? openedContentId;
     if (article is DigestItem) {
-      openedContentId = article.contentId;
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.contentId}',
       );
     } else if (article is Content) {
-      openedContentId = article.id;
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.id}',
         extra: article,
       );
     } else if (article is EssentielArticle) {
-      openedContentId = article.contentId;
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.contentId}',
       );
     } else {
       return;
     }
-    if (!mounted) return;
-    ref.read(fluxContinuProvider.notifier).markArticleRead(openedContentId);
   }
 
   // ---------------------------------------------------------------------------
@@ -669,6 +716,58 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final notifier = ref.read(fluxContinuProvider.notifier);
     unawaited(notifier.markHiddenRemote(contentId));
     setState(() => _pendingFeedback.add(contentId));
+  }
+
+  void _scheduleGestureNudge() {
+    if (_gestureNudgeRequested) return;
+    _gestureNudgeRequested = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final location =
+          GoRouter.of(context).routerDelegate.currentConfiguration.uri.path;
+      if (!location.startsWith(RoutePaths.fluxContinu)) {
+        _gestureNudgeRequested = false;
+        return;
+      }
+      final coordinator = ref.read(nudgeCoordinatorProvider);
+      if (coordinator.activeId != null) return;
+      final swipe = await coordinator.request(NudgeIds.feedSwipeHint);
+      if (!mounted) return;
+      if (swipe == NudgeIds.feedSwipeHint) {
+        setState(() => _showSwipeHint = true);
+        return;
+      }
+      if (coordinator.activeId == null) {
+        await coordinator.request(NudgeIds.feedPreviewLongpress);
+      }
+    });
+  }
+
+  void _onSwipeHintComplete() {
+    if (mounted) setState(() => _showSwipeHint = false);
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    if (coordinator.activeId == NudgeIds.feedSwipeHint) {
+      unawaited(coordinator.dismiss(markSeen: false));
+    }
+  }
+
+  void _recordSwipeConversion() {
+    if (_showSwipeHint && mounted) {
+      setState(() => _showSwipeHint = false);
+    }
+    unawaited(
+      ref
+          .read(nudgeCoordinatorProvider)
+          .recordConversion(NudgeIds.feedSwipeHint),
+    );
+  }
+
+  void _recordLongPressConversion() {
+    unawaited(
+      ref
+          .read(nudgeCoordinatorProvider)
+          .recordConversion(NudgeIds.feedPreviewLongpress),
+    );
   }
 
   void _resolveFeedback(String contentId) {
@@ -824,29 +923,48 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(fluxContinuProvider);
+    final data = state.valueOrNull;
+    // Squelette : fenêtre de loading initiale (avant 1ère peinture) OU état
+    // squelette explicite émis par le provider (cache d'hier invalidé / cold
+    // start). On rend alors un scaffold placeholder, jamais le spinner plein
+    // écran ni le vrai `_buildContent`.
+    final isSkeleton = state is AsyncLoading || (data?.isSkeleton ?? false);
     // Re-tap de l'onglet actif (depuis le shell) → remonter en haut.
     ref.listen(essentielScrollTriggerProvider, (_, __) => _scrollToTop());
+    ref.listen(tourneeLastDedicatedSectionProvider, (_, __) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _restoreLastDedicatedSection();
+      });
+    });
     // Flow post-onboarding : joué une seule fois quand Essentiel a chargé ses
-    // données (derrière les modales thème & notifications). Couvre la
-    // transition loading→data (via le listen) et le cas où l'état est déjà
-    // `data` au montage (check direct planifié en post-frame).
+    // **vraies** données (derrière les modales thème & notifications). On exclut
+    // l'état squelette : le flow attend du contenu réel. Couvre la transition
+    // loading→data (via le listen) et le cas où l'état est déjà `data` au
+    // montage (check direct planifié en post-frame).
     ref.listen<AsyncValue<FluxContinuState>>(fluxContinuProvider, (_, next) {
       if (next is AsyncData<FluxContinuState> &&
+          !next.value.isSkeleton &&
           ref.read(postOnboardingFlowPendingProvider) != null) {
         _schedulePostOnboardingFlow();
       }
     });
-    if (state is AsyncData<FluxContinuState> &&
+    if (!isSkeleton &&
+        state is AsyncData<FluxContinuState> &&
         ref.read(postOnboardingFlowPendingProvider) != null) {
       _schedulePostOnboardingFlow();
     }
     // Source unique : aligne [_sectionKeys] + [_stickyEntryKeys] sur les slivers
     // et dérive les descripteurs d'onglets (label+accent), dans le même ordre.
-    final stickyTabs = _syncStickyEntries(state.valueOrNull);
-    // Sections don't resize mid-session, so we refresh the snap anchors only on
-    // these content/layout-driven rebuilds — never per scroll frame.
-    _safeAreaBottom = MediaQuery.paddingOf(context).bottom;
-    _scheduleAnchorRecompute();
+    // Hors squelette uniquement : le scaffold placeholder n'attache pas les
+    // GlobalKeys de section ni la physics de snap.
+    final stickyTabs =
+        isSkeleton ? const <StickyTab>[] : _syncStickyEntries(data);
+    if (!isSkeleton) {
+      // Sections don't resize mid-session, so we refresh the snap anchors only
+      // on these content/layout-driven rebuilds — never per scroll frame.
+      _safeAreaBottom = MediaQuery.paddingOf(context).bottom;
+      _scheduleAnchorRecompute();
+    }
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
       // Header & footer vivent dans le scaffold de page partagé :
@@ -857,40 +975,26 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         bottom: false,
         child: Stack(
           children: [
-            state.when(
-              loading: () => const LoadingView(),
-              error: (e, _) => _ErrorView(
-                error: e,
-                onRetry: () => ref.read(fluxContinuProvider.notifier).refresh(),
-              ),
-              data: (data) => _buildContent(context, data),
-            ),
-            _StickyHostOverlay(
-              stickyVisible: _stickyVisible,
-              activeIndex: _activeIndex,
-              tabs: stickyTabs,
-              onTapTab: _scrollToSection,
-              tabsController: _tabsScroll,
-            ),
-            // Floating "back to top" button — reveals on upward scroll above
-            // the hide threshold, fades down on reverse / near top.
-            Positioned(
-              right: 16,
-              bottom: 24,
-              child: SafeArea(
-                child: AnimatedSlide(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  offset:
-                      _showScrollTopFab ? Offset.zero : const Offset(0, 1.6),
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 220),
-                    opacity: _showScrollTopFab ? 1.0 : 0.0,
-                    child: _ScrollToTopButton(onTap: _scrollToTop),
-                  ),
+            if (isSkeleton)
+              _FluxContinuSkeleton(sections: data?.sections ?? const [])
+            else
+              state.when(
+                loading: () => const _FluxContinuSkeleton(sections: []),
+                error: (e, _) => _ErrorView(
+                  error: e,
+                  onRetry: () =>
+                      ref.read(fluxContinuProvider.notifier).refresh(),
                 ),
+                data: (data) => _buildContent(context, data),
               ),
-            ),
+            if (!isSkeleton)
+              _StickyHostOverlay(
+                stickyVisible: _stickyVisible,
+                activeIndex: _activeIndex,
+                tabs: stickyTabs,
+                onTapTab: _scrollToSection,
+                tabsController: _tabsScroll,
+              ),
             // Pull-to-refresh discoverability pill.
             Positioned(
               top: 0,
@@ -932,8 +1036,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final grilleSlotIndex = state.grilleSlotIndex;
     // La carte perso est une entrée virtuelle (pas de section correspondante)
     // insérée juste après le hero tant que l'utilisateur n'a pas personnalisé.
-    final customized =
-        ref.watch(tourneeOrderPrefsProvider.select((s) => s.customized));
+    final customized = ref.watch(
+      tourneeOrderPrefsProvider.select((s) => s.customized),
+    );
     final heroPresent =
         state.sections.isNotEmpty && state.sections.first is EssentielSection;
 
@@ -1084,13 +1189,27 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     required FluxContinuNotifier notifier,
   }) {
     final favoriteCount = state.sections.where(_isFavoriteSection).length;
-    final swipeLeftHintSeen =
-        ref.watch(swipeLeftHintSeenProvider).valueOrNull ?? true;
+    final firstSwipeableSectionIndex = state.sections.indexWhere(
+      (section) => switch (section) {
+        EssentielSection() => false,
+        DigestTopicSection(:final topics) => topics.any(
+            (topic) =>
+                !_pendingFeedback.contains(pickTopicLead(topic).contentId),
+          ),
+        FeedThemeSection(:final items) => items.any(
+            (content) => !_pendingFeedback.contains(content.id),
+          ),
+      },
+    );
+    if (firstSwipeableSectionIndex >= 0) {
+      _scheduleGestureNudge();
+    }
 
     // Story Essentiel UX — la carte de perso (compte non personnalisé) et
     // l'inline « Gérer / Tes N favoris » (compte personnalisé) s'excluent.
-    final customized =
-        ref.watch(tourneeOrderPrefsProvider.select((s) => s.customized));
+    final customized = ref.watch(
+      tourneeOrderPrefsProvider.select((s) => s.customized),
+    );
     final heroPresent =
         state.sections.isNotEmpty && state.sections.first is EssentielSection;
     // Cible de l'inline (mode personnalisé) : la 1ʳᵉ section de contenu après le
@@ -1149,19 +1268,23 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                         _onSelectFeedbackChip(context, id, chip),
                     onResolveFeedback: _resolveFeedback,
                     onUndoFeedback: _undoFeedback,
-                    enableSwipeHintOnFirstCard: i == 0 && !swipeLeftHintSeen,
-                    onSwipeHintComplete: () async {
-                      await markSwipeLeftHintSeen();
-                      if (mounted) ref.invalidate(swipeLeftHintSeenProvider);
-                    },
+                    enableSwipeHintOnFirstCard:
+                        i == firstSwipeableSectionIndex && _showSwipeHint,
+                    onSwipeHintComplete: _onSwipeHintComplete,
+                    firstSwipeableCardAnchor: i == firstSwipeableSectionIndex
+                        ? fluxContinuFirstCardKey
+                        : null,
+                    onSwipeConversion: _recordSwipeConversion,
+                    onLongPressConversion: _recordLongPressConversion,
                     onTapFavorite: isFavorite
                         ? () => showTourneeComposerSheet(context)
                         : null,
                     // Story 23.4 — bouton réglages (tune) sur la section veille →
                     // ouvre la config en édition. Réutilisé par le CTA d'état vide.
                     onTapSettings: section.kind == SectionKind.veille
-                        ? () =>
-                            context.push('${RoutePaths.veilleConfig}?mode=edit')
+                        ? () => context.push(
+                              '${RoutePaths.veilleConfig}?mode=edit',
+                            )
                         : null,
                     // Tournée bugs E2E — CTA « Ajouter des sources » de l'empty-state
                     // d'une section thème favorite vide → ouvre « Composer ma Tournée ».
@@ -1202,6 +1325,91 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       slivers.add(_grilleSliver);
     }
     return slivers;
+  }
+}
+
+/// Scaffold squelette du démarrage matinal : en-têtes de sections **réels**
+/// (label/accent/illustration dérivés des prefs locales, portés par [sections])
+/// + cartes placeholder, au lieu du `LoadingView` plein écran. Évite tout saut
+/// de layout quand le contenu réel arrive : la structure est déjà en place, on
+/// ne fait que remplir.
+///
+/// Volontairement **non scrollable** (NeverScrollableScrollPhysics) et sans la
+/// physics de snap : le squelette est transitoire (≈ 1 round-trip), l'user est
+/// en haut de page, et on ne touche pas au système snap/settle délicat. Reçoit
+/// les coquilles de sections du provider ([FluxContinuState.sections] avec
+/// `isSkeleton:true`) ; liste vide pendant la brève fenêtre de loading initiale
+/// → on rend un hero + quelques placeholders génériques.
+class _FluxContinuSkeleton extends StatelessWidget {
+  final List<FluxSection> sections;
+
+  const _FluxContinuSkeleton({required this.sections});
+
+  @override
+  Widget build(BuildContext context) {
+    final children = <Widget>[
+      // Hero « L'Essentiel du jour » — placeholder pleine largeur en tête.
+      const _HeroSkeleton(),
+    ];
+    if (sections.isEmpty) {
+      // Fenêtre de loading initiale (pas encore de coquilles) → placeholders
+      // génériques pour occuper l'espace sans labels.
+      for (var i = 0; i < 3; i++) {
+        children.add(
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: ExploreDiscoverySkeleton(),
+          ),
+        );
+      }
+    } else {
+      for (final section in sections) {
+        // Le hero est déjà rendu au-dessus.
+        if (section is EssentielSection) continue;
+        final isSource =
+            section is FeedThemeSection && section.kind == SectionKind.source;
+        children.add(
+          SectionBanner(
+            title: section.label,
+            accent: section.accent,
+            blurb: section.blurb,
+            illustrationAsset: isSource ? null : section.illustrationAsset,
+            logoUrl: isSource ? section.sourceLogoUrl : null,
+          ),
+        );
+        children.add(const ExploreDiscoverySkeleton());
+        children.add(const SizedBox(height: 16));
+      }
+    }
+    return ListView(
+      // Le squelette ne défile pas — il est remplacé dès l'arrivée du contenu.
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(top: 8, bottom: 92),
+      children: children,
+    );
+  }
+}
+
+/// Placeholder du hero « L'Essentiel du jour » (carte hi-fi) pendant le
+/// squelette : un grand bloc neutre arrondi qui réserve l'espace au-dessus de
+/// la ligne de flottaison.
+class _HeroSkeleton extends StatelessWidget {
+  const _HeroSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+      child: Container(
+        height: 260,
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
+        ),
+      ),
+    );
   }
 }
 
@@ -1364,8 +1572,10 @@ class _SectionPassageDotState extends State<_SectionPassageDot>
       widget.pulseListenable.addListener(_onPulse);
     }
     if (oldWidget.approachListenable != widget.approachListenable) {
-      _repaint =
-          Listenable.merge([_pulseController, widget.approachListenable]);
+      _repaint = Listenable.merge([
+        _pulseController,
+        widget.approachListenable,
+      ]);
     }
   }
 
@@ -1550,79 +1760,6 @@ class _StickyHostOverlay extends StatelessWidget {
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _ScrollToTopButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _ScrollToTopButton({required this.onTap});
-
-  static const _kRadius = BorderRadius.all(Radius.circular(22));
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final isDark = context.isDarkMode;
-    // Same liquidglass mix as StickyBackdrop so the pill reads as part of the
-    // same surface family (parchment in light, dark-surface tint in dark).
-    final fillColor = isDark
-        ? colors.backgroundPrimary.withValues(alpha: 0.78)
-        : const Color.fromRGBO(242, 232, 213, 0.82);
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.10)
-        : const Color.fromRGBO(0, 0, 0, 0.08);
-
-    return ClipRRect(
-      borderRadius: _kRadius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: _kRadius,
-            onTap: onTap,
-            child: Container(
-              height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: fillColor,
-                borderRadius: _kRadius,
-                border: Border.all(color: borderColor, width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.10),
-                    blurRadius: 12,
-                    spreadRadius: -4,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
-                    size: 16,
-                    color: colors.textPrimary,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Remonter',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.1,
-                      color: colors.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

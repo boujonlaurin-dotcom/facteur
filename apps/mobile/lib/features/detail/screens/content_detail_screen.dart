@@ -1,7 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:facteur/core/utils/html_utils.dart';
 import 'package:flutter/foundation.dart'
-    show Factory, defaultTargetPlatform, kIsWeb, visibleForTesting;
+    show defaultTargetPlatform, kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,25 +11,30 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart'
+    show InAppWebViewController, WebUri;
 import 'package:flutter/services.dart';
-import 'package:flutter/gestures.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
 import '../../../config/theme.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../../shared/widgets/navigation/swipe_back_page.dart';
 import '../../feed/models/content_model.dart';
 import '../../sources/models/source_model.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
+import '../../feed/services/read_sync_service.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../my_interests/models/user_interests_state.dart' show InterestState;
 import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../my_interests/repositories/user_interests_repository.dart'
     show FavoriteCapReachedException;
 import '../../sources/providers/sources_providers.dart';
+import '../../sources/widgets/premium_source_connection.dart';
+import '../../sources/widgets/premium_web_view.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
 import '../../../widgets/sunflower_icon.dart';
 import '../providers/nudge_provider.dart' show NudgeTracker;
@@ -62,12 +67,11 @@ PerspectivesSectionStatus resolvePerspectivesStatus(
 
 /// Sink for launch breadcrumbs — injected so tests can capture them without
 /// reaching into Sentry.
-typedef LaunchBreadcrumbSink =
-    void Function(
-      String message, {
-      SentryLevel level,
-      Map<String, Object?> data,
-    });
+typedef LaunchBreadcrumbSink = void Function(
+  String message, {
+  SentryLevel level,
+  Map<String, Object?> data,
+});
 
 /// Opens the external source URL for the article reader CTA, keeping the Web
 /// and mobile branches strictly separate.
@@ -87,14 +91,21 @@ typedef LaunchBreadcrumbSink =
 Future<bool> launchReaderUrl(
   Uri uri, {
   required bool isWeb,
-  required Future<bool> Function(Uri, {LaunchMode mode, String? webOnlyWindowName})
-  launch,
+  required Future<bool> Function(
+    Uri, {
+    LaunchMode mode,
+    String? webOnlyWindowName,
+  }) launch,
   Future<bool> Function(Uri)? canLaunch,
   LaunchBreadcrumbSink? breadcrumb,
   Map<String, Object?> logData = const {},
 }) async {
   // `urlHost` seulement — jamais l'URL complète dans les logs.
-  final data = <String, Object?>{...logData, 'urlHost': uri.host, 'isWeb': isWeb};
+  final data = <String, Object?>{
+    ...logData,
+    'urlHost': uri.host,
+    'isWeb': isWeb,
+  };
   breadcrumb?.call('attempt', data: data);
   try {
     final bool ok;
@@ -143,12 +154,12 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
   final bool isExternal;
 
   const ContentDetailScreen({super.key, required this.contentId, this.content})
-    : externalUrl = null,
-      sourceName = null,
-      sourceDomain = null,
-      externalTitle = null,
-      biasStance = 'unknown',
-      isExternal = false;
+      : externalUrl = null,
+        sourceName = null,
+        sourceDomain = null,
+        externalTitle = null,
+        biasStance = 'unknown',
+        isExternal = false;
 
   /// Ouvre une URL externe (perspective) dans le reader unique, en mode
   /// webview du site (header/footer/scroll/anti-saccades partagés).
@@ -159,11 +170,11 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
     this.sourceDomain,
     String? title,
     this.biasStance = 'unknown',
-  }) : contentId = '',
-       content = null,
-       externalUrl = url,
-       externalTitle = title,
-       isExternal = true;
+  })  : contentId = '',
+        content = null,
+        externalUrl = url,
+        externalTitle = title,
+        isExternal = true;
 
   @override
   ConsumerState<ContentDetailScreen> createState() =>
@@ -205,6 +216,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _linkCopiedHeaderTimer;
   late DateTime _startTime;
   WebViewController? _webViewController;
+  // Chemin premium (source payante connectée) : WebView sur flutter_inappwebview
+  // pour réutiliser la session du média (cookies). Distinct du WebView
+  // webview_flutter du scroll-to-site des sources gratuites.
+  InAppWebViewController? _premiumWebController;
+  // Bandeau non-bloquant « Session expirée — Reconnecter » (paywall détecté en
+  // mode reader sur une source connectée).
+  bool _premiumSessionExpired = false;
   // Mutable: flipped to `true` from `_onReadOnSiteTap` when the in-app
   // reader could not enter scroll-to-site mode (htmlContent missing or
   // too short on Android race conditions). Forces `_buildWebViewFallback`
@@ -229,6 +247,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _articleLayerUnmountTimer;
 
   Timer? _readingTimer;
+  bool _isMarkingConsumed = false;
   Timer? _noteNudgeTimer;
   Timer? _scrollStopTimer;
   // 🌻 Nudge "Recommander ?" state
@@ -241,7 +260,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   // Marquage Lu unifié (décision PO) : « ouvrir un article = Lu ». Micro-délai
   // de 1 s avant d'écrire le statut consumed — laisse le loader s'afficher et
   // évite de marquer Lu un clic immédiatement annulé.
-  static const int _consumptionThreshold = 1; // seconds
   static const int _noteNudgeDelay = 20; // seconds
 
   // Reading progress tracking (0.0 - 1.0)
@@ -350,7 +368,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     } else {
       _content = widget.content;
       if (_content != null) {
-        _isConsumed = _content!.status == ContentStatus.consumed;
+        _isConsumed = _content!.status == ContentStatus.consumed ||
+            ref.read(consumedContentIdsProvider).contains(_content!.id);
       }
       // Always fetch fresh content to accept latest metadata/status/theme
       _fetchContent();
@@ -415,8 +434,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       vsync: this,
     );
     _footerAutoController.addListener(() {
-      _footerOffset.value =
-          _footerAutoStart +
+      _footerOffset.value = _footerAutoStart +
           (_footerAutoTarget - _footerAutoStart) * _footerAutoController.value;
     });
 
@@ -645,21 +663,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
     if (msg.startsWith('progress:')) {
       final pct = double.tryParse(msg.substring(9));
-      if (pct != null) {
-        // For partial content: WebView scroll maps to 25%-100% of total progress
-        // For full content: WebView scroll maps to the full 0%-100%
-        final double normalized;
-        if (_isPartialContent) {
-          normalized = 0.25 + (pct / 100.0) * 0.75;
-        } else {
-          normalized = pct / 100.0;
-        }
-        final clamped = normalized.clamp(0.0, 1.0);
-        _readingProgress.value = clamped;
-        if (clamped > _maxReadingProgress) {
-          _maxReadingProgress = clamped;
-        }
-      }
+      if (pct != null) _applyWebReadingProgress(pct);
+    }
+  }
+
+  /// Normalisation partagée de la progression de lecture en WebView : utilisée
+  /// par le canal webview_flutter (scroll-to-site gratuit) ET par le callback
+  /// `onProgress` de [PremiumWebView] (chemin premium inappwebview).
+  ///
+  /// For partial content: WebView scroll maps to 25%-100% of total progress.
+  /// For full content: WebView scroll maps to the full 0%-100%.
+  void _applyWebReadingProgress(double pct) {
+    final double normalized =
+        _isPartialContent ? 0.25 + (pct / 100.0) * 0.75 : pct / 100.0;
+    final clamped = normalized.clamp(0.0, 1.0);
+    _readingProgress.value = clamped;
+    if (clamped > _maxReadingProgress) {
+      _maxReadingProgress = clamped;
     }
   }
 
@@ -781,8 +801,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (endBox == null || svBox == null) return;
     if (!_scrollController.hasClients) return;
     // content-coord of marker = screen Y of marker − screen Y of sv top + scroll offset
-    final extent =
-        endBox.localToGlobal(Offset.zero).dy -
+    final extent = endBox.localToGlobal(Offset.zero).dy -
         svBox.localToGlobal(Offset.zero).dy +
         _scrollController.offset;
     if (extent > 0) _articleContentExtent = extent;
@@ -842,9 +861,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     setState(() {
       final current = _perspectivesSelectedSegments;
       if (current.contains(key)) {
-        _perspectivesSelectedSegments = current.length == 1
-            ? {}
-            : (Set.from(current)..remove(key));
+        _perspectivesSelectedSegments =
+            current.length == 1 ? {} : (Set.from(current)..remove(key));
       } else {
         _perspectivesSelectedSegments = current.isEmpty || current.length == 3
             ? {key}
@@ -1028,7 +1046,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           setState(() {
             _content = merged;
             _contentResolved = true;
-            _isConsumed = _content!.status == ContentStatus.consumed;
+            _isConsumed = _content!.status == ContentStatus.consumed ||
+                ref.read(consumedContentIdsProvider).contains(_content!.id);
           });
           // « Ouvrir = Lu » : redémarre le timer dès que le contenu est résolu
           // si on ne l'a pas encore marqué Lu (cas où _content était null au
@@ -1084,7 +1103,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   void _startReadingTimer() {
     _readingTimer?.cancel();
-    _readingTimer = Timer(const Duration(seconds: _consumptionThreshold), () {
+    _readingTimer = Timer(articleReadThreshold, () {
       if (mounted && !_isConsumed) {
         _markAsConsumed();
       }
@@ -1093,25 +1112,37 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   Future<void> _markAsConsumed() async {
     // Mode externe : id synthétique vide ⇒ pas de statut backend.
-    if (_isExternal) return;
+    if (_isExternal || _isConsumed || _isMarkingConsumed) return;
     final content = _content;
     // Ne latch PAS _isConsumed tant que le contenu n'est pas résolu : sinon un
     // fetch plus lent que le micro-délai laisserait l'article « consommé » en
     // local sans jamais écrire le statut backend (le re-start de _fetchContent
     // est gardé par !_isConsumed).
     if (content == null) return;
-    setState(() => _isConsumed = true);
-
+    _isMarkingConsumed = true;
     try {
-      final supabase = Supabase.instance.client;
-      final apiClient = ApiClient(supabase);
-      final repository = FeedRepository(apiClient);
-      await repository.updateContentStatus(content.id, ContentStatus.consumed);
-
-      // Silent update - no notification needed as this is tracked automatically
+      final queued =
+          await ref.read(readSyncServiceProvider).markConsumed(content.id);
+      if (queued) {
+        if (mounted) setState(() => _isConsumed = true);
+      } else if (mounted) {
+        _scheduleConsumedRetry();
+      }
     } catch (e) {
       debugPrint('Error marking as consumed: $e');
+      if (mounted) _scheduleConsumedRetry();
+    } finally {
+      _isMarkingConsumed = false;
     }
+  }
+
+  void _scheduleConsumedRetry() {
+    _readingTimer?.cancel();
+    _readingTimer = Timer(const Duration(milliseconds: 250), () {
+      if (mounted && !_isConsumed) {
+        unawaited(_markAsConsumed());
+      }
+    });
   }
 
   Future<void> _toggleBookmark() async {
@@ -1326,16 +1357,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-    _perspectivesPulseScale ??=
-        TweenSequence<double>([
-          TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 50),
-          TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0), weight: 50),
-        ]).animate(
-          CurvedAnimation(
-            parent: _perspectivesPulseController!,
-            curve: Curves.easeOutCubic,
-          ),
-        );
+    _perspectivesPulseScale ??= TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0), weight: 50),
+    ]).animate(
+      CurvedAnimation(
+        parent: _perspectivesPulseController!,
+        curve: Curves.easeOutCubic,
+      ),
+    );
     _perspectivesPulseController!.forward(from: 0).whenComplete(() async {
       if (!mounted) return;
       final coordinator = ref.read(nudgeCoordinatorProvider);
@@ -1445,6 +1475,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if ((state == AppLifecycleState.paused ||
+            state == AppLifecycleState.inactive ||
+            state == AppLifecycleState.detached) &&
+        shouldCommitReadOnBackground(
+          startedAt: _startTime,
+          now: DateTime.now(),
+          isConsumed: _isConsumed,
+          isExternal: _isExternal,
+        )) {
+      _readingTimer?.cancel();
+      unawaited(_markAsConsumed());
+    }
     if (state == AppLifecycleState.resumed && _isExitAnimating) {
       _exitAnimController.reset();
       setState(() {
@@ -1490,13 +1532,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final logData = _launchLogData(trigger);
 
     Future<bool> launch({required bool isWeb}) => launchReaderUrl(
-      uri,
-      isWeb: isWeb,
-      launch: launchUrl,
-      canLaunch: canLaunchUrl,
-      breadcrumb: _addLaunchBreadcrumb,
-      logData: logData,
-    );
+          uri,
+          isWeb: isWeb,
+          launch: launchUrl,
+          canLaunch: canLaunchUrl,
+          breadcrumb: _addLaunchBreadcrumb,
+          logData: logData,
+        );
 
     // Web: open immediately from within the user gesture — no canLaunchUrl, no
     // exit animation, no white overlay. Deferring the open (behind the overlay
@@ -1743,15 +1785,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
     final articleText = content.htmlContent ?? content.description;
     final hasEnoughContent = plainTextLength(articleText) >= 100;
-    final useScrollToSite =
-        !isConnectedPremiumSource &&
+    final useScrollToSite = !isConnectedPremiumSource &&
         content.hasInAppContent &&
         content.contentType == ContentType.article &&
         hasEnoughContent &&
         !_showWebView &&
         !kIsWeb;
-    final useInAppReading =
-        !isConnectedPremiumSource &&
+    final useInAppReading = !isConnectedPremiumSource &&
         content.hasInAppContent &&
         !_showWebView &&
         !useScrollToSite;
@@ -1827,10 +1867,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 child: isVideoContent
                     ? _buildVideoContent(context, content)
                     : useScrollToSite
-                    ? _buildScrollToSiteContent(context, content)
-                    : useInAppReading
-                    ? _buildInAppContent(context, content)
-                    : _buildWebViewFallback(content),
+                        ? _buildScrollToSiteContent(context, content)
+                        : useInAppReading
+                            ? _buildInAppContent(context, content)
+                            : _buildWebViewFallback(
+                                content,
+                                isConnectedPremiumSource:
+                                    isConnectedPremiumSource,
+                              ),
               ),
             ),
             // Header — pinned at the top of the screen; no scroll-driven
@@ -1904,8 +1948,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (content == null) return;
     final articleText = content.htmlContent ?? content.description;
     final hasEnoughContent = plainTextLength(articleText) >= 100;
-    final isScrollToSite =
-        content.hasInAppContent &&
+    final isScrollToSite = content.hasInAppContent &&
         content.contentType == ContentType.article &&
         hasEnoughContent &&
         !_showWebView;
@@ -2320,8 +2363,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Fallback to the article payload before the provider has loaded — avoids
     // a flash of the "Suivre +" chip on cold open when the source is already
     // followed server-side.
-    final InterestState effectiveState =
-        liveState ??
+    final InterestState effectiveState = liveState ??
         (content.isFollowedSource
             ? InterestState.followed
             : InterestState.unfollowed);
@@ -2406,9 +2448,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                               child: Container(
                                                 padding:
                                                     const EdgeInsets.symmetric(
-                                                      horizontal: 6,
-                                                      vertical: 2,
-                                                    ),
+                                                  horizontal: 6,
+                                                  vertical: 2,
+                                                ),
                                                 decoration: BoxDecoration(
                                                   color: Color.lerp(
                                                     colors.backgroundSecondary,
@@ -2422,11 +2464,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                                   content.source.name,
                                                   style: textTheme.labelMedium
                                                       ?.copyWith(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        color:
-                                                            colors.textPrimary,
-                                                      ),
+                                                    fontWeight: FontWeight.bold,
+                                                    color: colors.textPrimary,
+                                                  ),
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
@@ -2467,12 +2507,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                             child: InkWell(
                                               onTap: () =>
                                                   TopicChip.showArticleSheet(
-                                                    context,
-                                                    content,
-                                                    initialSection:
-                                                        ArticleSheetSection
-                                                            .source,
-                                                  ),
+                                                context,
+                                                content,
+                                                initialSection:
+                                                    ArticleSheetSection.source,
+                                              ),
                                               child: Padding(
                                                 padding: const EdgeInsets.all(
                                                   3,
@@ -2508,11 +2547,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                                   locale: 'fr_short',
                                                 )
                                                 .replaceAll('il y a ', ''),
-                                            style: textTheme.bodySmall
-                                                ?.copyWith(
-                                                  color: colors.textTertiary,
-                                                  fontSize: 11,
-                                                ),
+                                            style:
+                                                textTheme.bodySmall?.copyWith(
+                                              color: colors.textTertiary,
+                                              fontSize: 11,
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -2724,8 +2763,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         }
 
         final overflow = total - visibleCount;
-        final overflowLabel =
-            overflow == 1 ? '+1 sujet' : '+$overflow sujets';
+        final overflowLabel = overflow == 1 ? '+1 sujet' : '+$overflow sujets';
 
         return Wrap(
           spacing: spacing,
@@ -2776,7 +2814,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           Colors.grey.shade400,
           colors.primary,
           clamped,
-        )!.withValues(alpha: alpha);
+        )!
+            .withValues(alpha: alpha);
         return TweenAnimationBuilder<double>(
           tween: Tween<double>(end: clamped),
           duration: const Duration(milliseconds: 300),
@@ -3041,17 +3080,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               perspectives: _inlinePerspectives,
                               biasDistribution:
                                   _perspectivesResponse?.biasDistribution ??
-                                  const {},
+                                      const {},
                               keywords:
                                   _perspectivesResponse?.keywords ?? const [],
                               sourceBiasStance:
                                   _perspectivesResponse?.sourceBiasStance ??
-                                  'unknown',
+                                      'unknown',
                               sourceName: _content?.source.name ?? '',
                               contentId: widget.contentId,
                               comparisonQuality:
                                   _perspectivesResponse?.comparisonQuality ??
-                                  'low',
+                                      'low',
                               divergenceLevel:
                                   _perspectivesResponse?.divergenceLevel,
                               externalSelectedSegments:
@@ -3141,14 +3180,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     return WebViewWidget(
       controller: _webViewController!,
       gestureRecognizers: _isWebViewActive
-          ? {
-              Factory<VerticalDragGestureRecognizer>(
-                () => VerticalDragGestureRecognizer(),
-              ),
-              Factory<HorizontalDragGestureRecognizer>(
-                () => HorizontalDragGestureRecognizer(),
-              ),
-            }
+          ? swipeBackCompatiblePlatformViewGestureRecognizers()
           : const {},
     );
   }
@@ -3166,9 +3198,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // Description text: prefer htmlContent (stripped), fallback to description
     final rawDescription = content.htmlContent ?? content.description;
-    final descriptionText = rawDescription != null
-        ? stripHtml(rawDescription).trim()
-        : null;
+    final descriptionText =
+        rawDescription != null ? stripHtml(rawDescription).trim() : null;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -3333,8 +3364,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                       // Bottom spacing — clears the persistent footer.
                       SizedBox(
-                        height:
-                            _kFooterContentHeight +
+                        height: _kFooterContentHeight +
                             MediaQuery.of(context).viewPadding.bottom,
                       ),
                     ],
@@ -3488,8 +3518,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                     // Bottom spacing — clears the persistent footer.
                     SizedBox(
-                      height:
-                          _kFooterContentHeight +
+                      height: _kFooterContentHeight +
                           MediaQuery.of(context).viewPadding.bottom,
                     ),
                   ],
@@ -3534,9 +3563,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           title: content.title,
           shrinkWrap: true,
           onLinkTap: _animateAndLaunch,
-          bodyPlaceholder: !_contentResolved
-              ? _buildArticleBodySkeleton(colors)
-              : null,
+          bodyPlaceholder:
+              !_contentResolved ? _buildArticleBodySkeleton(colors) : null,
         );
 
         return ScrollConfiguration(
@@ -3703,8 +3731,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 // ── Footer clearance ───────────────────────────────────────
                 const SizedBox(height: FacteurSpacing.space4),
                 SizedBox(
-                  height:
-                      _kFooterContentHeight +
+                  height: _kFooterContentHeight +
                       MediaQuery.of(context).viewPadding.bottom,
                 ),
               ],
@@ -3755,13 +3782,51 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  Widget _buildWebViewFallback(Content content) {
+  Widget _buildWebViewFallback(
+    Content content, {
+    bool isConnectedPremiumSource = false,
+  }) {
     final colors = context.facteurColors;
 
     // Legacy web fallback — unreachable since build() auto-redirects
     // and footer CTA opens externally on web. Kept as safety net.
     if (kIsWeb) {
       return Center(child: CircularProgressIndicator(color: colors.primary));
+    }
+
+    final topInset = MediaQuery.of(context).padding.top;
+    final headerHeight = topInset + _kHeaderContentHeight;
+
+    // Chemin premium (source payante connectée) : flutter_inappwebview pour
+    // réutiliser la session du média + détecter l'expiration. Les sources
+    // gratuites restent sur webview_flutter (pas de cookies, moindre risque).
+    if (isConnectedPremiumSource) {
+      final webView = PremiumWebView(
+        source: content.source,
+        url: WebUri(content.url),
+        sessionStore: ref.read(premiumSessionStoreProvider),
+        enableScrollBridge: true,
+        detectPaywall: true,
+        onWebViewCreated: (c) => _premiumWebController = c,
+        onGestureStart: _onGestureStart,
+        onGestureDelta: _onGestureDelta,
+        onGestureEnd: _onGestureEnd,
+        onScrollY: (y) => _webScrollY = y,
+        onProgress: _applyWebReadingProgress,
+        onPaywallDetected: _onPremiumPaywallDetected,
+        gestureRecognizers: swipeBackCompatiblePlatformViewGestureRecognizers(),
+      );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(height: headerHeight),
+          if (_premiumSessionExpired)
+            _PremiumSessionExpiredBanner(
+              onReconnect: () => _reconnectPremium(content),
+            ),
+          Expanded(child: webView),
+        ],
+      );
     }
 
     // Mobile: Use native WebView with ScrollBridge for progress + auto-hide
@@ -3776,14 +3841,157 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       )
       ..loadRequest(Uri.parse(content.url));
 
-    final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + _kHeaderContentHeight;
+    // CTA discret : source payante non connectée → proposer de lire avec son
+    // abonnement (ouvre le flow de connexion).
+    final source = content.source;
+    final showConnectCta =
+        source.hasPaywall && source.premiumConnection != null;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(height: headerHeight),
-        Expanded(child: WebViewWidget(controller: _webViewController!)),
+        if (showConnectCta)
+          _PremiumConnectBanner(
+            onConnect: () => _openPremiumConnectionFromReader(source),
+          ),
+        Expanded(
+          child: WebViewWidget(
+            controller: _webViewController!,
+            gestureRecognizers:
+                swipeBackCompatiblePlatformViewGestureRecognizers(),
+          ),
+        ),
       ],
+    );
+  }
+
+  /// Ouvre le flow de connexion premium depuis le reader (source payante non
+  /// connectée). Le provider bascule en connecté → rebuild → chemin premium.
+  Future<void> _openPremiumConnectionFromReader(Source source) async {
+    if (source.premiumConnection == null) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PremiumSourceConnection(
+          source: source,
+          onConnected: () => ref
+              .read(userSourcesProvider.notifier)
+              .connectSubscription(source.id),
+        ),
+      ),
+    );
+  }
+
+  void _onPremiumPaywallDetected() {
+    if (!mounted || _premiumSessionExpired) return;
+    setState(() => _premiumSessionExpired = true);
+  }
+
+  /// Rouvre le flow de connexion pour re-loguer le média (session expirée),
+  /// puis recharge la WebView premium. Ne dissocie jamais l'abonnement.
+  Future<void> _reconnectPremium(Content content) async {
+    final userSources = ref.read(userSourcesProvider).valueOrNull ?? const [];
+    final source = userSources.firstWhere(
+      (s) => s.id == content.source.id,
+      orElse: () => content.source,
+    );
+    if (source.premiumConnection == null) return;
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PremiumSourceConnection(
+          source: source,
+          onConnected: () => ref
+              .read(userSourcesProvider.notifier)
+              .connectSubscription(source.id),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _premiumSessionExpired = false);
+    await _premiumWebController?.reload();
+  }
+}
+
+/// Bandeau non-bloquant affiché en mode reader premium quand un paywall est
+/// détecté (session du média expirée). Propose de se reconnecter sans
+/// dissocier l'abonnement.
+class _PremiumSessionExpiredBanner extends StatelessWidget {
+  final VoidCallback onReconnect;
+
+  const _PremiumSessionExpiredBanner({required this.onReconnect});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Material(
+      color: colors.surfaceElevated,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        child: Row(
+          children: [
+            Icon(
+              PhosphorIcons.warningCircle(PhosphorIconsStyle.fill),
+              size: 18,
+              color: colors.warning,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Session expirée chez ce média',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+              ),
+            ),
+            TextButton(
+              onPressed: onReconnect,
+              child: const Text('Reconnecter'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// CTA discret affiché en haut du reader pour une source payante non connectée :
+/// propose de lire l'article avec son abonnement.
+class _PremiumConnectBanner extends StatelessWidget {
+  final VoidCallback onConnect;
+
+  const _PremiumConnectBanner({required this.onConnect});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Material(
+      color: colors.surfaceElevated,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        child: Row(
+          children: [
+            Icon(
+              PhosphorIcons.lockKey(PhosphorIconsStyle.regular),
+              size: 18,
+              color: colors.primary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Article réservé aux abonnés',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+              ),
+            ),
+            TextButton(
+              onPressed: onConnect,
+              child: const Text('Lire avec mon abonnement'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -3927,10 +4135,10 @@ class _FollowChip extends StatelessWidget {
               Text(
                 'Suivre',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
-                ),
+                      color: colors.textSecondary,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.2,
+                    ),
               ),
             ],
           ),

@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,11 +9,18 @@ import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../core/nudges/nudge_coordinator.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/widgets/feed_nudge_anchors.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../../shared/widgets/loaders/loading_view.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../flux_continu/widgets/flux_continu_article_card.dart';
 import '../../flux_continu/widgets/section_banner.dart';
+import '../../flux_continu/widgets/section_block.dart' show FluxFeedbackChip;
+import '../../custom_topics/widgets/topic_chip.dart';
+import '../../release_notes/widgets/changelog_banner.dart';
 import '../../sources/widgets/pepites_carousel.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
@@ -22,12 +29,15 @@ import '../widgets/explore_section.dart';
 import '../widgets/favorite_topic_tabs.dart' show FavoriteTabKind;
 import '../widgets/feed_carousel.dart';
 import '../widgets/feed_filter_bar.dart';
+import '../widgets/feedback_inline.dart';
 import '../widgets/follow_keyword_suggestion_card.dart';
 import '../widgets/pin_subjects_sheet.dart';
 
 const double _kLoadMoreLeadingPx = 800.0;
-const double _kScrollDirThreshold = 12.0;
-const double _kFabHideAboveScroll = 380.0;
+
+/// Sous ce seuil le footer reste révélé même en scrollant vers le bas
+/// (on est effectivement « près du sommet »).
+const double _kFooterRevealNearTop = 60.0;
 
 class FlanerScreen extends ConsumerStatefulWidget {
   const FlanerScreen({super.key});
@@ -40,8 +50,9 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
   final ScrollController _scroll = ScrollController();
   final Set<String> _visibleContentIds = <String>{};
   bool _loadingMore = false;
-  bool _showScrollTopFab = false;
-  double _lastScrollPos = 0;
+  final Set<String> _pendingFeedback = <String>{};
+  bool _gestureNudgeRequested = false;
+  bool _showSwipeHint = false;
 
   @override
   void initState() {
@@ -61,20 +72,16 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
     final pos = _scroll.position;
     final currentScroll = pos.pixels;
 
-    final delta = currentScroll - _lastScrollPos;
-    if (delta.abs() >= _kScrollDirThreshold) {
-      bool nextFab = _showScrollTopFab;
-      if (currentScroll < _kFabHideAboveScroll) {
-        nextFab = false;
-      } else if (delta < 0) {
-        nextFab = true;
-      } else if (delta > 0) {
-        nextFab = false;
-      }
-      if (nextFab != _showScrollTopFab) {
-        setState(() => _showScrollTopFab = nextFab);
-      }
-      _lastScrollPos = currentScroll;
+    // Footer auto-hide (app-wide) : ne se cache QUE sur un scroll-down
+    // utilisateur réel (`userScrollDirection`), pas sur un delta de position —
+    // sinon un ré-ajustement programmatique du scroll masquerait le footer sans
+    // intention de l'utilisateur. Même logique que L'Essentiel.
+    if (currentScroll < _kFooterRevealNearTop) {
+      updateFooterVisibility(ref, true);
+    } else if (pos.userScrollDirection == ScrollDirection.reverse) {
+      updateFooterVisibility(ref, false);
+    } else if (pos.userScrollDirection == ScrollDirection.forward) {
+      updateFooterVisibility(ref, true);
     }
 
     if (pos.maxScrollExtent - currentScroll >= _kLoadMoreLeadingPx) return;
@@ -94,6 +101,9 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
   }
 
   Future<void> _refresh() async {
+    if (_pendingFeedback.isNotEmpty && mounted) {
+      setState(_pendingFeedback.clear);
+    }
     final ids = Set<String>.from(_visibleContentIds);
     _visibleContentIds.clear();
     await ref.read(feedProvider.notifier).refreshArticlesWithSnapshot(ids);
@@ -111,6 +121,7 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
   Future<void> _scrollToTop() async {
     if (!_scroll.hasClients) return;
     unawaited(HapticFeedback.lightImpact());
+    updateFooterVisibility(ref, true);
     await _scroll.animateTo(
       0,
       duration: const Duration(milliseconds: 700),
@@ -120,6 +131,125 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
 
   void _markVisible(String contentId) {
     if (contentId.isNotEmpty) _visibleContentIds.add(contentId);
+  }
+
+  void _scheduleGestureNudge() {
+    if (_gestureNudgeRequested) return;
+    _gestureNudgeRequested = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final location =
+          GoRouter.of(context).routerDelegate.currentConfiguration.uri.path;
+      if (!location.startsWith(RoutePaths.flaner)) {
+        _gestureNudgeRequested = false;
+        return;
+      }
+      final coordinator = ref.read(nudgeCoordinatorProvider);
+      if (coordinator.activeId != null) return;
+      final swipe = await coordinator.request(NudgeIds.feedSwipeHint);
+      if (!mounted) return;
+      if (swipe == NudgeIds.feedSwipeHint) {
+        setState(() => _showSwipeHint = true);
+        return;
+      }
+      if (coordinator.activeId == null) {
+        await coordinator.request(NudgeIds.feedPreviewLongpress);
+      }
+    });
+  }
+
+  void _onSwipeHintComplete() {
+    if (mounted) setState(() => _showSwipeHint = false);
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    if (coordinator.activeId == NudgeIds.feedSwipeHint) {
+      unawaited(coordinator.dismiss(markSeen: false));
+    }
+  }
+
+  void _recordSwipeConversion() {
+    if (_showSwipeHint && mounted) {
+      setState(() => _showSwipeHint = false);
+    }
+    unawaited(
+      ref
+          .read(nudgeCoordinatorProvider)
+          .recordConversion(NudgeIds.feedSwipeHint),
+    );
+  }
+
+  void _recordLongPressConversion() {
+    unawaited(
+      ref
+          .read(nudgeCoordinatorProvider)
+          .recordConversion(NudgeIds.feedPreviewLongpress),
+    );
+  }
+
+  void _onSwipeDismiss(Content article) {
+    unawaited(ref.read(feedProvider.notifier).markHiddenRemote(article));
+    setState(() => _pendingFeedback.add(article.id));
+  }
+
+  void _resolveFeedback(String contentId) {
+    if (!_pendingFeedback.remove(contentId)) return;
+    setState(() {});
+    ref.read(feedProvider.notifier).confirmDismiss(contentId);
+  }
+
+  void _undoFeedback(Content article) {
+    unawaited(ref.read(feedProvider.notifier).undoHide(article));
+    setState(() => _pendingFeedback.remove(article.id));
+  }
+
+  void _trackFeedback(String contentId, String feedbackType) {
+    unawaited(
+      ref.read(analyticsServiceProvider).trackArticleFeedbackSubmitted(
+            contentId: contentId,
+            feedbackType: feedbackType,
+            origin: 'flaner',
+          ),
+    );
+  }
+
+  Future<void> _selectFeedback(Content article, FluxFeedbackChip chip) async {
+    switch (chip) {
+      case FluxFeedbackChip.source:
+        _trackFeedback(article.id, 'less_source');
+        await TopicChip.showArticleSheet(
+          context,
+          article,
+          initialSection: ArticleSheetSection.source,
+          highlightInitialSection: true,
+        );
+        if (mounted) _resolveFeedback(article.id);
+      case FluxFeedbackChip.topic:
+        _trackFeedback(article.id, 'less_topic');
+        await TopicChip.showArticleSheet(
+          context,
+          article,
+          initialSection: ArticleSheetSection.topic,
+          highlightInitialSection: true,
+        );
+        if (mounted) _resolveFeedback(article.id);
+      case FluxFeedbackChip.alreadySeen:
+        _trackFeedback(article.id, 'already_seen');
+        _resolveFeedback(article.id);
+    }
+  }
+
+  Widget _feedbackInline(Content article) {
+    return Padding(
+      key: ValueKey('flaner_feedback_${article.id}'),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: FeedbackInline(
+        onSelectSource: () => _selectFeedback(article, FluxFeedbackChip.source),
+        onSelectTopic: () => _selectFeedback(article, FluxFeedbackChip.topic),
+        onSelectAlreadySeen: () =>
+            _selectFeedback(article, FluxFeedbackChip.alreadySeen),
+        onUndo: () => _undoFeedback(article),
+        onClose: () => _resolveFeedback(article.id),
+      ),
+    );
   }
 
   @override
@@ -143,23 +273,6 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
                 onRetry: () => ref.read(feedProvider.notifier).refresh(),
               ),
               data: (state) => _buildContent(context, state),
-            ),
-            Positioned(
-              right: 16,
-              bottom: 24,
-              child: SafeArea(
-                child: AnimatedSlide(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  offset:
-                      _showScrollTopFab ? Offset.zero : const Offset(0, 1.6),
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 220),
-                    opacity: _showScrollTopFab ? 1.0 : 0.0,
-                    child: _ScrollToTopButton(onTap: _scrollToTop),
-                  ),
-                ),
-              ),
             ),
           ],
         ),
@@ -188,6 +301,7 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
               large: true,
             ),
           ),
+          const SliverToBoxAdapter(child: ChangelogBanner()),
           const SliverPersistentHeader(
             pinned: true,
             delegate: _FilterHeaderDelegate(child: _FilterSurface()),
@@ -246,6 +360,12 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
     }
 
     intercalations.sort((a, b) => a.position.compareTo(b.position));
+    final firstSwipeableIndex = contents.indexWhere(
+      (article) => !_pendingFeedback.contains(article.id),
+    );
+    if (firstSwipeableIndex >= 0) {
+      _scheduleGestureNudge();
+    }
 
     return SliverList(
       delegate: SliverChildBuilderDelegate((context, listIndex) {
@@ -260,16 +380,26 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
           return null;
         }
         final article = contents[articleIndex];
+        if (_pendingFeedback.contains(article.id)) {
+          return _feedbackInline(article);
+        }
         return VisibilityDetector(
           key: ValueKey('flaner_visible_${article.id}'),
           onVisibilityChanged: (info) {
             if (info.visibleFraction >= 0.9) _markVisible(article.id);
           },
           child: FluxContinuArticleCard(
+            key: ValueKey('flaner_card_${article.id}'),
             article: article,
             onTap: () => _openArticle(article),
-            onSwipeDismiss: () =>
-                ref.read(feedProvider.notifier).swipeDismiss(article),
+            onSwipeDismiss: () => _onSwipeDismiss(article),
+            enableSwipeHint:
+                articleIndex == firstSwipeableIndex && _showSwipeHint,
+            onSwipeHintComplete: _onSwipeHintComplete,
+            nudgeAnchor:
+                articleIndex == firstSwipeableIndex ? flanerFirstCardKey : null,
+            onSwipeConversion: _recordSwipeConversion,
+            onLongPressConversion: _recordLongPressConversion,
           ),
         );
       }, childCount: contents.length + intercalations.length),
@@ -316,16 +446,13 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
             child: ExploreBlockHeader(label: 'Explorer de nouvelles sources'),
           ),
           SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final article = discovery[index];
-                return FluxContinuArticleCard(
-                  article: article,
-                  onTap: () => _openArticle(article),
-                );
-              },
-              childCount: discovery.length,
-            ),
+            delegate: SliverChildBuilderDelegate((context, index) {
+              final article = discovery[index];
+              return FluxContinuArticleCard(
+                article: article,
+                onTap: () => _openArticle(article),
+              );
+            }, childCount: discovery.length),
           ),
         ];
       },
@@ -427,53 +554,6 @@ class _LoadingMoreIndicator extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ScrollToTopButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _ScrollToTopButton({required this.onTap});
-
-  static const _kRadius = BorderRadius.all(Radius.circular(22));
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final isDark = context.isDarkMode;
-    final fillColor = isDark
-        ? colors.backgroundPrimary.withValues(alpha: 0.78)
-        : const Color.fromRGBO(242, 232, 213, 0.82);
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.10)
-        : const Color.fromRGBO(0, 0, 0, 0.08);
-
-    return ClipRRect(
-      borderRadius: _kRadius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: _kRadius,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: fillColor,
-                borderRadius: _kRadius,
-                border: Border.all(color: borderColor),
-              ),
-              child: Icon(
-                Icons.keyboard_arrow_up_rounded,
-                color: colors.textPrimary,
-                size: 24,
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

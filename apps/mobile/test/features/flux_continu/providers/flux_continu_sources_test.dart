@@ -27,6 +27,8 @@ import 'package:hive/hive.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'flux_continu_settle.dart';
+
 class _MockDigestRepository extends Mock implements DigestRepository {}
 
 class _MockFeedRepository extends Mock implements FeedRepository {}
@@ -66,7 +68,7 @@ UserInterestsState _interestsState({List<FavoriteRef> favorites = const []}) {
     customTopics: const [],
     favorites: favorites,
     favoriteCount: favorites.length,
-    favoriteCap: 5,
+    favoriteCap: 7,
   );
 }
 
@@ -81,7 +83,7 @@ UserSourcesState _sourcesState({List<SourceFavoriteRef> favorites = const []}) {
         .toList(),
     favorites: favorites,
     favoriteCount: favorites.length,
-    favoriteCap: 5,
+    favoriteCap: 7,
   );
 }
 
@@ -105,6 +107,7 @@ FeedResponse _feedWithIds(List<String> ids, {String sourceId = 's'}) {
     carousels: const [],
   );
 }
+
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -233,7 +236,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    await container.read(fluxContinuProvider.future);
+    await settle(container);
     final sections = feedSections(container);
 
     final themeIdx = sections.indexWhere((s) => s.kind == SectionKind.theme);
@@ -271,7 +274,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    await container.read(fluxContinuProvider.future);
+    await settle(container);
     final sections = feedSections(container);
 
     final theme = sections.firstWhere((s) => s.kind == SectionKind.theme);
@@ -299,7 +302,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    await container.read(fluxContinuProvider.future);
+    await settle(container);
     final sections = feedSections(container);
 
     final source = sections.where((s) => s.kind == SectionKind.source).toList();
@@ -311,7 +314,7 @@ void main() {
 
   test(
       'plusieurs sources favorites respectent l\'ordre par position et le '
-      'cap (parité thèmes = 5)', () async {
+      'cap (parité thèmes = 7)', () async {
     stubFeed(
       themeIds: const {},
       sourceIds: {
@@ -321,6 +324,8 @@ void main() {
         'd': ['d1', 'd2'],
         'e': ['e1', 'e2'],
         'f': ['f1', 'f2'],
+        'g': ['g1', 'g2'],
+        'h': ['h1', 'h2'],
       },
     );
     final container = await buildContainer(
@@ -332,6 +337,8 @@ void main() {
         SourceFavoriteRef(sourceId: 'd', position: 3),
         SourceFavoriteRef(sourceId: 'f', position: 5),
         SourceFavoriteRef(sourceId: 'e', position: 4),
+        SourceFavoriteRef(sourceId: 'h', position: 7),
+        SourceFavoriteRef(sourceId: 'g', position: 6),
       ]),
       catalog: [
         _source('a'),
@@ -340,6 +347,8 @@ void main() {
         _source('d'),
         _source('e'),
         _source('f'),
+        _source('g'),
+        _source('h'),
       ],
       tourneeOrder: const [
         'source:a',
@@ -348,17 +357,19 @@ void main() {
         'source:d',
         'source:e',
         'source:f',
+        'source:g',
+        'source:h',
       ],
     );
     addTearDown(container.dispose);
 
-    await container.read(fluxContinuProvider.future);
+    await settle(container);
     final sources = feedSections(container)
         .where((s) => s.kind == SectionKind.source)
         .map((s) => s.sourceId)
         .toList();
 
-    // Triées par position (a,b,c,d,e,f) puis capées à 5 → a,b,c,d,e.
-    expect(sources, ['a', 'b', 'c', 'd', 'e']);
+    // Triées par position (a..h) puis capées à 7 → a,b,c,d,e,f,g.
+    expect(sources, ['a', 'b', 'c', 'd', 'e', 'f', 'g']);
   });
 }

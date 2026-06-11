@@ -1,0 +1,32 @@
+{
+  "unreleased": [
+    {
+      "tag": "Veille",
+      "summary": "Veille plus précise (moins de hors-sujet) et plus facile à retrouver dans les réglages."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Questionnaire plus court et plus fluide, fin du blocage en sortie."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Ajoutez n'importe quelle source et voyez ses derniers articles arriver instantanément."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Choix des sources plus clair et premier feed qui met en avant votre thème préféré."
+    }
+  ],
+  "released": [
+    {
+      "version": "1.0.0",
+      "date": "2026-06-09",
+      "entries": [
+        {
+          "tag": "Quoi de neuf",
+          "summary": "Découvrez les nouveautés de chaque mise à jour directement dans l'app."
+        }
+      ]
+    }
+  ]
+}

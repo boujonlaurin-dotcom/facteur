@@ -279,37 +279,88 @@ class _PremiumSourcesSheetState extends ConsumerState<PremiumSourcesSheet> {
                   ),
             ),
           ),
-          TextButton(
-            onPressed: () => isSubscribed
-                ? _disconnectSource(source)
-                : _connectSource(context, source),
-            child: Text(isSubscribed ? 'Dissocier' : 'Connecter'),
-          ),
+          _buildTrailing(context, source, isSubscribed),
         ],
       ),
     );
   }
 
-  Future<void> _connectSource(BuildContext context, Source source) async {
-    await HapticFeedback.lightImpact();
-    // Source validée sans connecteur premium : un simple toggle « abonné »
-    // suffit (persisté via updateSourceSubscription), sans ouvrir l'écran de
-    // connexion premium qui n'aurait rien à connecter.
-    if (source.premiumConnection == null) {
-      await ref
-          .read(userSourcesProvider.notifier)
-          .connectSubscription(source.id);
-      if (mounted) {
-        setState(() => _subscribed.add(source.id));
-      }
-      return;
+  /// Action de droite : « Dissocier » si déjà connectée, sinon un CTA de
+  /// connexion (« Connecter » config curée / « Associer » fallback générique)
+  /// uniquement pour les sources payantes. Les sources clairement gratuites
+  /// n'ont aucun abonnement à associer → simple état « Suivie ✓ ».
+  Widget _buildTrailing(
+      BuildContext context, Source source, bool isSubscribed) {
+    final colors = context.facteurColors;
+    if (isSubscribed) {
+      return TextButton(
+        onPressed: () => _disconnectSource(source),
+        child: const Text('Dissocier'),
+      );
     }
-    if (!mounted) return;
+    final connection = _resolveConnection(source);
+    if (connection == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check, size: 16, color: colors.success),
+            const SizedBox(width: 4),
+            Text(
+              'Suivie',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: colors.textSecondary,
+                  ),
+            ),
+          ],
+        ),
+      );
+    }
+    return TextButton(
+      onPressed: () => _connectSource(context, source, connection),
+      child: Text(connection.isGeneric ? 'Associer' : 'Connecter'),
+    );
+  }
+
+  /// Résout la connexion premium d'une source, avec fallback générique frontend
+  /// quand la config est absente. Mêmes règles que le backend
+  /// `PremiumConnectionResponse.from_source` (étape 3) : source payante
+  /// (`hasPaywall`) + URL http(s) valide → login=test=home du média,
+  /// `isGeneric=true`. Retourne `null` pour une source clairement gratuite.
+  PremiumConnection? _resolveConnection(Source source) {
+    final existing = source.premiumConnection;
+    if (existing != null) return existing;
+    if (!source.hasPaywall) return null;
+    final url = source.url?.trim() ?? '';
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return null;
+    return PremiumConnection(
+      loginUrl: url,
+      testUrl: url,
+      displayHint:
+          'Connecte-toi à ton compte sur le site du média, puis reviens lire '
+          'tes articles.',
+      isGeneric: true,
+    );
+  }
+
+  Future<void> _connectSource(
+    BuildContext context,
+    Source source,
+    PremiumConnection connection,
+  ) async {
+    // Passe toujours par le flow de connexion premium avec une connexion
+    // explicite (curée ou fallback générique synthétisé). On ne fait jamais de
+    // `connectSubscription` direct (il levait un 400 PremiumConnectionNotEnabled
+    // quand la config premium était absente).
     final navigator = Navigator.of(context);
+    await HapticFeedback.lightImpact();
+    if (!mounted) return;
     await navigator.push<void>(
       MaterialPageRoute(
         builder: (_) => PremiumSourceConnection(
           source: source,
+          connection: connection,
           onConnected: () async {
             await ref
                 .read(userSourcesProvider.notifier)

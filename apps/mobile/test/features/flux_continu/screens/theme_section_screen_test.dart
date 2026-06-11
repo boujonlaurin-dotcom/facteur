@@ -4,16 +4,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/config/routes.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/providers/feed_provider.dart';
+import 'package:facteur/features/feed/services/read_sync_service.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
 import 'package:facteur/features/flux_continu/providers/theme_discovery_provider.dart';
 import 'package:facteur/features/flux_continu/screens/theme_section_screen.dart';
+import 'package:facteur/features/flux_continu/widgets/flux_continu_article_card.dart';
 import 'package:facteur/features/flux_continu/widgets/theme_detail_footer.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
+import 'package:facteur/shared/widgets/navigation/swipe_back_page.dart';
 
 /// Both top-level AsyncNotifiers stay in `loading` forever so the screen renders
 /// from `initialSection` and `valueOrNull` is null — exactly the slide-in state
@@ -96,5 +101,56 @@ void main() {
     expect(find.text('Retour à la Tournée'), findsWidgets);
     // Discovery block surfaced below the loaded list without scroll exhaustion.
     expect(find.text('Explorer de nouvelles sources'), findsOneWidget);
+    final scrollView = tester.widget<CustomScrollView>(
+      find.byType(CustomScrollView),
+    );
+    expect(scrollView.controller?.keepScrollOffset, isFalse);
+    expect(scrollView.controller?.initialScrollOffset, 0);
+
+    final discoveryTitle = find.text('title-d0');
+    Opacity discoveryOpacity() => tester.widget<Opacity>(
+          find.ancestor(of: discoveryTitle, matching: find.byType(Opacity)),
+        );
+    expect(discoveryOpacity().opacity, 1);
+
+    final container = ProviderScope.containerOf(
+      tester.element(discoveryTitle),
+    );
+    container.read(consumedContentIdsProvider.notifier).state = {'d0'};
+    await tester.pump();
+    expect(discoveryOpacity().opacity, 0.6);
+    expect(
+      find.descendant(
+        of: find.ancestor(
+          of: discoveryTitle,
+          matching: find.byType(FluxContinuArticleCard),
+        ),
+        matching: find.byIcon(
+          PhosphorIcons.check(PhosphorIconsStyle.bold),
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  test('dedicated-section navigation selects the expected slide direction', () {
+    expect(
+      tourneeSectionTransition(Uri.parse('/flux-continu/theme/tech')),
+      FullSwipePageTransition.horizontal,
+    );
+    expect(
+      tourneeSectionTransition(
+        Uri.parse('/flux-continu/theme/tech?transition=next'),
+      ),
+      FullSwipePageTransition.verticalFromBottom,
+    );
+    expect(
+      tourneeNextSectionLocation('/flux-continu/source/source%3A1'),
+      '/flux-continu/source/source%3A1?transition=next',
+    );
+    expect(
+      tourneeSectionTransitionDuration,
+      const Duration(milliseconds: 420),
+    );
   });
 }

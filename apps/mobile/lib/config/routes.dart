@@ -27,6 +27,7 @@ import '../features/sources/screens/add_source_screen.dart';
 import '../features/sources/screens/theme_sources_screen.dart';
 import '../features/settings/screens/profile_screen.dart';
 import '../features/settings/screens/account_screen.dart';
+import '../features/settings/screens/subscriptions_screen.dart';
 import '../features/settings/screens/notifications_screen.dart';
 import '../features/settings/screens/about_screen.dart';
 import '../features/settings/widgets/settings_sheet.dart';
@@ -47,6 +48,8 @@ import '../core/nudges/widgets/nudge_host.dart';
 import '../core/services/deep_link_service.dart';
 import '../core/ui/notification_service.dart';
 import '../shared/widgets/navigation/modal_bottom_sheet_page.dart';
+
+const tourneeSectionTransitionDuration = Duration(milliseconds: 420);
 
 /// Clés de navigator des deux branches du shell principal (Essentiel / Flâner).
 ///
@@ -81,6 +84,7 @@ class RouteNames {
   static const String addSource = 'add-source';
   static const String settings = 'settings';
   static const String account = 'account';
+  static const String subscriptions = 'subscriptions';
   static const String notifications = 'notifications';
   static const String about = 'about';
   static const String profile = 'profile';
@@ -118,6 +122,7 @@ class RoutePaths {
   // static const String addSource = '/sources/add'; // Removed for V0
   static const String settings = '/settings';
   static const String account = '/settings/account';
+  static const String subscriptions = '/settings/subscriptions';
   static const String notifications = '/settings/notifications';
   static const String about = '/settings/about';
   static const String profile = '/settings/profile';
@@ -184,15 +189,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isOnLoginPage = matchedLocation == RoutePaths.login;
       final isOnEmailConfirmation =
           matchedLocation == RoutePaths.emailConfirmation;
-      final isOnOnboarding =
-          matchedLocation == RoutePaths.onboarding ||
+      final isOnOnboarding = matchedLocation == RoutePaths.onboarding ||
           matchedLocation == RoutePaths.onboardingConclusion;
       // Escape hatch: the onboarding "Personnaliser mon mode serein" CTA pushes
       // the interests screen with ?serein=1. Let that through so the user can
       // configure their exclusions before completing onboarding.
       final isOnInterestsFromOnboarding =
           matchedLocation == RoutePaths.myInterests &&
-          state.uri.queryParameters['serein'] == '1';
+              state.uri.queryParameters['serein'] == '1';
 
       // 1. Les utilisateurs non connectés
       if (!isLoggedIn) {
@@ -212,6 +216,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!isEmailConfirmed) {
         if (isOnEmailConfirmation) return null;
         return RoutePaths.emailConfirmation;
+      }
+
+      // 2b. Statut d'onboarding pas encore résolu (cache Hive + DB async) :
+      // garder l'utilisateur sur le splash plutôt que de monter le shell puis de
+      // rebondir vers /onboarding. Ce rebond démontait le shell en plein
+      // finalizeTree → écran gris fatal (Sentry FLUTTER-2). `needsOnboarding`
+      // n'est fiable qu'une fois `onboardingStatusKnown == true`.
+      if (!authState.onboardingStatusKnown) {
+        return isOnSplash ? null : RoutePaths.splash;
       }
 
       // 3. Les utilisateurs confirmés ne doivent pas être sur login, confirmation ou splash
@@ -257,8 +270,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final authState = ref.read(authStateProvider);
           return EmailConfirmationScreen(
-            email:
-                authState.user?.email ??
+            email: authState.user?.email ??
                 authState.pendingEmailConfirmation ??
                 '',
           );
@@ -290,9 +302,9 @@ final routerProvider = Provider<GoRouter>((ref) {
             MainShell(navigationShell: navigationShell),
         navigatorContainerBuilder: (context, navigationShell, children) =>
             BranchPageView(
-              navigationShell: navigationShell,
-              children: children,
-            ),
+          navigationShell: navigationShell,
+          children: children,
+        ),
         branches: [
           // Branche 0 — L'Essentiel (Flux Continu, home post-auth Story 21.1).
           StatefulShellBranch(
@@ -330,6 +342,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                       final key = state.pathParameters['key']!;
                       final section = state.extra as FeedThemeSection?;
                       return FullSwipeCupertinoPage(
+                        key: state.pageKey,
+                        transitionDurationOverride:
+                            tourneeSectionTransitionDuration,
+                        transition: tourneeSectionTransition(state.uri),
                         child: ThemeSectionScreen(
                           sectionKeyValue: key,
                           initialSection: section,
@@ -344,6 +360,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                       final key = state.pathParameters['key']!;
                       final section = state.extra as DigestTopicSection?;
                       return FullSwipeCupertinoPage(
+                        key: state.pageKey,
+                        transitionDurationOverride:
+                            tourneeSectionTransitionDuration,
+                        transition: tourneeSectionTransition(state.uri),
                         child: DigestSectionScreen(
                           sectionKeyValue: key,
                           initialSection: section,
@@ -361,6 +381,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                       final id = state.pathParameters['id']!;
                       final section = state.extra as FeedThemeSection?;
                       return FullSwipeCupertinoPage(
+                        key: state.pageKey,
+                        transitionDurationOverride:
+                            tourneeSectionTransitionDuration,
+                        transition: tourneeSectionTransition(state.uri),
                         child: SourceSectionScreen(
                           sectionKeyValue: id,
                           initialSection: section,
@@ -530,6 +554,12 @@ final routerProvider = Provider<GoRouter>((ref) {
                 const FullSwipeCupertinoPage(child: AccountScreen()),
           ),
           GoRoute(
+            path: 'subscriptions', // /settings/subscriptions
+            name: RouteNames.subscriptions,
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: SubscriptionsScreen()),
+          ),
+          GoRoute(
             path: 'notifications', // /settings/notifications
             name: RouteNames.notifications,
             pageBuilder: (context, state) =>
@@ -648,3 +678,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         Scaffold(body: Center(child: Text('Page non trouvée: ${state.uri}'))),
   );
 });
+FullSwipePageTransition tourneeSectionTransition(Uri uri) {
+  return uri.queryParameters['transition'] == 'next'
+      ? FullSwipePageTransition.verticalFromBottom
+      : FullSwipePageTransition.horizontal;
+}
+
+String tourneeNextSectionLocation(String path) {
+  final separator = path.contains('?') ? '&' : '?';
+  return '$path${separator}transition=next';
+}

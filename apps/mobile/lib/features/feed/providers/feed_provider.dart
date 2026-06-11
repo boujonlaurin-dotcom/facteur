@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/providers.dart';
@@ -1088,6 +1089,36 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     }
   }
 
+  /// Hides remotely while retaining the article in local state so the screen
+  /// can replace its exact row with inline feedback.
+  Future<void> markHiddenRemote(Content content) async {
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.hideContent(content.id);
+      FeedRepository.clearDefaultViewCache();
+    } catch (e) {
+      debugPrint(
+        'FeedNotifier: markHiddenRemote failed for ${content.id}: $e',
+      );
+    }
+  }
+
+  /// Confirms removal after the inline feedback has been resolved.
+  void confirmDismiss(String contentId) {
+    removeFromState(contentId);
+  }
+
+  /// Cancels a remote hide while the retained local article stays in place.
+  Future<void> undoHide(Content content) async {
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.unhideContent(content.id);
+      FeedRepository.clearDefaultViewCache();
+    } catch (e) {
+      debugPrint('FeedNotifier: undoHide failed for ${content.id}: $e');
+    }
+  }
+
   /// Retrait local de l'item du state, sans appel API.
   ///
   /// À utiliser quand le hide a déjà été émis ailleurs (ex: résolution du
@@ -1349,28 +1380,29 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     state = AsyncData(FeedState(items: items, carousels: updatedCarousels));
   }
 
-  Future<void> markContentAsConsumed(Content content) async {
+  void markContentConsumedLocally(String contentId) {
     final currentState = state.value;
-    if (currentState == null) return;
+    if (currentState == null || contentId.isEmpty) return;
 
-    final feedIndex = currentState.items.indexWhere((c) => c.id == content.id);
-
-    final updatedItems = List<Content>.from(currentState.items);
-    if (feedIndex != -1) {
-      updatedItems[feedIndex] = updatedItems[feedIndex].copyWith(
-        status: ContentStatus.consumed,
-      );
-    }
-
+    final updatedItems = currentState.items
+        .map(
+          (c) => c.id == contentId
+              ? c.copyWith(status: ContentStatus.consumed)
+              : c,
+        )
+        .toList();
     final updatedCarousels = _updateCarouselItem(
       currentState.carousels,
-      content.id,
+      contentId,
       (c) => c.copyWith(status: ContentStatus.consumed),
     );
-
     state = AsyncData(
       FeedState(items: updatedItems, carousels: updatedCarousels),
     );
+  }
+
+  Future<void> markContentAsConsumed(Content content) async {
+    markContentConsumedLocally(content.id);
 
     try {
       final repository = ref.read(feedRepositoryProvider);

@@ -11,6 +11,7 @@ import 'core/services/deep_link_service.dart';
 import 'core/services/widget_service.dart';
 import 'features/feed/providers/feed_preload_provider.dart';
 import 'features/feed/providers/feed_provider.dart';
+import 'features/feed/services/read_sync_service.dart';
 import 'features/flux_continu/providers/flux_continu_preload_provider.dart';
 import 'features/flux_continu/services/tournee_progress_service.dart';
 import 'features/my_interests/services/interests_sync_service.dart';
@@ -51,6 +52,7 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _flushFluxScrollMetricIfAny();
       _startAnalyticsSessionIfNeeded();
+      unawaited(ref.read(readSyncServiceProvider).flushCurrentUser());
     });
     // Story 23.2 PR-4 : si un endpoint retiré répond 410, afficher un
     // snackbar global "Mise à jour requise". Le ApiClient intercepte tous
@@ -92,6 +94,7 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     } else if (appState == AppLifecycleState.resumed) {
       _flushFluxScrollMetricIfAny();
       _startAnalyticsSessionIfNeeded();
+      unawaited(ref.read(readSyncServiceProvider).flushCurrentUser());
       if (_wasBackgrounded) {
         _wasBackgrounded = false;
         final elapsed = _backgroundedAt != null
@@ -175,7 +178,9 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
       DeepLinkService.instance.setAuthenticated(next.isAuthenticated);
       if (next.isAuthenticated) {
         _startAnalyticsSessionIfNeeded();
+        unawaited(ref.read(readSyncServiceProvider).flushCurrentUser());
       } else if (prev?.isAuthenticated == true) {
+        ref.read(consumedContentIdsProvider.notifier).state = <String>{};
         _endAnalyticsSessionIfNeeded();
       }
     });

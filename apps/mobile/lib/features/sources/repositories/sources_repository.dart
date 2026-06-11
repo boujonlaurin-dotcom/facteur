@@ -1,6 +1,7 @@
 import '../../../core/api/api_client.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
+import '../models/source_recent_items.dart';
 import '../models/theme_source_model.dart';
 
 class SourcesRepository {
@@ -223,6 +224,36 @@ class SourcesRepository {
     } catch (e) {
       // ignore: avoid_print
       print('SourcesRepository: [ERROR] getPepites: $e');
+      return [];
+    }
+  }
+
+  /// Derniers contenus par source (animation de conclusion onboarding).
+  /// Toujours best-effort : une erreur renvoie une liste vide, l'animation
+  /// ne doit jamais bloquer la fin de l'onboarding.
+  Future<List<SourceRecentItems>> fetchRecentItems(
+    List<String> sourceIds, {
+    int perSource = 3,
+  }) async {
+    if (sourceIds.isEmpty) return [];
+    try {
+      final response = await _apiClient.dio.post<Map<String, dynamic>>(
+        'sources/recent-items',
+        data: {'source_ids': sourceIds, 'per_source': perSource},
+      );
+      final data = response.data?['sources'];
+      if (response.statusCode == 200 && data is List) {
+        return data
+            .map(
+              (json) =>
+                  SourceRecentItems.fromJson(json as Map<String, dynamic>),
+            )
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      // ignore: avoid_print
+      print('SourcesRepository: [ERROR] fetchRecentItems: $e');
       return [];
     }
   }

@@ -1,22 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_button.dart';
 import '../models/source_model.dart';
+import '../providers/sources_providers.dart';
+import '../services/premium_session_store.dart';
+import 'premium_web_view.dart';
 import 'source_logo_avatar.dart';
 
 typedef PremiumWebViewBuilder = Widget Function(
     BuildContext context, String url);
 
-class PremiumSourceConnection extends StatefulWidget {
+class PremiumSourceConnection extends ConsumerStatefulWidget {
   final Source source;
   final Future<void> Function() onConnected;
   final VoidCallback? onFinished;
   final PremiumWebViewBuilder? webViewBuilder;
   final Future<void> Function(String url)? openExternal;
+
+  /// Connexion à utiliser. Optionnelle : par défaut on lit
+  /// `source.premiumConnection`, mais l'appelant peut fournir une connexion
+  /// synthétisée (fallback générique) quand la source n'en porte pas.
+  final PremiumConnection? connection;
 
   const PremiumSourceConnection({
     super.key,
@@ -25,19 +34,25 @@ class PremiumSourceConnection extends StatefulWidget {
     this.onFinished,
     this.webViewBuilder,
     this.openExternal,
+    this.connection,
   });
 
   @override
-  State<PremiumSourceConnection> createState() =>
+  ConsumerState<PremiumSourceConnection> createState() =>
       _PremiumSourceConnectionState();
 }
 
-class _PremiumSourceConnectionState extends State<PremiumSourceConnection> {
+class _PremiumSourceConnectionState
+    extends ConsumerState<PremiumSourceConnection> {
   int _step = 0;
   bool _saving = false;
   String? _error;
 
-  PremiumConnection get _connection => widget.source.premiumConnection!;
+  PremiumConnection get _connection =>
+      widget.connection ?? widget.source.premiumConnection!;
+
+  PremiumSessionStore get _sessionStore =>
+      ref.read(premiumSessionStoreProvider);
 
   Future<void> _openExternal(String url) async {
     if (widget.openExternal != null) {
@@ -56,6 +71,11 @@ class _PremiumSourceConnectionState extends State<PremiumSourceConnection> {
       _error = null;
     });
     try {
+      // Session validée par l'utilisateur : on capture les cookies du média
+      // (store partagé, jamais recréé entre login et test) AVANT de persister
+      // l'abonnement côté backend.
+      final testUri = WebUri(_connection.testUrl);
+      await _sessionStore.captureForSource(widget.source, testUri);
       await widget.onConnected();
       if (!mounted) return;
       setState(() {
@@ -102,6 +122,8 @@ class _PremiumSourceConnectionState extends State<PremiumSourceConnection> {
           key: const ValueKey('premium-webview-login'),
           title: 'Connexion',
           url: _connection.loginUrl,
+          source: widget.source,
+          sessionStore: _sessionStore,
           actionLabel: 'Continuer vers l\'article test',
           webViewBuilder: widget.webViewBuilder,
           onAction: () => setState(() => _step = 2),
@@ -112,6 +134,8 @@ class _PremiumSourceConnectionState extends State<PremiumSourceConnection> {
           key: const ValueKey('premium-webview-test'),
           title: 'Article test',
           url: _connection.testUrl,
+          source: widget.source,
+          sessionStore: _sessionStore,
           actionLabel: 'L\'article s\'affiche correctement',
           webViewBuilder: widget.webViewBuilder,
           onAction: _saving ? null : _confirm,
@@ -203,9 +227,11 @@ class _PremiumSourceConnectionState extends State<PremiumSourceConnection> {
   }
 }
 
-class _WebViewStep extends StatefulWidget {
+class _WebViewStep extends StatelessWidget {
   final String title;
   final String url;
+  final Source source;
+  final PremiumSessionStore sessionStore;
   final String actionLabel;
   final PremiumWebViewBuilder? webViewBuilder;
   final VoidCallback? onAction;
@@ -217,6 +243,8 @@ class _WebViewStep extends StatefulWidget {
     super.key,
     required this.title,
     required this.url,
+    required this.source,
+    required this.sessionStore,
     required this.actionLabel,
     required this.onAction,
     required this.onOpenExternal,
@@ -226,27 +254,15 @@ class _WebViewStep extends StatefulWidget {
   });
 
   @override
-  State<_WebViewStep> createState() => _WebViewStepState();
-}
-
-class _WebViewStepState extends State<_WebViewStep> {
-  WebViewController? _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.webViewBuilder == null) {
-      _controller = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..loadRequest(Uri.parse(widget.url));
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final webView = widget.webViewBuilder?.call(context, widget.url) ??
-        WebViewWidget(controller: _controller!);
+    final webView = webViewBuilder?.call(context, url) ??
+        PremiumWebView(
+          source: source,
+          url: WebUri(url),
+          sessionStore: sessionStore,
+          enableScrollBridge: false,
+        );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -261,7 +277,7 @@ class _WebViewStepState extends State<_WebViewStep> {
             children: [
               Expanded(
                 child: Text(
-                  widget.title,
+                  title,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         color: colors.textPrimary,
                         fontWeight: FontWeight.w700,
@@ -269,7 +285,7 @@ class _WebViewStepState extends State<_WebViewStep> {
                 ),
               ),
               TextButton.icon(
-                onPressed: widget.onOpenExternal,
+                onPressed: onOpenExternal,
                 icon: Icon(PhosphorIcons.arrowSquareOut(), size: 18),
                 label: const Text('Navigateur'),
               ),
@@ -277,11 +293,11 @@ class _WebViewStepState extends State<_WebViewStep> {
           ),
         ),
         Expanded(child: webView),
-        if (widget.error != null)
+        if (error != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             child: Text(
-              widget.error!,
+              error!,
               textAlign: TextAlign.center,
               style: TextStyle(color: colors.error),
             ),
@@ -289,10 +305,10 @@ class _WebViewStepState extends State<_WebViewStep> {
         Padding(
           padding: const EdgeInsets.all(FacteurSpacing.space4),
           child: FacteurButton(
-            label: widget.isLoading ? 'Connexion...' : widget.actionLabel,
+            label: isLoading ? 'Connexion...' : actionLabel,
             type: FacteurButtonType.primary,
             icon: PhosphorIcons.arrowRight(),
-            onPressed: widget.onAction,
+            onPressed: onAction,
           ),
         ),
       ],

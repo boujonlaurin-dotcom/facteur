@@ -152,11 +152,13 @@ class _TabsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 48,
+      // Compaction « cartes ≤ écran » : rangée d'onglets 48→44 (sync avec
+      // `_kStickyBarHeight` côté écran, qui alimente budget de fit ET snap).
+      height: 44,
       child: ListView.separated(
         controller: controller,
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+        padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
         itemCount: tabs.length,
         separatorBuilder: (_, __) => const SizedBox(width: 2),
         itemBuilder: (context, i) {

@@ -17,8 +17,6 @@ import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/models/user_sources_state.dart';
 import '../../my_interests/providers/user_interests_provider.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
-import '../../my_interests/repositories/user_interests_repository.dart'
-    show FavoriteCapReachedException;
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
@@ -29,9 +27,11 @@ import '../utils/theme_color_mapping.dart';
 import 'choice_tile.dart';
 
 /// Story 10.2 — sheet unifiée « Mes favoris », deux modes de livraison :
-/// « Chaque matin dans ton Essentiel » (Tournée, cap 5) et « Tes onglets pour
-/// explorer » (Flâner, cap 10). Une seule sheet, deux portes : [entry] ne
-/// change que le segment « Ajouter » présélectionné — le contenu est identique.
+/// « Chaque matin dans ton Essentiel » (Tournée, cap 7) et « Tes onglets pour
+/// explorer » (Flâner, cap 10). L'ajout n'est jamais bloqué : le surplus
+/// au-delà du cap de section apparaît grisé sous un trait. Une seule sheet, deux
+/// portes : [entry] présélectionne le segment « Ajouter » et, côté Flâner,
+/// scrolle vers la section Flâner à l'ouverture — le contenu est identique.
 enum ManageFavoritesEntry { essentiel, flaner }
 
 /// Accent des Actus du jour (aligné provider Tournée).
@@ -111,6 +111,28 @@ class _ManageFavoritesContentState
   /// Onglet actif de la zone « AJOUTER » : 0 = Sources, 1 = Thèmes, 2 = Sujets.
   late int _addTab = widget.entry == ManageFavoritesEntry.flaner ? 2 : 1;
 
+  /// Ancre l'en-tête de la section Flâner pour le scroll auto à l'ouverture.
+  final GlobalKey _flanerSectionKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    // Bonus UX : ouverture depuis un onglet Flâner → on amène la section
+    // « ONGLETS DE TA PAGE FLÂNER » à l'écran (l'Essentiel est déjà en tête).
+    if (widget.entry == ManageFavoritesEntry.flaner) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _flanerSectionKey.currentContext;
+        if (ctx == null) return;
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+          alignment: 0,
+        );
+      });
+    }
+  }
+
   // ── Helpers d'ordre (prefs) ──────────────────────────────────────────────
 
   Future<void> _appendTournee(String key) async {
@@ -135,8 +157,10 @@ class _ManageFavoritesContentState
   }
 
   Future<void> _removeTab(String key) async {
-    final next =
-        ref.read(tabOrderPrefsProvider).where((k) => k != key).toList();
+    final next = ref
+        .read(tabOrderPrefsProvider)
+        .where((k) => k != key)
+        .toList();
     await ref.read(tabOrderPrefsProvider.notifier).setOrder(next);
   }
 
@@ -145,15 +169,13 @@ class _ManageFavoritesContentState
   Future<void> _onAddTheme(String slug) async {
     await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
     try {
-      await ref.read(userInterestsProvider.notifier).setInterestState(
+      await ref
+          .read(userInterestsProvider.notifier)
+          .setInterestState(
             ThemeFavoriteRef(slug: slug),
             InterestState.favorite,
           );
       await _appendTournee(tourneeThemeKey(slug));
-    } on FavoriteCapReachedException catch (e) {
-      NotificationService.showError(
-        'Tu as déjà ${e.cap} favoris. Retires-en un avant d\'en ajouter.',
-      );
     } catch (e) {
       NotificationService.showError('Erreur : $e');
     }
@@ -175,10 +197,6 @@ class _ManageFavoritesContentState
       } else {
         await _appendTab(tabOrderSourceKey(sourceId));
       }
-    } on FavoriteCapReachedException catch (e) {
-      NotificationService.showError(
-        'Tu as déjà ${e.cap} sources favorites. Retires-en une d\'abord.',
-      );
     } catch (e) {
       NotificationService.showError('Erreur : $e');
     }
@@ -242,7 +260,9 @@ class _ManageFavoritesContentState
         // Modèle exclusif : la clé `theme:<slug>` peut être côté Flâner.
         await _removeTab(item.key);
         try {
-          await ref.read(userInterestsProvider.notifier).setInterestState(
+          await ref
+              .read(userInterestsProvider.notifier)
+              .setInterestState(
                 ThemeFavoriteRef(slug: item.id),
                 InterestState.followed,
               );
@@ -250,8 +270,9 @@ class _ManageFavoritesContentState
           NotificationService.showError('Erreur : $e');
         }
       case _FavKind.source:
-        final wasEssentiel =
-            ref.read(tourneeOrderPrefsProvider).sourceIsEssentiel(item.id);
+        final wasEssentiel = ref
+            .read(tourneeOrderPrefsProvider)
+            .sourceIsEssentiel(item.id);
         if (wasEssentiel) {
           await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
         }
@@ -267,7 +288,9 @@ class _ManageFavoritesContentState
       case _FavKind.subject:
         await _removeTab(item.key);
         try {
-          await ref.read(userInterestsProvider.notifier).setInterestState(
+          await ref
+              .read(userInterestsProvider.notifier)
+              .setInterestState(
                 CustomTopicFavoriteRef(id: item.id),
                 InterestState.unfollowed,
               );
@@ -350,8 +373,9 @@ class _ManageFavoritesContentState
     final interests = ref.read(userInterestsProvider).valueOrNull;
     if (interests == null) return;
     final queue = [for (final id in topicIds) CustomTopicFavoriteRef(id: id)];
-    final slots =
-        interests.favorites.whereType<CustomTopicFavoriteRef>().length;
+    final slots = interests.favorites
+        .whereType<CustomTopicFavoriteRef>()
+        .length;
     if (queue.length != slots) return;
     var i = 0;
     final merged = [
@@ -379,14 +403,15 @@ class _ManageFavoritesContentState
     final reorderedSet = reorderedIds.toSet();
     final others = [
       for (final f in [
-        ...sourcesState.favorites
+        ...sourcesState.favorites,
       ]..sort((a, b) => a.position.compareTo(b.position)))
         if ((essentiel ? !isEssentiel(f.sourceId) : isEssentiel(f.sourceId)) &&
             !reorderedSet.contains(f.sourceId))
           f.sourceId,
     ];
-    final fullIds =
-        essentiel ? [...reorderedIds, ...others] : [...others, ...reorderedIds];
+    final fullIds = essentiel
+        ? [...reorderedIds, ...others]
+        : [...others, ...reorderedIds];
     final refs = [
       for (var i = 0; i < fullIds.length; i++)
         SourceFavoriteRef(sourceId: fullIds[i], position: i),
@@ -497,7 +522,7 @@ class _ManageFavoritesContentState
             key: kTourneeVeilleKey,
             kind: _FavKind.veille,
             id: veilleCfg.id,
-            label: 'Ma veille — ${veilleCfg.themeLabel}',
+            label: 'Ma veille — ${veilleCfg.sectionLabel}',
             emoji: '🔭',
             accent: _kVeilleAccent,
           );
@@ -524,8 +549,11 @@ class _ManageFavoritesContentState
       for (final item in essentielDefault)
         if (!tournee.hiddenKeys.contains(item.key)) item,
     ];
-    final essentielOrdered =
-        applyOrder(essentielVisible, tournee.order, (e) => e.key);
+    final essentielOrdered = applyOrder(
+      essentielVisible,
+      tournee.order,
+      (e) => e.key,
+    );
 
     // ── Items Flâner (sujets + sources mode-Flâner) ────────────────────────
     final subjectItems = <_FavItem>[
@@ -562,18 +590,14 @@ class _ManageFavoritesContentState
       for (final t in kVeilleFacteurThemes)
         if (!favThemeSlugs.contains(t.slug)) t,
     ];
-    final pinnableTopics = [
-      for (final t in customTopics)
-        if (!favoriteTopicIds.contains(t.id)) t,
-    ]..sort(
-        (a, b) =>
-            a.topicName.toLowerCase().compareTo(b.topicName.toLowerCase()),
-      );
-
-    final interestsAtCap =
-        interests != null && interests.favoriteCount >= interests.favoriteCap;
-    final sourcesAtCap = sourcesState != null &&
-        sourcesState.favorites.length >= sourcesState.favoriteCap;
+    final pinnableTopics =
+        [
+          for (final t in customTopics)
+            if (!favoriteTopicIds.contains(t.id)) t,
+        ]..sort(
+          (a, b) =>
+              a.topicName.toLowerCase().compareTo(b.topicName.toLowerCase()),
+        );
 
     final hiddenEditorialItems = <_FavItem>[
       if (tournee.hiddenKeys.contains(kTourneeActusKey)) actusItem,
@@ -632,6 +656,9 @@ class _ManageFavoritesContentState
                 // ── Section ESSENTIEL ───────────────────────────────────────
                 _SectionLabel(
                   label: 'BLOCS DE TA PAGE L\'ESSENTIEL',
+                  counter:
+                      '${essentielOrdered.length.clamp(0, kTourneeVisibleCap)}'
+                      '/$kTourneeVisibleCap',
                   colors: colors,
                 ),
                 const SizedBox(height: 8),
@@ -653,9 +680,11 @@ class _ManageFavoritesContentState
                       _persistEssentielReorder(reordered);
                     },
                     onRemove: _onRemove,
-                    moveIcon:
-                        PhosphorIcons.arrowLineDown(PhosphorIconsStyle.bold),
+                    moveIcon: PhosphorIcons.arrowLineDown(
+                      PhosphorIconsStyle.bold,
+                    ),
                     moveTooltip: 'Déplacer vers Flâner',
+                    moveLabel: 'Flâner',
                     onMove: (item) => item.kind == _FavKind.theme
                         ? _moveThemeToFlaner(item.id)
                         : _moveSourceToFlaner(item.id),
@@ -664,7 +693,11 @@ class _ManageFavoritesContentState
 
                 // ── Section FLÂNER ──────────────────────────────────────────
                 _SectionLabel(
+                  key: _flanerSectionKey,
                   label: 'ONGLETS DE TA PAGE FLÂNER',
+                  counter:
+                      '${flanerOrdered.length.clamp(0, kMaxFavoriteTabs)}'
+                      '/$kMaxFavoriteTabs',
                   colors: colors,
                 ),
                 const SizedBox(height: 8),
@@ -687,9 +720,11 @@ class _ManageFavoritesContentState
                       _persistFlanerReorder(reordered);
                     },
                     onRemove: _onRemove,
-                    moveIcon:
-                        PhosphorIcons.arrowLineUp(PhosphorIconsStyle.bold),
+                    moveIcon: PhosphorIcons.arrowLineUp(
+                      PhosphorIconsStyle.bold,
+                    ),
                     moveTooltip: 'Déplacer vers l\'Essentiel',
+                    moveLabel: 'Essentiel',
                     onMove: (item) => item.kind == _FavKind.theme
                         ? _moveThemeToEssentiel(item.id)
                         : _moveSourceToEssentiel(item.id),
@@ -725,21 +760,18 @@ class _ManageFavoritesContentState
                 if (_addTab == 0)
                   _SourcesAddList(
                     sources: followedSources,
-                    atCap: sourcesAtCap,
                     colors: colors,
                     onAdd: _onAddSource,
                   )
                 else if (_addTab == 1)
                   _ThemesAddList(
                     themes: addableThemes,
-                    atCap: interestsAtCap,
                     colors: colors,
                     onAdd: _onAddTheme,
                   )
                 else
                   _SubjectsAddList(
                     topics: pinnableTopics,
-                    atCap: interestsAtCap,
                     colors: colors,
                     onAdd: (id) async {
                       try {
@@ -750,18 +782,12 @@ class _ManageFavoritesContentState
                               InterestState.favorite,
                             );
                         await _appendTab(tabOrderTopicKey(id));
-                      } on FavoriteCapReachedException catch (e) {
-                        NotificationService.showError(
-                          'Tu as déjà ${e.cap} favoris. Retires-en un d\'abord.',
-                        );
                       } catch (e) {
                         NotificationService.showError('Erreur : $e');
                       }
                     },
-                    onCreate: () => EntityAddSheet.show(
-                      context,
-                      pinOnFollow: true,
-                    ),
+                    onCreate: () =>
+                        EntityAddSheet.show(context, pinOnFollow: true),
                   ),
 
                 if (hiddenEditorialItems.isNotEmpty) ...[
@@ -769,10 +795,11 @@ class _ManageFavoritesContentState
                   for (final item in hiddenEditorialItems)
                     _AddRow(
                       key: ValueKey('restore_${item.key}'),
-                      leading: Text(item.emoji,
-                          style: const TextStyle(fontSize: 14)),
+                      leading: Text(
+                        item.emoji,
+                        style: const TextStyle(fontSize: 14),
+                      ),
                       label: 'Réafficher ${item.label}',
-                      disabled: false,
                       colors: colors,
                       onTap: () => _onRestoreEditorial(item.key),
                     ),
@@ -780,7 +807,7 @@ class _ManageFavoritesContentState
                 const SizedBox(height: FacteurSpacing.space3),
                 if (canAddVeille)
                   _VeilleTile(
-                    label: 'Ajouter ma veille — ${veilleCfg.themeLabel}',
+                    label: 'Ajouter ma veille — ${veilleCfg.sectionLabel}',
                     colors: colors,
                     onTap: _onAddVeille,
                   )
@@ -837,6 +864,7 @@ class _FavList extends StatelessWidget {
   final void Function(_FavItem item) onRemove;
   final IconData moveIcon;
   final String moveTooltip;
+  final String moveLabel;
   final void Function(_FavItem item) onMove;
   final void Function(_FavItem item)? onSubjectVeille;
 
@@ -849,6 +877,7 @@ class _FavList extends StatelessWidget {
     required this.onRemove,
     required this.moveIcon,
     required this.moveTooltip,
+    required this.moveLabel,
     required this.onMove,
     this.onSubjectVeille,
   });
@@ -881,10 +910,12 @@ class _FavList extends StatelessWidget {
               colors: colors,
               moveIcon: moveIcon,
               moveTooltip: moveTooltip,
+              moveLabel: moveLabel,
               onRemove: () => onRemove(item),
               onMove: () => onMove(item),
-              onSubjectVeille:
-                  onSubjectVeille == null ? null : () => onSubjectVeille!(item),
+              onSubjectVeille: onSubjectVeille == null
+                  ? null
+                  : () => onSubjectVeille!(item),
             ),
           ],
         );
@@ -941,6 +972,7 @@ class _FavRow extends StatelessWidget {
   final FacteurColors colors;
   final IconData moveIcon;
   final String moveTooltip;
+  final String moveLabel;
   final VoidCallback onRemove;
   final VoidCallback onMove;
   final VoidCallback? onSubjectVeille;
@@ -952,6 +984,7 @@ class _FavRow extends StatelessWidget {
     required this.colors,
     required this.moveIcon,
     required this.moveTooltip,
+    required this.moveLabel,
     required this.onRemove,
     required this.onMove,
     this.onSubjectVeille,
@@ -993,8 +1026,10 @@ class _FavRow extends StatelessWidget {
                             radius: 6,
                           )
                         else
-                          Text(item.emoji,
-                              style: const TextStyle(fontSize: 16)),
+                          Text(
+                            item.emoji,
+                            style: const TextStyle(fontSize: 16),
+                          ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
@@ -1023,11 +1058,14 @@ class _FavRow extends StatelessWidget {
                   onTap: onSubjectVeille!,
                 ),
               // Source ou thème : déplacement de mode (Essentiel ⇄ Flâner).
+              // Puce lisible (icône directionnelle + destination) — bien plus
+              // découvrable que l'ancienne flèche seule.
               if (isSource || isTheme)
-                _RowIconButton(
+                _MoveChip(
                   icon: moveIcon,
+                  label: moveLabel,
                   tooltip: moveTooltip,
-                  color: colors.textSecondary,
+                  accent: item.accent,
                   onTap: onMove,
                 ),
               _RowIconButton(
@@ -1094,6 +1132,67 @@ class _RowIconButton extends StatelessWidget {
   }
 }
 
+/// Puce de passage de mode (Essentiel ⇄ Flâner) pour sources et thèmes :
+/// icône directionnelle + libellé de destination, accentuée et lisible. Cible
+/// tactile ≥ 44px, haptique conservée. Remplace l'ancienne flèche seule peu
+/// découvrable.
+class _MoveChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String tooltip;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _MoveChip({
+    required this.icon,
+    required this.label,
+    required this.tooltip,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Container(
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: accent.withValues(alpha: 0.5)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 14, color: accent),
+                const SizedBox(width: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: accent,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Trait de cap séparant les éléments visibles du surplus grisé.
 class _CapDivider extends StatelessWidget {
   final FacteurColors colors;
@@ -1129,13 +1228,11 @@ class _CapDivider extends StatelessWidget {
 
 class _SourcesAddList extends StatelessWidget {
   final List<Source> sources;
-  final bool atCap;
   final FacteurColors colors;
   final ValueChanged<String> onAdd;
 
   const _SourcesAddList({
     required this.sources,
-    required this.atCap,
     required this.colors,
     required this.onAdd,
   });
@@ -1151,18 +1248,11 @@ class _SourcesAddList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (atCap)
-          _CapHint(
-            label: 'Maximum de sources favorites atteint (partagé Essentiel + '
-                'Flâner).',
-            colors: colors,
-          ),
         for (final s in sources)
           _AddRow(
             key: ValueKey('add_source_${s.id}'),
             leading: SourceLogoAvatar(source: s, size: 28, radius: 6),
             label: s.name,
-            disabled: atCap,
             colors: colors,
             onTap: () => onAdd(s.id),
           ),
@@ -1173,13 +1263,11 @@ class _SourcesAddList extends StatelessWidget {
 
 class _ThemesAddList extends StatelessWidget {
   final List<({String slug, String label, String emoji})> themes;
-  final bool atCap;
   final FacteurColors colors;
   final ValueChanged<String> onAdd;
 
   const _ThemesAddList({
     required this.themes,
-    required this.atCap,
     required this.colors,
     required this.onAdd,
   });
@@ -1195,14 +1283,11 @@ class _ThemesAddList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (atCap)
-          _CapHint(label: 'Maximum de favoris atteint.', colors: colors),
         for (final t in themes)
           _AddRow(
             key: ValueKey('add_theme_${t.slug}'),
             leading: Text(t.emoji, style: const TextStyle(fontSize: 14)),
             label: t.label,
-            disabled: atCap,
             colors: colors,
             onTap: () => onAdd(t.slug),
           ),
@@ -1213,14 +1298,12 @@ class _ThemesAddList extends StatelessWidget {
 
 class _SubjectsAddList extends StatelessWidget {
   final List<CustomTopicInterest> topics;
-  final bool atCap;
   final FacteurColors colors;
   final ValueChanged<String> onAdd;
   final VoidCallback onCreate;
 
   const _SubjectsAddList({
     required this.topics,
-    required this.atCap,
     required this.colors,
     required this.onAdd,
     required this.onCreate,
@@ -1231,8 +1314,6 @@ class _SubjectsAddList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (atCap)
-          _CapHint(label: 'Maximum de favoris atteint.', colors: colors),
         if (topics.isEmpty)
           _EmptyHint(
             label: 'Aucun sujet suivi à épingler. Crée-en un ci-dessous.',
@@ -1247,7 +1328,6 @@ class _SubjectsAddList extends StatelessWidget {
                 style: const TextStyle(fontSize: 14),
               ),
               label: t.topicName,
-              disabled: atCap,
               colors: colors,
               onTap: () => onAdd(t.id),
             ),
@@ -1279,7 +1359,6 @@ class _SubjectsAddList extends StatelessWidget {
 class _AddRow extends StatelessWidget {
   final Widget leading;
   final String label;
-  final bool disabled;
   final FacteurColors colors;
   final VoidCallback onTap;
 
@@ -1287,58 +1366,52 @@ class _AddRow extends StatelessWidget {
     super.key,
     required this.leading,
     required this.label,
-    required this.disabled,
     required this.colors,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Opacity(
-      opacity: disabled ? 0.4 : 1,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: disabled
-                ? null
-                : () {
-                    HapticFeedback.selectionClick();
-                    onTap();
-                  },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: colors.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: colors.border),
-              ),
-              child: Row(
-                children: [
-                  leading,
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: colors.textPrimary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: colors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: colors.border),
+            ),
+            child: Row(
+              children: [
+                leading,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: colors.textPrimary,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(width: 10),
-                  Icon(
-                    PhosphorIcons.plus(PhosphorIconsStyle.bold),
-                    size: 16,
-                    color: colors.textSecondary,
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 10),
+                Icon(
+                  PhosphorIcons.plus(PhosphorIconsStyle.bold),
+                  size: 16,
+                  color: colors.textSecondary,
+                ),
+              ],
             ),
           ),
         ),
@@ -1407,19 +1480,35 @@ class _VeilleTile extends StatelessWidget {
 
 class _SectionLabel extends StatelessWidget {
   final String label;
+
+  /// Compteur discret affiché en suffixe (ex. « · 5/7 ») rappelant le cap de
+  /// la section. `null` → pas de compteur (ex. en-têtes AJOUTER / GÉRER).
+  final String? counter;
   final FacteurColors colors;
 
-  const _SectionLabel({required this.label, required this.colors});
+  const _SectionLabel({
+    super.key,
+    required this.label,
+    required this.colors,
+    this.counter,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: colors.textTertiary,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.2,
-          ),
+    final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+      color: colors.textTertiary,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1.2,
+    );
+    if (counter == null) return Text(label, style: labelStyle);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Flexible(child: Text(label, style: labelStyle)),
+        const SizedBox(width: 6),
+        Text('· $counter', style: labelStyle?.copyWith(letterSpacing: 0.2)),
+      ],
     );
   }
 }
@@ -1437,28 +1526,6 @@ class _EmptyHint extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(color: colors.textTertiary, fontSize: 13, height: 1.4),
-      ),
-    );
-  }
-}
-
-class _CapHint extends StatelessWidget {
-  final String label;
-  final FacteurColors colors;
-
-  const _CapHint({required this.label, required this.colors});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: colors.textTertiary,
-          fontSize: 12,
-          fontStyle: FontStyle.italic,
-        ),
       ),
     );
   }

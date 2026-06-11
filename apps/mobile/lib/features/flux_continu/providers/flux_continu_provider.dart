@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/auth/auth_state.dart' show authStateProvider;
 import '../../digest/models/digest_models.dart';
 import '../../digest/models/dual_digest_response.dart';
 import '../../digest/providers/digest_provider.dart'
@@ -32,6 +33,7 @@ import '../repositories/flux_continu_repository.dart';
 import '../services/flux_continu_cache_service.dart';
 import '../services/tournee_progress_service.dart';
 import '../utils/notif_teasers.dart';
+import '../utils/section_fit.dart';
 import '../utils/theme_color_mapping.dart';
 import 'tournee_order_prefs_provider.dart'; // tourneeOrderPrefsProvider, TourneeOrderState, applyOrder (réexporté)
 
@@ -62,14 +64,14 @@ const String _kActusDuJourBlurb = 'Les sujets les + couverts en France.';
 const String _kBonnesBlurb = 'Un peu de douceur...';
 
 /// Hard cap on the number of favorite theme sections rendered in the tournée.
-/// Mirrors `kFavoriteCap = 5` in the my_interests provider — the value is
+/// Mirrors `kFavoriteCap = 7` in the my_interests provider — the value is
 /// duplicated here only because the maps key by sectionKey and we slice the
 /// favorite list during composition. Keep aligned with the backend constant.
-const int _kMaxFavoriteSections = 5;
+const int _kMaxFavoriteSections = 7;
 
 /// Hard cap on the number of favorite SOURCE sections rendered in the tournée
 /// (PR « Sources dans la Tournée »). Parité avec les thèmes.
-const int _kMaxFavoriteSourceSections = 5;
+const int _kMaxFavoriteSourceSections = 7;
 
 /// Number of items requested per page for each theme section of the Tournée
 /// (initial load + each "loadMoreTheme" call). When the backend returns
@@ -77,6 +79,21 @@ const int _kMaxFavoriteSourceSections = 5;
 /// no subsequent page can exist regardless of what the backend's
 /// pagination.hasNext (computed from a pre-compression candidate count) says.
 const int _kThemeSectionPageLimit = 10;
+
+/// Usable scroll height (px) of the Flux Continu viewport, threaded from
+/// [FluxContinuScreen] (the only place that can measure it post-layout):
+/// ```
+/// usableViewportHeight = scrollViewportHeight − safeAreaBottom − kStickyBarHeight
+/// ```
+/// — the **exact same budget** the section snap uses to decide whether a
+/// section is "tall". `null` on the first frame (no measure yet) ⇒ the provider
+/// keeps the default visible counts and recomposes once the measure lands
+/// (masked by the loading skeleton). The screen writes it only when the rounded
+/// value changes (anti-boucle). Consumed by [FluxContinuNotifier._compose] to
+/// trim the hero and cap each downstream section so no card stack ever exceeds
+/// the screen. The footer auto-hide does **not** change this budget (the snap
+/// already subtracts only `safeAreaBottom`, not the footer height).
+final usableViewportHeightProvider = StateProvider<double?>((ref) => null);
 
 /// Riverpod provider for the Flux Continu V1.8 home screen.
 ///
@@ -126,6 +143,16 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
   bool _closingPersistQueued = false;
 
+  /// True du tout début de [build] jusqu'à la fin du 1er [_fetchAll]. Pendant
+  /// cette fenêtre, l'état affiché peut être un **squelette** (sections vides) :
+  /// les listeners de prefs ne doivent donc ni recomposer (le dédup viderait les
+  /// sections éditoriales vides) ni refetch (tempête de 401 prématurée). Le 1er
+  /// `_fetchAll` lit de toute façon les prefs les plus fraîches, donc tout
+  /// changement survenu pendant le bootstrap est capturé sans listener. Restaure
+  /// l'invariant « aucune réaction de listener avant le 1er build complet » que
+  /// l'ancien chemin cold tenait implicitement (state sans valeur).
+  bool _bootstrapping = false;
+
   /// Snapshot of the favorite order we last fetched for. Used by the
   /// userInterestsProvider listener to detect changes and refetch only the
   /// theme sections (cheap) instead of the full tournée.
@@ -133,6 +160,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
   @override
   Future<FluxContinuState> build() async {
+    _bootstrapping = true;
     _digestRepo = ref.read(digestRepositoryProvider);
     _feedRepo = ref.read(feedRepositoryProvider);
     _fluxRepo = ref.read(fluxContinuRepositoryProvider);
@@ -140,9 +168,21 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     _cacheService = FluxContinuCacheService();
 
     ref.listen<SereinToggleState>(sereinToggleProvider, (prev, next) {
+      if (_bootstrapping) return;
       if (prev?.enabled != next.enabled && state.hasValue) {
         ref.invalidateSelf();
       }
+    });
+
+    // La hauteur utile mesurée par l'écran pilote le « combien d'articles
+    // tiennent » (trim héros + cap des sections aval). On recompose à chaque
+    // changement, comme pour le toggle sérène — un simple recompose suffit, les
+    // sections sont déjà fetchées (on ne refait que le découpage d'affichage).
+    ref.listen<double?>(usableViewportHeightProvider, (prev, next) {
+      if (_bootstrapping) return;
+      if (prev == next) return;
+      if (!state.hasValue) return;
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
     });
 
     // React to favorite reorders / additions / removals without rebuilding
@@ -151,6 +191,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       prev,
       next,
     ) {
+      if (_bootstrapping) return;
       final nextFavorites = next.valueOrNull?.favorites;
       if (nextFavorites == null) return;
       final picked = _pickExplicitFavorites(nextFavorites);
@@ -166,6 +207,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       prev,
       next,
     ) {
+      if (_bootstrapping) return;
       final nextFavorites = next.valueOrNull?.favorites;
       if (nextFavorites == null) return;
       final picked = _pickFavoriteSources(nextFavorites);
@@ -181,6 +223,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     //    n'existe pas encore dans `_sources` ; une qui sort doit en disparaître.
     //  - sinon (réordre/masques) ⇒ simple recompose (sections déjà fetchées).
     ref.listen<TourneeOrderState>(tourneeOrderPrefsProvider, (prev, next) {
+      if (_bootstrapping) return;
       if (!state.hasValue) return;
       if (prev != null &&
           listEquals(prev.order, next.order) &&
@@ -200,6 +243,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // sections Essentiel. On recompose seulement quand l'ensemble des clés
     // `theme:` change (un réordre sujets/sources Flâner n'affecte pas la Tournée).
     ref.listen<List<String>>(tabOrderPrefsProvider, (prev, next) {
+      if (_bootstrapping) return;
       if (!state.hasValue) return;
       Set<String> themeKeys(List<String>? keys) => {
             for (final k in keys ?? const <String>[])
@@ -212,6 +256,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // La Grille est un slot autonome dans la liste cappée : sa présence dépend
     // uniquement de `today != null`, pas des sections déjà fetchées.
     ref.listen<AsyncValue<GrilleState>>(grilleProvider, (prev, next) {
+      if (_bootstrapping) return;
       if (!state.hasValue) return;
       final wasPresent = prev?.valueOrNull?.today != null;
       final isPresent = next.valueOrNull?.today != null;
@@ -219,20 +264,60 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
     });
 
-    final cached = await _cacheService.readToday();
-    if (cached != null) {
+    final isSerene = ref.read(sereinToggleProvider).enabled;
+
+    // Première peinture : on lit le snapshot SANS le jeter sur un day mismatch.
+    final snapshot = await _cacheService.readLatest();
+    if (snapshot != null && !snapshot.isStale) {
+      // Snapshot du jour → SWR in-day : on peint le **vrai** contenu
+      // instantanément (puis revalidation via _fetchAll).
+      debugPrint('[PERF] fluxContinu.build mode=content_fresh');
       state = AsyncData(
         await _buildStateFromPayload(
-          dual: cached.dual,
-          topThemes: cached.topThemes,
-          essentielArticles: cached.essentielArticles,
-          isSerene: ref.read(sereinToggleProvider).enabled,
+          dual: snapshot.dual,
+          topThemes: snapshot.topThemes,
+          essentielArticles: snapshot.essentielArticles,
+          isSerene: isSerene,
           fetchThemes: false,
         ),
       );
+    } else {
+      // Snapshot d'hier (stale) ou aucun → on ne peint JAMAIS de contenu
+      // périmé : on émet un squelette fidèle dérivé des prefs locales
+      // (bon nombre/ordre/labels/accents de sections), qui se remplit derrière.
+      debugPrint(
+          '[PERF] fluxContinu.build mode=${snapshot == null ? 'cold' : 'skeleton_stale'}');
+      state = AsyncData(_buildSkeletonState(isSerene));
     }
 
-    return _fetchAll();
+    // Garde anti-tempête 401 (stabilité + scalabilité) : on laisse le refresh
+    // initial (lancé non-bloquant par AuthStateNotifier) se résoudre — borné par
+    // un timeout court — AVANT de tirer les ~3+14 appels, pour qu'ils partent
+    // avec un JWT frais. Le squelette/cache est déjà peint, donc cette attente
+    // gate la DATA, pas les pixels.
+    await _awaitInitialRefresh();
+
+    try {
+      return await _fetchAll();
+    } finally {
+      _bootstrapping = false;
+    }
+  }
+
+  /// Attend le refresh initial en cours (cf. `AuthStateNotifier.initialRefresh`)
+  /// borné par un timeout court. Tout échec (timeout, AuthException, ou notifier
+  /// auth indisponible en test) est avalé : on tombe alors dans [_fetchAll] où
+  /// l'intercepteur 401 single-flight (`api_client`) reste le filet de sécurité.
+  Future<void> _awaitInitialRefresh() async {
+    try {
+      final refresh = ref.read(authStateProvider.notifier).initialRefresh;
+      if (refresh == null) return;
+      await refresh.timeout(const Duration(seconds: 3));
+    } catch (_) {
+      // Refresh raté/expiré ou auth indisponible (tests) — le filet 401 prend
+      // le relais ; AuthStateNotifier gère lui-même le chemin signout sur un
+      // refresh token mort.
+    }
   }
 
   Future<FluxContinuState> _fetchAll() async {
@@ -344,24 +429,198 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     _lastFavorites = favorites;
     final favoriteSources = _pickFavoriteSources();
     _lastSourceFavorites = favoriteSources;
-    final fetched = fetchThemes
-        ? await Future.wait([
-            _fetchThemeSections(
-              favorites,
-              isSerene,
-              isExplicitFavorite: !picked.isFallback,
-            ),
-            _fetchSourceSections(favoriteSources, isSerene),
-          ])
-        : const [<FeedThemeSection>[], <FeedThemeSection>[]];
-    _themes = fetched[0];
-    _sources = fetched[1];
 
+    // Sections thèmes/sources vidées d'abord — peuplées en phase 2 si fetch.
+    _themes = const [];
+    _sources = const [];
     _moreOpen = const {};
     _closingDismissed = await _loadClosingDismissedForToday();
     unawaited(_purgeOldPrefsKeys());
 
+    if (!fetchThemes) {
+      // Chemin cache in-day : pas de fan-out réseau, on compose directement.
+      return _compose(isSerene);
+    }
+
+    // Rendu progressif deux-phases. On n'émet l'état base-only intermédiaire que
+    // si l'état monté est un squelette (ou absent) — c.-à-d. au démarrage à
+    // froid. En SWR in-day / pull-to-refresh, du vrai contenu est déjà monté :
+    // on le garde tel quel jusqu'à l'arrivée du set complet (pas de blink des
+    // sections thèmes/sources).
+    final mounted = state.valueOrNull;
+    final emitProgressive = mounted == null || mounted.isSkeleton;
+
+    // Phase 1 — hero/Essentiel/Actus/Bonnes composés (sections thèmes/sources
+    // encore vides) : le haut de page réel remplace le squelette après ~1
+    // round-trip de base.
+    if (emitProgressive) {
+      state = AsyncData(_compose(isSerene));
+    }
+
+    // Phase 2 — fan-out thèmes + sources, puis recompose avec le set complet
+    // (réutilise exactement le pattern de _refetchThemesOnly/_refetchSourcesOnly).
+    final fetched = await Future.wait([
+      _fetchThemeSections(
+        favorites,
+        isSerene,
+        isExplicitFavorite: !picked.isFallback,
+      ),
+      _fetchSourceSections(favoriteSources, isSerene),
+    ]);
+    _themes = fetched[0];
+    _sources = fetched[1];
+
     return _compose(isSerene);
+  }
+
+  /// Construit l'état **squelette** affiché au démarrage matinal (cache d'hier
+  /// invalidé) ou à froid : structure de sections fidèle (en-têtes réels —
+  /// nombre/ordre/labels/accents dérivés des prefs locales) **sans** contenu.
+  /// Les sections sont des coquilles vides (items/topics vides) ; le screen rend
+  /// un placeholder par section. Jamais de contenu périmé. Pas de réseau.
+  FluxContinuState _buildSkeletonState(bool isSerene) {
+    _essentiel = const EssentielSection(
+      articles: <EssentielArticle>[],
+      illustrationAsset: _kEssentielIllustration,
+      blurb: _kEssentielBlurb,
+    );
+    _actusDuJour = const DigestTopicSection(
+      kind: SectionKind.essentiel,
+      label: 'Actus du jour',
+      blurb: _kActusDuJourBlurb,
+      accent: _kEssentielAccent,
+      illustrationAsset: _kEssentielIllustration,
+      coreVisibleCount: 3,
+      topics: <DigestTopic>[],
+    );
+    _bonnes = DigestTopicSection(
+      kind: SectionKind.bonnes,
+      label: 'Bonnes Nouvelles',
+      blurb: _kBonnesBlurb,
+      accent: _kBonnesAccent,
+      illustrationAsset: _kBonnesIllustration,
+      coreVisibleCount: isSerene ? 4 : 2,
+      topics: const <DigestTopic>[],
+    );
+    _quote = null;
+    _themes = _skeletonThemeSections();
+    _sources = _skeletonSourceSections();
+    _moreOpen = const {};
+    return _composeSkeleton(isSerene);
+  }
+
+  /// Ordonne les coquilles de sections du squelette via les mêmes helpers que
+  /// [_compose] (`_tourneeSectionByKey` / `_orderedTourneeKeys`) — source unique
+  /// de l'ordre — mais SANS dédup/cap/filtre (rien à dédupliquer sur des
+  /// sections vides ; le dédup retirerait au contraire les sections éditoriales
+  /// vides). Marque `isSkeleton: true`.
+  FluxContinuState _composeSkeleton(bool isSerene) {
+    final tournee = ref.read(tourneeOrderPrefsProvider);
+    final grilleAvailable = ref.read(grilleProvider).valueOrNull?.today != null;
+    final sectionByKey = _tourneeSectionByKey();
+    final orderedKeys = _orderedTourneeKeys(
+      isSerene: isSerene,
+      customized: tournee.customized,
+      sectionByKey: sectionByKey,
+      grilleAvailable: grilleAvailable,
+      hiddenKeys: tournee.hiddenKeys,
+      order: tournee.order,
+    );
+    final sections = <FluxSection>[
+      if (_essentiel != null) _essentiel!,
+      for (final key in orderedKeys)
+        if (key != kTourneeGrilleKey && sectionByKey[key] != null)
+          sectionByKey[key]!,
+    ];
+    final grilleSlotIndex = _resolveGrilleSlotIndex(
+      orderedKeys: orderedKeys,
+      finalSections: sections,
+    );
+    return FluxContinuState(
+      sections: sections,
+      grilleSlotIndex: grilleSlotIndex,
+      isSerene: isSerene,
+      isSkeleton: true,
+      isLoading: false,
+    );
+  }
+
+  /// Coquilles de sections thème/sujet/veille pour le squelette, dérivées des
+  /// favoris locaux (réutilise `_pickFavorites` + les mêmes label/accent que
+  /// [_fetchThemeSections]). `topFallback` vide ⇒ comptes neufs voient les
+  /// thèmes canoniques (tech/env/science), ce qui rend une structure utile.
+  List<FeedThemeSection> _skeletonThemeSections() {
+    final picked = _pickFavorites(const <TopTheme>[]);
+    final interestsState = ref.read(userInterestsProvider).valueOrNull;
+    final sections = <FeedThemeSection>[];
+    for (final favRef in picked.refs) {
+      final FeedThemeSection? shell = switch (favRef) {
+        ThemeFavoriteRef(:final slug) => FeedThemeSection(
+            kind: SectionKind.theme,
+            label: visualFor(slug).label,
+            accent: visualFor(slug).accent,
+            illustrationAsset: _kVeilleIllustration,
+            coreVisibleCount: 3,
+            themeSlug: slug,
+            items: const [],
+            hasMore: false,
+          ),
+        CustomTopicFavoriteRef(:final id) => FeedThemeSection(
+            kind: SectionKind.theme,
+            label: _customTopicLabel(interestsState, id),
+            accent: _customTopicAccent(interestsState, id),
+            illustrationAsset: _kVeilleIllustration,
+            coreVisibleCount: 3,
+            customTopicId: id,
+            items: const [],
+            hasMore: false,
+          ),
+        VeilleFavoriteRef() => _skeletonVeilleSection(),
+      };
+      if (shell != null) sections.add(shell);
+    }
+    return sections;
+  }
+
+  FeedThemeSection? _skeletonVeilleSection() {
+    final activeCfg = ref.read(veilleActiveConfigProvider).valueOrNull;
+    if (activeCfg == null) return null;
+    return FeedThemeSection(
+      kind: SectionKind.veille,
+      label: 'Ma veille — ${activeCfg.sectionLabel}',
+      blurb: 'Les derniers articles de ta veille personnalisée.',
+      accent: _kVeilleAccent,
+      illustrationAsset: _kVeilleIllustration,
+      coreVisibleCount: 3,
+      items: const [],
+      hasMore: false,
+    );
+  }
+
+  /// Coquilles de sections source pour le squelette, résolues via le même
+  /// catalogue/sélection que [_fetchSourceSections] (label/logo/accent réels).
+  List<FeedThemeSection> _skeletonSourceSections() {
+    final favs = _pickFavoriteSources();
+    if (favs.isEmpty) return const [];
+    final catalog =
+        ref.read(userSourcesProvider).valueOrNull ?? const <Source>[];
+    final sourceById = {for (final s in catalog) s.id: s};
+    final sections = <FeedThemeSection>[];
+    for (final fav in favs) {
+      final src = sourceById[fav.sourceId];
+      if (src == null) continue;
+      sections.add(FeedThemeSection(
+        kind: SectionKind.source,
+        label: src.name,
+        accent: sourceAccentFor(src.id),
+        coreVisibleCount: 3,
+        sourceId: src.id,
+        sourceLogoUrl: src.logoUrl,
+        items: const [],
+        hasMore: false,
+      ));
+    }
+    return sections;
   }
 
   FluxContinuState _compose(bool isSerene) {
@@ -377,13 +636,25 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       order: tournee.order,
     );
 
+    // « Cartes ≤ écran » : décidé côté provider par estimation conservatrice
+    // (pas de mesure runtime qui pilote le rendu). `null` au 1ᵉʳ frame ⇒ on
+    // garde les défauts, on recompose à l'arrivée de la mesure.
+    final usableHeight = ref.read(usableViewportHeightProvider);
+
     final rawOrdered = <FluxSection>[
-      if (_essentiel != null) _essentiel!,
+      // Héros trimmé AVANT le dédup : les articles éjectés ne sont jamais
+      // ajoutés à `seen` par [_dedupeSectionsInOrder] → ils sont relâchés vers
+      // les sections aval (digest/thème) qui portent le même contentId. Aucune
+      // plomberie de feedback à écrire — c'est « gratuit » via le dédup ordonné.
+      if (_essentiel != null) _fitHeroSection(_essentiel!, usableHeight),
       for (final key in orderedKeys)
         if (key != kTourneeGrilleKey && sectionByKey[key] != null)
           sectionByKey[key]!,
     ];
-    final finalSections = _dedupeSectionsInOrder(_filterSections(rawOrdered));
+    final finalSections = _capSectionsToFit(
+      _dedupeSectionsInOrder(_filterSections(rawOrdered)),
+      usableHeight,
+    );
     final grilleSlotIndex = _resolveGrilleSlotIndex(
       orderedKeys: orderedKeys,
       finalSections: finalSections,
@@ -411,6 +682,73 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       quote: _quote,
       isLoading: false,
     );
+  }
+
+  /// Trims the hero (« Ton Essentiel ») to the number of articles that fit the
+  /// usable viewport, keeping the lead. Returns the section untouched when the
+  /// height isn't measured yet (`null`) or everything already fits. The lead is
+  /// never dropped. The ejected articles leave the hero's `articles` list, so
+  /// the dedup downstream no longer claims them (cf. [_compose] rawOrdered).
+  FluxSection _fitHeroSection(FluxSection essentiel, double? usableHeight) {
+    if (essentiel is! EssentielSection || usableHeight == null) {
+      return essentiel;
+    }
+    final len = essentiel.articles.length;
+    final maxCount = len < 5 ? len : 5;
+    if (maxCount <= 1) return essentiel;
+    final fit = fitHeroCount(
+      usableHeight: usableHeight,
+      chromeHeight: kHeroChromeHeight,
+      leadHeight: kHeroLeadHeight,
+      mediumHeight: kHeroMediumHeight,
+      maxCount: maxCount,
+    );
+    if (fit >= len) return essentiel;
+    // Reconstruit comme [_filterSections]/[_dedupeSectionsInOrder] : seuls
+    // articles/blurb/illustration sont portés (label/accent = défauts canon).
+    return EssentielSection(
+      articles: essentiel.articles.take(fit).toList(growable: false),
+      blurb: essentiel.blurb,
+      illustrationAsset: essentiel.illustrationAsset,
+    );
+  }
+
+  /// Caps each downstream section's `coreVisibleCount` to what fits the usable
+  /// viewport (`min(défaut, fitVisibleCount)`, plancher 1). The defaults stay
+  /// the **ceiling** — fit can only reduce. No-op when the height isn't measured
+  /// yet. The hero is handled upstream (trim de la liste), so it passes through.
+  List<FluxSection> _capSectionsToFit(
+    List<FluxSection> sections,
+    double? usableHeight,
+  ) {
+    if (usableHeight == null) return sections;
+    return [for (final s in sections) _capSectionToFit(s, usableHeight)];
+  }
+
+  FluxSection _capSectionToFit(FluxSection s, double usableHeight) {
+    if (s is EssentielSection) return s;
+    final hasBlurb = s.blurb?.trim().isNotEmpty ?? false;
+    final fitCap = fitVisibleCount(
+      usableHeight: usableHeight,
+      bannerHeight: hasBlurb ? kBannerHeightWithBlurb : kBannerHeightNoBlurb,
+      footerHeight: kSectionFooterHeight,
+      cardHeight: estimateRegularCardHeight(),
+      maxCount: s.coreVisibleCount,
+    );
+    if (fitCap >= s.coreVisibleCount) return s;
+    return switch (s) {
+      EssentielSection() => s,
+      DigestTopicSection() => DigestTopicSection(
+          kind: s.kind,
+          label: s.label,
+          accent: s.accent,
+          coreVisibleCount: fitCap,
+          blurb: s.blurb,
+          illustrationAsset: s.illustrationAsset,
+          topics: s.topics,
+        ),
+      FeedThemeSection() => s.copyWith(coreVisibleCount: fitCap),
+    };
   }
 
   /// Fires the backend "hide" API for the article without touching local
@@ -628,20 +966,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
                   ),
               ],
             ),
-          FeedThemeSection(
-            :final items,
-            :final themeSlug,
-            :final customTopicId,
-          ) =>
-            FeedThemeSection(
-              kind: s.kind,
-              label: s.label,
-              accent: s.accent,
-              coreVisibleCount: s.coreVisibleCount,
-              blurb: s.blurb,
-              illustrationAsset: s.illustrationAsset,
-              themeSlug: themeSlug,
-              customTopicId: customTopicId,
+          FeedThemeSection(:final items) => s.copyWith(
               items: [
                 for (final c in items)
                   if (c.id == contentId)
@@ -1099,7 +1424,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     );
     return FeedThemeSection(
       kind: SectionKind.veille,
-      label: 'Ma veille — ${activeCfg.themeLabel}',
+      label: 'Ma veille — ${activeCfg.sectionLabel}',
       blurb: 'Les derniers articles de ta veille personnalisée.',
       accent: _kVeilleAccent,
       illustrationAsset: _kVeilleIllustration,
@@ -1248,7 +1573,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       for (final section in _themes)
         if (section.kind == SectionKind.veille) sectionKey(section),
     ];
-    final favoriteKeys = [...themeKeys, ...sourceKeys, ...veilleKeys];
+    // Tant que l'utilisateur n'a pas personnalisé l'ordre de sa Tournée, on
+    // remonte en tête des thèmes celui auquel il a rattaché le plus de sujets
+    // favoris (signal d'intérêt le plus fort, capté à l'onboarding). Un ordre
+    // personnalisé (`customized`) est respecté tel quel par `applyOrder`.
+    final orderedThemeKeys =
+        customized ? themeKeys : _biasThemeKeysByMostFollowed(themeKeys);
+    final favoriteKeys = [...orderedThemeKeys, ...sourceKeys, ...veilleKeys];
     final useSereneDefault = isSerene && !customized;
     // La Grille n'est PAS réordonnable par l'utilisateur (cf. modal « Mes
     // favoris ») : on l'exclut d'`applyOrder` et on l'épingle juste après les
@@ -1282,6 +1613,50 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     }
 
     return ordered.take(kTourneeVisibleCap).toList(growable: false);
+  }
+
+  /// Renvoie [themeKeys] avec, en tête, la clé du thème auquel l'utilisateur a
+  /// rattaché le plus de **sujets favoris** (`customTopics` à l'état favori).
+  /// No-op si < 2 thèmes, aucun sujet favori, ou si le thème dominant n'a pas de
+  /// section thème rendue. N'est appelé que quand l'ordre n'est pas personnalisé.
+  List<String> _biasThemeKeysByMostFollowed(List<String> themeKeys) {
+    if (themeKeys.length < 2) return themeKeys;
+    final interests = ref.read(userInterestsProvider).valueOrNull;
+    if (interests == null) return themeKeys;
+
+    final counts = <String, int>{};
+    for (final t in interests.customTopics) {
+      if (t.state != InterestState.favorite) continue;
+      counts[t.slugParent] = (counts[t.slugParent] ?? 0) + 1;
+    }
+    if (counts.isEmpty) return themeKeys;
+
+    String? topSlug;
+    var topCount = 0;
+    for (final entry in counts.entries) {
+      if (entry.value > topCount) {
+        topCount = entry.value;
+        topSlug = entry.key;
+      }
+    }
+    if (topSlug == null) return themeKeys;
+
+    // slugParent → clé `theme:<slug>` de la section thème correspondante.
+    String? topKey;
+    for (final section in _themes) {
+      if (section.kind == SectionKind.theme && section.themeSlug == topSlug) {
+        topKey = sectionKey(section);
+        break;
+      }
+    }
+    if (topKey == null) return themeKeys;
+
+    final idx = themeKeys.indexOf(topKey);
+    if (idx <= 0) return themeKeys; // absent ou déjà en tête
+    final reordered = [...themeKeys];
+    reordered.removeAt(idx);
+    reordered.insert(0, topKey);
+    return reordered;
   }
 
   int? _resolveGrilleSlotIndex({

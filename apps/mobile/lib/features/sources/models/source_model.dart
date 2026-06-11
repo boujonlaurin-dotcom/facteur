@@ -14,11 +14,17 @@ class PremiumConnection {
   final String testUrl;
   final String? displayHint;
 
+  /// `true` quand la config vient d'un fallback générique côté backend (URL =
+  /// home de la source) plutôt que d'une config curée/explicite. Sert à adapter
+  /// le label du CTA ("Associer" vs "Connecter").
+  final bool isGeneric;
+
   const PremiumConnection({
     this.enabled = true,
     required this.loginUrl,
     required this.testUrl,
     this.displayHint,
+    this.isGeneric = false,
   });
 
   factory PremiumConnection.fromJson(Map<String, dynamic> json) {
@@ -27,6 +33,7 @@ class PremiumConnection {
       loginUrl: (json['login_url'] as String?)?.trim() ?? '',
       testUrl: (json['test_url'] as String?)?.trim() ?? '',
       displayHint: (json['display_hint'] as String?)?.trim(),
+      isGeneric: (json['is_generic'] as bool?) ?? false,
     );
   }
 
@@ -57,6 +64,10 @@ class Source {
   final int followerCount;
   final double priorityMultiplier;
   final bool hasSubscription;
+
+  /// Source payante (paywall détecté ou média curé). Pilote l'affichage des
+  /// CTA "Lire avec mon abonnement" / "Associer mon abonnement". Défaut false.
+  final bool hasPaywall;
   final PremiumConnection? premiumConnection;
   final String? recommendedBy;
   final String? recommendationReason;
@@ -90,6 +101,7 @@ class Source {
     this.followerCount = 0,
     this.priorityMultiplier = 1.0,
     this.hasSubscription = false,
+    this.hasPaywall = false,
     this.premiumConnection,
     this.recommendedBy,
     this.recommendationReason,
@@ -120,6 +132,7 @@ class Source {
     int? followerCount,
     double? priorityMultiplier,
     bool? hasSubscription,
+    bool? hasPaywall,
     PremiumConnection? premiumConnection,
     String? recommendedBy,
     String? recommendationReason,
@@ -149,6 +162,7 @@ class Source {
       followerCount: followerCount ?? this.followerCount,
       priorityMultiplier: priorityMultiplier ?? this.priorityMultiplier,
       hasSubscription: hasSubscription ?? this.hasSubscription,
+      hasPaywall: hasPaywall ?? this.hasPaywall,
       premiumConnection: premiumConnection ?? this.premiumConnection,
       recommendedBy: recommendedBy ?? this.recommendedBy,
       recommendationReason: recommendationReason ?? this.recommendationReason,
@@ -193,6 +207,7 @@ class Source {
         priorityMultiplier:
             (json['priority_multiplier'] as num?)?.toDouble() ?? 1.0,
         hasSubscription: (json['has_subscription'] as bool?) ?? false,
+        hasPaywall: (json['has_paywall'] as bool?) ?? false,
         premiumConnection: _parsePremiumConnection(json['premium_connection']),
         recommendedBy: json['recommended_by'] as String?,
         recommendationReason: json['recommendation_reason'] as String?,
