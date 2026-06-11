@@ -234,6 +234,10 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
     final currentTheme = selectedThemes.isNotEmpty
         ? _resolveTheme(selectedThemes[safeIndex])
         : null;
+    // Carousel multi-thèmes : tant qu'il reste une carte à droite, le bouton bas
+    // fait défiler vers le thème suivant (« Suivant ») ; il ne déclenche la
+    // sauvegarde (« Continuer ») que sur la dernière carte (ou en thème unique).
+    final isLastPage = !isMulti || safeIndex >= selectedThemes.length - 1;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
@@ -313,7 +317,9 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
           const SizedBox(height: FacteurSpacing.space4),
 
           ElevatedButton(
-            onPressed: _saving ? null : _onContinuePressed,
+            onPressed: _saving
+                ? null
+                : (isLastPage ? _onContinuePressed : _goToNextPage),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 24),
             ),
@@ -323,7 +329,9 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(OnboardingStrings.continueButton),
+                : Text(isLastPage
+                    ? OnboardingStrings.continueButton
+                    : OnboardingStrings.nextButton),
           ),
 
           const SizedBox(height: FacteurSpacing.space4),
@@ -401,6 +409,15 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
           ),
         );
       }),
+    );
+  }
+
+  /// Anime le carousel vers la carte-thème suivante. `onPageChanged` met déjà à
+  /// jour `_currentTheme`/`_visitedPages` et joue l'haptique de sélection.
+  void _goToNextPage() {
+    _pageController.nextPage(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
     );
   }
 

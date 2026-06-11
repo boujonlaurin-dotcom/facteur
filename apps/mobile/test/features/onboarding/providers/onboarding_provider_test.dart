@@ -113,14 +113,15 @@ void main() {
       );
     });
 
-    test('themes/subtopics/sourcesIntent/digestMode skippables, pas sources/finalize',
+    test('sourcesIntent/digestMode skippables, pas themes/subtopics/sources/finalize',
         () {
       OnboardingState s3(Section3Question q) => OnboardingState(
             currentSection: OnboardingSection.sourcePreferences,
             currentQuestionIndex: q.index,
           );
-      expect(s3(Section3Question.themes).isSkippable, isTrue);
-      expect(s3(Section3Question.subtopics).isSkippable, isTrue);
+      // Décision PO (item 3) : thèmes + sous-thèmes ne sont plus skippables.
+      expect(s3(Section3Question.themes).isSkippable, isFalse);
+      expect(s3(Section3Question.subtopics).isSkippable, isFalse);
       expect(s3(Section3Question.sourcesIntent).isSkippable, isTrue);
       expect(s3(Section3Question.digestMode).isSkippable, isTrue);
       expect(s3(Section3Question.sources).isSkippable, isFalse);

@@ -287,10 +287,12 @@ class OnboardingState {
         return currentSection2Question == Section2Question.approach ||
             currentSection2Question == Section2Question.responseStyle;
       case OnboardingSection.sourcePreferences:
+        // Thèmes + sous-thèmes ne sont plus skippables (décision PO) : ces deux
+        // étapes structurent toute la perso et ont déjà un gate « >=1 sélection »
+        // côté bouton Continuer. Seuls l'intent sources et le mode digest gardent
+        // un défaut sain et restent passables.
         final q = currentSection3Question;
-        return q == Section3Question.themes ||
-            q == Section3Question.subtopics ||
-            q == Section3Question.sourcesIntent ||
+        return q == Section3Question.sourcesIntent ||
             q == Section3Question.digestMode;
     }
   }

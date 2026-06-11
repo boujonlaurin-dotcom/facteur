@@ -13,6 +13,7 @@ import '../../data/source_recommender.dart';
 import '../../onboarding_strings.dart';
 import '../../providers/onboarding_proof_cache_provider.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../widgets/add_subscription_card.dart';
 import '../../widgets/premium_sources_sheet.dart';
 import '../../widgets/recommendation_section.dart';
 import '../../widgets/source_catalog_section.dart';
@@ -337,7 +338,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
         initiallyExpanded: suggestions.isEmpty,
       ),
       const SizedBox(height: FacteurSpacing.space4),
-      _buildPremiumCta(colors, allSources),
+      AddSubscriptionCard(onTap: () => _openPremiumSheet(allSources)),
     ];
   }
 
@@ -407,7 +408,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
         onInfoTap: _showSourceDetail,
       ),
       const SizedBox(height: FacteurSpacing.space4),
-      _buildPremiumCta(colors, allSources),
+      AddSubscriptionCard(onTap: () => _openPremiumSheet(allSources)),
     ];
   }
 
@@ -484,26 +485,6 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       // en knows le panneau est visible dès l'entrée, le clavier attendra.
       autoFocusSearch: _isCurious && _addPanelExpanded,
       onSourceAdded: _onSourceAdded,
-    );
-  }
-
-  Widget _buildPremiumCta(FacteurColors colors, List<Source> allSources) {
-    return OutlinedButton.icon(
-      onPressed: () => _openPremiumSheet(allSources),
-      icon: Icon(
-        PhosphorIcons.star(PhosphorIconsStyle.bold),
-        size: 20,
-      ),
-      label: const Text(OnboardingStrings.premiumSubscriptionsButton),
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        side: BorderSide(color: colors.primary.withValues(alpha: 0.5),
-            width: 1.5),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        foregroundColor: colors.primary,
-      ),
     );
   }
 }

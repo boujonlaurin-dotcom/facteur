@@ -11,6 +11,10 @@
     {
       "tag": "Sources",
       "summary": "Ajoutez n'importe quelle source et voyez ses derniers articles arriver instantanément."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Choix des sources plus clair et premier feed qui met en avant votre thème préféré."
     }
   ],
   "released": [

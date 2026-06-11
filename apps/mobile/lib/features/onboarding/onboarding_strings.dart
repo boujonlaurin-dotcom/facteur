@@ -1,6 +1,7 @@
 class OnboardingStrings {
   // Common
   static const String continueButton = 'Continuer';
+  static const String nextButton = 'Suivant';
   static const String skipButton = 'Passer cette étape';
   static const String backButtonTooltip = 'Retour';
 
@@ -199,6 +200,14 @@ class OnboardingStrings {
   // Sources : abonnements presse
   static const String premiumSubscriptionsButton =
       'Ajouter vos abonnements presse';
+
+  // Carte d'ajout d'abonnement (style CTA Essentiel) sur la page sources.
+  static const String addSubscriptionCardTitle =
+      'Abonné à un média payant ?';
+  static const String addSubscriptionCardSubtitle =
+      'Le Monde, Mediapart, L\'Équipe... Connectez vos abonnements pour lire '
+      'les articles en entier, directement dans Facteur.';
+  static const String addSubscriptionCardButton = 'Ajouter mes abonnements';
   static const String premiumSheetTitle = 'Vos abonnements presse';
   static const String premiumSheetSubtitle =
       'Si vous êtes abonné à un média payant (Le Monde, Mediapart...), '

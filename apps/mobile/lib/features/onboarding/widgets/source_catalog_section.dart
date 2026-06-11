@@ -8,11 +8,13 @@ import '../data/source_recommender.dart';
 import '../onboarding_strings.dart';
 import '../widgets/source_recommendation_card.dart';
 
-/// Catalogue complet des sources groupé par thème, avec recherche.
+/// Catalogue complet des sources groupé par thème, purement « parcourir ».
 ///
-/// Replié par défaut derrière un en-tête « Voir tout le catalogue » ;
-/// extrait de l'ancienne page 2 des sources pour être partagé entre les
-/// deux variantes de la page sources adaptative.
+/// Replié par défaut derrière un en-tête « Voir tout le catalogue » ; sans barre
+/// de recherche propre (la seule entrée de recherche de la page sources est le
+/// `SourceAddPanel` smart-search, déjà catalog-aware). Extrait de l'ancienne
+/// page 2 des sources pour être partagé entre les deux variantes de la page
+/// sources adaptative.
 class SourceCatalogSection extends StatefulWidget {
   final List<RecommendedSource> catalog;
   final Set<String> selectedIds;
@@ -34,31 +36,7 @@ class SourceCatalogSection extends StatefulWidget {
 }
 
 class _SourceCatalogSectionState extends State<SourceCatalogSection> {
-  final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
   late bool _expanded = widget.initiallyExpanded;
-
-  @override
-  void initState() {
-    super.initState();
-    _searchController.addListener(() {
-      setState(() => _searchQuery = _searchController.text);
-    });
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  List<RecommendedSource> get _filteredCatalog {
-    if (_searchQuery.isEmpty) return widget.catalog;
-    final query = _searchQuery.toLowerCase();
-    return widget.catalog
-        .where((r) => r.source.name.toLowerCase().contains(query))
-        .toList();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -78,19 +56,7 @@ class _SourceCatalogSectionState extends State<SourceCatalogSection> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const SizedBox(height: FacteurSpacing.space3),
-                    _buildSearchField(colors),
                     ..._buildCatalogueByTheme(context),
-                    if (_searchQuery.isNotEmpty && _filteredCatalog.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: FacteurSpacing.space4,
-                        ),
-                        child: Text(
-                          OnboardingStrings.q9NoMatch,
-                          style: TextStyle(color: colors.textSecondary),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
                   ],
                 )
               : const SizedBox.shrink(),
@@ -145,36 +111,10 @@ class _SourceCatalogSectionState extends State<SourceCatalogSection> {
     );
   }
 
-  Widget _buildSearchField(FacteurColors colors) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: FacteurSpacing.space3),
-      child: TextField(
-        controller: _searchController,
-        decoration: InputDecoration(
-          hintText: OnboardingStrings.q9SearchHint,
-          prefixIcon: Icon(Icons.search, color: colors.textSecondary),
-          filled: true,
-          fillColor: colors.surface,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: FacteurSpacing.space4,
-            vertical: FacteurSpacing.space3,
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(FacteurRadius.full),
-            borderSide: BorderSide.none,
-          ),
-          hintStyle: TextStyle(color: colors.textSecondary),
-        ),
-        style: TextStyle(color: colors.textPrimary),
-        onTapOutside: (_) => FocusScope.of(context).unfocus(),
-      ),
-    );
-  }
-
   /// Catalogue groupé par thème avec mini-headers.
   List<Widget> _buildCatalogueByTheme(BuildContext context) {
     final colors = context.facteurColors;
-    final filtered = _filteredCatalog;
+    final filtered = widget.catalog;
 
     final grouped = <String, List<RecommendedSource>>{};
     for (final r in filtered) {
