@@ -21,6 +21,9 @@ from app.models.user import UserProfile, UserSubtopic
 logger = structlog.get_logger()
 FOLLOWED_SOURCE_STATES = (InterestState.FOLLOWED, InterestState.FAVORITE)
 
+# "Ouvrir ses horizons" carousel disabled (PO decision); code kept for re-enable.
+DEEP_CAROUSEL_ENABLED = False
+
 # Upper bound on the two-phase followed-sources query in the default feed
 # view. Above this, we rollback and fall back to a curated-only query so the
 # mobile client never sees an infinite spinner.
@@ -1229,17 +1232,20 @@ class RecommendationService:
         self.source_overflow = updated
 
     # Story 12.8: business-ordered base positions for carousel types
-    # (favorite > new_source > community > saved > hot > deep).
+    # (favorite > quiet_sources > saved > new_source > hot > community > deep).
     # `decale` is only emitted in serein mode, which excludes hot/community,
-    # so it sits at community's slot.
+    # so it sits at saved's slot.
+    # `deep` keeps its slot for the collision resolver but is no longer
+    # emitted (DEEP_CAROUSEL_ENABLED = False).
     _CAROUSEL_BASE_POSITIONS: dict[str, int] = {
         "favorite": 5,
-        "new_source": 11,
-        "community": 17,
+        "quiet_sources": 11,
+        "saved": 17,
         "decale": 17,
-        "saved": 23,
+        "new_source": 23,
         "hot": 29,
-        "deep": 35,
+        "community": 35,
+        "deep": 41,
     }
 
     @staticmethod
@@ -1396,7 +1402,12 @@ class RecommendationService:
             break  # Only 1 favorite carousel
 
         # --- deep → "Ouvrir ses horizons": internal perspectives from read articles (T5) ---
-        if len(carousels) < max_carousels and user_id is not None:
+        # Disabled (PO decision): kept intact behind the flag for an easy re-enable.
+        if (
+            DEEP_CAROUSEL_ENABLED
+            and len(carousels) < max_carousels
+            and user_id is not None
+        ):
             from app.services.article_clustering_service import (
                 find_perspectives_for_read_article,
             )
@@ -1603,6 +1614,92 @@ class RecommendationService:
                         promoted_ids.add(item.id)
                     break  # T3A: only 1 source carousel
 
+            # --- quiet_sources: latest article from followed low-volume sources ---
+            if len(carousels) < max_carousels:
+                QUIET_SOURCE_MAX_RECENT = 3  # < 3 articles in 30 days = "quiet"
+                now = datetime.datetime.now(datetime.UTC)
+                thirty_days_ago = now - datetime.timedelta(days=30)
+                sixty_days_ago = now - datetime.timedelta(days=60)
+
+                quiet_source_ids = (
+                    (
+                        await self.session.execute(
+                            select(UserSource.source_id)
+                            .join(Source, Source.id == UserSource.source_id)
+                            .outerjoin(
+                                Content,
+                                (Content.source_id == UserSource.source_id)
+                                & (Content.published_at >= thirty_days_ago),
+                            )
+                            .where(
+                                UserSource.user_id == user_id,
+                                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+                                Source.is_active == True,  # noqa: E712
+                            )
+                            .group_by(UserSource.source_id)
+                            .having(
+                                func.count(Content.id) < QUIET_SOURCE_MAX_RECENT
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+
+                quiet_articles: list[Content] = []
+                if quiet_source_ids:
+                    latest_per_source = (
+                        select(Content)
+                        .options(selectinload(Content.source))
+                        .where(
+                            Content.source_id.in_(quiet_source_ids),
+                            Content.published_at >= sixty_days_ago,
+                            Content.id.notin_(promoted_ids | consumed_ids),
+                        )
+                        .distinct(Content.source_id)
+                        .order_by(
+                            Content.source_id,
+                            Content.published_at.desc(),
+                        )
+                    )
+                    quiet_articles = list(
+                        (await self.session.scalars(latest_per_source)).all()
+                    )
+                    quiet_articles.sort(
+                        key=lambda c: c.published_at, reverse=True
+                    )
+                    quiet_articles = quiet_articles[:MAX_CAROUSEL_ITEMS]
+
+                logger.info(
+                    "carousel_quiet_sources_query",
+                    quiet_sources_found=len(quiet_source_ids),
+                    articles_found=len(quiet_articles),
+                    min_required=MIN_DISPLAY_ITEMS,
+                )
+                if len(quiet_articles) >= MIN_DISPLAY_ITEMS:
+                    badges = [
+                        {
+                            "code": "quiet_source",
+                            "label": a.source.name,
+                            "emoji": "\U0001f50d",
+                        }
+                        for a in quiet_articles
+                    ]
+                    carousels.append(
+                        {
+                            "carousel_type": "quiet_sources",
+                            "title": "Tes sources discrètes",
+                            "emoji": "\U0001f92b",
+                            "position": self._jitter_carousel_position(
+                                "quiet_sources", user_id, today
+                            ),
+                            "items": quiet_articles,
+                            "badges": badges,
+                        }
+                    )
+                    for item in quiet_articles:
+                        promoted_ids.add(item.id)
+
             # --- community: 🌻 sunflower recommendations with decay scoring ---
             if len(carousels) < max_carousels:
                 seven_days_ago = datetime.datetime.now(
@@ -1721,7 +1818,14 @@ class RecommendationService:
                                 UserContentStatus.is_saved.is_(True),
                                 UserContentStatus.status != ContentStatus.CONSUMED,
                             )
-                            .order_by(UserContentStatus.created_at.asc())
+                            .order_by(
+                                desc(
+                                    func.coalesce(
+                                        UserContentStatus.saved_at,
+                                        UserContentStatus.created_at,
+                                    )
+                                )
+                            )
                             .limit(MAX_CAROUSEL_ITEMS)
                         )
                     ).all()

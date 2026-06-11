@@ -413,12 +413,12 @@ class TestBuildCarouselsNewSource:
         async def mock_execute(stmt):
             nonlocal execute_calls
             execute_calls += 1
-            # 1: consumed_ids, 2: perspectives consumed_rows → empty
-            if execute_calls <= 2:
+            # 1: consumed_ids → empty
+            if execute_calls == 1:
                 return _mock_execute_result([])
-            if execute_calls == 3:
+            if execute_calls == 2:
                 return _mock_execute_result(src_rows)  # new_source
-            return _mock_execute_result([])  # community (empty)
+            return _mock_execute_result([])  # quiet_sources + community (empty)
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
         service.session.scalars = AsyncMock(
@@ -458,11 +458,11 @@ class TestBuildCarouselsNewSource:
         async def mock_execute(stmt):
             nonlocal execute_calls
             execute_calls += 1
-            if execute_calls <= 2:
-                return _mock_execute_result([])  # consumed_ids + perspectives
-            if execute_calls == 3:
+            if execute_calls == 1:
+                return _mock_execute_result([])  # consumed_ids
+            if execute_calls == 2:
                 return _mock_execute_result(src_rows)  # new_source
-            return _mock_execute_result([])  # community
+            return _mock_execute_result([])  # quiet_sources + community
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
         service.session.scalars = AsyncMock(
@@ -514,7 +514,7 @@ class TestBuildCarouselsCommunity:
         async def mock_execute(stmt):
             nonlocal call_count
             call_count += 1
-            # 1: consumed_ids, 2: perspectives, 3: new_source → empty
+            # 1: consumed_ids, 2: new_source, 3: quiet_sources → empty
             if call_count <= 3:
                 return _mock_execute_result([])
             # 4: community query
@@ -554,7 +554,7 @@ class TestBuildCarouselsCommunity:
         async def mock_execute(stmt):
             nonlocal call_count
             call_count += 1
-            # 1: consumed_ids, 2: perspectives, 3: new_source → empty
+            # 1: consumed_ids, 2: new_source, 3: quiet_sources → empty
             if call_count <= 3:
                 return _mock_execute_result([])
             # 4: community
@@ -584,7 +584,7 @@ class TestBuildCarouselsSaved:
             MockContent(title="Saved podcast", content_type="podcast"),
         ]
 
-        # All execute calls return empty (consumed_ids, perspectives, new_source, community)
+        # All execute calls return empty (consumed_ids, new_source, quiet_sources, community)
         async def mock_execute(stmt):
             return _mock_execute_result([])
 
@@ -659,12 +659,12 @@ class TestBuildCarouselsPhaseB_Integration:
         async def mock_execute(stmt):
             nonlocal execute_calls
             execute_calls += 1
-            # 1: consumed_ids, 2: perspectives → empty
-            if execute_calls <= 2:
+            # 1: consumed_ids → empty
+            if execute_calls == 1:
                 return _mock_execute_result([])
-            if execute_calls == 3:
+            if execute_calls == 2:
                 return _mock_execute_result(src_rows)  # new_source
-            return _mock_execute_result([])  # community
+            return _mock_execute_result([])  # quiet_sources + community
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
         service.session.scalars = AsyncMock(

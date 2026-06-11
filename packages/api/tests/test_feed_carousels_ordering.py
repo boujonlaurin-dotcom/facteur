@@ -20,19 +20,20 @@ from app.services.recommendation_service import RecommendationService
 class TestCarouselBaseOrder:
     def test_business_order_is_favorite_first_deep_last(self):
         """Ordre métier validé avec l'utilisateur :
-        favorite > new_source > community > saved > hot > deep."""
+        favorite > quiet_sources > saved > new_source > hot > community > deep."""
         bp = RecommendationService._CAROUSEL_BASE_POSITIONS
-        assert bp["favorite"] < bp["new_source"]
-        assert bp["new_source"] < bp["community"]
-        assert bp["community"] < bp["saved"]
-        assert bp["saved"] < bp["hot"]
-        assert bp["hot"] < bp["deep"]
+        assert bp["favorite"] < bp["quiet_sources"]
+        assert bp["quiet_sources"] < bp["saved"]
+        assert bp["saved"] < bp["new_source"]
+        assert bp["new_source"] < bp["hot"]
+        assert bp["hot"] < bp["community"]
+        assert bp["community"] < bp["deep"]
 
-    def test_decale_shares_community_slot_since_mutually_exclusive(self):
-        """`decale` n'apparaît qu'en mode serein (qui exclut `community` et `hot`),
-        donc il peut partager le slot de `community` sans collision réelle."""
+    def test_decale_shares_saved_slot_since_low_volume(self):
+        """`decale` n'apparaît qu'en mode serein (qui exclut `community` et `hot`) ;
+        il partage le slot de `saved` (collision resolver gère le cas résiduel)."""
         bp = RecommendationService._CAROUSEL_BASE_POSITIONS
-        assert bp["decale"] == bp["community"]
+        assert bp["decale"] == bp["saved"]
 
 
 class TestJitterDeterminism:

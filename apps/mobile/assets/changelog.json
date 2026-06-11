@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Flâner",
+      "summary": "Nouveau carrousel « Tes sources discrètes » : ne ratez plus les sources que vous suivez et qui publient rarement."
+    },
+    {
       "tag": "Veille",
       "summary": "Veille plus précise (moins de hors-sujet) et plus facile à retrouver dans les réglages."
     },
