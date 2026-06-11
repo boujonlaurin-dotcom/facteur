@@ -82,6 +82,7 @@ from app.routers import (
     custom_topics,
     digest,
     essentiel,
+    event_rsvp,
     feed,
     grille,
     images,
@@ -505,6 +506,7 @@ app.include_router(
 )
 app.include_router(app_update.router, prefix="/api/app", tags=["AppUpdate"])
 app.include_router(waitlist.router, prefix="/api/waitlist", tags=["Waitlist"])
+app.include_router(event_rsvp.router, prefix="/api/events", tags=["Events"])
 app.include_router(admin_cohorts.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(
     well_informed.router,
