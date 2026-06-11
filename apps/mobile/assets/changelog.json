@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Notif",
+      "summary": "Notification du matin plus courte, et un ton plus doux quand le mode Serein est activé."
+    },
+    {
       "tag": "Flâner",
       "summary": "Nouveau carrousel « Tes sources discrètes » : ne ratez plus les sources que vous suivez et qui publient rarement."
     },
