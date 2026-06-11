@@ -1,6 +1,14 @@
 {
   "unreleased": [
     {
+      "tag": "Flâner",
+      "summary": "Nouveau carrousel « Tes sources discrètes » : ne ratez plus les sources que vous suivez et qui publient rarement."
+    },
+    {
+      "tag": "Flâner",
+      "summary": "Carrousels plus fréquents dans le fil, et « Actu chaude » regroupe désormais des articles qui couvrent vraiment le même sujet."
+    },
+    {
       "tag": "Veille",
       "summary": "Veille plus précise (moins de hors-sujet) et plus facile à retrouver dans les réglages."
     },
