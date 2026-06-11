@@ -1,16 +1,19 @@
-name: Build Android APK
+name: Build Android APK (staging)
 
+# Env CONTINU : chaque merge sur main builde le flavor `staging`
+# (com.example.facteur.staging, canal beta) consommé par l'app de test interne.
+# Les vrais users passent par weekly-release.yml (flavor prod, canal stable).
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
     inputs:
       api_base_url:
-        description: 'URL de production de l API'
+        description: 'URL API (défaut: staging)'
         required: true
-        default: 'https://facteur-production.up.railway.app/api'
+        default: 'https://api-staging-40d3.up.railway.app/api'
       create_release:
-        description: 'Créer une release pour les beta testeurs'
+        description: 'Créer une release beta pour les testeurs'
         required: false
         type: boolean
         default: true
@@ -62,30 +65,31 @@ jobs:
         id: version
         run: echo "version=beta-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
 
-      - name: Build APK
+      - name: Build APK (staging flavor)
         run: |
           cd apps/mobile
-          flutter build apk --release \
+          flutter build apk --release --flavor staging \
             --build-number=${{ github.run_number }} \
-            --dart-define="API_BASE_URL=${{ github.event.inputs.api_base_url || vars.API_BASE_URL || 'https://facteur-production.up.railway.app/api' }}" \
+            --dart-define="API_BASE_URL=${{ github.event.inputs.api_base_url || 'https://api-staging-40d3.up.railway.app/api' }}" \
             --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
             --dart-define="SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" \
             --dart-define="REVENUECAT_IOS_KEY=${{ secrets.REVENUECAT_IOS_KEY }}" \
             --dart-define="POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}" \
             --dart-define="POSTHOG_HOST=${{ vars.POSTHOG_HOST || 'https://eu.i.posthog.com' }}" \
             --dart-define="SENTRY_DSN=${{ secrets.SENTRY_DSN_FLUTTER }}" \
-            --dart-define="SENTRY_ENVIRONMENT=${{ vars.SENTRY_ENVIRONMENT || 'production' }}" \
+            --dart-define="SENTRY_ENVIRONMENT=staging" \
+            --dart-define="UPDATE_CHANNEL=beta" \
             --dart-define="APP_RELEASE_TAG=${{ steps.version.outputs.version }}"
 
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: facteur-app-release
-          path: apps/mobile/build/app/outputs/flutter-apk/app-release.apk
+          name: facteur-app-staging-release
+          path: apps/mobile/build/app/outputs/flutter-apk/app-staging-release.apk
 
       - name: Rename APK
         run: |
-          mv apps/mobile/build/app/outputs/flutter-apk/app-release.apk \
+          mv apps/mobile/build/app/outputs/flutter-apk/app-staging-release.apk \
              apps/mobile/build/app/outputs/flutter-apk/Facteur-${{ steps.version.outputs.version }}.apk
 
       - name: Create Beta Release
