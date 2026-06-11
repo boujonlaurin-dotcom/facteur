@@ -20,14 +20,14 @@ from app.services.recommendation_service import RecommendationService
 class TestCarouselBaseOrder:
     def test_business_order_is_favorite_first_deep_last(self):
         """Ordre métier validé avec l'utilisateur :
-        favorite > quiet_sources > saved > new_source > hot > community > deep."""
+        favorite > quiet_sources > saved > new_source > community > hot > deep."""
         bp = RecommendationService._CAROUSEL_BASE_POSITIONS
         assert bp["favorite"] < bp["quiet_sources"]
         assert bp["quiet_sources"] < bp["saved"]
         assert bp["saved"] < bp["new_source"]
-        assert bp["new_source"] < bp["hot"]
-        assert bp["hot"] < bp["community"]
-        assert bp["community"] < bp["deep"]
+        assert bp["new_source"] < bp["community"]
+        assert bp["community"] < bp["hot"]
+        assert bp["hot"] < bp["deep"]
 
     def test_decale_shares_saved_slot_since_low_volume(self):
         """`decale` n'apparaît qu'en mode serein (qui exclut `community` et `hot`) ;

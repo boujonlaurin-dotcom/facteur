@@ -36,11 +36,20 @@ mobile nécessaire.**
 
 ### `packages/api/app/services/recommendation_service.py`
 
-- **`_CAROUSEL_BASE_POSITIONS`** : `{"favorite": 5, "quiet_sources": 11,
-  "saved": 17, "decale": 17, "new_source": 23, "hot": 29, "community": 35,
-  "deep": 41}`. Ordre à valider à la review (le PO n'a pas tranché l'ordre
-  final — ajustable par simple édition du dict). `deep` reste dans le dict
+- **`_CAROUSEL_BASE_POSITIONS`** (ordre validé PO, pas de 5 slots pour
+  densifier — jusqu'à 4 carrousels dans la 1re page mobile de 20 articles) :
+  `{"favorite": 4, "quiet_sources": 9, "saved": 14, "decale": 14,
+  "new_source": 19, "community": 24, "hot": 29, "deep": 41}`.
+  `MIN_GAP` 6 → 5, `MIN_CAROUSEL_POSITION` 5 → 4. `deep` reste dans le dict
   (collision resolver) mais n'est plus émis.
+- **Hot « Actu chaude » re-clustering (validé PO)** : `find_hot_cluster`
+  réutilise désormais `ImportanceDetector.build_topic_clusters` (similarité
+  Jaccard des titres, le même pipeline que les Actus du jour, couvert par le
+  harness de calibration) au lieu du regroupement par entité NER unique qui
+  agrégeait des articles sans rapport (« Actu chaude : Trump »). Garde-fous :
+  cluster ≥ 3 articles ET ≥ 2 sources ; le nom affiché = entité dominante
+  partagée par ≥ 2 articles du cluster (sinon titre « Actu chaude » seul) ;
+  sélection probabiliste top-3 conservée.
 - **Nouveau bloc `quiet_sources` dans `_build_carousels()`** (Phase B, entre
   `new_source` et `community`) :
   - Requête 1 — sources rares : `UserSource` (state FOLLOWED/FAVORITE) join

@@ -1232,19 +1232,22 @@ class RecommendationService:
         self.source_overflow = updated
 
     # Story 12.8: business-ordered base positions for carousel types
-    # (favorite > quiet_sources > saved > new_source > hot > community > deep).
+    # (favorite > quiet_sources > saved > new_source > community > hot > deep),
+    # tightened to a 5-slot pitch so up to 4 carousels land within the first
+    # ~20 articles (page 1 mobile — a carousel only renders once its position
+    # is < the number of loaded articles).
     # `decale` is only emitted in serein mode, which excludes hot/community,
     # so it sits at saved's slot.
     # `deep` keeps its slot for the collision resolver but is no longer
     # emitted (DEEP_CAROUSEL_ENABLED = False).
     _CAROUSEL_BASE_POSITIONS: dict[str, int] = {
-        "favorite": 5,
-        "quiet_sources": 11,
-        "saved": 17,
-        "decale": 17,
-        "new_source": 23,
+        "favorite": 4,
+        "quiet_sources": 9,
+        "saved": 14,
+        "decale": 14,
+        "new_source": 19,
+        "community": 24,
         "hot": 29,
-        "community": 35,
         "deep": 41,
     }
 
@@ -1285,7 +1288,7 @@ class RecommendationService:
         MIN_CAROUSEL_ITEMS = 3  # Minimum items for building a carousel
         MIN_DISPLAY_ITEMS = 2  # T2: Minimum items after consumed filtering
         MAX_CAROUSEL_ITEMS = 5
-        MIN_CAROUSEL_POSITION = 5  # No carousel before position 5 (≈ GNews cadence)
+        MIN_CAROUSEL_POSITION = 4  # No carousel before position 4 (≈ GNews cadence)
         carousels: list[dict] = []
         promoted_ids: set[UUID] = set()
         used_group_keys: set[str] = set()  # Prevent same group in hot + deep
@@ -1341,7 +1344,9 @@ class RecommendationService:
                     carousels.append(
                         {
                             "carousel_type": "hot",
-                            "title": f"Actu chaude : {display_name}",
+                            "title": f"Actu chaude : {display_name}"
+                            if display_name
+                            else "Actu chaude",
                             "emoji": "\U0001f50d",
                             "position": self._jitter_carousel_position(
                                 "hot", user_id, today
@@ -1909,7 +1914,7 @@ class RecommendationService:
         )
         # Carrousels espacés d'au moins MIN_GAP slots — évite les empilements
         # adjacents qui rendent le flux dense (effet GNews / Apple News).
-        MIN_GAP = 6
+        MIN_GAP = 5
         taken: list[int] = []
         for c in carousels:
             pos = max(c["position"], MIN_CAROUSEL_POSITION)
