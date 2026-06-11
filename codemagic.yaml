@@ -26,6 +26,15 @@ workflows:
         distribution_type: app_store
         bundle_identifier: app.facteur
 
+      # Secrets injectés au build via --dart-define (cf. étape Build).
+      # Crée ce groupe dans Codemagic (App settings > Environment variables),
+      # mêmes valeurs que les secrets GitHub Actions (build-ipa.yml) :
+      #   SUPABASE_URL, SUPABASE_ANON_KEY, REVENUECAT_IOS_KEY, POSTHOG_API_KEY,
+      #   SENTRY_DSN (= SENTRY_DSN_FLUTTER), et optionnels API_BASE_URL,
+      #   POSTHOG_HOST, SENTRY_ENVIRONMENT. Coche "Secure" pour chacun.
+      groups:
+        - facteur_secrets
+
       vars:
         APP_DIR: "apps/mobile"
 
@@ -96,7 +105,16 @@ workflows:
           set -euo pipefail
           cd "$APP_DIR"
           flutter build ipa --release \
-            --export-options-plist="$HOME/export_options.plist"
+            --export-options-plist="$HOME/export_options.plist" \
+            --dart-define="API_BASE_URL=${API_BASE_URL:-https://facteur-production.up.railway.app/api}" \
+            --dart-define="SUPABASE_URL=${SUPABASE_URL:-}" \
+            --dart-define="SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}" \
+            --dart-define="REVENUECAT_IOS_KEY=${REVENUECAT_IOS_KEY:-}" \
+            --dart-define="POSTHOG_API_KEY=${POSTHOG_API_KEY:-}" \
+            --dart-define="POSTHOG_HOST=${POSTHOG_HOST:-https://eu.i.posthog.com}" \
+            --dart-define="SENTRY_DSN=${SENTRY_DSN:-}" \
+            --dart-define="SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}" \
+            --dart-define="APP_RELEASE_TAG=${APP_RELEASE_TAG:-ios-1.0.0+${BUILD_NUMBER:-manual}}"
 
     artifacts:
       - $APP_DIR/build/ios/ipa/*.ipa
