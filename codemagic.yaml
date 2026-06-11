@@ -1,0 +1,118 @@
+workflows:
+  ios-release:
+    name: iOS Release
+    instance_type: mac_mini_m2
+    max_build_duration: 120
+
+    # App Store Connect API key added in Codemagic (Team integrations >
+    # Developer Portal). The name below MUST match the key name in Codemagic.
+    # Used both for code signing (cert/profile) and TestFlight publishing.
+    integrations:
+      app_store_connect: facteur.app
+
+    environment:
+      # Keep this pinned until phosphor_flutter is migrated away.
+      # Flutter 3.44 marks IconData as final, which breaks phosphor_flutter 2.1.0.
+      flutter: 3.41.6
+      xcode: latest
+      cocoapods: default
+
+      # Imports the uploaded Apple Distribution cert (incl. its private key)
+      # into the build keychain. The matching App Store profile does not exist
+      # yet; it is created in the signing step below via the CLI. The
+      # distribution_type form is the only schema-valid way to bring in an
+      # uploaded certificate together with its private key.
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: app.facteur
+
+      vars:
+        APP_DIR: "apps/mobile"
+
+    scripts:
+      - name: Show environment
+        script: |
+          set -euo pipefail
+          echo "Flutter version:"
+          flutter --version
+          echo "Xcode version:"
+          xcodebuild -version
+          echo "APP_DIR=$APP_DIR"
+
+      - name: Validate Flutter project path
+        script: |
+          set -euo pipefail
+          if [ ! -f "$APP_DIR/pubspec.yaml" ]; then
+            echo "pubspec.yaml not found at $APP_DIR/pubspec.yaml"
+            find . -name pubspec.yaml -not -path "*/.dart_tool/*" -not -path "*/build/*"
+            exit 1
+          fi
+          if [ ! -d "$APP_DIR/ios" ]; then
+            echo "iOS folder not found at $APP_DIR/ios"
+            exit 1
+          fi
+
+      - name: Get Flutter packages
+        script: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          flutter pub get
+
+      - name: Run code generation if configured
+        script: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          if grep -q "build_runner" pubspec.yaml; then
+            echo "build_runner detected; running code generation"
+            dart run build_runner build --delete-conflicting-outputs
+          else
+            echo "No build_runner dependency detected; skipping code generation"
+          fi
+
+      - name: Analyze Flutter project
+        script: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          set +e
+          flutter analyze
+          ANALYZE_EXIT_CODE=$?
+          set -e
+          if [ "$ANALYZE_EXIT_CODE" -ne 0 ]; then
+            echo "flutter analyze reported existing issues; continuing signed IPA build."
+          fi
+
+      - name: Set up code signing settings on Xcode project
+        script: |
+          set -euo pipefail
+          # The ios_signing block fetches the uploaded distribution certificate
+          # (with its private key) AND the App Store provisioning profile for
+          # app.facteur from Codemagic code signing identities. The profile must
+          # already exist there (created once in the Apple Developer Portal and
+          # fetched into Codemagic). This step applies it to the Xcode project.
+          xcode-project use-profiles
+
+      - name: Build signed iOS IPA
+        script: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          flutter build ipa --release \
+            --export-options-plist="$HOME/export_options.plist"
+
+    artifacts:
+      - $APP_DIR/build/ios/ipa/*.ipa
+      - $APP_DIR/build/ios/archive/*.xcarchive
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      # Uploads the signed build to App Store Connect and makes it available in
+      # TestFlight. Internal testers need no beta review. Requires the App Store
+      # Connect app record for bundle id app.facteur to already exist.
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+      email:
+        recipients:
+          - boujon.laurin@gmail.com
+        notify:
+          success: true
+          failure: true

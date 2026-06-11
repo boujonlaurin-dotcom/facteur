@@ -224,6 +224,12 @@ Future<void> _bootstrap() async {
 
 /// Init FlutterDownloader avec fallback silencieux (non-critique).
 Future<void> _initDownloaderSafe() async {
+  // flutter_downloader ne sert qu'à la MAJ in-app par APK (Android uniquement ;
+  // la feature app_update est déjà gardée `!Platform.isAndroid` partout).
+  // Sur iOS, FlutterDownloader.initialize() déclenche un fatalError natif
+  // (setPluginRegistrantCallback absent d'AppDelegate) → crash AU LANCEMENT,
+  // non rattrapable par le try/catch Dart. On skip donc l'init hors Android.
+  if (kIsWeb || !Platform.isAndroid) return;
   try {
     await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
   } catch (e) {
