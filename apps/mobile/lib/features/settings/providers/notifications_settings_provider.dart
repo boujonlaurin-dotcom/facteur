@@ -120,6 +120,10 @@ class NotificationsSettingsNotifier
   // que `main.dart` (cold start) lise la même clé sans dupliquer le littéral.
   static const kEssentielTeasers = 'notif_essentiel_teasers';
   static const kGoodNewsTeasers = 'notif_good_news_teasers';
+  // Dernier état connu de la préférence `serein_enabled`, persisté localement
+  // pour cuire la notif digest sur le bon ton (en-tête + CTA apaisés) aux 3
+  // points de scheduling. Publique : `main.dart` (cold start) la lit aussi.
+  static const kSereinNotif = 'notif_serein_enabled';
 
   Future<Box<dynamic>> _box() => Hive.openBox<dynamic>(_boxName);
 
@@ -236,6 +240,7 @@ class NotificationsSettingsNotifier
     final box = await _box();
     final essentielTeasers = readTeasers(box, kEssentielTeasers);
     final goodNewsTeasers = readTeasers(box, kGoodNewsTeasers);
+    final serene = readSerein(box);
     if (state.pushEnabled) {
       await push.scheduleDailyDigestNotification(
         timeSlot: state.timeSlot,
@@ -243,6 +248,7 @@ class NotificationsSettingsNotifier
             ? NotifVariant.variantA
             : NotifVariant.variantB,
         teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
+        serene: serene,
       );
       if (state.preset == NotifPreset.curieux) {
         await push.scheduleWeeklyCommunityPick();
@@ -266,6 +272,13 @@ class NotificationsSettingsNotifier
     return raw.whereType<String>().toList(growable: false);
   }
 
+  /// Lecture défensive du flag serein persisté (défaut `false`). Statique +
+  /// publique : `main.dart` (cold start) lit la même clé sans dupliquer le cast.
+  static bool readSerein(Box<dynamic> box) {
+    final raw = box.get(kSereinNotif);
+    return raw is bool ? raw : false;
+  }
+
   /// Met à jour les teasers persistés depuis le dernier digest chargé, puis
   /// replanifie les notifs perso. Appelée fire-and-forget depuis
   /// `fluxContinuProvider` après un load frais.
@@ -276,6 +289,7 @@ class NotificationsSettingsNotifier
   Future<void> syncDigestTeasers({
     required List<String> essentielTeasers,
     required List<String> goodNewsTeasers,
+    required bool sereinEnabled,
   }) async {
     final box = await _box();
     if (essentielTeasers.isNotEmpty) {
@@ -284,6 +298,7 @@ class NotificationsSettingsNotifier
     if (goodNewsTeasers.isNotEmpty) {
       await box.put(kGoodNewsTeasers, goodNewsTeasers);
     }
+    await box.put(kSereinNotif, sereinEnabled);
     await _reschedule();
   }
 

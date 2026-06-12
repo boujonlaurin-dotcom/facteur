@@ -12,26 +12,55 @@ void main() {
       expect(copy.bigText, copy.body);
     });
 
-    test('variant B with teasers uses tutoiement + personnification', () {
+    test('variant B body is the full first title (no clip)', () {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantB,
         teasers: ['Trump'],
       );
       expect(copy.title, 'Facteur');
-      expect(copy.body, 'À la une : Trump');
-      expect(copy.bigText, "À la une dans l'Essentiel :\n• Trump");
+      expect(copy.body, 'Trump');
+      expect(
+        copy.bigText,
+        "À la une dans l'Essentiel :\n• Trump\n"
+        "${PushNotificationService.digestCta}",
+      );
     });
 
-    test('variant B with multiple teasers renders bullet bigText (max 3)', () {
+    test('variant B caps at 2 titles + CTA line in bigText', () {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantB,
         teasers: ['Trump', 'Climat', 'Marseille', 'Quatrième'],
       );
-      expect(copy.body, 'À la une : Trump');
+      expect(copy.body, 'Trump');
       expect(
         copy.bigText,
-        "À la une dans l'Essentiel :\n• Trump\n• Climat\n• Marseille",
+        "À la une dans l'Essentiel :\n• Trump\n• Climat\n"
+        "Pour le reste, viens faire un tour sur l'app !",
       );
+    });
+
+    test('variant B serene swaps header and CTA, keeps the 2 titles', () {
+      final copy = PushNotificationService.buildCopy(
+        variant: NotifVariant.variantB,
+        teasers: ['Trump', 'Climat', 'Marseille'],
+        serene: true,
+      );
+      expect(copy.body, 'Trump');
+      expect(
+        copy.bigText,
+        'Du calme dans ton actu :\n• Trump\n• Climat\n'
+        "Le reste t'attend tranquillement dans l'app.",
+      );
+    });
+
+    test('variant B keeps full title even beyond 60 chars', () {
+      final teaser = 'A' * 80;
+      final copy = PushNotificationService.buildCopy(
+        variant: NotifVariant.variantB,
+        teasers: [teaser],
+      );
+      expect(copy.body, teaser);
+      expect(copy.body, isNot(endsWith('…')));
     });
 
     test('variant B without teasers falls back to A', () {
@@ -40,16 +69,7 @@ void main() {
         teasers: const [],
       );
       expect(copy.title, 'Facteur');
-    });
-
-    test('variant B truncates first teaser longer than 60 chars', () {
-      final teaser = 'A' * 80;
-      final copy = PushNotificationService.buildCopy(
-        variant: NotifVariant.variantB,
-        teasers: [teaser],
-      );
-      expect(copy.body.length, lessThanOrEqualTo('À la une : '.length + 58));
-      expect(copy.body, endsWith('…'));
+      expect(copy.body, "Ton récap du jour t'attend quand tu veux.");
     });
 
     test('variant C returns calm copy', () {

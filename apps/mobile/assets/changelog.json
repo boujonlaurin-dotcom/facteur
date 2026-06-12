@@ -1,8 +1,32 @@
 {
   "unreleased": [
     {
+      "tag": "Notif",
+      "summary": "Notification du matin plus courte, et un ton plus doux quand le mode Serein est activé."
+    },
+    {
+      "tag": "Flâner",
+      "summary": "Nouveau carrousel « Tes sources discrètes » : ne ratez plus les sources que vous suivez et qui publient rarement."
+    },
+    {
+      "tag": "Flâner",
+      "summary": "Carrousels plus fréquents dans le fil, et « Actu chaude » regroupe désormais des articles qui couvrent vraiment le même sujet."
+    },
+    {
       "tag": "Veille",
       "summary": "Veille plus précise (moins de hors-sujet) et plus facile à retrouver dans les réglages."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Questionnaire plus court et plus fluide, fin du blocage en sortie."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Ajoutez n'importe quelle source et voyez ses derniers articles arriver instantanément."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Choix des sources plus clair et premier feed qui met en avant votre thème préféré."
     }
   ],
   "released": [

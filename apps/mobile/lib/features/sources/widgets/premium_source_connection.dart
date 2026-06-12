@@ -22,6 +22,11 @@ class PremiumSourceConnection extends ConsumerStatefulWidget {
   final PremiumWebViewBuilder? webViewBuilder;
   final Future<void> Function(String url)? openExternal;
 
+  /// Connexion à utiliser. Optionnelle : par défaut on lit
+  /// `source.premiumConnection`, mais l'appelant peut fournir une connexion
+  /// synthétisée (fallback générique) quand la source n'en porte pas.
+  final PremiumConnection? connection;
+
   const PremiumSourceConnection({
     super.key,
     required this.source,
@@ -29,6 +34,7 @@ class PremiumSourceConnection extends ConsumerStatefulWidget {
     this.onFinished,
     this.webViewBuilder,
     this.openExternal,
+    this.connection,
   });
 
   @override
@@ -42,7 +48,8 @@ class _PremiumSourceConnectionState
   bool _saving = false;
   String? _error;
 
-  PremiumConnection get _connection => widget.source.premiumConnection!;
+  PremiumConnection get _connection =>
+      widget.connection ?? widget.source.premiumConnection!;
 
   PremiumSessionStore get _sessionStore =>
       ref.read(premiumSessionStoreProvider);

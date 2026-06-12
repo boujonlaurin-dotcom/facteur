@@ -11,6 +11,7 @@ import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
+import '../repositories/sources_repository.dart';
 import 'catalog_sources_strip.dart';
 import 'community_gems_strip.dart';
 import 'example_chips.dart';
@@ -33,6 +34,16 @@ class SourceAddPanel extends ConsumerStatefulWidget {
   final bool autoFocusSearch;
   final bool veilleMode;
 
+  /// Mode preuve inline (onboarding) : à l'ajout catalogue, la carte de
+  /// résultat se transforme en bloc « Connecté » + derniers articles au lieu
+  /// d'ouvrir la modale détail, et la liste de résultats reste affichée.
+  final bool inlineProof;
+
+  /// `true` quand le panneau est hébergé dans une page qui possède déjà son
+  /// scroll : le contenu est rendu sans [SingleChildScrollView] interne
+  /// (évite le nested-scroll / hauteur non bornée).
+  final bool embedded;
+
   /// Appelé après un ajout réussi, une fois la modale détail fermée.
   /// Le hôte décide de fermer le sheet, naviguer ailleurs, etc.
   final ValueChanged<SmartSearchResult>? onSourceAdded;
@@ -50,6 +61,8 @@ class SourceAddPanel extends ConsumerStatefulWidget {
     this.showAddedNudge = true,
     this.autoFocusSearch = false,
     this.veilleMode = false,
+    this.inlineProof = false,
+    this.embedded = false,
     this.onSourceAdded,
   });
 
@@ -68,10 +81,14 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   late final TextEditingController _searchController;
   late final FocusNode _searchFocusNode;
   bool _searchActive = false;
+  // Caché en champ : dispose() ne doit jamais lire `ref` (StateError pendant
+  // un démontage de shell — même classe de bug que NudgeHost / FLUTTER-2).
+  late final SourcesRepository _sourcesRepository;
 
   @override
   void initState() {
     super.initState();
+    _sourcesRepository = ref.read(sourcesRepositoryProvider);
     _searchController = TextEditingController();
     _searchFocusNode = FocusNode();
     _searchFocusNode.addListener(_handleSearchActivity);
@@ -92,7 +109,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   void dispose() {
     final query = _currentQuery.trim();
     if (query.isNotEmpty && !_sourceAdded) {
-      ref.read(sourcesRepositoryProvider).logSearchAbandoned(query);
+      _sourcesRepository.logSearchAbandoned(query);
     }
     _searchFocusNode.removeListener(_handleSearchActivity);
     _searchController.removeListener(_handleSearchActivity);
@@ -202,6 +219,15 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
             .setSourceState(sourceId, InterestState.favorite);
         if (!mounted) return;
 
+        if (widget.inlineProof) {
+          // Preuve inline : la carte transformée (« Connecté » + derniers
+          // articles) reste visible dans la liste — pas de modale, pas de
+          // reset de la recherche (qui démonterait la carte).
+          HapticFeedback.mediumImpact();
+          widget.onSourceAdded?.call(result);
+          return;
+        }
+
         final source = Source(
           id: sourceId,
           name: result.name,
@@ -219,6 +245,12 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         NotificationService.showSuccess(
           'Source ajoutee ! Ses contenus apparaitront dans ton feed.',
         );
+        if (widget.inlineProof) {
+          // Ajout custom (pas de carte catalogue à transformer) : on garde la
+          // notification et on remonte l'ajout sans vider la recherche.
+          widget.onSourceAdded?.call(result);
+          return;
+        }
       }
       _resetForNextAdd();
       widget.onSourceAdded?.call(result);
@@ -312,25 +344,33 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
 
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.showIntro && _currentQuery.isEmpty) ...[
+          const SizedBox(height: FacteurSpacing.space6),
+          _buildSearchIntro(colors),
+          const SizedBox(height: FacteurSpacing.space6),
+        ],
+        _buildBreathingSearch(colors),
+        SizedBox(
+          height: _currentQuery.isEmpty
+              ? FacteurSpacing.space8
+              : FacteurSpacing.space4,
+        ),
+        _buildContent(),
+      ],
+    );
+
+    // Hôte avec son propre scroll (page sources onboarding) : pas de
+    // SingleChildScrollView interne.
+    if (widget.embedded) {
+      return Padding(padding: widget.padding, child: content);
+    }
+
     return SingleChildScrollView(
       padding: widget.padding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (widget.showIntro && _currentQuery.isEmpty) ...[
-            const SizedBox(height: FacteurSpacing.space6),
-            _buildSearchIntro(colors),
-            const SizedBox(height: FacteurSpacing.space6),
-          ],
-          _buildBreathingSearch(colors),
-          SizedBox(
-            height: _currentQuery.isEmpty
-                ? FacteurSpacing.space8
-                : FacteurSpacing.space4,
-          ),
-          _buildContent(),
-        ],
-      ),
+      child: content,
     );
   }
 
@@ -589,6 +629,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
           return SourceResultCard(
             result: result,
             isAdded: isAdded,
+            showProof: widget.inlineProof,
             onAdd: () => _addSource(result),
             onPreview: () => _previewSource(result),
           );

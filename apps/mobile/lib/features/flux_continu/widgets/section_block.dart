@@ -44,6 +44,9 @@ class SectionBlock extends StatelessWidget {
   /// hint animation. Only the first section on screen should set this.
   final bool enableSwipeHintOnFirstCard;
   final VoidCallback? onSwipeHintComplete;
+  final GlobalKey? firstSwipeableCardAnchor;
+  final VoidCallback? onSwipeConversion;
+  final VoidCallback? onLongPressConversion;
 
   /// Optional — when set, the banner renders a small "favorite" star at the
   /// end of its title. Only wired for user-favorite sections (theme/topic);
@@ -72,6 +75,9 @@ class SectionBlock extends StatelessWidget {
     this.onUndoFeedback,
     this.enableSwipeHintOnFirstCard = false,
     this.onSwipeHintComplete,
+    this.firstSwipeableCardAnchor,
+    this.onSwipeConversion,
+    this.onLongPressConversion,
     this.onTapFavorite,
     this.onTapSettings,
     this.onAddSources,
@@ -110,17 +116,15 @@ class SectionBlock extends StatelessWidget {
           illustrationAsset: section.illustrationAsset,
           // PR « Sources dans la Tournée » — hero logo source à la place de
           // l'illustration thème.
-          logoUrl: section is FeedThemeSection &&
-                  section.kind == SectionKind.source
-              ? section.sourceLogoUrl
-              : null,
+          logoUrl:
+              section is FeedThemeSection && section.kind == SectionKind.source
+                  ? section.sourceLogoUrl
+                  : null,
           onTapFavorite: onTapFavorite,
           onTapSettings: onTapSettings,
         ),
         ...cards,
-        _SectionFooterRow(
-          voirPlus: _buildVoirPlusButton(section, hiddenCount),
-        ),
+        _SectionFooterRow(voirPlus: _buildVoirPlusButton(section, hiddenCount)),
         const SizedBox(height: 16),
       ],
     );
@@ -185,10 +189,15 @@ class SectionBlock extends StatelessWidget {
       case DigestTopicSection(:final topics, :final coreVisibleCount):
         final visible =
             isOpen ? topics : topics.take(coreVisibleCount).toList();
+        final firstSwipeableIndex = visible.indexWhere(
+          (topic) =>
+              !pendingFeedbackIds.contains(pickTopicLead(topic).contentId),
+        );
         return [
           for (var i = 0; i < visible.length; i++)
-            if (pendingFeedbackIds
-                .contains(pickTopicLead(visible[i]).contentId))
+            if (pendingFeedbackIds.contains(
+              pickTopicLead(visible[i]).contentId,
+            ))
               _feedbackInlineFor(pickTopicLead(visible[i]).contentId)
             else
               FluxContinuArticleCard(
@@ -197,17 +206,22 @@ class SectionBlock extends StatelessWidget {
                 pressReviewCount: visible[i].perspectiveCount,
                 perspectiveSources: visible[i].perspectiveSources,
                 divergenceLevel: visible[i].divergenceLevel,
-                onTap: () =>
-                    onTapArticle(pickTopicLead(visible[i])),
+                onTap: () => onTapArticle(pickTopicLead(visible[i])),
                 onSwipeDismiss: onDismissArticle == null
                     ? null
-                    : () =>
-                        onDismissArticle!(pickTopicLead(visible[i]).contentId),
-                enableSwipeHint: enableSwipeHintOnFirstCard && i == 0,
+                    : () => onDismissArticle!(
+                          pickTopicLead(visible[i]).contentId,
+                        ),
+                enableSwipeHint:
+                    enableSwipeHintOnFirstCard && i == firstSwipeableIndex,
                 onSwipeHintComplete:
-                    enableSwipeHintOnFirstCard && i == 0
+                    enableSwipeHintOnFirstCard && i == firstSwipeableIndex
                         ? onSwipeHintComplete
                         : null,
+                nudgeAnchor:
+                    i == firstSwipeableIndex ? firstSwipeableCardAnchor : null,
+                onSwipeConversion: onSwipeConversion,
+                onLongPressConversion: onLongPressConversion,
               ),
         ];
       case FeedThemeSection(:final items, :final coreVisibleCount):
@@ -227,7 +241,7 @@ class SectionBlock extends StatelessWidget {
               ctaIcon: Icons.library_books_outlined,
               ctaLabel: 'Voir toute la curation',
               onCta: onSeeAll,
-            )
+            ),
           ];
         }
         // Tournée bugs E2E — une section thème **favorite** vide reste visible
@@ -241,7 +255,7 @@ class SectionBlock extends StatelessWidget {
               ctaIcon: Icons.add_rounded,
               ctaLabel: 'Ajouter des sources',
               onCta: onAddSources,
-            )
+            ),
           ];
         }
         final visible = items.take(coreVisibleCount).toList();
@@ -249,11 +263,15 @@ class SectionBlock extends StatelessWidget {
         // dérivés au rendu sur les transitions de `veilleGroup`.
         if (section.kind == SectionKind.veille) {
           final rows = buildVeilleFeedRows(visible);
+          final firstSwipeableIndex = visible.indexWhere(
+            (content) => !pendingFeedbackIds.contains(content.id),
+          );
           return [
             for (final row in rows)
               switch (row) {
-                VeilleHeaderRow(:final label) =>
-                  VeilleGroupHeader(label: label),
+                VeilleHeaderRow(:final label) => VeilleGroupHeader(
+                    label: label,
+                  ),
                 VeilleArticleRow(:final content, :final index) =>
                   pendingFeedbackIds.contains(content.id)
                       ? _feedbackInlineFor(content.id)
@@ -263,16 +281,24 @@ class SectionBlock extends StatelessWidget {
                           onSwipeDismiss: onDismissArticle == null
                               ? null
                               : () => onDismissArticle!(content.id),
-                          enableSwipeHint:
-                              enableSwipeHintOnFirstCard && index == 0,
-                          onSwipeHintComplete:
-                              enableSwipeHintOnFirstCard && index == 0
-                                  ? onSwipeHintComplete
-                                  : null,
+                          enableSwipeHint: enableSwipeHintOnFirstCard &&
+                              index == firstSwipeableIndex,
+                          onSwipeHintComplete: enableSwipeHintOnFirstCard &&
+                                  index == firstSwipeableIndex
+                              ? onSwipeHintComplete
+                              : null,
+                          nudgeAnchor: index == firstSwipeableIndex
+                              ? firstSwipeableCardAnchor
+                              : null,
+                          onSwipeConversion: onSwipeConversion,
+                          onLongPressConversion: onLongPressConversion,
                         ),
               },
           ];
         }
+        final firstSwipeableIndex = visible.indexWhere(
+          (content) => !pendingFeedbackIds.contains(content.id),
+        );
         return [
           for (var i = 0; i < visible.length; i++)
             if (pendingFeedbackIds.contains(visible[i].id))
@@ -284,11 +310,16 @@ class SectionBlock extends StatelessWidget {
                 onSwipeDismiss: onDismissArticle == null
                     ? null
                     : () => onDismissArticle!(visible[i].id),
-                enableSwipeHint: enableSwipeHintOnFirstCard && i == 0,
+                enableSwipeHint:
+                    enableSwipeHintOnFirstCard && i == firstSwipeableIndex,
                 onSwipeHintComplete:
-                    enableSwipeHintOnFirstCard && i == 0
+                    enableSwipeHintOnFirstCard && i == firstSwipeableIndex
                         ? onSwipeHintComplete
                         : null,
+                nudgeAnchor:
+                    i == firstSwipeableIndex ? firstSwipeableCardAnchor : null,
+                onSwipeConversion: onSwipeConversion,
+                onLongPressConversion: onLongPressConversion,
               ),
         ];
     }

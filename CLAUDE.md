@@ -4,11 +4,19 @@
 
 ---
 
-## BRANCHE PAR DÉFAUT — RÈGLE ABSOLUE
+## BRANCHES & ENVIRONNEMENTS — RÈGLE ABSOLUE
 
-> **`staging` est DÉPRÉCIÉ. NE JAMAIS merger, créer de PR, ni pousser vers `staging`.**
-> **Toute PR DOIT cibler `main` avec `--base main`.**
-> Un hook (`pre-bash-no-staging.sh`) bloque automatiquement les `gh pr create` sans `--base main`.
+> **`main` = environnement STAGING CONTINU** (backend `api-staging-40d3`, APK flavor
+> `staging` = `com.example.facteur.staging`, canal `beta`). C'est l'env que TU testes.
+> **Toute PR DOIT cibler `main` avec `--base main`** — le workflow quotidien est inchangé.
+>
+> **`production` = branche HEBDO** (backend `facteur-production`, APK flavor `prod`,
+> canal `stable` → vrais users). Elle n'est **JAMAIS** une cible de PR et ne reçoit
+> **jamais** de commit direct : elle est avancée **uniquement** par le bouton manuel
+> GitHub Actions **« Weekly Production Release »** (`weekly-release.yml`).
+>
+> **`staging` (l'ancienne branche) est abandonnée** — ne plus l'utiliser.
+> Un hook (`pre-bash-no-staging.sh`) bloque tout `gh pr create` sans `--base main`.
 
 ---
 
@@ -18,6 +26,7 @@
 - `list[]`, `dict[]`, `X | None` natifs (jamais `from typing import List, Dict, Optional`)
 - JWT secret identique mobile ↔ backend
 - **Alembic est la seule source de vérité pour le schéma DB.** Tout DDL (ALTER, CREATE, DROP) passe par une migration générée via `alembic revision --autogenerate -m "<desc>"` dans la PR qui le requiert. **Pas de SQL manuel via Supabase SQL Editor** — c'est le pattern qui a causé l'incident de drift d'avril 2026 (cf. [runbook de récupération](docs/runbooks/recover-from-alembic-drift.md)). Exactement 1 head Alembic. Le `Dockerfile` exécute `alembic upgrade head` au démarrage de chaque conteneur Railway — donc une migration cassée plante le déploiement, et stamper prod *avant* de merger une refonte de la chaîne est obligatoire (cf. runbook).
+- **Migrations additives / expand-contract OBLIGATOIRE.** `main` (staging) et `production` (prod) **partagent la DB Supabase de prod**. Le `Dockerfile` joue `alembic upgrade head` au boot des **deux** services : une migration mergée dans `main` touche donc la DB partagée **dès le boot staging**, pendant que le backend prod (ancien code `production`) tourne encore dessus jusqu'à 1 semaine. ⇒ jamais de `DROP`/rename/`NOT NULL`-sur-peuplé en une étape ; étaler sur 2 cycles hebdo (semaine N ajoute, semaine N+1 retire). Migrations idempotentes (no-op si déjà à head), gardées sur les deux backends.
 - Zones à risque (Auth, Router, DB, Infra) → lire [Safety Guardrails](docs/agent-brain/safety-guardrails.md) AVANT modif
 
 ---
@@ -52,7 +61,7 @@ Après le GO utilisateur, implémente et teste en autonomie :
 
 ### 3. PR (confirmation requise)
 
-1. Crée la PR vers `main` — **OBLIGATOIRE : `--base main`** (`staging` est DÉPRÉCIÉ, le hook `pre-bash-no-staging.sh` bloquera toute PR sans `--base main`)
+1. Crée la PR vers `main` — **OBLIGATOIRE : `--base main`** (env staging continu ; le hook `pre-bash-no-staging.sh` bloquera toute PR sans `--base main`). **Ne jamais cibler `production`** (avancée seulement par le bouton hebdo).
 2. **STOP → Notifie "PR #XX prête pour review"**
 3. Attends CI green + Peer Review APPROVED avant merge
 
@@ -103,6 +112,8 @@ cd packages/api && pytest tests/test_specific.py -x -q
 # Mobile
 cd apps/mobile && flutter test
 cd apps/mobile && flutter analyze
+# NB : l'Android a 2 flavors (staging|prod) → tout build/run APK exige --flavor.
+# Smoke Kotlin local (cf. memory APK post-merge) : flutter build apk --debug --flavor staging
 
 # E2E API (scripts QA existants)
 bash docs/qa/scripts/verify_<task>.sh
@@ -210,7 +221,7 @@ autonomie** les 3 étapes qui restent — avec la preuve que ça marche :
 
 ### Règles non négociables de /go
 
-- `--base main` **toujours** (staging bloqué par hook).
+- `--base main` **toujours** (hook : `--base main` obligatoire ; jamais `production`).
 - Jamais `--no-verify`, jamais `--force-with-lease` sur `main`, jamais amender
   un commit déjà poussé.
 - Si VERIFY échoue à la 2e tentative après fix → **stop** et demande à

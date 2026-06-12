@@ -249,6 +249,13 @@ class AppUpdateConstants {
   /// Release tag injected by CI (e.g. "beta-20260221-1430")
   static const String releaseTag = String.fromEnvironment('APP_RELEASE_TAG');
 
+  /// Update channel injected by CI : "beta" pour le flavor staging (env
+  /// continu), "stable" pour le flavor prod (vrais users). Sélectionne le
+  /// préfixe de tag filtré côté backend : stable→release-, beta→beta-.
+  /// Défaut "stable" → comportement prod pour tout build sans dart-define.
+  static const String updateChannel =
+      String.fromEnvironment('UPDATE_CHANNEL', defaultValue: 'stable');
+
   /// Whether this is a CI-built release (not a dev build)
   static bool get isReleaseBuild => releaseTag.isNotEmpty;
 }

@@ -378,6 +378,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       await ref.read(notificationsSettingsProvider.notifier).syncDigestTeasers(
             essentielTeasers: buildEssentielTeasers(essentielArticles),
             goodNewsTeasers: buildGoodNewsTeasers(dual.serein),
+            sereinEnabled: dual.sereinEnabled,
           );
     } catch (e) {
       debugPrint('FluxContinu: syncNotificationTeasers failed: $e');
@@ -642,10 +643,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final usableHeight = ref.read(usableViewportHeightProvider);
 
     final rawOrdered = <FluxSection>[
-      // Héros trimmé AVANT le dédup : les articles éjectés ne sont jamais
-      // ajoutés à `seen` par [_dedupeSectionsInOrder] → ils sont relâchés vers
-      // les sections aval (digest/thème) qui portent le même contentId. Aucune
-      // plomberie de feedback à écrire — c'est « gratuit » via le dédup ordonné.
+      // Héros jamais tronqué (PO) : ses 5 articles entrent tous dans `seen` via
+      // [_dedupeSectionsInOrder] → les sections aval portant le même contentId
+      // les retirent correctement (pas de doublon).
       if (_essentiel != null) _fitHeroSection(_essentiel!, usableHeight),
       for (final key in orderedKeys)
         if (key != kTourneeGrilleKey && sectionByKey[key] != null)
@@ -684,33 +684,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     );
   }
 
-  /// Trims the hero (« Ton Essentiel ») to the number of articles that fit the
-  /// usable viewport, keeping the lead. Returns the section untouched when the
-  /// height isn't measured yet (`null`) or everything already fits. The lead is
-  /// never dropped. The ejected articles leave the hero's `articles` list, so
-  /// the dedup downstream no longer claims them (cf. [_compose] rawOrdered).
+  /// La carte héros « Ton Essentiel » n'est **jamais tronquée** (PO) : ses
+  /// 5 articles du jour sont toujours affichés, quel que soit le viewport.
+  /// No-op conservé comme seam (appelé par [_compose]).
   FluxSection _fitHeroSection(FluxSection essentiel, double? usableHeight) {
-    if (essentiel is! EssentielSection || usableHeight == null) {
-      return essentiel;
-    }
-    final len = essentiel.articles.length;
-    final maxCount = len < 5 ? len : 5;
-    if (maxCount <= 1) return essentiel;
-    final fit = fitHeroCount(
-      usableHeight: usableHeight,
-      chromeHeight: kHeroChromeHeight,
-      leadHeight: kHeroLeadHeight,
-      mediumHeight: kHeroMediumHeight,
-      maxCount: maxCount,
-    );
-    if (fit >= len) return essentiel;
-    // Reconstruit comme [_filterSections]/[_dedupeSectionsInOrder] : seuls
-    // articles/blurb/illustration sont portés (label/accent = défauts canon).
-    return EssentielSection(
-      articles: essentiel.articles.take(fit).toList(growable: false),
-      blurb: essentiel.blurb,
-      illustrationAsset: essentiel.illustrationAsset,
-    );
+    return essentiel;
   }
 
   /// Caps each downstream section's `coreVisibleCount` to what fits the usable
@@ -966,20 +944,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
                   ),
               ],
             ),
-          FeedThemeSection(
-            :final items,
-            :final themeSlug,
-            :final customTopicId,
-          ) =>
-            FeedThemeSection(
-              kind: s.kind,
-              label: s.label,
-              accent: s.accent,
-              coreVisibleCount: s.coreVisibleCount,
-              blurb: s.blurb,
-              illustrationAsset: s.illustrationAsset,
-              themeSlug: themeSlug,
-              customTopicId: customTopicId,
+          FeedThemeSection(:final items) => s.copyWith(
               items: [
                 for (final c in items)
                   if (c.id == contentId)
@@ -1586,7 +1551,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       for (final section in _themes)
         if (section.kind == SectionKind.veille) sectionKey(section),
     ];
-    final favoriteKeys = [...themeKeys, ...sourceKeys, ...veilleKeys];
+    // Tant que l'utilisateur n'a pas personnalisé l'ordre de sa Tournée, on
+    // remonte en tête des thèmes celui auquel il a rattaché le plus de sujets
+    // favoris (signal d'intérêt le plus fort, capté à l'onboarding). Un ordre
+    // personnalisé (`customized`) est respecté tel quel par `applyOrder`.
+    final orderedThemeKeys =
+        customized ? themeKeys : _biasThemeKeysByMostFollowed(themeKeys);
+    final favoriteKeys = [...orderedThemeKeys, ...sourceKeys, ...veilleKeys];
     final useSereneDefault = isSerene && !customized;
     // La Grille n'est PAS réordonnable par l'utilisateur (cf. modal « Mes
     // favoris ») : on l'exclut d'`applyOrder` et on l'épingle juste après les
@@ -1620,6 +1591,50 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     }
 
     return ordered.take(kTourneeVisibleCap).toList(growable: false);
+  }
+
+  /// Renvoie [themeKeys] avec, en tête, la clé du thème auquel l'utilisateur a
+  /// rattaché le plus de **sujets favoris** (`customTopics` à l'état favori).
+  /// No-op si < 2 thèmes, aucun sujet favori, ou si le thème dominant n'a pas de
+  /// section thème rendue. N'est appelé que quand l'ordre n'est pas personnalisé.
+  List<String> _biasThemeKeysByMostFollowed(List<String> themeKeys) {
+    if (themeKeys.length < 2) return themeKeys;
+    final interests = ref.read(userInterestsProvider).valueOrNull;
+    if (interests == null) return themeKeys;
+
+    final counts = <String, int>{};
+    for (final t in interests.customTopics) {
+      if (t.state != InterestState.favorite) continue;
+      counts[t.slugParent] = (counts[t.slugParent] ?? 0) + 1;
+    }
+    if (counts.isEmpty) return themeKeys;
+
+    String? topSlug;
+    var topCount = 0;
+    for (final entry in counts.entries) {
+      if (entry.value > topCount) {
+        topCount = entry.value;
+        topSlug = entry.key;
+      }
+    }
+    if (topSlug == null) return themeKeys;
+
+    // slugParent → clé `theme:<slug>` de la section thème correspondante.
+    String? topKey;
+    for (final section in _themes) {
+      if (section.kind == SectionKind.theme && section.themeSlug == topSlug) {
+        topKey = sectionKey(section);
+        break;
+      }
+    }
+    if (topKey == null) return themeKeys;
+
+    final idx = themeKeys.indexOf(topKey);
+    if (idx <= 0) return themeKeys; // absent ou déjà en tête
+    final reordered = [...themeKeys];
+    reordered.removeAt(idx);
+    reordered.insert(0, topKey);
+    return reordered;
   }
 
   int? _resolveGrilleSlotIndex({

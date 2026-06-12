@@ -14,13 +14,15 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/nudges/nudge_counters.dart';
+import '../../../core/nudges/nudge_coordinator.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/widgets/feed_nudge_anchors.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
-import '../../feed/providers/swipe_hint_provider.dart';
 import '../../feed/widgets/explore_section.dart' show ExploreDiscoverySkeleton;
 import '../../feed/widgets/feedback_inline.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
@@ -31,6 +33,7 @@ import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../../../shared/strings/loader_error_strings.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
+import '../providers/personalisation_cta_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart'
     show tourneeOrderPrefsProvider;
 import '../utils/section_snap.dart';
@@ -84,10 +87,7 @@ const _closingTab = StickyTab(
   accent: Color(0xFF2E7D32),
 );
 // Carte de personnalisation (virtuelle — pas de section correspondante).
-const _persoCardTab = StickyTab(
-  label: 'Pour toi',
-  accent: Color(0xFFB0470A),
-);
+const _persoCardTab = StickyTab(label: 'Pour toi', accent: Color(0xFFB0470A));
 
 /// Drag-time feedforward payload for [_SectionPassageDot]. Computed live in
 /// [_FluxContinuScreenState._updateBoundaryApproach] and broadcast via a
@@ -165,6 +165,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// `markHiddenRemote`); resolution (chip / X / undo) drives
   /// `confirmDismiss` or `undoHide` on the provider.
   final Set<String> _pendingFeedback = <String>{};
+  bool _gestureNudgeRequested = false;
+  bool _showSwipeHint = false;
 
   int _passagePulseSequence = 0;
 
@@ -181,8 +183,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// in-flow [_SectionPassageDot]s. Feedforward twin of [_sectionPassagePulse]
   /// (the post-validation pulse) — both ride the same dot so the gesture reads
   /// as a single continuous « j'approche un seuil → je l'ai franchi ».
-  final ValueNotifier<_BoundaryApproach?> _boundaryApproach =
-      ValueNotifier(null);
+  final ValueNotifier<_BoundaryApproach?> _boundaryApproach = ValueNotifier(
+    null,
+  );
 
   /// Sorted snap points of [_snapAnchors], cached once per layout (frames only
   /// change on layout, never per scroll frame) so the per-frame
@@ -615,11 +618,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// Pull-to-refresh handler. Wraps the provider's refresh + clears pending
   /// feedback (the new state replaces yesterday's session) + scrolls to top.
   Future<void> _handleRefresh() async {
-    await ref.read(fluxContinuProvider.notifier).refresh();
-    if (!mounted) return;
     if (_pendingFeedback.isNotEmpty) {
       setState(_pendingFeedback.clear);
     }
+    await ref.read(fluxContinuProvider.notifier).refresh();
+    if (!mounted) return;
     if (_scroll.hasClients) {
       unawaited(
         _scroll.animateTo(
@@ -636,7 +639,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// the cached items immediately rather than waiting on the provider.
   void _openThemeSection(BuildContext context, FeedThemeSection section) {
     final key = Uri.encodeComponent(sectionKey(section));
-    context.push('${RoutePaths.fluxContinu}/theme/$key', extra: section);
+    ref.read(tourneeLastDedicatedSectionProvider.notifier).state = sectionKey(
+      section,
+    );
+    context
+        .push('${RoutePaths.fluxContinu}/theme/$key', extra: section)
+        .then((_) => _restoreLastDedicatedSection());
   }
 
   /// PR « Sources dans la Tournée » — ouvre la vue détail d'une section source
@@ -644,44 +652,60 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// `/flux-continu/source/:id` (id = sectionKey = `source:<uuid>`).
   void _openSourceSection(BuildContext context, FeedThemeSection section) {
     final key = Uri.encodeComponent(sectionKey(section));
-    context.push('${RoutePaths.fluxContinu}/source/$key', extra: section);
+    ref.read(tourneeLastDedicatedSectionProvider.notifier).state = sectionKey(
+      section,
+    );
+    context
+        .push('${RoutePaths.fluxContinu}/source/$key', extra: section)
+        .then((_) => _restoreLastDedicatedSection());
   }
 
   /// Opens the dedicated full-page view for a [DigestTopicSection]
   /// (Actus du jour, Bonnes Nouvelles). Mirrors [_openThemeSection].
   void _openDigestSection(BuildContext context, DigestTopicSection section) {
-    context.push(
-      '${RoutePaths.fluxContinu}/section/${sectionKey(section)}',
-      extra: section,
+    ref.read(tourneeLastDedicatedSectionProvider.notifier).state = sectionKey(
+      section,
     );
+    context
+        .push(
+          '${RoutePaths.fluxContinu}/section/${sectionKey(section)}',
+          extra: section,
+        )
+        .then((_) => _restoreLastDedicatedSection());
   }
 
-  /// Opens an article and, on return, marks it read in local state so the
-  /// card immediately shows the grey + check badge without waiting for a
-  /// pull-to-refresh.
+  void _restoreLastDedicatedSection() {
+    if (!mounted) return;
+    final key = ref.read(tourneeLastDedicatedSectionProvider);
+    final sections = ref.read(fluxContinuProvider).valueOrNull?.sections;
+    if (key == null || sections == null) return;
+    final sectionIndex = sections.indexWhere((s) => sectionKey(s) == key);
+    if (sectionIndex < 0 || sectionIndex >= _sectionKeys.length) return;
+    final stickyIndex = _stickyEntryKeys.indexOf(_sectionKeys[sectionIndex]);
+    if (stickyIndex >= 0) {
+      unawaited(_scrollToSection(stickyIndex));
+    }
+  }
+
+  /// Opens an article. ReadSyncService propagates the read state after the
+  /// one-second threshold; returning sooner must leave the card unread.
   Future<void> _openArticle(BuildContext context, Object article) async {
-    String? openedContentId;
     if (article is DigestItem) {
-      openedContentId = article.contentId;
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.contentId}',
       );
     } else if (article is Content) {
-      openedContentId = article.id;
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.id}',
         extra: article,
       );
     } else if (article is EssentielArticle) {
-      openedContentId = article.contentId;
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.contentId}',
       );
     } else {
       return;
     }
-    if (!mounted) return;
-    ref.read(fluxContinuProvider.notifier).markArticleRead(openedContentId);
   }
 
   // ---------------------------------------------------------------------------
@@ -693,6 +717,58 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final notifier = ref.read(fluxContinuProvider.notifier);
     unawaited(notifier.markHiddenRemote(contentId));
     setState(() => _pendingFeedback.add(contentId));
+  }
+
+  void _scheduleGestureNudge() {
+    if (_gestureNudgeRequested) return;
+    _gestureNudgeRequested = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final location =
+          GoRouter.of(context).routerDelegate.currentConfiguration.uri.path;
+      if (!location.startsWith(RoutePaths.fluxContinu)) {
+        _gestureNudgeRequested = false;
+        return;
+      }
+      final coordinator = ref.read(nudgeCoordinatorProvider);
+      if (coordinator.activeId != null) return;
+      final swipe = await coordinator.request(NudgeIds.feedSwipeHint);
+      if (!mounted) return;
+      if (swipe == NudgeIds.feedSwipeHint) {
+        setState(() => _showSwipeHint = true);
+        return;
+      }
+      if (coordinator.activeId == null) {
+        await coordinator.request(NudgeIds.feedPreviewLongpress);
+      }
+    });
+  }
+
+  void _onSwipeHintComplete() {
+    if (mounted) setState(() => _showSwipeHint = false);
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    if (coordinator.activeId == NudgeIds.feedSwipeHint) {
+      unawaited(coordinator.dismiss(markSeen: false));
+    }
+  }
+
+  void _recordSwipeConversion() {
+    if (_showSwipeHint && mounted) {
+      setState(() => _showSwipeHint = false);
+    }
+    unawaited(
+      ref
+          .read(nudgeCoordinatorProvider)
+          .recordConversion(NudgeIds.feedSwipeHint),
+    );
+  }
+
+  void _recordLongPressConversion() {
+    unawaited(
+      ref
+          .read(nudgeCoordinatorProvider)
+          .recordConversion(NudgeIds.feedPreviewLongpress),
+    );
   }
 
   void _resolveFeedback(String contentId) {
@@ -856,6 +932,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final isSkeleton = state is AsyncLoading || (data?.isSkeleton ?? false);
     // Re-tap de l'onglet actif (depuis le shell) → remonter en haut.
     ref.listen(essentielScrollTriggerProvider, (_, __) => _scrollToTop());
+    ref.listen(tourneeLastDedicatedSectionProvider, (_, __) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _restoreLastDedicatedSection();
+      });
+    });
     // Flow post-onboarding : joué une seule fois quand Essentiel a chargé ses
     // **vraies** données (derrière les modales thème & notifications). On exclut
     // l'état squelette : le flow attend du contenu réel. Couvre la transition
@@ -877,7 +958,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // et dérive les descripteurs d'onglets (label+accent), dans le même ordre.
     // Hors squelette uniquement : le scaffold placeholder n'attache pas les
     // GlobalKeys de section ni la physics de snap.
-    final stickyTabs = isSkeleton ? const <StickyTab>[] : _syncStickyEntries(data);
+    final stickyTabs =
+        isSkeleton ? const <StickyTab>[] : _syncStickyEntries(data);
     if (!isSkeleton) {
       // Sections don't resize mid-session, so we refresh the snap anchors only
       // on these content/layout-driven rebuilds — never per scroll frame.
@@ -954,9 +1036,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final citationPresent = state.quote != null && !state.closingDismissed;
     final grilleSlotIndex = state.grilleSlotIndex;
     // La carte perso est une entrée virtuelle (pas de section correspondante)
-    // insérée juste après le hero tant que l'utilisateur n'a pas personnalisé.
-    final customized =
-        ref.watch(tourneeOrderPrefsProvider.select((s) => s.customized));
+    // insérée juste après le hero lorsqu'elle est éligible mensuellement.
+    final showPersonalisationCta =
+        ref.watch(personalisationCtaShouldShowProvider).valueOrNull ?? false;
     final heroPresent =
         state.sections.isNotEmpty && state.sections.first is EssentielSection;
 
@@ -978,7 +1060,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       );
       // Destination de snap dédiée juste après le hero (entrée virtuelle,
       // sans section réelle — retourne -1 dans _sectionIndexForStickyIndex).
-      if (!customized && heroPresent && i == 0) {
+      if (showPersonalisationCta && heroPresent && i == 0) {
         add(_persoCardKey, _persoCardTab);
       }
     }
@@ -1107,13 +1189,29 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     required FluxContinuNotifier notifier,
   }) {
     final favoriteCount = state.sections.where(_isFavoriteSection).length;
-    final swipeLeftHintSeen =
-        ref.watch(swipeLeftHintSeenProvider).valueOrNull ?? true;
+    final firstSwipeableSectionIndex = state.sections.indexWhere(
+      (section) => switch (section) {
+        EssentielSection() => false,
+        DigestTopicSection(:final topics) => topics.any(
+            (topic) =>
+                !_pendingFeedback.contains(pickTopicLead(topic).contentId),
+          ),
+        FeedThemeSection(:final items) => items.any(
+            (content) => !_pendingFeedback.contains(content.id),
+          ),
+      },
+    );
+    if (firstSwipeableSectionIndex >= 0) {
+      _scheduleGestureNudge();
+    }
 
-    // Story Essentiel UX — la carte de perso (compte non personnalisé) et
-    // l'inline « Gérer / Tes N favoris » (compte personnalisé) s'excluent.
-    final customized =
-        ref.watch(tourneeOrderPrefsProvider.select((s) => s.customized));
+    // La grande carte mensuelle et l'inline « Gérer / Tes N favoris »
+    // s'excluent pour éviter deux appels à l'action concurrents.
+    final customized = ref.watch(
+      tourneeOrderPrefsProvider.select((s) => s.customized),
+    );
+    final showPersonalisationCta =
+        ref.watch(personalisationCtaShouldShowProvider).valueOrNull ?? false;
     final heroPresent =
         state.sections.isNotEmpty && state.sections.first is EssentielSection;
     // Cible de l'inline (mode personnalisé) : la 1ʳᵉ section de contenu après le
@@ -1145,7 +1243,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       // Mode personnalisé : préfixe l'inline « Gérer / Tes N favoris » au-dessus
       // du `SectionBlock`, à l'intérieur du subtree mesuré → l'inline fait
       // partie du bloc de snap de cette section (cf. [inlineTargetIndex]).
-      final showInlineHere = customized && i == inlineTargetIndex;
+      final showInlineHere =
+          customized && !showPersonalisationCta && i == inlineTargetIndex;
       slivers.add(
         SliverToBoxAdapter(
           child: KeyedSubtree(
@@ -1172,19 +1271,23 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                         _onSelectFeedbackChip(context, id, chip),
                     onResolveFeedback: _resolveFeedback,
                     onUndoFeedback: _undoFeedback,
-                    enableSwipeHintOnFirstCard: i == 0 && !swipeLeftHintSeen,
-                    onSwipeHintComplete: () async {
-                      await markSwipeLeftHintSeen();
-                      if (mounted) ref.invalidate(swipeLeftHintSeenProvider);
-                    },
+                    enableSwipeHintOnFirstCard:
+                        i == firstSwipeableSectionIndex && _showSwipeHint,
+                    onSwipeHintComplete: _onSwipeHintComplete,
+                    firstSwipeableCardAnchor: i == firstSwipeableSectionIndex
+                        ? fluxContinuFirstCardKey
+                        : null,
+                    onSwipeConversion: _recordSwipeConversion,
+                    onLongPressConversion: _recordLongPressConversion,
                     onTapFavorite: isFavorite
                         ? () => showTourneeComposerSheet(context)
                         : null,
                     // Story 23.4 — bouton réglages (tune) sur la section veille →
                     // ouvre la config en édition. Réutilisé par le CTA d'état vide.
                     onTapSettings: section.kind == SectionKind.veille
-                        ? () =>
-                            context.push('${RoutePaths.veilleConfig}?mode=edit')
+                        ? () => context.push(
+                              '${RoutePaths.veilleConfig}?mode=edit',
+                            )
                         : null,
                     // Tournée bugs E2E — CTA « Ajouter des sources » de l'empty-state
                     // d'une section thème favorite vide → ouvre « Composer ma Tournée ».
@@ -1206,11 +1309,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           ),
         ),
       );
-      // Compte non personnalisé : carte de perso dédiée juste après le hero
-      // (son propre bloc de snap — destination volontaire), à la place de
-      // l'inline. Une fois personnalisée, c'est l'inline qui reprend (cf.
-      // [showInlineHere]).
-      if (!customized && heroPresent && i == 0) {
+      // Carte mensuelle dédiée juste après le hero (son propre bloc de snap).
+      if (showPersonalisationCta && heroPresent && i == 0) {
         slivers.add(
           SliverToBoxAdapter(
             child: KeyedSubtree(
@@ -1255,10 +1355,12 @@ class _FluxContinuSkeleton extends StatelessWidget {
       // Fenêtre de loading initiale (pas encore de coquilles) → placeholders
       // génériques pour occuper l'espace sans labels.
       for (var i = 0; i < 3; i++) {
-        children.add(const Padding(
-          padding: EdgeInsets.only(top: 8),
-          child: ExploreDiscoverySkeleton(),
-        ));
+        children.add(
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: ExploreDiscoverySkeleton(),
+          ),
+        );
       }
     } else {
       for (final section in sections) {
@@ -1266,13 +1368,15 @@ class _FluxContinuSkeleton extends StatelessWidget {
         if (section is EssentielSection) continue;
         final isSource =
             section is FeedThemeSection && section.kind == SectionKind.source;
-        children.add(SectionBanner(
-          title: section.label,
-          accent: section.accent,
-          blurb: section.blurb,
-          illustrationAsset: isSource ? null : section.illustrationAsset,
-          logoUrl: isSource ? section.sourceLogoUrl : null,
-        ));
+        children.add(
+          SectionBanner(
+            title: section.label,
+            accent: section.accent,
+            blurb: section.blurb,
+            illustrationAsset: isSource ? null : section.illustrationAsset,
+            logoUrl: isSource ? section.sourceLogoUrl : null,
+          ),
+        );
         children.add(const ExploreDiscoverySkeleton());
         children.add(const SizedBox(height: 16));
       }
@@ -1468,8 +1572,10 @@ class _SectionPassageDotState extends State<_SectionPassageDot>
       widget.pulseListenable.addListener(_onPulse);
     }
     if (oldWidget.approachListenable != widget.approachListenable) {
-      _repaint =
-          Listenable.merge([_pulseController, widget.approachListenable]);
+      _repaint = Listenable.merge([
+        _pulseController,
+        widget.approachListenable,
+      ]);
     }
   }
 

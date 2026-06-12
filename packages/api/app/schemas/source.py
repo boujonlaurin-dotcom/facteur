@@ -240,6 +240,28 @@ class SearchAbandonedRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=500)
 
 
+class RecentItemsRequest(BaseModel):
+    """Requête batch des derniers contenus par source (conclusion onboarding)."""
+
+    source_ids: list[UUID] = Field(default_factory=list, max_length=30)
+    per_source: int = Field(default=3, ge=1, le=5)
+
+
+class SourceRecentItems(BaseModel):
+    """Derniers contenus d'une source, avec son identité visuelle."""
+
+    source_id: UUID
+    name: str
+    logo_url: str | None = None
+    items: list[SmartSearchRecentItem] = []
+
+
+class RecentItemsResponse(BaseModel):
+    """Réponse batch des derniers contenus par source."""
+
+    sources: list[SourceRecentItems] = []
+
+
 class ThemeSourceGroup(BaseModel):
     """Groupe de sources par catégorie dans un thème."""
 

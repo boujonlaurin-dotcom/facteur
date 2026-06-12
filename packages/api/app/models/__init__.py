@@ -12,6 +12,7 @@ from app.models.digest_completion import DigestCompletion
 from app.models.digest_generation_state import DigestGenerationState
 from app.models.editorial_highlights_history import EditorialHighlightsHistory
 from app.models.enums import ContentStatus, ContentType, SourceType
+from app.models.event_rsvp import EventRsvp
 from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.grille_game_state import GrilleGameState
 from app.models.grille_puzzle import GrillePuzzle
@@ -101,6 +102,8 @@ __all__ = [
     # Waitlist (Landing Page)
     "WaitlistEntry",
     "WaitlistSurveyResponse",
+    # RSVP événement (Story 25.1)
+    "EventRsvp",
     # Serene Feedback
     "SereneReport",
     # Entity Preferences (follow/mute on named entities)

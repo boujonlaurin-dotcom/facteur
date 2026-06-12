@@ -81,14 +81,15 @@ Future<void> _bootstrap() async {
     _openBoxSafe<String>('supabase_auth_persistence'),
     _openBoxSafe<String>('feed_cache'),
     _openBoxSafe<String>('flux_continu_cache'),
+    _openBoxSafe<String>('pending_reads'),
     SharedPreferences.getInstance(),
   ]);
-  final boxes = initResults.take(5).cast<Box<dynamic>>().toList();
-  final sharedPreferences = initResults[5] as SharedPreferences;
+  final boxes = initResults.take(6).cast<Box<dynamic>>().toList();
+  final sharedPreferences = initResults[6] as SharedPreferences;
   final authBox = boxes[1];
   final supabaseBox = boxes[2];
   debugPrint(
-    '[PERF] boot.hive_boxes_ms=${boxesSw.elapsedMilliseconds} (5 boxes + prefs parallel)',
+    '[PERF] boot.hive_boxes_ms=${boxesSw.elapsedMilliseconds} (6 boxes + prefs parallel)',
   );
 
   debugPrint('Main: Hive auth_prefs keys: ${authBox.keys.toList()}');
@@ -326,6 +327,7 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
     final digestVariant = essentielTeasers.isEmpty
         ? NotifVariant.variantA
         : NotifVariant.variantB;
+    final digestSerene = NotificationsSettingsNotifier.readSerein(settingsBox);
 
     // Diagnostic + scheduling sont indépendants : collecter le diagnostic
     // pendant la planification (alarms + permission). `pushEnabled=false`
@@ -343,6 +345,7 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
             await pushNotificationService.scheduleDailyDigestNotification(
           variant: digestVariant,
           teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
+          serene: digestSerene,
         );
         if (!scheduled) {
           debugPrint(
@@ -353,6 +356,7 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
               await pushNotificationService.scheduleDailyDigestNotification(
             variant: digestVariant,
             teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
+            serene: digestSerene,
           );
           debugPrint('Main: Retry result: $retryOk');
         }
