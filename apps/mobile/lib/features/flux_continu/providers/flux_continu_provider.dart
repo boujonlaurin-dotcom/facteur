@@ -696,7 +696,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     List<FluxSection> sections,
     double? usableHeight,
   ) {
-    if (usableHeight == null) return sections;
+    // Mesure absente OU implausiblement petite (render box détachée / recompose
+    // hors-écran déclenchée par un changement de mode d'affichage) : on garde
+    // les comptes nominaux plutôt que d'effondrer chaque section à 1 carte.
+    if (usableHeight == null || usableHeight < kMinPlausibleUsableHeight) {
+      return sections;
+    }
     return [for (final s in sections) _capSectionToFit(s, usableHeight)];
   }
 

@@ -192,46 +192,42 @@ class SectionBanner extends StatelessWidget {
                             top: 2,
                             bottom: hasBlurb ? (large ? 10 : 8) : 0,
                           ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Expanded(
-                                child: Text.rich(
-                                  TextSpan(
-                                    text: title,
-                                    children: <InlineSpan>[
-                                      if (onTapFavorite != null) ...[
-                                        const TextSpan(text: '  '),
-                                        WidgetSpan(
-                                          alignment: PlaceholderAlignment.middle,
-                                          child: _FavoriteStar(
-                                            color: colors.primary,
-                                            onTap: onTapFavorite!,
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                    style: GoogleFonts.fraunces(
-                                      fontSize: large ? 28 : 20,
-                                      fontWeight: FontWeight.w700,
-                                      height: large ? 1.12 : 1.08,
-                                      letterSpacing: -0.4,
-                                      color: colors.textPrimary,
+                          child: Text.rich(
+                            TextSpan(
+                              text: title,
+                              children: <InlineSpan>[
+                                if (tappable) ...[
+                                  const TextSpan(text: ' '),
+                                  WidgetSpan(
+                                    alignment: PlaceholderAlignment.middle,
+                                    child: IgnorePointer(
+                                      child: Icon(
+                                        PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
+                                        size: 18,
+                                        color: colors.textTertiary,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ),
-                              if (tappable) ...[
-                                const SizedBox(width: 8),
-                                IgnorePointer(
-                                  child: Icon(
-                                    PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
-                                    size: 22,
-                                    color: accent.withValues(alpha: 0.78),
+                                ],
+                                if (onTapFavorite != null) ...[
+                                  const TextSpan(text: '  '),
+                                  WidgetSpan(
+                                    alignment: PlaceholderAlignment.middle,
+                                    child: _FavoriteStar(
+                                      color: colors.textTertiary,
+                                      onTap: onTapFavorite!,
+                                    ),
                                   ),
-                                ),
+                                ],
                               ],
-                            ],
+                              style: GoogleFonts.fraunces(
+                                fontSize: large ? 28 : 20,
+                                fontWeight: FontWeight.w700,
+                                height: large ? 1.12 : 1.08,
+                                letterSpacing: -0.4,
+                                color: colors.textPrimary,
+                              ),
+                            ),
                           ),
                         ),
                         if (hasBlurb)
@@ -396,8 +392,8 @@ class _FavoriteStar extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
           child: Icon(
             PhosphorIcons.star(PhosphorIconsStyle.fill),
-            size: 14,
-            color: color,
+            size: 16,
+            color: color.withValues(alpha: 0.45),
           ),
         ),
       ),

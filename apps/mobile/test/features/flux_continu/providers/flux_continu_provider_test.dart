@@ -18,6 +18,8 @@ import 'package:facteur/features/grille/providers/grille_provider.dart';
 import 'package:facteur/features/grille/repositories/grille_repository.dart';
 import 'package:facteur/features/my_interests/models/user_interests_state.dart';
 import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
+import 'package:facteur/features/settings/models/display_mode_spec.dart';
+import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:flutter/material.dart' show Color;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -979,6 +981,9 @@ void main() {
             ),
           ),
           sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+          // La box Hive 'settings' n'est pas ouverte ici ⇒ on court-circuite le
+          // spec (lu par le cap dynamique) plutôt que de la faire planter.
+          displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),
           if (usableHeight != null)
             usableViewportHeightProvider.overrideWith((ref) => usableHeight),
         ],
@@ -1028,6 +1033,29 @@ void main() {
         // Hero kept all 4 ⇒ dedup strips e3/e4 from the theme section.
         final theme = state.sections.whereType<FeedThemeSection>().single;
         expect(theme.items.map((c) => c.id), ['x1', 'x2']);
+        expect(theme.coreVisibleCount, 3);
+      },
+    );
+
+    test(
+      'an implausibly small measured height is ignored — sections keep their '
+      'nominal count instead of collapsing to 1 (bug minimaliste)',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        // Une mesure transitoire/aberrante (render box détachée lors d'une
+        // recompose hors-écran déclenchée par un changement de mode) ne doit pas
+        // effondrer chaque section à 1 carte : sous le plancher de plausibilité,
+        // on garde les comptes nominaux.
+        final container = makeFitContainer(
+          essentielIds: const ['e1', 'e2'],
+          themeFeedIds: const ['x1', 'x2', 'x3', 'x4', 'x5'],
+          usableHeight: 200, // < kMinPlausibleUsableHeight (360)
+        );
+        addTearDown(container.dispose);
+
+        final state = await settle(container);
+        final theme = state.sections.whereType<FeedThemeSection>().single;
+        // Sans le garde-fou, fitVisibleCount(200) plancherait à 1.
         expect(theme.coreVisibleCount, 3);
       },
     );

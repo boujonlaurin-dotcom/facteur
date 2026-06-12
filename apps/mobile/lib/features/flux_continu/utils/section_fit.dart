@@ -53,6 +53,15 @@ const double kBannerHeightWithBlurb = 100;
 /// (SizedBox 16 du SectionBlock).
 const double kSectionFooterHeight = 16;
 
+/// Plancher de plausibilité (px) du viewport utile mesuré. En dessous, la mesure
+/// est considérée **non fiable** (mesure transitoire / render box détachée au
+/// moment d'un changement de mode d'affichage ou d'une recompose hors-écran) :
+/// le cap est court-circuité (cf. [usableHeight] == null) pour ne pas effondrer
+/// toutes les sections à 1 carte. Même le plus petit téléphone (iPhone SE,
+/// ~480px utiles dans le feed) reste largement au-dessus, donc le « cartes ≤
+/// écran » légitime n'est pas affecté.
+const double kMinPlausibleUsableHeight = 360;
+
 // ── Hero card (« Ton Essentiel » — lead + up to 4 mediums) ────────────────────
 
 /// Non-tile chrome of the hi-fi hero card (px): card margins (8+16) + container
