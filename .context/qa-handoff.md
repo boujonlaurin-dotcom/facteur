@@ -1,88 +1,66 @@
-# QA Handoff — PR-A Stabilité du questionnaire d'onboarding
+# QA Handoff — Progression PR1 (Mon courrier → Progression, gamification)
 
-> Salve pré-Stores. PR-A = stabilité + simplification du questionnaire.
-> PR-B (Refonte sources + Wow) est gérée séparément, plus tard.
+> Ce fichier est rempli par l'agent dev à la fin du développement, après validation du PO.
+> Il sert d'input à la commande /validate-feature de l'agent QA.
 
 ## Feature développée
-Correction de l'écran gris fatal en fin/abandon de questionnaire (Sentry FLUTTER-2)
-et refonte de fluidité : questionnaire raccourci (suppression des questions
-articles/jour + gamification), tap carte source = modal de compréhension par défaut,
-mode serein conditionnel déplacé juste avant le final, bouton « Passer » avec défauts
-sains, et fix du champ sujet custom caché par le clavier.
+L'onglet « Mon courrier (progression) » devient « Progression » : grades de facteur dérivés des lettres complétées (Apprenti facteur → Maître facteur), badge de niveau discret sur l'avatar header, header gamifié sur l'écran Progression, teaser « Classement des Facteurs (BIENTÔT) », carte Progression en haut du Profil, avatar + grade dans la sheet Réglages, banner feed avec étape x/n et mini barre. 100 % client, zéro backend.
 
 ## PR associée
-À créer vers `main` (`--base main`).
+À créer via /go (base main). Branche : boujonlaurin-dotcom/progression-tab-gamification.
 
 ## Écrans impactés
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Splash (gate anti-rebond) | /splash | Modifié (logique redirect) |
-| Onboarding (questionnaire) | /onboarding | Modifié |
-| Conclusion onboarding | /onboarding/conclusion | Inchangé (vérif non-régression) |
-| Essentiel / Flux Continu (sortie) | /flux-continu | Cible de sortie (vérif pas de gris) |
-| Modal détail source | (bottom sheet) | Modifié (libellés sélection onboarding) |
+| Progression (ex Mon courrier) | /lettres | Modifié (titre, header gamifié, teaser classement, sections sans em-dash) |
+| Profil | profil (depuis sheet Réglages) | Modifié (carte PROGRESSION en premier) |
+| Sheet Réglages | bouton avatar header | Modifié (_ProfileBlock : RingAvatar + grade au lieu de « Plan gratuit ») |
+| Feed Essentiel (banner lettres) | / (flâner/essentiel) | Modifié (kicker « ÉTAPE 01 · x/n », mini barre, pastille enveloppe) |
+| Avatar header | toutes pages avec header | Modifié (badge numérique de niveau bas-droite) |
 
 ## Scénarios de test
 
-### Scénario 1 : Happy path — signup → fin du questionnaire
-1. Créer un nouveau compte → confirmer email → arriver sur l'onboarding.
-2. Répondre à toutes les questions jusqu'au bout (animation de conclusion).
-**Résultat attendu** : atterrissage sur l'Essentiel, modals post-onboarding OK,
-**aucun écran gris**.
+### Scénario 1 : Écran Progression (happy path)
+**Parcours** :
+1. Ouvrir l'avatar header → Réglages → « Progression » (ou route /lettres)
+2. Observer le header
+**Résultat attendu** : titre « Progression » ; carte header avec avatar (initiales + badge niveau), titre de grade (ex « Apprenti facteur »), sous-ligne « NIVEAU 1 · 0 LETTRE CLASSÉE », barre de progression globale, « x/n étapes sur la lettre en cours » ; sections EN COURS / À VENIR / CLASSÉES sans tirets « — » ; teaser « CLASSEMENT DES FACTEURS » + « BIENTÔT » entre À VENIR et CLASSÉES, non tappable.
 
-### Scénario 2 : Abandon en cours de questionnaire
-1. Démarrer l'onboarding, avancer de quelques questions.
-2. Taper la croix « Quitter » → confirmer « Quitter ».
-**Résultat attendu** : atterrissage sur l'Essentiel, **aucun écran gris**.
+### Scénario 2 : Badge niveau sur l'avatar header
+**Parcours** :
+1. Sur le feed, observer l'avatar en haut à droite
+2. Activer le Mode Serein dans Réglages, ré-observer
+**Résultat attendu** : petit disque sombre bas-droite avec le chiffre du niveau (discret). En serein : le lotus remplace le badge niveau (un seul badge de coin).
 
-### Scénario 3 : Refaire le questionnaire depuis les réglages
-1. Depuis Réglages, relancer le questionnaire.
-2. Le terminer (fin) **puis** (autre run) l'abandonner.
-**Résultat attendu** : les deux chemins atterrissent proprement, **aucun écran gris**.
+### Scénario 3 : Profil + sheet Réglages
+**Parcours** :
+1. Avatar header → sheet Réglages : bloc profil
+2. Tap sur le bloc profil → écran Profil
+3. Tap sur la carte PROGRESSION
+**Résultat attendu** : sheet : avatar RingAvatar (mêmes initiales que le header) + grade en sous-titre (plus de « Plan gratuit »). Profil : carte « PROGRESSION » en premier (avatar, grade, « Lettre 02 · x/y étapes », mini barre) ; tap → écran Progression.
 
-### Scénario 4 : « Passer » tout le questionnaire
-1. Sur chaque question proposant « Passer cette étape », taper « Passer ».
-**Résultat attendu** : le parcours avance avec des défauts sains (objectifs vides →
-Section 2 ; approach=detailed ; responseStyle=nuanced ; thèmes vides → sources
-directement ; digestMode=pour_vous). Les suggestions de sources restent ≥ 5 même sans
-thème sélectionné.
+### Scénario 4 : Banner feed
+**Parcours** :
+1. Avec une lettre active, aller sur l'Essentiel/Flâner
+**Résultat attendu** : banner avec enveloppe sur pastille teintée, kicker « ÉTAPE 02 · x/n » (sans x/n si la lettre n'a pas d'actions), mini barre sous le titre ; dismiss X masque pour la session ; tap ouvre la lettre.
 
-### Scénario 5 : Mode serein conditionnel
-1. Run A : ne PAS cocher « La négativité » dans les objectifs → terminer.
-   **Attendu** : la question « Rester serein ? » **n'apparaît pas** ; on passe direct au final.
-2. Run B : cocher « La négativité » → terminer.
-   **Attendu** : la question « Rester serein ? » apparaît **juste avant** le final, avec la
-   mention « Vous pourrez activer ou désactiver le mode serein à tout moment depuis Mes
-   intérêts. »
-
-### Scénario 6 : Tap carte source vs sélection
-1. Sur la page sources, taper le **corps** d'une carte source.
-   **Attendu** : ouverture de la modal de compréhension (libellé bouton
-   « Sélectionner cette source » / « Retirer de ma sélection »).
-2. Taper le **cercle** de sélection à droite.
-   **Attendu** : toggle de la sélection (zone de tap ≥ 44px), sans ouvrir la modal.
-
-### Scénario 7 : Champ sujet custom + clavier (edge)
-1. Sur « Affine tes centres d'intérêt », taper « + ajouter » pour saisir un sujet custom.
-2. Observer pendant que le clavier monte (tester mono-thème ET multi-thème PageView, petit device).
-**Résultat attendu** : le champ de saisie reste **visible au-dessus du clavier**.
+### Scénario 5 : Cas d'erreur
+**Parcours** :
+1. Couper le réseau, ouvrir /lettres
+**Résultat attendu** : « Impossible de charger ta progression. » + Réessayer. Carte Profil et avatar : pas de badge ni carte (shrink silencieux), pas de crash.
 
 ## Critères d'acceptation
-- [ ] Aucun écran gris en fin **ni** en abandon (FLUTTER-2 éteint sur la release suivante).
-- [ ] Questionnaire raccourci : plus de question « articles/jour » ni « gamification ».
-- [ ] Mode serein affiché uniquement si objectif « négativité » coché, et placé avant le final.
-- [ ] Tap carte = modal ; tap cercle = sélection.
-- [ ] Bouton « Passer » présent sur les questions skippables, défauts sains appliqués.
-- [ ] Champ sujet custom visible au clavier.
+- [ ] Titre « Progression » partout côté UI (route /lettres inchangée)
+- [ ] Grade correct : 0 lettre complétée = niveau 1 (letter_0 bienvenue ignorée), 1 = niveau 2, clamp à Maître facteur
+- [ ] Badge niveau discret, serein prioritaire (jamais 2 badges)
+- [ ] Aucun em-dash dans la nouvelle copy
+- [ ] Dark mode (Encre & Nuit + Encre Pure) : nouveaux widgets lisibles
+- [ ] Viewport 390x844, console sans erreurs, pas de 4xx/5xx inattendus
 
 ## Zones de risque
-- **Redirect / splash gate** : tester la matrice — déconnecté / email non confirmé /
-  nouveau compte / utilisateur existant. Le shell ne doit pas se monter avant la résolution
-  du statut d'onboarding.
-- **Reprise Hive** : bump `_currentVersion` 3→4 → les positions sauvegardées sont wipées ;
-  un utilisateur en cours de questionnaire au moment de la MAJ redémarre proprement.
-- **Barre de progression** : Section 2 = 2 étapes, Section 3 = 5 (ou 6 si serein).
+- Goldens RingAvatar : chemin non-serein sans level doit rester byte-identical (vérifié : goldens existants inchangés).
+- Le grade est 100 % client : avec seulement letter_0 archivée (actions vides), niveau doit être 1, pas 2.
+- Scroll de l'écran Progression : CLASSÉES passe sous le fold avec le nouveau header.
 
 ## Dépendances
-- Aucun changement backend. Defaults `dailyArticleCount=5` / `gamification=true` /
-  `digest_mode=pour_vous` envoyés via les fallbacks existants (`user_api_service`).
+Aucune : zéro backend, zéro migration. Endpoint lettres existant uniquement.

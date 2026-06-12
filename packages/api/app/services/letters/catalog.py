@@ -116,10 +116,9 @@ LETTER_2: dict = {
         },
     ],
     "message": (
-        "Ta sélection est prête. Maintenant, faisons connaissance avec ce qu'elle "
+        "Ta sélection est prête. Faisons connaissance avec ce qu'elle "
         "peut t'apporter au quotidien.\n\n"
-        "Pas de course à la lecture, pas de chiffres à atteindre — "
-        "juste cinq gestes simples pour entrer dans le rythme."
+        "Cinq gestes simples pour entrer dans le rythme."
     ),
     "signature": "Le Facteur",
     "completion_voeu": (

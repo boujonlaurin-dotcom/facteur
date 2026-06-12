@@ -66,6 +66,47 @@ void main() {
     });
   });
 
+  group('RingAvatar level badge', () {
+    testWidgets('shows the level number when level is set', (tester) async {
+      await tester.pumpWidget(_wrap(
+        const RingAvatar(initials: 'LB', progress: 0.5, level: 3),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('3'), findsOneWidget);
+    });
+
+    testWidgets('serein wins over level — single corner badge',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        const RingAvatar(initials: 'LB', progress: 0.5, serein: true, level: 3),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(SereinColors.sereinIcon), findsOneWidget);
+      expect(find.text('3'), findsNothing);
+    });
+
+    testWidgets('no badge when level is null and serein is false',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        const RingAvatar(initials: 'LB', progress: 0.5),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(SereinColors.sereinIcon), findsNothing);
+      expect(find.text('3'), findsNothing);
+    });
+
+    testWidgets('golden — level badge', (tester) async {
+      await tester.pumpWidget(_wrap(
+        const RingAvatar(initials: 'LB', progress: 0.5, level: 2),
+      ));
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(RingAvatar),
+        matchesGoldenFile('goldens/ring_avatar_level_2.png'),
+      );
+    });
+  });
+
   group('RingAvatar goldens', () {
     testWidgets('null progress — no ring', (tester) async {
       await tester.pumpWidget(_wrap(
