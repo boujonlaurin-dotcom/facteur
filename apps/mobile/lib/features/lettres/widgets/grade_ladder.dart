@@ -86,6 +86,7 @@ class _GradeRow extends StatelessWidget {
               title,
               style: GoogleFonts.dmSans(
                 fontSize: 14,
+                fontStyle: FontStyle.italic,
                 fontWeight: current ? FontWeight.w700 : FontWeight.w500,
                 color: current
                     ? colors.primary

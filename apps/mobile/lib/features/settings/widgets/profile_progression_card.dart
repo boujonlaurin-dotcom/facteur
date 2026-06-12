@@ -61,16 +61,19 @@ class ProfileProgressionCard extends ConsumerWidget {
             child: InkWell(
               onTap: () => context.pushNamed(RouteNames.lettres),
               child: Padding(
-                padding: const EdgeInsets.all(FacteurSpacing.space4),
+                padding: const EdgeInsets.all(20),
                 child: Row(
                   children: [
-                    RingAvatar.fromName(
-                      displayName,
-                      active?.progress,
-                      level: grade.level,
-                      serein: serein,
+                    Transform.scale(
+                      scale: 1.35,
+                      child: RingAvatar.fromName(
+                        displayName,
+                        active?.progress,
+                        level: grade.level,
+                        serein: serein,
+                      ),
                     ),
-                    const SizedBox(width: FacteurSpacing.space4),
+                    const SizedBox(width: 20),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -79,15 +82,19 @@ class ProfileProgressionCard extends ConsumerWidget {
                             grade.title,
                             style: Theme.of(context)
                                 .textTheme
-                                .bodyMedium
-                                ?.copyWith(fontWeight: FontWeight.w600),
+                                .titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontStyle: FontStyle.italic,
+                                ),
                           ),
                           if (active != null && activeTotal > 0) ...[
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 8),
                             LetterMiniProgress(
                               progress: active.progress,
                               done: activeDone,
                               total: activeTotal,
+                              height: 6,
                               showCount: false,
                             ),
                           ],
