@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -11,6 +12,7 @@ import '../../../config/constants.dart';
 import '../../../config/routes.dart';
 import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../app_update/providers/app_update_provider.dart';
 import '../../app_update/widgets/update_bottom_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
@@ -440,19 +442,23 @@ Future<void> _confirmAndArchiveVeille(BuildContext context, WidgetRef ref) async
   }
 }
 
-class _FeedbackTile extends StatelessWidget {
+class _FeedbackTile extends ConsumerWidget {
   const _FeedbackTile();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     return _SheetCard(
-      onTap: () => showModalBottomSheet<void>(
-        context: context,
-        backgroundColor: Colors.transparent,
-        isScrollControlled: true,
-        builder: (_) => const FeedbackModal(),
-      ),
+      onTap: () {
+        // Trace serveur pour la lettre 4 (action give_app_feedback).
+        unawaited(ref.read(analyticsServiceProvider).trackAppFeedbackOpened());
+        showModalBottomSheet<void>(
+          context: context,
+          backgroundColor: Colors.transparent,
+          isScrollControlled: true,
+          builder: (_) => const FeedbackModal(),
+        );
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: FacteurSpacing.space4,

@@ -28,6 +28,36 @@ void main() {
       );
     });
 
+    test('maps letter 3 and 4 action ids (Story 26.2)', () {
+      expect(
+        resolveLetterActionRoute(_action(id: 'create_first_veille')),
+        '/veille/config',
+      );
+      expect(resolveLetterActionRoute(_action(id: 'save_5_articles')), '/flaner');
+      expect(resolveLetterActionRoute(_action(id: 'write_first_note')), '/saved');
+      expect(resolveLetterActionRoute(_action(id: 'mute_3_sources')), '/flaner');
+      expect(
+        resolveLetterActionRoute(_action(id: 'add_5_youtube_channels')),
+        '/settings/sources/add',
+      );
+      expect(
+        resolveLetterActionRoute(_action(id: 'read_50_articles')),
+        '/flaner',
+      );
+      expect(
+        resolveLetterActionRoute(_action(id: 'recommend_10_articles')),
+        '/flaner',
+      );
+      expect(
+        resolveLetterActionRoute(_action(id: 'open_10_perspectives')),
+        '/flaner',
+      );
+      expect(
+        resolveLetterActionRoute(_action(id: 'give_app_feedback')),
+        '/settings',
+      );
+    });
+
     test('normalizes legacy digest and feed routes', () {
       expect(
         resolveLetterActionRoute(
