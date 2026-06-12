@@ -22,7 +22,7 @@ from uuid import UUID
 
 import sentry_sdk
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import safe_async_session
@@ -49,6 +49,40 @@ from app.services.editorial.schemas import EditorialPipelineResult
 from app.utils.time import today_paris
 
 logger = structlog.get_logger()
+
+
+async def compute_digest_coverage(
+    session: AsyncSession, target_date: datetime.date
+) -> tuple[int, int, float]:
+    """Couverture du digest pour `target_date`.
+
+    Renvoie `(total_users, pair_count, coverage)` où `coverage` est la
+    fraction (0.0-1.0) de paires `(user_id, is_serene)` présentes sur les
+    `total_users * 2` attendues (chaque user = variante normale + sereine).
+
+    Source unique de la notion de "couverture", partagée entre le watchdog
+    (scheduler) et le résumé de run (ce module) — évite la dérive entre deux
+    calculs divergents. Les deux `session.scalar` sont émis dans l'ordre
+    `total_users` puis `pair_count`.
+    """
+    total_users = (
+        await session.scalar(select(func.count()).select_from(UserProfile)) or 0
+    )
+    if not total_users:
+        return 0, 0, 0.0
+
+    expected_pairs = total_users * 2
+    pair_subq = (
+        select(DailyDigest.user_id, DailyDigest.is_serene)
+        .where(DailyDigest.target_date == target_date)
+        .group_by(DailyDigest.user_id, DailyDigest.is_serene)
+        .subquery()
+    )
+    pair_count = (
+        await session.scalar(select(func.count()).select_from(pair_subq)) or 0
+    )
+    coverage = pair_count / expected_pairs if expected_pairs else 0.0
+    return total_users, pair_count, coverage
 
 
 class DigestGenerationJob:
@@ -288,6 +322,30 @@ class DigestGenerationJob:
                 **self.stats,
             )
 
+            # Résumé de run always-on (durée + couverture %) — enabler
+            # observabilité scaling (WP-E). La couverture est lue dans une
+            # session courte dédiée pour ne jamais toucher l'état de la session
+            # batch ; best-effort, un échec de lecture ne fait pas échouer le job.
+            coverage_pct: float | None = None
+            try:
+                async with safe_async_session() as cov_session:
+                    _, _, coverage = await compute_digest_coverage(
+                        cov_session, target_date
+                    )
+                coverage_pct = round(coverage * 100, 1)
+            except Exception as exc:  # pragma: no cover — defensive
+                logger.warning("digest_run_summary_coverage_failed", error=str(exc))
+
+            logger.info(
+                "digest_run_summary",
+                target_date=str(target_date),
+                duration_seconds=round(duration, 1),
+                total_users=self.stats["total_users"],
+                success=self.stats["success"],
+                failed=self.stats["failed"],
+                coverage_pct=coverage_pct,
+            )
+
             # Story 14.1 — operational event to PostHog for ops dashboards.
             # Uses a synthetic distinct_id since this is a system-level event.
             try:
@@ -299,6 +357,7 @@ class DigestGenerationJob:
                     properties={
                         "target_date": str(target_date),
                         "duration_seconds": round(duration, 1),
+                        "coverage_pct": coverage_pct,
                         **self.stats,
                     },
                 )

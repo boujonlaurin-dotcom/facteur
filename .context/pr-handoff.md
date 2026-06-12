@@ -1,32 +1,31 @@
-## Remettre en place un environnement `staging` séparé de la prod
+feat(observabilité): instrumentation API externes + sonde pool + résumé digest (scaling WP-E)
 
-Sépare l'environnement **continu** (que je teste) des **releases hebdo propres** pour les
-vrais users, **sans** changer le workflow quotidien (PRs vers `main`, Conductor, `/go`).
+Enabler scaling **purement additif** (aucun impact user-facing, aucun changement de comportement métier). Phase 1 de l'investigation scaling 200 users — *mesurer avant de remédier*. Débloque WP-D (quotas/coûts Mistral), WP-B (digest), WP-A (pool). Doc : `docs/maintenance/maintenance-observabilite-scaling.md`.
 
-| Branche | Backend Railway | Flavor | applicationId | Canal | Tag |
-|---|---|---|---|---|---|
-| `main` | `api-staging-40d3` (staging) | `staging` | `com.example.facteur.staging` | `beta` | `beta-*` |
-| `production` | `facteur-production` (prod) | `prod` | `com.example.facteur` | `stable` | `release-*` |
+## Volet 1 — Tracking persistant des appels API externes
+- Nouvelle table append-only **`api_usage_events`** (`provider`, `model`, `call_site`, `user_id`, `status`, `latency_ms`, `created_at` + 2 index). Pas de contrainte d'unicité → zéro hot-row contention.
+- Recorder best-effort **`record_api_call`** (`app/services/observability/usage_recorder.py`) : session courte dédiée (`safe_async_session`), jamais bloquant, ne lève jamais, gated par le kill-switch `usage_tracking_enabled`.
+- 6 call sites instrumentés en `try/finally` (capte aussi `error`/`rate_limited`) : `classification_pass1`, `good_news_pass2`, `editorial` (chokepoint unique curation/pipeline/deep/perspective), `veille_suggester`, `smart_search_mistral`, `smart_search_brave`. Compteurs in-memory veille existants **laissés en place** (pas de rebranchement d'enforcement → WP-D).
 
-Les deux APK cohabitent sur un device (applicationId distincts). PRs continuent de cibler `main`.
+## Volet 2 — Résumé de run digest always-on
+- `compute_digest_coverage(session, target_date)` factorisé depuis le watchdog (source unique de la couverture, partagée scheduler ↔ job).
+- Log always-on `digest_run_summary` (`duration_seconds`, `total_users`, `success`, `failed`, `coverage_pct`) + `coverage_pct` ajouté à l'event PostHog `digest_generated`. Couverture lue dans une session dédiée best-effort. Aucune nouvelle table.
 
-### Changements (code)
-- **Flavors Android** `prod`/`staging` + `android:label="${appLabel}"` (Facteur / Facteur STG).
-- **Mobile** : `AppUpdateConstants.updateChannel` (`UPDATE_CHANNEL`, défaut `stable`) propagé aux 2 call-sites (`?channel=…`).
-- **Backend** `app_update.py` : filtre par canal (`stable→release-`, `beta→beta-`), cache **clé par préfixe**, `channel` dans les 3 endpoints. **Rétro-compat** : apps prod sans `channel` → `stable` → `release-*`, vu « plus récent » que `beta-*` (lexicographique) → migration propre. +tests pytest.
-- **Workflows** : `build-apk`→staging/beta ; `deploy-staging`→`[main]` ; `promote-to-production`→`[production]` ; `build-docker`→`[main, production]`. **Nouveau** `weekly-release.yml` (bouton `workflow_dispatch` : `--ff-only` `production`←`main`, build prod, tag `release-*`, smoke prod).
-- **Docs/hook** : `CLAUDE.md` (branches/env, règle migrations expand-contract, note flavor) ; `pre-bash-no-staging.sh` (messages, logique inchangée). Doc `docs/maintenance/maintenance-restore-staging-env.md`.
+## Volet 3 — Sonde pool périodique + métrique idle-in-tx
+- `read_pool_stats(engine)` factorisé (`app/observability/pool_stats.py`), réutilisé par `/api/health/pool` (comportement inchangé) **et** par la nouvelle sonde.
+- Job APScheduler `_pool_health_probe` (interval 5 min) : alerte `db_pool_pressure_high` + `sentry_sdk.capture_message(level="warning")` au seuil `pool_alert_threshold_pct` (défaut 80).
+- `zombie_session_sweeper` émet désormais `db_idle_in_transaction_swept{count}` always-on (idle-in-tx requêtable même à 0).
 
-### Vérifié localement
-- `pytest tests/routers/test_app_update.py` → **5 passed** (3 canaux + cache par préfixe + redirect existant).
-- `flutter analyze` (fichiers touchés) → aucun nouvel issue.
-- `flutter build apk --debug` **staging** + **prod** → OK ; merged manifests : `com.example.facteur.staging`/"Facteur STG" et `com.example.facteur`/"Facteur".
-- 5 workflows YAML valides.
+## Config (kill-switches)
+`usage_tracking_enabled: bool = True` · `pool_alert_threshold_pct: int = 80`.
 
-### ⚠️ Après merge — séquence sûre (PO, dashboards)
-La branche `production` est **déjà créée** (= `main`, `ab6430d2`). Restent les dashboards :
-1. **Avant de merger** : Railway `facteur-production` deploy branch `main`→`production` ; `api-staging-40d3` `staging`→`main` (confirmer `RAILWAY_ENVIRONMENT_NAME=staging` + `DATABASE_URL`=DB prod).
-2. **Merger cette PR** → `main` redéploie staging + 1er `beta-*` staging.
-3. **Cliquer immédiatement « Weekly Production Release »** → `production` rattrape `main`, backend prod passe au filtre `release-` (ignore les `beta-*`), publie la 1ère `release-*` → anciens users prod : 1 prompt → update in-place.
+## Migration
+`au01_api_usage_events`, `down_revision = gr02_grille_featured_article` (head courant ; `vf02` du plan était dépassé depuis #784). **1 seul head** confirmé via `alembic heads`. Additive pure (CREATE TABLE + 2 index), rollback trivial. `upgrade head` + `downgrade -1` rejoués sur **DB vide** → OK.
 
-Détails + follow-ups (iOS/Web encore sur `main` avec URL prod, branche parasite `fix/mute-logic-debug`) : voir `docs/maintenance/maintenance-restore-staging-env.md`.
+## Tests & VERIFY
+- Nouveaux : `tests/test_usage_recorder.py` (kill-switch, best-effort never-raises, coercition user_id, call_site inconnu), `tests/test_pool_observability.py` (`read_pool_stats` saturé/ok/NullPool + sonde alerte/quiet/registration).
+- Non-régression : `tests/ml/`, `tests/editorial/`, `tests/workers/`, `tests/test_digest_generation_job.py`, `tests/test_health_pool.py`, `tests/services/search/` → **tout vert** (~355 tests sur les modules touchés).
+- Intégration live (Postgres) : 1 ligne/appel écrite (Mistral + Brave), kill-switch ⇒ 0 insert, requête WP-D `GROUP BY provider, model, day` OK.
+
+## Risques & rollback
+Write amplification négligeable (append-only + best-effort + flag, ~3k/j). Rollback à chaud : `usage_tracking_enabled=False` (sans redéploiement schéma) ou `alembic downgrade -1`. Pas de changelog user (PR backend sans impact visible).
