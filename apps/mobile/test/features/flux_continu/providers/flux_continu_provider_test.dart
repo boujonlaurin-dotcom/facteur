@@ -269,7 +269,6 @@ void main() {
       final state = await settle(container);
 
       expect(state.closingDismissed, isFalse);
-      expect(state.moreOpen, isEmpty);
     });
   });
 

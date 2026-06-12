@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
@@ -22,6 +23,7 @@ import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/models/user_sources_state.dart';
 import '../../my_interests/providers/user_interests_provider.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
+import '../../settings/providers/display_mode_provider.dart';
 import '../../settings/providers/notifications_settings_provider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart'
@@ -133,7 +135,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   // Dernières sources favorites (sourceId+position) rendues — sert au listener
   // `userSourcesStateProvider` pour ne refetch que sur un vrai changement.
   List<SourceFavoriteRef> _lastSourceFavorites = const [];
-  Map<String, bool> _moreOpen = const {};
   bool _closingDismissed = false;
   // Citation du jour servie par le backend (sérène ou normal — même pool
   // YAML, sélection déterministe seed = user_id + date). Rendue avant
@@ -179,6 +180,16 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // changement, comme pour le toggle sérène — un simple recompose suffit, les
     // sections sont déjà fetchées (on ne refait que le découpage d'affichage).
     ref.listen<double?>(usableViewportHeightProvider, (prev, next) {
+      if (_bootstrapping) return;
+      if (prev == next) return;
+      if (!state.hasValue) return;
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
+    });
+
+    // Changement de mode d'affichage (Normal / Minimaliste / Ludique) : les
+    // hauteurs de cartes du budget fit changent → simple recompose, comme pour
+    // la hauteur utile (les sections sont déjà fetchées).
+    ref.listen<DisplayMode>(displayModeNotifierProvider, (prev, next) {
       if (_bootstrapping) return;
       if (prev == next) return;
       if (!state.hasValue) return;
@@ -433,7 +444,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // Sections thèmes/sources vidées d'abord — peuplées en phase 2 si fetch.
     _themes = const [];
     _sources = const [];
-    _moreOpen = const {};
     _closingDismissed = await _loadClosingDismissedForToday();
     unawaited(_purgeOldPrefsKeys());
 
@@ -505,7 +515,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     _quote = null;
     _themes = _skeletonThemeSections();
     _sources = _skeletonSourceSections();
-    _moreOpen = const {};
     return _composeSkeleton(isSerene);
   }
 
@@ -659,23 +668,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       finalSections: finalSections,
     );
 
-    // Drop moreOpen entries pointing at sections that didn't survive
-    // composition (e.g. a favorite was removed since it was opened earlier).
-    // Keeps the map tight and avoids stale ghosts.
-    final keysPresent = finalSections.map(sectionKey).toSet();
-    final moreOpenFiltered = <String, bool>{
-      for (final entry in _moreOpen.entries)
-        if (entry.value && keysPresent.contains(entry.key)) entry.key: true,
-    };
-    if (moreOpenFiltered.length != _moreOpen.length) {
-      _moreOpen = moreOpenFiltered;
-    }
-
     return FluxContinuState(
       sections: finalSections,
       grilleSlotIndex: grilleSlotIndex,
       isSerene: isSerene,
-      moreOpen: _moreOpen,
       closingDismissed: _closingDismissed,
       dismissedIds: Set.unmodifiable(_dismissedIds),
       quote: _quote,
@@ -691,9 +687,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }
 
   /// Caps each downstream section's `coreVisibleCount` to what fits the usable
-  /// viewport (`min(défaut, fitVisibleCount)`, plancher 1). The defaults stay
-  /// the **ceiling** — fit can only reduce. No-op when the height isn't measured
-  /// yet. The hero is handled upstream (trim de la liste), so it passes through.
+  /// viewport (plancher 1). Le cap nominal est le plafond par défaut ; en mode
+  /// minimaliste (`spec.sectionFitCeiling`) le fit peut **monter** au-dessus du
+  /// nominal jusqu'à `min(ceiling, totalCount)` quand l'écran a de la place.
+  /// No-op when the height isn't measured yet. The hero is handled upstream
+  /// (trim de la liste), so it passes through.
   List<FluxSection> _capSectionsToFit(
     List<FluxSection> sections,
     double? usableHeight,
@@ -705,14 +703,21 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   FluxSection _capSectionToFit(FluxSection s, double usableHeight) {
     if (s is EssentielSection) return s;
     final hasBlurb = s.blurb?.trim().isNotEmpty ?? false;
+    final spec = ref.read(displayModeSpecProvider);
+    // Le cap intervient après dédup, donc les articles révélés au-dessus du
+    // nominal sont déjà dédupliqués.
+    final ceiling = spec.sectionFitCeiling;
+    final maxCount = ceiling == null
+        ? s.coreVisibleCount
+        : math.max(s.coreVisibleCount, math.min(ceiling, s.totalCount));
     final fitCap = fitVisibleCount(
       usableHeight: usableHeight,
       bannerHeight: hasBlurb ? kBannerHeightWithBlurb : kBannerHeightNoBlurb,
       footerHeight: kSectionFooterHeight,
-      cardHeight: estimateRegularCardHeight(),
-      maxCount: s.coreVisibleCount,
+      cardHeight: estimateRegularCardHeight(spec),
+      maxCount: maxCount,
     );
-    if (fitCap >= s.coreVisibleCount) return s;
+    if (fitCap == s.coreVisibleCount) return s;
     return switch (s) {
       EssentielSection() => s,
       DigestTopicSection() => DigestTopicSection(
@@ -955,17 +960,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         },
     ];
     state = AsyncData(current.copyWith(sections: updated));
-  }
-
-  /// Toggle the expand/collapse state of a section's "Plus de…" overflow.
-  void toggleMore(FluxSection section) {
-    final current = state.valueOrNull;
-    if (current == null) return;
-    final key = sectionKey(section);
-    final next = Map<String, bool>.from(_moreOpen);
-    next[key] = !(next[key] ?? false);
-    _moreOpen = next;
-    state = AsyncData(current.copyWith(moreOpen: next));
   }
 
   /// In-place pagination for the Tournée du jour theme sections. Fetches the

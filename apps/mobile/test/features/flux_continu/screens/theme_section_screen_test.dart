@@ -17,6 +17,8 @@ import 'package:facteur/features/flux_continu/providers/theme_discovery_provider
 import 'package:facteur/features/flux_continu/screens/theme_section_screen.dart';
 import 'package:facteur/features/flux_continu/widgets/flux_continu_article_card.dart';
 import 'package:facteur/features/flux_continu/widgets/theme_detail_footer.dart';
+import 'package:facteur/features/settings/models/display_mode_spec.dart';
+import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:facteur/shared/widgets/navigation/swipe_back_page.dart';
 
@@ -59,7 +61,11 @@ FeedThemeSection _themeSection({required bool hasMore}) {
 
 Widget _wrap(Widget child, {required List<Override> overrides}) {
   return ProviderScope(
-    overrides: overrides,
+    overrides: [
+      // Spec lu via Hive en prod — court-circuité dans les widget tests.
+      displayModeSpecProvider.overrideWith((ref) => DisplayModeSpec.normal),
+      ...overrides,
+    ],
     child: MaterialApp(
       theme: ThemeData(extensions: [FacteurPalettes.light]),
       home: child,

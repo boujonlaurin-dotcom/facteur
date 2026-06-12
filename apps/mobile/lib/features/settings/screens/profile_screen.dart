@@ -9,7 +9,9 @@ import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
 import '../../onboarding/widgets/theme_choice_bottom_sheet.dart';
+import '../providers/display_mode_provider.dart';
 import '../providers/theme_provider.dart';
+import '../widgets/display_mode_bottom_sheet.dart';
 
 /// Page « Profil » regroupant les réglages applicatifs accessibles depuis
 /// la sheet Réglages : compte, notifications, thème, refonte du
@@ -21,6 +23,7 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     final themeMode = ref.watch(themeNotifierProvider);
+    final displayMode = ref.watch(displayModeNotifierProvider);
 
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
@@ -59,6 +62,12 @@ class ProfileScreen extends ConsumerWidget {
                   title: 'Thème',
                   subtitle: _themeName(themeMode),
                   onTap: () => showThemeChoiceBottomSheet(context, ref),
+                ),
+                _Tile(
+                  icon: Icons.view_agenda_outlined,
+                  title: 'Affichage des articles',
+                  subtitle: displayMode.label,
+                  onTap: () => showDisplayModeBottomSheet(context, ref),
                 ),
                 _Tile(
                   icon: Icons.settings_suggest_outlined,

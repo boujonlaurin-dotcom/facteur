@@ -11,12 +11,49 @@ import 'package:facteur/features/feed/widgets/coverage_spectrum_bar.dart';
 import 'package:facteur/features/feed/widgets/perspectives_bottom_sheet.dart';
 
 Perspective _p(String name, {String bias = 'center'}) => Perspective(
-  title: 'Titre $name',
-  url: 'https://example.com/$name',
-  sourceName: name,
-  sourceDomain: '',
-  biasStance: bias,
-);
+      title: 'Titre $name',
+      url: 'https://example.com/$name',
+      sourceName: name,
+      sourceDomain: '',
+      biasStance: bias,
+    );
+
+class _ScrollablePerspectivesHost extends StatefulWidget {
+  final ScrollController controller;
+
+  const _ScrollablePerspectivesHost({required this.controller});
+
+  @override
+  State<_ScrollablePerspectivesHost> createState() =>
+      _ScrollablePerspectivesHostState();
+}
+
+class _ScrollablePerspectivesHostState
+    extends State<_ScrollablePerspectivesHost> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      controller: widget.controller,
+      child: Column(
+        children: [
+          const SizedBox(height: 500),
+          PerspectivesInlineSection(
+            status: PerspectivesSectionStatus.ready,
+            perspectives: [_p('A'), _p('B', bias: 'left')],
+            biasDistribution: const {'left': 1, 'center': 1},
+            contentId: 'test-content-id',
+            sourceName: 'Test',
+            isExpanded: _isExpanded,
+            onToggle: () => setState(() => _isExpanded = !_isExpanded),
+          ),
+          const SizedBox(height: 700),
+        ],
+      ),
+    );
+  }
+}
 
 Future<void> _pumpInline(
   WidgetTester tester, {
@@ -148,18 +185,18 @@ void main() {
     expect(toggleCount, 0);
 
     // Pause de lecture : le bandeau reste visible
-    await tester.pump(const Duration(milliseconds: 1499));
+    await tester.pump(const Duration(milliseconds: 1999));
     expect(find.text('Couverture médiatique (0)'), findsOneWidget);
 
-    // Timer 1500 ms → fading + slide démarrent
+    // Timer 2000 ms → fading + slide démarrent
     await tester.pump(const Duration(milliseconds: 1));
     expect(
       tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
       0,
     );
 
-    // Collapse après la durée du slide (960 ms) + AnimatedSize (250 ms)
-    await tester.pump(const Duration(milliseconds: 960));
+    // Collapse après la durée du slide (650 ms) + AnimatedSize (250 ms)
+    await tester.pump(const Duration(milliseconds: 650));
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('Couverture médiatique (0)'), findsNothing);
   });
@@ -182,6 +219,33 @@ void main() {
     expect(toggleCount, 1);
   });
 
+  testWidgets('opening coverage keeps the reader scroll offset',
+      (tester) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: FacteurTheme.lightTheme,
+          home: Scaffold(
+            body: _ScrollablePerspectivesHost(controller: controller),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    controller.jumpTo(300);
+    await tester.pump();
+    final offsetBeforeTap = controller.offset;
+
+    await tester.tap(find.text('Couverture médiatique (2)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Titre A', findRichText: true), findsOneWidget);
+    expect(controller.offset, offsetBeforeTap);
+  });
+
   testWidgets(
     'expanded ready puts variants above analysis and removes ref block',
     (tester) async {
@@ -198,12 +262,10 @@ void main() {
         onToggle: () {},
       );
 
-      final analysisTop = tester
-          .getTopLeft(find.text('Analyse Facteur').first)
-          .dy;
-      final firstVariantTop = tester
-          .getTopLeft(find.text('Titre A', findRichText: true))
-          .dy;
+      final analysisTop =
+          tester.getTopLeft(find.text('Analyse Facteur').first).dy;
+      final firstVariantTop =
+          tester.getTopLeft(find.text('Titre A', findRichText: true)).dy;
 
       expect(firstVariantTop, lessThan(analysisTop));
       expect(find.text('CET ARTICLE'), findsNothing);

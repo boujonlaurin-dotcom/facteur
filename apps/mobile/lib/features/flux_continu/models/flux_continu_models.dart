@@ -19,8 +19,8 @@ enum SectionKind { essentiel, bonnes, theme, veille, source }
 
 /// Stable identity for a section across rebuilds.
 ///
-/// Used as a key into the `moreOpen` map so per-section UI state
-/// survives provider refreshes. For theme sections, the slug or custom topic
+/// Used as a key for per-section UI/dérivations (ordre tournée, dédup…) so
+/// state survives provider refreshes. For theme sections, the slug or custom topic
 /// id discriminates between multiple `kind == theme` instances; system
 /// sections collapse to just their kind name. La section veille collapse à
 /// `'veille'` (un seul par user à V1).
@@ -30,7 +30,7 @@ enum SectionKind { essentiel, bonnes, theme, veille, source }
 ///   - la nouvelle [EssentielSection] (carte hi-fi "L'Essentiel du jour")
 ///     → mappée sur `'essentiel_v3'` ;
 ///   - la [DigestTopicSection] legacy renommée "Actus du jour"
-///     → garde la clé historique `'essentiel'` pour son état `moreOpen`.
+///     → garde la clé historique `'essentiel'`.
 String sectionKey(FluxSection section) {
   return switch (section) {
     EssentielSection() => 'essentiel_v3',
@@ -395,10 +395,6 @@ class FluxContinuState {
   /// visible cap. The Grille is not a [FluxSection].
   final int? grilleSlotIndex;
   final bool isSerene;
-  // Per-section UI state keyed by [sectionKey]. String keys (rather than
-  // `SectionKind`) so multiple theme sections (one per favorite, 0..3) keep
-  // independent state — the legacy enum-keyed maps could not represent that.
-  final Map<String, bool> moreOpen;
   // Whether the closing card "Vous êtes à jour" has been dismissed for the
   // day — either via the Continuer/Refermer buttons or by scrolling past it.
   // Persisted day-by-day.
@@ -426,7 +422,6 @@ class FluxContinuState {
     this.sections = const [],
     this.grilleSlotIndex,
     this.isSerene = false,
-    this.moreOpen = const {},
     this.closingDismissed = false,
     this.dismissedIds = const {},
     this.quote,
@@ -439,7 +434,6 @@ class FluxContinuState {
     List<FluxSection>? sections,
     int? grilleSlotIndex,
     bool? isSerene,
-    Map<String, bool>? moreOpen,
     bool? closingDismissed,
     Set<String>? dismissedIds,
     QuoteResponse? quote,
@@ -452,7 +446,6 @@ class FluxContinuState {
       sections: sections ?? this.sections,
       grilleSlotIndex: grilleSlotIndex ?? this.grilleSlotIndex,
       isSerene: isSerene ?? this.isSerene,
-      moreOpen: moreOpen ?? this.moreOpen,
       closingDismissed: closingDismissed ?? this.closingDismissed,
       dismissedIds: dismissedIds ?? this.dismissedIds,
       quote: quote ?? this.quote,
@@ -461,11 +454,6 @@ class FluxContinuState {
       isSkeleton: isSkeleton ?? this.isSkeleton,
     );
   }
-
-  /// Convenience accessor — caller passes the section itself so the key
-  /// derivation stays inside the model. Lets widgets stay agnostic of the
-  /// string-key encoding scheme.
-  bool isOpen(FluxSection section) => moreOpen[sectionKey(section)] ?? false;
 
   /// Slugs of the `FeedThemeSection`s that make up today's tournée — used by
   /// the Explorer filter bar to hide chips for themes the user has already
