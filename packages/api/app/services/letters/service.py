@@ -84,21 +84,6 @@ async def _detect_add_2_personal_sources(user_id: UUID, db: AsyncSession) -> boo
     return (count or 0) >= 2
 
 
-def _first_event_detector(event_type: str):
-    async def _detect(user_id: UUID, db: AsyncSession) -> bool:
-        stmt = (
-            select(AnalyticsEvent.id)
-            .where(
-                AnalyticsEvent.user_id == user_id,
-                AnalyticsEvent.event_type == event_type,
-            )
-            .limit(1)
-        )
-        return (await db.execute(stmt)).scalar() is not None
-
-    return _detect
-
-
 def _count_event_detector(event_type: str, threshold: int):
     async def _detect(user_id: UUID, db: AsyncSession) -> bool:
         stmt = (
@@ -112,6 +97,10 @@ def _count_event_detector(event_type: str, threshold: int):
         return ((await db.execute(stmt)).scalar() or 0) >= threshold
 
     return _detect
+
+
+def _first_event_detector(event_type: str):
+    return _count_event_detector(event_type, 1)
 
 
 _detect_first_perspectives_open = _first_event_detector("perspectives_opened")
@@ -189,17 +178,27 @@ async def _detect_create_first_veille(user_id: UUID, db: AsyncSession) -> bool:
     return (await db.execute(stmt)).scalar() is not None
 
 
-async def _detect_save_5_articles(user_id: UUID, db: AsyncSession) -> bool:
-    """≥5 UserContentStatus avec is_saved=True."""
-    stmt = (
-        select(func.count())
-        .select_from(UserContentStatus)
-        .where(
-            UserContentStatus.user_id == user_id,
-            UserContentStatus.is_saved.is_(True),
+def _count_status_flag_detector(flag, threshold: int):
+    """Détecteur sur un flag booléen de UserContentStatus (is_saved, is_liked)."""
+
+    async def _detect(user_id: UUID, db: AsyncSession) -> bool:
+        stmt = (
+            select(func.count())
+            .select_from(UserContentStatus)
+            .where(
+                UserContentStatus.user_id == user_id,
+                flag.is_(True),
+            )
         )
-    )
-    return ((await db.execute(stmt)).scalar() or 0) >= 5
+        return ((await db.execute(stmt)).scalar() or 0) >= threshold
+
+    return _detect
+
+
+_detect_save_5_articles = _count_status_flag_detector(UserContentStatus.is_saved, 5)
+_detect_recommend_10_articles = _count_status_flag_detector(
+    UserContentStatus.is_liked, 10
+)
 
 
 async def _detect_write_first_note(user_id: UUID, db: AsyncSession) -> bool:
@@ -239,19 +238,6 @@ async def _detect_add_5_youtube_channels(user_id: UUID, db: AsyncSession) -> boo
         )
     )
     return ((await db.execute(stmt)).scalar() or 0) >= 5
-
-
-async def _detect_recommend_10_articles(user_id: UUID, db: AsyncSession) -> bool:
-    """≥10 UserContentStatus avec is_liked=True."""
-    stmt = (
-        select(func.count())
-        .select_from(UserContentStatus)
-        .where(
-            UserContentStatus.user_id == user_id,
-            UserContentStatus.is_liked.is_(True),
-        )
-    )
-    return ((await db.execute(stmt)).scalar() or 0) >= 10
 
 
 DETECTORS = {

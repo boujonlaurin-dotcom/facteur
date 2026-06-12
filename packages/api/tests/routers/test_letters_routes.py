@@ -961,9 +961,11 @@ async def _add_youtube_sources(
     await db_session.commit()
 
 
-async def _add_read_articles(db_session, user_id: UUID, count: int) -> None:
-    """Bulk : `count` articles distincts avec un signal de lecture
-    (un seul commit)."""
+async def _add_articles_bulk(
+    db_session, user_id: UUID, count: int, **status_kwargs
+) -> None:
+    """Bulk : `count` articles distincts avec les kwargs passés au
+    UserContentStatus (un seul commit)."""
     src = await _make_source(db_session)
     for _ in range(count):
         content = Content(
@@ -981,31 +983,7 @@ async def _add_read_articles(db_session, user_id: UUID, count: int) -> None:
             UserContentStatus(
                 user_id=user_id,
                 content_id=content.id,
-                time_spent_seconds=1,
-            )
-        )
-    await db_session.commit()
-
-
-async def _add_liked_articles(db_session, user_id: UUID, count: int) -> None:
-    src = await _make_source(db_session)
-    for _ in range(count):
-        content = Content(
-            id=uuid4(),
-            source_id=src.id,
-            title="t",
-            url=f"https://x/{uuid4()}",
-            published_at=datetime.now(UTC),
-            content_type=ContentType.ARTICLE,
-            guid=str(uuid4()),
-        )
-        db_session.add(content)
-        await db_session.flush()
-        db_session.add(
-            UserContentStatus(
-                user_id=user_id,
-                content_id=content.id,
-                is_liked=True,
+                **status_kwargs,
             )
         )
     await db_session.commit()
@@ -1230,7 +1208,7 @@ class TestLetter3Detection:
 class TestLetter4Detection:
     async def test_read_50_articles_detected(self, auth_user, db_session):
         await _activate_letter(db_session, auth_user, "letter_4")
-        await _add_read_articles(db_session, auth_user, 50)
+        await _add_articles_bulk(db_session, auth_user, 50, time_spent_seconds=1)
 
         async with _client() as ac:
             resp = await ac.post("/api/letters/letter_4/refresh-status")
@@ -1239,7 +1217,7 @@ class TestLetter4Detection:
 
     async def test_read_below_threshold_not_detected(self, auth_user, db_session):
         await _activate_letter(db_session, auth_user, "letter_4")
-        await _add_read_articles(db_session, auth_user, 49)
+        await _add_articles_bulk(db_session, auth_user, 49, time_spent_seconds=1)
 
         async with _client() as ac:
             resp = await ac.post("/api/letters/letter_4/refresh-status")
@@ -1248,7 +1226,7 @@ class TestLetter4Detection:
 
     async def test_recommend_10_articles_detected(self, auth_user, db_session):
         await _activate_letter(db_session, auth_user, "letter_4")
-        await _add_liked_articles(db_session, auth_user, 10)
+        await _add_articles_bulk(db_session, auth_user, 10, is_liked=True)
 
         async with _client() as ac:
             resp = await ac.post("/api/letters/letter_4/refresh-status")
@@ -1259,7 +1237,7 @@ class TestLetter4Detection:
         self, auth_user, db_session
     ):
         await _activate_letter(db_session, auth_user, "letter_4")
-        await _add_liked_articles(db_session, auth_user, 9)
+        await _add_articles_bulk(db_session, auth_user, 9, is_liked=True)
 
         async with _client() as ac:
             resp = await ac.post("/api/letters/letter_4/refresh-status")
@@ -1345,8 +1323,8 @@ class TestNewLettersChaining:
 
     async def test_letter_4_complete_is_terminal(self, auth_user, db_session):
         await _activate_letter(db_session, auth_user, "letter_4")
-        await _add_read_articles(db_session, auth_user, 50)
-        await _add_liked_articles(db_session, auth_user, 10)
+        await _add_articles_bulk(db_session, auth_user, 50, time_spent_seconds=1)
+        await _add_articles_bulk(db_session, auth_user, 10, is_liked=True)
         for _ in range(10):
             await _add_event(db_session, auth_user, "perspectives_opened")
         await _add_event(db_session, auth_user, "app_feedback_opened")
