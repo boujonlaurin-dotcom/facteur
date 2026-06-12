@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -11,9 +12,13 @@ import '../../../config/constants.dart';
 import '../../../config/routes.dart';
 import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../app_update/providers/app_update_provider.dart';
 import '../../app_update/widgets/update_bottom_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
+import '../../lettres/models/facteur_grade.dart';
+import '../../lettres/providers/letters_provider.dart';
+import '../../lettres/widgets/ring_avatar.dart';
 import '../../my_interests/providers/user_interests_provider.dart';
 import '../../veille/providers/veille_active_config_provider.dart';
 import '../../veille/providers/veille_repository_provider.dart';
@@ -112,57 +117,47 @@ class _ProfileBlock extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
+    final displayName = ref.watch(userProfileProvider).displayName?.trim();
+    final serein = ref.watch(sereinToggleProvider.select((s) => s.enabled));
+    final lettersState = ref.watch(lettersProvider).valueOrNull;
+    final grade = lettersState?.grade;
+    final shown = (displayName == null || displayName.isEmpty)
+        ? 'Mon profil'
+        : displayName;
     return _SheetCard(
       onTap: () => context.pushNamed(RouteNames.profile),
       child: Padding(
         padding: const EdgeInsets.all(FacteurSpacing.space4),
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: colors.primary.withOpacity(0.10),
-                border: Border.all(
-                  color: colors.primary.withOpacity(0.25),
-                  width: 1,
-                ),
-              ),
-              alignment: Alignment.center,
-              child: Icon(
-                PhosphorIcons.userCircle(PhosphorIconsStyle.duotone),
-                size: 30,
-                color: colors.primary,
-              ),
+            // Même identité visuelle que l'avatar du header (initiales,
+            // serein, badge de niveau).
+            RingAvatar.fromName(
+              displayName,
+              lettersState?.activeLetter?.progress,
+              serein: serein,
+              level: grade?.level,
             ),
             const SizedBox(width: FacteurSpacing.space4),
             Expanded(
-              child: Consumer(builder: (context, ref, _) {
-                final displayName =
-                    ref.watch(userProfileProvider).displayName?.trim();
-                final shown = (displayName == null || displayName.isEmpty)
-                    ? 'Mon profil'
-                    : displayName;
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      shown,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Plan gratuit',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.textSecondary,
-                          ),
-                    ),
-                  ],
-                );
-              }),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    shown,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    grade?.title ?? facteurLadder.first.title,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                  ),
+                ],
+              ),
             ),
             Icon(
               PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
@@ -447,19 +442,23 @@ Future<void> _confirmAndArchiveVeille(BuildContext context, WidgetRef ref) async
   }
 }
 
-class _FeedbackTile extends StatelessWidget {
+class _FeedbackTile extends ConsumerWidget {
   const _FeedbackTile();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     return _SheetCard(
-      onTap: () => showModalBottomSheet<void>(
-        context: context,
-        backgroundColor: Colors.transparent,
-        isScrollControlled: true,
-        builder: (_) => const FeedbackModal(),
-      ),
+      onTap: () {
+        // Trace serveur pour la lettre 4 (action give_app_feedback).
+        unawaited(ref.read(analyticsServiceProvider).trackAppFeedbackOpened());
+        showModalBottomSheet<void>(
+          context: context,
+          backgroundColor: Colors.transparent,
+          isScrollControlled: true,
+          builder: (_) => const FeedbackModal(),
+        );
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: FacteurSpacing.space4,

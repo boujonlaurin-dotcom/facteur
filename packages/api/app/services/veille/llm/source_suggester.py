@@ -158,6 +158,7 @@ class SourceSuggester:
             model=self._model,
             temperature=0.4,
             max_tokens=1500,
+            call_site="veille_suggester",
         )
 
         sources = self._parse(raw)

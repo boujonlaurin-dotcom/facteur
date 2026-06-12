@@ -68,6 +68,13 @@ class Letter {
     this.completionVoeu,
   });
 
+  /// Nombre d'actions marquées comme terminées (source unique de comptage).
+  int get doneActionCount =>
+      actions.where((a) => a.status == LetterActionStatus.done).length;
+
+  /// Nombre total d'actions de la lettre.
+  int get totalActionCount => actions.length;
+
   factory Letter.fromJson(Map<String, dynamic> json) {
     final status = _letterStatusFromJson(json['status'] as String);
     final completed = (json['completed_actions'] as List<dynamic>? ?? [])

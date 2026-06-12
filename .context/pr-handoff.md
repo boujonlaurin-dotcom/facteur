@@ -1,76 +1,31 @@
-## Veille — ajustements finaux (« released »)
+feat(observabilité): instrumentation API externes + sonde pool + résumé digest (scaling WP-E)
 
-Rend la Veille « release-ready » en corrigeant les 3 griefs PO (compte NBA,
-`laurin_boujon@proton.me`) : faux-positifs massifs, point d'entrée disparu,
-veille éparpillée + bouton hors design-system.
+Enabler scaling **purement additif** (aucun impact user-facing, aucun changement de comportement métier). Phase 1 de l'investigation scaling 200 users — *mesurer avant de remédier*. Débloque WP-D (quotas/coûts Mistral), WP-B (digest), WP-A (pool). Doc : `docs/maintenance/maintenance-observabilite-scaling.md`.
 
-### Partie 1 — [critical] Fix des faux-positifs + banc de mesure (backend)
+## Volet 1 — Tracking persistant des appels API externes
+- Nouvelle table append-only **`api_usage_events`** (`provider`, `model`, `call_site`, `user_id`, `status`, `latency_ms`, `created_at` + 2 index). Pas de contrainte d'unicité → zéro hot-row contention.
+- Recorder best-effort **`record_api_call`** (`app/services/observability/usage_recorder.py`) : session courte dédiée (`safe_async_session`), jamais bloquant, ne lève jamais, gated par le kill-switch `usage_tracking_enabled`.
+- 6 call sites instrumentés en `try/finally` (capte aussi `error`/`rate_limited`) : `classification_pass1`, `good_news_pass2`, `editorial` (chokepoint unique curation/pipeline/deep/perspective), `veille_suggester`, `smart_search_mistral`, `smart_search_brave`. Compteurs in-memory veille existants **laissés en place** (pas de rebranchement d'enforcement → WP-D).
 
-**Cause racine.** Le **Bloc A « Tes sources »** de `fetch_veille_feed` était en
-**laisser-passer total** (`apply_floor=False`) : tout article récent (30 j) d'une
-source configurée entrait sans filtre de pertinence. Une source large (The
-Athletic, tous les sports) inondait une veille étroite (NBA) de
-cricket/hockey/baseball. Le floor « la source est un boost, pas un free-pass » ne
-tournait jamais en prod pour les sources configurées.
+## Volet 2 — Résumé de run digest always-on
+- `compute_digest_coverage(session, target_date)` factorisé depuis le watchdog (source unique de la couverture, partagée scheduler ↔ job).
+- Log always-on `digest_run_summary` (`duration_seconds`, `total_users`, `success`, `failed`, `coverage_pct`) + `coverage_pct` ajouté à l'event PostHog `digest_generated`. Couverture lue dans une session dédiée best-effort. Aucune nouvelle table.
 
-**Fix (gate-all, décision PO « le plus strict »).**
-- `feed_filter.py` Bloc A : `apply_floor=True, apply_threshold=True`. Le floor ne
-  mord que si la config a un axe topic/mot-clé (`floor_active`) → une config
-  **purement source** garde le laisser-passer (fallback voulu).
-- `_matched_axes` : matching mot-entier (`matches_word_boundary`) au lieu de
-  sous-chaîne — aligne l'axe `keyword` exposé sur le scoring/prédicat SQL et
-  empêche un mot-clé générique de survivre sur un fragment (« nets » ⊂
-  « internets ») dans le Bloc A.
+## Volet 3 — Sonde pool périodique + métrique idle-in-tx
+- `read_pool_stats(engine)` factorisé (`app/observability/pool_stats.py`), réutilisé par `/api/health/pool` (comportement inchangé) **et** par la nouvelle sonde.
+- Job APScheduler `_pool_health_probe` (interval 5 min) : alerte `db_pool_pressure_high` + `sentry_sdk.capture_message(level="warning")` au seuil `pool_alert_threshold_pct` (défaut 80).
+- `zombie_session_sweeper` émet désormais `db_idle_in_transaction_swept{count}` always-on (idle-in-tx requêtable même à 0).
 
-**Banc de mesure (le « dataset de test » demandé, sans LLM).**
-- `tests/fixtures/veille_curation_gold.json` — gold écrit à la main (27 articles,
-  configs NBA topic-ML-mort + IA topic-ML-vivant), encode le repro.
-- `scripts/evaluate_veille_curation.py` — rejoue la **vraie** porte
-  (`_score_block`/`_matched_axes`, anti-drift) : P/R/F1, FP par bloc/chemin, FN
-  par raison, couverture d'axe, `--sweep`, `--compare`.
-- `tests/scripts/test_evaluate_veille_curation.py` + toy fixture — anti-drift +
-  confusion connue (FP Bloc A `source_only` planté tué par le floor ; FN
-  mot-clé-absent ; mot-entier « agentic »).
-- `docs/maintenance/maintenance-veille-curation-calibration.md` — doc + journal.
+## Config (kill-switches)
+`usage_tracking_enabled: bool = True` · `pool_alert_threshold_pct: int = 80`.
 
-**Résultat mesuré (baseline laisser-passer → gate-all) :** précision **0.786 →
-1.000** (+0.214), **FP Bloc A `source_only` 3 → 0**, **rappel inchangé** (0.846 ;
-les 2 FN paraphrases étaient déjà perdues au cap de diversité). La config IA
-(topic ML vivant) reste à P=R=1.0 — le gate ne coûte rien quand le topic porte le
-rappel.
+## Migration
+`au01_api_usage_events`, `down_revision = gr02_grille_featured_article` (head courant ; `vf02` du plan était dépassé depuis #784). **1 seul head** confirmé via `alembic heads`. Additive pure (CREATE TABLE + 2 index), rollback trivial. `upgrade head` + `downgrade -1` rejoués sur **DB vide** → OK.
 
-### Partie 2 — Onglet veille dédié dans les réglages
+## Tests & VERIFY
+- Nouveaux : `tests/test_usage_recorder.py` (kill-switch, best-effort never-raises, coercition user_id, call_site inconnu), `tests/test_pool_observability.py` (`read_pool_stats` saturé/ok/NullPool + sonde alerte/quiet/registration).
+- Non-régression : `tests/ml/`, `tests/editorial/`, `tests/workers/`, `tests/test_digest_generation_job.py`, `tests/test_health_pool.py`, `tests/services/search/` → **tout vert** (~355 tests sur les modules touchés).
+- Intégration live (Postgres) : 1 ligne/appel écrite (Mistral + Brave), kill-switch ⇒ 0 insert, requête WP-D `GROUP BY provider, model, day` OK.
 
-`settings_sheet.dart` : nouvelle tuile **« Ma veille »** (icône jumelles), état
-adaptatif (veille active → menu modifier/archiver ; sinon → « Crée ta veille » →
-flow de création). Restaure le point d'entrée découvrable retiré au commit
-`dbb6aa20`. Le menu modifier/**archiver** (seul chemin d'archivage de l'app) est
-**déplacé** ici depuis Mes intérêts (pas perdu).
-
-### Partie 3 — Cleanup « Mes intérêts » + alignement bouton
-
-- `my_interests_screen.dart` : retrait des CTAs veille autonomes
-  (`_CreateVeilleCta` + bouton/menu « Gérer ma veille ») qui doublonnaient.
-- `tournee_composer_sheet.dart` : `ComposeTourneeButton` passe au composant
-  canonique **`PrimaryButton`** (terracotta plein, `elevation:0`) au lieu de la
-  tuile teintée + ombre (« dégradé étrange »). Haptique conservée.
-- Libellé section : `VeilleConfigDto.sectionLabel` = **premier angle** (topic
-  granulaire « NBA ») au lieu du thème macro (« Sport »). Appliqué aux 4 sites
-  (`flux_continu_provider.dart`, `manage_favorites_sheet.dart`).
-
-### Tests / vérif
-
-- Backend : suite complète verte (**1617 passed**, 1 skipped, 2 xfailed) ;
-  `prove_veille_curation.py` → VERDICT GLOBAL OK ; ruff clean.
-  `test_feed_pagination_across_block_boundary` mis à jour (comportement gate-all
-  assumé). Les DB tests exigent `DATABASE_URL` vers `facteur_test`.
-- Mobile : `flutter analyze` clean (info-only, déjà présents) ; tests veille DTO
-  (+ `sectionLabel`), flux_continu, manage_favorites, my_interests, settings
-  verts. Le test de régression #639 (CTA my_interests) est retiré (CTA déplacé
-  vers les réglages) ; un test `sectionLabel` est ajouté. **À valider via
-  `/validate-feature`** (onglet « Ma veille », bouton primary, section « Ma
-  veille — NBA »).
-
-**Aucune migration Alembic** (pas de changement de schéma).
-
-Changelog : entrée `unreleased` « Veille ».
+## Risques & rollback
+Write amplification négligeable (append-only + best-effort + flag, ~3k/j). Rollback à chaud : `usage_tracking_enabled=False` (sans redéploiement schéma) ou `alembic downgrade -1`. Pas de changelog user (PR backend sans impact visible).

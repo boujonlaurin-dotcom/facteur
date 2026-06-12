@@ -380,6 +380,14 @@ class AnalyticsService {
     await _logEvent('perspective_comparison_closed', props);
   }
 
+  /// Ouverture de la modale « Donner mon avis » (réglages). Trace serveur
+  /// utilisée par la lettre 4 (action give_app_feedback).
+  Future<void> trackAppFeedbackOpened() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('app_feedback_opened', props);
+    await _capturePostHog('app_feedback_opened', props);
+  }
+
   /// origin: 'digest' | 'feed' | 'settings'
   Future<void> trackArticleFeedbackSubmitted({
     required String contentId,

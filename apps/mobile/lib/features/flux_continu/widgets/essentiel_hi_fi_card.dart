@@ -68,14 +68,14 @@ class EssentielHiFiCard extends StatelessWidget {
           FacteurSpacing.space4,
           FacteurSpacing.space3,
           FacteurSpacing.space4,
-          FacteurSpacing.space3,
+          FacteurSpacing.space2,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _Header(accent: accent, onTapPersonalize: onTapPersonalize),
-            // Compaction : gap header→lead resserré space4→space3.
-            const SizedBox(height: FacteurSpacing.space3),
+            // Compaction : gap header→lead resserré space3→space2.
+            const SizedBox(height: FacteurSpacing.space2),
             if (lead != null)
               _LeadTile(
                 article: lead,
@@ -115,7 +115,7 @@ class _Header extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _HeaderAccentDash(accent: accent),
-              const SizedBox(height: 7),
+              const SizedBox(height: 5),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -123,9 +123,9 @@ class _Header extends StatelessWidget {
                     child: Text(
                       'Ton Essentiel',
                       style: GoogleFonts.fraunces(
-                        fontSize: 20,
+                        fontSize: 18,
                         fontWeight: FontWeight.w700,
-                        height: 1.2,
+                        height: 1.15,
                         color: colors.textPrimary,
                       ),
                       maxLines: 2,
@@ -160,8 +160,8 @@ class _HeaderAccentDash extends StatelessWidget {
   Widget build(BuildContext context) {
     return IgnorePointer(
       child: Container(
-        width: 30,
-        height: 3,
+        width: 24,
+        height: 2,
         decoration: BoxDecoration(
           color: accent.withValues(alpha: 0.82),
           borderRadius: BorderRadius.circular(999),

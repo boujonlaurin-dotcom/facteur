@@ -1,9 +1,9 @@
 name: Staging Smoke Tests
 
 on:
-  # Runs after merge to staging (Railway auto-deploys via webhook)
+  # Env continu : main déploie le backend staging (Railway auto-deploy via webhook).
   push:
-    branches: [staging]
+    branches: [main]
 
   # Manual trigger
   workflow_dispatch:

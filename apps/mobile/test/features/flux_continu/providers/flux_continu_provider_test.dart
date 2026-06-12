@@ -987,11 +987,11 @@ void main() {
     }
 
     test(
-      'small usable height trims the hero AND releases ejected ids downstream',
+      'hero is never trimmed even on a small viewport — all articles kept',
       () async {
         SharedPreferences.setMockInitialValues(<String, Object>{});
-        // 4 hero articles ; the 'tech' feed carries the two that would be
-        // ejected (e3, e4) plus its own items.
+        // 4 hero articles ; the 'tech' feed also carries e3/e4 — with the hero
+        // untrimmed these are deduped OUT of the downstream section.
         final container = makeFitContainer(
           essentielIds: const ['e1', 'e2', 'e3', 'e4'],
           themeFeedIds: const ['e3', 'e4', 'x1', 'x2'],
@@ -1001,19 +1001,13 @@ void main() {
 
         final state = await settle(container);
 
-        // (a) hero trimmed to the lead + one medium (fitHeroCount(500) == 2).
+        // (a) hero keeps ALL its articles, regardless of the small viewport.
         final hero = state.sections.whereType<EssentielSection>().single;
-        expect(hero.articles.map((a) => a.contentId), ['e1', 'e2']);
+        expect(hero.articles.map((a) => a.contentId), ['e1', 'e2', 'e3', 'e4']);
 
-        // (b) the ejected ids reappear in the next section (« sortent du pool »).
+        // (b) hero kept all 4 ⇒ dedup strips e3/e4 from the theme section.
         final theme = state.sections.whereType<FeedThemeSection>().single;
-        expect(theme.items.map((c) => c.id), containsAll(['e3', 'e4']));
-
-        // (c) downstream cap ≤ default (3) and ≥ 1 — fitVisibleCount(500) == 2.
-        expect(theme.coreVisibleCount, 2);
-
-        // (d) the "+N" footer count derives correctly (totalCount − cap).
-        expect(theme.totalCount - theme.coreVisibleCount, 2);
+        expect(theme.items.map((c) => c.id), ['x1', 'x2']);
       },
     );
 

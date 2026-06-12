@@ -77,6 +77,14 @@ class NudgeRegistry {
       cooldown: Duration(days: 14),
     ),
     const Nudge(
+      id: NudgeIds.personalisationCta,
+      surface: NudgeSurface.feed,
+      placement: NudgePlacement.inlineBanner,
+      priority: NudgePriority.low,
+      frequency: NudgeFrequency.cooldown,
+      cooldown: Duration(days: 30),
+    ),
+    const Nudge(
       id: NudgeIds.prioritySliderExplainer,
       surface: NudgeSurface.settings,
       placement: NudgePlacement.inlineBanner,

@@ -10,6 +10,7 @@ import '../../../core/auth/auth_state.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
 import '../../onboarding/widgets/theme_choice_bottom_sheet.dart';
 import '../providers/theme_provider.dart';
+import '../widgets/profile_progression_card.dart';
 
 /// Page « Profil » regroupant les réglages applicatifs accessibles depuis
 /// la sheet Réglages : compte, notifications, thème, refonte du
@@ -33,6 +34,8 @@ class ProfileScreen extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(vertical: FacteurSpacing.space4),
         child: Column(
           children: [
+            const ProfileProgressionCard(),
+            const SizedBox(height: FacteurSpacing.space6),
             _Section(
               title: 'COMPTE',
               children: [

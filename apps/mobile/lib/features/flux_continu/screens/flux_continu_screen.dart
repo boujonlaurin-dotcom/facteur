@@ -33,6 +33,7 @@ import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../../../shared/strings/loader_error_strings.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
+import '../providers/personalisation_cta_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart'
     show tourneeOrderPrefsProvider;
 import '../utils/section_snap.dart';
@@ -1035,10 +1036,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final citationPresent = state.quote != null && !state.closingDismissed;
     final grilleSlotIndex = state.grilleSlotIndex;
     // La carte perso est une entrée virtuelle (pas de section correspondante)
-    // insérée juste après le hero tant que l'utilisateur n'a pas personnalisé.
-    final customized = ref.watch(
-      tourneeOrderPrefsProvider.select((s) => s.customized),
-    );
+    // insérée juste après le hero lorsqu'elle est éligible mensuellement.
+    final showPersonalisationCta =
+        ref.watch(personalisationCtaShouldShowProvider).valueOrNull ?? false;
     final heroPresent =
         state.sections.isNotEmpty && state.sections.first is EssentielSection;
 
@@ -1060,7 +1060,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       );
       // Destination de snap dédiée juste après le hero (entrée virtuelle,
       // sans section réelle — retourne -1 dans _sectionIndexForStickyIndex).
-      if (!customized && heroPresent && i == 0) {
+      if (showPersonalisationCta && heroPresent && i == 0) {
         add(_persoCardKey, _persoCardTab);
       }
     }
@@ -1205,11 +1205,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       _scheduleGestureNudge();
     }
 
-    // Story Essentiel UX — la carte de perso (compte non personnalisé) et
-    // l'inline « Gérer / Tes N favoris » (compte personnalisé) s'excluent.
+    // La grande carte mensuelle et l'inline « Gérer / Tes N favoris »
+    // s'excluent pour éviter deux appels à l'action concurrents.
     final customized = ref.watch(
       tourneeOrderPrefsProvider.select((s) => s.customized),
     );
+    final showPersonalisationCta =
+        ref.watch(personalisationCtaShouldShowProvider).valueOrNull ?? false;
     final heroPresent =
         state.sections.isNotEmpty && state.sections.first is EssentielSection;
     // Cible de l'inline (mode personnalisé) : la 1ʳᵉ section de contenu après le
@@ -1241,7 +1243,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       // Mode personnalisé : préfixe l'inline « Gérer / Tes N favoris » au-dessus
       // du `SectionBlock`, à l'intérieur du subtree mesuré → l'inline fait
       // partie du bloc de snap de cette section (cf. [inlineTargetIndex]).
-      final showInlineHere = customized && i == inlineTargetIndex;
+      final showInlineHere =
+          customized && !showPersonalisationCta && i == inlineTargetIndex;
       slivers.add(
         SliverToBoxAdapter(
           child: KeyedSubtree(
@@ -1306,11 +1309,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           ),
         ),
       );
-      // Compte non personnalisé : carte de perso dédiée juste après le hero
-      // (son propre bloc de snap — destination volontaire), à la place de
-      // l'inline. Une fois personnalisée, c'est l'inline qui reprend (cf.
-      // [showInlineHere]).
-      if (!customized && heroPresent && i == 0) {
+      // Carte mensuelle dédiée juste après le hero (son propre bloc de snap).
+      if (showPersonalisationCta && heroPresent && i == 0) {
         slivers.add(
           SliverToBoxAdapter(
             child: KeyedSubtree(

@@ -152,6 +152,7 @@ class AngleSuggester:
             model=self._model,
             temperature=0.3,
             max_tokens=2000,
+            call_site="veille_suggester",
         )
 
         angles = self._parse(raw)

@@ -11,6 +11,7 @@ import '../navigation/letter_action_route_resolver.dart';
 import '../models/letter.dart';
 import '../models/letter_progress.dart';
 import '../providers/letters_provider.dart';
+import '../providers/pending_save_nudge_provider.dart';
 import '../widgets/envelope_thumb.dart';
 import '../widgets/letter_action_tile.dart';
 import '../widgets/letter_completion_overlay.dart';
@@ -395,13 +396,24 @@ class _Body extends ConsumerWidget {
                     action: a,
                     onTap: () async {
                       final route = resolveLetterActionRoute(a);
-                      if (route != null && route.isNotEmpty) {
-                        await context.push<void>(route);
-                      }
-                      if (!context.mounted) return;
+                      // Rafraîchir l'UI Progression AVANT de naviguer : les
+                      // destinations sont des onglets shell → context.go (qui
+                      // ne « revient » pas), pas context.push (qui crashe sur
+                      // une branche StatefulShellRoute).
                       await ref
                           .read(lettersProvider.notifier)
                           .refreshLetterStatus(letter.id);
+                      if (!context.mounted) return;
+                      if (route != null && route.isNotEmpty) {
+                        // « Sauvegarder 3 articles » : armer le nudge
+                        // Sauvegarder sur le 1er article ouvert.
+                        if (a.id == 'read_first_video_podcast') {
+                          ref
+                              .read(pendingSaveNudgeProvider.notifier)
+                              .state = true;
+                        }
+                        context.go(route);
+                      }
                     },
                   ),
                 ),

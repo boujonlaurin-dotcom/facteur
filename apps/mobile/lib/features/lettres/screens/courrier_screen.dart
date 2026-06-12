@@ -6,11 +6,15 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../models/facteur_grade.dart';
 import '../models/letter.dart';
 import '../models/letter_progress.dart';
 import '../providers/letters_provider.dart';
+import '../widgets/grade_ladder.dart';
+import '../widgets/leaderboard_teaser_card.dart';
 import '../widgets/letter_row.dart';
 import '../widgets/lettres_empty_state.dart';
+import '../widgets/progression_header.dart';
 
 class CourrierScreen extends ConsumerWidget {
   const CourrierScreen({super.key});
@@ -75,7 +79,7 @@ class _ErrorView extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Impossible de charger ton courrier.',
+                    'Impossible de charger ta progression.',
                     style: GoogleFonts.dmSans(
                       fontSize: 15,
                       color: colors.textSecondary,
@@ -133,23 +137,13 @@ class _Body extends ConsumerWidget {
         child: CustomScrollView(
           slivers: [
             const SliverToBoxAdapter(child: _TopBar()),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(18, 2, 18, 16),
-                child: Text(
-                  'Ces étapes sont là pour t\'aider à créer l\'app parfaite pour t\'informer au quotidien. Nous ajouterons des étapes petit à petit, pour te pousser pas-à-pas à construire ton front de sources fiables.',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 13,
-                    height: 1.45,
-                    color: colors.textSecondary,
-                  ),
-                ),
-              ),
-            ),
+            SliverToBoxAdapter(child: ProgressionHeader(state: state)),
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 18),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
+                  const _SectionHeader(label: 'GRADES'),
+                  GradeLadder(grade: state.grade),
                   if (active.isNotEmpty) ...[
                     const _SectionHeader(label: 'EN COURS'),
                     ...active.map((l) => _buildRow(context, l)),
@@ -158,6 +152,7 @@ class _Body extends ConsumerWidget {
                     const _SectionHeader(label: 'À VENIR'),
                     ...upcoming.map((l) => _buildRow(context, l)),
                   ],
+                  const LeaderboardTeaserCard(),
                   if (archived.isNotEmpty) ...[
                     const _SectionHeader(label: 'CLASSÉES'),
                     ...archived.map((l) => _buildRow(context, l)),
@@ -218,7 +213,7 @@ class _TopBar extends StatelessWidget {
           ),
           Expanded(
             child: Text(
-              'Mon courrier (progression)',
+              'Progression',
               style: GoogleFonts.fraunces(
                 fontSize: 24,
                 fontWeight: FontWeight.w700,
@@ -247,7 +242,7 @@ class _SectionHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
-            '— $label —',
+            label,
             style: GoogleFonts.courierPrime(
               fontSize: 10,
               fontWeight: FontWeight.w700,

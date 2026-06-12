@@ -1,6 +1,30 @@
 {
   "unreleased": [
     {
+      "tag": "Progression",
+      "summary": "Deux nouvelles lettres du Facteur : des défis de curation (veille, notes, sources) et un palier de fond pour les lecteurs assidus."
+    },
+    {
+      "tag": "Progression",
+      "summary": "Mon courrier devient Progression : grades de facteur, niveau sur ton avatar et un écran plus clair pour suivre tes étapes."
+    },
+    {
+      "tag": "Progression",
+      "summary": "Ton grade de facteur et ta progression s'affichent directement en haut du fil."
+    },
+    {
+      "tag": "Notif",
+      "summary": "Notification du matin plus courte, et un ton plus doux quand le mode Serein est activé."
+    },
+    {
+      "tag": "Flâner",
+      "summary": "Nouveau carrousel « Tes sources discrètes » : ne ratez plus les sources que vous suivez et qui publient rarement."
+    },
+    {
+      "tag": "Flâner",
+      "summary": "Carrousels plus fréquents dans le fil, et « Actu chaude » regroupe désormais des articles qui couvrent vraiment le même sujet."
+    },
+    {
       "tag": "Veille",
       "summary": "Veille plus précise (moins de hors-sujet) et plus facile à retrouver dans les réglages."
     },
