@@ -9,12 +9,24 @@ import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/core/auth/auth_state.dart' as app_auth;
 import 'package:facteur/features/lettres/models/letter.dart';
-import 'package:facteur/features/lettres/providers/letters_provider.dart';
 import 'package:facteur/features/lettres/providers/letters_repository_provider.dart';
 import 'package:facteur/features/lettres/repositories/letters_repository.dart';
 import 'package:facteur/features/lettres/widgets/lettres_notification_banner.dart';
+import 'package:facteur/features/lettres/widgets/ring_avatar.dart';
+import 'package:facteur/features/settings/providers/user_profile_provider.dart';
 
 class _MockRepo extends Mock implements LettersRepository {}
+
+/// Stub profil qui n'ouvre pas Hive/Supabase (le notifier réel charge une box
+/// au démarrage, indisponible en test).
+class _StubProfileNotifier extends StateNotifier<UserProfile>
+    implements UserProfileNotifier {
+  _StubProfileNotifier()
+      : super(const UserProfile(displayName: 'Laurin Boujon'));
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 class _AuthNotifier extends StateNotifier<app_auth.AuthState>
     implements app_auth.AuthStateNotifier {
@@ -40,9 +52,22 @@ Letter _activeLetter() => Letter(
       message: 'msg',
       signature: 'Le Facteur',
       status: LetterStatus.active,
-      actions: const [],
+      actions: const [
+        LetterAction(
+          id: 'a0',
+          label: 'Action 0',
+          help: '',
+          status: LetterActionStatus.done,
+        ),
+        LetterAction(
+          id: 'a1',
+          label: 'Action 1',
+          help: '',
+          status: LetterActionStatus.todo,
+        ),
+      ],
       completedActions: const [],
-      progress: 0.0,
+      progress: 0.5,
       startedAt: DateTime.utc(2026, 5, 2),
       archivedAt: null,
     );
@@ -87,6 +112,7 @@ Widget _wrap({
     overrides: [
       lettersRepositoryProvider.overrideWithValue(repo),
       app_auth.authStateProvider.overrideWith((ref) => _AuthNotifier()),
+      userProfileProvider.overrideWith((ref) => _StubProfileNotifier()),
     ],
     child: MaterialApp.router(
       theme: ThemeData(extensions: [FacteurPalettes.light]),
@@ -112,7 +138,7 @@ void main() {
     expect(find.text('Tes premières sources'), findsNothing);
   });
 
-  testWidgets('shows banner with active letter title', (tester) async {
+  testWidgets('shows grade title + avatar + compteur', (tester) async {
     final repo = _MockRepo();
     when(() => repo.getLetters()).thenAnswer((_) async => [_activeLetter()]);
 
@@ -120,8 +146,13 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    expect(find.text('Tes premières sources'), findsOneWidget);
-    expect(find.text('NOUVELLE ÉTAPE · 01'), findsOneWidget);
+    // Nouveau compte (0 lettre archivée) → grade niveau 1.
+    expect(find.text('Facteur Stagiaire'), findsOneWidget);
+    expect(find.byType(RingAvatar), findsOneWidget);
+    expect(find.text('1/2'), findsOneWidget);
+    // L'ancien label statique et le titre de lettre ne sont plus affichés.
+    expect(find.text('Progression'), findsNothing);
+    expect(find.text('Tes premières sources'), findsNothing);
   });
 
   testWidgets('hides when current route is /lettres*', (tester) async {
@@ -133,7 +164,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    expect(find.text('Tes premières sources'), findsNothing);
+    expect(find.text('Facteur Stagiaire'), findsNothing);
   });
 
   testWidgets('dismiss X hides for the rest of session', (tester) async {
@@ -143,11 +174,11 @@ void main() {
     await tester.pumpWidget(_wrap(repo: repo));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    expect(find.text('Tes premières sources'), findsOneWidget);
+    expect(find.text('Facteur Stagiaire'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Masquer'));
     await tester.pump();
 
-    expect(find.text('Tes premières sources'), findsNothing);
+    expect(find.text('Facteur Stagiaire'), findsNothing);
   });
 }
