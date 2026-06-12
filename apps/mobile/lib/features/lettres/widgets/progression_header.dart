@@ -58,6 +58,7 @@ class ProgressionHeader extends ConsumerWidget {
                     style: GoogleFonts.fraunces(
                       fontSize: 19,
                       fontWeight: FontWeight.w700,
+                      fontStyle: FontStyle.italic,
                       letterSpacing: -0.3,
                       height: 1.15,
                       color: colors.textPrimary,
