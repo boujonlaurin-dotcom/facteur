@@ -3,11 +3,12 @@
 import contextlib
 import time
 from collections import defaultdict
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,8 @@ from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.source import Source, UserSource
 from app.models.user import UserInterest
 from app.schemas.source import (
+    CoverageResponse,
+    CoverageRow,
     PremiumConnectionResponse,
     RecentItemsRequest,
     RecentItemsResponse,
@@ -388,13 +391,24 @@ async def get_recent_items(
         .label("rn")
     )
     ranked = (
-        select(Content.source_id, Content.title, Content.published_at, rn)
+        select(
+            Content.source_id,
+            Content.title,
+            Content.published_at,
+            Content.theme,
+            rn,
+        )
         .where(Content.source_id.in_(data.source_ids))
         .subquery()
     )
     rows = (
         await db.execute(
-            select(ranked.c.source_id, ranked.c.title, ranked.c.published_at)
+            select(
+                ranked.c.source_id,
+                ranked.c.title,
+                ranked.c.published_at,
+                ranked.c.theme,
+            )
             .where(ranked.c.rn <= data.per_source)
             .order_by(ranked.c.source_id, ranked.c.published_at.desc())
         )
@@ -406,6 +420,7 @@ async def get_recent_items(
             SmartSearchRecentItem(
                 title=row.title,
                 published_at=row.published_at.isoformat() if row.published_at else "",
+                theme=row.theme,
             )
         )
 
@@ -678,6 +693,101 @@ async def detect_source(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+# Nombre maximum de thèmes affichés individuellement ; la longue traîne au-delà
+# est regroupée dans une ligne unique `theme="autres"`.
+COVERAGE_TOP_N = 6
+# Clé brute utilisée pour la ligne agrégée (longue traîne + thèmes NULL).
+COVERAGE_OTHER_THEME = "autres"
+# Espace fine insécable (U+202F) — séparateur des milliers en typographie FR.
+_NARROW_NBSP = " "
+
+
+def _format_fr_thousands(value: int) -> str:
+    """Formate un entier avec une espace fine insécable comme séparateur des milliers."""
+    return f"{value:,}".replace(",", _NARROW_NBSP)
+
+
+@router.get("/{source_id}/coverage", response_model=CoverageResponse)
+async def get_source_coverage(
+    source_id: UUID,
+    days: int = Query(default=30, ge=1, le=365),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> CoverageResponse:
+    """Couverture par thèmes d'une source sur une fenêtre glissante.
+
+    Agrège `contents` par `theme` sur les `days` derniers jours. Trie par
+    volume décroissant, conserve le top N et regroupe la longue traîne (ainsi
+    que les thèmes NULL) dans une ligne unique `autres`. La clé `theme` reste
+    brute : le mapping label/couleur est fait côté front.
+    """
+    period_label = f"{days} derniers jours"
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+
+    result = await db.execute(
+        select(Content.theme, func.count())
+        .where(Content.source_id == source_id)
+        .where(Content.published_at >= cutoff)
+        .group_by(Content.theme)
+    )
+    aggregates = result.all()
+
+    # total_count = somme sur TOUS les thèmes de la fenêtre (avant troncature top-N).
+    total_count = sum(int(count) for _theme, count in aggregates)
+
+    if total_count == 0:
+        return CoverageResponse(
+            period_label=period_label,
+            total_count=0,
+            caption="Aucun article publié sur la période",
+            rows=[],
+        )
+
+    # Sépare les thèmes nommés (non-NULL) de la part NULL, qui ira dans « autres ».
+    named: list[tuple[str, int]] = []
+    other_count = 0
+    for theme, count in aggregates:
+        count = int(count)
+        if theme is None:
+            other_count += count
+        else:
+            named.append((theme, count))
+
+    named.sort(key=lambda item: item[1], reverse=True)
+
+    # Top N affichés individuellement ; le reste rejoint « autres ».
+    head = named[:COVERAGE_TOP_N]
+    tail = named[COVERAGE_TOP_N:]
+    other_count += sum(count for _theme, count in tail)
+
+    rows = [
+        CoverageRow(
+            theme=theme,
+            count=count,
+            pct=round(count / total_count * 100),
+        )
+        for theme, count in head
+    ]
+    if other_count > 0:
+        rows.append(
+            CoverageRow(
+                theme=COVERAGE_OTHER_THEME,
+                count=other_count,
+                pct=round(other_count / total_count * 100),
+            )
+        )
+
+    noun = "article publié" if total_count == 1 else "articles publiés"
+    caption = f"{_format_fr_thousands(total_count)} {noun} sur la période"
+
+    return CoverageResponse(
+        period_label=period_label,
+        total_count=total_count,
+        caption=caption,
+        rows=rows,
+    )
 
 
 @router.put("/{source_id}/subscription", response_model=SourceResponse)

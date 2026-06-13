@@ -205,6 +205,9 @@ class SmartSearchRecentItem(BaseModel):
 
     title: str
     published_at: str = ""
+    # Thème inféré (clé brute backend ; mapping label/couleur côté front).
+    # Additif/rétro-compatible : reste None si non fourni par l'appelant.
+    theme: str | None = None
 
 
 class SmartSearchResultItem(BaseModel):
@@ -289,3 +292,24 @@ class ThemesFollowedResponse(BaseModel):
     """Réponse thèmes suivis."""
 
     themes: list[ThemeFollowed]
+
+
+class CoverageRow(BaseModel):
+    """Couverture d'un thème par une source sur la période."""
+
+    theme: str
+    count: int
+    pct: int
+
+
+class CoverageResponse(BaseModel):
+    """Agrégation de la couverture par thème d'une source.
+
+    `theme` reste la clé brute backend ; le mapping label/couleur est fait
+    côté front. `rows` est trié par `count` décroissant, top N + « autres ».
+    """
+
+    period_label: str
+    total_count: int
+    caption: str
+    rows: list[CoverageRow] = []
