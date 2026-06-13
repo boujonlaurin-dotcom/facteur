@@ -19,6 +19,7 @@ from app.models.host_feed_resolution import HostFeedResolution
 from app.models.source import Source
 from app.models.source_search_log import SourceSearchLog
 from app.models.user import UserInterest
+from app.services.observability.cost_budget import is_over_cap, monthly_call_count
 from app.services.observability.usage_recorder import track_api_call
 from app.services.rss_parser import RSSParser
 from app.services.search.cache import (
@@ -36,10 +37,12 @@ from app.services.search.providers.reddit_search import RedditSearchProvider
 
 logger = structlog.get_logger()
 
-# ─── In-memory rate counters (reset on restart) ─────────────────
-
-_brave_calls_month: int = 0
-_mistral_calls_month: int = 0
+# ─── Rate counters ──────────────────────────────────────────────
+# Les caps mensuels Brave/Mistral sont désormais lus depuis
+# `cost_budget` (persistant, dérivé d'api_usage_events) : les anciens
+# compteurs en mémoire étaient remis à zéro à chaque restart Railway, donc
+# jamais atteints. La limite journalière par user reste en mémoire (fenêtre
+# 24 h, sans enjeu de coût mensuel et hot-path).
 _user_daily_counts: dict[str, int] = {}
 _user_daily_reset_date: str = ""
 
@@ -329,8 +332,6 @@ class SmartSourceSearchService:
 
         Returns a dict matching SmartSearchResponse schema.
         """
-        global _brave_calls_month, _mistral_calls_month
-
         start = time.monotonic()
         normalized = normalize_query(query)
         layers_called: list[str] = []
@@ -457,7 +458,7 @@ class SmartSourceSearchService:
         brave_eligible = (
             external_eligible
             and self.brave.is_ready
-            and _brave_calls_month < settings.brave_monthly_cap
+            and not await is_over_cap("brave", settings.brave_monthly_cap)
         )
 
         if expand and external_eligible and brave_eligible:
@@ -465,7 +466,6 @@ class SmartSourceSearchService:
                 self._search_brave(normalized, user_themes),
                 self._search_google_news(normalized, user_themes),
             )
-            _brave_calls_month += 1
             for r in brave_results:
                 if r["url"] not in seen_urls:
                     seen_urls.add(r["url"])
@@ -477,28 +477,17 @@ class SmartSourceSearchService:
                     results.append(r)
             layers_called.append("google_news")
 
-            if _brave_calls_month >= int(settings.brave_monthly_cap * 0.8):
-                logger.warning(
-                    "smart_search.brave_budget_warning",
-                    calls=_brave_calls_month,
-                    cap=settings.brave_monthly_cap,
-                )
+            await self._warn_if_brave_budget_low(settings)
         else:
             if brave_eligible:
                 brave_results = await self._search_brave(normalized, user_themes)
-                _brave_calls_month += 1
                 for r in brave_results:
                     if r["url"] not in seen_urls:
                         seen_urls.add(r["url"])
                         results.append(r)
                 layers_called.append("brave")
 
-                if _brave_calls_month >= int(settings.brave_monthly_cap * 0.8):
-                    logger.warning(
-                        "smart_search.brave_budget_warning",
-                        calls=_brave_calls_month,
-                        cap=settings.brave_monthly_cap,
-                    )
+                await self._warn_if_brave_budget_low(settings)
 
             if not expand and len(results) >= MIN_RESULTS_FOR_SHORTCIRCUIT:
                 return await self._finalize(
@@ -535,9 +524,10 @@ class SmartSourceSearchService:
                     )
 
         # (f) Mistral fallback — catch-all, skipped when a type filter is set
-        if content_type is None and _mistral_calls_month < settings.mistral_monthly_cap:
+        if content_type is None and not await is_over_cap(
+            "mistral", settings.mistral_monthly_cap
+        ):
             mistral_results = await self._search_mistral(normalized, user_themes)
-            _mistral_calls_month += 1
             for r in mistral_results:
                 if r["url"] not in seen_urls:
                     seen_urls.add(r["url"])
@@ -981,6 +971,18 @@ class SmartSourceSearchService:
                 )
             )
         return results
+
+    @staticmethod
+    async def _warn_if_brave_budget_low(settings) -> None:
+        """Log un warning si la conso Brave du mois atteint 80 % du cap."""
+        cap = settings.brave_monthly_cap
+        if cap <= 0:
+            return
+        calls = await monthly_call_count("brave")
+        if calls >= int(cap * 0.8):
+            logger.warning(
+                "smart_search.brave_budget_warning", calls=calls, cap=cap
+            )
 
     async def _search_brave(self, query: str, user_themes: list[str]) -> list[dict]:
         """Search Brave and keep only candidates that resolve to a real RSS feed.
