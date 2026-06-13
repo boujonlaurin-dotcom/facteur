@@ -176,9 +176,13 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
     required TextTheme textTheme,
   }) {
     final hiddenItems = <_HiddenEntry>[
-      for (final t in interests.themes.where((t) => t.state == InterestState.hidden))
+      for (final t in interests.themes.where(
+        (t) => t.state == InterestState.hidden,
+      ))
         _HiddenEntry.theme(slug: t.interestSlug),
-      for (final c in interests.customTopics.where((c) => c.state == InterestState.hidden))
+      for (final c in interests.customTopics.where(
+        (c) => c.state == InterestState.hidden,
+      ))
         _HiddenEntry.customTopic(id: c.id, name: c.topicName),
     ];
 
@@ -197,8 +201,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
             ),
             child: _SereinToggleTile(
               enabled: sereinMode,
-              onChanged: () =>
-                  ref.read(sereinToggleProvider.notifier).toggle(),
+              onChanged: () => ref.read(sereinToggleProvider.notifier).toggle(),
             ),
           ),
           if (!sereinMode) ...[
@@ -263,8 +266,9 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                   border: Border.all(color: colors.surfaceElevated),
                 ),
                 child: Theme(
-                  data: Theme.of(context)
-                      .copyWith(dividerColor: Colors.transparent),
+                  data: Theme.of(
+                    context,
+                  ).copyWith(dividerColor: Colors.transparent),
                   child: ExpansionTile(
                     initiallyExpanded: false,
                     tilePadding: const EdgeInsets.symmetric(
@@ -284,14 +288,16 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                       ),
                     ),
                     children: hiddenItems
-                        .map((entry) => _HiddenItemRow(
-                              entry: entry,
-                              onRestore: () => _pickState(
-                                title: entry.displayName,
-                                refTarget: entry.refTarget,
-                                currentState: InterestState.hidden,
-                              ),
-                            ))
+                        .map(
+                          (entry) => _HiddenItemRow(
+                            entry: entry,
+                            onRestore: () => _pickState(
+                              title: entry.displayName,
+                              refTarget: entry.refTarget,
+                              currentState: InterestState.hidden,
+                            ),
+                          ),
+                        )
                         .toList(),
                   ),
                 ),
@@ -302,7 +308,6 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
       ),
     );
   }
-
 }
 
 class _HiddenEntry {
@@ -310,10 +315,11 @@ class _HiddenEntry {
   final String displayName;
   final bool isTheme;
 
-  _HiddenEntry._(
-      {required this.refTarget,
-      required this.displayName,
-      required this.isTheme});
+  _HiddenEntry._({
+    required this.refTarget,
+    required this.displayName,
+    required this.isTheme,
+  });
 
   factory _HiddenEntry.theme({required String slug}) => _HiddenEntry._(
         refTarget: ThemeFavoriteRef(slug: slug),
@@ -321,7 +327,10 @@ class _HiddenEntry {
         isTheme: true,
       );
 
-  factory _HiddenEntry.customTopic({required String id, required String name}) =>
+  factory _HiddenEntry.customTopic({
+    required String id,
+    required String name,
+  }) =>
       _HiddenEntry._(
         refTarget: CustomTopicFavoriteRef(id: id),
         displayName: name,
@@ -338,29 +347,40 @@ class _HeroBlock extends StatelessWidget {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: FacteurSpacing.space4,
-        vertical: FacteurSpacing.space4,
+      padding: const EdgeInsets.fromLTRB(
+        FacteurSpacing.space4,
+        FacteurSpacing.space2,
+        FacteurSpacing.space4,
+        FacteurSpacing.space4,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            sereinMode ? 'Vos bonnes nouvelles' : 'Vos centres d\'intérêt',
-            style: textTheme.displaySmall?.copyWith(
-              fontWeight: FontWeight.w700,
+      child: Container(
+        padding: const EdgeInsets.all(FacteurSpacing.space4),
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(FacteurRadius.large),
+          border: Border.all(color: colors.surfaceElevated),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              sereinMode ? 'Vos bonnes nouvelles' : 'Vos centres d\'intérêt',
+              style: FacteurTypography.serifTitle(
+                colors.textPrimary,
+              ).copyWith(fontSize: 20, height: 1.2),
             ),
-          ),
-          const SizedBox(height: FacteurSpacing.space2),
-          Text(
-            sereinMode
-                ? 'Choisissez ce qui reste dans vos bonnes nouvelles. Cochez pour garder, décochez pour mettre de côté.'
-                : 'Étoilez vos favoris pour les voir en tête du flux. Les 3 premiers (ordre modifiable) constituent votre Tournée du jour.',
-            style: textTheme.bodyMedium?.copyWith(
-              color: colors.textSecondary,
+            const SizedBox(height: 6),
+            Text(
+              sereinMode
+                  ? 'Choisissez ce qui reste dans vos bonnes nouvelles. Cochez pour garder, décochez pour mettre de côté.'
+                  : 'Étoilez vos favoris pour les voir en tête du flux. Les 3 premiers (ordre modifiable) constituent votre Tournée du jour.',
+              style: textTheme.bodySmall?.copyWith(
+                color: colors.textSecondary,
+                height: 1.45,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -462,9 +482,7 @@ class _SereinSettingsHeader extends StatelessWidget {
         decoration: BoxDecoration(
           color: SereinColors.sereinColor.withOpacity(0.08),
           borderRadius: BorderRadius.circular(FacteurRadius.large),
-          border: Border.all(
-            color: SereinColors.sereinColor.withOpacity(0.25),
-          ),
+          border: Border.all(color: SereinColors.sereinColor.withOpacity(0.25)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -510,8 +528,11 @@ class _ThemeBlock extends ConsumerWidget {
   final UserInterestsState interests;
   final bool sereinMode;
   final Future<void> Function(InterestState current) onPickThemeState;
-  final Future<void> Function(String topicId, String name, InterestState current)
-      onPickTopicState;
+  final Future<void> Function(
+    String topicId,
+    String name,
+    InterestState current,
+  ) onPickTopicState;
 
   const _ThemeBlock({
     required this.macroLabel,
@@ -527,9 +548,8 @@ class _ThemeBlock extends ConsumerWidget {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
-    final themeRow = interests.themes
-        .where((t) => t.interestSlug == themeSlug)
-        .firstOrNull;
+    final themeRow =
+        interests.themes.where((t) => t.interestSlug == themeSlug).firstOrNull;
     final themeState = themeRow?.state ?? InterestState.unfollowed;
 
     // slug_parent en DB est un slug fin (ex. 'cinema', 'ai', 'feminism'). On
@@ -537,9 +557,11 @@ class _ThemeBlock extends ConsumerWidget {
     // affiché. Avant : comparaison directe `slugParent == themeSlug` qui
     // masquait ~85% des sujets followed (PR #622).
     final topics = interests.customTopics
-        .where((c) =>
-            getTopicMacroTheme(c.slugParent) == macroLabel &&
-            c.state != InterestState.hidden)
+        .where(
+          (c) =>
+              getTopicMacroTheme(c.slugParent) == macroLabel &&
+              c.state != InterestState.hidden,
+        )
         .toList();
 
     // Hide the whole block in normal mode when there's nothing to show
@@ -575,8 +597,10 @@ class _ThemeBlock extends ConsumerWidget {
             ),
             title: Row(
               children: [
-                Text(getMacroThemeEmoji(macroLabel),
-                    style: const TextStyle(fontSize: 16)),
+                Text(
+                  getMacroThemeEmoji(macroLabel),
+                  style: const TextStyle(fontSize: 16),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -602,8 +626,11 @@ class _ThemeBlock extends ConsumerWidget {
                 ...topics.map(
                   (topic) => _TopicRow(
                     topic: topic,
-                    onPickState: () =>
-                        onPickTopicState(topic.id, topic.topicName, topic.state),
+                    onPickState: () => onPickTopicState(
+                      topic.id,
+                      topic.topicName,
+                      topic.state,
+                    ),
                   ),
                 ),
                 _AddTopicInlineButton(themeSlug: themeSlug),
@@ -647,8 +674,10 @@ class _DiscoverHint extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Text(getMacroThemeEmoji(macroLabel),
-                  style: const TextStyle(fontSize: 16)),
+              Text(
+                getMacroThemeEmoji(macroLabel),
+                style: const TextStyle(fontSize: 16),
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -769,10 +798,10 @@ class _SereinTopicRow extends ConsumerWidget {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final customTopicsAsync = ref.watch(customTopicsProvider);
-    final legacyTopic = customTopicsAsync.value
-        ?.where((t) => t.id == topic.id)
-        .firstOrNull;
-    final included = legacyTopic == null ? true : !legacyTopic.excludedFromSerein;
+    final legacyTopic =
+        customTopicsAsync.value?.where((t) => t.id == topic.id).firstOrNull;
+    final included =
+        legacyTopic == null ? true : !legacyTopic.excludedFromSerein;
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -797,8 +826,9 @@ class _SereinTopicRow extends ConsumerWidget {
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content:
-                                Text('Impossible de mettre à jour ce sujet.'),
+                            content: Text(
+                              'Impossible de mettre à jour ce sujet.',
+                            ),
                             duration: Duration(seconds: 3),
                           ),
                         );
@@ -958,9 +988,7 @@ class _PinnedTopicsSection extends StatelessWidget {
             Text(
               'Apparaissent comme onglets dans Flâner. '
               'Ils ne remplacent pas vos thèmes favoris.',
-              style: textTheme.bodySmall?.copyWith(
-                color: colors.textTertiary,
-              ),
+              style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
             ),
             const SizedBox(height: FacteurSpacing.space2),
             ...pinned.map((ref) {
@@ -1036,14 +1064,9 @@ class _HiddenItemRow extends StatelessWidget {
       ),
       title: Text(
         entry.displayName,
-        style: textTheme.bodyMedium?.copyWith(
-          color: colors.textSecondary,
-        ),
+        style: textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
       ),
-      trailing: TextButton(
-        onPressed: onRestore,
-        child: const Text('Modifier'),
-      ),
+      trailing: TextButton(onPressed: onRestore, child: const Text('Modifier')),
     );
   }
 }
@@ -1106,8 +1129,7 @@ class _ContentTypesSection extends ConsumerWidget {
                     value: !isMuted,
                     activeColor: colors.primary,
                     onChanged: (enabled) async {
-                      final repo =
-                          ref.read(personalizationRepositoryProvider);
+                      final repo = ref.read(personalizationRepositoryProvider);
                       if (enabled) {
                         await repo.unmuteContentType(entry.key);
                       } else {
@@ -1125,4 +1147,3 @@ class _ContentTypesSection extends ConsumerWidget {
     );
   }
 }
-

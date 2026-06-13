@@ -12,9 +12,8 @@ import '../../../config/theme.dart';
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/services/widget_service.dart';
-import '../providers/language_preference_provider.dart';
+import '../../../core/ui/notification_service.dart';
 import '../providers/user_profile_provider.dart';
-import 'package:facteur/core/ui/notification_service.dart';
 
 /// Écran de gestion du compte utilisateur
 class AccountScreen extends ConsumerWidget {
@@ -69,8 +68,11 @@ class AccountScreen extends ConsumerWidget {
                   const SizedBox(height: FacteurSpacing.space2),
                   Row(
                     children: [
-                      Icon(Icons.email_outlined,
-                          color: colors.primary, size: 20),
+                      Icon(
+                        Icons.email_outlined,
+                        color: colors.primary,
+                        size: 20,
+                      ),
                       const SizedBox(width: FacteurSpacing.space3),
                       Expanded(
                         child: Column(
@@ -81,9 +83,7 @@ class AccountScreen extends ConsumerWidget {
                               style: Theme.of(context)
                                   .textTheme
                                   .labelSmall
-                                  ?.copyWith(
-                                    color: colors.textTertiary,
-                                  ),
+                                  ?.copyWith(color: colors.textTertiary),
                             ),
                             Text(
                               userEmail,
@@ -93,72 +93,6 @@ class AccountScreen extends ConsumerWidget {
                         ),
                       ),
                     ],
-                  ),
-                ],
-              ),
-            ),
-
-            // Section Abonnements (médias payants connectés)
-            const SizedBox(height: FacteurSpacing.space6),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(FacteurSpacing.space4),
-              decoration: BoxDecoration(
-                color: colors.surface,
-                borderRadius: BorderRadius.circular(FacteurRadius.large),
-                border: Border.all(color: colors.surfaceElevated),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'ABONNEMENTS',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: colors.textTertiary,
-                          letterSpacing: 1.5,
-                        ),
-                  ),
-                  const SizedBox(height: FacteurSpacing.space3),
-                  InkWell(
-                    onTap: () => context.push(RoutePaths.subscriptions),
-                    borderRadius: BorderRadius.circular(FacteurRadius.medium),
-                    child: Row(
-                      children: [
-                        Icon(
-                          PhosphorIcons.link(PhosphorIconsStyle.regular),
-                          color: colors.primary,
-                          size: 20,
-                        ),
-                        const SizedBox(width: FacteurSpacing.space3),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Mes abonnements',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.copyWith(fontWeight: FontWeight.w500),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Gère tes médias payants connectés',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(color: colors.textSecondary),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Icon(
-                          PhosphorIcons.caretRight(),
-                          color: colors.textTertiary,
-                          size: 18,
-                        ),
-                      ],
-                    ),
                   ),
                 ],
               ),
@@ -223,7 +157,8 @@ class AccountScreen extends ConsumerWidget {
                           ),
                           Icon(
                             PhosphorIcons.arrowSquareOut(
-                                PhosphorIconsStyle.regular),
+                              PhosphorIconsStyle.regular,
+                            ),
                             color: colors.textTertiary,
                             size: 18,
                           ),
@@ -234,9 +169,6 @@ class AccountScreen extends ConsumerWidget {
                 ),
               ),
             ],
-
-            const SizedBox(height: FacteurSpacing.space6),
-            _LanguagePreferenceSection(),
 
             const Spacer(),
 
@@ -300,8 +232,10 @@ class AccountScreen extends ConsumerWidget {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: colors.surface,
-        title: Text('Nom d\'affichage',
-            style: TextStyle(color: colors.textPrimary)),
+        title: Text(
+          'Nom d\'affichage',
+          style: TextStyle(color: colors.textPrimary),
+        ),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -314,86 +248,19 @@ class AccountScreen extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child:
-                Text('Annuler', style: TextStyle(color: colors.textSecondary)),
+            child: Text(
+              'Annuler',
+              style: TextStyle(color: colors.textSecondary),
+            ),
           ),
           TextButton(
             onPressed: () {
-              ref.read(userProfileProvider.notifier).updateProfile(
-                    displayName: controller.text.trim(),
-                  );
+              ref
+                  .read(userProfileProvider.notifier)
+                  .updateProfile(displayName: controller.text.trim());
               Navigator.of(context).pop();
             },
             child: Text('Enregistrer', style: TextStyle(color: colors.primary)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Section "LANGUE & CONTENUS" — toggle masquage des sources non françaises.
-class _LanguagePreferenceSection extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.facteurColors;
-    final state = ref.watch(languagePreferenceProvider);
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: FacteurSpacing.space4,
-        vertical: FacteurSpacing.space2,
-      ),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(FacteurRadius.large),
-        border: Border.all(color: colors.surfaceElevated),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: FacteurSpacing.space2),
-            child: Text(
-              'LANGUE & CONTENUS',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: colors.textTertiary,
-                    letterSpacing: 1.5,
-                  ),
-            ),
-          ),
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              'Masquer les sources non françaises',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(fontWeight: FontWeight.w500),
-            ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                'Les sources que tu suis restent toujours visibles.',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: colors.textSecondary),
-              ),
-            ),
-            value: state.hideNonFr,
-            activeColor: colors.primary,
-            onChanged: (v) async {
-              final ok = await ref
-                  .read(languagePreferenceProvider.notifier)
-                  .toggle(v);
-              if (!ok) {
-                NotificationService.showError(
-                  'Impossible de mettre à jour ce réglage. Réessaye dans un instant.',
-                );
-              }
-            },
           ),
         ],
       ),
@@ -432,14 +299,11 @@ class _InfoRow extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colors.textTertiary,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(color: colors.textTertiary),
                 ),
-                Text(
-                  value,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
+                Text(value, style: Theme.of(context).textTheme.bodyMedium),
               ],
             ),
           ),
