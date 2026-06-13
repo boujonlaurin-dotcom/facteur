@@ -321,7 +321,8 @@ class GrilleResultView extends StatelessWidget {
     };
     final lower = s.toLowerCase();
     final buf = StringBuffer();
-    for (final ch in lower.split('')) {
+    for (var i = 0; i < lower.length; i++) {
+      final ch = lower[i];
       buf.write(map[ch] ?? ch);
     }
     return buf.toString();

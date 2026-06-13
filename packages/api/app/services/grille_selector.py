@@ -12,8 +12,10 @@ Pur scoring + une requête corpus en miroir de
 le résultat est figé en colonnes sur `GrillePuzzle`.
 """
 
+import asyncio
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
@@ -25,7 +27,7 @@ from sqlalchemy.orm import selectinload
 from app.models.content import Content
 from app.models.grille_puzzle import GrillePuzzle
 from app.services.editorial.schemas import EditorialGlobalContext
-from app.services.grille_dictionary import is_valid_word
+from app.services.grille_dictionary import WORD_LENGTH, is_valid_word
 from app.services.grille_matcher import _excerpt, _norm
 from app.services.grille_quality_pool import get_quality_pool
 from app.services.grille_text import normalize_word
@@ -90,8 +92,12 @@ def _scan_field(
                 hits[word] = (tok, True)
             continue
         # Flexion : un mot du pool est strictement inclus dans le token.
+        # Les mots du pool font tous WORD_LENGTH lettres → un token plus court
+        # ne peut pas les contenir.
+        if len(tok_norm) <= WORD_LENGTH:
+            continue
         for word_l, word in pool_index.items():
-            if len(tok_norm) > len(word_l) and word_l in tok_norm:
+            if word_l in tok_norm:
                 hits.setdefault(word, (tok, False))
     return hits
 
@@ -176,6 +182,12 @@ class _Candidate:
     surface: str = ""
 
 
+@lru_cache(maxsize=1)
+def _pool_index() -> dict[str, str]:
+    """Index `mot_minuscule → mot_MAJ` du pool (calculé une seule fois)."""
+    return {word.lower(): word for word in get_quality_pool()}
+
+
 def _select_from_corpus(
     corpus: list[Content],
     cluster_index: dict[str, int],
@@ -183,9 +195,7 @@ def _select_from_corpus(
     exclude: str | None,
 ) -> GrilleSelection | None:
     """Cœur pur : extrait le meilleur mot du pool présent dans le corpus."""
-    # `_norm` renvoie du minuscule ; le pool est en MAJUSCULES → l'index mappe
-    # la forme minuscule (clé de comparaison) vers la forme MAJ canonique.
-    pool_index = {word.lower(): word for word in get_quality_pool()}
+    pool_index = _pool_index()
     candidates: dict[str, _Candidate] = {}
 
     for content in corpus:
@@ -268,7 +278,10 @@ async def select_daily_word(
 
     Lecture seule : ne touche pas le puzzle (c'est `apply_hybrid_word` qui fige).
     """
-    corpus = await _corpus(session)
+    corpus, yesterday = await asyncio.gather(
+        _corpus(session),
+        _yesterday_word(session, target_date),
+    )
     if not corpus:
         logger.info("grille_selector_empty_corpus", target_date=str(target_date))
         return None
@@ -277,7 +290,7 @@ async def select_daily_word(
         corpus,
         _build_cluster_index(editorial_ctx),
         _subject_label_words(editorial_ctx),
-        await _yesterday_word(session, target_date),
+        yesterday,
     )
     if selection is None:
         logger.info("grille_selector_no_candidate", target_date=str(target_date))
