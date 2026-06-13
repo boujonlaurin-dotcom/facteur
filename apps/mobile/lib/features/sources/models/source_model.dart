@@ -40,6 +40,28 @@ class PremiumConnection {
   bool get isUsable => enabled && loginUrl.isNotEmpty && testUrl.isNotEmpty;
 }
 
+/// Returns the usable premium connection for [source].
+///
+/// Paid sources without curated connection metadata fall back to their home
+/// page so users can still authenticate through the generic WebView flow.
+PremiumConnection? resolvePremiumConnection(Source source) {
+  final existing = source.premiumConnection;
+  if (existing != null && existing.isUsable) return existing;
+  if (!source.hasPaywall) return null;
+
+  final url = source.url?.trim() ?? '';
+  if (!url.startsWith('http://') && !url.startsWith('https://')) return null;
+
+  return PremiumConnection(
+    loginUrl: url,
+    testUrl: url,
+    displayHint:
+        'Connecte-toi à ton compte sur le site du média, puis reviens lire '
+        'tes articles.',
+    isGeneric: true,
+  );
+}
+
 class Source {
   final String id;
   final String name;

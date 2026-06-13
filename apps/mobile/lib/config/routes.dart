@@ -27,6 +27,8 @@ import '../features/sources/screens/add_source_screen.dart';
 import '../features/sources/screens/theme_sources_screen.dart';
 import '../features/settings/screens/profile_screen.dart';
 import '../features/settings/screens/account_screen.dart';
+import '../features/settings/screens/appearance_screen.dart';
+import '../features/settings/screens/source_settings_screen.dart';
 import '../features/settings/screens/subscriptions_screen.dart';
 import '../features/settings/screens/notifications_screen.dart';
 import '../features/settings/screens/about_screen.dart';
@@ -84,6 +86,8 @@ class RouteNames {
   static const String addSource = 'add-source';
   static const String settings = 'settings';
   static const String account = 'account';
+  static const String appearance = 'appearance';
+  static const String sourceSettings = 'source-settings';
   static const String subscriptions = 'subscriptions';
   static const String notifications = 'notifications';
   static const String about = 'about';
@@ -122,6 +126,8 @@ class RoutePaths {
   // static const String addSource = '/sources/add'; // Removed for V0
   static const String settings = '/settings';
   static const String account = '/settings/account';
+  static const String appearance = '/settings/appearance';
+  static const String sourceSettings = '/settings/sources/preferences';
   static const String subscriptions = '/settings/subscriptions';
   static const String notifications = '/settings/notifications';
   static const String about = '/settings/about';
@@ -520,6 +526,12 @@ final routerProvider = Provider<GoRouter>((ref) {
                 const FullSwipeCupertinoPage(child: ProfileScreen()),
           ),
           GoRoute(
+            path: 'appearance', // /settings/appearance
+            name: RouteNames.appearance,
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: AppearanceScreen()),
+          ),
+          GoRoute(
             path: 'sources', // /settings/sources
             name: RouteNames.sources,
             pageBuilder: (context, state) =>
@@ -530,6 +542,12 @@ final routerProvider = Provider<GoRouter>((ref) {
                 name: RouteNames.addSource,
                 pageBuilder: (context, state) =>
                     const FullSwipeCupertinoPage(child: AddSourceScreen()),
+              ),
+              GoRoute(
+                path: 'preferences', // /settings/sources/preferences
+                name: RouteNames.sourceSettings,
+                pageBuilder: (context, state) =>
+                    const FullSwipeCupertinoPage(child: SourceSettingsScreen()),
               ),
               GoRoute(
                 path: 'theme/:slug', // /settings/sources/theme/:slug

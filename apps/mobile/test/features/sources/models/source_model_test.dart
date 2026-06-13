@@ -2,6 +2,60 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 
 void main() {
+  group('resolvePremiumConnection', () {
+    test('uses curated connection when available', () {
+      const curated = PremiumConnection(
+        loginUrl: 'https://example.com/login',
+        testUrl: 'https://example.com/article',
+      );
+      final source = Source(
+        id: 'source',
+        name: 'Source',
+        type: SourceType.article,
+        hasPaywall: true,
+        premiumConnection: curated,
+      );
+
+      expect(resolvePremiumConnection(source), same(curated));
+    });
+
+    test('creates a generic fallback for a paid source with a valid URL', () {
+      final source = Source(
+        id: 'source',
+        name: 'Source',
+        type: SourceType.article,
+        url: 'https://example.com',
+        hasPaywall: true,
+      );
+
+      final connection = resolvePremiumConnection(source);
+
+      expect(connection, isNotNull);
+      expect(connection!.isGeneric, isTrue);
+      expect(connection.loginUrl, 'https://example.com');
+      expect(connection.testUrl, 'https://example.com');
+    });
+
+    test('rejects free sources and paid sources without a valid URL', () {
+      final free = Source(
+        id: 'free',
+        name: 'Free',
+        type: SourceType.article,
+        url: 'https://example.com',
+      );
+      final invalid = Source(
+        id: 'invalid',
+        name: 'Invalid',
+        type: SourceType.article,
+        url: 'example.com',
+        hasPaywall: true,
+      );
+
+      expect(resolvePremiumConnection(free), isNull);
+      expect(resolvePremiumConnection(invalid), isNull);
+    });
+  });
+
   group('Source.fromJson premiumConnection', () {
     test('parses usable premium_connection', () {
       final source = Source.fromJson({
