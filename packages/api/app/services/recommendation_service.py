@@ -1642,9 +1642,7 @@ class RecommendationService:
                                 Source.is_active == True,  # noqa: E712
                             )
                             .group_by(UserSource.source_id)
-                            .having(
-                                func.count(Content.id) < QUIET_SOURCE_MAX_RECENT
-                            )
+                            .having(func.count(Content.id) < QUIET_SOURCE_MAX_RECENT)
                         )
                     )
                     .scalars()
@@ -1670,9 +1668,7 @@ class RecommendationService:
                     quiet_articles = list(
                         (await self.session.scalars(latest_per_source)).all()
                     )
-                    quiet_articles.sort(
-                        key=lambda c: c.published_at, reverse=True
-                    )
+                    quiet_articles.sort(key=lambda c: c.published_at, reverse=True)
                     quiet_articles = quiet_articles[:MAX_CAROUSEL_ITEMS]
 
                 logger.info(

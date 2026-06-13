@@ -223,9 +223,7 @@ class ClassificationWorker:
                         "retry_count": item.retry_count,
                         "has_content": content is not None,
                         "title": (content.title or "") if content else "",
-                        "description": (content.description or "")
-                        if content
-                        else "",
+                        "description": (content.description or "") if content else "",
                         "source_name": source.name if source else "",
                     }
                 )
