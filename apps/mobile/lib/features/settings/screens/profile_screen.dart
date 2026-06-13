@@ -12,6 +12,7 @@ import '../../onboarding/widgets/theme_choice_bottom_sheet.dart';
 import '../providers/display_mode_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/display_mode_bottom_sheet.dart';
+import '../widgets/profile_progression_card.dart';
 
 /// Page « Profil » regroupant les réglages applicatifs accessibles depuis
 /// la sheet Réglages : compte, notifications, thème, refonte du
