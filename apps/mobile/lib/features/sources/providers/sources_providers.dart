@@ -7,7 +7,9 @@ import '../../feed/repositories/personalization_repository.dart';
 import '../../lettres/providers/letters_provider.dart';
 import '../../settings/providers/language_preference_provider.dart';
 import '../models/smart_search_result.dart';
+import '../models/source_coverage.dart';
 import '../models/source_model.dart';
+import '../models/source_recent_items.dart';
 import '../models/theme_source_model.dart';
 import '../repositories/sources_repository.dart';
 import '../services/premium_session_store.dart';
@@ -67,6 +69,31 @@ final smartSearchProvider =
         expand: params.expand,
       );
     });
+
+/// Couverture par thèmes d'une source (fiche source v2). Le cache de Riverpod
+/// évite un refetch quand la fiche se reconstruit (toggles trust/mute…).
+final sourceCoverageProvider =
+    FutureProvider.family<SourceCoverage, String>((ref, sourceId) async {
+  if (sourceId.isEmpty) {
+    return const SourceCoverage(periodLabel: '', totalCount: 0);
+  }
+  final repository = ref.watch(sourcesRepositoryProvider);
+  return repository.fetchCoverage(sourceId, days: 30);
+});
+
+/// Derniers articles d'une source pour la fiche v2 (jusqu'à 3, avec thème).
+/// Renvoie une liste vide si la source n'a rien publié récemment.
+final sourceRecentArticlesProvider =
+    FutureProvider.family<List<SmartSearchRecentItem>, String>(
+        (ref, sourceId) async {
+  if (sourceId.isEmpty) return const [];
+  final repository = ref.watch(sourcesRepositoryProvider);
+  final results = await repository.fetchRecentItems([sourceId], perSource: 3);
+  final match = results
+      .cast<SourceRecentItems?>()
+      .firstWhere((s) => s?.sourceId == sourceId, orElse: () => null);
+  return match?.items ?? const [];
+});
 
 final trendingSourcesProvider = FutureProvider<List<Source>>((ref) async {
   final repository = ref.watch(sourcesRepositoryProvider);
