@@ -41,6 +41,22 @@ android {
         versionName = flutter.versionName
     }
 
+    // Canal `beta` = APK side-loaded via GitHub Releases (auto-update intégré,
+    // garde REQUEST_INSTALL_PACKAGES). Canal `playstore` = AAB Play Store
+    // (sans cette permission, pas d'auto-update).
+    flavorDimensions += "channel"
+
+    productFlavors {
+        create("beta") {
+            dimension = "channel"
+            applicationIdSuffix = ".beta"
+            versionNameSuffix = "-beta"
+        }
+        create("playstore") {
+            dimension = "channel"
+        }
+    }
+
     signingConfigs {
         if (keystorePropertiesFile.exists()) {
             create("release") {
@@ -61,23 +77,6 @@ android {
             }
             isMinifyEnabled = false
             isShrinkResources = false
-        }
-    }
-
-    // Deux environnements cohabitant sur un même device :
-    //  - prod    -> com.example.facteur          (vrais users, releases hebdo "release-*")
-    //  - staging -> com.example.facteur.staging   (env continu testé en interne, builds "beta-*")
-    // Le signingConfig vit sur buildTypes.release (ci-dessus) -> flavor-agnostic.
-    flavorDimensions += "env"
-    productFlavors {
-        create("prod") {
-            dimension = "env"
-            manifestPlaceholders["appLabel"] = "Facteur"
-        }
-        create("staging") {
-            dimension = "env"
-            applicationIdSuffix = ".staging"
-            manifestPlaceholders["appLabel"] = "Facteur STG"
         }
     }
 }

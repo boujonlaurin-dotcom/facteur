@@ -72,14 +72,16 @@ jobs:
         id: version
         run: echo "version=release-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
 
-      - name: Build APK (prod flavor)
+      - name: Build APK (beta flavor — side-loaded, canal stable)
         run: |
           cd apps/mobile
           # versionCode = epoch (monotone et TOUJOURS > les anciens run_number).
           # github.run_number repart à 1 pour ce workflow neuf -> versionCode=1 ->
           # downgrade refusé par Android ("le package semble ne pas être valide")
           # chez tous les users prod déjà installés. Plafond Android 2.1e9 -> ok ~2036.
-          flutter build apk --release --flavor prod \
+          # Flavor `beta` = APK side-loaded (REQUEST_INSTALL_PACKAGES requis pour
+          # l'auto-update) ; UPDATE_CHANNEL=stable -> pull des tags release-*.
+          flutter build apk --release --flavor beta \
             --build-number=$(date +%s) \
             --dart-define="API_BASE_URL=https://facteur-production.up.railway.app/api" \
             --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
@@ -96,11 +98,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: facteur-app-prod-release
-          path: apps/mobile/build/app/outputs/flutter-apk/app-prod-release.apk
+          path: apps/mobile/build/app/outputs/flutter-apk/app-beta-release.apk
 
       - name: Rename APK
         run: |
-          mv apps/mobile/build/app/outputs/flutter-apk/app-prod-release.apk \
+          mv apps/mobile/build/app/outputs/flutter-apk/app-beta-release.apk \
              apps/mobile/build/app/outputs/flutter-apk/Facteur-${{ steps.version.outputs.version }}.apk
 
       - name: Create Production Release

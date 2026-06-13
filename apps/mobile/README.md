@@ -135,11 +135,43 @@ flutter test
 
 ## 📱 Build
 
-```bash
-# iOS Release
-flutter build ios --release
+### Android — canal `beta` (side-load via GitHub Releases)
 
-# Avec variables d'environnement
+Conserve l'auto-update intégré (télécharge l'APK depuis GitHub Releases puis
+déclenche l'installeur Android via `REQUEST_INSTALL_PACKAGES`). C'est ce que
+fait CI dans `.github/workflows/build-apk.yml` à chaque push sur `main`.
+
+```bash
+flutter build apk --flavor beta --release \
+  --dart-define=APP_RELEASE_TAG=beta-$(date +'%Y%m%d-%H%M') \
+  --dart-define=API_BASE_URL=https://facteur-production.up.railway.app/api/ \
+  --dart-define=SUPABASE_URL=... \
+  --dart-define=SUPABASE_ANON_KEY=...
+```
+
+`applicationId` = `com.example.facteur.beta` (suffix `.beta`) → cohabite avec
+le build playstore sur un même device.
+
+### Android — canal `playstore` (AAB sans auto-update)
+
+Pas d'auto-update (Play Store distribue les MAJ), pas de
+`REQUEST_INSTALL_PACKAGES`. Le flag `PLAYSTORE_BUILD=true` court-circuite
+`appUpdateProvider`.
+
+```bash
+flutter build appbundle --flavor playstore --release \
+  --dart-define=PLAYSTORE_BUILD=true \
+  --dart-define=API_BASE_URL=https://facteur-production.up.railway.app/api/ \
+  --dart-define=SUPABASE_URL=... \
+  --dart-define=SUPABASE_ANON_KEY=...
+```
+
+`applicationId` = `com.example.facteur` (sans suffix) → c'est l'app
+publiée sur le Play Store.
+
+### iOS
+
+```bash
 flutter build ios --release \
   --dart-define=SUPABASE_URL=... \
   --dart-define=SUPABASE_ANON_KEY=... \
