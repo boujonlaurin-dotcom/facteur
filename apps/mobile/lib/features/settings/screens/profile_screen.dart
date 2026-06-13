@@ -36,6 +36,8 @@ class ProfileScreen extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(vertical: FacteurSpacing.space4),
         child: Column(
           children: [
+            const ProfileProgressionCard(),
+            const SizedBox(height: FacteurSpacing.space6),
             _Section(
               title: 'COMPTE',
               children: [

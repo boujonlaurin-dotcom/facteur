@@ -1,6 +1,7 @@
 """Modèles SQLAlchemy pour Facteur."""
 
 from app.models.analytics import AnalyticsEvent
+from app.models.api_usage_event import ApiUsageEvent
 from app.models.classification_queue import ClassificationQueue
 from app.models.cluster_title_annotation import ClusterTitleAnnotation
 from app.models.collection import Collection, CollectionItem
@@ -62,6 +63,8 @@ __all__ = [
     "ClassificationQueue",
     # Analytics
     "AnalyticsEvent",
+    # API usage tracking (observabilité scaling WP-E)
+    "ApiUsageEvent",
     # Subscription
     "UserSubscription",
     # Progress (Epic 8)

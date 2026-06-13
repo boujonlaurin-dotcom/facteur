@@ -75,8 +75,12 @@ jobs:
       - name: Build APK (prod flavor)
         run: |
           cd apps/mobile
+          # versionCode = epoch (monotone et TOUJOURS > les anciens run_number).
+          # github.run_number repart à 1 pour ce workflow neuf -> versionCode=1 ->
+          # downgrade refusé par Android ("le package semble ne pas être valide")
+          # chez tous les users prod déjà installés. Plafond Android 2.1e9 -> ok ~2036.
           flutter build apk --release --flavor prod \
-            --build-number=${{ github.run_number }} \
+            --build-number=$(date +%s) \
             --dart-define="API_BASE_URL=https://facteur-production.up.railway.app/api" \
             --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
             --dart-define="SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" \

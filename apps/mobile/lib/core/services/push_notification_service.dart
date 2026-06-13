@@ -130,6 +130,16 @@ class PushNotificationService {
   static const String defaultTitle = 'Facteur';
   static const String defaultBody = "Ton récap du jour t'attend quand tu veux.";
 
+  /// En-têtes du bigText de la notif digest (variante B), selon le mode.
+  static const String digestHeader = "À la une dans l'Essentiel :";
+  static const String digestHeaderSerene = 'Du calme dans ton actu :';
+
+  /// Ligne CTA finale du bigText digest, selon le mode.
+  static const String digestCta =
+      "Pour le reste, viens faire un tour sur l'app !";
+  static const String digestCtaSerene =
+      "Le reste t'attend tranquillement dans l'app.";
+
   /// Variante C — déclenchée manuellement par l'éditorial (hors v1).
   static const String calmTitle = 'Facteur';
   static const String calmBody =
@@ -152,12 +162,15 @@ class PushNotificationService {
 
   /// Construit le triplet (title, body, bigText) selon la variante.
   ///
-  /// - [variantB] requiert au moins un teaser dans [teasers]. Le premier
-  ///   teaser est utilisé pour le body collapsed (tronqué à 60c, brief §6.1) ;
-  ///   l'ensemble (max 3) est rendu en bullets dans le bigText Android.
+  /// - [variantB] requiert au moins un teaser dans [teasers]. Le titre complet
+  ///   du premier teaser est utilisé pour le body collapsed (l'OS l'ellipsise
+  ///   sur une ligne) ; les 2 premiers titres sont rendus en bullets dans le
+  ///   bigText Android, suivis d'une ligne CTA renvoyant vers l'app.
+  /// - [serene] bascule l'en-tête et le CTA sur un ton apaisé (mode Serein).
   static ({String title, String body, String bigText}) buildCopy({
     required NotifVariant variant,
     List<String>? teasers,
+    bool serene = false,
   }) {
     switch (variant) {
       case NotifVariant.variantA:
@@ -166,19 +179,18 @@ class PushNotificationService {
         final cleaned = (teasers ?? const <String>[])
             .map((t) => t.trim())
             .where((t) => t.isNotEmpty)
-            .take(3)
+            .take(2)
             .toList();
         if (cleaned.isEmpty) {
           return (title: defaultTitle, body: defaultBody, bigText: defaultBody);
         }
-        final first = cleaned.first;
-        final clipped =
-            first.length > 60 ? '${first.substring(0, 57)}…' : first;
+        final header = serene ? digestHeaderSerene : digestHeader;
+        final cta = serene ? digestCtaSerene : digestCta;
         final bullets = cleaned.map((t) => '• $t').join('\n');
         return (
           title: defaultTitle,
-          body: 'À la une : $clipped',
-          bigText: "À la une dans l'Essentiel :\n$bullets",
+          body: cleaned.first,
+          bigText: '$header\n$bullets\n$cta',
         );
       case NotifVariant.variantC:
         return (title: calmTitle, body: calmBody, bigText: calmBody);
@@ -222,10 +234,11 @@ class PushNotificationService {
     NotifTimeSlot timeSlot = NotifTimeSlot.morning,
     NotifVariant variant = NotifVariant.variantA,
     List<String>? teasers,
+    bool serene = false,
   }) async {
     final time = _timeOfDayFor(timeSlot);
     final scheduledDate = _nextInstanceOf(time);
-    final copy = buildCopy(variant: variant, teasers: teasers);
+    final copy = buildCopy(variant: variant, teasers: teasers, serene: serene);
 
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();

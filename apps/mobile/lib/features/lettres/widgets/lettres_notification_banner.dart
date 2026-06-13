@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,12 +6,23 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../settings/providers/user_profile_provider.dart';
+import '../models/facteur_grade.dart';
 import '../providers/letters_provider.dart';
-import 'envelope_thumb.dart';
+import 'letter_mini_progress.dart';
+import 'ring_avatar.dart';
+
+/// Accent chaud « dernière étape » : un doré cire/parchemin cohérent avec la
+/// palette postale, distinct du primary (ocre rouge). Signal visuel « tu y es
+/// presque » quand il ne reste qu'une action sur la lettre active.
+const _kLastStepGold = Color(0xFFD4A24E);
 
 /// Banner inline (feed) — apparait quand une lettre est `active`, masqué sur
 /// `/lettres*` et après dismiss session-only (cohérent avec les autres
 /// nudges, cf. notification_renudge_banner.dart).
+///
+/// Mini-réplique du `ProgressionHeader` : avatar de grade (anneau animé + badge
+/// de niveau) + titre de grade + étapes de la lettre en cours.
 class LettresNotificationBanner extends ConsumerStatefulWidget {
   const LettresNotificationBanner({super.key});
 
@@ -23,48 +32,37 @@ class LettresNotificationBanner extends ConsumerStatefulWidget {
 }
 
 class _LettresNotificationBannerState
-    extends ConsumerState<LettresNotificationBanner>
-    with SingleTickerProviderStateMixin {
+    extends ConsumerState<LettresNotificationBanner> {
   bool _dismissedThisSession = false;
-  late final AnimationController _wobble;
-
-  @override
-  void initState() {
-    super.initState();
-    _wobble = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 5),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _wobble.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     if (_dismissedThisSession) return const SizedBox.shrink();
 
-    final letters = ref.watch(lettersProvider).valueOrNull;
-    final active = letters?.activeLetter;
+    final state = ref.watch(lettersProvider).valueOrNull;
+    final active = state?.activeLetter;
     if (active == null) return const SizedBox.shrink();
 
     final route = GoRouterState.of(context).matchedLocation;
     if (route.startsWith(RoutePaths.lettres)) return const SizedBox.shrink();
 
     final colors = context.facteurColors;
+    final grade = state!.grade;
+    final displayName = ref.watch(userProfileProvider).displayName;
+    final done = active.doneActionCount;
+    final total = active.totalActionCount;
+    final lastStep = total > 0 && done == total - 1;
+    final accent = lastStep ? _kLastStepGold : colors.primary;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(18, 6, 18, 12),
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border(left: BorderSide(width: 3, color: colors.primary)),
+        border: Border(left: BorderSide(width: 3, color: accent)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -85,23 +83,10 @@ class _LettresNotificationBannerState
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    AnimatedBuilder(
-                      animation: _wobble,
-                      builder: (context, child) {
-                        // -3..3 deg, -3..0 px translate Y
-                        final t = _wobble.value;
-                        final eased = Curves.easeInOut.transform(t);
-                        final dy = -3 * eased;
-                        final rotateDeg = -3 + 6 * eased;
-                        return Transform.translate(
-                          offset: Offset(0, dy),
-                          child: Transform.rotate(
-                            angle: rotateDeg * math.pi / 180,
-                            child: child,
-                          ),
-                        );
-                      },
-                      child: const EnvelopeThumb(width: 36, height: 28),
+                    RingAvatar.fromName(
+                      displayName,
+                      active.progress,
+                      level: grade.level,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -110,26 +95,26 @@ class _LettresNotificationBannerState
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            'NOUVELLE ÉTAPE · ${active.letterNum}',
-                            style: GoogleFonts.courierPrime(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1,
-                              color: colors.primary,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            active.title,
+                            grade.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.dmSans(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: -0.1,
+                            style: GoogleFonts.fraunces(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.3,
+                              height: 1.15,
                               color: colors.textPrimary,
                             ),
                           ),
+                          if (total > 0) ...[
+                            const SizedBox(height: 7),
+                            LetterMiniProgress(
+                              progress: active.progress,
+                              done: done,
+                              total: total,
+                              showCount: true,
+                            ),
+                          ],
                         ],
                       ),
                     ),

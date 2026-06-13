@@ -125,7 +125,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   }
 
-  testWidgets('normalizes Actu du jour action and preserves back stack', (
+  // Les actions ciblent des onglets shell (StatefulShellRoute) → on navigue
+  // avec context.go (pas context.push, qui crashe sur une branche shell). On
+  // vérifie donc l'atterrissage sur la destination normalisée, sans back stack.
+  testWidgets('normalizes Actu du jour action → onglet essentiel', (
     tester,
   ) async {
     final repo = _MockRepo();
@@ -144,15 +147,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('Section essentiel'), findsWidgets);
-
-    await tester.pageBack();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.text('Tes premieres lectures'), findsOneWidget);
   });
 
-  testWidgets('normalizes Bonnes nouvelles action and preserves back stack', (
+  testWidgets('normalizes Bonnes nouvelles action → onglet bonnes', (
     tester,
   ) async {
     final repo = _MockRepo();
@@ -171,15 +168,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('Section bonnes'), findsWidgets);
-
-    await tester.pageBack();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.text('Tes premieres lectures'), findsOneWidget);
   });
 
-  testWidgets('normalizes Flaner action and preserves back stack', (
+  testWidgets('normalizes Flaner action → onglet Flaner', (
     tester,
   ) async {
     final repo = _MockRepo();
@@ -198,11 +189,5 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('Flaner'), findsWidgets);
-
-    await tester.pageBack();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.text('Tes premieres lectures'), findsOneWidget);
   });
 }

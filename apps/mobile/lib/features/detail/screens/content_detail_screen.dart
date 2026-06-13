@@ -20,6 +20,7 @@ import 'dart:math' as math;
 import '../../../config/theme.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../../shared/widgets/fab_nudge_bubble.dart';
 import '../../../shared/widgets/navigation/swipe_back_page.dart';
 import '../../feed/models/content_model.dart';
 import '../../sources/models/source_model.dart';
@@ -51,6 +52,7 @@ import '../../../config/topic_labels.dart';
 import '../../digest/widgets/editorial_badge.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../lettres/providers/letters_provider.dart';
+import '../../lettres/providers/pending_save_nudge_provider.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
@@ -206,6 +208,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   // true once user reaches end of displayed content
   final ValueNotifier<bool> _footerPermanent = ValueNotifier<bool>(false);
   bool _showReadOnSiteNudge = false;
+  // Nudge « Sauvegarde cet article » déclenché par l'action de lettre
+  // « Sauvegarder 3 articles » (pendingSaveNudgeProvider), one-shot.
+  bool _showSaveNudge = false;
   int _articleOpenCount = 0;
   bool _readOnSiteNudgeRequested = false;
 
@@ -485,6 +490,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         _bookmarkBounceController.forward(from: 0);
       }
     });
+
+    // Nudge « Sauvegarder 3 articles » : si l'action de lettre a armé le flag,
+    // on « pop » immédiatement le bouton Sauvegarder + bulle, puis on consomme
+    // le flag (one-shot : seul le 1er article ouvert déclenche le nudge).
+    if (!_isExternal && ref.read(pendingSaveNudgeProvider)) {
+      ref.read(pendingSaveNudgeProvider.notifier).state = false;
+      _showSaveNudge = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _bookmarkBounceController.forward(from: 0);
+      });
+    }
 
     // Scroll-to-site: attach scroll listener
     _scrollController.addListener(_onScrollToSite);
@@ -2211,40 +2227,55 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Sauvegarder (long-press → collection picker)
-                  GestureDetector(
-                    onLongPress: () {
-                      HapticFeedback.mediumImpact();
-                      CollectionPickerSheet.show(
-                        context,
-                        content.id,
-                        onAddNote: () => _openNoteSheet(),
-                      );
-                    },
-                    child: ScaleTransition(
-                      scale: _bookmarkScaleAnimation,
-                      child: IconButton(
-                        style: iconButtonStyle.copyWith(
-                          backgroundColor: content.isSaved
-                              ? WidgetStatePropertyAll(colors.primary)
-                              : null,
+                  Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.center,
+                    children: [
+                      GestureDetector(
+                        onLongPress: () {
+                          HapticFeedback.mediumImpact();
+                          CollectionPickerSheet.show(
+                            context,
+                            content.id,
+                            onAddNote: () => _openNoteSheet(),
+                          );
+                        },
+                        child: ScaleTransition(
+                          scale: _bookmarkScaleAnimation,
+                          child: IconButton(
+                            style: iconButtonStyle.copyWith(
+                              backgroundColor: content.isSaved
+                                  ? WidgetStatePropertyAll(colors.primary)
+                                  : null,
+                            ),
+                            onPressed: _toggleBookmark,
+                            icon: Icon(
+                              content.isSaved
+                                  ? PhosphorIcons.bookmarkSimple(
+                                      PhosphorIconsStyle.fill,
+                                    )
+                                  : PhosphorIcons.bookmarkSimple(
+                                      PhosphorIconsStyle.regular,
+                                    ),
+                              size: 28,
+                              color: content.isSaved
+                                  ? Colors.white
+                                  : colors.textSecondary,
+                            ),
+                            tooltip: 'Sauvegarder',
+                          ),
                         ),
-                        onPressed: _toggleBookmark,
-                        icon: Icon(
-                          content.isSaved
-                              ? PhosphorIcons.bookmarkSimple(
-                                  PhosphorIconsStyle.fill,
-                                )
-                              : PhosphorIcons.bookmarkSimple(
-                                  PhosphorIconsStyle.regular,
-                                ),
-                          size: 28,
-                          color: content.isSaved
-                              ? Colors.white
-                              : colors.textSecondary,
-                        ),
-                        tooltip: 'Sauvegarder',
                       ),
-                    ),
+                      if (_showSaveNudge)
+                        const Positioned(
+                          bottom: 50,
+                          right: 0,
+                          child: FabNudgeBubble(
+                            text: 'Sauvegarde cet article pour valider '
+                                'ton étape.',
+                          ),
+                        ),
+                    ],
                   ),
 
                   // 🌻 Recommander

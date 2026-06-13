@@ -327,6 +327,7 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
     final digestVariant = essentielTeasers.isEmpty
         ? NotifVariant.variantA
         : NotifVariant.variantB;
+    final digestSerene = NotificationsSettingsNotifier.readSerein(settingsBox);
 
     // Diagnostic + scheduling sont indépendants : collecter le diagnostic
     // pendant la planification (alarms + permission). `pushEnabled=false`
@@ -344,6 +345,7 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
             await pushNotificationService.scheduleDailyDigestNotification(
           variant: digestVariant,
           teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
+          serene: digestSerene,
         );
         if (!scheduled) {
           debugPrint(
@@ -354,6 +356,7 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
               await pushNotificationService.scheduleDailyDigestNotification(
             variant: digestVariant,
             teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
+            serene: digestSerene,
           );
           debugPrint('Main: Retry result: $retryOk');
         }

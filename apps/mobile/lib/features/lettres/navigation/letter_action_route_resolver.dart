@@ -19,11 +19,24 @@ String? resolveLetterActionRoute(LetterAction action) {
     case 'read_3_long_articles':
     case 'read_first_video_podcast':
     case 'recommend_first_article':
+    case 'save_5_articles':
+    case 'mute_3_sources':
+    case 'read_50_articles':
+    case 'recommend_10_articles':
+    case 'open_10_perspectives':
       return RoutePaths.flaner;
     case 'read_first_essentiel':
       return '${RoutePaths.fluxContinu}/section/essentiel';
     case 'read_first_bonnes_nouvelles':
       return '${RoutePaths.fluxContinu}/section/bonnes';
+    case 'create_first_veille':
+      return RoutePaths.veilleConfig;
+    case 'write_first_note':
+      return RoutePaths.saved;
+    case 'add_5_youtube_channels':
+      return '${RoutePaths.sources}/add';
+    case 'give_app_feedback':
+      return RoutePaths.settings;
   }
 
   final raw = action.targetRoute?.trim();

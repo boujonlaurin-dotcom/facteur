@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../digest/providers/serein_toggle_provider.dart';
+import '../../lettres/models/facteur_grade.dart';
 import '../../lettres/providers/letters_provider.dart';
 import '../../lettres/widgets/ring_avatar.dart';
 import '../../settings/providers/user_profile_provider.dart';
@@ -34,7 +35,17 @@ class ProfileAvatarButton extends ConsumerWidget {
       orElse: () => null,
     );
 
-    final avatar = RingAvatar.fromName(displayName, progress, serein: serein);
+    final level = lettersAsync.maybeWhen(
+      data: (state) => state.grade.level,
+      orElse: () => null,
+    );
+
+    final avatar = RingAvatar.fromName(
+      displayName,
+      progress,
+      serein: serein,
+      level: level,
+    );
 
     if (onTap == null) return avatar;
 

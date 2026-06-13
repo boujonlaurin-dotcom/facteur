@@ -389,6 +389,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       await ref.read(notificationsSettingsProvider.notifier).syncDigestTeasers(
             essentielTeasers: buildEssentielTeasers(essentielArticles),
             goodNewsTeasers: buildGoodNewsTeasers(dual.serein),
+            sereinEnabled: dual.sereinEnabled,
           );
     } catch (e) {
       debugPrint('FluxContinu: syncNotificationTeasers failed: $e');
