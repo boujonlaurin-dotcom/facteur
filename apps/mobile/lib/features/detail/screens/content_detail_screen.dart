@@ -848,27 +848,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _offsetsComputed = true;
   }
 
-  /// Shared handler for the inline "Couverture médiatique" toggle. On
-  /// expand-from-collapsed, scrolls the section into view.
+  /// Shared handler for the inline "Couverture médiatique" toggle.
   void _onPerspectivesToggle() {
     HapticFeedback.lightImpact();
-    final wasCollapsed = !_perspectivesExpanded;
     setState(() {
       _perspectivesExpanded = !_perspectivesExpanded;
     });
-    if (wasCollapsed) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final ctx = _perspectivesKey.currentContext;
-        if (ctx == null) return;
-        Scrollable.ensureVisible(
-          ctx,
-          alignment: 0.0,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeInOut,
-        );
-      });
-    }
   }
 
   /// Toggles a perspectives bias-bar segment filter. Mirrors the logic in

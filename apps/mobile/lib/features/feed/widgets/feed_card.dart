@@ -6,6 +6,7 @@ import 'package:facteur/core/utils/html_utils.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/utils/article_title_layout.dart';
 import 'package:facteur/features/feed/widgets/reading_badge.dart';
+import 'package:facteur/features/settings/models/display_mode_spec.dart';
 import 'package:facteur/widgets/design/facteur_card.dart';
 import 'package:facteur/features/digest/widgets/divergence_inline_badge.dart';
 import 'package:facteur/widgets/design/facteur_image.dart';
@@ -67,6 +68,12 @@ class FeedCard extends StatefulWidget {
   /// la meta-row (recency / paywall). Câblé depuis `topic_section.dart`
   /// pour les articles topicalisés uniquement — silence ailleurs.
   final String? divergenceLevel;
+  /// Mode d'affichage choisi par l'utilisateur (Normal / Minimaliste /
+  /// Ludique). Les call sites Riverpod passent
+  /// `ref.watch(displayModeSpecProvider)` ; défaut = normal (rendu actuel).
+  /// Minimaliste masque l'image header et densifie ; ludique agrandit
+  /// image et titres.
+  final DisplayModeSpec displaySpec;
 
   const FeedCard({
     super.key,
@@ -104,6 +111,7 @@ class FeedCard extends StatefulWidget {
     this.badgeAnchorKey,
     this.cardAnchorKey,
     this.divergenceLevel,
+    this.displaySpec = DisplayModeSpec.normal,
   });
 
   @override
@@ -195,10 +203,12 @@ class _FeedCardState extends State<FeedCard>
                             color: const Color(0xFFFF0000),
                           ),
 
-                        // 1. Image (Header)
-                        FacteurThumbnail(
+                        // 1. Image (Header) — masquée en mode minimaliste.
+                        if (widget.displaySpec.showImages)
+                          FacteurThumbnail(
                           imageUrl: widget.content.thumbnailUrl,
-                          aspectRatio: widget.imageAspectRatio,
+                          aspectRatio: widget.displaySpec.feedImageAspectRatio ??
+                              widget.imageAspectRatio,
                           borderRadius: isVideo
                               ? BorderRadius.zero
                               : const BorderRadius.vertical(
@@ -592,17 +602,23 @@ class _FeedCardState extends State<FeedCard>
 
   Widget _buildBody(
       BuildContext context, FacteurColors colors, TextTheme textTheme) {
+    final spec = widget.displaySpec;
     final hasDescription =
         widget.content.description != null && widget.content.description!.isNotEmpty;
-    final hasImage = widget.content.thumbnailUrl != null &&
+    final hasImage = spec.showImages &&
+        widget.content.thumbnailUrl != null &&
         widget.content.thumbnailUrl!.isNotEmpty;
-    final effectiveTitleMaxLines =
+    final baseTitleMaxLines =
         hasImage ? math.min(3, widget.titleMaxLines) : widget.titleMaxLines;
+    final effectiveTitleMaxLines =
+        math.max(2, baseTitleMaxLines + spec.titleMaxLinesDelta);
 
     final bodyContent = Padding(
       padding: EdgeInsets.symmetric(
         horizontal: FacteurSpacing.space3,
-        vertical: widget.denseLayout ? FacteurSpacing.space2 : FacteurSpacing.space3,
+        vertical: widget.denseLayout || spec.dense
+            ? FacteurSpacing.space2
+            : FacteurSpacing.space3,
       ),
       child: Column(
         mainAxisSize: widget.expandContent ? MainAxisSize.max : MainAxisSize.min,
@@ -641,7 +657,7 @@ class _FeedCardState extends State<FeedCard>
                   Text(
                     widget.content.title,
                     style: textTheme.displaySmall?.copyWith(
-                      fontSize: 20,
+                      fontSize: 20 * spec.fontScale,
                       fontWeight: FontWeight.w700,
                       height: 1.2,
                     ),

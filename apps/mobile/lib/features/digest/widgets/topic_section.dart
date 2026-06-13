@@ -22,6 +22,7 @@ import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import 'a_la_une_badge.dart';
+import '../../settings/providers/display_mode_provider.dart';
 import 'article_thumbs_feedback.dart';
 import 'divergence_analysis_block.dart';
 import 'editorial_badge.dart';
@@ -1116,6 +1117,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             descriptionFontSize: 15,
             titleMaxLines: _digestTitleMaxLines,
             denseLayout: true,
+            displaySpec: ref.watch(displayModeSpecProvider),
             divergenceLevel: widget.topic.divergenceLevel,
             onImageError: () => _onImageError(article.contentId),
             onTap: () => widget.onArticleTap(article),
@@ -1163,6 +1165,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           descriptionFontSize: 15,
           titleMaxLines: _digestTitleMaxLines,
           denseLayout: true,
+          displaySpec: ref.watch(displayModeSpecProvider),
           divergenceLevel: widget.topic.divergenceLevel,
           onImageError: () => _onImageError(article.contentId),
           onTap: () => widget.onArticleTap(article),

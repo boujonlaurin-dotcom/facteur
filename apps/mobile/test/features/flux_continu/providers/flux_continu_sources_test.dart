@@ -13,6 +13,8 @@ import 'package:facteur/features/feed/providers/feed_provider.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
+import 'package:facteur/features/settings/models/display_mode_spec.dart';
+import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
 import 'package:facteur/features/flux_continu/repositories/flux_continu_repository.dart';
 import 'package:facteur/features/my_interests/models/user_interests_state.dart';
@@ -108,7 +110,6 @@ FeedResponse _feedWithIds(List<String> ids, {String sourceId = 's'}) {
   );
 }
 
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -190,6 +191,9 @@ void main() {
         // Évite la chaîne authStateProvider → Supabase.instance (non initialisé
         // en test). Notifier réel mais sans le `ref.watch(authStateProvider)`.
         sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+        // Le cap de fit lit displayModeSpecProvider (box Hive 'settings' non
+        // ouverte en test) ⇒ court-circuit.
+        displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),
       ],
     );
     // Pré-résout les providers de sources : le FluxContinuNotifier les lit en

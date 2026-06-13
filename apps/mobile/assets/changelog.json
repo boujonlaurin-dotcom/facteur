@@ -1,20 +1,12 @@
 {
   "unreleased": [
     {
-      "tag": "Progression",
-      "summary": "Deux nouvelles lettres du Facteur : des défis de curation (veille, notes, sources) et un palier de fond pour les lecteurs assidus."
+      "tag": "Affichage",
+      "summary": "Choisis ton mode d'affichage des articles : normal, minimaliste ou lisible."
     },
     {
-      "tag": "Progression",
-      "summary": "Mon courrier devient Progression : grades de facteur, niveau sur ton avatar et un écran plus clair pour suivre tes étapes."
-    },
-    {
-      "tag": "Progression",
-      "summary": "Ton grade de facteur et ta progression s'affichent directement en haut du fil."
-    },
-    {
-      "tag": "Notif",
-      "summary": "Notification du matin plus courte, et un ton plus doux quand le mode Serein est activé."
+      "tag": "Tournée",
+      "summary": "Sections plus légères : le titre de section devient cliquable pour tout lire, fini le bouton en bas."
     },
     {
       "tag": "Flâner",

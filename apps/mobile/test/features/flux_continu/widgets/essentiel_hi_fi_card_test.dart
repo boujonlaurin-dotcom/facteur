@@ -12,6 +12,8 @@ import 'package:facteur/features/flux_continu/models/weather_snapshot.dart';
 import 'package:facteur/features/flux_continu/providers/weather_location_provider.dart';
 import 'package:facteur/features/flux_continu/providers/weather_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/essentiel_hi_fi_card.dart';
+import 'package:facteur/features/settings/models/display_mode_spec.dart';
+import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 
 Widget _wrap(Widget child, {List<Override> overrides = const []}) {
   return ProviderScope(
@@ -20,6 +22,8 @@ Widget _wrap(Widget child, {List<Override> overrides = const []}) {
         () => _FakeWeatherNotifier(_testWeatherForecast()),
       ),
       weatherLocationProvider.overrideWith(_FakeLocationNotifier.new),
+      // Spec lu via Hive en prod — court-circuité dans les widget tests.
+      displayModeSpecProvider.overrideWith((ref) => DisplayModeSpec.normal),
       ...overrides,
     ],
     child: MaterialApp(
@@ -192,8 +196,9 @@ void main() {
       expect(find.text('Ton Essentiel'), findsOneWidget);
     });
 
-    testWidgets('lead Actu du jour badge and section chip share a Wrap',
-        (tester) async {
+    testWidgets(
+        'lead Actu du jour badge rendu sans chip section (Bonus 10.1) ; '
+        'lead sans Actu du jour : aucun badge', (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1, isActuDuJour: true)],
@@ -202,17 +207,19 @@ void main() {
         ),
       ));
 
-      final badge = find.text('Actu du jour');
-      expect(badge, findsOneWidget);
+      expect(find.text('Actu du jour'), findsOneWidget);
+      // Le chip section (themeMap : 'tech' → 'Technologie') a été retiré
+      // des tuiles pour alléger la carte.
+      expect(find.text('Technologie'), findsNothing);
 
-      // ActuBadge text and section chip both descend from the same Wrap.
-      // The chip label resolves via themeMap (theme: 'tech' → 'Technologie').
-      final wrap = find.ancestor(of: badge, matching: find.byType(Wrap));
-      expect(wrap, findsAtLeastNWidgets(1));
-      expect(
-        find.descendant(of: wrap.first, matching: find.text('Technologie')),
-        findsOneWidget,
-      );
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+        ),
+      ));
+      expect(find.text('Actu du jour'), findsNothing);
     });
 
     testWidgets('lead Actu du jour badge uses forced sectionEssentiel orange',
@@ -273,6 +280,8 @@ void main() {
           overrides: [
             weatherProvider.overrideWith(() => _FakeWeatherNotifier(forecast)),
             weatherLocationProvider.overrideWith(_FakeLocationNotifier.new),
+            displayModeSpecProvider
+                .overrideWith((ref) => DisplayModeSpec.normal),
           ],
           child: MaterialApp(
             theme: ThemeData(extensions: [FacteurPalettes.light]),

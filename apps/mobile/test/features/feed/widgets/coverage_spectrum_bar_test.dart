@@ -15,8 +15,7 @@ void main() {
   }
 
   group('CoverageSpectrumBar', () {
-    testWidgets('rend 5 segments distincts à taille fixe 96x9',
-        (tester) async {
+    testWidgets('rend 5 segments distincts à taille fixe 96x9', (tester) async {
       await tester.pumpWidget(host(const {
         'left': 1,
         'center-left': 1,
@@ -27,10 +26,12 @@ void main() {
       await tester.pumpAndSettle();
 
       final sized = tester.widget<SizedBox>(
-        find.descendant(
-          of: find.byType(CoverageSpectrumBar),
-          matching: find.byType(SizedBox),
-        ).first,
+        find
+            .descendant(
+              of: find.byType(CoverageSpectrumBar),
+              matching: find.byType(SizedBox),
+            )
+            .first,
       );
       expect(sized.width, 96);
       expect(sized.height, 9);
@@ -45,8 +46,7 @@ void main() {
       );
     });
 
-    testWidgets('flex proportionnel à la distribution brute',
-        (tester) async {
+    testWidgets('flex proportionnel à la distribution brute', (tester) async {
       await tester.pumpWidget(host(const {
         'left': 4,
         'center-left': 0,
@@ -65,25 +65,21 @@ void main() {
           )
           .toList();
 
-      // L=4, CL=floor 1, C=2, CR=floor 1, R=floor 1
-      expect(expandeds.map((e) => e.flex).toList(), [4, 1, 2, 1, 1]);
+      expect(expandeds.map((e) => e.flex).toList(), [4, 2]);
     });
 
-    testWidgets('floor=1 pour segments à zéro (visibilité minimale)',
+    testWidgets('ne rend aucun segment pour une distribution vide',
         (tester) async {
       await tester.pumpWidget(host(const <String, int>{}));
       await tester.pumpAndSettle();
 
-      final expandeds = tester
-          .widgetList<Expanded>(
-            find.descendant(
-              of: find.byType(CoverageSpectrumBar),
-              matching: find.byType(Expanded),
-            ),
-          )
-          .toList();
-
-      expect(expandeds.map((e) => e.flex).toList(), [1, 1, 1, 1, 1]);
+      expect(
+        find.descendant(
+          of: find.byType(CoverageSpectrumBar),
+          matching: find.byType(Expanded),
+        ),
+        findsNothing,
+      );
     });
   });
 }

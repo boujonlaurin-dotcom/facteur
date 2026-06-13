@@ -36,6 +36,7 @@ import '../providers/flux_continu_provider.dart';
 import '../providers/personalisation_cta_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart'
     show tourneeOrderPrefsProvider;
+import '../utils/section_fit.dart' show kMinPlausibleUsableHeight;
 import '../utils/section_snap.dart';
 import '../widgets/citation_du_jour_card.dart';
 import '../widgets/closing_card_v18.dart';
@@ -530,7 +531,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// only writes when the rounded value actually moves, so the provider recompose
   /// it triggers (→ screen rebuild → this runs again, same value) terminates.
   void _publishUsableHeight(double height) {
-    if (height <= 0) return;
+    // Rejet à la source des mesures aberrantes/transitoires (render box détachée
+    // / recompose hors-écran lors d'un changement de mode) : sous le plancher de
+    // plausibilité, on NE publie PAS — la dernière bonne hauteur reste en place
+    // et le provider ne bascule pas sur un fallback. (kMinPlausibleUsableHeight
+    // ≈ 360, bien sous les ~480px utiles du plus petit téléphone.)
+    if (height < kMinPlausibleUsableHeight) return;
     final rounded = height.roundToDouble();
     final notifier = ref.read(usableViewportHeightProvider.notifier);
     final current = notifier.state;
@@ -1262,8 +1268,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                   tallSections: _tallSections,
                   child: SectionBlock(
                     section: section,
-                    isOpen: state.isOpen(section),
-                    onToggleMore: () => notifier.toggleMore(section),
                     onTapArticle: (a) => _openArticle(context, a),
                     onDismissArticle: _onSwipeDismiss,
                     pendingFeedbackIds: _pendingFeedback,

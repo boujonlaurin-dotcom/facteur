@@ -133,20 +133,6 @@ void main() {
   });
 
   group('FluxContinuState', () {
-    test('isOpen defaults to false', () {
-      const state = FluxContinuState();
-      expect(state.isOpen(digestSection()), isFalse);
-      expect(state.isOpen(themeSection(slug: 'tech')), isFalse);
-    });
-
-    test('isOpen reads from moreOpen map keyed by sectionKey', () {
-      final state = FluxContinuState(
-        moreOpen: {sectionKey(digestSection(kind: SectionKind.bonnes)): true},
-      );
-      expect(state.isOpen(digestSection(kind: SectionKind.bonnes)), isTrue);
-      expect(state.isOpen(digestSection(kind: SectionKind.essentiel)), isFalse);
-    });
-
     test('copyWith clears error when clearError is true', () {
       const state = FluxContinuState(error: 'boom');
       final updated = state.copyWith(clearError: true);
@@ -164,11 +150,6 @@ void main() {
       expect(updated.closingDismissed, isTrue);
     });
 
-    test('copyWith preserves moreOpen when not specified', () {
-      const state = FluxContinuState(moreOpen: {'bonnes': true});
-      final updated = state.copyWith(isSerene: true);
-      expect(updated.isOpen(digestSection(kind: SectionKind.bonnes)), isTrue);
-    });
   });
 
   group('FluxSection.hasOverflow', () {

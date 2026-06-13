@@ -12,9 +12,8 @@ const _radius = BorderRadius.all(Radius.circular(2));
 /// 5-segs pour le détail panel.
 class CoverageSpectrumBar extends StatelessWidget {
   /// Distribution brute : `{'left': n, 'center-left': n, 'center': n,
-  /// 'center-right': n, 'right': n}`. Tout segment manquant ou à 0 est
-  /// rendu avec un flex floor=1 pour rester visible (sinon un segment
-  /// nul disparaîtrait, faussant la lecture chromatique 5-segs).
+  /// 'center-right': n, 'right': n}`. Les segments absents ou à 0 ne sont
+  /// pas rendus afin que les largeurs reflètent strictement les compteurs.
   final Map<String, int> distribution;
 
   const CoverageSpectrumBar({super.key, required this.distribution});
@@ -38,6 +37,11 @@ class CoverageSpectrumBar extends StatelessWidget {
       colors.biasCenterRight,
       colors.biasRight,
     ];
+    final visibleSegments = List.generate(
+      _keys.length,
+      (index) =>
+          (count: distribution[_keys[index]] ?? 0, color: segmentColors[index]),
+    ).where((segment) => segment.count > 0).toList();
 
     return SizedBox(
       width: 96,
@@ -47,15 +51,17 @@ class CoverageSpectrumBar extends StatelessWidget {
         // cross-axis loose (0..9) et se peint à hauteur 0 → invisible. cf.
         // coverage_spectrum_visible_test.dart.
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: List.generate(_keys.length, (i) {
-          final count = distribution[_keys[i]] ?? 0;
+        children: List.generate(visibleSegments.length, (i) {
+          final segment = visibleSegments[i];
           return Expanded(
-            flex: count > 0 ? count : 1,
+            flex: segment.count,
             child: Padding(
-              padding: EdgeInsets.only(right: i == _keys.length - 1 ? 0 : 1),
+              padding: EdgeInsets.only(
+                right: i == visibleSegments.length - 1 ? 0 : 1,
+              ),
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: segmentColors[i],
+                  color: segment.color,
                   borderRadius: _radius,
                 ),
               ),

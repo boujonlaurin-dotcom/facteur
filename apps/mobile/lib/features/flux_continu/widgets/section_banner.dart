@@ -40,6 +40,17 @@ class SectionBanner extends StatelessWidget {
   /// initiales si le logo réseau échoue.
   final String? logoUrl;
 
+  /// Story 10.1 — banner cliquable : remplace le CTA « Tout lire » de bas de
+  /// section. Quand non null, le banner entier devient tappable et le titre
+  /// gagne un chevron « > » fin couleur accent. Ignoré en variante [large]
+  /// (page Flâner : pas de navigation de section).
+  final VoidCallback? onTap;
+
+  /// Nombre d'articles non affichés (`totalCount - coreVisibleCount`).
+  /// Rendu en « +X » gris discret après le chevron quand > 0 et [onTap]
+  /// est câblé.
+  final int hiddenCount;
+
   const SectionBanner({
     super.key,
     required this.title,
@@ -50,6 +61,8 @@ class SectionBanner extends StatelessWidget {
     this.onTapSettings,
     this.large = false,
     this.logoUrl,
+    this.onTap,
+    this.hiddenCount = 0,
   });
 
   double _trailingControlReserve() {
@@ -69,6 +82,9 @@ class SectionBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+    // La variante `large` (page Flâner) reste non navigable : pas de chevron,
+    // pas de +X, pas d'InkWell.
+    final tappable = onTap != null && !large;
     final effectiveBlurb = _displayBlurbFor(title, blurb);
     final hasBlurb = effectiveBlurb != null && effectiveBlurb.trim().isNotEmpty;
     // `width: double.infinity` is required because the parent SectionBlock
@@ -179,18 +195,31 @@ class SectionBanner extends StatelessWidget {
                           child: Text.rich(
                             TextSpan(
                               text: title,
-                              children: onTapFavorite == null
-                                  ? null
-                                  : <InlineSpan>[
-                                      const TextSpan(text: '  '),
-                                      WidgetSpan(
-                                        alignment: PlaceholderAlignment.middle,
-                                        child: _FavoriteStar(
-                                          color: colors.primary,
-                                          onTap: onTapFavorite!,
-                                        ),
+                              children: <InlineSpan>[
+                                if (tappable) ...[
+                                  const TextSpan(text: ' '),
+                                  WidgetSpan(
+                                    alignment: PlaceholderAlignment.middle,
+                                    child: IgnorePointer(
+                                      child: Icon(
+                                        PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
+                                        size: 18,
+                                        color: colors.textTertiary,
                                       ),
-                                    ],
+                                    ),
+                                  ),
+                                ],
+                                if (onTapFavorite != null) ...[
+                                  const TextSpan(text: '  '),
+                                  WidgetSpan(
+                                    alignment: PlaceholderAlignment.middle,
+                                    child: _FavoriteStar(
+                                      color: colors.textTertiary,
+                                      onTap: onTapFavorite!,
+                                    ),
+                                  ),
+                                ],
+                              ],
                               style: GoogleFonts.fraunces(
                                 fontSize: large ? 28 : 20,
                                 fontWeight: FontWeight.w700,
@@ -264,7 +293,18 @@ class SectionBanner extends StatelessWidget {
         ],
       ),
     );
-    return container;
+    if (!tappable) return container;
+    // Material transparent + InkWell sur tout le banner : l'étoile favorite
+    // (GestureDetector opaque) et le bouton réglages (InkWell enfant) restent
+    // des hit targets indépendants — le descendant gagne sur l'ancêtre.
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: borderRadius,
+        child: container,
+      ),
+    );
   }
 }
 
@@ -352,8 +392,8 @@ class _FavoriteStar extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
           child: Icon(
             PhosphorIcons.star(PhosphorIconsStyle.fill),
-            size: 14,
-            color: color,
+            size: 16,
+            color: color.withValues(alpha: 0.45),
           ),
         ),
       ),

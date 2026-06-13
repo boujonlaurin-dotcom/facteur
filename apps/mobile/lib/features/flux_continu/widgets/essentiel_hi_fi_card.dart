@@ -7,6 +7,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../settings/models/display_mode_spec.dart';
+import '../../settings/providers/display_mode_provider.dart';
 import '../models/flux_continu_models.dart';
 import '../models/weather_snapshot.dart';
 import '../providers/weather_provider.dart';
@@ -20,7 +22,7 @@ import 'weather_detail_sheet.dart';
 ///   - `articles[0]` → lead (fond teinté, bord gauche accent)
 ///   - `articles[1..2]` → médiums (filets fins)
 ///   - `articles[3..4]` → lights (filet pointillé, une ligne tronquée)
-class EssentielHiFiCard extends StatelessWidget {
+class EssentielHiFiCard extends ConsumerWidget {
   final List<EssentielArticle> articles;
   final void Function(EssentielArticle article) onTapArticle;
   final VoidCallback onTapPersonalize;
@@ -33,9 +35,10 @@ class EssentielHiFiCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).extension<FacteurColors>()!;
     final accent = colors.sectionEssentiel;
+    final spec = ref.watch(displayModeSpecProvider);
 
     final lead = articles.isNotEmpty ? articles.first : null;
     final remaining = articles.length > 1
@@ -80,13 +83,14 @@ class EssentielHiFiCard extends StatelessWidget {
               _LeadTile(
                 article: lead,
                 accent: accent,
+                spec: spec,
                 onTap: () => onTapArticle(lead),
               ),
             for (final a in remaining) ...[
               const SizedBox(height: FacteurSpacing.space2),
               const _Hairline(),
               const SizedBox(height: FacteurSpacing.space2),
-              _MediumTile(article: a, onTap: () => onTapArticle(a)),
+              _MediumTile(article: a, spec: spec, onTap: () => onTapArticle(a)),
             ],
           ],
         ),
@@ -497,11 +501,13 @@ class _PersonalizeButton extends StatelessWidget {
 class _LeadTile extends StatelessWidget {
   final EssentielArticle article;
   final Color accent;
+  final DisplayModeSpec spec;
   final VoidCallback onTap;
 
   const _LeadTile({
     required this.article,
     required this.accent,
+    required this.spec,
     required this.onTap,
   });
 
@@ -536,32 +542,23 @@ class _LeadTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        if (article.isActuDuJour)
-                          _ActuBadge(
-                            accent: chipAccent,
-                            overrideBackground: colors.sectionEssentiel,
-                          ),
-                        _SectionChip(
-                          label: _sectionLabelFor(article),
-                          accent: chipAccent,
-                          showFollowed: article.isFollowedTopic,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: FacteurSpacing.space2),
+                    // Bonus 10.1 — plus de chip section (allège la tuile) ;
+                    // seul le badge « Actu du jour » reste, quand pertinent.
+                    if (article.isActuDuJour) ...[
+                      _ActuBadge(
+                        accent: chipAccent,
+                        overrideBackground: colors.sectionEssentiel,
+                      ),
+                      const SizedBox(height: FacteurSpacing.space2),
+                    ],
                     Text(
                       article.title,
                       // Compaction « cartes ≤ écran » : plafond 5→4 lignes pour
                       // borner la hauteur du lead (cohérent avec section_fit).
-                      maxLines: 4,
+                      maxLines: 4 + spec.titleMaxLinesDelta,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.fraunces(
-                        fontSize: 19,
+                        fontSize: 19 * spec.fontScale,
                         fontWeight: FontWeight.w700,
                         height: 1.3,
                         color: colors.textPrimary,
@@ -588,14 +585,18 @@ class _LeadTile extends StatelessWidget {
 
 class _MediumTile extends StatelessWidget {
   final EssentielArticle article;
+  final DisplayModeSpec spec;
   final VoidCallback onTap;
 
-  const _MediumTile({required this.article, required this.onTap});
+  const _MediumTile({
+    required this.article,
+    required this.spec,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<FacteurColors>()!;
-    final themeAccent = _accentFor(article, colors.sectionEssentiel);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -613,12 +614,6 @@ class _MediumTile extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        _SectionChip(
-                          label: _sectionLabelFor(article),
-                          accent: themeAccent,
-                          showFollowed: article.isFollowedTopic,
-                        ),
-                        const SizedBox(width: FacteurSpacing.space2),
                         Flexible(
                           child: Text(
                             article.sourceName,
@@ -638,10 +633,10 @@ class _MediumTile extends StatelessWidget {
                     Text(
                       article.title,
                       // Compaction « cartes ≤ écran » : plafond 4→3 lignes.
-                      maxLines: 3,
+                      maxLines: 3 + spec.titleMaxLinesDelta,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.fraunces(
-                        fontSize: 16,
+                        fontSize: 16 * spec.fontScale,
                         fontWeight: FontWeight.w600,
                         height: 1.3,
                         color: colors.textPrimary,
@@ -664,52 +659,7 @@ class _MediumTile extends StatelessWidget {
   }
 }
 
-class _SectionChip extends StatelessWidget {
-  final String label;
-  final Color accent;
-  final bool showFollowed;
-
-  const _SectionChip({
-    required this.label,
-    required this.accent,
-    this.showFollowed = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(FacteurRadius.pill),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (showFollowed) ...[
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 5),
-          ],
-          Text(
-            label,
-            style: GoogleFonts.dmSans(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.2,
-              color: accent,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Pastille "Actu du jour" affichée à côté du chip section dans le lead.
+/// Pastille "Actu du jour" affichée en tête du lead.
 /// [overrideBackground] permet de forcer la couleur orange Essentiel quel
 /// que soit le thème de l'article (sinon `accent` est utilisé).
 class _ActuBadge extends StatelessWidget {
@@ -851,16 +801,3 @@ T? _themeMapLookup<T>(String? slug, T Function(ThemeVisual) selector) {
 /// Picks an accent color: theme slug first, then card-level kind fallback.
 Color _accentFor(EssentielArticle article, Color fallback) =>
     _themeMapLookup(article.theme, (e) => e.accent) ?? fallback;
-
-/// Resolves the section label rendered next to each article in the hi-fi card.
-///
-/// Prefers the stable client-side [themeMap] over the backend `section_label`,
-/// which is often empty or non-canonical (e.g. carries the source name).
-String _sectionLabelFor(EssentielArticle article) {
-  if (_themeMapLookup(article.theme, (e) => e.label) case final label?) {
-    return label;
-  }
-  final raw = article.sectionLabel.trim();
-  if (raw.isNotEmpty) return raw;
-  return 'Actus';
-}

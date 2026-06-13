@@ -1,57 +1,60 @@
-# QA Handoff — Story 26.2 : Lettres 3 et 4 du Facteur
+# QA Handoff — Modes d'affichage des articles (Story 10.1, finalisation)
 
-> Ce fichier est rempli par l'agent dev à la fin du développement, après validation du PO.
-> Il sert d'input à la commande /validate-feature de l'agent QA.
+> Rempli par l'agent dev. Input de /validate-feature.
 
 ## Feature développée
-
-Deux nouvelles lettres au catalogue backend (letter_3 « Ta tournée s'organise »,
-letter_4 « Facteur de fond »), backfill automatique pour les users existants,
-et 3 actions demandées par le PO : note sur un article sauvegardé, masquer
-3 sources, donner son avis sur l'app (nouvel event `app_feedback_opened` émis
-à l'ouverture de la modale « Donner mon avis »).
+Différenciation réelle des 3 modes d'affichage (Normal / Minimaliste / Ludique) : le minimaliste révèle plus d'articles par section (le fit peut monter au-dessus du top 3 nominal, plafond 7) avec titres jusqu'à 5 lignes ; le ludique met l'image en élément principal (pleine largeur en haut de carte, hauteur fixe 170, fontScale 1.05, titres 3 lignes). Bonus : le CTA « Tout lire » de bas de section est remplacé par un banner cliquable (chevron accent + « +X » gris dans le titre) et les chips de thème des tuiles de l'Essentiel sont retirées.
 
 ## PR associée
-
-À créer via /go (base main). Branche : boujonlaurin-dotcom/progression-pr2-new-letters.
+À créer via /go (base main).
 
 ## Écrans impactés
+| Écran | Route | Modifié / Nouveau |
+|-------|-------|-------------------|
+| Tournée (Flux Continu) | / (home) | Modifié (cartes, banners, fit) |
+| Profil → Affichage des articles | /profile (bottom sheet) | Existant (sélecteur de mode) |
+| Page thème / source (deep-dive) | /flux-continu/theme/:key | Modifié (accès via tap banner) |
+| Flâner (banner large) | page Flâner | Inchangé attendu (pas de chevron) |
 
-- **Progression** (`/lettres`) : 5 lettres au lieu de 3 ; letter_3 s'active
-  automatiquement pour un user qui avait fini letter_2.
-- **Réglages** (`/settings`) : le tap sur « Donner mon avis » émet l'event
-  analytics (aucun changement visuel).
-- Navigation depuis une action de lettre : nouvelles destinations
-  (`/veille/config`, `/saved`, `/settings/sources/add`, `/settings`, `/flaner`).
+## Scénarios de test
 
-## Scénarios
+### Scénario 1 : Mode minimaliste — plus d'articles
+**Parcours** :
+1. Profil → « Affichage des articles » → Minimaliste → valider
+2. Revenir sur la Tournée
+**Résultat attendu** : cartes texte seul compactes ; les sections (Bonnes Nouvelles incluse) affichent plus de 3 articles si l'écran le permet (jusqu'à 7) ; titres longs jusqu'à 5 lignes ; aucune carte ne déborde de l'écran (filet `[fit-net]` silencieux).
 
-### Happy path
+### Scénario 2 : Mode ludique — image en haut
+**Parcours** :
+1. Profil → « Affichage des articles » → Ludique → valider
+2. Parcourir la Tournée
+**Résultat attendu** : cartes régulières avec image pleine largeur en haut (type carrousel) et texte dessous ; textes à peine plus gros que Normal (1.05) ; titres max 3 lignes ; badge play conservé sur les vidéos ; hero Essentiel inchangé structurellement.
 
-1. Ouvrir Progression → vérifier 5 lettres, letter_3/4 affichées (upcoming ou
-   active selon l'avancement du compte).
-2. Tap sur chaque action de letter_3 → vérifier la redirection :
-   - « Créer ta première veille » → écran de config veille
-   - « Enregistrer 5 articles » → Flâner
-   - « Écrire une note sur un article sauvegardé » → écran Sauvegardés
-   - « Masquer 3 sources » → Flâner
-   - « Ajouter 5 chaînes YouTube » → ajout de source
-3. Tap sur « Donner ton avis sur l'app » (letter_4) → ouverture des réglages ;
-   tap « Donner mon avis » → modale feedback + requête réseau analytics
-   (`app_feedback_opened`) sans erreur.
-4. Compléter une action (ex. masquer 3 sources depuis un article) → revenir
-   sur Progression → l'action passe cochée après refresh.
+### Scénario 3 : Carte ludique avec image cassée (cas d'erreur)
+**Parcours** :
+1. En mode ludique, trouver un article dont la vignette 404 (ou couper le réseau après le 1er rendu)
+**Résultat attendu** : la carte retombe sur le layout texte standard (pas d'espace vide de 170px, pas d'image grise cassée).
 
-### Edge cases
+### Scénario 4 : Banner cliquable (Bonus 1)
+**Parcours** :
+1. Sur la Tournée, taper le banner d'une section thème, source, veille, Actus du jour et Bonnes Nouvelles
+2. Taper l'étoile favorite d'une section favorite, puis le bouton réglages (tune) de la veille
+**Résultat attendu** : tap banner → ouvre la page « tout lire » de la section ; chevron « > » fin couleur accent après le titre + « +X » gris si articles cachés ; plus aucun bouton « Tout lire » en bas de section ; l'étoile ouvre « Composer ma Tournée » (pas la navigation) ; le tune ouvre la config veille ; le banner large de la page Flâner n'a ni chevron ni tap.
 
-- User existant (3 rows) : GET /api/letters → 200, pas d'erreur, 5 lettres.
-- User ayant déjà tout fini (L0-L2 archivées) : letter_3 doit être active.
-- Note vide ou espaces → ne valide pas « Écrire une note ».
-- Console sans erreurs, réseau sans 4xx/5xx inattendus sur tous ces flux.
+### Scénario 5 : Essentiel allégé (Bonus 2)
+**Parcours** :
+1. Observer la carte « Ton Essentiel » (lead + médiums)
+**Résultat attendu** : plus de balises de thème (« Technologie », etc.) sur les tuiles ; le badge « Actu du jour » reste sur le lead concerné ; les tuiles médiums montrent source + titre.
 
 ## Critères d'acceptation
+- [ ] Minimaliste : > 3 articles/section sur écran standard ; titres 5 lignes max
+- [ ] Ludique : image pleine largeur en haut, fontScale 1.05, titres 3 lignes, fallback image cassée
+- [ ] Banner cliquable sur les 5 types de sections, chevron + « +X », étoile/tune indépendants
+- [ ] Plus de bouton « Lire plus » en bas des sections
+- [ ] Plus de chips de thème dans l'Essentiel
+- [ ] Aucun débordement de carte dans les 3 modes (logs `[fit-net]` propres)
 
-- [ ] 5 lettres visibles, ordre 00→04, grades cohérents avec le ladder
-- [ ] Aucune erreur pour les users existants (backfill silencieux)
-- [ ] Chaque action redirige vers un écran où le geste est faisable
-- [ ] Event `app_feedback_opened` émis au tap « Donner mon avis »
+## Vérifications déjà faites (dev)
+- `flutter analyze` : 0 erreur.
+- `flutter test test/features/flux_continu/ test/features/settings/` : 245/245 verts.
+- Suite complète : retour exact à la baseline (23 échecs pré-existants Hive/Supabase, hors périmètre).

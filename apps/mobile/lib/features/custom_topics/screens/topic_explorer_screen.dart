@@ -12,6 +12,7 @@ import '../widgets/topic_chip.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../my_interests/widgets/interest_state_pill.dart';
 import '../providers/custom_topics_provider.dart';
+import '../../settings/providers/display_mode_provider.dart';
 
 /// Terracotta accent color for custom topics.
 const Color _terracotta = Color(0xFFE07A5F);
@@ -213,6 +214,7 @@ class TopicExplorerScreen extends ConsumerWidget {
                         child: FeedCard(
                           content: article,
                           titleMaxLines: 5,
+                          displaySpec: ref.watch(displayModeSpecProvider),
                           onTap: () {
                             // Navigate to article detail
                             Navigator.of(context).pushNamed(

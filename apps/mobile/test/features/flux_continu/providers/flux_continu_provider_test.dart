@@ -18,6 +18,8 @@ import 'package:facteur/features/grille/providers/grille_provider.dart';
 import 'package:facteur/features/grille/repositories/grille_repository.dart';
 import 'package:facteur/features/my_interests/models/user_interests_state.dart';
 import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
+import 'package:facteur/features/settings/models/display_mode_spec.dart';
+import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:flutter/material.dart' show Color;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -172,6 +174,10 @@ void main() {
         grilleRepositoryProvider.overrideWithValue(_NoGrilleRepository()),
         userInterestsProvider.overrideWith(() => userInterestsNotifier),
         sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+        // Le cap de fit lit displayModeSpecProvider même sans mesure (fallback
+        // référence) ⇒ il faut court-circuiter la box Hive 'settings' (non
+        // ouverte ici), comme makeFitContainer.
+        displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),
       ],
     );
   }
@@ -222,13 +228,13 @@ void main() {
         todayClosingKey: true,
       });
 
-        final container = makeContainer();
-        addTearDown(container.dispose);
+      final container = makeContainer();
+      addTearDown(container.dispose);
 
-        await settle(container);
-        // Purge runs as `unawaited` — give the microtask queue a beat.
-        await Future<void>.delayed(Duration.zero);
-        await Future<void>.delayed(Duration.zero);
+      await settle(container);
+      // Purge runs as `unawaited` — give the microtask queue a beat.
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
 
       final prefs = await SharedPreferences.getInstance();
       final keys = prefs.getKeys();
@@ -246,8 +252,8 @@ void main() {
         'flux_continu_folded_${_todayIso()}': <String>['bonnes'],
       });
 
-        final container = makeContainer();
-        addTearDown(container.dispose);
+      final container = makeContainer();
+      addTearDown(container.dispose);
 
       await settle(container);
       await Future<void>.delayed(Duration.zero);
@@ -269,7 +275,6 @@ void main() {
       final state = await settle(container);
 
       expect(state.closingDismissed, isFalse);
-      expect(state.moreOpen, isEmpty);
     });
   });
 
@@ -784,6 +789,7 @@ void main() {
             sereinToggleProvider.overrideWith(
               (ref) => SereinToggleNotifier(ref),
             ),
+            displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),
           ],
         );
         addTearDown(container.dispose);
@@ -859,6 +865,9 @@ void main() {
           // (uninitialized in unit tests). Override with a notifier that skips
           // the auth watch so the provider build doesn't blow up.
           sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+          // Le cap de fit lit displayModeSpecProvider (box Hive 'settings' non
+          // ouverte ici) ⇒ court-circuit.
+          displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),
         ],
       );
     }
@@ -953,6 +962,7 @@ void main() {
       required List<String> essentielIds,
       required List<String> themeFeedIds,
       double? usableHeight,
+      DisplayModeSpec spec = DisplayModeSpec.normal,
     }) {
       when(
         () => feedRepo.getFeed(
@@ -976,10 +986,14 @@ void main() {
           grilleRepositoryProvider.overrideWithValue(_NoGrilleRepository()),
           userInterestsProvider.overrideWith(
             () => _StubUserInterestsNotifier(
-              _interestsState(favorites: const [ThemeFavoriteRef(slug: 'tech')]),
+              _interestsState(
+                  favorites: const [ThemeFavoriteRef(slug: 'tech')]),
             ),
           ),
           sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+          // La box Hive 'settings' n'est pas ouverte ici ⇒ on court-circuite le
+          // spec (lu par le cap dynamique) plutôt que de la faire planter.
+          displayModeSpecProvider.overrideWithValue(spec),
           if (usableHeight != null)
             usableViewportHeightProvider.overrideWith((ref) => usableHeight),
         ],
@@ -1012,13 +1026,14 @@ void main() {
     );
 
     test(
-      'no measure yet (null height) keeps defaults — hero & dedup untouched',
+      'no measure yet (null height) applies a MODE-AWARE cap on the reference '
+      'height — never the mode-blind nominal',
       () async {
         SharedPreferences.setMockInitialValues(<String, Object>{});
         final container = makeFitContainer(
           essentielIds: const ['e1', 'e2', 'e3', 'e4'],
           themeFeedIds: const ['e3', 'e4', 'x1', 'x2'],
-          // usableHeight null ⇒ provider default (no fit applied).
+          // usableHeight null ⇒ cap calculé sur kReferenceUsableHeight (640).
         );
         addTearDown(container.dispose);
 
@@ -1029,11 +1044,99 @@ void main() {
         // Hero kept all 4 ⇒ dedup strips e3/e4 from the theme section.
         final theme = state.sections.whereType<FeedThemeSection>().single;
         expect(theme.items.map((c) => c.id), ['x1', 'x2']);
+        // 2 items dispo, cap référence (Normal) ⇒ 2 (et non le nominal brut 3).
+        expect(theme.coreVisibleCount, 2);
+      },
+    );
+
+    test(
+      'an implausibly small measured height falls back to the MODE-AWARE '
+      'reference cap, never collapsing to 1 (bug minimaliste)',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        // Une mesure transitoire/aberrante (render box détachée lors d'une
+        // recompose hors-écran déclenchée par un changement de mode) ne doit ni
+        // effondrer la section à 1 carte, ni retomber sur le nominal mode-aveugle :
+        // on cape sur la hauteur de référence (640) selon le mode courant.
+        final container = makeFitContainer(
+          essentielIds: const ['e1', 'e2'],
+          themeFeedIds: const ['x1', 'x2', 'x3', 'x4', 'x5'],
+          usableHeight: 200, // < kMinPlausibleUsableHeight (360)
+        );
+        addTearDown(container.dispose);
+
+        final state = await settle(container);
+        final theme = state.sections.whereType<FeedThemeSection>().single;
+        // Normal sur la référence 640 : floor((640-68)/146)=3, borné [2,4] ⇒ 3.
         expect(theme.coreVisibleCount, 3);
       },
     );
 
-    test('the dynamic cap survives a dismiss (copyWith preserves it)', () async {
+    test(
+      'normal : sur écran haut le fit MONTE au-dessus du nominal jusqu\'au '
+      'plafond 4 (cible 3-4)',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        // 5 articles de thème disponibles, écran assez haut pour 4 cartes de
+        // 146px (chrome 84 + 4·146 = 668). Le fit doit révéler 4 articles, pas
+        // rester bloqué au nominal backend (3).
+        final container = makeFitContainer(
+          essentielIds: const ['e1', 'e2'],
+          themeFeedIds: const ['x1', 'x2', 'x3', 'x4', 'x5'],
+          usableHeight: 700,
+        );
+        addTearDown(container.dispose);
+
+        final state = await settle(container);
+        final theme = state.sections.whereType<FeedThemeSection>().single;
+        expect(theme.coreVisibleCount, 4);
+      },
+    );
+
+    test(
+      'ludique : plafonné à 3, et la grande image (272px/carte) limite à 2 sur '
+      'un écran moyen (cible 2-3, sans débordement)',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        // Chrome 84 + N·272 : 2 = 628, 3 = 900. À 640px utiles, seules 2 cartes
+        // tiennent — le plancher soft n'en force pas une 3e qui déborderait.
+        final container = makeFitContainer(
+          essentielIds: const ['e1', 'e2'],
+          themeFeedIds: const ['x1', 'x2', 'x3', 'x4', 'x5'],
+          usableHeight: 640,
+          spec: DisplayModeSpec.playful,
+        );
+        addTearDown(container.dispose);
+
+        final state = await settle(container);
+        final theme = state.sections.whereType<FeedThemeSection>().single;
+        expect(theme.coreVisibleCount, 2);
+      },
+    );
+
+    test(
+      'jamais 1 seul article : Lisible sur petit écran garde 2 cartes (plancher '
+      'dur), même si la 2e déborde un peu',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        // 460px utiles (petit téléphone) : une seule carte Lisible (272px)
+        // tiendrait dans le budget, mais le plancher dur impose 2.
+        final container = makeFitContainer(
+          essentielIds: const ['e1', 'e2'],
+          themeFeedIds: const ['x1', 'x2', 'x3', 'x4', 'x5'],
+          usableHeight: 460,
+          spec: DisplayModeSpec.playful,
+        );
+        addTearDown(container.dispose);
+
+        final state = await settle(container);
+        final theme = state.sections.whereType<FeedThemeSection>().single;
+        expect(theme.coreVisibleCount, 2);
+      },
+    );
+
+    test('the dynamic cap survives a dismiss (copyWith preserves it)',
+        () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       final container = makeFitContainer(
         essentielIds: const ['e1', 'e2'],
@@ -1110,7 +1213,9 @@ void main() {
                 DigestTopic(
                   topicId: 'old-t',
                   label: 'Vieux sujet',
-                  articles: [DigestItem(contentId: 'stale-topic-1', title: 'X')],
+                  articles: [
+                    DigestItem(contentId: 'stale-topic-1', title: 'X')
+                  ],
                 ),
               ],
             ),
@@ -1138,10 +1243,8 @@ void main() {
         final finalState = await settle(container);
 
         // 1ère donnée émise = squelette.
-        final firstData = captured
-                .whereType<AsyncData<FluxContinuState>>()
-                .first
-                .value;
+        final firstData =
+            captured.whereType<AsyncData<FluxContinuState>>().first.value;
         expect(firstData.isSkeleton, isTrue,
             reason: 'le matin, on peint d\'abord un squelette');
 
@@ -1170,8 +1273,8 @@ void main() {
       () async {
         SharedPreferences.setMockInitialValues(<String, Object>{});
         when(() => digestRepo.fetchBothDigests()).thenAnswer(
-          (_) async =>
-              DualDigestResponse(normal: digestWithTopics(), sereinEnabled: false),
+          (_) async => DualDigestResponse(
+              normal: digestWithTopics(), sereinEnabled: false),
         );
         when(
           () => feedRepo.getFeed(
@@ -1216,7 +1319,8 @@ void main() {
               s.sections.whereType<FeedThemeSection>().isEmpty,
         );
         expect(baseIdx, greaterThan(skeletonIdx),
-            reason: 'le haut de page réel remplace le squelette avant le fan-out');
+            reason:
+                'le haut de page réel remplace le squelette avant le fan-out');
 
         // complet : la section thème 'tech' est présente, après le base-only.
         final fullIdx = captured.lastIndexWhere(

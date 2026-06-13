@@ -4,7 +4,6 @@ import '../../feed/widgets/feedback_inline.dart';
 import '../models/flux_continu_models.dart';
 import 'essentiel_hi_fi_card.dart';
 import 'flux_continu_article_card.dart';
-import 'plus_de_button.dart';
 import 'section_banner.dart';
 import 'tournee_composer_sheet.dart';
 import 'veille_group_header.dart';
@@ -12,23 +11,20 @@ import 'veille_group_header.dart';
 /// Identifies which chip the user picked on a [FeedbackInline] banner.
 enum FluxFeedbackChip { source, topic, alreadySeen }
 
-/// Composes one section of the Flux Continu V1.8: banner → cards → "Plus
-/// de…" overflow. State (open/closed for the overflow) is passed in so the
-/// provider remains the single source of truth.
+/// Composes one section of the Flux Continu V1.8: banner cliquable → cards.
+/// Le banner porte la navigation « tout lire » (Story 10.1) — le CTA de bas
+/// de section a disparu.
 ///
 /// For [DigestTopicSection], the section renders one card per topic, the
 /// lead article being picked by [pickTopicLead]. For [FeedThemeSection],
 /// one card per feed item.
 class SectionBlock extends StatelessWidget {
   final FluxSection section;
-  final bool isOpen;
-  final VoidCallback onToggleMore;
   final void Function(Object article) onTapArticle;
   final ValueChanged<String>? onDismissArticle;
 
-  /// Opens the dedicated full-page view for a [FeedThemeSection]. Wired by
-  /// the flux_continu screen to push `/flux-continu/theme/:key`. Ignored
-  /// for [DigestTopicSection] which keeps its in-place fold/expand button.
+  /// Opens the dedicated full-page view for the section. Wired by the
+  /// flux_continu screen ; rendu comme tap sur le banner (+ chevron / « +X »).
   final VoidCallback? onSeeAll;
 
   /// IDs of articles currently in the inline-feedback pending state. When
@@ -65,8 +61,6 @@ class SectionBlock extends StatelessWidget {
   const SectionBlock({
     super.key,
     required this.section,
-    required this.isOpen,
-    required this.onToggleMore,
     required this.onTapArticle,
     this.onDismissArticle,
     this.pendingFeedbackIds = const <String>{},
@@ -105,7 +99,8 @@ class SectionBlock extends StatelessWidget {
       );
     }
     final cards = _buildCards();
-    final hiddenCount = section.totalCount - section.coreVisibleCount;
+    final hiddenCount =
+        (section.totalCount - section.coreVisibleCount).clamp(0, 999);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -122,44 +117,13 @@ class SectionBlock extends StatelessWidget {
                   : null,
           onTapFavorite: onTapFavorite,
           onTapSettings: onTapSettings,
+          onTap: onSeeAll,
+          hiddenCount: hiddenCount,
         ),
         ...cards,
-        _SectionFooterRow(voirPlus: _buildVoirPlusButton(section, hiddenCount)),
         const SizedBox(height: 16),
       ],
     );
-  }
-
-  /// Returns the "Voir tout" / "Plus de…" button for this section, or null
-  /// when no overflow CTA applies.
-  Widget? _buildVoirPlusButton(FluxSection section, int hiddenCount) {
-    // Filet de sécurité : le bouton est TOUJOURS rendu pour une section thème
-    // (indépendant de la taille du pool). Le deep-dive est la seule route vers
-    // carrousels / « Explorer plus » / CTA « Sujet suivant », donc on ne le
-    // masque jamais — même quand la section tient en entier à l'écran.
-    if (section is FeedThemeSection && onSeeAll != null) {
-      return SeeAllSectionButton(
-        hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
-        onTap: onSeeAll!,
-      );
-    }
-    if (section is DigestTopicSection &&
-        onSeeAll != null &&
-        section.hasOverflow) {
-      return SeeAllSectionButton(
-        hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
-        onTap: onSeeAll!,
-      );
-    }
-    if (section.hasOverflow) {
-      return PlusDeButton(
-        sectionLabel: section.label,
-        isOpen: isOpen,
-        hiddenCount: hiddenCount > 0 ? hiddenCount : 0,
-        onTap: onToggleMore,
-      );
-    }
-    return null;
   }
 
   Widget _feedbackInlineFor(String contentId) {
@@ -179,6 +143,25 @@ class SectionBlock extends StatelessWidget {
     );
   }
 
+  /// Mode Lisible — IDs des cartes autorisées à afficher leur image pleine
+  /// largeur : les **2 premières** cartes porteuses d'image d'une section. Au
+  /// delà, l'image n'est pas affichée (cf. [FluxContinuArticleCard.allowImageOnTop])
+  /// pour éviter qu'une section ne devienne trop haute. Décision PO : « si 2
+  /// images dispo, ne pas afficher la 3ᵉ ». Sans effet hors mode Lisible.
+  static const int _maxImagesPerSection = 2;
+
+  Set<String> _imageAllowedIds(List<({String id, String? thumb})> items) {
+    final allowed = <String>{};
+    var count = 0;
+    for (final item in items) {
+      if (item.thumb != null && item.thumb!.isNotEmpty) {
+        if (count < _maxImagesPerSection) allowed.add(item.id);
+        count++;
+      }
+    }
+    return allowed;
+  }
+
   List<Widget> _buildCards() {
     final isEssentiel = section.kind == SectionKind.essentiel;
     switch (section) {
@@ -187,12 +170,18 @@ class SectionBlock extends StatelessWidget {
         // _buildCards, so this branch is unreachable in practice.
         return const [];
       case DigestTopicSection(:final topics, :final coreVisibleCount):
-        final visible =
-            isOpen ? topics : topics.take(coreVisibleCount).toList();
+        final visible = topics.take(coreVisibleCount).toList();
         final firstSwipeableIndex = visible.indexWhere(
           (topic) =>
               !pendingFeedbackIds.contains(pickTopicLead(topic).contentId),
         );
+        final imageAllowed = _imageAllowedIds([
+          for (final topic in visible)
+            (
+              id: pickTopicLead(topic).contentId,
+              thumb: pickTopicLead(topic).thumbnailUrl,
+            ),
+        ]);
         return [
           for (var i = 0; i < visible.length; i++)
             if (pendingFeedbackIds.contains(
@@ -203,6 +192,9 @@ class SectionBlock extends StatelessWidget {
               FluxContinuArticleCard(
                 article: pickTopicLead(visible[i]),
                 isEssentiel: isEssentiel,
+                allowImageOnTop: imageAllowed.contains(
+                  pickTopicLead(visible[i]).contentId,
+                ),
                 pressReviewCount: visible[i].perspectiveCount,
                 perspectiveSources: visible[i].perspectiveSources,
                 divergenceLevel: visible[i].divergenceLevel,
@@ -299,6 +291,10 @@ class SectionBlock extends StatelessWidget {
         final firstSwipeableIndex = visible.indexWhere(
           (content) => !pendingFeedbackIds.contains(content.id),
         );
+        final imageAllowed = _imageAllowedIds([
+          for (final content in visible)
+            (id: content.id, thumb: content.thumbnailUrl),
+        ]);
         return [
           for (var i = 0; i < visible.length; i++)
             if (pendingFeedbackIds.contains(visible[i].id))
@@ -306,6 +302,7 @@ class SectionBlock extends StatelessWidget {
             else
               FluxContinuArticleCard(
                 article: visible[i],
+                allowImageOnTop: imageAllowed.contains(visible[i].id),
                 onTap: () => onTapArticle(visible[i]),
                 onSwipeDismiss: onDismissArticle == null
                     ? null
@@ -435,21 +432,3 @@ class _FavoriteEmptyState extends StatelessWidget {
   }
 }
 
-/// Footer for a [SectionBlock]: renders the full-width "Voir tout" / "Plus
-/// de…" overflow button (or nothing when the section has no overflow CTA).
-/// Owns the bottom padding so the button stays flush with the cards above.
-class _SectionFooterRow extends StatelessWidget {
-  final Widget? voirPlus;
-
-  const _SectionFooterRow({this.voirPlus});
-
-  @override
-  Widget build(BuildContext context) {
-    final voirPlus = this.voirPlus;
-    if (voirPlus == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: voirPlus,
-    );
-  }
-}

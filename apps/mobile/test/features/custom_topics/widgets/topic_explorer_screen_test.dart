@@ -7,6 +7,8 @@ import 'package:facteur/features/custom_topics/models/topic_models.dart';
 import 'package:facteur/features/custom_topics/providers/custom_topics_provider.dart';
 import 'package:facteur/features/custom_topics/repositories/topic_repository.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
+import 'package:facteur/features/settings/models/display_mode_spec.dart';
+import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:facteur/core/auth/auth_state.dart' as app_auth;
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
@@ -62,6 +64,8 @@ void main() {
       overrides: [
         topicRepositoryProvider.overrideWithValue(mockRepo),
         app_auth.authStateProvider.overrideWith((ref) => mockAuth),
+        // Spec lu via Hive en prod — court-circuité dans les widget tests.
+        displayModeSpecProvider.overrideWith((ref) => DisplayModeSpec.normal),
       ],
       child: MaterialApp(
         home: TopicExplorerScreen(
