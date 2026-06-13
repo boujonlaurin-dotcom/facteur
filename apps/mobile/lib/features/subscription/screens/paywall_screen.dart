@@ -1,27 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:purchases_flutter/purchases_flutter.dart';
 
+import 'package:facteur/core/ui/notification_service.dart';
 import '../../../config/theme.dart';
 import '../../../shared/widgets/buttons/primary_button.dart';
 import '../../../widgets/design/facteur_logo.dart';
-import 'package:facteur/core/ui/notification_service.dart';
+import '../providers/subscription_provider.dart';
 
-/// Écran de paywall (placeholder)
-class PaywallScreen extends StatefulWidget {
+/// Écran de paywall — branché sur RevenueCat.
+class PaywallScreen extends ConsumerStatefulWidget {
   const PaywallScreen({super.key});
 
   @override
-  State<PaywallScreen> createState() => _PaywallScreenState();
+  ConsumerState<PaywallScreen> createState() => _PaywallScreenState();
 }
 
-class _PaywallScreenState extends State<PaywallScreen> {
-  // ignore: unused_field
-  final bool _isYearly = true; // Kept for logic
-
+class _PaywallScreenState extends ConsumerState<PaywallScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+    final offeringsAsync = ref.watch(offeringsProvider);
+    final subState = ref.watch(subscriptionProvider);
 
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
@@ -33,8 +35,6 @@ class _PaywallScreenState extends State<PaywallScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 60),
-
-              // Close button
               Align(
                 alignment: Alignment.topRight,
                 child: IconButton(
@@ -42,10 +42,8 @@ class _PaywallScreenState extends State<PaywallScreen> {
                   onPressed: () => context.pop(),
                 ),
               ),
-
               const FacteurLogo(size: 80),
               const SizedBox(height: FacteurSpacing.space6),
-
               Text(
                 'Soutenez\nFacteur',
                 style: Theme.of(context).textTheme.displayLarge?.copyWith(
@@ -54,9 +52,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                     ),
                 textAlign: TextAlign.center,
               ),
-
               const SizedBox(height: FacteurSpacing.space4),
-
               Text(
                 'L\'information a un prix.\nCelui de votre temps, pas de votre attention.',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
@@ -64,21 +60,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                     ),
                 textAlign: TextAlign.center,
               ),
-
               const SizedBox(height: FacteurSpacing.space6),
-
-              // Cartes d'offres
-              // Note: _SubscriptionCard was seemingly not defined in the original file I viewed, or replaced by _PricingOption and manual layout?
-              // The usage in previous replace call used _SubscriptionCard but definition was nowhere.
-              // I will assume _PricingOption was what was intended or restore usage of _PricingOption.
-              // However, the text content suggests distinct cards.
-              // Given the messy state, I'll reconstruct a simple UI using containers if needed or assuming definitions exist/I add them.
-              // Looking at previous valid code, there were _SubscriptionCard usages. I will define it if missing or use what's there.
-              // Wait, the file ending shows _PricingOption and _FeatureRow but NOT _SubscriptionCard.
-              // I will assume the previous code I saw in `replace_file_content` (Step 343) was TRYING to use _SubscriptionCard but failed to define it or I overwrote it?
-              // Actually, looking at Step 332, I saw `_SubscriptionCard` being used.
-              // I will define `_SubscriptionCard` to make it work.
-
               _SubscriptionCard(
                 title: 'Facteur Libre',
                 price: 'Gratuit',
@@ -92,45 +74,64 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 textColor: colors.textPrimary,
                 borderColor: colors.textTertiary.withOpacity(0.2),
               ),
-
               const SizedBox(height: FacteurSpacing.space4),
-
-              _SubscriptionCard(
-                title: 'Facteur Engagé',
-                price: '4,99€ / mois',
-                description: 'Soutenez le journalisme indépendant',
-                features: const [
-                  'Sources illimitées',
-                  'Analyses approfondies',
-                  'Mode hors-ligne',
-                  'Badge supporter',
-                ],
-                isPopular: true,
-                color: colors.surface,
-                textColor: colors.primary,
-                borderColor: colors.primary,
-                buttonText: 'S\'abonner (7 jours gratuits)',
+              offeringsAsync.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+                error: (e, _) => _OfferingsError(
+                  message: e.toString(),
+                  onRetry: () => ref.invalidate(offeringsProvider),
+                ),
+                data: (offerings) {
+                  final package = offerings.current?.monthly ??
+                      offerings.current?.availablePackages.firstOrNull;
+                  if (package == null) {
+                    return _OfferingsError(
+                      message: 'Aucune offre disponible.',
+                      onRetry: () => ref.invalidate(offeringsProvider),
+                    );
+                  }
+                  return _SubscriptionCard(
+                    title: 'Facteur Engagé',
+                    price: package.storeProduct.priceString,
+                    description: package.storeProduct.description.isNotEmpty
+                        ? package.storeProduct.description
+                        : 'Soutenez le journalisme indépendant',
+                    features: const [
+                      'Sources illimitées',
+                      'Analyses approfondies',
+                      'Mode hors-ligne',
+                      'Badge supporter',
+                    ],
+                    isPopular: true,
+                    color: colors.surface,
+                    textColor: colors.primary,
+                    borderColor: colors.primary,
+                    buttonText: 'S\'abonner',
+                    onSubscribe: subState.loading
+                        ? null
+                        : () => _onSubscribe(package),
+                  );
+                },
               ),
-
               const SizedBox(height: FacteurSpacing.space6),
-
-              // CTA
-              PrimaryButton(
-                label: 'S\'abonner',
-                onPressed: () {
-                  // TODO: RevenueCat purchase
-                  NotificationService.showInfo(
-                      'Intégration RevenueCat à venir');
-                },
-              ),
-
+              if (offeringsAsync.hasValue)
+                PrimaryButton(
+                  label: subState.loading ? 'Achat en cours…' : 'S\'abonner',
+                  onPressed: subState.loading
+                      ? null
+                      : () {
+                          final pkg = offeringsAsync.value?.current?.monthly ??
+                              offeringsAsync
+                                  .value?.current?.availablePackages.firstOrNull;
+                          if (pkg != null) _onSubscribe(pkg);
+                        },
+                ),
               const SizedBox(height: FacteurSpacing.space4),
-
-              // Restore
               TextButton(
-                onPressed: () {
-                  // TODO: Restore purchases
-                },
+                onPressed: subState.loading ? null : _onRestore,
                 child: Text(
                   'Restaurer mes achats',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
@@ -138,10 +139,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       ),
                 ),
               ),
-
               const SizedBox(height: FacteurSpacing.space4),
-
-              // Legal
               Text(
                 'En vous abonnant, vous acceptez nos Conditions d\'utilisation. '
                 'L\'abonnement se renouvelle automatiquement. '
@@ -151,11 +149,57 @@ class _PaywallScreenState extends State<PaywallScreen> {
                     ),
                 textAlign: TextAlign.center,
               ),
-
               const SizedBox(height: FacteurSpacing.space6),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Future<void> _onSubscribe(Package package) async {
+    final notifier = ref.read(subscriptionProvider.notifier);
+    final ok = await notifier.purchase(package);
+    if (!mounted) return;
+    if (ok) {
+      NotificationService.showSuccess('Bienvenue chez Facteur Engagé');
+      context.pop();
+    } else {
+      final err = ref.read(subscriptionProvider).error;
+      if (err != null) NotificationService.showError(err);
+    }
+  }
+
+  Future<void> _onRestore() async {
+    final notifier = ref.read(subscriptionProvider.notifier);
+    final ok = await notifier.restore();
+    if (!mounted) return;
+    NotificationService.showInfo(
+      ok ? 'Achats restaurés' : 'Aucun achat à restaurer',
+    );
+    if (ok) context.pop();
+  }
+}
+
+class _OfferingsError extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+  const _OfferingsError({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Column(
+        children: [
+          Text(
+            message,
+            style: Theme.of(context).textTheme.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          TextButton(onPressed: onRetry, child: const Text('Réessayer')),
+        ],
       ),
     );
   }
@@ -171,6 +215,7 @@ class _SubscriptionCard extends StatelessWidget {
   final Color borderColor;
   final bool isPopular;
   final String? buttonText;
+  final VoidCallback? onSubscribe;
 
   const _SubscriptionCard({
     required this.title,
@@ -182,6 +227,7 @@ class _SubscriptionCard extends StatelessWidget {
     required this.borderColor,
     this.isPopular = false,
     this.buttonText,
+    this.onSubscribe,
   });
 
   @override
@@ -249,7 +295,7 @@ class _SubscriptionCard extends StatelessWidget {
             const SizedBox(height: 24),
             PrimaryButton(
               label: buttonText!,
-              onPressed: () {},
+              onPressed: onSubscribe,
             ),
           ],
         ],
