@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "dataset_kind": "veille_curation",
+  "generated_at": "2026-06-09T12:00:00+00:00",
+  "note": "Toy à confusion connue. NOW = 2026-06-09T12:00Z. Plante : (1) un off_angle source-seul (off_source) gardé en passthrough → tué par le floor ; (2) un off_angle dont un mot-clé n'apparaît qu'en sous-chaîne (off_substr : 'agent' ⊂ 'agentic') → mot-entier ⇒ pas d'axe keyword ⇒ floor-pruned ; (3) un relevant sans mot-clé littéral (para) → floor-pruned (FN). ext_off teste le prédicat Bloc B en mot-entier (jamais candidat).",
+  "configs": [
+    {
+      "config_key": "toy",
+      "config_display": "Toy",
+      "theme_id": "tech",
+      "theme_label": "Tech",
+      "angles": [
+        {"topic_id": "ai", "label": "IA", "keywords": ["agent"]}
+      ],
+      "global_keywords": [],
+      "sources": [
+        {"source_id": "src", "name": "Src", "kind": "curated"}
+      ],
+      "articles": [
+        {"id": "on_topic", "title": "Avancées en IA générale", "description": "", "topics": ["ai"], "source_id": "src", "source_name": "Src", "published_at": "2026-06-09T10:00:00+00:00", "label": "relevant"},
+        {"id": "on_kw", "title": "Un agent autonome débarque", "description": "", "topics": ["tech"], "source_id": "src", "source_name": "Src", "published_at": "2026-06-09T09:00:00+00:00", "label": "relevant"},
+        {"id": "off_source", "title": "Résultats du match de foot", "description": "", "topics": ["sport"], "source_id": "src", "source_name": "Src", "published_at": "2026-06-09T08:00:00+00:00", "label": "off_angle"},
+        {"id": "off_substr", "title": "Les agentic workflows expliqués", "description": "", "topics": ["tech"], "source_id": "src", "source_name": "Src", "published_at": "2026-06-08T06:00:00+00:00", "label": "off_angle"},
+        {"id": "para", "title": "Une nouvelle ère pour l'apprentissage automatique", "description": "", "topics": ["tech"], "source_id": "src", "source_name": "Src", "published_at": "2026-06-07T20:00:00+00:00", "label": "relevant"},
+        {"id": "ext_on", "title": "OpenAI dévoile un agent de raisonnement", "description": "", "topics": ["ai"], "source_id": "ext", "source_name": "Ext", "published_at": "2026-06-09T09:00:00+00:00", "label": "relevant"},
+        {"id": "ext_off", "title": "Les agentic patterns en entreprise", "description": "", "topics": ["tech"], "source_id": "ext", "source_name": "Ext", "published_at": "2026-06-09T06:00:00+00:00", "label": "off_angle"}
+      ]
+    }
+  ]
+}

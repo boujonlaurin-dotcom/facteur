@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:home_widget/home_widget.dart';
@@ -17,6 +20,8 @@ import 'core/auth/supabase_storage.dart';
 import 'core/services/posthog_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/ui/notification_service.dart';
+import 'features/flux_continu/services/tournee_progress_service.dart';
+import 'features/settings/providers/notifications_settings_provider.dart';
 
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:timeago/src/messages/fr_messages.dart'
@@ -30,38 +35,28 @@ Future<void> main() async {
   // pendant l'init. Si DSN absent (dev local sans clé), l'init est skip.
   // Cf. docs/bugs/bug-android-disconnect-race.md (P5 — instrumentation).
   if (SentryConstants.isEnabled) {
-    await SentryFlutter.init(
-      (options) {
-        options.dsn = SentryConstants.dsn;
-        options.environment = SentryConstants.environment;
-        if (SentryConstants.release.isNotEmpty) {
-          options.release = SentryConstants.release;
-        }
-        // Sample 100% des erreurs, pas de perf tracing pour le moment.
-        options.tracesSampleRate = 0.0;
-        // Ne pas envoyer les PII par défaut.
-        options.sendDefaultPii = false;
-      },
-      appRunner: _bootstrap,
-    );
+    await SentryFlutter.init((options) {
+      options.dsn = SentryConstants.dsn;
+      options.environment = SentryConstants.environment;
+      if (SentryConstants.release.isNotEmpty) {
+        options.release = SentryConstants.release;
+      }
+      // Sample 100% des erreurs, pas de perf tracing pour le moment.
+      options.tracesSampleRate = 0.0;
+      // Ne pas envoyer les PII par défaut.
+      options.sendDefaultPii = false;
+    }, appRunner: _bootstrap);
   } else {
     await _bootstrap();
   }
 }
 
 Future<void> _bootstrap() async {
+  final bootSw = Stopwatch()..start();
 
-  // Initialiser timeago
   timeago.setLocaleMessages('fr', fr_messages.FrMessages());
   timeago.setLocaleMessages('fr_short', FrCompactMessages());
 
-  // Orientation portrait uniquement
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
-
-  // Status bar style
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -70,24 +65,32 @@ Future<void> _bootstrap() async {
     ),
   );
 
-  // Initialiser Hive (storage local)
+  // Orientation : doit être résolu avant 1ère frame, sinon flash rotation
+  // sur devices qui lancent en landscape.
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+
   await Hive.initFlutter();
 
-  // Initialiser flutter_downloader (Android DownloadManager) pour la mise
-  // à jour APK : permet au téléchargement de continuer en arrière-plan.
-  try {
-    await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
-  } catch (e) {
-    debugPrint('Main: FlutterDownloader init failed (non-critical): $e');
-  }
-
-  // Pré-ouvrir les boxes et vérifier leur contenu
-  // Try-catch avec fallback : si un box est corrompu, on le recrée vide
-  debugPrint('Main: Opening Hive boxes...');
-  await _openBoxSafe<dynamic>('settings');
-  final authBox = await _openBoxSafe<dynamic>('auth_prefs');
-  final supabaseBox = await _openBoxSafe<String>('supabase_auth_persistence');
-  await _openBoxSafe<String>('feed_cache');
+  final boxesSw = Stopwatch()..start();
+  final initResults = await Future.wait<Object>([
+    _openBoxSafe<dynamic>('settings'),
+    _openBoxSafe<dynamic>('auth_prefs'),
+    _openBoxSafe<String>('supabase_auth_persistence'),
+    _openBoxSafe<String>('feed_cache'),
+    _openBoxSafe<String>('flux_continu_cache'),
+    _openBoxSafe<String>('pending_reads'),
+    SharedPreferences.getInstance(),
+  ]);
+  final boxes = initResults.take(6).cast<Box<dynamic>>().toList();
+  final sharedPreferences = initResults[6] as SharedPreferences;
+  final authBox = boxes[1];
+  final supabaseBox = boxes[2];
+  debugPrint(
+    '[PERF] boot.hive_boxes_ms=${boxesSw.elapsedMilliseconds} (6 boxes + prefs parallel)',
+  );
 
   debugPrint('Main: Hive auth_prefs keys: ${authBox.keys.toList()}');
   debugPrint(
@@ -105,67 +108,7 @@ Future<void> _bootstrap() async {
     debugPrint('Main: Hive supabase_session NOT FOUND in box.');
   }
 
-  // Initialiser les notifications push locales (sans forcer la permission)
-  Map<String, dynamic>? bootNotifDiag;
-  bool? bootPushEnabledHive;
-  try {
-    debugPrint('Main: Initializing push notifications...');
-    final pushNotificationService = PushNotificationService();
-    PushNotificationService.setNavigatorKey(NotificationService.navigatorKey);
-    await pushNotificationService.init();
-
-    // Planifier uniquement si l'utilisateur a déjà autorisé les notifications
-    final settingsBox = Hive.box<dynamic>('settings');
-    final pushEnabled = settingsBox.get('push_notifications_enabled',
-        defaultValue: true) as bool;
-    bootPushEnabledHive = pushEnabled;
-    if (pushEnabled) {
-      // S'assurer que la permission exact alarm est toujours valide
-      // (peut être révoquée par une mise à jour Android ou un changement système)
-      await pushNotificationService.ensureExactAlarmPermission();
-
-      // Ne planifier la notification statique que si aucune n'existe déjà.
-      // Si une notification personnalisée (avec les sujets du digest) a été
-      // planifiée par DigestNotifier._updateNotificationWithTopics(), on la
-      // préserve — écraser avec le corps statique régresserait la feature.
-      final alreadyScheduled =
-          await pushNotificationService.isDigestNotificationScheduled();
-      if (!alreadyScheduled) {
-        final scheduled =
-            await pushNotificationService.scheduleDailyDigestNotification();
-        if (!scheduled) {
-          debugPrint(
-              'Main: WARNING — digest notification scheduling failed, retrying...');
-          // Retry après re-demande explicite de permission
-          await pushNotificationService.requestExactAlarmPermission();
-          final retryOk =
-              await pushNotificationService.scheduleDailyDigestNotification();
-          debugPrint('Main: Retry result: $retryOk');
-        }
-      } else {
-        debugPrint(
-            'Main: Digest notification already scheduled — skipping static placeholder.');
-      }
-    }
-
-    // Toujours collecter le diagnostic — y compris quand pushEnabled=false —
-    // pour mesurer le parc côté télémétrie (cf. bug-notifications-stalled).
-    bootNotifDiag = await pushNotificationService.getDiagnostics();
-    debugPrint('Main: Push diagnostics: $bootNotifDiag');
-    debugPrint('Main: Push notifications initialized (enabled: $pushEnabled)');
-  } catch (e, s) {
-    debugPrint('ERROR: Failed to initialize push notifications: $e\n$s');
-  }
-
-  // Initialize Home Widget for Android home screen widget
-  try {
-    HomeWidget.registerInteractivityCallback(homeWidgetBackgroundCallback);
-    debugPrint('Main: Home Widget initialized.');
-  } catch (e) {
-    debugPrint('Main: Home Widget init failed (non-critical): $e');
-  }
-
-  // Validation Supabase avant initialisation
+  // Validation Supabase config (sans ça, on crash plus tard)
   if (SupabaseConstants.url.isEmpty || SupabaseConstants.anonKey.isEmpty) {
     debugPrint('ERROR: Supabase URL or Anon Key is missing.');
     _runErrorApp(
@@ -174,92 +117,46 @@ Future<void> _bootstrap() async {
     return;
   }
 
-  // Initialisation Analytics
-  // Note: On le fait tôt pour choper le launch
-  // Mais on a besoin de Dio qui est dans le container...
-  // On va le faire via le provider plus tard ou ici si on instancie manuellement
-  // Pour l'instant on laisse le provider s'en occuper au premier build de FacteurApp
+  // Bind navigator key AVANT runApp : ref statique consommée par le plugin
+  // notifications lors de son init différé.
+  PushNotificationService.setNavigatorKey(NotificationService.navigatorKey);
 
+  // PushNotificationService.init() est différé post-runApp : la codebase
+  // n'appelle jamais getNotificationAppLaunchDetails, donc le tap depuis
+  // cold-launch n'est pas géré aujourd'hui — déférer l'init ne régresse rien
+  // et économise ~100-400ms (timezone DB load + platform channel).
+  final initsSw = Stopwatch()..start();
+  final posthog = PostHogService();
+  String? appVersion;
   try {
-    final url = SupabaseConstants.url;
-    final key = SupabaseConstants.anonKey;
-
-    // Initialiser Supabase avec timeout de sécurité
-    debugPrint('Main: Initializing Supabase...');
-    debugPrint('Main: Supabase URL: ${SupabaseConstants.url}');
-    await Supabase.initialize(
-      url: url,
-      anonKey: key,
-      authOptions: FlutterAuthClientOptions(
-        localStorage: SupabaseHiveStorage(),
+    await Future.wait<void>([
+      Supabase.initialize(
+        url: SupabaseConstants.url,
+        anonKey: SupabaseConstants.anonKey,
+        authOptions: FlutterAuthClientOptions(
+          localStorage: SupabaseHiveStorage(),
+        ),
+        headers: {'X-Client-Info': 'supabase-flutter/2.5.0'},
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint(
+            'Main: Supabase.initialize TIMEOUT 10s — throwing to catch block',
+          );
+          throw TimeoutException(
+            'Supabase.initialize timeout after 10 seconds',
+          );
+        },
       ),
-      headers: {
-        'X-Client-Info': 'supabase-flutter/2.5.0',
-      },
-    ).timeout(
-      const Duration(seconds: 15),
-      onTimeout: () {
-        debugPrint(
-            'Main: Supabase.initialize TIMEOUT - throwing to catch block');
-        throw TimeoutException('Supabase.initialize timeout after 15 seconds');
-      },
-    );
-    debugPrint('Main: Supabase initialized correctly.');
-    final hasSession = Supabase.instance.client.auth.currentSession != null;
-    debugPrint('Main: Supabase Session restored immediately: $hasSession');
-
-    // RevenueCat — initialiser avant PostHog pour qu'un éventuel `logIn`
-    // post-restoration de session parte sans race avec le listener auth ci-bas.
-    await _bootstrapRevenueCat();
-
-    // Story 14.1 — init PostHog after Supabase so we can piggyback on the
-    // auth state stream to identify/reset the distinct_id automatically.
-    final posthog = PostHogService();
-    await posthog.init();
-
-    // Émettre l'état des notifs locales collecté au boot (capture après init
-    // PostHog : avant, capture() est un no-op silencieux).
-    if (bootNotifDiag != null) {
-      final diagProps = <String, Object>{
-        'push_enabled_hive': bootPushEnabledHive ?? false,
-      };
-      bootNotifDiag.forEach((k, v) {
-        if (v != null) diagProps[k] = v as Object;
-      });
-      unawaited(posthog.capture(event: 'notif_diag', properties: diagProps));
-    }
-
-    if (hasSession) {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user != null) {
-        await posthog.identify(
-          userId: user.id,
-          properties: _userIdentifyProperties(user),
-        );
-      }
-    }
-    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
-      switch (data.event) {
-        case AuthChangeEvent.signedIn:
-        case AuthChangeEvent.tokenRefreshed:
-        case AuthChangeEvent.userUpdated:
-          final user = data.session?.user;
-          if (user != null) {
-            posthog.identify(
-              userId: user.id,
-              properties: _userIdentifyProperties(user),
-            );
-            unawaited(_revenueCatLogIn(user.id));
-          }
-          break;
-        case AuthChangeEvent.signedOut:
-          posthog.reset();
-          unawaited(_revenueCatLogOut());
-          break;
-        default:
-          break;
-      }
-    });
+      _initPosthogSafe(posthog),
+      _initRevenueCatSafe(),
+      _initDownloaderSafe(),
+      PackageInfo.fromPlatform().then((info) {
+        appVersion = '${info.version}+${info.buildNumber}';
+      }).catchError((Object _) {
+        // Best-effort — version tracking degrades gracefully
+      }),
+    ]);
   } catch (e) {
     debugPrint('ERROR: Failed to initialize Supabase: $e');
     _runErrorApp(
@@ -267,67 +164,230 @@ Future<void> _bootstrap() async {
     );
     return;
   }
+  debugPrint('[PERF] boot.critical_inits_ms=${initsSw.elapsedMilliseconds}');
+
+  final hasSession = Supabase.instance.client.auth.currentSession != null;
+  debugPrint('Main: Supabase Session restored immediately: $hasSession');
+
+  if (hasSession) {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user != null) {
+      unawaited(
+        posthog.identify(
+          userId: user.id,
+          properties: _userIdentifyProperties(user, appVersion: appVersion),
+        ),
+      );
+      unawaited(_loginRevenueCatSafe(user.id));
+    }
+  }
+  Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+    switch (data.event) {
+      case AuthChangeEvent.signedIn:
+      case AuthChangeEvent.tokenRefreshed:
+      case AuthChangeEvent.userUpdated:
+        final user = data.session?.user;
+        if (user != null) {
+          posthog.identify(
+            userId: user.id,
+            properties: _userIdentifyProperties(user, appVersion: appVersion),
+          );
+          unawaited(_loginRevenueCatSafe(user.id));
+        }
+        break;
+      case AuthChangeEvent.signedOut:
+        posthog.reset();
+        unawaited(_logoutRevenueCatSafe());
+        break;
+      default:
+        break;
+    }
+  });
+
+  debugPrint('[PERF] boot.pre_runapp_ms=${bootSw.elapsedMilliseconds}');
 
   // Lancer l'app
-  debugPrint('Main: Calling runApp...');
-  runApp(const ProviderScope(child: FacteurApp()));
-  debugPrint('Main: runApp called.');
+  runApp(
+    ProviderScope(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(sharedPreferences),
+      ],
+      child: const FacteurApp(),
+    ),
+  );
+
+  // Inits différés post-runApp : non bloquants pour la 1ère frame.
+  // - Notif scheduling (alarm, permissions, diagnostics)
+  // - Home Widget callback registration
+  unawaited(_initDeferredServices(posthog: posthog));
 }
 
-/// Initialise le SDK RevenueCat. No-op si la clé pour la plateforme courante
-/// n'est pas fournie (dev local sans IAP), ou si on tourne sur une plateforme
-/// non supportée par `purchases_flutter` (web/desktop).
-Future<void> _bootstrapRevenueCat() async {
-  final apiKey = _revenueCatApiKey();
-  if (apiKey.isEmpty) {
-    debugPrint('Main: RevenueCat skipped (no API key for this platform).');
+/// Init FlutterDownloader avec fallback silencieux (non-critique).
+Future<void> _initDownloaderSafe() async {
+  try {
+    await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
+  } catch (e) {
+    debugPrint('Main: FlutterDownloader init failed (non-critical): $e');
+  }
+}
+
+/// Init PostHog avec fallback silencieux : la télémétrie ne doit jamais
+/// crasher le boot.
+Future<void> _initPosthogSafe(PostHogService posthog) async {
+  try {
+    await posthog.init();
+  } catch (e) {
+    debugPrint('Main: PostHog init failed (non-critical): $e');
+  }
+}
+
+/// Init RevenueCat — paywall MVP V1, source de vérité de l'entitlement
+/// `premium`. Skip silencieux si pas de clé API configurée (dev sans paywall
+/// ou plateforme web).
+Future<void> _initRevenueCatSafe() async {
+  if (kIsWeb) return;
+  final bool isIOS = Platform.isIOS;
+  if (!RevenueCatConstants.isConfigured(isIOS: isIOS)) {
+    debugPrint('Main: RevenueCat skipped (no API key for current platform)');
     return;
   }
   try {
     await Purchases.setLogLevel(LogLevel.warn);
+    final apiKey = isIOS
+        ? RevenueCatConstants.iosApiKey
+        : RevenueCatConstants.androidApiKey;
     await Purchases.configure(PurchasesConfiguration(apiKey));
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user != null) {
-      await Purchases.logIn(user.id);
-    }
-    debugPrint('Main: RevenueCat configured.');
   } catch (e) {
     debugPrint('Main: RevenueCat init failed (non-critical): $e');
   }
 }
 
-Future<void> _revenueCatLogIn(String userId) async {
-  if (_revenueCatApiKey().isEmpty) return;
+/// Identifie l'utilisateur courant côté RevenueCat (post-login Supabase).
+/// Permet à un achat Web Billing fait depuis la landing — où l'`app_user_id`
+/// est déjà le user_id Supabase — de suivre le bon compte dans l'app.
+Future<void> _loginRevenueCatSafe(String userId) async {
+  if (kIsWeb) return;
   try {
     await Purchases.logIn(userId);
   } catch (e) {
-    debugPrint('Main: RevenueCat logIn failed: $e');
+    debugPrint('Main: Purchases.logIn failed (non-critical): $e');
   }
 }
 
-Future<void> _revenueCatLogOut() async {
-  if (_revenueCatApiKey().isEmpty) return;
+/// Délie l'identité RevenueCat au logout : évite que l'utilisateur suivant
+/// hérite par erreur des entitlements du précédent sur un device partagé.
+Future<void> _logoutRevenueCatSafe() async {
+  if (kIsWeb) return;
   try {
     await Purchases.logOut();
   } catch (e) {
-    debugPrint('Main: RevenueCat logOut failed: $e');
+    debugPrint('Main: Purchases.logOut failed (non-critical): $e');
   }
 }
 
-String _revenueCatApiKey() {
-  if (Platform.isIOS || Platform.isMacOS) {
-    return RevenueCatConstants.appleApiKey;
+/// Services lancés après [runApp] : aucun n'est requis pour la 1ère frame.
+///
+/// Inclut la planification de la notification quotidienne (system call lente),
+/// la vérification d'exact alarm permission, le diagnostic notifs, et
+/// l'enregistrement du callback Home Widget. Tout est fire-and-forget côté
+/// boot — si un service échoue, le démarrage de l'app n'est pas affecté.
+Future<void> _initDeferredServices({required PostHogService posthog}) async {
+  final sw = Stopwatch()..start();
+
+  try {
+    unawaited(
+      HomeWidget.registerInteractivityCallback(homeWidgetBackgroundCallback),
+    );
+  } catch (e) {
+    debugPrint('Main: Home Widget init failed (non-critical): $e');
   }
-  if (Platform.isAndroid) {
-    return RevenueCatConstants.androidApiKey;
+
+  Map<String, dynamic>? bootNotifDiag;
+  bool? bootPushEnabledHive;
+  try {
+    final pushNotificationService = PushNotificationService();
+    // L'init plugin (timezone DB + platform channel) coûte ~100-400ms ;
+    // déférée car aucun consommateur du tap-callback ne s'active dans la
+    // 1ère seconde post-runApp.
+    await pushNotificationService.init();
+
+    final settingsBox = Hive.box<dynamic>('settings');
+    final pushEnabled = settingsBox.get('push_notifications_enabled',
+        defaultValue: true) as bool;
+    bootPushEnabledHive = pushEnabled;
+
+    // Cold start : re-pose la variante B personnalisée avec les derniers
+    // teasers persistés (le home les rafraîchira au 1er load frais). Liste vide
+    // (1er lancement) → variante A générique, acceptable. Clé + lecture
+    // défensive partagées avec le provider (source de vérité).
+    final essentielTeasers = NotificationsSettingsNotifier.readTeasers(
+      settingsBox,
+      NotificationsSettingsNotifier.kEssentielTeasers,
+    );
+    final digestVariant = essentielTeasers.isEmpty
+        ? NotifVariant.variantA
+        : NotifVariant.variantB;
+    final digestSerene = NotificationsSettingsNotifier.readSerein(settingsBox);
+
+    // Diagnostic + scheduling sont indépendants : collecter le diagnostic
+    // pendant la planification (alarms + permission). `pushEnabled=false`
+    // → on collecte quand même le diagnostic (cf. bug-notifications-stalled).
+    final diagFuture = pushNotificationService.getDiagnostics();
+    if (pushEnabled) {
+      await pushNotificationService.ensureExactAlarmPermission();
+      // Si une notification personnalisée (avec les sujets du digest) a été
+      // planifiée par DigestNotifier._updateNotificationWithTopics(), on la
+      // préserve — écraser avec le corps statique régresserait la feature.
+      final alreadyScheduled =
+          await pushNotificationService.isDigestNotificationScheduled();
+      if (!alreadyScheduled) {
+        final scheduled =
+            await pushNotificationService.scheduleDailyDigestNotification(
+          variant: digestVariant,
+          teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
+          serene: digestSerene,
+        );
+        if (!scheduled) {
+          debugPrint(
+            'Main: WARNING — digest notification scheduling failed, retrying...',
+          );
+          await pushNotificationService.requestExactAlarmPermission();
+          final retryOk =
+              await pushNotificationService.scheduleDailyDigestNotification(
+            variant: digestVariant,
+            teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
+            serene: digestSerene,
+          );
+          debugPrint('Main: Retry result: $retryOk');
+        }
+      } else {
+        debugPrint(
+          'Main: Digest notification already scheduled — skipping static placeholder.',
+        );
+      }
+    }
+    bootNotifDiag = await diagFuture;
+  } catch (e, s) {
+    debugPrint('ERROR: Deferred push notifications init failed: $e\n$s');
   }
-  return '';
+
+  if (bootNotifDiag != null) {
+    final diagProps = <String, Object>{
+      'push_enabled_hive': bootPushEnabledHive ?? false,
+    };
+    bootNotifDiag.forEach((k, v) {
+      if (v != null) diagProps[k] = v as Object;
+    });
+    unawaited(posthog.capture(event: 'notif_diag', properties: diagProps));
+  }
+
+  debugPrint('[PERF] boot.deferred_inits_ms=${sw.elapsedMilliseconds}');
 }
 
 /// User properties pushed à chaque `$identify` PostHog. Permet de filtrer
 /// dashboard et insights par email/provider sans devoir matcher manuellement
 /// les distinct_id Supabase.
-Map<String, Object> _userIdentifyProperties(User user) {
+Map<String, Object> _userIdentifyProperties(User user, {String? appVersion}) {
   final props = <String, Object>{};
   if (user.email != null && user.email!.isNotEmpty) {
     props['email'] = user.email!;
@@ -335,6 +395,9 @@ Map<String, Object> _userIdentifyProperties(User user) {
   final providers = user.appMetadata['providers'];
   if (providers is List) {
     props['auth_providers'] = providers.join(',');
+  }
+  if (appVersion != null) {
+    props['app_version'] = appVersion;
   }
   return props;
 }
@@ -360,7 +423,8 @@ Future<Box<T>> _openBoxSafe<T>(String name) async {
   } catch (e) {
     debugPrint('Main: Hive box "$name" corrupted, recreating: $e');
     debugPrint(
-        '[AUTH_TELEMETRY] event=hive_box_corrupted box_name=$name error=$e');
+      '[AUTH_TELEMETRY] event=hive_box_corrupted box_name=$name error=$e',
+    );
     await Hive.deleteBoxFromDisk(name);
     return await Hive.openBox<T>(name);
   }

@@ -1,21 +1,35 @@
 """Service source."""
 
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.enums import InterestState
 from app.models.source import Source, UserSource
+from app.models.user_favorites import UserFavoriteSource
 from app.models.user_personalization import UserPersonalization
 from app.schemas.source import (
+    PremiumConnectionResponse,
     SourceCatalogResponse,
     SourceDetectResponse,
     SourceResponse,
 )
+from app.services.language_user_filter import recompute_auto_pref
+from app.services.premium_curated_sources import (
+    PREMIUM_CURATED_MAP,
+    is_paywalled_source,
+)
 from app.services.rss_parser import RSSParser
 
 logger = structlog.get_logger()
+FOLLOWED_SOURCE_STATES = (InterestState.FOLLOWED, InterestState.FAVORITE)
+
+
+class PremiumConnectionNotEnabled(Exception):
+    """Raised when a source cannot be marked subscribed via WebView flow."""
 
 
 class SourceService:
@@ -25,82 +39,153 @@ class SourceService:
         self.db = db
         self.rss_parser = RSSParser()
 
-    async def _load_user_source_multipliers(self, user_id: UUID) -> dict[UUID, float]:
-        """Load priority_multiplier for all user sources."""
-        result = await self.db.execute(
-            select(UserSource.source_id, UserSource.priority_multiplier).where(
-                UserSource.user_id == user_id
-            )
-        )
-        return {row.source_id: row.priority_multiplier for row in result.all()}
+    @staticmethod
+    def _premium_connection(s: Source) -> PremiumConnectionResponse | None:
+        return PremiumConnectionResponse.from_source(s, curated_map=PREMIUM_CURATED_MAP)
 
-    async def _load_user_source_subscriptions(self, user_id: UUID) -> dict[UUID, bool]:
-        """Load has_subscription for all user sources."""
+    @staticmethod
+    def _has_paywall(s: Source) -> bool:
+        return is_paywalled_source(s, curated_map=PREMIUM_CURATED_MAP)
+
+    async def _load_user_source_context(
+        self, user_id: UUID
+    ) -> tuple[set[UUID], dict[UUID, float], dict[UUID, bool]]:
+        """Charge trusted_ids, multipliers et subscriptions en une seule query.
+
+        Remplace les trois appels séparés (_load_user_source_multipliers,
+        _load_user_source_subscriptions, SELECT source_id) par une unique
+        query combinée — réduit le nombre de round-trips DB de 3 à 1.
+        Fix partiel PYTHON-46 / PYTHON-1W (N+1 sur sources).
+        """
         result = await self.db.execute(
-            select(UserSource.source_id, UserSource.has_subscription).where(
-                UserSource.user_id == user_id
+            select(
+                UserSource.source_id,
+                UserSource.priority_multiplier,
+                UserSource.has_subscription,
+            ).where(
+                UserSource.user_id == user_id,
+                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
             )
         )
-        return {row.source_id: row.has_subscription for row in result.all()}
+        rows = result.all()
+        trusted_ids = {row.source_id for row in rows}
+        multipliers = {row.source_id: row.priority_multiplier for row in rows}
+        subscriptions = {row.source_id: row.has_subscription for row in rows}
+        return trusted_ids, multipliers, subscriptions
+
+    def _build_source_response(
+        self,
+        s: Source,
+        *,
+        is_curated: bool,
+        is_custom: bool,
+        is_trusted: bool,
+        muted_source_ids: set[UUID],
+        multipliers: dict[UUID, float],
+        subscriptions: dict[UUID, bool],
+        follower_count: int = 0,
+    ) -> SourceResponse:
+        """Construit un SourceResponse à partir d'un objet Source et du contexte user.
+
+        Helper synchrone pur — élimine la duplication du bloc SourceResponse(...)
+        présent dans get_all_sources, get_curated_sources, get_trending_sources, etc.
+        """
+        return SourceResponse(
+            id=s.id,
+            name=s.name,
+            url=s.url,
+            type=s.type,
+            theme=s.theme,
+            description=s.description,
+            logo_url=s.logo_url,
+            is_curated=is_curated,
+            is_custom=is_custom,
+            is_trusted=is_trusted,
+            is_muted=s.id in muted_source_ids,
+            priority_multiplier=multipliers.get(s.id, 1.0),
+            has_subscription=subscriptions.get(s.id, False),
+            content_count=0,  # TODO
+            follower_count=follower_count,
+            bias_stance=getattr(s.bias_stance, "value", "unknown"),
+            reliability_score=getattr(s.reliability_score, "value", "unknown"),
+            bias_origin=getattr(s.bias_origin, "value", "unknown"),
+            score_independence=s.score_independence,
+            score_rigor=s.score_rigor,
+            score_ux=s.score_ux,
+            recommended_by=getattr(s, "recommended_by", None),
+            recommendation_reason=getattr(s, "recommendation_reason", None),
+            has_paywall=self._has_paywall(s),
+            premium_connection=self._premium_connection(s),
+        )
 
     async def get_all_sources(self, user_id: str) -> SourceCatalogResponse:
-        """Récupère toutes les sources (curées + custom)."""
+        """Récupère toutes les sources (curées + custom).
+
+        Optimisé : 4 queries au lieu de 8 (fix PYTHON-46 / PYTHON-1W N+1).
+        Les données user (trusted_ids, multipliers, subscriptions, muted) sont
+        chargées une seule fois et partagées entre curated et custom, éliminant
+        les 4 queries redondantes de l'implémentation précédente qui appelait
+        get_curated_sources() puis re-chargeait les mêmes données.
+
+        Combiné avec le fix du router (session ouverte après lock), résout
+        l'IdleInTransactionSessionTimeout lors de l'onboarding (PYTHON-4R / 3C).
+        """
         user_uuid = UUID(user_id)
 
-        # Load muted sources for is_muted flag
-        muted_source_ids = set()
+        # 1 query combinée : trusted_ids + multipliers + subscriptions
+        (
+            trusted_source_ids,
+            multipliers,
+            subscriptions,
+        ) = await self._load_user_source_context(user_uuid)
+
+        # 1 query : muted sources via UserPersonalization
+        muted_source_ids: set[UUID] = set()
         personalization = await self.db.scalar(
             select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
         )
         if personalization and personalization.muted_sources:
             muted_source_ids = set(personalization.muted_sources)
 
-        # Sources curées
-        curated = await self.get_curated_sources(user_id)
+        # 1 query : sources curées
+        curated_result = await self.db.execute(
+            select(Source).where(Source.is_curated, Source.is_active)
+        )
+        curated = [
+            self._build_source_response(
+                s,
+                is_curated=True,
+                is_custom=False,
+                is_trusted=s.id in trusted_source_ids,
+                muted_source_ids=muted_source_ids,
+                multipliers=multipliers,
+                subscriptions=subscriptions,
+            )
+            for s in curated_result.scalars().all()
+        ]
 
-        # Load priority multipliers and subscriptions
-        multipliers = await self._load_user_source_multipliers(user_uuid)
-        subscriptions = await self._load_user_source_subscriptions(user_uuid)
-
-        # Sources custom de l'utilisateur (distinct au cas où doublons user_sources)
-        query = (
+        # 1 query : sources custom (distinct pour éviter doublons user_sources)
+        custom_result = await self.db.execute(
             select(Source)
             .join(UserSource)
             .where(
                 UserSource.user_id == user_uuid,
+                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
                 ~Source.is_curated,
             )
             .distinct()
         )
-        result = await self.db.execute(query)
-        custom_sources = result.scalars().all()
-
         custom = [
-            SourceResponse(
-                id=s.id,
-                name=s.name,
-                url=s.url,
-                type=s.type,
-                theme=s.theme,
-                description=s.description,
-                logo_url=s.logo_url,
+            self._build_source_response(
+                s,
                 is_curated=False,
                 is_custom=True,
-                is_trusted=True,
-                is_muted=s.id in muted_source_ids,
-                priority_multiplier=multipliers.get(s.id, 1.0),
-                has_subscription=subscriptions.get(s.id, False),
-                content_count=0,  # TODO
-                bias_stance=getattr(s.bias_stance, "value", "unknown"),
-                reliability_score=getattr(s.reliability_score, "value", "unknown"),
-                bias_origin=getattr(s.bias_origin, "value", "unknown"),
-                score_independence=s.score_independence,
-                score_rigor=s.score_rigor,
-                score_ux=s.score_ux,
-                recommended_by=getattr(s, "recommended_by", None),
-                recommendation_reason=getattr(s, "recommendation_reason", None),
+                is_trusted=True,  # les sources custom sont toujours trusted
+                muted_source_ids=muted_source_ids,
+                multipliers=multipliers,
+                subscriptions=subscriptions,
             )
-            for s in custom_sources
+            for s in custom_result.scalars().all()
         ]
 
         return SourceCatalogResponse(curated=curated, custom=custom)
@@ -108,26 +193,28 @@ class SourceService:
     async def get_curated_sources(
         self, user_id: str | None = None
     ) -> list[SourceResponse]:
-        """Récupère les sources curées."""
-        query = select(Source).where(Source.is_curated, Source.is_active)
-        result = await self.db.execute(query)
-        sources = result.scalars().all()
+        """Récupère les sources curées.
 
-        trusted_source_ids = set()
-        muted_source_ids = set()
+        Optimisé : 3 queries au lieu de 5 (trusted_ids + multipliers +
+        subscriptions chargés en une seule query via _load_user_source_context).
+        """
+        curated_result = await self.db.execute(
+            select(Source).where(Source.is_curated, Source.is_active)
+        )
+        sources = curated_result.scalars().all()
+
+        trusted_source_ids: set[UUID] = set()
+        muted_source_ids: set[UUID] = set()
         multipliers: dict[UUID, float] = {}
         subscriptions: dict[UUID, bool] = {}
+
         if user_id:
             user_uuid = UUID(user_id)
-            user_sources_query = select(UserSource.source_id).where(
-                UserSource.user_id == user_uuid
-            )
-            user_sources_result = await self.db.execute(user_sources_query)
-            trusted_source_ids = set(user_sources_result.scalars().all())
-
-            multipliers = await self._load_user_source_multipliers(user_uuid)
-            subscriptions = await self._load_user_source_subscriptions(user_uuid)
-
+            (
+                trusted_source_ids,
+                multipliers,
+                subscriptions,
+            ) = await self._load_user_source_context(user_uuid)
             personalization = await self.db.scalar(
                 select(UserPersonalization).where(
                     UserPersonalization.user_id == user_uuid
@@ -137,29 +224,14 @@ class SourceService:
                 muted_source_ids = set(personalization.muted_sources)
 
         return [
-            SourceResponse(
-                id=s.id,
-                name=s.name,
-                url=s.url,
-                type=s.type,
-                theme=s.theme,
-                description=s.description,
-                logo_url=s.logo_url,
+            self._build_source_response(
+                s,
                 is_curated=True,
                 is_custom=False,
                 is_trusted=s.id in trusted_source_ids,
-                is_muted=s.id in muted_source_ids,
-                priority_multiplier=multipliers.get(s.id, 1.0),
-                has_subscription=subscriptions.get(s.id, False),
-                content_count=0,  # TODO
-                bias_stance=getattr(s.bias_stance, "value", "unknown"),
-                reliability_score=getattr(s.reliability_score, "value", "unknown"),
-                bias_origin=getattr(s.bias_origin, "value", "unknown"),
-                score_independence=s.score_independence,
-                score_rigor=s.score_rigor,
-                score_ux=s.score_ux,
-                recommended_by=getattr(s, "recommended_by", None),
-                recommendation_reason=getattr(s, "recommendation_reason", None),
+                muted_source_ids=muted_source_ids,
+                multipliers=multipliers,
+                subscriptions=subscriptions,
             )
             for s in sources
         ]
@@ -169,32 +241,26 @@ class SourceService:
     ) -> list[SourceResponse]:
         """Récupère les sources les plus populaires de la communauté."""
         count_col = func.count(UserSource.user_id).label("follower_count")
-        query = (
+        result = await self.db.execute(
             select(Source, count_col)
             .join(UserSource)
+            .where(UserSource.state.in_(FOLLOWED_SOURCE_STATES))
             .where(Source.is_active)
             .where(~Source.is_curated)
             .group_by(Source.id)
             .order_by(count_col.desc())
             .limit(limit)
         )
-
-        result = await self.db.execute(query)
         rows = result.all()  # list of (Source, follower_count) tuples
 
-        # Check trusted & muted status for the current user
         user_uuid = UUID(user_id)
+        (
+            trusted_source_ids,
+            multipliers,
+            subscriptions,
+        ) = await self._load_user_source_context(user_uuid)
 
-        user_sources_query = select(UserSource.source_id).where(
-            UserSource.user_id == user_uuid
-        )
-        user_sources_result = await self.db.execute(user_sources_query)
-        trusted_source_ids = set(user_sources_result.scalars().all())
-
-        multipliers = await self._load_user_source_multipliers(user_uuid)
-        subscriptions = await self._load_user_source_subscriptions(user_uuid)
-
-        muted_source_ids = set()
+        muted_source_ids: set[UUID] = set()
         personalization = await self.db.scalar(
             select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
         )
@@ -202,30 +268,15 @@ class SourceService:
             muted_source_ids = set(personalization.muted_sources)
 
         return [
-            SourceResponse(
-                id=s.id,
-                name=s.name,
-                url=s.url,
-                type=s.type,
-                theme=s.theme,
-                description=s.description,
-                logo_url=s.logo_url,
+            self._build_source_response(
+                s,
                 is_curated=s.is_curated,
                 is_custom=not s.is_curated,
                 is_trusted=s.id in trusted_source_ids,
-                is_muted=s.id in muted_source_ids,
-                priority_multiplier=multipliers.get(s.id, 1.0),
-                has_subscription=subscriptions.get(s.id, False),
-                content_count=0,
+                muted_source_ids=muted_source_ids,
+                multipliers=multipliers,
+                subscriptions=subscriptions,
                 follower_count=follower_count,
-                bias_stance=getattr(s.bias_stance, "value", "unknown"),
-                reliability_score=getattr(s.reliability_score, "value", "unknown"),
-                bias_origin=getattr(s.bias_origin, "value", "unknown"),
-                score_independence=s.score_independence,
-                score_rigor=s.score_rigor,
-                score_ux=s.score_ux,
-                recommended_by=getattr(s, "recommended_by", None),
-                recommendation_reason=getattr(s, "recommendation_reason", None),
             )
             for s, follower_count in rows
         ]
@@ -247,21 +298,17 @@ class SourceService:
         result = await self.db.execute(search_query)
         sources = result.scalars().all()
 
-        # Load user context for is_trusted / is_muted flags
-        trusted_source_ids = set()
-        muted_source_ids = set()
+        trusted_source_ids: set[UUID] = set()
+        muted_source_ids: set[UUID] = set()
         multipliers: dict[UUID, float] = {}
         subscriptions: dict[UUID, bool] = {}
         if user_id:
             user_uuid = UUID(user_id)
-            user_sources_result = await self.db.execute(
-                select(UserSource.source_id).where(UserSource.user_id == user_uuid)
-            )
-            trusted_source_ids = set(user_sources_result.scalars().all())
-
-            multipliers = await self._load_user_source_multipliers(user_uuid)
-            subscriptions = await self._load_user_source_subscriptions(user_uuid)
-
+            (
+                trusted_source_ids,
+                multipliers,
+                subscriptions,
+            ) = await self._load_user_source_context(user_uuid)
             personalization = await self.db.scalar(
                 select(UserPersonalization).where(
                     UserPersonalization.user_id == user_uuid
@@ -271,29 +318,14 @@ class SourceService:
                 muted_source_ids = set(personalization.muted_sources)
 
         return [
-            SourceResponse(
-                id=s.id,
-                name=s.name,
-                url=s.url,
-                type=s.type,
-                theme=s.theme,
-                description=s.description,
-                logo_url=s.logo_url,
+            self._build_source_response(
+                s,
                 is_curated=s.is_curated,
                 is_custom=not s.is_curated,
                 is_trusted=s.id in trusted_source_ids,
-                is_muted=s.id in muted_source_ids,
-                priority_multiplier=multipliers.get(s.id, 1.0),
-                has_subscription=subscriptions.get(s.id, False),
-                content_count=0,
-                bias_stance=getattr(s.bias_stance, "value", "unknown"),
-                reliability_score=getattr(s.reliability_score, "value", "unknown"),
-                bias_origin=getattr(s.bias_origin, "value", "unknown"),
-                score_independence=s.score_independence,
-                score_rigor=s.score_rigor,
-                score_ux=s.score_ux,
-                recommended_by=getattr(s, "recommended_by", None),
-                recommendation_reason=getattr(s, "recommendation_reason", None),
+                muted_source_ids=muted_source_ids,
+                multipliers=multipliers,
+                subscriptions=subscriptions,
             )
             for s in sources
         ]
@@ -351,6 +383,7 @@ class SourceService:
             self.db.add(user_source)
 
         await self.db.flush()
+        await recompute_auto_pref(self.db, user_uuid)
 
         return SourceResponse(
             id=source.id,
@@ -372,6 +405,8 @@ class SourceService:
             score_ux=source.score_ux,
             recommended_by=getattr(source, "recommended_by", None),
             recommendation_reason=getattr(source, "recommendation_reason", None),
+            has_paywall=self._has_paywall(source),
+            premium_connection=self._premium_connection(source),
         )
 
     async def delete_custom_source(self, user_id: str, source_id: str) -> bool:
@@ -389,6 +424,7 @@ class SourceService:
 
         await self.db.delete(user_source)
         await self.db.flush()
+        await recompute_auto_pref(self.db, UUID(user_id))
 
         return True
 
@@ -413,6 +449,14 @@ class SourceService:
         existing = existing_result.scalar_one_or_none()
 
         if existing:
+            if existing.state not in FOLLOWED_SOURCE_STATES:
+                existing.state = InterestState.FOLLOWED
+                await self.db.execute(
+                    delete(UserFavoriteSource).where(
+                        UserFavoriteSource.user_id == UUID(user_id),
+                        UserFavoriteSource.source_id == UUID(source_id),
+                    )
+                )
             return True
 
         # Ajouter
@@ -440,77 +484,29 @@ class SourceService:
             ]
 
         await self.db.flush()
+        # Mode auto du filtre langue : si l'utilisateur n'a pas figé son
+        # toggle, le suivi d'une nouvelle source peut basculer la pref.
+        await recompute_auto_pref(self.db, UUID(user_id))
         return True
-
-    async def update_source_weight(
-        self, user_id: str, source_id: str, priority_multiplier: float
-    ) -> SourceResponse | None:
-        """Met à jour le priority_multiplier d'une source suivie."""
-        user_uuid = UUID(user_id)
-        source_uuid = UUID(source_id)
-
-        user_source = await self.db.scalar(
-            select(UserSource).where(
-                UserSource.user_id == user_uuid,
-                UserSource.source_id == source_uuid,
-            )
-        )
-        if not user_source:
-            return None
-
-        user_source.priority_multiplier = priority_multiplier
-        await self.db.flush()
-
-        source = await self.db.scalar(select(Source).where(Source.id == source_uuid))
-        if not source:
-            return None
-
-        # Load muted status
-        muted_source_ids = set()
-        personalization = await self.db.scalar(
-            select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
-        )
-        if personalization and personalization.muted_sources:
-            muted_source_ids = set(personalization.muted_sources)
-
-        logger.info(
-            "source_weight_updated",
-            user_id=user_id,
-            source_id=source_id,
-            multiplier=priority_multiplier,
-        )
-
-        return SourceResponse(
-            id=source.id,
-            name=source.name,
-            url=source.url,
-            type=source.type,
-            theme=source.theme,
-            description=source.description,
-            logo_url=source.logo_url,
-            is_curated=source.is_curated,
-            is_custom=user_source.is_custom,
-            is_trusted=True,
-            is_muted=source.id in muted_source_ids,
-            priority_multiplier=priority_multiplier,
-            has_subscription=user_source.has_subscription,
-            content_count=0,
-            bias_stance=getattr(source.bias_stance, "value", "unknown"),
-            reliability_score=getattr(source.reliability_score, "value", "unknown"),
-            bias_origin=getattr(source.bias_origin, "value", "unknown"),
-            score_independence=source.score_independence,
-            score_rigor=source.score_rigor,
-            score_ux=source.score_ux,
-            recommended_by=getattr(source, "recommended_by", None),
-            recommendation_reason=getattr(source, "recommendation_reason", None),
-        )
 
     async def update_source_subscription(
         self, user_id: str, source_id: str, has_subscription: bool
     ) -> SourceResponse | None:
-        """Met à jour le has_subscription d'une source suivie."""
+        """Met à jour le has_subscription d'une source.
+
+        La connexion positive exige une config premium explicite côté source,
+        puis crée le lien UserSource si nécessaire. La dissociation reste
+        autorisée même si la config source a été retirée.
+        """
         user_uuid = UUID(user_id)
         source_uuid = UUID(source_id)
+
+        source = await self.db.scalar(select(Source).where(Source.id == source_uuid))
+        if not source:
+            return None
+
+        if has_subscription and self._premium_connection(source) is None:
+            raise PremiumConnectionNotEnabled
 
         user_source = await self.db.scalar(
             select(UserSource).where(
@@ -519,14 +515,28 @@ class SourceService:
             )
         )
         if not user_source:
-            return None
+            if not has_subscription:
+                return None
+            user_source = UserSource(
+                id=uuid4(),
+                user_id=user_uuid,
+                source_id=source_uuid,
+                is_custom=not source.is_curated,
+            )
+            self.db.add(user_source)
 
         user_source.has_subscription = has_subscription
-        await self.db.flush()
+        if has_subscription:
+            now = datetime.now(UTC)
+            user_source.state = InterestState.FOLLOWED
+            if user_source.subscription_connected_at is None:
+                user_source.subscription_connected_at = now
+            user_source.subscription_last_verified_at = now
+        else:
+            user_source.subscription_connected_at = None
+            user_source.subscription_last_verified_at = None
 
-        source = await self.db.scalar(select(Source).where(Source.id == source_uuid))
-        if not source:
-            return None
+        await self.db.flush()
 
         # Load muted status
         muted_source_ids = set()
@@ -566,6 +576,8 @@ class SourceService:
             score_ux=source.score_ux,
             recommended_by=getattr(source, "recommended_by", None),
             recommendation_reason=getattr(source, "recommendation_reason", None),
+            has_paywall=self._has_paywall(source),
+            premium_connection=self._premium_connection(source),
         )
 
     async def untrust_source(self, user_id: str, source_id: str) -> bool:
@@ -580,8 +592,15 @@ class SourceService:
         if not user_source:
             return False
 
+        await self.db.execute(
+            delete(UserFavoriteSource).where(
+                UserFavoriteSource.user_id == UUID(user_id),
+                UserFavoriteSource.source_id == UUID(source_id),
+            )
+        )
         await self.db.delete(user_source)
         await self.db.flush()
+        await recompute_auto_pref(self.db, UUID(user_id))
         return True
 
     async def detect_source(self, url: str) -> SourceDetectResponse:

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../../config/constants.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_logo.dart';
 
@@ -89,6 +92,33 @@ class AboutScreen extends StatelessWidget {
             ),
             const SizedBox(height: FacteurSpacing.space8),
             Center(
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: FacteurSpacing.space2,
+                children: [
+                  const _LegalLink(
+                    label: 'Confidentialité',
+                    url: LegalLinks.privacy,
+                  ),
+                  Text('•',
+                      style: textTheme.labelSmall
+                          ?.copyWith(color: colors.textTertiary)),
+                  const _LegalLink(
+                    label: 'CGU',
+                    url: LegalLinks.terms,
+                  ),
+                  Text('•',
+                      style: textTheme.labelSmall
+                          ?.copyWith(color: colors.textTertiary)),
+                  const _LegalLink(
+                    label: 'Support',
+                    url: LegalLinks.supportEmail,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: FacteurSpacing.space4),
+            Center(
               child: Text(
                 'Version Beta 1.0 • Open Source',
                 style:
@@ -170,6 +200,38 @@ class AboutScreen extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _LegalLink extends StatelessWidget {
+  const _LegalLink({required this.label, required this.url});
+
+  final String label;
+  final String url;
+
+  Future<void> _open() async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return InkWell(
+      onTap: _open,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colors.primary,
+                decoration: TextDecoration.underline,
+              ),
+        ),
       ),
     );
   }

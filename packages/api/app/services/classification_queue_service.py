@@ -109,8 +109,9 @@ class ClassificationQueueService:
         entities: list[dict],
         is_serene: bool | None = None,
         is_good_news: bool | None = None,
+        is_ad: bool | None = None,
     ) -> None:
-        """Marque un élément comme complété avec topics, entités, sérénité et good news.
+        """Marque un élément comme complété avec topics, entités, sérénité, good news et is_ad.
 
         Args:
             queue_id: ID de l'élément dans la file
@@ -119,6 +120,7 @@ class ClassificationQueueService:
             is_serene: True si article non-anxiogène, False sinon, None si inconnu
             is_good_news: True si véritable bonne nouvelle (espoir, progrès tangible),
                 False sinon, None si inconnu. Indépendant d'is_serene.
+            is_ad: True si publicité / native ad, False sinon, None si inconnu.
         """
         import structlog
 
@@ -157,6 +159,14 @@ class ClassificationQueueService:
                 except (AttributeError, Exception) as e:
                     logger.warning(
                         "is_good_news_column_missing",
+                        error=str(e),
+                        content_id=str(content.id),
+                    )
+                try:
+                    content.is_ad = is_ad
+                except (AttributeError, Exception) as e:
+                    logger.warning(
+                        "is_ad_column_missing",
                         error=str(e),
                         content_id=str(content.id),
                     )

@@ -80,20 +80,7 @@ class CreateTopicRequest(BaseModel):
 
 
 class UpdateTopicRequest(BaseModel):
-    priority_multiplier: float | None = None
     excluded_from_serein: bool | None = None
-
-    @field_validator("priority_multiplier")
-    @classmethod
-    def validate_multiplier(cls, v: float | None) -> float | None:
-        if v is None:
-            return v
-        allowed = {0.2, 1.0, 2.0}
-        if v not in allowed:
-            raise ValueError(
-                f"priority_multiplier doit être 0.2, 1.0 ou 2.0 (reçu: {v})"
-            )
-        return v
 
 
 class TopicResponse(BaseModel):
@@ -447,7 +434,7 @@ async def update_topic(
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
-    """Met à jour le priority_multiplier d'un custom topic."""
+    """Met à jour les flags d'un custom topic (excluded_from_serein)."""
     user_uuid = UUID(current_user_id)
 
     topic = await db.scalar(
@@ -459,8 +446,6 @@ async def update_topic(
     if not topic:
         raise HTTPException(status_code=404, detail="Topic non trouvé")
 
-    if request.priority_multiplier is not None:
-        topic.priority_multiplier = request.priority_multiplier
     if request.excluded_from_serein is not None:
         topic.excluded_from_serein = request.excluded_from_serein
     await db.flush()
@@ -472,7 +457,6 @@ async def update_topic(
         "custom_topic_updated",
         user_id=current_user_id,
         topic_id=str(topic_id),
-        multiplier=request.priority_multiplier,
         excluded_from_serein=request.excluded_from_serein,
     )
 

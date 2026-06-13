@@ -34,17 +34,12 @@ class LettersNotifier extends AsyncNotifier<LetterProgressState> {
   }
 
   Future<void> refreshLetterStatus(String letterId) async {
-    final updated =
-        await ref.read(lettersRepositoryProvider).refreshStatus(letterId);
-    final current = state.valueOrNull ?? const LetterProgressState.empty();
-    final next = current.letters
-        .map((l) => l.id == letterId ? updated : l)
-        .toList(growable: false);
-    state = AsyncData(LetterProgressState(letters: next));
+    await ref.read(lettersRepositoryProvider).refreshStatus(letterId);
+    await silentRefresh();
   }
 }
 
 final lettersProvider =
     AsyncNotifierProvider<LettersNotifier, LetterProgressState>(
-  LettersNotifier.new,
-);
+      LettersNotifier.new,
+    );

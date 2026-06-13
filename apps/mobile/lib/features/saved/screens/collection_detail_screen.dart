@@ -14,6 +14,7 @@ import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../providers/collections_provider.dart';
 import '../widgets/collection_dialogs.dart';
+import '../../settings/providers/display_mode_provider.dart';
 
 class CollectionDetailScreen extends ConsumerStatefulWidget {
   final String collectionId;
@@ -220,6 +221,7 @@ class _CollectionDetailScreenState
                             child: FeedCard(
                               content: content,
                               titleMaxLines: 5,
+                              displaySpec: ref.watch(displayModeSpecProvider),
                               isSaved: content.isSaved,
                               isLiked: content.isLiked,
                               onTap: () => context.pushNamed(

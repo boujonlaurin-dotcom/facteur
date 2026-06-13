@@ -13,6 +13,10 @@ import structlog
 
 from app.services.briefing.importance_detector import TopicCluster
 from app.services.editorial.schemas import EditorialSubject, MatchedActuArticle
+from app.services.recommendation.filter_presets import (
+    is_denylisted_editorial_source,
+    is_news_bulletin_title,
+)
 
 logger = structlog.get_logger()
 
@@ -259,6 +263,10 @@ class ActuMatcher:
                 continue
             if content.is_paid:
                 continue
+            if is_news_bulletin_title(content.title):
+                continue
+            if is_denylisted_editorial_source(content):
+                continue
             if _is_non_text(content):
                 # Les "extra actus" affichés sous la carte sont aussi de la
                 # revue de presse texte ; les vidéos seraient redondantes
@@ -320,6 +328,10 @@ class ActuMatcher:
                 continue
             if content.is_paid:
                 continue
+            if is_news_bulletin_title(content.title):
+                continue
+            if is_denylisted_editorial_source(content):
+                continue
             if not allow_non_text and _is_non_text(content):
                 continue
             if content.published_at.replace(tzinfo=UTC) < cutoff:
@@ -373,6 +385,10 @@ class ActuMatcher:
             if content.id in excluded_ids:
                 continue
             if content.is_paid:
+                continue
+            if is_news_bulletin_title(content.title):
+                continue
+            if is_denylisted_editorial_source(content):
                 continue
             if _is_non_text(content):
                 continue

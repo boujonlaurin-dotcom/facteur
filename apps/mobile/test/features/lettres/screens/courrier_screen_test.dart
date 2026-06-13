@@ -13,10 +13,22 @@ import 'package:facteur/features/lettres/providers/letters_provider.dart';
 import 'package:facteur/features/lettres/providers/letters_repository_provider.dart';
 import 'package:facteur/features/lettres/repositories/letters_repository.dart';
 import 'package:facteur/features/lettres/screens/courrier_screen.dart';
+import 'package:facteur/features/lettres/widgets/grade_ladder.dart';
+import 'package:facteur/features/lettres/widgets/leaderboard_teaser_card.dart';
 import 'package:facteur/features/lettres/widgets/letter_row.dart';
 import 'package:facteur/features/lettres/widgets/lettres_empty_state.dart';
+import 'package:facteur/features/settings/providers/user_profile_provider.dart';
 
 class _MockRepo extends Mock implements LettersRepository {}
+
+class _FakeProfileNotifier extends StateNotifier<UserProfile>
+    implements UserProfileNotifier {
+  _FakeProfileNotifier()
+      : super(const UserProfile(displayName: 'Laurin Boujon'));
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 class _AuthNotifier extends StateNotifier<app_auth.AuthState>
     implements app_auth.AuthStateNotifier {
@@ -79,6 +91,7 @@ Widget _wrap(_MockRepo repo) {
     overrides: [
       lettersRepositoryProvider.overrideWithValue(repo),
       app_auth.authStateProvider.overrideWith((ref) => _AuthNotifier()),
+      userProfileProvider.overrideWith((ref) => _FakeProfileNotifier()),
     ],
     child: MaterialApp.router(
       theme: ThemeData(extensions: [FacteurPalettes.light]),
@@ -103,11 +116,29 @@ void main() {
     await tester.pumpWidget(_wrap(repo));
     await tester.pumpAndSettle();
 
-    expect(find.text('Mon courrier (progression)'), findsOneWidget);
-    expect(find.text('— EN COURS —'), findsOneWidget);
-    expect(find.text('— À VENIR —'), findsOneWidget);
-    expect(find.text('— CLASSÉES —'), findsOneWidget);
-    expect(find.byType(LetterRow), findsNWidgets(3));
+    expect(find.text('Progression'), findsOneWidget);
+    // Ladder des grades : en-tête GRADES + widget + grade courant lisible.
+    expect(find.text('GRADES'), findsOneWidget);
+    expect(find.byType(GradeLadder), findsOneWidget);
+    expect(find.text('Facteur Stagiaire'), findsWidgets);
+    // Les libellés section existent aussi en pill sur les rows → findsWidgets.
+    expect(find.text('EN COURS'), findsWidgets);
+    expect(find.text('À VENIR'), findsWidgets);
+    // Le bas de liste est sous le fold (header + teaser) → scroll.
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
+    await tester.pumpAndSettle();
+    expect(find.text('CLASSÉES'), findsOneWidget);
+    expect(find.byType(LetterRow), findsWidgets);
+    // Teaser classement : présent, non tappable.
+    expect(find.byType(LeaderboardTeaserCard), findsOneWidget);
+    expect(find.text('BIENTÔT'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(LeaderboardTeaserCard),
+        matching: find.byType(InkWell),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('shows empty state when no letters', (tester) async {
@@ -129,6 +160,14 @@ void main() {
         ]);
 
     await tester.pumpWidget(_wrap(repo));
+    await tester.pumpAndSettle();
+
+    // La ladder des grades pousse la row « À VENIR » sous le fold → scroll.
+    await tester.dragUntilVisible(
+      find.text('Future'),
+      find.byType(CustomScrollView),
+      const Offset(0, -200),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Future'));

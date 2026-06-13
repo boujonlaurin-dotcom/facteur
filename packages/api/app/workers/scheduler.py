@@ -7,32 +7,42 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import get_settings
-from app.jobs.digest_generation_job import run_digest_generation
-from app.jobs.purge_deleted_users import purge_deleted_users
-from app.jobs.veille_generation_job import (
-    cleanup_stuck_running_deliveries,
-    run_veille_generation,
+from app.jobs.digest_generation_job import (
+    compute_digest_coverage,
+    run_digest_generation,
 )
+from app.jobs.purge_deleted_users import purge_deleted_users
+from app.jobs.recompute_source_language import recompute_source_language
 from app.workers.rss_sync import sync_all_sources
 from app.workers.storage_cleanup import cleanup_old_articles
-from app.workers.top3_job import generate_daily_top3_job
 
 logger = structlog.get_logger()
 settings = get_settings()
 
 _PARIS_TZ = pytz.timezone("Europe/Paris")
 
-# Hour (Paris) at which the daily digest cron fires. Imported by the
+# Hour/minute (Paris) at which the daily digest cron fires. Imported by the
 # startup catchup in app/main.py so it never generates earlier than the
 # scheduled cron — avoids midnight regenerations on late-evening Railway
 # deploys (RSS not yet refreshed → poor digest content).
-DIGEST_CRON_HOUR_PARIS = 6
+#
+# Pourquoi 07:30 et pas 06:00 (bug-digest-evening-content) : à 06:00 Paris
+# les Unes du matin (Le Monde ~06h30, Le Figaro ~07h, Libération ~07h) ne
+# sont pas encore publiées. Le pool des 200 contents les plus récents
+# (hours_lookback=48 → ORDER BY published_at DESC LIMIT 200) est alors
+# saturé par l'édition de la veille au soir et les dépêches nocturnes,
+# donc le digest "Essentiel" servait des articles datés ~22h. La courbe
+# des `published_at` montre un saut de 215 → 509 articles/heure entre
+# 5h et 6h Paris : firer le cron à 07:30 garantit que les Unes du matin
+# sont déjà dans le pool candidat.
+DIGEST_CRON_HOUR_PARIS = 7
+DIGEST_CRON_MINUTE_PARIS = 30
 
 scheduler: AsyncIOScheduler | None = None
 
 
 async def _digest_watchdog() -> None:
-    """Watchdog 7h30 : vérifie la couverture digest et relance si nécessaire.
+    """Watchdog 8h15 : vérifie la couverture digest et relance si nécessaire.
 
     Counts `(user_id, is_serene)` pairs so a user is only considered
     "covered" when BOTH the normal and serein variants exist. Previously
@@ -43,11 +53,7 @@ async def _digest_watchdog() -> None:
     If coverage < 90 %, relance `run_digest_generation()` qui skip les
     users already fully covered.
     """
-    from sqlalchemy import func, select
-
     from app.database import safe_async_session
-    from app.models.daily_digest import DailyDigest
-    from app.models.user import UserProfile
     from app.utils.time import today_paris
 
     try:
@@ -55,30 +61,18 @@ async def _digest_watchdog() -> None:
             try:
                 today = today_paris()
 
-                total_users = await session.scalar(
-                    select(func.count()).select_from(UserProfile)
+                # Couverture = paires (user_id, is_serene) présentes sur les
+                # total_users * 2 attendues. Calcul factorisé dans
+                # `compute_digest_coverage` (source unique, partagée avec le
+                # résumé de run du job digest).
+                total_users, pair_count, coverage = await compute_digest_coverage(
+                    session, today
                 )
                 if not total_users:
                     logger.info("digest_watchdog_no_users")
                     return
 
-                # Expected coverage = 2 digests per user (normal + serein).
-                # Count distinct (user_id, is_serene) pairs via a GROUP BY
-                # subquery rather than string-concat casts — clearer intent,
-                # no implicit bool→text coercion, portable across backends.
                 expected_pairs = total_users * 2
-                pair_subq = (
-                    select(DailyDigest.user_id, DailyDigest.is_serene)
-                    .where(DailyDigest.target_date == today)
-                    .group_by(DailyDigest.user_id, DailyDigest.is_serene)
-                    .subquery()
-                )
-                pair_count = (
-                    await session.scalar(select(func.count()).select_from(pair_subq))
-                    or 0
-                )
-
-                coverage = pair_count / expected_pairs if expected_pairs else 0
                 logger.info(
                     "digest_watchdog_check",
                     target_date=str(today),
@@ -146,6 +140,10 @@ async def _zombie_session_sweeper() -> None:
                 )
             )
             killed = result.fetchall()
+            # Métrique always-on (enabler observabilité scaling) : rend
+            # l'idle-in-transaction requêtable/visible à chaque passage, même à
+            # 0, sans dépendre du log warning conditionnel ci-dessous.
+            logger.info("db_idle_in_transaction_swept", count=len(killed))
             if killed:
                 logger.warning(
                     "zombie_session_sweeper_killed",
@@ -157,6 +155,35 @@ async def _zombie_session_sweeper() -> None:
                 logger.debug("zombie_session_sweeper_clean")
     except Exception:
         logger.exception("zombie_session_sweeper_failed")
+
+
+async def _pool_health_probe() -> None:
+    """Sonde active du pool DB toutes les 5 min (enabler observabilité scaling).
+
+    `/api/health/pool` ne loggue `db_pool_pressure_high` que lorsqu'il est
+    *appelé* (passif). Cette sonde lit le pool périodiquement pour rendre la
+    pression visible dans structlog/Sentry sans dépendre d'un appel externe,
+    en réutilisant la même introspection (`read_pool_stats`).
+    """
+    import sentry_sdk
+
+    from app.database import engine
+    from app.observability.pool_stats import read_pool_stats
+
+    try:
+        stats = read_pool_stats(engine)
+        usage_pct = stats.get("usage_pct")
+        threshold = settings.pool_alert_threshold_pct
+        if usage_pct is not None and usage_pct >= threshold:
+            logger.warning("db_pool_pressure_high", source="probe", **stats)
+            sentry_sdk.capture_message(
+                f"DB pool pressure high: {usage_pct}% (>= {threshold}%)",
+                level="warning",
+            )
+        else:
+            logger.info("db_pool_probe", **stats)
+    except Exception:
+        logger.exception("pool_health_probe_failed")
 
 
 def start_scheduler() -> None:
@@ -174,21 +201,17 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
-    # Job Top 3 Briefing Quotidien (8h00 Paris)
-    scheduler.add_job(
-        generate_daily_top3_job,
-        trigger=CronTrigger(hour=8, minute=0, timezone=_PARIS_TZ),
-        id="daily_top3",
-        name="Daily Top 3 Briefing",
-        replace_existing=True,
-    )
-
-    # Job Digest Quotidien (6h00 Paris — avancé de 8h pour pré-générer avant le réveil)
+    # Job Digest Quotidien (07h30 Paris — voir DIGEST_CRON_HOUR_PARIS pour le
+    # rationale : à 06h les Unes du matin ne sont pas encore publiées).
     # misfire_grace_time=14400 (4h): couvre les redémarrages Railway longs.
     # coalesce=True: pas de double exécution si plusieurs triggers rattrapés.
     scheduler.add_job(
         run_digest_generation,
-        trigger=CronTrigger(hour=DIGEST_CRON_HOUR_PARIS, minute=0, timezone=_PARIS_TZ),
+        trigger=CronTrigger(
+            hour=DIGEST_CRON_HOUR_PARIS,
+            minute=DIGEST_CRON_MINUTE_PARIS,
+            timezone=_PARIS_TZ,
+        ),
         id="daily_digest",
         name="Daily Digest Generation",
         replace_existing=True,
@@ -196,10 +219,12 @@ def start_scheduler() -> None:
         coalesce=True,
     )
 
-    # Watchdog 7h30 — vérifie la couverture et relance si < 90%
+    # Watchdog 08h15 — vérifie la couverture et relance si < 90%.
+    # Doit tourner *après* le cron principal (07h30) pour avoir une chance
+    # de constater la couverture réelle avant de relancer.
     scheduler.add_job(
         _digest_watchdog,
-        trigger=CronTrigger(hour=7, minute=30, timezone=_PARIS_TZ),
+        trigger=CronTrigger(hour=8, minute=15, timezone=_PARIS_TZ),
         id="digest_watchdog",
         name="Digest Generation Watchdog",
         replace_existing=True,
@@ -226,6 +251,16 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
+    # Recalcul `sources.language` à partir des Content des 30 derniers jours
+    # (3h30 Paris, après storage_cleanup pour partir d'un pool nettoyé).
+    scheduler.add_job(
+        recompute_source_language,
+        trigger=CronTrigger(hour=3, minute=30, timezone=_PARIS_TZ),
+        id="recompute_source_language",
+        name="Recompute Source.language (majoritaire 30j)",
+        replace_existing=True,
+    )
+
     # Zombie session sweeper — kill Supavisor sessions stuck in
     # `idle in transaction` > 5 min (filet de sécurité par-dessus le
     # timeout Postgres + le rollback() en finally de safe_async_session).
@@ -237,32 +272,14 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
-    # Veille generation scanner — */30 min Paris.
-    # Scan ultra-léger (1 SELECT indexé sur next_scheduled_at) puis traitement
-    # par config avec session courte. Concurrence bornée à 5 (vs 10 du digest)
-    # car la veille tourne moins souvent → on peut être plus prudent côté
-    # pool DB (cf. bug-infinite-load-requests.md).
+    # Sonde pool DB active (5 min) — rend la pression pool visible dans
+    # structlog/Sentry sans dépendre d'un appel à /api/health/pool.
     scheduler.add_job(
-        run_veille_generation,
-        trigger=CronTrigger(minute="*/30", timezone=_PARIS_TZ),
-        id="veille_generation",
-        name="Veille Generation Scanner",
-        replace_existing=True,
-        misfire_grace_time=900,
-        coalesce=True,
-        max_instances=1,
-    )
-
-    # Filet final : passe FAILED toute row veille_deliveries restée RUNNING
-    # > 15 min — couvre les SIGKILL/OOM Railway que ni le retry router ni le
-    # watchdog `_phase1_mark_running` ne reprennent (config plus `due`).
-    scheduler.add_job(
-        cleanup_stuck_running_deliveries,
+        _pool_health_probe,
         trigger=IntervalTrigger(minutes=5),
-        id="veille_stuck_cleanup",
-        name="Veille stuck-running cleanup (>15 min)",
+        id="pool_health_probe",
+        name="DB pool health probe (5min)",
         replace_existing=True,
-        max_instances=1,
     )
 
     scheduler.start()
@@ -270,19 +287,17 @@ def start_scheduler() -> None:
         "Scheduler started",
         jobs=[
             "rss_sync",
-            "daily_top3",
             "daily_digest",
             "digest_watchdog",
             "storage_cleanup",
             "purge_deleted_users",
+            "recompute_source_language",
             "zombie_session_sweeper",
-            "veille_generation",
-            "veille_stuck_cleanup",
+            "pool_health_probe",
         ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,
-        digest_cron="06:00 Europe/Paris",
-        watchdog_cron="07:30 Europe/Paris",
-        top3_cron="08:00 Europe/Paris",
+        digest_cron="07:30 Europe/Paris",
+        watchdog_cron="08:15 Europe/Paris",
         cleanup_cron="03:00 Europe/Paris",
     )
 

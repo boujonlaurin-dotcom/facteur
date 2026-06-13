@@ -130,6 +130,16 @@ class PushNotificationService {
   static const String defaultTitle = 'Facteur';
   static const String defaultBody = "Ton récap du jour t'attend quand tu veux.";
 
+  /// En-têtes du bigText de la notif digest (variante B), selon le mode.
+  static const String digestHeader = "À la une dans l'Essentiel :";
+  static const String digestHeaderSerene = 'Du calme dans ton actu :';
+
+  /// Ligne CTA finale du bigText digest, selon le mode.
+  static const String digestCta =
+      "Pour le reste, viens faire un tour sur l'app !";
+  static const String digestCtaSerene =
+      "Le reste t'attend tranquillement dans l'app.";
+
   /// Variante C — déclenchée manuellement par l'éditorial (hors v1).
   static const String calmTitle = 'Facteur';
   static const String calmBody =
@@ -152,12 +162,15 @@ class PushNotificationService {
 
   /// Construit le triplet (title, body, bigText) selon la variante.
   ///
-  /// - [variantB] requiert au moins un teaser dans [teasers]. Le premier
-  ///   teaser est utilisé pour le body collapsed (tronqué à 60c, brief §6.1) ;
-  ///   l'ensemble (max 3) est rendu en bullets dans le bigText Android.
+  /// - [variantB] requiert au moins un teaser dans [teasers]. Le titre complet
+  ///   du premier teaser est utilisé pour le body collapsed (l'OS l'ellipsise
+  ///   sur une ligne) ; les 2 premiers titres sont rendus en bullets dans le
+  ///   bigText Android, suivis d'une ligne CTA renvoyant vers l'app.
+  /// - [serene] bascule l'en-tête et le CTA sur un ton apaisé (mode Serein).
   static ({String title, String body, String bigText}) buildCopy({
     required NotifVariant variant,
     List<String>? teasers,
+    bool serene = false,
   }) {
     switch (variant) {
       case NotifVariant.variantA:
@@ -166,23 +179,49 @@ class PushNotificationService {
         final cleaned = (teasers ?? const <String>[])
             .map((t) => t.trim())
             .where((t) => t.isNotEmpty)
-            .take(3)
+            .take(2)
             .toList();
         if (cleaned.isEmpty) {
           return (title: defaultTitle, body: defaultBody, bigText: defaultBody);
         }
-        final first = cleaned.first;
-        final clipped =
-            first.length > 60 ? '${first.substring(0, 57)}…' : first;
+        final header = serene ? digestHeaderSerene : digestHeader;
+        final cta = serene ? digestCtaSerene : digestCta;
         final bullets = cleaned.map((t) => '• $t').join('\n');
         return (
           title: defaultTitle,
-          body: 'À la une : $clipped',
-          bigText: "À la une dans l'Essentiel :\n$bullets",
+          body: cleaned.first,
+          bigText: '$header\n$bullets\n$cta',
         );
       case NotifVariant.variantC:
         return (title: calmTitle, body: calmBody, bigText: calmBody);
     }
+  }
+
+  /// Construit le triplet (title, body, bigText) pour la notif « Bonnes
+  /// nouvelles du jour » — miroir de [buildCopy] mais ton serein.
+  ///
+  /// - [teasers] vide → corps générique ([goodNewsTitle] / [goodNewsBody]) ;
+  /// - sinon → body collapsed avec le premier teaser (clip 60c), bigText en
+  ///   bullets (max 3).
+  static ({String title, String body, String bigText}) buildGoodNewsCopy({
+    List<String>? teasers,
+  }) {
+    final cleaned = (teasers ?? const <String>[])
+        .map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .take(3)
+        .toList();
+    if (cleaned.isEmpty) {
+      return (title: goodNewsTitle, body: goodNewsBody, bigText: goodNewsBody);
+    }
+    final first = cleaned.first;
+    final clipped = first.length > 60 ? '${first.substring(0, 57)}…' : first;
+    final bullets = cleaned.map((t) => '• $t').join('\n');
+    return (
+      title: goodNewsTitle,
+      body: 'À la une : $clipped',
+      bigText: 'Vos bonnes nouvelles du jour :\n$bullets',
+    );
   }
 
   // --- Daily digest --------------------------------------------------------
@@ -195,17 +234,18 @@ class PushNotificationService {
     NotifTimeSlot timeSlot = NotifTimeSlot.morning,
     NotifVariant variant = NotifVariant.variantA,
     List<String>? teasers,
+    bool serene = false,
   }) async {
     final time = _timeOfDayFor(timeSlot);
     final scheduledDate = _nextInstanceOf(time);
-    final copy = buildCopy(variant: variant, teasers: teasers);
+    final copy = buildCopy(variant: variant, teasers: teasers, serene: serene);
 
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     final canUseExact =
         (await androidPlugin?.canScheduleExactNotifications()) ?? true;
     final scheduleMode = canUseExact
-        ? AndroidScheduleMode.alarmClock
+        ? AndroidScheduleMode.exactAllowWhileIdle
         : AndroidScheduleMode.inexactAllowWhileIdle;
 
     const sender = Person(
@@ -269,7 +309,7 @@ class PushNotificationService {
     final canUseExact =
         (await androidPlugin?.canScheduleExactNotifications()) ?? true;
     final scheduleMode = canUseExact
-        ? AndroidScheduleMode.alarmClock
+        ? AndroidScheduleMode.exactAllowWhileIdle
         : AndroidScheduleMode.inexactAllowWhileIdle;
 
     final androidDetails = AndroidNotificationDetails(
@@ -314,16 +354,18 @@ class PushNotificationService {
   /// principal pour permettre un horaire dédié sans coupler les opt-ins.
   Future<bool> scheduleDailyGoodNewsNotification({
     NotifTimeSlot timeSlot = NotifTimeSlot.evening,
+    List<String>? teasers,
   }) async {
     final time = _timeOfDayFor(timeSlot);
     final scheduledDate = _nextInstanceOf(time);
+    final copy = buildGoodNewsCopy(teasers: teasers);
 
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     final canUseExact =
         (await androidPlugin?.canScheduleExactNotifications()) ?? true;
     final scheduleMode = canUseExact
-        ? AndroidScheduleMode.alarmClock
+        ? AndroidScheduleMode.exactAllowWhileIdle
         : AndroidScheduleMode.inexactAllowWhileIdle;
 
     const sender = Person(
@@ -345,7 +387,7 @@ class PushNotificationService {
         const Person(name: 'Toi'),
         groupConversation: false,
         messages: [
-          Message(goodNewsBody, DateTime.now(), sender),
+          Message(copy.bigText, DateTime.now(), sender),
         ],
       ),
     );
@@ -353,8 +395,8 @@ class PushNotificationService {
 
     await _plugin.zonedSchedule(
       id: _NotifIds.dailyGoodNews,
-      title: goodNewsTitle,
-      body: goodNewsBody,
+      title: copy.title,
+      body: copy.body,
       scheduledDate: scheduledDate,
       notificationDetails: NotificationDetails(
         android: androidDetails,
@@ -367,7 +409,7 @@ class PushNotificationService {
 
     debugPrint(
       'PushNotificationService: good news scheduled @ $scheduledDate '
-      '(slot: $timeSlot)',
+      '(slot: $timeSlot, teasers: ${teasers?.length ?? 0})',
     );
 
     return _isScheduled(_NotifIds.dailyGoodNews);
@@ -405,7 +447,7 @@ class PushNotificationService {
     final canUseExact =
         (await androidPlugin?.canScheduleExactNotifications()) ?? true;
     final scheduleMode = canUseExact
-        ? AndroidScheduleMode.alarmClock
+        ? AndroidScheduleMode.exactAllowWhileIdle
         : AndroidScheduleMode.inexactAllowWhileIdle;
 
     final androidDetails = AndroidNotificationDetails(
@@ -434,7 +476,7 @@ class PushNotificationService {
         iOS: iosDetails,
       ),
       androidScheduleMode: scheduleMode,
-      payload: 'route:/veille/dashboard',
+      payload: 'route:/flux-continu',
     );
 
     debugPrint(
@@ -542,7 +584,7 @@ class PushNotificationService {
   }
 
   static String _routeFromPayload(String? payload) {
-    if (payload == null || !payload.startsWith('route:')) return '/digest';
+    if (payload == null || !payload.startsWith('route:')) return '/flux-continu';
     return payload.substring('route:'.length);
   }
 }

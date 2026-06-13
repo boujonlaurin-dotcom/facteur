@@ -77,7 +77,20 @@ class FeedFilterMode(StrEnum):
 
     RECENT = "recent"  # Deprecated: chrono pur sans diversification
     CHRONOLOGICAL = "chronological"  # Epic 12: chrono diversifié (nouveau défaut)
-    POUR_VOUS = "pour_vous"  # Epic 12: ancien scoring 4-piliers
     INSPIRATION = "inspiration"
     PERSPECTIVES = "perspectives"
     DEEP_DIVE = "deep_dive"
+
+
+class InterestState(StrEnum):
+    """État sémantique d'un intérêt (Thème, Sujet ou Source) — Story 22.1.
+
+    Axe unique partagé par `user_interests`, `user_topic_profiles`, `user_sources`.
+    `weight` / `priority_multiplier` restent des signaux appris/quantitatifs ;
+    `state` est le signal déclaré par l'utilisateur.
+    """
+
+    HIDDEN = "hidden"
+    UNFOLLOWED = "unfollowed"
+    FOLLOWED = "followed"
+    FAVORITE = "favorite"

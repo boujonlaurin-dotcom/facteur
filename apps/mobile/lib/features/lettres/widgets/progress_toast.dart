@@ -21,6 +21,7 @@ void showProgressToast(
   String? sectionTitle,
   String? stepNum,
   String? stepTitle,
+  Color? accentColor,
   VoidCallback? onOpen,
 }) {
   final overlay = Overlay.maybeOf(context, rootOverlay: true);
@@ -30,7 +31,6 @@ void showProgressToast(
   _currentDismiss?.call();
 
   late OverlayEntry entry;
-  late void Function() dismiss;
   bool removed = false;
 
   void onDismissed() {
@@ -43,6 +43,8 @@ void showProgressToast(
     entry.remove();
   }
 
+  VoidCallback dismiss = onDismissed;
+
   entry = OverlayEntry(
     builder: (_) => _ProgressToast(
       level: level,
@@ -52,16 +54,20 @@ void showProgressToast(
       sectionTitle: sectionTitle,
       stepNum: stepNum,
       stepTitle: stepTitle,
+      accentColor: accentColor,
       onOpen: onOpen,
       onDismissed: onDismissed,
-      onRequestClose: (cb) => dismiss = cb,
+      onRequestClose: (cb) {
+        dismiss = cb;
+        if (identical(entry, _currentEntry)) {
+          _currentDismiss = cb;
+        }
+      },
     ),
   );
 
   _currentEntry = entry;
-  _currentDismiss = () {
-    dismiss();
-  };
+  _currentDismiss = dismiss;
 
   overlay.insert(entry);
 
@@ -86,6 +92,7 @@ class _ProgressToast extends StatefulWidget {
   final String? sectionTitle;
   final String? stepNum;
   final String? stepTitle;
+  final Color? accentColor;
   final VoidCallback? onOpen;
   final VoidCallback onDismissed;
   final ValueChanged<VoidCallback> onRequestClose;
@@ -100,6 +107,7 @@ class _ProgressToast extends StatefulWidget {
     this.sectionTitle,
     this.stepNum,
     this.stepTitle,
+    this.accentColor,
     this.onOpen,
   });
 
@@ -191,15 +199,16 @@ class _ProgressToastState extends State<_ProgressToast>
   }
 
   Widget _buildShell(FacteurColors colors) {
-    final accent = widget.level == ProgressToastLevel.step
-        ? colors.primary
-        : colors.success;
+    final accent =
+        widget.accentColor ??
+        (widget.level == ProgressToastLevel.step
+            ? colors.primary
+            : colors.success);
 
     final body = switch (widget.level) {
       ProgressToastLevel.micro => _MicroBody(accent: accent, toast: widget),
-      ProgressToastLevel.section =>
-        _SectionBody(accent: accent, toast: widget),
-      ProgressToastLevel.step => _StepBody(toast: widget),
+      ProgressToastLevel.section => _SectionBody(accent: accent, toast: widget),
+      ProgressToastLevel.step => _StepBody(accent: accent, toast: widget),
     };
 
     return GestureDetector(
@@ -210,7 +219,7 @@ class _ProgressToastState extends State<_ProgressToast>
           color: colors.surface,
           borderRadius: BorderRadius.circular(12),
           border: widget.level == ProgressToastLevel.step
-              ? Border.all(color: colors.primary.withValues(alpha: 0.15))
+              ? Border.all(color: accent.withValues(alpha: 0.15))
               : null,
           boxShadow: const [
             BoxShadow(
@@ -327,11 +336,7 @@ class _MicroBody extends StatelessWidget {
             const SizedBox(height: 6),
             Padding(
               padding: const EdgeInsets.only(left: 26),
-              child: _Segments(
-                current: current,
-                total: total,
-                accent: accent,
-              ),
+              child: _Segments(current: current, total: total, accent: accent),
             ),
           ],
         ),
@@ -456,8 +461,7 @@ class _SegmentState extends State<_Segment>
                 builder: (_, __) => Align(
                   alignment: Alignment.centerLeft,
                   child: FractionallySizedBox(
-                    widthFactor:
-                        Curves.easeOutCubic.transform(_fill.value),
+                    widthFactor: Curves.easeOutCubic.transform(_fill.value),
                     child: Container(color: widget.accent),
                   ),
                 ),
@@ -784,9 +788,10 @@ class _EnvelopePainter extends CustomPainter {
    NIVEAU 3 · B — Étape (cachet + halo + CTA)
    ============================================================ */
 class _StepBody extends StatelessWidget {
+  final Color accent;
   final _ProgressToast toast;
 
-  const _StepBody({required this.toast});
+  const _StepBody({required this.accent, required this.toast});
 
   @override
   Widget build(BuildContext context) {
@@ -801,10 +806,7 @@ class _StepBody extends StatelessWidget {
           gradient: RadialGradient(
             center: const Alignment(-0.64, 0),
             radius: 0.55,
-            colors: [
-              colors.primary.withValues(alpha: 0.10),
-              Colors.transparent,
-            ],
+            colors: [accent.withValues(alpha: 0.10), Colors.transparent],
           ),
         ),
         child: Padding(
@@ -816,7 +818,7 @@ class _StepBody extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  _CachetStamp(num: num, accent: colors.primary),
+                  _CachetStamp(num: num, accent: accent),
                   const SizedBox(width: 11),
                   Expanded(
                     child: Column(
@@ -829,7 +831,7 @@ class _StepBody extends StatelessWidget {
                             fontSize: 8.5,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1.1,
-                            color: colors.primary,
+                            color: accent,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -855,7 +857,7 @@ class _StepBody extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 6),
                 child: CustomPaint(
                   painter: _DashedTopBorder(
-                    color: colors.primary.withValues(alpha: 0.25),
+                    color: accent.withValues(alpha: 0.25),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.only(top: 6),
@@ -872,7 +874,7 @@ class _StepBody extends StatelessWidget {
                                   style: GoogleFonts.dmSans(
                                     fontSize: 11.5,
                                     fontWeight: FontWeight.w600,
-                                    color: colors.primary,
+                                    color: accent,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -882,7 +884,7 @@ class _StepBody extends StatelessWidget {
                               Icon(
                                 PhosphorIcons.arrowRight(),
                                 size: 13,
-                                color: colors.primary,
+                                color: accent,
                               ),
                             ],
                           ),
@@ -983,10 +985,7 @@ class _CachetStampState extends State<_CachetStamp>
                       height: 54,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(
-                          color: widget.accent,
-                          width: 1.5,
-                        ),
+                        border: Border.all(color: widget.accent, width: 1.5),
                       ),
                     ),
                   ),
@@ -1136,8 +1135,11 @@ class _DashedTopBorder extends CustomPainter {
     const gap = 3.0;
     double x = 0;
     while (x < size.width) {
-      canvas.drawLine(Offset(x, 0), Offset((x + dash).clamp(0, size.width), 0),
-          paint);
+      canvas.drawLine(
+        Offset(x, 0),
+        Offset((x + dash).clamp(0, size.width), 0),
+        paint,
+      );
       x += dash + gap;
     }
   }

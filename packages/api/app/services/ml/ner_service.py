@@ -248,6 +248,15 @@ class NERService:
         """Check if service is ready."""
         return self._nlp is not None
 
+    def get_nlp(self):
+        """Return the loaded spaCy Language object (or None if unavailable).
+
+        Exposes the singleton model for downstream services
+        (e.g. TitleAnnotationService) so spaCy is loaded exactly once
+        process-wide.
+        """
+        return self._nlp
+
     def get_stats(self) -> dict:
         """Get service stats."""
         return {

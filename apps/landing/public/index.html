@@ -4,20 +4,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Facteur — Reprends le contrôle sur ton info.</title>
+    <title>Facteur · Reprends le contrôle sur ton info.</title>
     <meta name="description"
-        content="L'essentiel de tes médias de confiance.\nSereinement. \nSans scroll infini. \nRejoins la waitlist.">
+        content="L'essentiel de tes médias de confiance, dans une seule app.">
 
     <!-- OG Tags -->
-    <meta property="og:title" content="Facteur — Reprends le contrôle sur l'information">
+    <meta property="og:title" content="Facteur · Reprends le contrôle sur l'information">
     <meta property="og:description"
-        content="L'essentiel de tes médias de confiance. En transparence. Sans scroll infini. Rejoins la waitlist.">
+        content="L'essentiel de tes médias préférés dans une seule app. Sans scroll sans fin, sans l'angoisse de l'info. Bientôt disponible.">
     <meta property="og:type" content="website">
     <meta property="og:image" content="/images/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
 
     <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/css/style.css?v=3">
+    <link rel="stylesheet" href="/css/style.css?v=5">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -26,15 +26,25 @@
 <body>
 
     <!-- ═══════════════════════════════════════════ -->
+    <!-- Bandeau annonce soirée de pré-lancement     -->
+    <!-- ═══════════════════════════════════════════ -->
+    <a class="announce-bar" href="/blog-soiree-prelancement.html">
+        <span class="announce-bar__emoji">🎉</span>
+        <span class="announce-bar__text">Soir&eacute;e de pr&eacute;-lancement le <strong>19 juin &agrave; Paris</strong> &middot; 40 places</span>
+        <span class="announce-bar__cta">J'y vais &rarr;</span>
+    </a>
+
+    <!-- ═══════════════════════════════════════════ -->
     <!-- Section Nav                                 -->
     <!-- ═══════════════════════════════════════════ -->
     <nav id="section-nav" class="section-nav">
         <a href="#hero" class="section-nav__item is-active" data-section="hero">Accueil</a>
         <a href="#testimonials" class="section-nav__item" data-section="testimonials">Témoignages</a>
         <a href="#solution" class="section-nav__item" data-section="solution">Solution</a>
-        <a href="#founder" class="section-nav__item" data-section="founder">Fondateur</a>
-        <a href="#faq" class="section-nav__item" data-section="faq">FAQ</a>
+        <a href="#blog" class="section-nav__item" data-section="blog">Blog</a>
         <a href="#manifesto" class="section-nav__item" data-section="manifesto">Manifeste</a>
+        <a href="#faq" class="section-nav__item" data-section="faq">FAQ</a>
+        <a href="#founder" class="section-nav__item" data-section="founder">Fondateur</a>
     </nav>
 
     <!-- ═══════════════════════════════════════════ -->
@@ -44,33 +54,45 @@
         <div class="container hero__inner">
             <div class="hero__text">
                 <h1 class="hero__title">Reprends <span class="highlight">le contrôle</span><br>sur ton info.</h1>
-                <p class="hero__subtitle">L'essentiel de tes médias de confiance.<br>Dans une seule interface.<br>Mieux
-                    s'informer.</p>
+                <p class="hero__subtitle">L'essentiel de tes médias de confiance, dans une seule app. Sans scroll sans
+                    fin, sans l'angoisse de l'info.</p>
+
+                <div class="store-badges" aria-label="Bientôt disponible sur l'App Store et Google Play">
+                    <span class="store-badge" role="img" aria-disabled="true"
+                        aria-label="App Store, bientôt disponible">
+                        <svg class="store-badge__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                            <path d="M17.564 12.65c-.026-2.622 2.144-3.881 2.244-3.942-1.222-1.785-3.122-2.029-3.799-2.06-1.617-.164-3.155.954-3.978.954-.823 0-2.084-.93-3.43-.904-1.764.026-3.39 1.025-4.297 2.604-1.831 3.171-.469 7.866 1.314 10.448.869 1.265 1.905 2.685 3.273 2.634 1.314-.052 1.81-.85 3.397-.85 1.587 0 2.033.85 3.423.823 1.414-.026 2.31-1.291 3.176-2.561.999-1.469 1.41-2.892 1.436-2.965-.031-.013-2.752-1.053-2.779-4.181zM14.97 4.939c.729-.881 1.221-2.107 1.087-3.327-1.05.042-2.322.7-3.077 1.581-.677.781-1.27 2.029-1.11 3.224 1.171.09 2.371-.595 3.1-1.478z" />
+                        </svg>
+                        <span class="store-badge__text"><small>Bientôt sur</small><strong>App Store</strong></span>
+                    </span>
+                    <span class="store-badge" role="img" aria-disabled="true"
+                        aria-label="Google Play, bientôt disponible">
+                        <svg class="store-badge__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                            <path d="M3.6 2.2 13.5 12 3.6 21.8c-.3-.2-.5-.6-.5-1.1V3.3c0-.5.2-.9.5-1.1z" fill="#34A853" />
+                            <path d="M16.3 9.2 5.9 3.3 3.6 2.2c.2-.1.5-.1.8 0l11.9 7z" fill="#EA4335" />
+                            <path d="M16.3 14.8 17 14.4l3.8-2.2c.6-.4.6-1.2 0-1.6L17 8.4l-.7-.4-2.8 2 2.8 2.8z"
+                                fill="#FBBC04" />
+                            <path d="M16.3 14.8 4.4 21.8c-.3.1-.6.1-.8 0l2.3-1.1 10.4-5.9z" fill="#4285F4" />
+                        </svg>
+                        <span class="store-badge__text"><small>Bientôt sur</small><strong>Google Play</strong></span>
+                    </span>
+                </div>
 
                 <form class="waitlist-form" data-form="hero">
                     <div class="waitlist-form__row">
                         <input type="email" name="email" placeholder="ton@email.com" required
                             class="waitlist-form__input" autocomplete="email">
-                        <button type="submit" class="waitlist-form__btn">Rejoindre la waitlist</button>
+                        <button type="submit" class="waitlist-form__btn">Être prévenu·e au lancement</button>
                     </div>
-                    <p class="waitlist-form__hint">Beta privée (places limitées)</p>
+                    <p class="waitlist-form__hint">Beta privée. On t'écrit dès que c'est prêt.</p>
+                    <p class="waitlist-form__freemium">Gratuit. Premium optionnel.</p>
                     <p class="waitlist-form__success" hidden>Merci ! On t'écrit très vite. 💌</p>
                     <p class="waitlist-form__error" hidden></p>
                 </form>
-
-                <div id="social-proof" class="social-proof" hidden>
-                    <div class="social-proof__avatars">
-                        <span class="social-proof__dot">L</span>
-                        <span class="social-proof__dot">M</span>
-                        <span class="social-proof__dot">S</span>
-                        <span class="social-proof__dot">A</span>
-                    </div>
-                    <p class="social-proof__text"><span id="waitlist-count">0</span> personnes sur la waitlist</p>
-                </div>
             </div>
             <div class="hero__visual">
                 <div class="phone-mockup">
-                    <img src="/images/feed-facteur.webp" alt="Feed Facteur — tes news personnalisées"
+                    <img src="/images/page_acceuil_bon_format.jpeg" alt="L'app Facteur, ton essentiel du jour"
                         class="phone-mockup__img">
                 </div>
             </div>
@@ -89,7 +111,7 @@
                 <div class="testimonial-grid">
                     <div class="testimonial-card reveal-child">
                         <blockquote class="testimonial-card__quote">
-                            &laquo;&nbsp;On est noy&eacute;s de contenus, on consomme toujours plus d'info &mdash;
+                            &laquo;&nbsp;On est noy&eacute;s de contenus, on consomme toujours plus d'info,
                             mais au final, on reste en surface sur tout.&nbsp;&raquo;
                         </blockquote>
                         <div class="testimonial-card__header">
@@ -118,7 +140,7 @@
                     <div class="testimonial-card reveal-child">
                         <blockquote class="testimonial-card__quote">
                             &laquo;&nbsp;L'info est devenue anxiog&egrave;ne. &Ccedil;a fatigue, &ccedil;a
-                            d&eacute;prime &mdash; alors j'ai fini par l'&eacute;viter
+                            d&eacute;prime, alors j'ai fini par l'&eacute;viter
                             compl&egrave;tement.&nbsp;&raquo;
                         </blockquote>
                         <div class="testimonial-card__header">
@@ -156,92 +178,80 @@
         <section id="solution" class="section solution">
             <div class="container">
                 <h2 class="section__title">Facteur, c'est quoi <span class="highlight">concrètement</span> ?</h2>
+                <p class="section__lede">Une app d'agr&eacute;gation de ton info pour y voir plus clair et reprendre le contr&ocirc;le sur ce que tu lis.</p>
 
-                <!-- Pilier 1 -->
-                <div class="pillar reveal">
-                    <div class="pillar__text">
-                        <h3 class="pillar__title">Tes sources, <span class="highlight">ton choix</span></h3>
-                        <p class="pillar__desc">Une App pour sélectionner tes médias de confiance. Ajoute toutes les
-                            sources qui
-                            te parlent : journal, newsletter, chaine YouTube, podcast...</p>
-                    </div>
-                    <div class="pillar__visuals">
-                        <div class="phone-mockup phone-mockup--small">
-                            <img src="/images/choisir-mes-sources.webp" alt="Sélection de sources"
-                                class="phone-mockup__img">
-                        </div>
-                        <div class="phone-mockup phone-mockup--small">
-                            <img src="/images/ajouter-source.webp" alt="Ajout d'une source custom"
-                                class="phone-mockup__img">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Pilier 2 -->
+                <!-- Pilier 1 — Compare les points de vue -->
                 <div class="pillar pillar--reverse reveal">
                     <div class="pillar__text">
-                        <h3 class="pillar__title">Ton actu du jour, <span class="highlight">en 5 min</span></h3>
-                        <p class="pillar__desc">On te résume l'info du jour de tes sources, en t'orientant tout de suite
-                            vers des analyses profondes des sujets. Pas de surchage, et pas d'impression de "rater un
-                            truc".
-                        </p>
+                        <h3 class="pillar__title">Compares les titres <span class="highlight">en 1 clic</span></h3>
+                        <p class="pillar__desc">Confronte la couverture de chaque m&eacute;dia sur chaque actu, et
+                            analyse les diff&eacute;rences en un coup d'&oelig;il. Dis adieu &agrave; ta bulle&nbsp;!</p>
                     </div>
                     <div class="pillar__visuals">
                         <div class="phone-mockup phone-mockup--small">
-                            <img src="/images/exemple-digest.webp" alt="L'essentiel du jour" class="phone-mockup__img">
+                            <img src="/images/reader_propre.jpeg" alt="Lecture d'un article"
+                                class="phone-mockup__img">
                         </div>
                         <div class="phone-mockup phone-mockup--small">
-                            <img src="/images/rester-serein.webp" alt="Rester serein — digest terminé"
+                            <img src="/images/anal_biais.jpeg" alt="Analyse des biais et points de vue"
                                 class="phone-mockup__img">
                         </div>
                     </div>
                 </div>
 
-                <!-- Pilier 3 -->
+                <!-- Pilier 2 — Évaluation des médias -->
                 <div class="pillar reveal">
                     <div class="pillar__text">
-                        <h3 class="pillar__title"><span class="highlight">Transparent</span> et open-source</h3>
-                        <p class="pillar__desc">Vois pourquoi chaque contenu t'est recommandé. Garde le contrôle sur ton
-                            feed. Le tout dans une app open-source et qui le restera.</p>
+                        <h3 class="pillar__title">Comprends &agrave; qui <span class="highlight">faire confiance.</span></h3>
+                        <p class="pillar__desc">Nos experts &eacute;valuent les m&eacute;dias afin de clarifier leurs
+                            positionnements et mettre en lumi&egrave;re tout &eacute;ventuel manquement journalistique.</p>
                     </div>
                     <div class="pillar__visuals">
                         <div class="phone-mockup phone-mockup--small">
-                            <img src="/images/algo-transparent.webp" alt="Pourquoi cet article — transparence algo"
+                            <img src="/images/eval_CNEWS.jpeg" alt="&Eacute;valuation d'un m&eacute;dia (CNEWS)"
                                 class="phone-mockup__img">
                         </div>
                         <div class="phone-mockup phone-mockup--small">
-                            <img src="/images/contr%C3%B4ler-int%C3%A9r%C3%AAts.webp"
-                                alt="Contrôle des intérêts et filtres" class="phone-mockup__img">
+                            <img src="/images/repart_lemonde.jpeg" alt="R&eacute;partition &eacute;ditoriale (Le Monde)"
+                                class="phone-mockup__img">
                         </div>
                     </div>
                 </div>
 
-                <!-- Pilier 4 -->
+                <!-- Pilier 3 — Résumés & veilles -->
                 <div class="pillar pillar--reverse reveal">
                     <div class="pillar__text">
-                        <h3 class="pillar__title"><span class="highlight">Compare</span> les points de vue</h3>
-                        <p class="pillar__desc">Confronte les angles de différents médias et leurs biais éditoriaux en 1
-                            clic, sur chaque actu.
-                        </p>
+                        <h3 class="pillar__title">Tes infos r&eacutesumées, <span class="highlight">chaque matin.</span></h3>
+                        <p class="pillar__desc">On te r&eacute;sume l'info du jour et on veille sur les sujets qui
+                            comptent pour toi. On t'informe en quelques minutes, sans rien rater d'important.</p>
                     </div>
                     <div class="pillar__visuals">
                         <div class="phone-mockup phone-mockup--small">
-                            <img src="/images/comparaison.webp" alt="Comparaison des points de vue"
+                            <img src="/images/ton_essentiel.jpeg" alt="Ton essentiel du jour"
+                                class="phone-mockup__img">
+                        </div>
+                        <div class="phone-mockup phone-mockup--small">
+                            <img src="/images/page_acceuil_2.jpeg" alt="Page d'accueil, tes infos du matin"
                                 class="phone-mockup__img">
                         </div>
                     </div>
                 </div>
 
-                <!-- Pilier 5 -->
+                <!-- Pilier 4 — Reste serein·e -->
                 <div class="pillar reveal">
                     <div class="pillar__text">
-                        <h3 class="pillar__title"><span class="highlight">Soutiens</span> tes médias préférés.</h3>
-                        <p class="pillar__desc">Finance tes sources de confiance directement via l'application, pour
-                            rendre la production d'info durablement indépendante.</p>
+                        <h3 class="pillar__title">Reste serein&middot;e, <span class="highlight">et sache quand t'arr&ecirc;ter.</span></h3>
+                        <p class="pillar__desc">Mode serein pour adoucir l'actu du moment tout en ayant le sentiment
+                            d'&ecirc;tre &agrave; jour. Tu t'informes, sans te mettre le moral &agrave; z&eacute;ro.</p>
                     </div>
                     <div class="pillar__visuals">
                         <div class="phone-mockup phone-mockup--small">
-                            <div class="phone-mockup__placeholder"><span>Très bientôt</span></div>
+                            <img src="/images/mode_serein-1.jpeg" alt="Mode serein, actu adoucie"
+                                class="phone-mockup__img">
+                        </div>
+                        <div class="phone-mockup phone-mockup--small">
+                            <img src="/images/fin_de_tourn%C3%A9e.jpeg" alt="Fin de tourn&eacute;e, moment de fermeture"
+                                class="phone-mockup__img">
                         </div>
                     </div>
                 </div>
@@ -249,50 +259,223 @@
         </section>
 
         <!-- ═══════════════════════════════════════════ -->
-        <!-- SECTION 5 — Qui suis-je                    -->
+        <!-- SECTION — Ce que l'app peut contenir        -->
         <!-- ═══════════════════════════════════════════ -->
-        <section id="founder" class="section founder reveal">
-            <div class="container founder__inner">
-                <div class="founder__photo">
-                    <img src="/images/laurin-v2.png" alt="Laurin, fondateur de Facteur" class="founder__photo-img">
+        <section id="sources" class="section sources-showcase reveal">
+            <div class="container">
+                <h2 class="section__title sources-showcase__title">Tes médias préférés, <span class="highlight">dans 1 seule app.</span></h2>
+                <p class="section__lede sources-showcase__lede">Journaux, newsletters, cha&icirc;nes YouTube, podcasts, Reddits&nbsp;: ajoute les sources en qui tu as le plus confiance, toutes au m&ecirc;me endroit.</p>
+
+                <div class="sources-groups">
+
+                    <!-- Presse & journaux -->
+                    <div class="source-group">
+                        <div class="source-group__head">
+                            <span class="source-group__icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h12v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M16 8h3a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2"/><line x1="7" y1="9" x2="13" y2="9"/><line x1="7" y1="12.5" x2="13" y2="12.5"/><line x1="7" y1="16" x2="11" y2="16"/></svg>
+                            </span>
+                            <h3 class="source-group__label">Presse &amp; journaux</h3>
+                        </div>
+                        <div class="source-chips">
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=www.lemonde.fr&amp;sz=128"><span>Le Monde</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=www.liberation.fr&amp;sz=128"><span>Lib&eacute;ration</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=www.lefigaro.fr&amp;sz=128"><span>Le Figaro</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=www.mediapart.fr&amp;sz=128"><span>Mediapart</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=www.courrierinternational.com&amp;sz=128"><span>Courrier International</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=www.lesechos.fr&amp;sz=128"><span>Les &Eacute;chos</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=www.lepoint.fr&amp;sz=128"><span>Le Point</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=www.monde-diplomatique.fr&amp;sz=128"><span>Le Monde Diplomatique</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=theconversation.com&amp;sz=128"><span>The Conversation</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=www.francetvinfo.fr&amp;sz=128"><span>France Info</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=www.blast-info.fr&amp;sz=128"><span>Blast</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=reporterre.net&amp;sz=128"><span>Reporterre</span></span>
+                            <span class="source-chip source-chip--more">+165</span>
+                        </div>
+                    </div>
+
+                    <!-- Newsletters -->
+                    <div class="source-group">
+                        <div class="source-group__head">
+                            <span class="source-group__icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+                            </span>
+                            <h3 class="source-group__label">Newsletters</h3>
+                        </div>
+                        <div class="source-chips">
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=bonpote.com&amp;sz=128"><span>Bon Pote</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=vert.eco&amp;sz=128"><span>Vert</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=legrandcontinent.eu&amp;sz=128"><span>Le Grand Continent</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=www.socialter.fr&amp;sz=128"><span>Socialter</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=nouveaudepart.co&amp;sz=128"><span>Nouveau D&eacute;part</span></span>
+                            <span class="source-chip"><img class="source-chip__logo" loading="lazy" alt="" src="https://www.google.com/s2/favicons?domain=www.alternatives-economiques.fr&amp;sz=128"><span>Alternatives &Eacute;conomiques</span></span>
+                            <span class="source-chip source-chip--more">+200</span>
+                        </div>
+                    </div>
+
+                    <!-- YouTube -->
+                    <div class="source-group">
+                        <div class="source-group__head">
+                            <span class="source-group__icon source-group__icon--youtube" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M23 12s0-3.2-.4-4.7a2.5 2.5 0 0 0-1.8-1.8C19.3 5 12 5 12 5s-7.3 0-8.8.4a2.5 2.5 0 0 0-1.8 1.8C1 8.8 1 12 1 12s0 3.2.4 4.7a2.5 2.5 0 0 0 1.8 1.8C4.7 19 12 19 12 19s7.3 0 8.8-.4a2.5 2.5 0 0 0 1.8-1.8C23 15.2 23 12 23 12Zm-13 3V9l5 3Z"/></svg>
+                            </span>
+                            <h3 class="source-group__label">Cha&icirc;nes YouTube</h3>
+                        </div>
+                        <div class="source-chips">
+                            <span class="source-chip source-chip--text"><span>Le Dessous des Cartes</span></span>
+                            <span class="source-chip source-chip--text"><span>ScienceEtonnante</span></span>
+                            <span class="source-chip source-chip--text"><span>Fouloscopie</span></span>
+                            <span class="source-chip source-chip--text"><span>Heu?reka</span></span>
+                            <span class="source-chip source-chip--text"><span>Monsieur Phi</span></span>
+                            <span class="source-chip source-chip--text"><span>Osons Causer</span></span>
+                            <span class="source-chip source-chip--more">+1000</span>
+                        </div>
+                    </div>
+
+                    <!-- Podcasts -->
+                    <div class="source-group">
+                        <div class="source-group__head">
+                            <span class="source-group__icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/><line x1="8" y1="21" x2="16" y2="21"/></svg>
+                            </span>
+                            <h3 class="source-group__label">Podcasts</h3>
+                        </div>
+                        <div class="source-chips">
+                            <span class="source-chip source-chip--text"><span>Sismique</span></span>
+                            <span class="source-chip source-chip--text"><span>M&eacute;caniques du Complot</span></span>
+                            <span class="source-chip source-chip--text"><span>La Science CQFD</span></span>
+                            <span class="source-chip source-chip--text"><span>France Inter</span></span>
+                            <span class="source-chip source-chip--text"><span>Le Collimateur</span></span>
+                            <span class="source-chip source-chip--text"><span>Transfert</span></span>
+                            <span class="source-chip source-chip--more">+100</span>
+                        </div>
+                    </div>
+
+                    <!-- Reddit -->
+                    <div class="source-group">
+                        <div class="source-group__head">
+                            <span class="source-group__icon source-group__icon--reddit" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12.07a2.05 2.05 0 0 0-3.47-1.46 10.1 10.1 0 0 0-5.2-1.6l.88-3.93 2.78.62a1.4 1.4 0 1 0 .16-1.06l-3.3-.73a.53.53 0 0 0-.63.4l-1 4.43a10.1 10.1 0 0 0-5.27 1.6 2.05 2.05 0 1 0-2.4 3.27 3.7 3.7 0 0 0-.05.65c0 3.04 3.54 5.5 7.9 5.5s7.9-2.46 7.9-5.5a3.7 3.7 0 0 0-.05-.64A2.05 2.05 0 0 0 22 12.07ZM7.8 13.5a1.25 1.25 0 1 1 2.5 0 1.25 1.25 0 0 1-2.5 0Zm7.05 3.36a4.6 4.6 0 0 1-2.85.83 4.6 4.6 0 0 1-2.85-.83.43.43 0 1 1 .56-.65 3.78 3.78 0 0 0 2.29.62 3.78 3.78 0 0 0 2.29-.62.43.43 0 1 1 .56.65Zm-.1-2.11a1.25 1.25 0 1 1 1.25-1.25 1.25 1.25 0 0 1-1.25 1.25Z"/></svg>
+                            </span>
+                            <h3 class="source-group__label">Reddit</h3>
+                        </div>
+                        <div class="source-chips">
+                            <span class="source-chip source-chip--text"><span>r/france</span></span>
+                            <span class="source-chip source-chip--text"><span>r/Europe</span></span>
+                            <span class="source-chip source-chip--text"><span>r/sciences</span></span>
+                            <span class="source-chip source-chip--text"><span>r/geopolitics</span></span>
+                            <span class="source-chip source-chip--more">+100</span>
+                        </div>
+                    </div>
+
                 </div>
-                <div class="founder__text">
-                    <h2 class="section__title">Pourquoi lancer Facteur ?</h2>
-                    <p>Souvent, je repense à cette vidéo qui a profondément changé ma vie.</p>
-                    <p>À 23 ans, début de COVID, je tombe sur <a href="https://www.youtube.com/watch?v=Vjkq8V5rVy0"
-                            target="_blank" rel="noopener">cette conférence de Jean-Marc Jancovici</a> présentant le
-                        problème
-                        du changement climatique à Sciences Po, sur YouTube.
+
+                <p class="sources-showcase__foot">&hellip;et tout le reste. Ajoute n'importe quel site, flux RSS ou cha&icirc;ne en quelques secondes.</p>
+            </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════════ -->
+        <!-- SECTION — Blog                              -->
+        <!-- ═══════════════════════════════════════════ -->
+        <section id="blog" class="section blog reveal">
+            <div class="container">
+                <h2 class="section__title">Blog du Facteur</h2>
+                <div class="blog-grid">
+                    <a class="blog-card blog-card--link blog-card--featured" href="/blog-soiree-prelancement.html">
+                        <div class="blog-card__visual blog-card__visual--event">
+                            <img src="/images/equipe-facteur.png" alt="L'&eacute;quipe Facteur" class="blog-card__visual-img">
+                        </div>
+                        <div class="blog-card__body">
+                            <span class="blog-card__tag">&Eacute;v&eacute;nement</span>
+                            <h3 class="blog-card__title">On lance Facteur, viens f&ecirc;ter &ccedil;a&nbsp;!</h3>
+                            <p class="blog-card__excerpt">Soir&eacute;e de pr&eacute;-lancement le 19 juin &agrave; 19h au bar Kilom&egrave;tre Z&eacute;ro, Paris. App en avant-premi&egrave;re, 40 places.</p>
+                            <span class="blog-card__more">Lire l'article &rarr;</span>
+                        </div>
+                    </a>
+                </div>
+                <p class="blog__hint"><a href="/blog.html">Voir tous les articles &rarr;</a></p>
+            </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════════ -->
+        <!-- SECTION — Manifeste                         -->
+        <!-- ═══════════════════════════════════════════ -->
+        <section id="manifesto" class="section manifesto reveal">
+            <div class="container manifesto__inner">
+                <h2 class="section__title">Notre manifeste</h2>
+                <div class="manifesto__body">
+                    <p>Le monde dans lequel nous vivons actuellement est devenu pleinement d&eacute;pendant et
+                        fa&ccedil;onn&eacute; par le monde Num&eacute;rique. Probl&egrave;me&nbsp;: ce dernier se trouve
+                        aujourd'hui dans un &eacute;tat de <strong>polarisation</strong>,
+                        <strong>d'opacit&eacute;</strong>, et de <strong>vuln&eacute;rabilit&eacute;</strong>
+                        compl&egrave;te face aux potentielles manipulations, qu'elles soient guid&eacute;es par
+                        des int&eacute;r&ecirc;ts priv&eacute;s, des ing&eacute;rences ou des id&eacute;ologies
+                        extr&eacute;mistes.
                     </p>
-                    <p>Quelques centaines de vidéos et de conférences plus tard, me voilà
-                        convaincu de dédier une partie de ma vie à ce même problème. Est-ce que j'aurais même envisagé
-                        une telle trajectoire sans cette
-                        vidéo ? Est-ce que j'aurais pris cette route
-                        sans les 100 autres contenus recommandés par mon algorithme sur ces sujets ensuite ? Rien
-                        de moins certain.</p>
-                    <p>Je pense que l'info qu'on reçoit aujourd'hui façonne ce en quoi on croit et ce pour quoi on sera
-                        prêt à se
-                        battre demain. Choisir
-                        qui
-                        peut voir quoi, c'est donc un
-                        pouvoir immense. Et
-                        c'est bien pour ça qu'il se dispute tant aujourd'hui.</p>
-                    <p>Si les médias et les réseaux sociaux sont rachetés par les plus puissants d'entre nous, ce n'est
-                        pas un hasard. C'est car il s'agit du meilleur moyen pour nous connaitre et nous influencer -
-                        quitte, au besoin, à
-                        nous diviser.</p>
-                    <p>Facteur, c'est une contre-proposition à ces modèles de médias et de réseaux sociaux. Une app où
-                        on
-                        contrôle nos sources.
-                        Où on comprend
-                        pourquoi chaque contenu est là. Et on peut aussi s'arrêter de scroller — pour sortir du trop-plein d'infos inutiles voire déprimantes.</p>
-                    <p class="founder__closing">L'ingénieur fou qui impulse ce projet, c'est moi, Laurin.
-                        <br>Et
-                        si je quitte mon travail dans l'écologie pour lancer Facteur, c'est parce que je crois
-                        profondément qu'on
-                        peut aujourd'hui repenser, ensemble, une toute autre façon de produire et consommer
-                        l'information qui nous parvient chaque jour.
+
+                    <p>Ce que ce projet porte, c'est la vocation de repenser nos outils num&eacute;riques en profondeur
+                        pour en faire de vrais alli&eacute;s de la circulation d'information
+                        <strong>d&eacute;centralis&eacute;e</strong> et <strong>d&eacute;mocratique</strong>. Pour ce
+                        faire, ces flux se doivent &eacute;galement &ecirc;tre constitu&eacute;s d'informations
+                        <strong>qualitatives</strong>, et d'&eacute;viter, dans la mesure du possible, de contribuer
+                        &agrave; l'<strong>explosion quantitative</strong> du volume d'information, qui am&egrave;ne
+                        &agrave; une plus forte vuln&eacute;rabilit&eacute; de toutes les parties prenantes du
+                        traitement de l'information (traitement des fake news, exploitation de biais cognitifs&hellip;)
                     </p>
+
+                    <p>Pour avoir une chance d'exister dans ce milieu ultracomp&eacute;titif de l'information, devenu
+                        compl&egrave;tement scl&eacute;ros&eacute; par la pression de guerres attentionnelles,
+                        id&eacute;ologiques et informationnelles, la strat&eacute;gie et la R&amp;D du projet viseront
+                        &agrave; toujours suivre 2 boussoles, sur lesquels s'appuyer de fa&ccedil;on it&eacute;rative et
+                        tr&egrave;s r&eacute;guli&egrave;re&nbsp;: pragmatisme d'impact, et lucidit&eacute;
+                        cons&eacute;quencielle.</p>
+
+                    <div class="manifesto__principles">
+                        <div class="manifesto__principle">
+                            <h3 class="manifesto__principle-title">Pragmatisme d'impact</h3>
+                            <p>Nos choix doivent &ecirc;tre orient&eacute;s vers la maximisation de notre impact, afin
+                                de faire &laquo;&nbsp;barrage&nbsp;&raquo; aux immenses avantages structurels des
+                                mastodontes du num&eacute;rique (pouvoir &eacute;conomique, structurel,
+                                informationnel&hellip;) et &agrave; l'incons&eacute;quence de leur strat&eacute;gie, qui
+                                ne cherche en aucun cas &agrave; maximiser l'int&eacute;r&ecirc;t commun.</p>
+                        </div>
+                        <div class="manifesto__principle">
+                            <h3 class="manifesto__principle-title">Lucidit&eacute; cons&eacute;quencielle</h3>
+                            <p>Bien que la maximisation de l'impact soit un aspect cl&eacute; de ce projet, il n'en
+                                reste pas moins essentiel de mesurer aussi pr&eacute;cis&eacute;ment que possible les
+                                potentiels impacts n&eacute;gatifs allant de pair avec tout changement
+                                provoqu&eacute; <em>dans la vie d'un utilisateur.</em></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Engagements (transparence / contrôle / open-source) -->
+                <div class="manifesto__engagements">
+                    <h3 class="manifesto__engagements-title">Nos engagements</h3>
+                    <p class="manifesto__engagements-intro">Pas des fonctionnalit&eacute;s. Des choix de
+                        conception. Preuves &agrave; l'appui.</p>
+                    <div class="manifesto__commitment-grid">
+                        <div class="manifesto__commitment">
+                            <img src="/images/algo-transparent.webp"
+                                alt="Pourquoi cet article, transparence de l'algorithme"
+                                class="manifesto__commitment-img">
+                            <h4 class="manifesto__commitment-title">Transparence totale</h4>
+                            <p>Tu sais pourquoi chaque article t'est recommand&eacute;. L'algo t'appartient.</p>
+                        </div>
+                        <div class="manifesto__commitment">
+                            <img src="/images/contr%C3%B4ler-int%C3%A9r%C3%AAts.webp"
+                                alt="Contr&ocirc;le des sources et des sujets"
+                                class="manifesto__commitment-img">
+                            <h4 class="manifesto__commitment-title">Tu gardes le contr&ocirc;le</h4>
+                            <p>Sources, sujets, intensit&eacute;&nbsp;: tout se r&egrave;gle selon tes pr&eacute;f&eacute;rences, pas les n&ocirc;tres.</p>
+                        </div>
+                        <div class="manifesto__commitment">
+                            <div class="manifesto__commitment-img manifesto__commitment-img--placeholder">
+                                <span class="manifesto__commitment-code">&lt;/&gt;</span>
+                            </div>
+                            <h4 class="manifesto__commitment-title">Code source disponible</h4>
+                            <p>Publi&eacute; sous licence non commerciale. Tu peux voir ce qu'on fait, et contribuer.</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -310,23 +493,25 @@
                             <span class="faq__icon"></span>
                         </button>
                         <div class="faq__answer">
-                            <p>L'application est et restera gratuite. Nous d&eacute;veloppons des
-                                fonctionnalit&eacute;s premium optionnelles, ainsi que des partenariats avec des
-                                m&eacute;dias et cr&eacute;ateurs ind&eacute;pendants. L'objectif&nbsp;: un
-                                mod&egrave;le &eacute;conomique align&eacute; avec la qualit&eacute; de l'info, pas
-                                avec le temps pass&eacute; sur l'&eacute;cran.</p>
+                            <p>Facteur est gratuit, avec des fonctionnalit&eacute;s premium optionnelles et des
+                                partenariats avec des m&eacute;dias et cr&eacute;ateur&middot;ice&middot;s
+                                ind&eacute;pendant&middot;e&middot;s. L'objectif&nbsp;: un mod&egrave;le align&eacute;
+                                avec la qualit&eacute; de l'info, pas avec le temps pass&eacute; sur l'&eacute;cran.</p>
                         </div>
                     </div>
 
                     <div class="faq__item">
                         <button class="faq__question" type="button">
-                            Facteur est open-source ?
+                            Le code de Facteur est-il public ?
                             <span class="faq__icon"></span>
                         </button>
                         <div class="faq__answer">
-                            <p>Oui, et &ccedil;a le restera. Le code est ouvert sous licence libre.
-                                D&eacute;veloppeurs, designers, product managers &mdash; ou toute personne avec de
-                                bonnes id&eacute;es et l'envie de les porter &mdash; sont les bienvenus pour
+                            <p>Oui. Le code source est disponible sous licence non commerciale
+                                <code>PolyForm Noncommercial 1.0.0</code>.
+                                Tout usage commercial requiert un accord s&eacute;par&eacute; via
+                                <a href="mailto:laurin_boujon@proton.me">laurin_boujon@proton.me</a>.
+                                D&eacute;veloppeurs, designers, product managers, ou toute personne avec de
+                                bonnes id&eacute;es et l'envie de les porter, sont les bienvenus pour
                                 contribuer.</p>
                         </div>
                     </div>
@@ -370,55 +555,50 @@
         </section>
 
         <!-- ═══════════════════════════════════════════ -->
-        <!-- SECTION — Manifeste                         -->
+        <!-- SECTION 5 — Qui suis-je                    -->
         <!-- ═══════════════════════════════════════════ -->
-        <section id="manifesto" class="section manifesto reveal">
-            <div class="container manifesto__inner">
-                <h2 class="section__title">Notre manifeste</h2>
-                <div class="manifesto__body">
-                    <p>Le monde dans lequel nous vivons actuellement est devenu pleinement d&eacute;pendant et
-                        fa&ccedil;onn&eacute; par le monde Num&eacute;rique. Probl&egrave;me&nbsp;: ce dernier se trouve
-                        aujourd'hui dans un &eacute;tat de <strong>polarisation</strong>,
-                        <strong>d'opacit&eacute;</strong>, et de <strong>vuln&eacute;rabilit&eacute;</strong>
-                        compl&egrave;te face aux potentielles manipulations &mdash; qu'elles soient guid&eacute;es par
-                        des int&eacute;r&ecirc;ts priv&eacute;s, des ing&eacute;rences ou des id&eacute;ologies
-                        extr&eacute;mistes.
+        <section id="founder" class="section founder reveal">
+            <div class="container founder__inner">
+                <div class="founder__photo">
+                    <img src="/images/laurin-v2.png" alt="Laurin, fondateur de Facteur" class="founder__photo-img">
+                </div>
+                <div class="founder__text">
+                    <h2 class="section__title">Pourquoi lancer Facteur ?</h2>
+                    <p>Souvent, je repense à cette vidéo qui a profondément changé ma vie.</p>
+                    <p>À 23 ans, début de COVID, je tombe sur <a href="https://www.youtube.com/watch?v=Vjkq8V5rVy0"
+                            target="_blank" rel="noopener">cette conférence de Jean-Marc Jancovici</a> présentant le
+                        problème
+                        du changement climatique à Sciences Po, sur YouTube.
                     </p>
-
-                    <p>Ce que ce projet porte, c'est la vocation de repenser nos outils num&eacute;riques en profondeur
-                        pour en faire de vrais alli&eacute;s de la circulation d'information
-                        <strong>d&eacute;centralis&eacute;e</strong> et <strong>d&eacute;mocratique</strong>. Pour ce
-                        faire, ces flux se doivent &eacute;galement &ecirc;tre constitu&eacute;s d'informations
-                        <strong>qualitatives</strong>, et d'&eacute;viter, dans la mesure du possible, de contribuer
-                        &agrave; l'<strong>explosion quantitative</strong> du volume d'information, qui am&egrave;ne
-                        &agrave; une plus forte vuln&eacute;rabilit&eacute; de toutes les parties prenantes du
-                        traitement de l'information (traitement des fake news, exploitation de biais cognitifs&hellip;)
+                    <p>Quelques centaines de vidéos et de conférences plus tard, me voilà
+                        convaincu de dédier une partie de ma vie à ce même problème. Est-ce que j'aurais même envisagé
+                        une telle trajectoire sans cette
+                        vidéo ? Est-ce que j'aurais pris cette route
+                        sans les 100 autres contenus recommandés par mon algorithme sur ces sujets ensuite ? Rien
+                        de moins certain.</p>
+                    <p>Je pense que l'info qu'on reçoit aujourd'hui façonne ce en quoi on croit et ce pour quoi on sera
+                        prêt à se
+                        battre demain. Choisir
+                        qui
+                        peut voir quoi, c'est donc un
+                        pouvoir immense. Et
+                        c'est bien pour ça qu'il se dispute tant aujourd'hui.</p>
+                    <p>Si les médias et les réseaux sociaux sont rachetés par les plus puissants d'entre nous, ce n'est
+                        pas un hasard. C'est car il s'agit du meilleur moyen pour nous connaitre et nous influencer -
+                        quitte, au besoin, à
+                        nous diviser.</p>
+                    <p>Facteur, c'est une contre-proposition à ces modèles de médias et de réseaux sociaux. Une app où
+                        on
+                        contrôle nos sources.
+                        Où on comprend
+                        pourquoi chaque contenu est là. Et on peut aussi s'arrêter de scroller, pour sortir du trop-plein d'infos inutiles voire déprimantes.</p>
+                    <p class="founder__closing">L'ingénieur fou qui impulse ce projet, c'est moi, Laurin.
+                        <br>Et
+                        si je quitte mon travail dans l'écologie pour lancer Facteur, c'est parce que je crois
+                        profondément qu'on
+                        peut aujourd'hui repenser, ensemble, une toute autre façon de produire et consommer
+                        l'information qui nous parvient chaque jour.
                     </p>
-
-                    <p>Pour avoir une chance d'exister dans ce milieu ultracomp&eacute;titif de l'information, devenu
-                        compl&egrave;tement scl&eacute;ros&eacute; par la pression de guerres attentionnelles,
-                        id&eacute;ologiques et informationnelles, la strat&eacute;gie et la R&amp;D du projet viseront
-                        &agrave; toujours suivre 2 boussoles, sur lesquels s'appuyer de fa&ccedil;on it&eacute;rative et
-                        tr&egrave;s r&eacute;guli&egrave;re&nbsp;: pragmatisme d'impact, et lucidit&eacute;
-                        cons&eacute;quencielle.</p>
-
-                    <div class="manifesto__principles">
-                        <div class="manifesto__principle">
-                            <h3 class="manifesto__principle-title">Pragmatisme d'impact</h3>
-                            <p>Nos choix doivent &ecirc;tre orient&eacute;s vers la maximisation de notre impact, afin
-                                de faire &laquo;&nbsp;barrage&nbsp;&raquo; aux immenses avantages structurels des
-                                mastodontes du num&eacute;rique (pouvoir &eacute;conomique, structurel,
-                                informationnel&hellip;) et &agrave; l'incons&eacute;quence de leur strat&eacute;gie, qui
-                                ne cherche en aucun cas &agrave; maximiser l'int&eacute;r&ecirc;t commun.</p>
-                        </div>
-                        <div class="manifesto__principle">
-                            <h3 class="manifesto__principle-title">Lucidit&eacute; cons&eacute;quencielle</h3>
-                            <p>Bien que la maximisation de l'impact soit un aspect cl&eacute; de ce projet, il n'en
-                                reste pas moins essentiel de mesurer aussi pr&eacute;cis&eacute;ment que possible les
-                                potentiels impacts n&eacute;gatifs allant de pair avec tout changement
-                                provoqu&eacute; <em>dans la vie d'un utilisateur.</em></p>
-                        </div>
-                    </div>
                 </div>
             </div>
         </section>
@@ -429,15 +609,37 @@
         <section id="cta" class="section cta reveal">
             <div class="container cta__inner">
                 <h2 class="cta__title">Envie de <span class="highlight">jeter un oeil</span> ?</h2>
-                <p class="cta__subtitle">Ajoute ton email — on t'écrira dès que c'est prêt.</p>
+                <p class="cta__subtitle">Ajoute ton email, on t'écrira dès que c'est prêt.</p>
+
+                <div class="store-badges store-badges--center"
+                    aria-label="Bientôt disponible sur l'App Store et Google Play">
+                    <span class="store-badge" role="img" aria-disabled="true"
+                        aria-label="App Store, bientôt disponible">
+                        <svg class="store-badge__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                            <path d="M17.564 12.65c-.026-2.622 2.144-3.881 2.244-3.942-1.222-1.785-3.122-2.029-3.799-2.06-1.617-.164-3.155.954-3.978.954-.823 0-2.084-.93-3.43-.904-1.764.026-3.39 1.025-4.297 2.604-1.831 3.171-.469 7.866 1.314 10.448.869 1.265 1.905 2.685 3.273 2.634 1.314-.052 1.81-.85 3.397-.85 1.587 0 2.033.85 3.423.823 1.414-.026 2.31-1.291 3.176-2.561.999-1.469 1.41-2.892 1.436-2.965-.031-.013-2.752-1.053-2.779-4.181zM14.97 4.939c.729-.881 1.221-2.107 1.087-3.327-1.05.042-2.322.7-3.077 1.581-.677.781-1.27 2.029-1.11 3.224 1.171.09 2.371-.595 3.1-1.478z" />
+                        </svg>
+                        <span class="store-badge__text"><small>Bientôt sur</small><strong>App Store</strong></span>
+                    </span>
+                    <span class="store-badge" role="img" aria-disabled="true"
+                        aria-label="Google Play, bientôt disponible">
+                        <svg class="store-badge__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                            <path d="M3.6 2.2 13.5 12 3.6 21.8c-.3-.2-.5-.6-.5-1.1V3.3c0-.5.2-.9.5-1.1z" fill="#34A853" />
+                            <path d="M16.3 9.2 5.9 3.3 3.6 2.2c.2-.1.5-.1.8 0l11.9 7z" fill="#EA4335" />
+                            <path d="M16.3 14.8 17 14.4l3.8-2.2c.6-.4.6-1.2 0-1.6L17 8.4l-.7-.4-2.8 2 2.8 2.8z"
+                                fill="#FBBC04" />
+                            <path d="M16.3 14.8 4.4 21.8c-.3.1-.6.1-.8 0l2.3-1.1 10.4-5.9z" fill="#4285F4" />
+                        </svg>
+                        <span class="store-badge__text"><small>Bientôt sur</small><strong>Google Play</strong></span>
+                    </span>
+                </div>
 
                 <form class="waitlist-form" data-form="cta">
                     <div class="waitlist-form__row">
                         <input type="email" name="email" placeholder="ton@email.com" required
                             class="waitlist-form__input" autocomplete="email">
-                        <button type="submit" class="waitlist-form__btn">Rejoindre la waitlist</button>
+                        <button type="submit" class="waitlist-form__btn">Être prévenu·e au lancement</button>
                     </div>
-                    <p class="waitlist-form__hint">Beta privée — places limitées</p>
+                    <p class="waitlist-form__hint">Beta privée. On t'écrit dès que c'est prêt.</p>
                     <p class="waitlist-form__success" hidden>Merci ! On t'écrit très vite. 💌</p>
                     <p class="waitlist-form__error" hidden></p>
                 </form>
@@ -453,6 +655,9 @@
                 <p class="footer__tagline">L'info sereine, chaque jour.</p>
             </div>
             <div class="footer__links">
+                <a href="/blog.html" class="footer__link">Blog</a>
+                <a href="/premium.html" class="footer__link">Premium</a>
+                <a href="/politique-confidentialite.html" class="footer__link">Politique de confidentialité</a>
                 <a href="https://github.com/boujonlaurin-dotcom/facteur" target="_blank" rel="noopener"
                     class="footer__link">GitHub</a>
                 <a href="mailto:laurin_boujon@proton.me" class="footer__link">Contact</a>
@@ -497,7 +702,7 @@
                                     class="pain-rank"></span><span>Je ne fais plus confiance &agrave; ce qu'on me
                                     montre</span></button>
                             <button type="button" class="pain-item" data-value="stress_evitement"><span
-                                    class="pain-rank"></span><span>L'info me stresse / d&eacute;prime &mdash; je
+                                    class="pain-rank"></span><span>L'info me stresse / d&eacute;prime, je
                                     l'&eacute;vite</span></button>
                             <button type="button" class="pain-item" data-value="surface"><span
                                     class="pain-rank"></span><span>Je reste en surface, je comprends pas

@@ -9,8 +9,10 @@ import '../../../shared/widgets/fab_nudge_bubble.dart';
 import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../../../shared/widgets/states/laurin_fallback_view.dart';
 
-import '../../custom_topics/providers/algorithm_profile_provider.dart';
-import '../../settings/providers/paid_content_provider.dart';
+import '../../my_interests/models/user_interests_state.dart' show InterestState;
+import '../../my_interests/providers/user_sources_state_provider.dart';
+import '../../flux_continu/widgets/tournee_composer_sheet.dart';
+import '../../my_interests/widgets/interest_state_picker_sheet.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
 import '../widgets/source_list_item.dart';
@@ -84,6 +86,32 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     });
   }
 
+  Future<void> _pickSourceState(Source source) async {
+    final state = ref.read(userSourcesStateProvider).value;
+    final currentState = state?.stateOf(source.id) ?? InterestState.followed;
+
+    final picked = await InterestStatePickerSheet.show(
+      context,
+      title: source.name,
+      currentState: currentState,
+    );
+    if (picked == null || picked == currentState) return;
+
+    try {
+      await ref
+          .read(userSourcesStateProvider.notifier)
+          .setSourceState(source.id, picked);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Impossible de mettre à jour cette source.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
@@ -132,15 +160,17 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
               title: const Text('Sources de confiance'),
               actions: [
                 IconButton(
-                  icon: Icon(PhosphorIcons.magnifyingGlass(
-                      PhosphorIconsStyle.regular)),
+                  icon: Icon(
+                    PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
+                  ),
                   onPressed: () => setState(() => _isSearching = true),
                 ),
                 Stack(
                   children: [
                     IconButton(
                       icon: Icon(
-                          PhosphorIcons.funnel(PhosphorIconsStyle.regular)),
+                        PhosphorIcons.funnel(PhosphorIconsStyle.regular),
+                      ),
                       onPressed: () => _showFilterSheet(colors),
                     ),
                     if (_hasActiveFilter)
@@ -183,14 +213,18 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
           data: (sources) {
             // Sort alphabetically
             var allSources = sources.toList()
-              ..sort((a, b) =>
-                  a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+              ..sort(
+                (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+              );
 
             // Apply search filter
             if (_searchQuery.isNotEmpty) {
               allSources = allSources
-                  .where((s) =>
-                      s.name.toLowerCase().contains(_searchQuery.toLowerCase()))
+                  .where(
+                    (s) => s.name.toLowerCase().contains(
+                          _searchQuery.toLowerCase(),
+                        ),
+                  )
                   .toList();
             }
 
@@ -198,9 +232,9 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
               return _scrollableCenter(
                 Text(
                   'Aucune source disponible',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: colors.textSecondary,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(color: colors.textSecondary),
                 ),
               );
             }
@@ -244,10 +278,9 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                     const SizedBox(height: 12),
                     Text(
                       'Aucune source pour ces filtres',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(color: colors.textSecondary),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: colors.textSecondary,
+                          ),
                     ),
                     const SizedBox(height: 8),
                     TextButton(
@@ -270,7 +303,15 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
                 _IntroBlock(colors: colors),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
+                const _SourceSettingsCta(),
+                const SizedBox(height: 12),
+                // Gestion des favoris (sources + thèmes + veille, ordre libre,
+                // cap 5) centralisée dans « Composer ma Tournée ».
+                const ComposeTourneeButton(
+                  style: ComposeTourneeButtonStyle.secondary,
+                ),
+                const SizedBox(height: 8),
                 if (premiumSources.isNotEmpty)
                   _buildCollapsibleSection(
                     title: 'Mes abonnements Premium',
@@ -282,8 +323,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                     colors: colors,
                     icon: PhosphorIcons.star(PhosphorIconsStyle.fill),
                   ),
-                const _HidePaidToggleCard(),
-                const SizedBox(height: 8),
                 if (customSources.isNotEmpty)
                   _buildCollapsibleSection(
                     title: 'Mes sources personnalisees',
@@ -422,8 +461,10 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: titleColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(10),
@@ -467,11 +508,16 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   }
 
   Widget _buildSourceItem(Source source) {
-    final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
-    final sourceUsage = algoProfile?.sourceAffinities[source.id];
+    final isFavorite = ref
+            .watch(userSourcesStateProvider)
+            .value
+            ?.favorites
+            .any((f) => f.sourceId == source.id) ??
+        false;
     return SourceListItem(
       source: source,
-      usageWeight: sourceUsage,
+      isFavorite: isFavorite,
+      onPickInterestState: () => _pickSourceState(source),
       onTap: () {
         ref
             .read(userSourcesProvider.notifier)
@@ -481,18 +527,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
         ref
             .read(userSourcesProvider.notifier)
             .toggleMute(source.id, source.isMuted);
-      },
-      onWeightChanged: source.isTrusted && !source.isMuted
-          ? (multiplier) {
-              ref
-                  .read(userSourcesProvider.notifier)
-                  .updateWeight(source.id, multiplier);
-            }
-          : null,
-      onToggleSubscription: () {
-        ref
-            .read(userSourcesProvider.notifier)
-            .toggleSubscription(source.id, source.hasSubscription);
       },
     );
   }
@@ -703,12 +737,13 @@ class _IntroBlock extends StatelessWidget {
         children: [
           Text(
             'Vos sources de confiance',
-            style: FacteurTypography.serifTitle(colors.textPrimary)
-                .copyWith(fontSize: 20, height: 1.2),
+            style: FacteurTypography.serifTitle(
+              colors.textPrimary,
+            ).copyWith(fontSize: 20, height: 1.2),
           ),
           const SizedBox(height: 6),
           Text(
-            'Réglez les fréquences d\'apparitions de vos sources de 1 (occasionnellement) à 3 (tout voir), masquez celles qui ne vous parlent pas, et ajoutez plus de sources pour enrichir votre flux.',
+            'Gérez vos préférences par sources. Ajoutez certaines en favoris pour les voir apparaitre plus souvent. Masquez celles que vous souhaitez filtrer de vos flux.',
             style: textTheme.bodySmall?.copyWith(
               color: colors.textSecondary,
               height: 1.45,
@@ -720,81 +755,75 @@ class _IntroBlock extends StatelessWidget {
   }
 }
 
-// ─── Hide paid toggle card ──────────────────────────────────
-
-class _HidePaidToggleCard extends ConsumerWidget {
-  const _HidePaidToggleCard();
+class _SourceSettingsCta extends StatelessWidget {
+  const _SourceSettingsCta();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final hidePaid = ref.watch(hidePaidContentProvider);
     final borderRadius = BorderRadius.circular(FacteurRadius.large);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Material(
-        color: colors.surface,
+    return Material(
+      key: const Key('source-settings-cta'),
+      color: colors.surface,
+      borderRadius: borderRadius,
+      child: InkWell(
+        onTap: () => context.pushNamed(RouteNames.sourceSettings),
         borderRadius: borderRadius,
-        child: InkWell(
-          onTap: () =>
-              ref.read(hidePaidContentProvider.notifier).toggle(!hidePaid),
-          borderRadius: borderRadius,
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: borderRadius,
-              border: Border.all(color: colors.surfaceElevated),
-            ),
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space4,
-              vertical: FacteurSpacing.space3,
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: colors.primary.withOpacity(0.10),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    PhosphorIcons.lock(PhosphorIconsStyle.regular),
-                    color: colors.primary,
-                    size: 18,
-                  ),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: borderRadius,
+            border: Border.all(color: colors.surfaceElevated),
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: FacteurSpacing.space4,
+            vertical: FacteurSpacing.space3,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colors.primary.withValues(alpha: 0.10),
                 ),
-                const SizedBox(width: FacteurSpacing.space3),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Masquer les articles payants',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Cache les articles derrière un paywall.',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: colors.textSecondary),
-                      ),
-                    ],
+                alignment: Alignment.center,
+                child: Icon(
+                  PhosphorIcons.slidersHorizontal(
+                    PhosphorIconsStyle.regular,
                   ),
+                  color: colors.primary,
+                  size: 19,
                 ),
-                Switch.adaptive(
-                  value: hidePaid,
-                  activeColor: colors.primary,
-                  onChanged: (v) =>
-                      ref.read(hidePaidContentProvider.notifier).toggle(v),
+              ),
+              const SizedBox(width: FacteurSpacing.space3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Paramètres des sources',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Langues, articles payants et abonnements',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textSecondary,
+                          ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              Icon(
+                PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
+                color: colors.textTertiary,
+                size: 18,
+              ),
+            ],
           ),
         ),
       ),

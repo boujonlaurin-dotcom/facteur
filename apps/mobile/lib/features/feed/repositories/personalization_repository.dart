@@ -93,6 +93,21 @@ class PersonalizationRepository {
     }
   }
 
+  Future<void> toggleHideNonFrSources(bool hideNonFr) async {
+    try {
+      await _apiClient.post(
+        'users/personalization/toggle-hide-non-fr-sources',
+        body: {'hide_non_fr': hideNonFr},
+      );
+    } on DioException catch (e) {
+      print('PersonalizationRepository.toggleHideNonFrSources failed:');
+      print('   Status: ${e.response?.statusCode}');
+      print('   Body sent: {hide_non_fr: $hideNonFr}');
+      print('   Response: ${e.response?.data}');
+      rethrow;
+    }
+  }
+
   Future<void> unmuteSource(String sourceId) async {
     try {
       await _apiClient.delete('users/personalization/unmute-source/$sourceId');

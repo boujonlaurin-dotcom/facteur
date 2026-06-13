@@ -1,9 +1,11 @@
 name: Production Smoke Tests
 
 on:
-  # Runs after merge to main (Railway auto-deploys via webhook)
+  # Hebdo : quand la branche production avance (Railway auto-deploys via webhook).
+  # NB: l'avancée faite par weekly-release.yml utilise le GITHUB_TOKEN, qui ne
+  # re-déclenche PAS ce workflow — d'où le smoke prod intégré à weekly-release.yml.
   push:
-    branches: [main]
+    branches: [production]
 
   # Manual trigger for ad-hoc verification
   workflow_dispatch:

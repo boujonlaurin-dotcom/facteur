@@ -16,13 +16,14 @@ from app.services.editorial.schemas import (
 )
 
 
-def _make_content_mock(title="Test article"):
+def _make_content_mock(title="Test article", bias_stance="center"):
     c = MagicMock()
     c.id = uuid4()
     c.title = title
     c.source_id = uuid4()
     c.source = MagicMock()
     c.source.name = "Test Source"
+    c.source.bias_stance = bias_stance
     c.published_at = datetime.now(UTC)
     c.is_paid = False
     return c
@@ -60,12 +61,16 @@ def _make_subject(rank=1, topic_id="c1", deep_article=None, actu_article=None):
 
 @pytest.fixture
 def mock_dependencies():
-    """Patch all external dependencies of EditorialPipelineService."""
+    """Patch all external dependencies of EditorialPipelineService.
+
+    Note: DeepMatcher is disabled in the post-unification cleanup. The
+    pipeline hardcodes ``deep_matches = {topic_id: None}`` so no patch is
+    required for it.
+    """
     with (
         patch("app.services.editorial.pipeline.load_editorial_config") as mock_config,
         patch("app.services.editorial.pipeline.EditorialLLMClient") as mock_llm_cls,
         patch("app.services.editorial.pipeline.CurationService") as mock_curation_cls,
-        patch("app.services.editorial.pipeline.DeepMatcher") as mock_deep_cls,
         patch("app.services.editorial.pipeline.ActuMatcher") as mock_actu_cls,
         patch(
             "app.services.editorial.pipeline.PerspectiveService"
@@ -91,11 +96,6 @@ def mock_dependencies():
         mock_curation.select_a_la_une = AsyncMock(return_value=None)
         mock_curation_cls.return_value = mock_curation
 
-        # Deep matcher
-        mock_deep = MagicMock()
-        mock_deep.match_for_topics = AsyncMock()
-        mock_deep_cls.return_value = mock_deep
-
         # Actu matcher
         mock_actu = MagicMock()
         mock_actu_cls.return_value = mock_actu
@@ -111,7 +111,6 @@ def mock_dependencies():
             "config": config,
             "llm": mock_llm,
             "curation": mock_curation,
-            "deep": mock_deep,
             "actu": mock_actu,
             "perspective": mock_perspective,
         }
@@ -170,21 +169,6 @@ class TestComputeGlobalContext:
             ]
             mock_dependencies["curation"].select_topics.return_value = remaining_topics
 
-            # Mock deep matching
-            deep_1 = MagicMock(spec=MatchedDeepArticle)
-            deep_1.content_id = UUID("00000000-0000-0000-0000-000000000001")
-            deep_1.source_id = UUID("00000000-0000-0000-0000-aaaaaaaaaaaa")
-            deep_3 = MagicMock(spec=MatchedDeepArticle)
-            deep_3.content_id = UUID("00000000-0000-0000-0000-000000000003")
-            deep_3.source_id = UUID("00000000-0000-0000-0000-bbbbbbbbbbbb")
-            mock_dependencies["deep"].match_for_topics.return_value = {
-                "c1": deep_1,
-                "c2": None,
-                "c3": deep_3,
-                "c4": None,
-                "c5": None,
-            }
-
             # match_global populate un actu_article pour chaque sujet (cas
             # nominal). Sans ça, le trim post-matching de la pipeline drop
             # les sujets sans actu ni deep — comportement attendu.
@@ -241,8 +225,6 @@ class TestComputeGlobalContext:
                     deep_angle=None,
                 )
             ]
-            mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
-
             # Sans actu ni deep, le sujet serait droppé par le trim de la
             # pipeline ; on simule la présence d'une actu pour que le trim
             # le conserve et qu'on puisse asserter `deep_angle is None`.
@@ -351,11 +333,6 @@ class TestALaUneFallback:
                     topic_id="c3", label="C3", selection_reason="r", deep_angle="D"
                 ),
             ]
-            mock_dependencies["deep"].match_for_topics.return_value = {
-                "c1": None,
-                "c2": None,
-                "c3": None,
-            }
 
             def _populate(
                 subjects, clusters, excluded_source_ids=None, excluded_content_ids=None
@@ -405,7 +382,6 @@ class TestALaUneFallback:
                     topic_id="c1", label="C1", selection_reason="r", deep_angle="D"
                 ),
             ]
-            mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
 
             def _populate(
                 subjects, clusters, excluded_source_ids=None, excluded_content_ids=None
@@ -440,7 +416,17 @@ class TestSubjectTrimAndRenumber:
 
         clusters = [_make_cluster_mock(f"c{i}", f"Cluster {i}") for i in range(1, 7)]
 
-        with patch(
+        # Le test mesure la boucle drop+renumber sur la frontière "target".
+        # On épingle target=5/buffer=2 (config legacy) pour découpler la garantie
+        # du défaut courant (qui a évolué à 10/4 en mai 2026).
+        with patch.dict(
+            "os.environ",
+            {
+                "EDITORIAL_TARGET_SUBJECT_COUNT": "5",
+                "EDITORIAL_SUBJECT_BUFFER": "2",
+            },
+            clear=False,
+        ), patch(
             "app.services.editorial.pipeline.ImportanceDetector"
         ) as mock_detector_cls:
             mock_detector = MagicMock()
@@ -464,9 +450,6 @@ class TestSubjectTrimAndRenumber:
                 )
                 for i in range(2, 8)  # c2..c7
             ]
-            mock_dependencies["deep"].match_for_topics.return_value = {
-                f"c{i}": None for i in range(1, 8)
-            }
 
             # match_global donne actu pour c1, c2, c3, c4 mais PAS c5 (pour
             # tester le drop+remplacement par le buffer c6).
@@ -629,8 +612,9 @@ class TestPerspectiveCountAlignment:
         newer.source.url = "https://www.cluster.fr/"
         newer.url = "https://www.cluster.fr/newer"
 
+        cluster_id_str = str(uuid4())
         cluster = _make_cluster_mock(
-            cluster_id="c1",
+            cluster_id=cluster_id_str,
             label="Retraites",
             contents=[older, newer],
         )
@@ -679,14 +663,13 @@ class TestPerspectiveCountAlignment:
             mock_detector_cls.return_value = mock_detector
 
             mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
-                topic_id="c1",
+                topic_id=cluster_id_str,
                 label="Retraites",
                 selection_reason="Traité par 1 sources",
                 deep_angle="D",
                 source_count=1,
             )
             mock_dependencies["curation"].select_topics.return_value = []
-            mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
 
             # Le trim post-matching de la pipeline drop les sujets sans
             # actu ni deep ; on populate des actus pour préserver les sujets.
@@ -750,8 +733,9 @@ class TestPerspectiveCountAlignment:
         article_b.url = "https://www.outlet-b.fr/story"
         article_b.published_at = datetime(2026, 4, 22, 7, tzinfo=UTC)
 
+        cluster_id_str = str(uuid4())
         cluster = _make_cluster_mock(
-            cluster_id="c1",
+            cluster_id=cluster_id_str,
             label="Breaking news",
             contents=[article_a, article_b],
             source_ids={outlet_a_id, outlet_b_id},
@@ -790,14 +774,13 @@ class TestPerspectiveCountAlignment:
             mock_detector_cls.return_value = mock_detector
 
             mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
-                topic_id="c1",
+                topic_id=cluster_id_str,
                 label="Breaking news",
                 selection_reason="Traité par 2 sources",
                 deep_angle="D",
                 source_count=2,
             )
             mock_dependencies["curation"].select_topics.return_value = []
-            mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
 
             # Le trim post-matching de la pipeline drop les sujets sans
             # actu ni deep ; on populate des actus pour préserver les sujets.
@@ -838,3 +821,648 @@ class TestPerspectiveCountAlignment:
         # Footer logos — one per outlet, matching the count.
         assert subject.perspective_sources is not None
         assert len(subject.perspective_sources) == 2
+
+
+# ============================================================================
+# LLM bias annotation step (PR 4)
+# ============================================================================
+
+
+class TestLLMBiasAnnotationStep:
+    """Couvre l'étape 3B-bis : annotation LLM des variants des clusters
+    sélectionnés, et le helper `_annotate_cluster_llm_bias` qui orchestre
+    spaCy → signature → cache → LLM → write."""
+
+    @staticmethod
+    def _mock_llm_bias_module(
+        is_ready: bool = True,
+        annotate_result: dict | None = None,
+        cached: dict | None = None,
+    ):
+        """Patch in-context : LLMBiasAnnotationService + get_title_annotation_service."""
+        mock_llm_service = MagicMock()
+        mock_llm_service.is_ready = is_ready
+        mock_llm_service.annotate_variant = AsyncMock(
+            return_value=annotate_result
+            if annotate_result is not None
+            else {
+                "target_spans": [
+                    {
+                        "start": 0,
+                        "end": 4,
+                        "text": "Test",
+                        "category": "framing",
+                        "weight": 0.7,
+                    }
+                ],
+                "exclude_spans": [],
+                "notes": "",
+                "confidence": 0.8,
+            }
+        )
+
+        mock_title_service = MagicMock()
+        mock_title_service.compute_cluster_signature = MagicMock(return_value="sig-abc")
+        mock_title_service.get_or_compute_cluster_annotations = AsyncMock()
+        mock_title_service.get_llm_annotations = AsyncMock(return_value=cached or {})
+        mock_title_service.write_llm_annotations = AsyncMock(return_value=0)
+        return mock_llm_service, mock_title_service
+
+    # ---------- Tests pipeline-level (gates `is_ready` / singleton / crash) ----
+
+    @pytest.mark.asyncio
+    async def test_skips_when_service_not_ready(self, mock_dependencies):
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        mock_llm_service, mock_title_service = self._mock_llm_bias_module(
+            is_ready=False
+        )
+
+        cluster_id_str = str(uuid4())
+        cluster = _make_cluster_mock(
+            cluster_id_str,
+            "Retraites",
+            contents=[_make_content_mock("A"), _make_content_mock("B")],
+        )
+        cluster.is_trending = False
+        cluster.is_multi_source = False
+
+        with (
+            patch(
+                "app.services.editorial.pipeline.ImportanceDetector"
+            ) as mock_detector_cls,
+            patch(
+                "app.services.editorial.pipeline.LLMBiasAnnotationService",
+                return_value=mock_llm_service,
+            ),
+            patch(
+                "app.services.editorial.pipeline.get_title_annotation_service",
+                return_value=mock_title_service,
+            ),
+            patch(
+                "app.services.editorial.pipeline._persist_content_cluster_ids",
+            ),
+        ):
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = [cluster]
+            mock_detector_cls.return_value = mock_detector
+
+            mock_dependencies["curation"].select_topics.return_value = [
+                SelectedTopic(
+                    topic_id=cluster_id_str,
+                    label="Retraites",
+                    selection_reason="R",
+                    deep_angle="D",
+                )
+            ]
+
+            def _populate_actu(subjects, clusters, **_):
+                out = []
+                for s in subjects:
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies["actu"].match_global.side_effect = _populate_actu
+
+            svc = EditorialPipelineService(AsyncMock())
+            result = await svc.compute_global_context([_make_content_mock()])
+
+        assert result is not None
+        mock_llm_service.annotate_variant.assert_not_called()
+        mock_title_service.write_llm_annotations.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_singleton_clusters(self, mock_dependencies):
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        mock_llm_service, mock_title_service = self._mock_llm_bias_module()
+
+        # Singleton: 1 seul variant → rien à comparer.
+        cluster = _make_cluster_mock(
+            "c1", "Solo", contents=[_make_content_mock("Solo")]
+        )
+        cluster.is_trending = False
+        cluster.is_multi_source = False
+
+        with (
+            patch(
+                "app.services.editorial.pipeline.ImportanceDetector"
+            ) as mock_detector_cls,
+            patch(
+                "app.services.editorial.pipeline.LLMBiasAnnotationService",
+                return_value=mock_llm_service,
+            ),
+            patch(
+                "app.services.editorial.pipeline.get_title_annotation_service",
+                return_value=mock_title_service,
+            ),
+        ):
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = [cluster]
+            mock_detector_cls.return_value = mock_detector
+
+            mock_dependencies["curation"].select_topics.return_value = [
+                SelectedTopic(
+                    topic_id="c1",
+                    label="Solo",
+                    selection_reason="R",
+                    deep_angle="D",
+                )
+            ]
+
+            def _populate_actu(subjects, clusters, **_):
+                out = []
+                for s in subjects:
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies["actu"].match_global.side_effect = _populate_actu
+
+            svc = EditorialPipelineService(AsyncMock())
+            await svc.compute_global_context([_make_content_mock()])
+
+        # Singleton cluster → pas d'appel LLM, pas d'écriture.
+        mock_llm_service.annotate_variant.assert_not_called()
+        mock_title_service.write_llm_annotations.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_failure_does_not_crash_digest(self, mock_dependencies):
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        # Helper raise une exception interne → le try/except doit la rattraper.
+        mock_llm_service, mock_title_service = self._mock_llm_bias_module()
+        mock_title_service.get_or_compute_cluster_annotations.side_effect = (
+            RuntimeError("DB explosion")
+        )
+
+        cluster_id_str = str(uuid4())
+        cluster = _make_cluster_mock(
+            cluster_id_str,
+            "Retraites",
+            contents=[_make_content_mock("A"), _make_content_mock("B")],
+        )
+        cluster.is_trending = False
+        cluster.is_multi_source = False
+
+        with (
+            patch(
+                "app.services.editorial.pipeline.ImportanceDetector"
+            ) as mock_detector_cls,
+            patch(
+                "app.services.editorial.pipeline.LLMBiasAnnotationService",
+                return_value=mock_llm_service,
+            ),
+            patch(
+                "app.services.editorial.pipeline.get_title_annotation_service",
+                return_value=mock_title_service,
+            ),
+            patch(
+                "app.services.editorial.pipeline._persist_content_cluster_ids",
+            ),
+        ):
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = [cluster]
+            mock_detector_cls.return_value = mock_detector
+
+            mock_dependencies["curation"].select_topics.return_value = [
+                SelectedTopic(
+                    topic_id=cluster_id_str,
+                    label="Retraites",
+                    selection_reason="R",
+                    deep_angle="D",
+                )
+            ]
+
+            def _populate_actu(subjects, clusters, **_):
+                out = []
+                for s in subjects:
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies["actu"].match_global.side_effect = _populate_actu
+
+            svc = EditorialPipelineService(AsyncMock())
+            result = await svc.compute_global_context([_make_content_mock()])
+
+        # Digest produit malgré l'erreur LLM.
+        assert result is not None
+
+    # ---------- Tests helper-level (cache / signature / self-ref / write) -----
+
+    @pytest.mark.asyncio
+    async def test_writes_annotations_for_digest_clusters(self):
+        from app.services.editorial.pipeline import _annotate_cluster_llm_bias
+        from app.services.llm_bias_annotation_service import LLMBiasAnnotationService
+
+        mock_llm_service, mock_title_service = self._mock_llm_bias_module()
+
+        v1 = _make_content_mock("Variant gauche", bias_stance="left")
+        v2 = _make_content_mock("Variant droite", bias_stance="right")
+        v3 = _make_content_mock("Variant centre (best)", bias_stance="center")
+        cluster_id_str = str(uuid4())
+        cluster = _make_cluster_mock(
+            cluster_id_str, "Variant centre (best)", contents=[v1, v2, v3]
+        )
+
+        session_cm = AsyncMock()
+        session_cm.__aenter__.return_value = AsyncMock()
+        session_cm.__aexit__.return_value = None
+        short_session = MagicMock(return_value=session_cm)
+
+        stats = {
+            "cluster_count": 0,
+            "variants_annotated": 0,
+            "variants_skipped": 0,
+            "cache_hits": 0,
+        }
+        await _annotate_cluster_llm_bias(
+            cluster=cluster,
+            llm_service=mock_llm_service,
+            title_service=mock_title_service,
+            short_session=short_session,
+            stats=stats,
+        )
+
+        # 2 variants annotés (le self-ref `v3` est skippé).
+        assert mock_llm_service.annotate_variant.await_count == 2
+        assert stats["variants_annotated"] == 2
+
+        # write_llm_annotations appelé avec la version + signature + payload.
+        mock_title_service.write_llm_annotations.assert_awaited_once()
+        kwargs = mock_title_service.write_llm_annotations.await_args
+        # signature de write_llm_annotations:
+        # (session, cluster_id_uuid, llm_version, signature, annotations)
+        assert kwargs.args[2] == LLMBiasAnnotationService.LLM_VERSION
+        assert kwargs.args[3] == "sig-abc"
+        annotations_arg = kwargs.args[4]
+        assert set(annotations_arg.keys()) == {v1.id, v2.id}
+
+    @pytest.mark.asyncio
+    async def test_uses_cache_when_signature_matches(self):
+        from app.services.editorial.pipeline import _annotate_cluster_llm_bias
+
+        v1 = _make_content_mock("A")
+        v2 = _make_content_mock("B")
+        v3 = _make_content_mock("C (best)")
+        cluster = _make_cluster_mock(
+            str(uuid4()), "C (best)", contents=[v1, v2, v3]
+        )
+
+        # Cache contient déjà toutes les annotations attendues (v1, v2 ; v3 self-ref).
+        cached = {v1.id: {"target_spans": []}, v2.id: {"target_spans": []}}
+        mock_llm_service, mock_title_service = self._mock_llm_bias_module(
+            cached=cached
+        )
+
+        session_cm = AsyncMock()
+        session_cm.__aenter__.return_value = AsyncMock()
+        session_cm.__aexit__.return_value = None
+        short_session = MagicMock(return_value=session_cm)
+
+        stats = {
+            "cluster_count": 0,
+            "variants_annotated": 0,
+            "variants_skipped": 0,
+            "cache_hits": 0,
+        }
+        await _annotate_cluster_llm_bias(
+            cluster=cluster,
+            llm_service=mock_llm_service,
+            title_service=mock_title_service,
+            short_session=short_session,
+            stats=stats,
+        )
+
+        mock_llm_service.annotate_variant.assert_not_awaited()
+        mock_title_service.write_llm_annotations.assert_not_awaited()
+        assert stats["cache_hits"] == 1
+        assert stats["variants_annotated"] == 0
+
+    @pytest.mark.asyncio
+    async def test_recomputes_on_signature_mismatch(self):
+        from app.services.editorial.pipeline import _annotate_cluster_llm_bias
+
+        v1 = _make_content_mock("A")
+        v2 = _make_content_mock("B")
+        v3 = _make_content_mock("C (best)")
+        cluster = _make_cluster_mock(
+            str(uuid4()), "C (best)", contents=[v1, v2, v3]
+        )
+
+        # PR 3 filtre strict : signature qui ne match pas → get_llm_annotations
+        # retourne {} → on doit re-déclencher le LLM pour les 2 variants non self-ref.
+        mock_llm_service, mock_title_service = self._mock_llm_bias_module(cached={})
+
+        session_cm = AsyncMock()
+        session_cm.__aenter__.return_value = AsyncMock()
+        session_cm.__aexit__.return_value = None
+        short_session = MagicMock(return_value=session_cm)
+
+        stats = {
+            "cluster_count": 0,
+            "variants_annotated": 0,
+            "variants_skipped": 0,
+            "cache_hits": 0,
+        }
+        await _annotate_cluster_llm_bias(
+            cluster=cluster,
+            llm_service=mock_llm_service,
+            title_service=mock_title_service,
+            short_session=short_session,
+            stats=stats,
+        )
+
+        assert mock_llm_service.annotate_variant.await_count == 2
+        assert stats["cache_hits"] == 0
+        assert stats["variants_annotated"] == 2
+
+    @pytest.mark.asyncio
+    async def test_skips_self_reference_variant(self):
+        from app.services.editorial.pipeline import _annotate_cluster_llm_bias
+
+        # cluster.label == v2.title → v2 doit être skippé (auto-référence).
+        v1 = _make_content_mock("Variant A")
+        v2 = _make_content_mock("Le meilleur titre")
+        v3 = _make_content_mock("Variant C")
+        cluster = _make_cluster_mock(
+            str(uuid4()), "Le meilleur titre", contents=[v1, v2, v3]
+        )
+
+        mock_llm_service, mock_title_service = self._mock_llm_bias_module()
+
+        session_cm = AsyncMock()
+        session_cm.__aenter__.return_value = AsyncMock()
+        session_cm.__aexit__.return_value = None
+        short_session = MagicMock(return_value=session_cm)
+
+        stats = {
+            "cluster_count": 0,
+            "variants_annotated": 0,
+            "variants_skipped": 0,
+            "cache_hits": 0,
+        }
+        await _annotate_cluster_llm_bias(
+            cluster=cluster,
+            llm_service=mock_llm_service,
+            title_service=mock_title_service,
+            short_session=short_session,
+            stats=stats,
+        )
+
+        # Seulement v1 et v3 sont annotés. v2 (== label) est skippé.
+        assert mock_llm_service.annotate_variant.await_count == 2
+        annotated_titles = {
+            call.kwargs["variant_title"]
+            for call in mock_llm_service.annotate_variant.await_args_list
+        }
+        assert annotated_titles == {"Variant A", "Variant C"}
+
+
+# ============================================================================
+# Cluster id persistence (Sprint 3 — activate LLM bias pipeline)
+# ============================================================================
+
+
+class TestPersistContentClusterIds:
+    """`_persist_content_cluster_ids` doit écrire `cluster_id` en bulk sur les
+    `Content` sélectionnés, condition sine qua non pour que le router
+    `/perspectives` retrouve les annotations LLM via `content.cluster_id`."""
+
+    @pytest.mark.asyncio
+    async def test_writes_cluster_id_for_each_content(self, db_session):
+        from datetime import UTC, datetime
+        from sqlalchemy import select as sa_select
+
+        from app.models.content import Content
+        from app.models.enums import ContentType, SourceType
+        from app.models.source import Source
+        from app.services.editorial.pipeline import _persist_content_cluster_ids
+
+        source = Source(
+            id=uuid4(),
+            name="Persistence src",
+            url="https://persist.fr",
+            feed_url=f"https://persist.fr/feed-{uuid4()}.xml",
+            type=SourceType.ARTICLE,
+            theme="society",
+            is_active=True,
+            is_curated=False,
+        )
+        db_session.add(source)
+        await db_session.commit()
+
+        cluster_a = uuid4()
+        cluster_b = uuid4()
+        contents: list[Content] = []
+        for i in range(5):
+            c = Content(
+                id=uuid4(),
+                source_id=source.id,
+                title=f"Article {i}",
+                url=f"https://persist.fr/{i}",
+                published_at=datetime.now(UTC),
+                content_type=ContentType.ARTICLE,
+                guid=f"persist-{i}",
+                cluster_id=None,
+            )
+            db_session.add(c)
+            contents.append(c)
+        await db_session.commit()
+
+        # 3 articles in cluster A, 2 in cluster B.
+        pairs = [
+            (contents[0].id, cluster_a),
+            (contents[1].id, cluster_a),
+            (contents[2].id, cluster_a),
+            (contents[3].id, cluster_b),
+            (contents[4].id, cluster_b),
+        ]
+        await _persist_content_cluster_ids(db_session, pairs)
+
+        rows = (
+            await db_session.execute(
+                sa_select(Content.id, Content.cluster_id).where(
+                    Content.id.in_([c.id for c in contents])
+                )
+            )
+        ).all()
+        observed = {r.id: r.cluster_id for r in rows}
+        assert observed[contents[0].id] == cluster_a
+        assert observed[contents[1].id] == cluster_a
+        assert observed[contents[2].id] == cluster_a
+        assert observed[contents[3].id] == cluster_b
+        assert observed[contents[4].id] == cluster_b
+
+    @pytest.mark.asyncio
+    async def test_idempotent_when_pairs_unchanged(self, db_session):
+        from datetime import UTC, datetime
+        from sqlalchemy import select as sa_select
+
+        from app.models.content import Content
+        from app.models.enums import ContentType, SourceType
+        from app.models.source import Source
+        from app.services.editorial.pipeline import _persist_content_cluster_ids
+
+        source = Source(
+            id=uuid4(),
+            name="Idem src",
+            url="https://idem.fr",
+            feed_url=f"https://idem.fr/feed-{uuid4()}.xml",
+            type=SourceType.ARTICLE,
+            theme="society",
+            is_active=True,
+            is_curated=False,
+        )
+        db_session.add(source)
+        await db_session.commit()
+
+        cluster_id = uuid4()
+        c = Content(
+            id=uuid4(),
+            source_id=source.id,
+            title="Idem",
+            url="https://idem.fr/x",
+            published_at=datetime.now(UTC),
+            content_type=ContentType.ARTICLE,
+            guid="idem",
+            cluster_id=None,
+        )
+        db_session.add(c)
+        await db_session.commit()
+
+        await _persist_content_cluster_ids(db_session, [(c.id, cluster_id)])
+        await _persist_content_cluster_ids(db_session, [(c.id, cluster_id)])
+
+        row = (
+            await db_session.execute(
+                sa_select(Content.cluster_id).where(Content.id == c.id)
+            )
+        ).first()
+        assert row.cluster_id == cluster_id
+
+    @pytest.mark.asyncio
+    async def test_noop_on_empty_pairs(self, db_session):
+        from app.services.editorial.pipeline import _persist_content_cluster_ids
+
+        # No rows in DB needed — simply must not raise.
+        await _persist_content_cluster_ids(db_session, [])
+
+
+class TestPipelineWiresClusterIdPersistence:
+    """La pipeline doit appeler `_persist_content_cluster_ids` avant l'étape
+    3B-bis avec les pairs (content_id, cluster_id) des `selected_topics`
+    multi-articles."""
+
+    @pytest.mark.asyncio
+    async def test_persists_pairs_before_llm_bias_step(self, mock_dependencies):
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        v1 = _make_content_mock("Variant A")
+        v2 = _make_content_mock("Variant B")
+        cluster_id_str = str(uuid4())
+        cluster = _make_cluster_mock(cluster_id_str, "Variant A", contents=[v1, v2])
+        cluster.is_trending = True
+        cluster.is_multi_source = True
+
+        captured_pairs: list[tuple] = []
+
+        async def _fake_persist(session, pairs):
+            captured_pairs.extend(pairs)
+
+        with (
+            patch(
+                "app.services.editorial.pipeline.ImportanceDetector"
+            ) as mock_detector_cls,
+            patch(
+                "app.services.editorial.pipeline._persist_content_cluster_ids",
+                side_effect=_fake_persist,
+            ) as mock_persist,
+        ):
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = [cluster]
+            mock_detector_cls.return_value = mock_detector
+
+            mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
+                topic_id=cluster_id_str,
+                label="Variant A",
+                selection_reason="R",
+                deep_angle="D",
+                source_count=2,
+            )
+            mock_dependencies["curation"].select_topics.return_value = []
+
+            def _populate_actu(subjects, clusters, **_):
+                out = []
+                for s in subjects:
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies["actu"].match_global.side_effect = _populate_actu
+
+            svc = EditorialPipelineService(AsyncMock())
+            result = await svc.compute_global_context([_make_content_mock()])
+
+        assert result is not None
+        mock_persist.assert_awaited_once()
+        assert {pair[0] for pair in captured_pairs} == {v1.id, v2.id}
+        assert {pair[1] for pair in captured_pairs} == {UUID(cluster_id_str)}
+
+    @pytest.mark.asyncio
+    async def test_skips_persist_for_singleton_clusters(self, mock_dependencies):
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        # Un seul article → cluster.contents < 2, on ne persiste rien.
+        cluster = _make_cluster_mock(
+            str(uuid4()), "Solo", contents=[_make_content_mock("Solo")]
+        )
+        cluster.is_trending = False
+        cluster.is_multi_source = False
+
+        with (
+            patch(
+                "app.services.editorial.pipeline.ImportanceDetector"
+            ) as mock_detector_cls,
+            patch(
+                "app.services.editorial.pipeline._persist_content_cluster_ids"
+            ) as mock_persist,
+        ):
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = [cluster]
+            mock_detector_cls.return_value = mock_detector
+
+            mock_dependencies["curation"].select_topics.return_value = [
+                SelectedTopic(
+                    topic_id=cluster.cluster_id,
+                    label="Solo",
+                    selection_reason="R",
+                    deep_angle="D",
+                )
+            ]
+
+            def _populate_actu(subjects, clusters, **_):
+                out = []
+                for s in subjects:
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies["actu"].match_global.side_effect = _populate_actu
+
+            svc = EditorialPipelineService(AsyncMock())
+            await svc.compute_global_context([_make_content_mock()])
+
+        mock_persist.assert_not_awaited()

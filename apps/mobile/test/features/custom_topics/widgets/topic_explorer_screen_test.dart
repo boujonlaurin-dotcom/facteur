@@ -7,6 +7,8 @@ import 'package:facteur/features/custom_topics/models/topic_models.dart';
 import 'package:facteur/features/custom_topics/providers/custom_topics_provider.dart';
 import 'package:facteur/features/custom_topics/repositories/topic_repository.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
+import 'package:facteur/features/settings/models/display_mode_spec.dart';
+import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:facteur/core/auth/auth_state.dart' as app_auth;
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
@@ -62,6 +64,8 @@ void main() {
       overrides: [
         topicRepositoryProvider.overrideWithValue(mockRepo),
         app_auth.authStateProvider.overrideWith((ref) => mockAuth),
+        // Spec lu via Hive en prod — court-circuité dans les widget tests.
+        displayModeSpecProvider.overrideWith((ref) => DisplayModeSpec.normal),
       ],
       child: MaterialApp(
         home: TopicExplorerScreen(
@@ -101,7 +105,7 @@ void main() {
       );
     });
 
-    testWidgets('shows "Suivi" + slider when topic is followed',
+    testWidgets('shows "Suivi" header + state pill when topic is followed',
         (tester) async {
       await tester.pumpWidget(createWidget(
         followedTopics: [
@@ -115,8 +119,10 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      expect(find.text('Suivi'), findsOneWidget);
-      expect(find.text('Priorité :'), findsOneWidget);
+      // Header "Suivi" + pill "Suivi" (default state when no userInterests data)
+      expect(find.text('Suivi'), findsNWidgets(2));
+      // Old slider wording should be gone.
+      expect(find.text('Priorité :'), findsNothing);
     });
 
     testWidgets('follow button calls followTopic on provider',

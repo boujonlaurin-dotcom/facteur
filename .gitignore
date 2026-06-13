@@ -90,3 +90,9 @@ serve_test.py
 # Logs
 *.log
 facteur-release.jks
+
+# Nix / direnv
+.direnv/
+.envrc.local
+result
+result-*

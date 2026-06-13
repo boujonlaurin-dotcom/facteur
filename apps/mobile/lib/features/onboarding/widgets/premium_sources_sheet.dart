@@ -1,30 +1,42 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../config/theme.dart';
 import '../../sources/models/source_model.dart';
+import '../../sources/providers/sources_providers.dart';
+import '../../sources/widgets/premium_source_connection.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../onboarding_strings.dart';
 
 /// Bottom sheet for indicating press subscriptions during onboarding.
 ///
-/// Shows all curated sources so the user can mark which ones they have
-/// a paid subscription to. Returns the set of subscribed source IDs via [onDone].
-class PremiumSourcesSheet extends StatefulWidget {
+/// Shows the sources the user just validated ([selectedSourceIds]) so they can
+/// mark which ones they pay for. During onboarding these aren't persisted yet
+/// (`hasSubscription=false`) and may have no premium connector — gating on
+/// `premiumConnection` left the list empty, so we base it on the validated
+/// selection instead. Returns the set of subscribed source IDs via [onDone].
+class PremiumSourcesSheet extends ConsumerStatefulWidget {
   final List<Source> allSources;
-  final ValueChanged<Set<String>> onDone;
+
+  /// Sources the user validated at the previous step. The sheet lists these
+  /// (plus any already-subscribed) so the toggle reflects what they own.
+  final Set<String> selectedSourceIds;
+  final ValueChanged<Set<String>>? onDone;
 
   const PremiumSourcesSheet({
     super.key,
     required this.allSources,
-    required this.onDone,
+    required this.selectedSourceIds,
+    this.onDone,
   });
 
   @override
-  State<PremiumSourcesSheet> createState() => _PremiumSourcesSheetState();
+  ConsumerState<PremiumSourcesSheet> createState() =>
+      _PremiumSourcesSheetState();
 }
 
-class _PremiumSourcesSheetState extends State<PremiumSourcesSheet> {
+class _PremiumSourcesSheetState extends ConsumerState<PremiumSourcesSheet> {
   late Set<String> _subscribed;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -50,7 +62,10 @@ class _PremiumSourcesSheetState extends State<PremiumSourcesSheet> {
 
   List<Source> get _filteredSources {
     var sources = widget.allSources
-        .where((s) => s.isCurated)
+        .where((s) =>
+            s.isCurated &&
+            (widget.selectedSourceIds.contains(s.id) ||
+                _subscribed.contains(s.id)))
         .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
 
@@ -146,22 +161,39 @@ class _PremiumSourcesSheetState extends State<PremiumSourcesSheet> {
           ),
           const SizedBox(height: FacteurSpacing.space3),
 
-          // Sources list
           Flexible(
-            child: ListView.separated(
-              shrinkWrap: true,
-              padding: const EdgeInsets.symmetric(
-                horizontal: FacteurSpacing.space6,
-              ),
-              itemCount: sources.length,
-              separatorBuilder: (_, __) =>
-                  const SizedBox(height: FacteurSpacing.space2),
-              itemBuilder: (context, index) {
-                final source = sources[index];
-                final isSubscribed = _subscribed.contains(source.id);
-                return _buildSourceTile(context, source, isSubscribed);
-              },
-            ),
+            child: sources.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: FacteurSpacing.space6,
+                      vertical: FacteurSpacing.space4,
+                    ),
+                    child: Center(
+                      child: Text(
+                        widget.selectedSourceIds.isEmpty
+                            ? "Vous n'avez pas encore validé de source."
+                            : 'Aucune source à afficher pour le moment.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: colors.textSecondary,
+                            ),
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: FacteurSpacing.space6,
+                    ),
+                    itemCount: sources.length,
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(height: FacteurSpacing.space2),
+                    itemBuilder: (context, index) {
+                      final source = sources[index];
+                      final isSubscribed = _subscribed.contains(source.id);
+                      return _buildSourceTile(context, source, isSubscribed);
+                    },
+                  ),
           ),
 
           // Done button
@@ -171,7 +203,7 @@ class _PremiumSourcesSheetState extends State<PremiumSourcesSheet> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-                  widget.onDone(_subscribed);
+                  widget.onDone?.call(_subscribed);
                   Navigator.of(context).pop();
                 },
                 style: ElevatedButton.styleFrom(
@@ -196,7 +228,7 @@ class _PremiumSourcesSheetState extends State<PremiumSourcesSheet> {
 
     return Container(
       decoration: BoxDecoration(
-        color: colors.textPrimary.withOpacity(0.06),
+        color: colors.textPrimary.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(8),
       ),
       alignment: Alignment.center,
@@ -230,7 +262,8 @@ class _PremiumSourcesSheetState extends State<PremiumSourcesSheet> {
                   ? FacteurImage(
                       imageUrl: source.logoUrl!,
                       fit: BoxFit.cover,
-                      errorWidget: (_) => _buildLogoFallback(colors, source.name),
+                      errorWidget: (_) =>
+                          _buildLogoFallback(colors, source.name),
                     )
                   : _buildLogoFallback(colors, source.name),
             ),
@@ -246,23 +279,87 @@ class _PremiumSourcesSheetState extends State<PremiumSourcesSheet> {
                   ),
             ),
           ),
-          // Switch
-          Switch.adaptive(
-            value: isSubscribed,
-            onChanged: (val) {
-              HapticFeedback.lightImpact();
-              setState(() {
-                if (val) {
-                  _subscribed.add(source.id);
-                } else {
-                  _subscribed.remove(source.id);
-                }
-              });
-            },
-            activeTrackColor: colors.primary,
-          ),
+          _buildTrailing(context, source, isSubscribed),
         ],
       ),
     );
+  }
+
+  /// Action de droite : « Dissocier » si déjà connectée, sinon un CTA de
+  /// connexion (« Connecter » config curée / « Associer » fallback générique)
+  /// uniquement pour les sources payantes. Les sources clairement gratuites
+  /// n'ont aucun abonnement à associer → simple état « Suivie ✓ ».
+  Widget _buildTrailing(
+      BuildContext context, Source source, bool isSubscribed) {
+    final colors = context.facteurColors;
+    if (isSubscribed) {
+      return TextButton(
+        onPressed: () => _disconnectSource(source),
+        child: const Text('Dissocier'),
+      );
+    }
+    final connection = resolvePremiumConnection(source);
+    if (connection == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check, size: 16, color: colors.success),
+            const SizedBox(width: 4),
+            Text(
+              'Suivie',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: colors.textSecondary,
+                  ),
+            ),
+          ],
+        ),
+      );
+    }
+    return TextButton(
+      onPressed: () => _connectSource(context, source, connection),
+      child: Text(connection.isGeneric ? 'Associer' : 'Connecter'),
+    );
+  }
+
+  Future<void> _connectSource(
+    BuildContext context,
+    Source source,
+    PremiumConnection connection,
+  ) async {
+    // Passe toujours par le flow de connexion premium avec une connexion
+    // explicite (curée ou fallback générique synthétisé). On ne fait jamais de
+    // `connectSubscription` direct (il levait un 400 PremiumConnectionNotEnabled
+    // quand la config premium était absente).
+    final navigator = Navigator.of(context);
+    await HapticFeedback.lightImpact();
+    if (!mounted) return;
+    await navigator.push<void>(
+      MaterialPageRoute(
+        builder: (_) => PremiumSourceConnection(
+          source: source,
+          connection: connection,
+          onConnected: () async {
+            await ref
+                .read(userSourcesProvider.notifier)
+                .connectSubscription(source.id);
+            if (mounted) {
+              setState(() => _subscribed.add(source.id));
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _disconnectSource(Source source) async {
+    await HapticFeedback.lightImpact();
+    await ref
+        .read(userSourcesProvider.notifier)
+        .disconnectSubscription(source.id);
+    if (mounted) {
+      setState(() => _subscribed.remove(source.id));
+    }
   }
 }

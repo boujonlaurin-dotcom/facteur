@@ -310,9 +310,10 @@ async def test_cleanup_preserves_digest_referenced_content():
         delete_stmt.compile(compile_kwargs={"literal_binds": True})
     )
     assert referenced_id.hex in compiled
-    # And the DELETE has an extra NOT IN clause beyond the bookmarks /
-    # deep-source ones — signalled by multiple "NOT IN" occurrences.
-    assert compiled.count("NOT IN") >= 3
+    # Le DELETE exclut 3 catégories : bookmarks et deep-sources via NOT EXISTS
+    # (anti-join indexé), et digest refs via NOT IN sur la liste matérialisée.
+    assert compiled.count("NOT (EXISTS") >= 2
+    assert "NOT IN" in compiled
 
 
 @pytest.mark.asyncio

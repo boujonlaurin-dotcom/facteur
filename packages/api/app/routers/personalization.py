@@ -5,13 +5,14 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.source import UserSource
+from app.models.user_favorites import UserFavoriteSource
 from app.models.user_personalization import UserPersonalization
 from app.schemas.learning import (
     EntityPreferenceRequest,
@@ -50,12 +51,20 @@ class TogglePaidContentRequest(BaseModel):
     hide_paid: bool
 
 
+class ToggleHideNonFrSourcesRequest(BaseModel):
+    hide_non_fr: bool
+
+
 class PersonalizationResponse(BaseModel):
     muted_sources: list[UUID] = []
     muted_themes: list[str] = []
     muted_topics: list[str] = []
     muted_content_types: list[str] = []
     hide_paid_content: bool = True
+    hide_non_fr_sources: bool = True
+    # `true` quand l'utilisateur a touché manuellement au toggle ci-dessus —
+    # à partir de là, le recalcul auto sur follow/unfollow est gelé.
+    language_filter_user_set: bool = False
 
 
 # --- Endpoints ---
@@ -84,6 +93,10 @@ async def get_personalization(
         hide_paid_content=result.hide_paid_content
         if result.hide_paid_content is not None
         else True,
+        hide_non_fr_sources=result.hide_non_fr_sources
+        if result.hide_non_fr_sources is not None
+        else True,
+        language_filter_user_set=bool(result.language_filter_user_set),
     )
 
 
@@ -95,15 +108,12 @@ async def mute_source(
 ):
     """Ajoute une source à la liste des sources mutées."""
     user_uuid = UUID(current_user_id)
-    # Garantir l'existence du profil utilisateur (requis pour la FK)
-
-    # Garantir l'existence du profil utilisateur (requis pour la FK)
     user_service = UserService(db)
-    # Ensure profile exists to satisfy FK constraint
-    await user_service.get_or_create_profile(current_user_id)
-    await db.commit()  # S'assurer que le profil est persisté et visible pour la FK
 
     try:
+        await user_service.get_or_create_profile(current_user_id)
+        await db.commit()
+
         # Upsert: Insert if not exists, update if exists
         # Use COALESCE to handle case where muted_sources is NULL
         stmt = (
@@ -137,6 +147,12 @@ async def mute_source(
             )
         )
         if existing_trust:
+            await db.execute(
+                delete(UserFavoriteSource).where(
+                    UserFavoriteSource.user_id == user_uuid,
+                    UserFavoriteSource.source_id == request.source_id,
+                )
+            )
             await db.delete(existing_trust)
 
         await db.commit()
@@ -434,6 +450,67 @@ async def unmute_content_type(
         FEED_CACHE.invalidate(user_uuid)
 
     return {"message": f"Type de contenu '{ct_slug}' démuté"}
+
+
+@router.post("/toggle-hide-non-fr-sources")
+async def toggle_hide_non_fr_sources(
+    request: ToggleHideNonFrSourcesRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Active/désactive le masquage des sources non-FR.
+
+    Toute interaction utilisateur sur ce toggle gèle le mode auto
+    (`language_filter_user_set = true`) : le recalcul automatique sur
+    follow/unfollow d'une source non-FR ne touchera plus le toggle —
+    le choix explicite de l'utilisateur prévaut.
+    """
+    user_uuid = UUID(current_user_id)
+
+    user_service = UserService(db)
+    await user_service.get_or_create_profile(current_user_id)
+    await db.commit()
+
+    try:
+        stmt = (
+            pg_insert(UserPersonalization)
+            .values(
+                user_id=user_uuid,
+                hide_non_fr_sources=request.hide_non_fr,
+                language_filter_user_set=True,
+            )
+            .on_conflict_do_update(
+                index_elements=["user_id"],
+                set_={
+                    "hide_non_fr_sources": request.hide_non_fr,
+                    "language_filter_user_set": True,
+                    "updated_at": func.now(),
+                },
+            )
+        )
+
+        await db.execute(stmt)
+        await db.commit()
+        FEED_CACHE.invalidate(user_uuid)
+
+        return {
+            "message": (
+                f"Masquage sources non-FR "
+                f"{'activé' if request.hide_non_fr else 'désactivé'}"
+            ),
+            "hide_non_fr_sources": request.hide_non_fr,
+            "language_filter_user_set": True,
+        }
+
+    except Exception as e:
+        logger.error(
+            "toggle_hide_non_fr_sources_error", error=str(e), user_id=str(user_uuid)
+        )
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur lors du changement de préférence: {str(e)}",
+        )
 
 
 @router.post("/toggle-paid-content")

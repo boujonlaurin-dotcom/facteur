@@ -541,6 +541,8 @@ class TestBackgroundRegenRateLimit:
 
     def test_rate_limit_blocks_repeat_calls_within_cooldown(self):
         """Second call within cooldown window is a no-op."""
+        from datetime import datetime
+
         from app.services import digest_service
 
         # Reset rate limit dict
@@ -549,7 +551,12 @@ class TestBackgroundRegenRateLimit:
         user_id = uuid4()
         target_date = date.today()
 
-        with patch("asyncio.create_task") as mock_create_task:
+        # Fixe l'heure à 09:00 Paris pour passer la garde horaire (Fix 1).
+        after_cron = datetime.combine(target_date, datetime.min.time()).replace(hour=9)
+        with (
+            patch("app.utils.time.now_paris", return_value=after_cron),
+            patch("asyncio.create_task") as mock_create_task,
+        ):
             digest_service._schedule_background_regen(
                 user_id=user_id, target_date=target_date, is_serene=False
             )
@@ -561,6 +568,8 @@ class TestBackgroundRegenRateLimit:
 
     def test_rate_limit_independent_per_serene_variant(self):
         """(user, date, False) and (user, date, True) are separate buckets."""
+        from datetime import datetime
+
         from app.services import digest_service
 
         digest_service._BG_REGEN_RATE_LIMIT.clear()
@@ -568,7 +577,11 @@ class TestBackgroundRegenRateLimit:
         user_id = uuid4()
         target_date = date.today()
 
-        with patch("asyncio.create_task") as mock_create_task:
+        after_cron = datetime.combine(target_date, datetime.min.time()).replace(hour=9)
+        with (
+            patch("app.utils.time.now_paris", return_value=after_cron),
+            patch("asyncio.create_task") as mock_create_task,
+        ):
             digest_service._schedule_background_regen(
                 user_id=user_id, target_date=target_date, is_serene=False
             )
@@ -577,6 +590,90 @@ class TestBackgroundRegenRateLimit:
             )
             # Both should go through — different variants
             assert mock_create_task.call_count == 2
+
+
+class TestBackgroundRegenCronGuard:
+    """Fix 1 — bug-essentiel-pipeline.md.
+
+    Avant 07:30 Paris, `_schedule_background_regen` doit refuser de générer
+    pour `target_date == today` : à minuit, le pool 48h est saturé du soir
+    précédent et les Unes du matin n'existent pas encore, donc le digest qui
+    serait produit est mauvais ET bloque la régen du cron de 07:30 via
+    `digest_background_regen_skipped_good_format`."""
+
+    def test_skips_when_called_before_cron_hour(self):
+        from datetime import datetime
+
+        from app.services import digest_service
+
+        digest_service._BG_REGEN_RATE_LIMIT.clear()
+
+        user_id = uuid4()
+        target_date = date.today()
+        before_cron = datetime.combine(target_date, datetime.min.time()).replace(
+            hour=2, minute=0
+        )
+
+        with (
+            patch("app.utils.time.now_paris", return_value=before_cron),
+            patch("asyncio.create_task") as mock_create_task,
+        ):
+            digest_service._schedule_background_regen(
+                user_id=user_id, target_date=target_date, is_serene=False
+            )
+
+        assert mock_create_task.call_count == 0
+        # La garde ne doit pas non plus consommer le slot rate-limit.
+        assert (user_id, target_date, False) not in digest_service._BG_REGEN_RATE_LIMIT
+
+    def test_proceeds_when_called_at_or_after_cron_hour(self):
+        from datetime import datetime
+
+        from app.services import digest_service
+
+        digest_service._BG_REGEN_RATE_LIMIT.clear()
+
+        user_id = uuid4()
+        target_date = date.today()
+        at_cron = datetime.combine(target_date, datetime.min.time()).replace(
+            hour=7, minute=30
+        )
+
+        with (
+            patch("app.utils.time.now_paris", return_value=at_cron),
+            patch("asyncio.create_task") as mock_create_task,
+        ):
+            digest_service._schedule_background_regen(
+                user_id=user_id, target_date=target_date, is_serene=False
+            )
+
+        assert mock_create_task.call_count == 1
+
+    def test_guard_only_applies_to_today(self):
+        """La garde protège uniquement target_date == today. Une régen pour
+        hier (ou un autre jour passé) doit toujours passer, à n'importe
+        quelle heure."""
+        from datetime import datetime
+
+        from app.services import digest_service
+
+        digest_service._BG_REGEN_RATE_LIMIT.clear()
+
+        user_id = uuid4()
+        yesterday = date.today() - timedelta(days=1)
+        before_cron = datetime.combine(date.today(), datetime.min.time()).replace(
+            hour=2, minute=0
+        )
+
+        with (
+            patch("app.utils.time.now_paris", return_value=before_cron),
+            patch("asyncio.create_task") as mock_create_task,
+        ):
+            digest_service._schedule_background_regen(
+                user_id=user_id, target_date=yesterday, is_serene=False
+            )
+
+        assert mock_create_task.call_count == 1
 
 
 # ─── Tests: Phase 5.2 — deferred stale-format deletion ────────────────────────
@@ -1011,3 +1108,91 @@ class TestCloneGlobalEditorialDigest:
                 await service.get_or_create_digest(user_id=user_id, target_date=today)
 
         service.selector.select_for_user.assert_awaited()
+
+
+# ─── Tests: _build_editorial_response — fallback label (régression notif) ──────
+
+
+def _make_editorial_content(*, content_id, title):
+    """Mock Content suffisant pour _build_editorial_response."""
+    from app.models.enums import ContentType
+    from app.schemas.content import SourceMini
+
+    content = Mock()
+    content.id = content_id
+    content.title = title
+    content.url = "https://example.com/x"
+    content.thumbnail_url = None
+    content.description = None
+    content.html_content = None
+    content.topics = []
+    content.entities = []
+    content.content_type = ContentType.ARTICLE
+    content.duration_seconds = None
+    content.published_at = datetime(2026, 6, 1, 8, 0, 0)
+    content.is_paid = False
+    content.source_id = uuid4()
+    content.source = SourceMini(
+        id=content.source_id, name="Le Monde", logo_url=None, type="rss", theme=None
+    )
+    return content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "stored_label, expected_label",
+    [
+        # Régression bug 21 mai : label persisté vide → on récupère le titre de
+        # l'actu_article pour réactiver la notification personnalisée (variante B).
+        ("", "Conflit au Liban"),
+        # Label déjà présent → on ne l'écrase pas.
+        ("À la une : Liban", "À la une : Liban"),
+    ],
+)
+async def test_editorial_label_falls_back_to_actu_title(
+    service, mock_session, stored_label, expected_label
+):
+    cid = uuid4()
+    content = _make_editorial_content(content_id=cid, title="Conflit au Liban")
+
+    digest = Mock()
+    digest.id = uuid4()
+    digest.user_id = uuid4()
+    digest.target_date = date(2026, 6, 1)
+    digest.generated_at = datetime(2026, 6, 1, 7, 30, 0)
+    digest.mode = "pour_vous"
+    digest.is_serene = False
+    digest.format_version = "editorial_v1"
+    digest.items = {
+        "subjects": [
+            {
+                "topic_id": "t1",
+                "label": stored_label,
+                "rank": 1,
+                "actu_article": {
+                    "content_id": str(cid),
+                    "title": "Conflit au Liban",
+                },
+            }
+        ]
+    }
+
+    # 1er execute() = sources suivies (aucune), 2e = contenus du digest.
+    followed_result = Mock()
+    followed_result.scalars.return_value.all.return_value = []
+    content_result = Mock()
+    content_result.scalars.return_value.all.return_value = [content]
+    mock_session.execute.side_effect = [followed_result, content_result]
+
+    with (
+        patch.object(
+            service, "_get_batch_action_states", new=AsyncMock(return_value={})
+        ),
+        patch.object(
+            service, "_compute_target_size", new=AsyncMock(return_value=5)
+        ),
+    ):
+        response = await service._build_editorial_response(digest, digest.user_id)
+
+    assert len(response.topics) == 1
+    assert response.topics[0].label == expected_label

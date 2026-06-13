@@ -3,24 +3,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../config/constants.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
-import '../providers/theme_provider.dart';
+import '../widgets/profile_progression_card.dart';
 
 /// Page « Profil » regroupant les réglages applicatifs accessibles depuis
-/// la sheet Réglages : compte, notifications, thème, refonte du
-/// questionnaire, présentation.
+/// la sheet Réglages : compte, notifications, questionnaire, présentation
+/// et liens secondaires.
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
-    final themeMode = ref.watch(themeNotifierProvider);
-
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
       appBar: AppBar(
@@ -32,6 +32,8 @@ class ProfileScreen extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(vertical: FacteurSpacing.space4),
         child: Column(
           children: [
+            const ProfileProgressionCard(),
+            const SizedBox(height: FacteurSpacing.space6),
             _Section(
               title: 'COMPTE',
               children: [
@@ -54,26 +56,11 @@ class ProfileScreen extends ConsumerWidget {
               title: 'PRÉFÉRENCES',
               children: [
                 _Tile(
-                  icon: Icons.palette_outlined,
-                  title: 'Thème',
-                  subtitle: _themeName(themeMode),
-                  onTap: () {
-                    final next = themeMode == ThemeMode.light
-                        ? ThemeMode.dark
-                        : ThemeMode.light;
-                    ref
-                        .read(themeNotifierProvider.notifier)
-                        .setThemeMode(next);
-                  },
-                ),
-                _Tile(
                   icon: Icons.settings_suggest_outlined,
                   title: 'Refaire le questionnaire',
                   subtitle: 'Ajuster mon profil et mes préférences',
                   onTap: () {
-                    ref
-                        .read(onboardingProvider.notifier)
-                        .restartOnboarding();
+                    ref.read(onboardingProvider.notifier).restartOnboarding();
                     ref
                         .read(authStateProvider.notifier)
                         .setNeedsOnboarding(true);
@@ -93,6 +80,27 @@ class ProfileScreen extends ConsumerWidget {
                 ),
               ],
             ),
+            const SizedBox(height: FacteurSpacing.space6),
+            _Section(
+              title: 'AIDE & INFORMATIONS',
+              children: [
+                _Tile(
+                  icon: PhosphorIcons.shieldCheck(PhosphorIconsStyle.regular),
+                  title: 'Politique de confidentialité',
+                  onTap: () => _open(LegalLinks.privacy),
+                ),
+                _Tile(
+                  icon: PhosphorIcons.fileText(PhosphorIconsStyle.regular),
+                  title: 'Conditions d\'utilisation',
+                  onTap: () => _open(LegalLinks.terms),
+                ),
+                _Tile(
+                  icon: PhosphorIcons.lifebuoy(PhosphorIconsStyle.regular),
+                  title: 'Contacter le support',
+                  onTap: () => _open(LegalLinks.supportEmail),
+                ),
+              ],
+            ),
             const SizedBox(height: FacteurSpacing.space8),
           ],
         ),
@@ -100,14 +108,10 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-  String _themeName(ThemeMode mode) {
-    switch (mode) {
-      case ThemeMode.light:
-        return 'Papier Dessin';
-      case ThemeMode.dark:
-        return 'Encre & Nuit';
-      case ThemeMode.system:
-        return 'Système';
+  Future<void> _open(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 }
@@ -138,8 +142,7 @@ class _Section extends StatelessWidget {
           ),
         ),
         Container(
-          margin:
-              const EdgeInsets.symmetric(horizontal: FacteurSpacing.space4),
+          margin: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space4),
           decoration: BoxDecoration(
             color: colors.surface,
             borderRadius: BorderRadius.circular(FacteurRadius.large),

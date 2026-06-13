@@ -386,6 +386,9 @@ class TestScoringWeightsRebalance:
     def test_trusted_source_reduced(self):
         assert ScoringWeights.TRUSTED_SOURCE == 35.0
 
+    def test_digest_trusted_source_bonus(self):
+        assert ScoringWeights.DIGEST_TRUSTED_SOURCE_BONUS == 60.0
+
     def test_standard_source_increased(self):
         assert ScoringWeights.STANDARD_SOURCE == 15.0
 

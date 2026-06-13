@@ -33,11 +33,11 @@ from sqlalchemy.orm import selectinload
 from app.models.content import Content, UserContentStatus
 from app.models.daily_digest import DailyDigest
 from app.models.digest_completion import DigestCompletion
-from app.models.enums import ContentStatus
+from app.models.enums import ContentStatus, InterestState
 from app.models.user import UserStreak
 from app.models.user_personalization import UserPersonalization
+from app.schemas.content import SourceMini
 from app.schemas.digest import (
-    CoupDeCoeurResponse,
     DigestAction,
     DigestItem,
     DigestRecommendationReason,
@@ -45,9 +45,9 @@ from app.schemas.digest import (
     DigestScoreBreakdown,
     DigestTopic,
     DigestTopicArticle,
-    PepiteResponse,
     QuoteResponse,
 )
+from app.services.digest_cache import DIGEST_CONTENT_CACHE, CachedDigestContent
 from app.services.digest_selector import DigestSelector
 from app.services.editorial.schemas import EditorialPipelineResult
 from app.services.streak_service import StreakService
@@ -88,6 +88,35 @@ def _schedule_background_regen(
     reference doesn't let it be garbage-collected mid-run.
     """
     import time as _time
+
+    # Garde horaire : ne JAMAIS générer un digest pour `target_date == today`
+    # avant l'heure du cron principal. Sinon le pool `published_at >= now - 48h`
+    # est saturé d'articles du soir précédent et les Unes du matin (Le Monde
+    # ~06h30, Figaro/Libé ~07h) ne sont pas encore publiées. Conséquences :
+    # clusters petits + deeps anciens promus en article principal + digest
+    # gravé en DB qui bloque la régénération du cron 07:30 via
+    # `digest_background_regen_skipped_good_format`. Cf. bug-essentiel-pipeline.md.
+    # Reprend exactement la garde appliquée au startup catchup (main.py:304-317).
+    from app.utils.time import now_paris
+    from app.workers.scheduler import (
+        DIGEST_CRON_HOUR_PARIS,
+        DIGEST_CRON_MINUTE_PARIS,
+    )
+
+    now = now_paris()
+    if target_date == now.date():
+        cron_minutes = DIGEST_CRON_HOUR_PARIS * 60 + DIGEST_CRON_MINUTE_PARIS
+        now_minutes = now.hour * 60 + now.minute
+        if now_minutes < cron_minutes:
+            logger.info(
+                "digest_background_regen_skipped_too_early",
+                user_id=str(user_id),
+                target_date=str(target_date),
+                is_serene=is_serene,
+                now_paris=now.strftime("%H:%M"),
+                cron_at=f"{DIGEST_CRON_HOUR_PARIS:02d}:{DIGEST_CRON_MINUTE_PARIS:02d}",
+            )
+            return
 
     key = (user_id, target_date, is_serene)
     now_mono = _time.monotonic()
@@ -142,7 +171,7 @@ def _schedule_background_regen(
                         user_id, target_date, is_serene=is_serene
                     )
                     if existing and existing.format_version in (
-                        "editorial_v1",
+                        EDITORIAL_FORMAT_VERSION,
                         "topics_v1",
                     ):
                         logger.info(
@@ -302,9 +331,26 @@ def _select_daily_quote(user_id: str, target_date: str) -> dict | None:
     return rng.choice(quotes)
 
 
+# Version courante du format editorial. Bumpée editorial_v1 -> editorial_v2 avec
+# la projection per-user (P2), puis editorial_v2 -> editorial_v3 avec le
+# classement par importance éditoriale (couverture + récence + polarisation,
+# perso en départage ; solos relégués) — cf. bug-actus-du-jour-ranking.md. La
+# FORME JSON est inchangée (toujours `subjects[]`), mais la SÉMANTIQUE D'ORDRE
+# change → le bump force la régénération des digests cachés `editorial_v2`
+# (le cron les voit "stale") et évite de servir un mix de sémantiques. Clé
+# d'idempotence (user_id, target_date, is_serene) inchangée.
+EDITORIAL_FORMAT_VERSION = "editorial_v3"
+# Tous les formats editorial rendus/clonables pendant les transitions.
+# Même forme JSON → `_build_editorial_response` les traite identiquement.
+_EDITORIAL_FORMATS: tuple[str, ...] = (
+    "editorial_v1",
+    "editorial_v2",
+    "editorial_v3",
+)
+
 # Format versions that the read-only hot path is willing to render. flat_v1
 # is legacy/expendable — never served from /digest or /digest/both.
-_READABLE_FORMATS: tuple[str, ...] = ("editorial_v1", "topics_v1")
+_READABLE_FORMATS: tuple[str, ...] = (*_EDITORIAL_FORMATS, "topics_v1")
 _HOTPATH_FALLBACK_DAYS = 7
 
 
@@ -327,11 +373,15 @@ async def read_digest_or_fallback(
     2. Any other user's ``editorial_v1`` digest for today (clone, since
        editorial output is user-agnostic).
     3. Yesterday's ``editorial_v1``/``topics_v1`` digest for this user.
+    3b. Any other user's ``editorial_v1`` digest for *yesterday* (rendered
+        ephemerally, NOT persisted — persisting would graveyard the row as
+        today's editorial_v1 and trip the cron's "good format already exists"
+        guard at 07:30). Covers the new-user-signing-up-at-night case.
     4. Most recent digest within the last ``_HOTPATH_FALLBACK_DAYS`` days for
        this user.
     5. Nothing → schedule regen, return None.
 
-    Steps 3 and 4 set ``response.is_stale_fallback = True`` so the mobile
+    Steps 3, 3b and 4 set ``response.is_stale_fallback = True`` so the mobile
     client (already wired since #422) auto-refetches silently when the
     background regen lands.
     """
@@ -393,6 +443,51 @@ async def read_digest_or_fallback(
                 "digest_hotpath_yesterday_render_failed",
                 user_id=str(user_id),
                 format_version=yesterday_digest.format_version,
+            )
+
+    # 3b. Any other user's editorial_v1 for *yesterday*, rendered ephemerally.
+    # Covers a new user signing up before the morning batch: they have no
+    # own digest (steps 1 & 3 miss), no editorial_v1 today exists yet
+    # (step 2 misses — the bg regen guard blocks generation until 07:30
+    # Paris), so without this fallback they would land on the 7-day step
+    # (also empty for new users) and end up with a 202. We render any
+    # existing yesterday editorial_v1 — strictly ephemeral, never persisted,
+    # because writing a row with `target_date == today + format_version ==
+    # editorial_v1` would make the morning cron skip the real regeneration
+    # via `digest_background_regen_skipped_good_format`.
+    yesterday_clone_stmt = (
+        select(DailyDigest)
+        .where(
+            and_(
+                DailyDigest.user_id != user_id,
+                DailyDigest.target_date == yesterday,
+                DailyDigest.is_serene == is_serene,
+                DailyDigest.format_version.in_(_EDITORIAL_FORMATS),
+            )
+        )
+        .order_by(DailyDigest.generated_at.desc())
+        .limit(1)
+    )
+    yesterday_clone = (await session.execute(yesterday_clone_stmt)).scalar_one_or_none()
+    if yesterday_clone is not None:
+        _schedule_background_regen(
+            user_id=user_id, target_date=target_date, is_serene=is_serene
+        )
+        try:
+            response = await svc._build_digest_response(yesterday_clone, user_id)
+            response.is_stale_fallback = True
+            logger.warning(
+                "digest_hotpath_serving_yesterday_clone",
+                user_id=str(user_id),
+                yesterday_date=str(yesterday),
+                source_user_id=str(yesterday_clone.user_id),
+            )
+            return response
+        except Exception:
+            logger.exception(
+                "digest_hotpath_yesterday_clone_render_failed",
+                user_id=str(user_id),
+                yesterday_date=str(yesterday),
             )
 
     # 4. Last 7 days fallback for this user.
@@ -483,6 +578,22 @@ class DigestService:
         self.selector = DigestSelector(session, session_maker=session_maker)
         self.streak_service = StreakService(session)
 
+    async def _compute_target_size(self, user_id: UUID) -> int:
+        """`weekly_goal` clampé dans la fenêtre [3, 10]. Fallback sur
+        ``DiversityConstraints.TARGET_DIGEST_SIZE`` quand pas de pref user."""
+        from app.models.user import UserProfile
+        from app.services.digest_selector import DiversityConstraints
+
+        profile = await self.session.scalar(
+            select(UserProfile).where(UserProfile.user_id == user_id)
+        )
+        raw_goal = (
+            profile.weekly_goal
+            if profile and profile.weekly_goal
+            else DiversityConstraints.TARGET_DIGEST_SIZE
+        )
+        return max(3, min(raw_goal, 10))
+
     async def get_or_create_digest(
         self,
         user_id: UUID,
@@ -545,10 +656,10 @@ class DigestService:
         # 1a. Check format_version mismatch — stale cache from pre-editorial era
         expected_format = await self._get_user_digest_format(user_id)
         expected_version = {
-            "editorial": "editorial_v1",
+            "editorial": EDITORIAL_FORMAT_VERSION,
             "topics": "topics_v1",
             "flat": "flat_v1",
-        }.get(expected_format, "editorial_v1")
+        }.get(expected_format, EDITORIAL_FORMAT_VERSION)
 
         # Defer deletion of stale-format digest until AFTER the new digest is
         # successfully generated. This avoids a hole where we delete a valid
@@ -608,10 +719,7 @@ class DigestService:
                         digest_id=str(existing_digest.id),
                         format_version=existing_digest.format_version,
                     )
-                    if existing_digest.format_version in (
-                        "editorial_v1",
-                        "topics_v1",
-                    ):
+                    if existing_digest.format_version in _READABLE_FORMATS:
                         # Defer deletion, fall through to regeneration.
                         stale_format_digest = existing_digest
                         existing_digest = None
@@ -633,7 +741,13 @@ class DigestService:
             # pipeline (3-5 min), which exceeds both the /digest timeouts
             # and the mobile retry budget — the classic "spinner forever
             # after onboarding" symptom.
-            if expected_version == "editorial_v1":
+            # Cold-start fallback : depuis P2 le digest editorial est per-user,
+            # donc cloner la ligne d'un autre user n'est plus strictement
+            # "user-agnostic". On le garde quand même pour les nouveaux users
+            # arrivés après le batch : un digest frais et valide vaut mieux que
+            # le spinner cold-path LLM (3-5 min). La ligne clonée sera regénérée
+            # proprement (per-user) au prochain batch.
+            if expected_version == EDITORIAL_FORMAT_VERSION:
                 cloned = await self._try_clone_global_editorial_digest(
                     user_id=user_id,
                     target_date=target_date,
@@ -786,8 +900,6 @@ class DigestService:
             logger.warning(
                 "digest_editorial_empty_subjects_fallback",
                 user_id=str(user_id),
-                has_header=bool(digest_items.header_text),
-                has_closure=bool(digest_items.closure_text),
             )
             digest_items = []
             is_editorial_format = False
@@ -966,7 +1078,10 @@ class DigestService:
         from app.models.source import UserSource
 
         followed_result = await self.session.execute(
-            select(UserSource.source_id).where(UserSource.user_id == user_id)
+            select(UserSource.source_id).where(
+                UserSource.user_id == user_id,
+                UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+            )
         )
         followed_source_ids = set(followed_result.scalars().all())
 
@@ -1520,7 +1635,7 @@ class DigestService:
                         DailyDigest.user_id != user_id,
                         DailyDigest.target_date == target_date,
                         DailyDigest.is_serene == is_serene,
-                        DailyDigest.format_version == "editorial_v1",
+                        DailyDigest.format_version.in_(_EDITORIAL_FORMATS),
                     )
                 )
                 .order_by(DailyDigest.generated_at.desc())
@@ -1555,7 +1670,9 @@ class DigestService:
             items=source.items,
             mode=source.mode or ("serein" if is_serene else "pour_vous"),
             is_serene=is_serene,
-            format_version="editorial_v1",
+            # Préserve la version de la source (le `items` JSONB embarque sa
+            # propre `format_version` — garder la ligne cohérente avec lui).
+            format_version=source.format_version,
             generated_at=source.generated_at,
         )
         self.session.add(cloned)
@@ -1758,7 +1875,7 @@ class DigestService:
         mode: str | None = None,
         is_serene: bool = False,
     ) -> DailyDigest | None:
-        """Create a new DailyDigest in editorial_v1 format."""
+        """Create a new DailyDigest in the current editorial format (editorial_v2)."""
         # Garde-fou: la pipeline trim déjà les sujets sans article (cf.
         # pipeline.py "ÉTAPE 3A-bis"). Ici on est défensif : si quelque chose
         # passe au travers, on logge en error (ce ne devrait plus arriver).
@@ -1778,8 +1895,7 @@ class DigestService:
         result = result.model_copy(update={"subjects": valid_subjects})
 
         items_json = {
-            "format_version": "editorial_v1",
-            "header_text": result.header_text,
+            "format_version": EDITORIAL_FORMAT_VERSION,
             "mode": mode or "pour_vous",
             "subjects": [
                 {
@@ -1791,8 +1907,6 @@ class DigestService:
                     "source_count": s.source_count,
                     "theme": s.theme,
                     "is_a_la_une": s.is_a_la_une,
-                    "intro_text": s.intro_text,
-                    "transition_text": s.transition_text,
                     "perspective_count": s.perspective_count,
                     "bias_distribution": s.bias_distribution,
                     "bias_highlights": s.bias_highlights,
@@ -1828,45 +1942,9 @@ class DigestService:
                         }
                         for a in s.extra_actu_articles
                     ],
-                    "deep_article": {
-                        "content_id": str(s.deep_article.content_id),
-                        "title": s.deep_article.title,
-                        "source_name": s.deep_article.source_name,
-                        "source_id": str(s.deep_article.source_id),
-                        "badge": "pas_de_recul",
-                        "match_reason": s.deep_article.match_reason,
-                        "published_at": s.deep_article.published_at.isoformat(),
-                    }
-                    if s.deep_article
-                    else None,
                 }
                 for s in result.subjects
             ],
-            "pepite": {
-                "content_id": str(result.pepite.content_id),
-                "mini_editorial": result.pepite.mini_editorial,
-                "badge": "pepite",
-            }
-            if result.pepite
-            else None,
-            "coup_de_coeur": {
-                "content_id": str(result.coup_de_coeur.content_id),
-                "title": result.coup_de_coeur.title,
-                "source_name": result.coup_de_coeur.source_name,
-                "save_count": result.coup_de_coeur.save_count,
-                "badge": "coup_de_coeur",
-            }
-            if result.coup_de_coeur
-            else None,
-            "actu_decalee": {
-                "content_id": str(result.actu_decalee.content_id),
-                "mini_editorial": result.actu_decalee.mini_editorial,
-                "badge": "actu_decalee",
-            }
-            if result.actu_decalee
-            else None,
-            "closure_text": result.closure_text,
-            "cta_text": result.cta_text,
             "generated_at": datetime.utcnow().isoformat(),
             "metadata": result.metadata,
         }
@@ -1878,7 +1956,7 @@ class DigestService:
             items=items_json,
             mode=mode or "pour_vous",
             is_serene=is_serene,
-            format_version="editorial_v1",
+            format_version=EDITORIAL_FORMAT_VERSION,
             generated_at=datetime.now(UTC),
         )
 
@@ -1964,7 +2042,7 @@ class DigestService:
         - topics_v1: grouped topics + flat items fallback
         - flat_v1 / None: legacy flat list
         """
-        if digest.format_version == "editorial_v1":
+        if digest.format_version in _EDITORIAL_FORMATS:
             return await self._build_editorial_response(digest, user_id)
         if digest.format_version == "topics_v1":
             return await self._build_topics_response(digest, user_id)
@@ -2114,10 +2192,25 @@ class DigestService:
         Maps editorial subjects to topics + flat items for backward compatibility
         with existing mobile clients.
         """
+        from app.models.source import UserSource
+
         items_data = digest.items if isinstance(digest.items, dict) else {}
         subjects_data = items_data.get("subjects", [])
 
-        # Collect all content_ids (actu + deep + pepite + coup_de_coeur)
+        # Recompute is_followed_source from the live UserSource table rather
+        # than trusting the editorial pipeline's static `is_user_source` field.
+        # The editorial digest is generated globally (match_global) and hard-
+        # codes that flag to False, so the cached value is per-user wrong.
+        followed_result = await self.session.execute(
+            select(UserSource.source_id).where(
+                UserSource.user_id == user_id,
+                UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+            )
+        )
+        followed_source_ids: set[UUID] = set(followed_result.scalars().all())
+
+        # Collect all content_ids (actu + deep — old digests may still carry
+        # a `deep_article` snapshot from before the Pas de recul cleanup).
         all_content_ids: list[UUID] = []
         for subject in subjects_data:
             if subject.get("actu_article"):
@@ -2126,16 +2219,6 @@ class DigestService:
                 all_content_ids.append(UUID(extra["content_id"]))
             if subject.get("deep_article"):
                 all_content_ids.append(UUID(subject["deep_article"]["content_id"]))
-
-        pepite_data = items_data.get("pepite")
-        coup_de_coeur_data = items_data.get("coup_de_coeur")
-        actu_decalee_data = items_data.get("actu_decalee")
-        if pepite_data and pepite_data.get("content_id"):
-            all_content_ids.append(UUID(pepite_data["content_id"]))
-        if coup_de_coeur_data and coup_de_coeur_data.get("content_id"):
-            all_content_ids.append(UUID(coup_de_coeur_data["content_id"]))
-        if actu_decalee_data and actu_decalee_data.get("content_id"):
-            all_content_ids.append(UUID(actu_decalee_data["content_id"]))
 
         # Batch queries
         completion = await self.session.scalar(
@@ -2147,13 +2230,9 @@ class DigestService:
             )
         )
 
-        content_stmt = (
-            select(Content)
-            .options(selectinload(Content.source))
-            .where(Content.id.in_(all_content_ids))
+        content_map = await self._get_cached_digest_contents(
+            digest, user_id, all_content_ids
         )
-        content_result = await self.session.execute(content_stmt)
-        content_map = {c.id: c for c in content_result.scalars().all()}
 
         action_states_map = await self._get_batch_action_states(
             user_id, all_content_ids
@@ -2227,7 +2306,7 @@ class DigestService:
                     rank=art_idx + 1,
                     reason=reason,
                     badge=art_data.get("badge"),
-                    is_followed_source=art_data.get("is_user_source", False),
+                    is_followed_source=content.source_id in followed_source_ids,
                     recommendation_reason=None,
                     is_read=action_state["is_read"],
                     is_saved=action_state["is_saved"],
@@ -2281,13 +2360,27 @@ class DigestService:
                     _divergence_str = str(_divergence_raw)
                 else:
                     _divergence_str = _divergence_raw
+                # Fallback label : les digests editorial_v1/globaux persistés
+                # avant le fix write-side ont `label=""`, ce qui désactive la
+                # notification personnalisée (variante B). On répare au read en
+                # reprenant le titre de l'actu_article. Pas de regénération requise.
+                _label = subject.get("label") or ""
+                if not _label and subject.get("actu_article"):
+                    _label = (subject["actu_article"].get("title") or "")[:80]
                 response_topics.append(
                     DigestTopic(
                         topic_id=subject.get("topic_id", ""),
-                        label=subject.get("label", ""),
+                        label=_label,
                         rank=subject.get("rank", 0),
                         reason=subject.get("selection_reason", ""),
-                        is_trending=subject.get("is_a_la_une", False),
+                        # `is_trending` = signal "≥3 sources couvrent le topic"
+                        # (le buzz multi-rédaction). `is_une` = décision
+                        # éditoriale "à la une". Deux leviers indépendants
+                        # dans le scoring Essentiel (_W_TRENDING + _W_UNE) —
+                        # historiquement mappés au même champ JSONB, ce qui
+                        # cumulait +70 sur tout subject "à la une" indépendamment
+                        # de sa couverture.
+                        is_trending=subject.get("source_count", 0) >= 3,
                         is_une=subject.get("is_a_la_une", False),
                         source_count=subject.get("source_count", 0),
                         theme=subject.get("theme"),
@@ -2301,8 +2394,6 @@ class DigestService:
                             [subject["deep_angle"]] if subject.get("deep_angle") else []
                         ),
                         articles=topic_articles,
-                        intro_text=subject.get("intro_text"),
-                        transition_text=subject.get("transition_text"),
                         perspective_count=subject.get("perspective_count", 0),
                         bias_distribution=subject.get("bias_distribution"),
                         bias_highlights=subject.get("bias_highlights"),
@@ -2321,201 +2412,22 @@ class DigestService:
                     label=subject.get("label", ""),
                 )
 
-        # Build pepite response
-        default_action = {
-            "is_read": False,
-            "is_saved": False,
-            "is_liked": False,
-            "is_dismissed": False,
-        }
-        pepite_response = None
-        if pepite_data and pepite_data.get("content_id"):
-            pepite_cid = UUID(pepite_data["content_id"])
-            pepite_content = content_map.get(pepite_cid)
-            if not pepite_content:
-                logger.warning(
-                    "editorial_pepite_not_found",
-                    content_id=str(pepite_cid),
-                )
-            elif not pepite_content.source:
-                logger.warning(
-                    "editorial_pepite_missing_source",
-                    content_id=str(pepite_cid),
-                )
-            if pepite_content and pepite_content.source:
-                pepite_action = action_states_map.get(pepite_cid, default_action)
-                pepite_response = PepiteResponse(
-                    content_id=pepite_cid,
-                    mini_editorial=pepite_data.get("mini_editorial", ""),
-                    title=pepite_content.title,
-                    url=pepite_content.url,
-                    thumbnail_url=pepite_content.thumbnail_url,
-                    published_at=pepite_content.published_at,
-                    source=pepite_content.source,
-                    is_read=pepite_action["is_read"],
-                    is_saved=pepite_action["is_saved"],
-                    is_liked=pepite_action["is_liked"],
-                    is_dismissed=pepite_action["is_dismissed"],
-                )
-                # Also add to flat items for backward compat
-                global_rank += 1
-                flat_items.append(
-                    DigestItem(
-                        content_id=pepite_cid,
-                        title=pepite_content.title,
-                        url=pepite_content.url,
-                        thumbnail_url=pepite_content.thumbnail_url,
-                        description=pepite_content.description or None,
-                        html_content=pepite_content.html_content,
-                        topics=pepite_content.topics or [],
-                        content_type=pepite_content.content_type,
-                        duration_seconds=pepite_content.duration_seconds,
-                        published_at=pepite_content.published_at,
-                        is_paid=pepite_content.is_paid
-                        if hasattr(pepite_content, "is_paid")
-                        else False,
-                        source=pepite_content.source,
-                        rank=global_rank,
-                        reason=pepite_data.get("mini_editorial", "Pépite du jour"),
-                        badge="pepite",
-                        is_read=pepite_action["is_read"],
-                        is_saved=pepite_action["is_saved"],
-                        is_liked=pepite_action["is_liked"],
-                        is_dismissed=pepite_action["is_dismissed"],
-                    )
-                )
-
-        # Build coup de coeur response
-        coup_de_coeur_response = None
-        if coup_de_coeur_data and coup_de_coeur_data.get("content_id"):
-            cdc_cid = UUID(coup_de_coeur_data["content_id"])
-            cdc_content = content_map.get(cdc_cid)
-            if not cdc_content:
-                logger.warning(
-                    "editorial_coup_de_coeur_not_found",
-                    content_id=str(cdc_cid),
-                )
-            elif not cdc_content.source:
-                logger.warning(
-                    "editorial_coup_de_coeur_missing_source",
-                    content_id=str(cdc_cid),
-                )
-            if cdc_content and cdc_content.source:
-                cdc_action = action_states_map.get(cdc_cid, default_action)
-                coup_de_coeur_response = CoupDeCoeurResponse(
-                    content_id=cdc_cid,
-                    title=cdc_content.title,
-                    source_name=coup_de_coeur_data.get(
-                        "source_name", cdc_content.source.name
-                    ),
-                    save_count=coup_de_coeur_data.get("save_count", 0),
-                    url=cdc_content.url,
-                    thumbnail_url=cdc_content.thumbnail_url,
-                    published_at=cdc_content.published_at,
-                    source=cdc_content.source,
-                    is_read=cdc_action["is_read"],
-                    is_saved=cdc_action["is_saved"],
-                    is_liked=cdc_action["is_liked"],
-                    is_dismissed=cdc_action["is_dismissed"],
-                )
-                # Also add to flat items for backward compat
-                global_rank += 1
-                flat_items.append(
-                    DigestItem(
-                        content_id=cdc_cid,
-                        title=cdc_content.title,
-                        url=cdc_content.url,
-                        thumbnail_url=cdc_content.thumbnail_url,
-                        description=cdc_content.description or None,
-                        html_content=cdc_content.html_content,
-                        topics=cdc_content.topics or [],
-                        content_type=cdc_content.content_type,
-                        duration_seconds=cdc_content.duration_seconds,
-                        published_at=cdc_content.published_at,
-                        is_paid=cdc_content.is_paid
-                        if hasattr(cdc_content, "is_paid")
-                        else False,
-                        source=cdc_content.source,
-                        rank=global_rank,
-                        reason="Coup de cœur de la communauté",
-                        badge="coup_de_coeur",
-                        is_read=cdc_action["is_read"],
-                        is_saved=cdc_action["is_saved"],
-                        is_liked=cdc_action["is_liked"],
-                        is_dismissed=cdc_action["is_dismissed"],
-                    )
-                )
-
-        # Build actu décalée response (serein mode only)
-        actu_decalee_response = None
-        if actu_decalee_data and actu_decalee_data.get("content_id"):
-            ad_cid = UUID(actu_decalee_data["content_id"])
-            ad_content = content_map.get(ad_cid)
-            if not ad_content:
-                logger.warning(
-                    "editorial_actu_decalee_not_found",
-                    content_id=str(ad_cid),
-                )
-            elif not ad_content.source:
-                logger.warning(
-                    "editorial_actu_decalee_missing_source",
-                    content_id=str(ad_cid),
-                )
-            if ad_content and ad_content.source:
-                ad_action = action_states_map.get(ad_cid, default_action)
-                actu_decalee_response = PepiteResponse(
-                    content_id=ad_cid,
-                    mini_editorial=actu_decalee_data.get("mini_editorial", ""),
-                    badge="actu_decalee",
-                    title=ad_content.title,
-                    url=ad_content.url,
-                    thumbnail_url=ad_content.thumbnail_url,
-                    published_at=ad_content.published_at,
-                    source=ad_content.source,
-                    is_read=ad_action["is_read"],
-                    is_saved=ad_action["is_saved"],
-                    is_liked=ad_action["is_liked"],
-                    is_dismissed=ad_action["is_dismissed"],
-                )
-                global_rank += 1
-                flat_items.append(
-                    DigestItem(
-                        content_id=ad_cid,
-                        title=ad_content.title,
-                        url=ad_content.url,
-                        thumbnail_url=ad_content.thumbnail_url,
-                        description=ad_content.description or None,
-                        html_content=ad_content.html_content,
-                        topics=ad_content.topics or [],
-                        content_type=ad_content.content_type,
-                        duration_seconds=ad_content.duration_seconds,
-                        published_at=ad_content.published_at,
-                        is_paid=ad_content.is_paid
-                        if hasattr(ad_content, "is_paid")
-                        else False,
-                        source=ad_content.source,
-                        rank=global_rank,
-                        reason=actu_decalee_data.get(
-                            "mini_editorial", "L'actu décalée"
-                        ),
-                        badge="actu_decalee",
-                        is_read=ad_action["is_read"],
-                        is_saved=ad_action["is_saved"],
-                        is_liked=ad_action["is_liked"],
-                        is_dismissed=ad_action["is_dismissed"],
-                    )
-                )
-
-        # Quote for serein digest only
+        # Citation du jour — disponible dans les deux modes (normal + sérène),
+        # rendue côté mobile comme clôture éditoriale avant "Fin de tournée".
         quote_response = None
-        if digest.is_serene:
-            q = _select_daily_quote(str(digest.user_id), str(digest.target_date))
-            if q:
-                quote_response = QuoteResponse(
-                    text=q["text"],
-                    author=q["author"],
-                    source=q.get("source"),
-                )
+        q = _select_daily_quote(str(digest.user_id), str(digest.target_date))
+        if q:
+            quote_response = QuoteResponse(
+                text=q["text"],
+                author=q["author"],
+                source=q.get("source"),
+            )
+
+        # Sans ce plafond, la barre de progression mobile exigerait
+        # l'épuisement des 10 sujets backend même quand la pref user en
+        # demande 3 ou 5.
+        target_size = await self._compute_target_size(user_id)
+        editorial_completion_threshold = min(target_size, len(response_topics))
 
         return DigestResponse(
             digest_id=digest.id,
@@ -2524,18 +2436,13 @@ class DigestService:
             generated_at=digest.generated_at,
             mode=digest.mode or "pour_vous",
             is_serene=digest.is_serene,
-            format_version="editorial_v1",
+            # Reflète la version réelle de la ligne (v1 legacy ou v2 courant).
+            format_version=digest.format_version or EDITORIAL_FORMAT_VERSION,
             items=flat_items,
             topics=response_topics,
-            completion_threshold=len(response_topics),
+            completion_threshold=editorial_completion_threshold,
             is_completed=completion is not None,
             completed_at=completion.completed_at if completion else None,
-            header_text=items_data.get("header_text"),
-            closure_text=items_data.get("closure_text"),
-            cta_text=items_data.get("cta_text"),
-            pepite=pepite_response,
-            coup_de_coeur=coup_de_coeur_response,
-            actu_decalee=actu_decalee_response,
             quote=quote_response,
         )
 
@@ -2549,9 +2456,24 @@ class DigestService:
         Produces both `topics` (new grouped format) and `items` (flat legacy)
         so that old mobile clients continue to work.
         """
+        from app.models.source import UserSource
+
         topics_data = (
             digest.items.get("topics", []) if isinstance(digest.items, dict) else []
         )
+
+        # Same rationale as _build_editorial_response: the cached
+        # `is_followed_source` in the JSONB was computed at generation time
+        # against a possibly different user set (digest may be shared across
+        # users in some paths). Always recompute against the current
+        # UserSource table so the badge in mobile reflects reality.
+        followed_result = await self.session.execute(
+            select(UserSource.source_id).where(
+                UserSource.user_id == user_id,
+                UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+            )
+        )
+        followed_source_ids: set[UUID] = set(followed_result.scalars().all())
 
         # Collect all content_ids across all topics
         all_content_ids: list[UUID] = []
@@ -2569,14 +2491,11 @@ class DigestService:
             )
         )
 
-        # Batch query: content + sources
-        content_stmt = (
-            select(Content)
-            .options(selectinload(Content.source))
-            .where(Content.id.in_(all_content_ids))
+        # Batch query: content + sources, cached briefly across /digest and
+        # /essentiel. User action state and completion are still fetched below.
+        content_map = await self._get_cached_digest_contents(
+            digest, user_id, all_content_ids
         )
-        content_result = await self.session.execute(content_stmt)
-        content_map = {c.id: c for c in content_result.scalars().all()}
 
         # Batch query: action states
         action_states_map = await self._get_batch_action_states(
@@ -2643,7 +2562,7 @@ class DigestService:
                     source=content.source,
                     rank=art_data.get("rank", 1),
                     reason=art_data.get("reason", ""),
-                    is_followed_source=art_data.get("is_followed_source", False),
+                    is_followed_source=content.source_id in followed_source_ids,
                     recommendation_reason=recommendation_reason,
                     is_read=action_state["is_read"],
                     is_saved=action_state["is_saved"],
@@ -2695,16 +2614,15 @@ class DigestService:
                 )
             )
 
-        # Quote for serein digest only
+        # Citation du jour — disponible dans les deux modes (normal + sérène).
         quote_response = None
-        if digest.is_serene:
-            q = _select_daily_quote(str(digest.user_id), str(digest.target_date))
-            if q:
-                quote_response = QuoteResponse(
-                    text=q["text"],
-                    author=q["author"],
-                    source=q.get("source"),
-                )
+        q = _select_daily_quote(str(digest.user_id), str(digest.target_date))
+        if q:
+            quote_response = QuoteResponse(
+                text=q["text"],
+                author=q["author"],
+                source=q.get("source"),
+            )
 
         return DigestResponse(
             digest_id=digest.id,
@@ -2779,6 +2697,80 @@ class DigestService:
             }
             for status in statuses
         }
+
+    async def _get_cached_digest_contents(
+        self,
+        digest: DailyDigest,
+        user_id: UUID,
+        content_ids: list[UUID],
+    ) -> dict[UUID, CachedDigestContent]:
+        """Fetch content/source snapshots for a digest with a short TTL.
+
+        Cache key is user/date/variant/digest-id. The user component keeps
+        cloned/stale render paths isolated; the digest id prevents serving a
+        previous row if today's digest is regenerated inside the TTL window.
+        """
+        if not content_ids:
+            return {}
+
+        key = (user_id, digest.target_date, digest.is_serene, digest.id)
+        cached = DIGEST_CONTENT_CACHE.get(key)
+        if cached is not None:
+            logger.info(
+                "digest_content_cache_hit",
+                user_id=str(user_id),
+                digest_id=str(digest.id),
+                content_count=len(cached),
+            )
+            return cached
+
+        async with DIGEST_CONTENT_CACHE.lock(key):
+            cached = DIGEST_CONTENT_CACHE.get(key)
+            if cached is not None:
+                logger.info(
+                    "digest_content_cache_hit_after_lock",
+                    user_id=str(user_id),
+                    digest_id=str(digest.id),
+                    content_count=len(cached),
+                )
+                return cached
+
+            content_stmt = (
+                select(Content)
+                .options(selectinload(Content.source))
+                .where(Content.id.in_(content_ids))
+            )
+            content_result = await self.session.execute(content_stmt)
+            content_map: dict[UUID, CachedDigestContent] = {}
+            for content in content_result.scalars().all():
+                if content.source is None:
+                    continue
+                content_map[content.id] = CachedDigestContent(
+                    id=content.id,
+                    title=content.title,
+                    url=content.url,
+                    thumbnail_url=content.thumbnail_url,
+                    description=content.description,
+                    html_content=content.html_content,
+                    topics=list(content.topics or []),
+                    entities=list(content.entities or []),
+                    content_type=content.content_type,
+                    duration_seconds=content.duration_seconds,
+                    published_at=content.published_at,
+                    is_paid=content.is_paid,
+                    source_id=content.source_id,
+                    source=SourceMini.model_validate(content.source),
+                )
+
+            DIGEST_CONTENT_CACHE.put(key, content_map)
+            logger.info(
+                "digest_content_cache_miss_loaded",
+                user_id=str(user_id),
+                digest_id=str(digest.id),
+                content_found=len(content_map),
+                content_expected=len(set(content_ids)),
+            )
+            return content_map
 
     async def _get_or_create_content_status(
         self, user_id: UUID, content_id: UUID
@@ -2946,7 +2938,7 @@ class DigestService:
             "message": message,
         }
 
-    async def _get_user_serein_enabled(self, user_id: UUID) -> bool:
+    async def get_user_serein_enabled(self, user_id: UUID) -> bool:
         """Lit la préférence serein_enabled depuis user_preferences."""
         from app.models.user import UserPreference, UserProfile
 

@@ -16,15 +16,28 @@ from app.config import get_settings
 logger = structlog.get_logger()
 router = APIRouter()
 
-# Simple in-memory cache with TTL
+# Simple in-memory cache with TTL, keyed by tag prefix (one entry per channel).
 _cache: dict[str, tuple[float, dict]] = {}
 _CACHE_TTL = 300  # 5 minutes
 
+# Update channels -> GitHub release tag prefix.
+#  - "stable" : releases hebdo prod (flavor prod). Défaut : les apps prod déjà
+#    déployées appellent /app/update SANS `channel` -> stable -> "release-".
+#  - "beta"   : builds continus staging (flavor staging) publiés à chaque merge
+#    sur main.
+# iOS garde son préfixe "ios-beta-*", jamais matché par ces filtres Android.
+_PREFIXES = {"stable": "release-", "beta": "beta-"}
 
-async def _fetch_latest_release() -> dict:
-    """Fetch latest release info from GitHub API, with 5-min cache."""
+
+async def _fetch_latest_release(channel: str = "stable") -> dict:
+    """Fetch latest release info from GitHub API, with 5-min cache.
+
+    `channel` sélectionne le préfixe de tag filtré (cf. ``_PREFIXES``) ; le
+    cache est clé par préfixe pour servir les deux canaux indépendamment.
+    """
+    prefix = _PREFIXES.get(channel, "release-")
     now = time.monotonic()
-    cached = _cache.get("latest")
+    cached = _cache.get(prefix)
     if cached and now < cached[0]:
         return cached[1]
 
@@ -67,7 +80,7 @@ async def _fetch_latest_release() -> dict:
             r
             for r in releases
             if not r.get("draft", False)
-            and r.get("tag_name", "").startswith("beta-")  # skip ios-beta-* releases
+            and r.get("tag_name", "").startswith(prefix)  # canal -> préfixe filtré
             and any(a["name"].endswith(".apk") for a in r.get("assets", []))
         ),
         None,
@@ -90,26 +103,26 @@ async def _fetch_latest_release() -> dict:
         "apk_size": apk_asset["size"] if apk_asset else None,
     }
 
-    _cache["latest"] = (now + _CACHE_TTL, result)
-    logger.info("github_release_fetched", tag=result["tag"])
+    _cache[prefix] = (now + _CACHE_TTL, result)
+    logger.info("github_release_fetched", tag=result["tag"], channel=channel)
     return result
 
 
 @router.get("/update")
-async def check_for_update() -> dict:
-    """Retourne les infos de la dernière release GitHub."""
-    return await _fetch_latest_release()
+async def check_for_update(channel: str = "stable") -> dict:
+    """Retourne les infos de la dernière release GitHub pour le canal donné."""
+    return await _fetch_latest_release(channel)
 
 
 @router.get("/update/download-url")
-async def get_download_url() -> dict[str, str]:
+async def get_download_url(channel: str = "stable") -> dict[str, str]:
     """Retourne une URL de téléchargement temporaire pour l'APK.
 
     GitHub redirige (302) vers une URL S3 pré-signée quand on requête
     un asset avec Accept: application/octet-stream. On capture cette URL
     et la retourne au client (~10 min de validité).
     """
-    release = await _fetch_latest_release()
+    release = await _fetch_latest_release(channel)
     asset_id = release.get("apk_asset_id")
     if not asset_id:
         raise HTTPException(status_code=404, detail="No APK found in latest release")
@@ -139,7 +152,7 @@ async def get_download_url() -> dict[str, str]:
 
 
 @router.get("/update/apk", include_in_schema=False)
-async def download_apk_redirect() -> RedirectResponse:
+async def download_apk_redirect(channel: str = "stable") -> RedirectResponse:
     """Redirige (302) vers l'APK pré-signé de la dernière release.
 
     URL stable et publique destinée à être partagée hors-app aux utilisateurs
@@ -147,5 +160,5 @@ async def download_apk_redirect() -> RedirectResponse:
     Android déclenche un download direct + install in-place (même clé de
     signing → données préservées, pas de désinstallation).
     """
-    payload = await get_download_url()
+    payload = await get_download_url(channel)
     return RedirectResponse(url=payload["url"], status_code=302)

@@ -63,6 +63,9 @@ class SourceMini(BaseModel):
     bias_stance: BiasStance = BiasStance.UNKNOWN
     reliability_score: ReliabilityScore = ReliabilityScore.UNKNOWN
     bias_origin: BiasOrigin = BiasOrigin.UNKNOWN
+    # Langue majoritaire dénormalisée. `None` = inconnu (traité comme FR
+    # par défaut côté client, rétro-compat — cf. language_user_filter.py).
+    language: str | None = None
 
     class Config:
         from_attributes = True
@@ -115,6 +118,8 @@ class ContentResponse(BaseModel):
     note_text: str | None = None
     note_updated_at: datetime | None = None
     is_followed_source: bool = False
+    # Langue détectée du titre (forward-compat — label éventuel côté mobile).
+    language: str | None = None
 
     @field_serializer("topics", when_used="always")
     def serialize_topics(self, value: list[str] | None) -> list[str]:
@@ -178,18 +183,6 @@ class ContentStatusUpdate(BaseModel):
     reading_progress: int | None = Field(None, ge=0, le=100)
 
 
-class DailyTop3Response(BaseModel):
-    """Item du Daily Briefing (Top 3)."""
-
-    rank: int
-    reason: str  # "À la Une", "Sujet tendance", "Source suivie"
-    consumed: bool
-    content: ContentResponse
-
-    class Config:
-        from_attributes = True
-
-
 class ArticleFeedbackRequest(BaseModel):
     """Requête de feedback utilisateur sur un article (pouce haut/bas)."""
 
@@ -223,12 +216,3 @@ class FeedRefreshUndoRequest(BaseModel):
     """Requête pour annuler un refresh précédent et restaurer les `last_impressed_at`."""
 
     previous_impressions: list[PreviousImpression] = Field(..., max_length=200)
-
-
-class FeedResponse(BaseModel):
-    """Réponse globale du feed."""
-
-    briefing: list[
-        DailyTop3Response
-    ] = []  # Le Top 3 du jour (vide si on n'est pas "today" ou déjà vu?)
-    items: list[ContentResponse]  # Le flux infini

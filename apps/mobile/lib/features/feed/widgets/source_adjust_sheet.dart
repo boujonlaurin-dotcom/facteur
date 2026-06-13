@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -8,11 +6,9 @@ import '../../../config/theme.dart';
 import '../../../core/nudges/nudge_coordinator.dart';
 import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/widgets/nudge_inline_banner.dart';
-import '../../../widgets/design/priority_slider.dart';
-import '../../custom_topics/providers/algorithm_profile_provider.dart';
+import '../../my_interests/widgets/interest_state_pill.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
-import '../providers/feed_provider.dart';
 
 /// Bottom sheet for quick source adjustment (frequency slider + mute).
 ///
@@ -50,14 +46,12 @@ class SourceAdjustSheet extends ConsumerStatefulWidget {
 }
 
 class _SourceAdjustSheetState extends ConsumerState<SourceAdjustSheet> {
-  late double _currentMultiplier;
   bool _isMuting = false;
   bool _showPriorityExplainer = false;
 
   @override
   void initState() {
     super.initState();
-    _currentMultiplier = widget.source.priorityMultiplier;
     _requestExplainerNudge();
   }
 
@@ -79,33 +73,6 @@ class _SourceAdjustSheetState extends ConsumerState<SourceAdjustSheet> {
     }
     if (mounted) {
       setState(() => _showPriorityExplainer = false);
-    }
-  }
-
-  Future<void> _onSliderChanged(double newValue) async {
-    setState(() => _currentMultiplier = newValue);
-    try {
-      await ref
-          .read(userSourcesProvider.notifier)
-          .updateWeight(widget.source.id, newValue);
-      // Auto-refresh feed to reflect new diversification quotas
-      unawaited(ref.read(feedProvider.notifier).refresh());
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Source mise à jour'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (_) {
-      // Revert on error
-      setState(() => _currentMultiplier = widget.source.priorityMultiplier);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Erreur lors de la mise à jour')),
-        );
-      }
     }
   }
 
@@ -208,14 +175,13 @@ class _SourceAdjustSheetState extends ConsumerState<SourceAdjustSheet> {
           if (_showPriorityExplainer) ...[
             NudgeInlineBanner(
               body:
-                  "Glissez pour ajuster l'importance de cette thématique dans votre digest — de minimale à essentielle.",
+                  "Choisissez la place de cette source dans votre flux : Favori (dans la Tournée du jour), Suivi, Neutre ou Masqué.",
               icon: PhosphorIcons.slidersHorizontal(PhosphorIconsStyle.regular),
               onDismiss: _dismissExplainer,
             ),
             const SizedBox(height: FacteurSpacing.space3),
           ],
 
-          // Frequency label + slider
           Row(
             children: [
               Icon(
@@ -225,7 +191,7 @@ class _SourceAdjustSheetState extends ConsumerState<SourceAdjustSheet> {
               ),
               const SizedBox(width: 8),
               Text(
-                'Fréquence',
+                'Place dans le flux',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
@@ -233,15 +199,10 @@ class _SourceAdjustSheetState extends ConsumerState<SourceAdjustSheet> {
                 ),
               ),
               const Spacer(),
-              Builder(builder: (context) {
-                final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
-                final sourceUsage = algoProfile?.sourceAffinities[widget.source.id];
-                return PrioritySlider(
-                  currentMultiplier: _currentMultiplier,
-                  onChanged: _onSliderChanged,
-                  usageWeight: sourceUsage,
-                );
-              }),
+              SourceStatePill(
+                sourceId: source.id,
+                title: source.name,
+              ),
             ],
           ),
           const SizedBox(height: 20),

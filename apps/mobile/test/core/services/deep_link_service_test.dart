@@ -8,7 +8,7 @@ void main() {
         Uri.parse('io.supabase.facteur://digest'),
       );
       expect(action.target, WidgetDeepLinkTarget.digest);
-      expect(action.route, '/digest');
+      expect(action.route, '/flux-continu');
       expect(action.articleId, isNull);
     });
 
@@ -17,7 +17,7 @@ void main() {
         Uri.parse('io.supabase.facteur://digest/'),
       );
       expect(action.target, WidgetDeepLinkTarget.digest);
-      expect(action.route, '/digest');
+      expect(action.route, '/flux-continu');
     });
 
     test('digest host with article id → article reader route', () {
@@ -27,44 +27,44 @@ void main() {
         ),
       );
       expect(action.target, WidgetDeepLinkTarget.article);
-      expect(action.route, '/feed/content/abc-123');
+      expect(action.route, '/flux-continu/content/abc-123');
       expect(action.articleId, 'abc-123');
       expect(action.position, 2);
       expect(action.topicId, 'international');
     });
 
-    test('veille/dashboard → veille target', () {
+    test('veille/dashboard (legacy widget link) → flux continu', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://veille/dashboard'),
       );
       expect(action.target, WidgetDeepLinkTarget.veille);
-      expect(action.route, '/veille/dashboard');
+      expect(action.route, '/flux-continu');
     });
 
-    test('veille bare host → veille target (fallback dashboard)', () {
+    test('veille bare host → flux continu', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://veille'),
       );
       expect(action.target, WidgetDeepLinkTarget.veille);
-      expect(action.route, '/veille/dashboard');
+      expect(action.route, '/flux-continu');
     });
 
-    test('feed host → feed target', () {
+    test('feed host → flâner (FeedScreen supprimé)', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://feed'),
       );
       expect(action.target, WidgetDeepLinkTarget.feed);
-      expect(action.route, '/feed');
+      expect(action.route, '/flaner');
     });
 
-    test('feed/content/<id> → article reader (Flux deep link)', () {
+    test('feed/content/<id> → article reader (Flâner deep link)', () {
       final action = DeepLinkService.parse(
         Uri.parse(
           'io.supabase.facteur://feed/content/abc-123?pos=4&topicId=tech',
         ),
       );
       expect(action.target, WidgetDeepLinkTarget.article);
-      expect(action.route, '/feed/content/abc-123');
+      expect(action.route, '/flaner/content/abc-123');
       expect(action.articleId, 'abc-123');
       expect(action.position, 4);
       expect(action.topicId, 'tech');
@@ -77,17 +77,33 @@ void main() {
         Uri.parse('io.supabase.facteur:///feed/content/abc-123?pos=7'),
       );
       expect(action.target, WidgetDeepLinkTarget.article);
-      expect(action.route, '/feed/content/abc-123');
+      expect(action.route, '/flaner/content/abc-123');
       expect(action.articleId, 'abc-123');
       expect(action.position, 7);
     });
 
-    test('feed/content/ (id missing) falls back to feed target', () {
+    test('feed/content/ (id missing) falls back to flâner', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://feed/content/'),
       );
       expect(action.target, WidgetDeepLinkTarget.feed);
-      expect(action.route, '/feed');
+      expect(action.route, '/flaner');
+    });
+
+    test('grille host → /grille (mot du jour partagé entre amis)', () {
+      final action = DeepLinkService.parse(
+        Uri.parse('io.supabase.facteur://grille'),
+      );
+      expect(action.target, WidgetDeepLinkTarget.grille);
+      expect(action.route, '/grille');
+    });
+
+    test('grille bare path (host vide) → /grille', () {
+      final action = DeepLinkService.parse(
+        Uri.parse('io.supabase.facteur:///grille'),
+      );
+      expect(action.target, WidgetDeepLinkTarget.grille);
+      expect(action.route, '/grille');
     });
 
     test('login-callback URI is ignored (handled by Supabase SDK)', () {

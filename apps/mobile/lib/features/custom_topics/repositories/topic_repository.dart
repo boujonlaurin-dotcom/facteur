@@ -47,24 +47,6 @@ class TopicRepository {
     }
   }
 
-  /// PUT personalization/topics/{id} → UserTopicProfile
-  Future<UserTopicProfile> updateTopicPriority(
-    String topicId,
-    double priorityMultiplier,
-  ) async {
-    try {
-      final data = await _apiClient.put(
-        'personalization/topics/$topicId',
-        body: {'priority_multiplier': priorityMultiplier},
-      );
-      return UserTopicProfile.fromJson(data as Map<String, dynamic>);
-    } on DioException catch (e) {
-      debugPrint(
-          'TopicRepository: [ERROR] updateTopicPriority: ${e.response?.statusCode} ${e.response?.data}');
-      rethrow;
-    }
-  }
-
   /// PUT personalization/topics/{id} → toggle `excluded_from_serein`.
   Future<UserTopicProfile> updateTopicSereinExclusion(
     String topicId,

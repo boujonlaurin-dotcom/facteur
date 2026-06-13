@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../config/constants.dart';
@@ -50,14 +53,18 @@ class AppUpdateInfo {
   }
 }
 
-/// Checks for app updates. Returns null if not a release build or check fails.
+/// Checks for app updates. Returns null on non-Android platforms or dev builds.
 final appUpdateProvider =
     FutureProvider.autoDispose<AppUpdateInfo?>((ref) async {
+  if (kIsWeb || !Platform.isAndroid) return null;
   if (!AppUpdateConstants.isReleaseBuild) return null;
 
   try {
     final apiClient = ref.read(apiClientProvider);
-    final data = await apiClient.get('app/update');
+    final data = await apiClient.get(
+      'app/update',
+      queryParameters: {'channel': AppUpdateConstants.updateChannel},
+    );
     return AppUpdateInfo.fromJson(data as Map<String, dynamic>);
   } catch (e) {
     // Fail silently — update check should never block the app

@@ -1,8 +1,9 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.services.classification_queue_service import ClassificationQueueService
+from app.services.title_annotation_service import get_title_annotation_service
 from app.workers.rss_sync import sync_all_sources
 
 router = APIRouter()
@@ -15,19 +16,6 @@ async def trigger_sync(
     """Déclenche manuellement la synchronisation RSS de toutes les sources."""
     results = await sync_all_sources()
     return {"message": "Sync completed", "results": results}
-
-
-@router.post("/briefing", status_code=status.HTTP_200_OK)
-async def trigger_daily_briefing(background_tasks: BackgroundTasks):
-    """Déclenche manuellement la génération du Top 3 Quotidien."""
-    # On lance en tâche de fond pour ne pas bloquer, mais pour le test d'intégration
-    # il faudra poller ou checker les logs.
-    # Pour le dev, on peut aussi l'await si on veut le retour direct
-    # Ici on choisit d'await pour voir le résultat dans la réponse du test
-    from app.workers.top3_job import generate_daily_top3_job
-
-    await generate_daily_top3_job(trigger_manual=True)
-    return {"message": "Daily Top 3 generation completed"}
 
 
 @router.get("/admin/queue-stats", status_code=status.HTTP_200_OK)
@@ -74,3 +62,20 @@ async def backfill_serene(
     service = ClassificationQueueService(session)
     count = await service.requeue_missing_serene(batch_limit=batch_limit)
     return {"message": "Backfill serene queued", "articles_queued": count}
+
+
+@router.get("/admin/ner-health", status_code=status.HTTP_200_OK)
+async def get_ner_health(
+    sample_title: str = Query(
+        default="Tsahal frappe Gaza et tue plusieurs civils",
+        max_length=200,
+    ),
+):
+    """Diagnostique la santé du pipeline NER (spaCy fr_core_news_md)."""
+    svc = get_title_annotation_service()
+    return {
+        "nlp_available": svc.is_nlp_available,
+        "model_version": svc.MODEL_VERSION,
+        "sample_title": sample_title,
+        "sample_tokens": svc.compute_strong_tokens(sample_title),
+    }

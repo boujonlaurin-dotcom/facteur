@@ -3,7 +3,7 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from app.models.enums import SourceType
 
@@ -39,9 +39,105 @@ class SourceResponse(BaseModel):
     score_ux: float | None = None
     recommended_by: str | None = None
     recommendation_reason: str | None = None
+    has_paywall: bool = False
+    premium_connection: "PremiumConnectionResponse | None" = None
 
     class Config:
         from_attributes = True
+
+
+class PremiumConnectionResponse(BaseModel):
+    """Configuration mobile pour connecter une source payante en WebView."""
+
+    enabled: bool = True
+    login_url: str
+    test_url: str
+    display_hint: str | None = None
+    # True quand la config est dérivée d'un fallback générique (URL = home de la
+    # source) plutôt que d'une config curée/explicite. Le mobile adapte le label
+    # du CTA ("Associer" vs "Connecter").
+    is_generic: bool = False
+
+    @classmethod
+    def from_config(cls, config: object) -> "PremiumConnectionResponse | None":
+        if not isinstance(config, dict) or config.get("enabled") is not True:
+            return None
+
+        login_url = config.get("login_url")
+        test_url = config.get("test_url")
+        if not isinstance(login_url, str) or not login_url.strip():
+            return None
+        if not isinstance(test_url, str) or not test_url.strip():
+            return None
+
+        display_hint = config.get("display_hint")
+        return cls(
+            enabled=True,
+            login_url=login_url.strip(),
+            test_url=test_url.strip(),
+            display_hint=display_hint.strip()
+            if isinstance(display_hint, str) and display_hint.strip()
+            else None,
+        )
+
+    @classmethod
+    def from_source(
+        cls, source: object, *, curated_map: dict
+    ) -> "PremiumConnectionResponse | None":
+        """Résout la config de connexion premium d'une source, par priorité.
+
+        1. config explicite (``premium_connection_config``) si présente ;
+        2. sinon match domaine dans ``curated_map`` → config curée
+           (``is_generic=False``) ;
+        3. sinon, si la source est payante (paywall_config / map) et possède une
+           URL http(s) valide → fallback générique (login=test=home de la source,
+           ``is_generic=True``) ;
+        4. sinon ``None``.
+        """
+        # Import local : évite un cycle schemas → services au chargement.
+        from app.services.premium_curated_sources import (
+            domain_key,
+            is_paywalled_source,
+        )
+
+        explicit = cls.from_config(getattr(source, "premium_connection_config", None))
+        if explicit is not None:
+            return explicit
+
+        url = getattr(source, "url", None)
+        domain = domain_key(url)
+
+        curated = curated_map.get(domain) if domain else None
+        if isinstance(curated, dict):
+            login_url = str(curated.get("login_url", "")).strip()
+            test_url = str(curated.get("test_url", "")).strip()
+            if login_url and test_url:
+                hint = curated.get("display_hint")
+                return cls(
+                    enabled=True,
+                    login_url=login_url,
+                    test_url=test_url,
+                    display_hint=hint.strip()
+                    if isinstance(hint, str) and hint.strip()
+                    else None,
+                    is_generic=False,
+                )
+
+        if is_paywalled_source(source, curated_map=curated_map):
+            clean_url = url.strip() if isinstance(url, str) else ""
+            if clean_url.startswith(("http://", "https://")):
+                return cls(
+                    enabled=True,
+                    login_url=clean_url,
+                    test_url=clean_url,
+                    display_hint=(
+                        "Connecte-toi à ton compte sur le site du média, "
+                        "puis reviens lire tes articles."
+                    ),
+                    is_generic=True,
+                )
+
+        return None
 
 
 class SourceCreate(BaseModel):
@@ -87,22 +183,6 @@ class SourceCatalogResponse(BaseModel):
     custom: list[SourceResponse]
 
 
-class UpdateSourceWeightRequest(BaseModel):
-    """Mise à jour du poids d'une source."""
-
-    priority_multiplier: float
-
-    @field_validator("priority_multiplier")
-    @classmethod
-    def validate_multiplier(cls, v: float) -> float:
-        allowed = {0.2, 1.0, 2.0}
-        if v not in allowed:
-            raise ValueError(
-                f"priority_multiplier doit être 0.2, 1.0 ou 2.0 (reçu: {v})"
-            )
-        return v
-
-
 class UpdateSourceSubscriptionRequest(BaseModel):
     """Mise à jour de l'abonnement premium à une source."""
 
@@ -125,6 +205,9 @@ class SmartSearchRecentItem(BaseModel):
 
     title: str
     published_at: str = ""
+    # Thème inféré (clé brute backend ; mapping label/couleur côté front).
+    # Additif/rétro-compatible : reste None si non fourni par l'appelant.
+    theme: str | None = None
 
 
 class SmartSearchResultItem(BaseModel):
@@ -160,6 +243,28 @@ class SearchAbandonedRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=500)
 
 
+class RecentItemsRequest(BaseModel):
+    """Requête batch des derniers contenus par source (conclusion onboarding)."""
+
+    source_ids: list[UUID] = Field(default_factory=list, max_length=30)
+    per_source: int = Field(default=3, ge=1, le=5)
+
+
+class SourceRecentItems(BaseModel):
+    """Derniers contenus d'une source, avec son identité visuelle."""
+
+    source_id: UUID
+    name: str
+    logo_url: str | None = None
+    items: list[SmartSearchRecentItem] = []
+
+
+class RecentItemsResponse(BaseModel):
+    """Réponse batch des derniers contenus par source."""
+
+    sources: list[SourceRecentItems] = []
+
+
 class ThemeSourceGroup(BaseModel):
     """Groupe de sources par catégorie dans un thème."""
 
@@ -187,3 +292,24 @@ class ThemesFollowedResponse(BaseModel):
     """Réponse thèmes suivis."""
 
     themes: list[ThemeFollowed]
+
+
+class CoverageRow(BaseModel):
+    """Couverture d'un thème par une source sur la période."""
+
+    theme: str
+    count: int
+    pct: int
+
+
+class CoverageResponse(BaseModel):
+    """Agrégation de la couverture par thème d'une source.
+
+    `theme` reste la clé brute backend ; le mapping label/couleur est fait
+    côté front. `rows` est trié par `count` décroissant, top N + « autres ».
+    """
+
+    period_label: str
+    total_count: int
+    caption: str
+    rows: list[CoverageRow] = []

@@ -3,15 +3,22 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../config/constants.dart';
 import '../../../config/theme.dart';
 
 /// YouTube video player widget (Story 5.2)
 ///
-/// Uses flutter_inappwebview with a CORS proxy (corsproxy.io) to bypass
-/// YouTube's server-side WebView detection (Error 153 on Android).
-/// JS bridge for progress tracking and long-press 2x speed boost.
+/// Loads the YouTube IFrame Player API via a wrapper page served from our own
+/// backend (`/api/youtube/player?v=...`). Serving the wrapper from a real
+/// https origin gives the embedded YouTube iframe a valid Referer/Origin —
+/// the canonical fix for Android WebView Error 153. (Loading the embed
+/// directly, or via `loadDataWithBaseURL`, fails because Android WebView
+/// doesn't attach an Origin/Referer in those cases, so YouTube refuses the
+/// embed. This mirrors what the old corsproxy.io wrapper did, but self-hosted.)
 ///
-/// Falls back to "open in YouTube" if playback still fails.
+/// A standard Chrome mobile User-Agent is also set (no "wv" marker) as
+/// defense in depth. The YT.Player JS API drives progress, play state, and
+/// playbackRate (long-press 2x). Falls back to "open in YouTube" on error.
 class YouTubePlayerWidget extends StatefulWidget {
   final String videoUrl;
   final String title;
@@ -37,6 +44,10 @@ class YouTubePlayerWidget extends StatefulWidget {
 }
 
 class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
+  /// Host of our backend origin — whitelisted in [shouldOverrideUrlLoading].
+  /// Derived once from the (constant) [ApiConstants.baseUrl].
+  static final String _apiHost = WebUri(ApiConstants.baseUrl).host;
+
   InAppWebViewController? _controller;
   String? _videoId;
   double _lastReportedProgress = -1.0;
@@ -82,50 +93,11 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
     return null;
   }
 
-  // ---------------------------------------------------------------------------
-  // JS bridge injection — after page loads
-  // ---------------------------------------------------------------------------
-
-  Future<void> _injectPlayerBridge() async {
-    await _controller?.evaluateJavascript(source: '''
-(function() {
-  if (window._bridgeInitialized) return;
-  window._bridgeInitialized = true;
-
-  var checkCount = 0;
-
-  function findAndSetup() {
-    var video = document.querySelector('video');
-    if (!video && checkCount < 50) {
-      checkCount++;
-      setTimeout(findAndSetup, 200);
-      return;
-    }
-    if (video) {
-      setInterval(function() {
-        if (video.duration > 0) {
-          window.flutter_inappwebview.callHandler('FlutterProgress', video.currentTime / video.duration);
-        }
-      }, 1000);
-
-      video.addEventListener('playing', function() {
-        window.flutter_inappwebview.callHandler('FlutterPlayState', 1);
-      });
-      video.addEventListener('pause', function() {
-        window.flutter_inappwebview.callHandler('FlutterPlayState', 0);
-      });
-      video.addEventListener('ended', function() {
-        window.flutter_inappwebview.callHandler('FlutterPlayState', 0);
-      });
-
-      window.setPlaybackRate = function(rate) { video.playbackRate = rate; };
-    }
-  }
-
-  findAndSetup();
-})();
-''');
-  }
+  /// URL of the backend-hosted IFrame Player wrapper page for [videoId].
+  /// Served from our real https origin so the YouTube embed gets a valid
+  /// Referer (bypasses Error 153). [ApiConstants.baseUrl] ends with `/`.
+  String _playerUrl(String videoId) =>
+      '${ApiConstants.baseUrl}youtube/player?v=$videoId';
 
   void _startSpeedBoost() {
     setState(() => _isSpeedBoosted = true);
@@ -167,21 +139,22 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
       );
     }
 
-    final rawEmbedUrl =
-        'https://www.youtube.com/embed/$_videoId'
-        '?playsinline=1&rel=0&modestbranding=1&autoplay=0&controls=1&fs=1';
-    final embedUrl =
-        'https://corsproxy.io/?url=${Uri.encodeComponent(rawEmbedUrl)}';
-
     final settings = InAppWebViewSettings(
       javaScriptEnabled: true,
       mediaPlaybackRequiresUserGesture: false,
       allowsInlineMediaPlayback: true,
       transparentBackground: true,
+      // Chrome mobile UA (no "wv" marker) so YouTube doesn't block via
+      // WebView detection (Error 153 / 152-4).
+      userAgent:
+          'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 '
+          '(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
     );
 
     final playerWidget = InAppWebView(
-      initialUrlRequest: URLRequest(url: WebUri(embedUrl)),
+      // Wrapper page served from our backend origin → the YouTube embed
+      // iframe gets a valid Referer → no Error 153.
+      initialUrlRequest: URLRequest(url: WebUri(_playerUrl(_videoId!))),
       initialSettings: settings,
       onWebViewCreated: (controller) {
         _controller = controller;
@@ -208,9 +181,13 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
             widget.onPlayStateChanged?.call(isPlaying);
           },
         );
-      },
-      onLoadStop: (controller, url) async {
-        _injectPlayerBridge();
+
+        controller.addJavaScriptHandler(
+          handlerName: 'FlutterError',
+          callback: (args) {
+            if (mounted) setState(() => _hasError = true);
+          },
+        );
       },
       onReceivedError: (controller, request, error) {
         if (request.isForMainFrame ?? false) {
@@ -240,13 +217,13 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
         final uri = navigationAction.request.url;
         if (uri == null) return NavigationActionPolicy.CANCEL;
         final host = uri.host;
-        if (host.endsWith('youtube.com') ||
+        if (host == _apiHost ||
+            host.endsWith('youtube.com') ||
             host.endsWith('youtube-nocookie.com') ||
             host.endsWith('ytimg.com') ||
             host.endsWith('googlevideo.com') ||
             host.endsWith('google.com') ||
-            host.endsWith('gstatic.com') ||
-            host.endsWith('corsproxy.io')) {
+            host.endsWith('gstatic.com')) {
           return NavigationActionPolicy.ALLOW;
         }
         return NavigationActionPolicy.CANCEL;

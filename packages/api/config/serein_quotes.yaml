@@ -122,3 +122,32 @@ quotes:
 
   - text: "Les gens ne font pas des voyages, ce sont les voyages qui font les gens."
     author: "John Steinbeck"
+
+  - text: "Nous sommes tous dans le caniveau, mais certains d'entre nous regardent les étoiles."
+    author: "Oscar Wilde"
+    source: "L'Éventail de Lady Windermere"
+
+  - text: "Le hasard, c'est peut-être le pseudonyme de Dieu quand il ne veut pas signer."
+    author: "Anatole France"
+
+  - text: "On ne reçoit pas la sagesse, il faut la découvrir soi-même après un trajet que personne ne peut faire à notre place."
+    author: "Marcel Proust"
+    source: "À la recherche du temps perdu"
+
+  - text: "La simplicité est la sophistication suprême."
+    author: "Léonard de Vinci"
+
+  - text: "Rien n'est plus dangereux qu'une idée, quand on n'a qu'une idée."
+    author: "Alain"
+    source: "Propos sur la religion"
+
+  - text: "Ceux qui ne bougent pas ne sentent pas leurs chaînes."
+    author: "Rosa Luxemburg"
+
+  - text: "Le rire est le propre de l'homme."
+    author: "Rabelais"
+    source: "Gargantua"
+
+  - text: "Le doute est un hommage rendu à l'espoir."
+    author: "Lautréamont"
+    source: "Poésies"

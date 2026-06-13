@@ -1,0 +1,120 @@
+{
+  "generated_at": "2026-06-09T00:00:00+00:00",
+  "schema_version": 1,
+  "dataset_kind": "event_membership",
+  "seed_window_hours": 72,
+  "pools": [
+    {
+      "pool_key": "trump",
+      "pool_display": "Trump",
+      "seed_entity": {"name": "Trump", "type": "PERSON"},
+      "theme": "international",
+      "events": [
+        {"event_id": "iran", "label": "Frappes Iran-Israël", "size": 3},
+        {"event_id": "nba", "label": "Finales NBA", "size": 1},
+        {"event_id": "NOISE", "label": "singletons / hors-événement", "size": 1}
+      ],
+      "articles": [
+        {
+          "id": "T1",
+          "title": "Trump frappe l'Iran, Téhéran riposte",
+          "url": "https://example.com/t1",
+          "published_at": "2026-06-08T08:00:00+00:00",
+          "source_name": "Le Monde",
+          "source_id": "src-1",
+          "bias_stance": "center-left",
+          "theme": "international",
+          "topics": ["geopolitics", "middleeast"],
+          "entities": [
+            "{\"name\": \"Trump\", \"type\": \"PERSON\"}",
+            "{\"name\": \"Iran\", \"type\": \"LOCATION\"}"
+          ],
+          "event_id": "iran",
+          "label_source": "po",
+          "label_reviewed": true,
+          "label_confidence": 1.0,
+          "label_notes": ""
+        },
+        {
+          "id": "T2",
+          "title": "Trump ordonne une frappe massive sur l'Iran",
+          "url": "https://example.com/t2",
+          "published_at": "2026-06-08T09:00:00+00:00",
+          "source_name": "Libération",
+          "source_id": "src-2",
+          "bias_stance": "left",
+          "theme": "international",
+          "topics": ["geopolitics", "middleeast"],
+          "entities": [
+            "{\"name\": \"Trump\", \"type\": \"PERSON\"}",
+            "{\"name\": \"Iran\", \"type\": \"LOCATION\"}"
+          ],
+          "event_id": "iran",
+          "label_source": "po",
+          "label_reviewed": true,
+          "label_confidence": 1.0,
+          "label_notes": ""
+        },
+        {
+          "id": "T4",
+          "title": "Guerre au Moyen-Orient : l'offensive se poursuit",
+          "url": "https://example.com/t4",
+          "published_at": "2026-06-08T10:00:00+00:00",
+          "source_name": "Le Figaro",
+          "source_id": "src-3",
+          "bias_stance": "right",
+          "theme": "international",
+          "topics": ["geopolitics", "middleeast"],
+          "entities": [
+            "{\"name\": \"Trump\", \"type\": \"PERSON\"}",
+            "{\"name\": \"Iran\", \"type\": \"LOCATION\"}"
+          ],
+          "event_id": "iran",
+          "label_source": "po",
+          "label_reviewed": true,
+          "label_confidence": 1.0,
+          "label_notes": "paraphrase : pas de token partagé avec T1/T2"
+        },
+        {
+          "id": "T3",
+          "title": "Trump hué aux finales NBA",
+          "url": "https://example.com/t3",
+          "published_at": "2026-06-08T11:00:00+00:00",
+          "source_name": "L'Équipe",
+          "source_id": "src-4",
+          "bias_stance": "center",
+          "theme": "international",
+          "topics": ["sport"],
+          "entities": [
+            "{\"name\": \"Trump\", \"type\": \"PERSON\"}",
+            "{\"name\": \"NBA\", \"type\": \"ORG\"}"
+          ],
+          "event_id": "nba",
+          "label_source": "po",
+          "label_reviewed": true,
+          "label_confidence": 1.0,
+          "label_notes": ""
+        },
+        {
+          "id": "N1",
+          "title": "Trump convoite les Chagos",
+          "url": "https://example.com/n1",
+          "published_at": "2026-06-08T12:00:00+00:00",
+          "source_name": "Mediapart",
+          "source_id": "src-5",
+          "bias_stance": "left",
+          "theme": "international",
+          "topics": ["geopolitics"],
+          "entities": [
+            "{\"name\": \"Trump\", \"type\": \"PERSON\"}"
+          ],
+          "event_id": "NOISE",
+          "label_source": "po",
+          "label_reviewed": true,
+          "label_confidence": 1.0,
+          "label_notes": "partage seulement l'entité Trump"
+        }
+      ]
+    }
+  ]
+}

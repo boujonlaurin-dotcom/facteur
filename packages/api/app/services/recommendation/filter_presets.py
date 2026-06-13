@@ -17,7 +17,7 @@ from sqlalchemy import and_, exists, func, literal_column, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.content import Content
-from app.models.enums import BiasStance
+from app.models.enums import BiasStance, InterestState
 from app.models.source import Source, UserSource
 from app.models.user import UserPreference
 from app.models.user_topic_profile import UserTopicProfile
@@ -193,6 +193,7 @@ def apply_serein_filter(
         ),
     )
     query = query.where(serene_condition)
+    query = apply_ad_filter(query)
 
     # User-personalized theme exclusions override LLM is_serene=True: if the
     # user explicitly said "no tech", hide every tech article regardless of
@@ -205,6 +206,13 @@ def apply_serein_filter(
         if topic_exclusion is not None:
             query = query.where(topic_exclusion)
     return query
+
+
+def apply_ad_filter(query):
+    """Exclut les articles classifiés is_ad=True. NULL toléré (articles non encore classifiés)."""
+    return query.where(
+        or_(Content.is_ad.is_(None), Content.is_ad == False)  # noqa: E712
+    )
 
 
 def apply_good_news_filter(
@@ -221,6 +229,7 @@ def apply_good_news_filter(
     pour respecter les préférences personnelles.
     """
     query = query.where(Content.is_good_news == True)  # noqa: E712
+    query = apply_ad_filter(query)
     if excluded_topics:
         topic_exclusion = _topic_exclusion_condition(excluded_topics)
         if topic_exclusion is not None:
@@ -299,28 +308,35 @@ def apply_theme_focus_filter(query, theme_slug: str):
     Optimisé : résout le matching source-level via subquery sur la petite
     table sources (~100 rows), puis utilise deux chemins indexés sur contents
     via BitmapOr :
-      1. Content.source_id IN (source IDs matchant le thème) → ix_contents_source_id
-      2. Content.theme = theme_slug → ix_contents_theme_published
+      1. Content.theme = theme_slug → ix_contents_theme_published
+      2. Content.source_id IN (sources dont le thème PRINCIPAL matche)
+         ET Content.theme IS NULL → ix_contents_source_id
 
     Utilisé par le mode THEME_FOCUS (digest) et le filtre thème (feed).
+
+    NOTE (fix bug curation 2026-05-31) : pour les articles non classifiés
+    (`Content.theme IS NULL`), on ne s'appuie QUE sur le thème **principal** de
+    la source — jamais sur ses `secondary_themes`. Les sources généralistes ont
+    des `secondary_themes` très larges (Le Monde → society/politics/economy/
+    culture/tech/science) : les utiliser pour des articles frais non classifiés
+    déversait chaque article du matin dans des sections sans rapport (un fil
+    « guerre en Ukraine » apparaissant sous Technologie ET Science). Les articles
+    classifiés, eux, passent toujours par le chemin (1) via `content.theme`, donc
+    `secondary_themes` n'apporte rien d'autre que la fuite.
     """
-    # Subquery : source IDs dont le thème principal ou secondaire matche
-    theme_source_ids_subq = select(Source.id).where(
-        or_(
-            Source.theme == theme_slug,
-            Source.secondary_themes.any(theme_slug),
-        )
-    )
+    # Subquery : source IDs dont le thème PRINCIPAL matche (pas les secondaires).
+    primary_theme_source_ids_subq = select(Source.id).where(Source.theme == theme_slug)
     # Deux chemins indexés sur la même table (contents) :
     # 1. Articles classifiés ML dans ce thème → toujours inclus
-    # 2. Articles de sources matchant le thème MAIS pas encore classifiés
-    #    (Content.theme IS NULL) → bénéfice du doute
+    # 2. Articles d'une source dont le thème principal matche MAIS pas encore
+    #    classifiés (Content.theme IS NULL) → bénéfice du doute, borné à la
+    #    section principale de la source.
     # Exclut: articles de sources matchantes mais classifiés dans un AUTRE thème
     return query.where(
         or_(
             Content.theme == theme_slug,
             and_(
-                Content.source_id.in_(theme_source_ids_subq),
+                Content.source_id.in_(primary_theme_source_ids_subq),
                 Content.theme.is_(None),
             ),
         )
@@ -424,9 +440,113 @@ LOW_PRIORITY_SPORT_KEYWORDS = [
     " asm ",
     "mbappé",
     "mbappe",
+    # NBA / basket élargi (Story 9.4 — preuves DB : Wembanyama / TrashTalk / Thunder)
+    "nba",
+    "wembanyama",
+    "play-offs",
+    "playoffs",
 ]
 
 LOW_PRIORITY_SPORT_THEMES = {"sport", "sports"}
+
+
+# --- Constantes "bulletins / chroniques" ---
+#
+# Patterns regex matchant les titres de bulletins radio (« JOURNAL DE 8H… »),
+# tranches horaires (« Le 7/9 »), chroniques régulières (« Avec Sciences,
+# chronique du lundi 25 mai 2026 »), revues de presse. Ces contenus ne
+# constituent pas une actualité chaude éditoriale et doivent être exclus de
+# l'Essentiel — ils saturent les top slots avec du contenu daté/répétitif.
+#
+# Ancrage début de chaîne ou borné aux 30 premiers caractères pour éviter de
+# matcher un article analytique contenant « chronique » en milieu de phrase
+# (« Une chronique du conflit… »).
+NEWS_BULLETIN_PATTERNS = [
+    r"^\s*journal de \d{1,2}\s?h",  # JOURNAL DE 8H, Journal de 13h
+    r"^\s*le \d{1,2}\s?/\s?\d{1,2}\b",  # Le 7/9, Le 13/14, Le 18/20
+    # « Avec Sciences, chronique du… » → précédé de virgule/colon, ou en début
+    # de titre (« Chronique du soir »). Le « Une chronique du conflit » est
+    # exclu par construction (mot précédent = « Une », pas une ponctuation).
+    r"(^\s*|[,:]\s+)chronique du\b",
+    r"^\s*jt (de |du )",  # JT de 20h, JT du soir
+    r"^\s*les titres\b",  # Les titres de l'actualité
+    r"^\s*info (matin|soir)\b",
+    r"^\s*bulletin (info|météo|meteo)\b",
+    r"^\s*revue de presse\b",
+    r"^\s*flash (info|actu)\b",
+    r"^\s*le journal\b",  # Le journal de France Inter, Le Journal du week-end
+    # « Journal RTL », « Journal RFI » sans déterminant — pas catché par
+    # « Le journal » ni « Journal de Xh ».
+    r"^\s*journal (rtl|rfi|bfm|europe|france|rmc|lcp|i-?t[eé]l[eé])\b",
+    # « L'émission politique », « L'Émission du soir » — apostrophe droite
+    # ou typographique.
+    r"^\s*l[''’]\s*[ée]mission\b",
+    # « Ma chronique », « La chronique de Nicolas », « Sa chronique du lundi »
+    # — ancré sur possessif/déterminant pour éviter « Une chronique du conflit ».
+    r"^\s*(ma|la|sa|notre)\s+chronique\b",
+    # « Chronique: l'économie », « Chronique – bilan de semaine ».
+    r"^\s*chronique\s*[:\-–—]",
+    # Préfixe descriptif avant « émission du <jour> » :
+    # « L'humeur du jour, émission du mercredi 27 mai 2026 »
+    # « La revue de presse internationale, émission du lundi 25 mai 2026 »
+    r",\s*émission du (lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b",
+    # « La revue de presse », « La matinale », « L'invité » — liste fermée
+    # pour ne pas attraper « La revue d'un livre ».
+    r"^\s*(la|l[''’])\s*(revue de presse|humeur du jour|invité|matinale)\b",
+    # « L'humeur du jour », « L'idée du jour » — chronique matinale type
+    # France Culture / France Inter.
+    r"^\s*l[''’][a-zéèêàâîôûç]+ du jour\b",
+    # --- Séries / feuilletons éditoriaux nommés (France Culture & co.) ---
+    # Épisodes d'une série récurrente : pas de l'actu chaude, ils saturent les
+    # top slots malgré le dédoublonnage par domaine (cf.
+    # bug-actus-du-jour-ranking.md, Partie B). Deux marqueurs robustes :
+    #  - sous-titre de série après virgule : « Philippe Jaenada, l'art de la
+    #    contre-enquête », « …, l'art du roman ».
+    r",\s*l[''’]art (de|du|des|d[''’])\b",
+    #  - compteur d'épisode parenthésé en fin de titre : « (1/4) », « (2 / 5) ».
+    #    Forme canonique des feuilletons ; parenthèses requises pour ne pas
+    #    attraper une date « 15/05 » en fin de titre.
+    r"\(\s*\d{1,2}\s?/\s?\d{1,2}\s*\)\s*$",
+]
+
+_BULLETIN_RE = re.compile("|".join(NEWS_BULLETIN_PATTERNS), re.IGNORECASE)
+
+
+def is_news_bulletin_title(title: str | None) -> bool:
+    """True si le titre matche un pattern de bulletin radio / chronique régulière.
+
+    Utilisé pour exclure de l'Essentiel les contenus daté/répétitifs
+    (« JOURNAL DE 8H du lundi 25 mai 2026 », « Avec Sciences, chronique du… »)
+    qui passent à travers les autres filtres parce qu'ils sont publiés en
+    flux article (content_type=ARTICLE) sur certaines sources comme France
+    Culture.
+    """
+    if not title:
+        return False
+    return bool(_BULLETIN_RE.search(title))
+
+
+# Sources dont les articles ne peuvent pas être sélectionnés comme actu dans
+# le top 10 éditorial. Match par sous-chaîne casefold sur Source.name — tolère
+# variations (« Frandroid », « FRANDROID », « frandroid.com »).
+EDITORIAL_SOURCE_DENYLIST: frozenset[str] = frozenset(
+    {
+        # Publie du contenu sponsorisé non systématiquement tagué is_ad
+        # (« Bouygues fête ses 30 ans… »).
+        "frandroid",
+    }
+)
+
+
+def is_denylisted_editorial_source(content) -> bool:  # type: ignore[no-untyped-def]
+    """True si la source du contenu est dans EDITORIAL_SOURCE_DENYLIST."""
+    source = getattr(content, "source", None)
+    if source is None:
+        return False
+    name = (getattr(source, "name", None) or "").casefold()
+    if not name:
+        return False
+    return any(token in name for token in EDITORIAL_SOURCE_DENYLIST)
 
 
 def _match_ratio(cluster: TopicCluster, keywords: list[str]) -> float:
@@ -577,7 +697,12 @@ async def calculate_user_bias(session: AsyncSession, user_id: UUID) -> BiasStanc
     Fallback CENTER si aucune source suivie.
     """
     result = await session.execute(
-        select(Source.bias_stance).join(UserSource).where(UserSource.user_id == user_id)
+        select(Source.bias_stance)
+        .join(UserSource)
+        .where(
+            UserSource.user_id == user_id,
+            UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+        )
     )
     biases = result.scalars().all()
 

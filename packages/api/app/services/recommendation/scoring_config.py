@@ -22,6 +22,14 @@ class ScoringWeights:
     # Réduit de 40→35 pour ne pas dominer la pertinence thématique.
     TRUSTED_SOURCE = 35.0
 
+    # Bonus additionnel appliqué *uniquement dans le digest* (Essentiel +
+    # Bonnes Nouvelles) en plus de TRUSTED_SOURCE. Le pool digest inclut déjà
+    # les sources suivies en étape 1, mais le ranking + la diversité (1
+    # article/source) les évinçaient souvent ; ce bonus garantit qu'un
+    # article de source suivie passe devant un curated comparable, sans
+    # écraser un curated nettement plus pertinent (trending fort, etc.).
+    DIGEST_TRUSTED_SOURCE_BONUS = 60.0
+
     # Bonus pour une source non suivie mais "Standard" (vs suivie).
     # Augmenté de 10→15 pour encourager les sources secondaires.
     STANDARD_SOURCE = 15.0
@@ -41,8 +49,10 @@ class ScoringWeights:
     # --- CUSTOM TOPIC LAYER (Epic 11) ---
 
     # Base bonus when an article matches a user's custom topic.
-    # Calibrated: 15 * 2.0 max = 30pts (competes with THEME_MATCH=50 without dominating).
-    CUSTOM_TOPIC_BASE_BONUS = 15.0
+    # Top3 thematic selection: bumped 15→25 (B3) — un sujet perso précis est
+    # le signal d'intention le plus fort dont on dispose, il doit pouvoir
+    # peser autant qu'un TRUSTED_SOURCE (35) à multiplier max 2.0.
+    CUSTOM_TOPIC_BASE_BONUS = 25.0
 
     # --- DIGEST RECENCY BONUSES (Tiered) ---
     # Bonus de fraîcheur hiérarchisés pour l'algorithme de digest
@@ -64,6 +74,21 @@ class ScoringWeights:
 
     # Article ancien (< 168h): +1 pt
     RECENT_OLD_BONUS = 1.0
+
+    # --- THEMATIC SECTION ADAPTIVE FRESHNESS WINDOW (rareté de contenu) ---
+    # Sections thématiques de la Tournée (personalized_theme_mode) : la fenêtre
+    # 24h + sources-suivies-seulement peut rendre une section quasi vide pour les
+    # thèmes à faible fréquence (ex. science = 4 candidats/24h). On élargit la
+    # fenêtre par paliers UNIQUEMENT quand le pool 24h est sous le seuil ; le
+    # scoring Fraîcheur continue de privilégier « le plus frais d'abord ».
+    THEMATIC_WINDOW_TIERS_HOURS = (24, 48, 72)  # paliers d'élargissement successifs
+    THEMATIC_MIN_POOL_SIZE = 8  # sous ce seuil → on tente le palier suivant
+    # Plancher absolu de candidats par section thématique. Si le pool des sources
+    # suivies reste en dessous (même au palier 72h), on complète avec des sources
+    # curées NON-suivies (comme Flâner), marquées « Suivre + » à l'affichage. Le
+    # deep-dive (carrousels / Explorer plus / CTA Sujet suivant) reste toujours
+    # accessible.
+    THEMATIC_HARD_FLOOR = 5
 
     # --- QUALITY LAYER (FQS - Facteur Quality Score) ---
 
@@ -129,9 +154,42 @@ class ScoringWeights:
     # --- DIGEST LOW-PRIORITY (Sport) ---
 
     # Pénalité appliquée aux articles Sport dans le scoring du digest (2 modes).
-    # Alignée sur MUTED_THEME_MALUS (-40) : un Sport fort (source suivie + topic
-    # ciblé + très récent) peut encore dépasser le seuil — pas d'exclusion dure.
-    DIGEST_SPORT_PENALTY = -40.0
+    # Renforcée de -40 → -80 (Story 9.4) : la pénalité d'origine était trop
+    # faible — un sport avec source suivie (+100) ou trending (+45) la battait
+    # systématiquement, d'où plusieurs cas observés en rank 1-3 (UNFP Dembélé,
+    # Wembanyama, F1, Ligue des champions). À -80 le sport ne passe en tête
+    # que s'il est éditorialement majeur ET suivi par l'user.
+    DIGEST_SPORT_PENALTY = -80.0
+
+    # --- ESSENTIEL (top 5 transversal — Story 9.4) ---
+
+    # Slot minimum autorisé pour un article sport dans l'Essentiel (1-indexed).
+    # Sport en rank < 5 = exclu via post-processing positionnel.
+    ESSENTIEL_SPORT_MIN_SLOT = 5
+
+    # Nombre maximum d'articles sport par Essentiel (5 articles total).
+    ESSENTIEL_MAX_SPORT_PER_DIGEST = 1
+
+    # Score perspectives non-linéaire (log2) : `min(CAP, BASE * log2(n))`.
+    # 1→0  2→+12  3→+19  4→+24  5→+28  6→+30 (cap)  8+→+30
+    # Permet à un sujet relayé par 3+ médias de rivaliser avec un BOOST_BADGE_ACTU
+    # (+25) et d'égaler un BOOST_UNE (+30). Un scoop isolé n'a aucun bonus.
+    # Source de vérité unique partagée par Essentiel, feed thématique et digest
+    # via `helpers/coverage_score.py`.
+    COVERAGE_BASE = 12.0
+    COVERAGE_CAP = 30.0
+    # Anciens noms maintenus pour rétrocompat (essentiel_service avant migration).
+    ESSENTIEL_PERSPECTIVE_BASE = COVERAGE_BASE
+    ESSENTIEL_PERSPECTIVE_CAP = COVERAGE_CAP
+
+    # --- DIGEST POLARISATION (importance éditoriale — Actus du jour) ---
+    # Bonus d'importance pour un sujet où les médias divergent (gauche ET
+    # droite représentées). Signal tertiaire derrière couverture (cap 30) et
+    # récence (max 30) : il départage les sujets très couverts du jour sans
+    # jamais dominer la couverture. `divergence_level` "low"/"none" = 0 (pas
+    # de polarisation notable). Cf. bug-actus-du-jour-ranking.md (Partie C).
+    POLARIZATION_MEDIUM_BONUS = 6.0
+    POLARIZATION_HIGH_BONUS = 12.0
 
     # --- DIGEST TRENDING/IMPORTANCE (Pour vous hybride) ---
 
@@ -154,10 +212,13 @@ class ScoringWeights:
     TOPIC_FOLLOWED_SOURCE_BONUS = 40.0
 
     # Bonus pour un topic trending (couvert par ≥3 sources distinctes).
+    # Source de vérité partagée avec Essentiel et feed thématique.
     TOPIC_TRENDING_BONUS = 50.0
+    TOPIC_IS_TRENDING_BONUS = TOPIC_TRENDING_BONUS  # alias canonique
 
     # Bonus pour un topic contenant ≥1 article "À la Une".
     TOPIC_UNE_BONUS = 35.0
+    TOPIC_IS_UNE_BONUS = TOPIC_UNE_BONUS  # alias canonique
 
     # Bonus pour un topic dont le thème dominant matche les intérêts user.
     TOPIC_THEME_MATCH_BONUS = 45.0
@@ -248,6 +309,64 @@ class ScoringWeights:
 
     # Scoring engine version: "layers_v1" (legacy) or "pillars_v1" (new).
     SCORING_VERSION = "pillars_v1"
+
+    # --- VEILLE (feed temps-réel curé par score) ---
+
+    # Bonus mots-clés **escaladant** (Story 23.4) : un angle dont N mots-clés
+    # distincts matchent (titre/description) rapporte
+    # `min(BASE + INCREMENT*(N-1), CAP)`. Remplace l'ancien `+25` plat de
+    # `_score_custom_topics` quand l'angle est marqué `is_veille`. Le cap (45)
+    # protège `MAX_PERTINENCE_RAW=130` d'un empilement non borné.
+    VEILLE_KEYWORD_BASE_BONUS = 18.0
+    VEILLE_KEYWORD_INCREMENT = 9.0
+    VEILLE_KEYWORD_CAP = 45.0
+
+    # Bonus quand l'article porte le `topic_id` de l'angle dans `Content.topics`
+    # (« article labellisé IA ») — le signal canonique le plus fort.
+    VEILLE_TOPIC_MATCH_BONUS = 50.0
+
+    # Bonus de combo : topic canonique **ET** ≥1 mot-clé matché (signal on-angle
+    # le plus net).
+    VEILLE_TOPIC_KEYWORD_COMBO_BONUS = 15.0
+
+    # Bonus source suivie appliqué **dans la pertinence** uniquement si l'article
+    # a déjà un topic ou un mot-clé (bonus angle > 0). « La source est un boost,
+    # pas un free-pass » : source-seul = 0 contribution de pertinence.
+    VEILLE_SOURCE_ON_TOPIC_BONUS = 12.0
+
+    # Seuil de pertinence (score final piliers, échelle ~0-100) en-deçà duquel
+    # un article candidat est élagué du feed veille. Relevé 40→48 (Story 23.4)
+    # avec la curation v2 : source-seul frais+riche ≈ 44 (< 48, écarté en plus
+    # par le floor) ; 1 mot-clé+source ≈ 52-58 ; topic+source ≈ 62-70 ;
+    # topic+2kw+source ≈ 75-82. Point de calibration tunable via les logs prod
+    # (max_score / pass_count / floor_pruned_count / threshold_pruned_count).
+    VEILLE_RELEVANCE_THRESHOLD = 48.0
+
+    # Anti-starvation : si après scoring moins de N articles passent ET que des
+    # candidats on-axis ont été coupés par le *seuil* (jamais par le floor), on
+    # relâche le seuil d'un cran (max -8, plancher 40).
+    VEILLE_MIN_FEED_SIZE = 5
+
+    # Plafond du pool de candidats scorés par fetch (borne le coût ILIKE +
+    # scoring sur un feed curé ; offsets au-delà renvoient vide — acceptable).
+    VEILLE_CANDIDATE_CAP = 300
+
+    # Fenêtre de récence (heures) du prédicat veille — aligné sur le digest.
+    # S'applique au **Bloc B « Couverture élargie »** (topics/mots-clés, sources
+    # non configurées).
+    VEILLE_RECENCY_HOURS = 168
+
+    # Fenêtre de récence (heures) du **Bloc A « Tes sources »** : 30 j. Les
+    # sources niche configurées ont souvent des flux RSS lents/peu fréquents —
+    # une fenêtre 7 j les rend invisibles alors qu'elles sont le cœur de la
+    # veille. On élargit donc à 30 j *uniquement* pour les sources explicitement
+    # ajoutées (laisser-passer), bornées par le cap de diversité ci-dessous.
+    VEILLE_CONFIGURED_RECENCY_HOURS = 720
+
+    # Cap de diversité du Bloc A : au plus N articles par source configurée, afin
+    # qu'une source bavarde (flux dense) ne monopolise pas le bloc malgré la
+    # fenêtre 30 j. Appliqué via `diversify()` après tri par score.
+    VEILLE_SOURCE_DIVERSITY_CAP = 3
 
     # --- TOPIC-AWARE FEED DIVERSIFICATION (Phase 2 — Budget Neutre) ---
 

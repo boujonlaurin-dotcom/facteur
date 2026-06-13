@@ -1,0 +1,16 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Facteur//Soiree de pre-lancement//FR
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+UID:soiree-prelancement-facteur-20260619@facteur.app
+DTSTAMP:20260609T120000Z
+DTSTART:20260619T170000Z
+DTEND:20260619T210000Z
+SUMMARY:Soirée de pré-lancement Facteur
+LOCATION:Bar Kilomètre Zéro, 39 Rue Notre Dame de Nazareth, 75003 Paris
+DESCRIPTION:On lance Facteur ! Viens découvrir l'app en avant-première, échanger avec l'équipe et fêter le pré-lancement. 40 places, premiers arrivés, premiers servis.
+URL:https://facteur.app/blog-soiree-prelancement.html
+END:VEVENT
+END:VCALENDAR

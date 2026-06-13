@@ -47,6 +47,19 @@ class UserPersonalization(Base):
         Boolean, default=True, server_default="true"
     )
 
+    # Filtre langue : masque les cartes des sources non-FR (Source.language
+    # ∉ ('fr', NULL)) dans Essentiel/feed/digest. Les sources suivies
+    # explicitement par l'utilisateur ne sont JAMAIS masquées.
+    hide_non_fr_sources: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true"
+    )
+
+    # Mode du toggle ci-dessus. false = auto (recalculé à chaque
+    # follow/unfollow d'une source) ; true = figé par l'utilisateur via API.
+    language_filter_user_set: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+
     # Story 13.2 — Carousel "Pépites" : rate-limit et cool-down dismiss
     pepite_carousel_dismissed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

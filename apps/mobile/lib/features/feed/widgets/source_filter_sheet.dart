@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
+import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 
@@ -56,25 +57,19 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
     final followed = allSources
         .where((s) => (s.isTrusted || s.isCustom) && !s.isMuted)
         .toList();
-    followed.sort(
-        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    followed
+        .sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return followed;
   }
 
-  List<Source> _getFavorites(List<Source> allSources) {
-    final followed = allSources
-        .where((s) => (s.isTrusted || s.isCustom) && !s.isMuted)
-        .toList();
-    final favorites = followed
-        .where((s) => s.hasSubscription || s.priorityMultiplier >= 2.0)
-        .toList();
-    favorites.sort((a, b) {
-      if (a.hasSubscription != b.hasSubscription) {
-        return b.hasSubscription ? 1 : -1;
-      }
-      return b.priorityMultiplier.compareTo(a.priorityMultiplier);
-    });
-    return favorites;
+  List<Source> _getFavorites(List<Source> allSources, Set<String> favoriteIds) {
+    final byId = {for (final s in allSources) s.id: s};
+    final ordered = <Source>[];
+    for (final id in favoriteIds) {
+      final source = byId[id];
+      if (source != null && !source.isMuted) ordered.add(source);
+    }
+    return ordered;
   }
 
   List<Source> _filterByQuery(List<Source> sources) {
@@ -186,7 +181,15 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
             Flexible(
               child: sourcesAsync.when(
                 data: (allSources) {
-                  final favorites = _filterByQuery(_getFavorites(allSources));
+                  final favoriteIds = ref
+                          .watch(userSourcesStateProvider)
+                          .valueOrNull
+                          ?.favorites
+                          .map((f) => f.sourceId)
+                          .toSet() ??
+                      const <String>{};
+                  final favorites =
+                      _filterByQuery(_getFavorites(allSources, favoriteIds));
                   final allFollowed =
                       _filterByQuery(_getFollowedSources(allSources));
 
@@ -254,8 +257,8 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
                           _FavoritesPromptCta(
                             label: 'Définir mes sources favorites',
                             subtitle: favorites.isEmpty
-                                ? 'Pousse leur priorité à 3/3 dans Mes sources'
-                                : '${favorites.length}/3 — ajoute-en encore ${3 - favorites.length}',
+                                ? 'Ajoute-les en favori dans Mes sources (top 5 = Tournée du jour)'
+                                : '${favorites.length} favori${favorites.length > 1 ? "s" : ""} — top 5 affiché dans la Tournée du jour',
                             colors: colors,
                             onTap: () {
                               Navigator.of(context).pop();
@@ -361,8 +364,10 @@ class _FavoriteChip extends StatelessWidget {
                   width: 16,
                   height: 16,
                   fit: BoxFit.cover,
-                  placeholder: (context) => const SizedBox(width: 16, height: 16),
-                  errorWidget: (context) => const SizedBox(width: 16, height: 16),
+                  placeholder: (context) =>
+                      const SizedBox(width: 16, height: 16),
+                  errorWidget: (context) =>
+                      const SizedBox(width: 16, height: 16),
                 ),
               ),
               const SizedBox(width: 6),
@@ -513,7 +518,8 @@ class _SourceItem extends StatelessWidget {
                 source.name,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: colors.textPrimary,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w400,
                     ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

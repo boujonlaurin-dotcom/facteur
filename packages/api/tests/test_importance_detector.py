@@ -156,6 +156,7 @@ class TestDetectTrendingClusters:
         mock.source_id = source_id or uuid.uuid4()
         mock.title = title
         mock.guid = str(uuid.uuid4())
+        mock.url = f"https://source-{mock.source_id}.fr/article"
         return mock
 
     def test_trending_with_3_sources(self):
@@ -374,6 +375,7 @@ class TestAggregatorFold:
         c.published_at = dt.now(UTC)
         c.entities = None
         c.theme = None
+        c.url = f"https://source-{c.source_id}.fr/article"
         c.source = MagicMock()
         c.source.type = source_type
         c.source.theme = "politique"
