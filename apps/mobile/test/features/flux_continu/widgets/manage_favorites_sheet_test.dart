@@ -330,8 +330,10 @@ void main() {
       sources: _sources(),
     );
 
+    await tester.ensureVisible(find.text('Thèmes'));
     await tester.tap(find.text('Thèmes'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Technologie'));
     await tester.tap(find.text('Technologie'));
     await tester.pumpAndSettle();
 
