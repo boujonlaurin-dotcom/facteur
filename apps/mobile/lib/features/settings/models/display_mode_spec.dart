@@ -78,7 +78,9 @@ class DisplayModeSpec {
   });
 
   /// Rendu actuel — les hauteurs sont les constantes historiques de
-  /// `section_fit.dart` (146 / 160 / 88).
+  /// `section_fit.dart` (146 / 160 / 88). `sectionFitCeiling: 4` : le fit peut
+  /// **monter** jusqu'à 4 articles/section quand l'écran a de la place (cible
+  /// 3-4) au lieu de rester bloqué au nominal backend.
   static const normal = DisplayModeSpec(
     showImages: true,
     fontScale: 1.0,
@@ -89,6 +91,7 @@ class DisplayModeSpec {
     titleMaxLinesDelta: 0,
     regularTitleMaxLines: 4,
     thumbSize: 78,
+    sectionFitCeiling: 4,
   );
 
   /// Texte seul, compact. Sans thumb le head row n'est plus flooré à 78px —
@@ -96,8 +99,8 @@ class DisplayModeSpec {
   /// + footer 20 + paddings dense (20) + marge externe 12 ≈ 126 (les titres
   /// peuvent monter à 5 lignes — plafond rare, le filet `[fit-net]` couvre).
   /// Hero : lead 3 lignes Fraunces 17.1 ≈ 67 (vs 74) → 153 ; medium 2 lignes
-  /// ≈ 38 → 84. `sectionFitCeiling: 7` : le fit peut révéler jusqu'à 7
-  /// articles/section quand l'écran a de la place.
+  /// ≈ 38 → 84. `sectionFitCeiling: 6` : le fit peut révéler jusqu'à 6
+  /// articles/section quand l'écran a de la place (cible 4-6).
   static const minimal = DisplayModeSpec(
     showImages: false,
     fontScale: 0.9,
@@ -108,26 +111,30 @@ class DisplayModeSpec {
     titleMaxLinesDelta: 0,
     regularTitleMaxLines: 5,
     thumbSize: 0,
-    sectionFitCeiling: 7,
+    sectionFitCeiling: 6,
   );
 
-  /// Image élément principal : pleine largeur en haut de carte (170px fixes),
-  /// texte dessous. `regularCardHeight` : image 170 + pad top 12 + titre
+  /// Image élément principal : pleine largeur en haut de carte (130px fixes),
+  /// texte dessous. `regularCardHeight` : image 130 + pad top 12 + titre
   /// 3 lignes (18·1.05 · 1.3 · 3 ≈ 74) + gap 10 + footer 20 + pad bottom 14 +
-  /// marge externe 12 ≈ 312. Hero (inchangé structurellement) : lead 3 lignes
-  /// Fraunces 19.95 ≈ 78 → 164 ; medium 2 lignes ≈ 44 → 90.
+  /// marge externe 12 ≈ 272 — image volontairement plus basse que les 170px
+  /// d'origine pour que 2-3 cartes tiennent sous le bandeau sans dépasser
+  /// l'écran (la carte restait « image-forward »). Hero (inchangé
+  /// structurellement) : lead 3 lignes Fraunces 19.95 ≈ 78 → 164 ; medium
+  /// 2 lignes ≈ 44 → 90. `sectionFitCeiling: 3` : cible 2-3 articles/section.
   static const playful = DisplayModeSpec(
     showImages: true,
     fontScale: 1.05,
     dense: false,
-    regularCardHeight: 312,
+    regularCardHeight: 272,
     heroLeadHeight: 164,
     heroMediumHeight: 90,
     titleMaxLinesDelta: -1,
     regularTitleMaxLines: 3,
     thumbSize: 0,
     imageOnTop: true,
-    regularImageHeight: 170,
+    regularImageHeight: 130,
     feedImageAspectRatio: 16 / 10,
+    sectionFitCeiling: 3,
   );
 }

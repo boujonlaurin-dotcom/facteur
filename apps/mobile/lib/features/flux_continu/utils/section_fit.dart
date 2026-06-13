@@ -62,6 +62,15 @@ const double kSectionFooterHeight = 16;
 /// écran » légitime n'est pas affecté.
 const double kMinPlausibleUsableHeight = 360;
 
+/// Hauteur utile (px) de **secours** quand aucune mesure fiable n'est encore
+/// disponible (1ᵉʳ frame avant la mesure post-layout, ou mesure transitoire
+/// rejetée). On applique malgré tout un cap **dépendant du mode** sur cette
+/// référence plutôt que de retomber sur le compte nominal backend (mode-aveugle :
+/// déborde en Lisible, sous-remplit en Minimaliste). Valeur d'un téléphone
+/// moderne typique → Normal 3 / Minimaliste 4 / Lisible 2, affinés dès l'arrivée
+/// de la vraie mesure.
+const double kReferenceUsableHeight = 640;
+
 // ── Hero card (« Ton Essentiel » — lead + up to 4 mediums) ────────────────────
 
 /// Non-tile chrome of the hi-fi hero card (px): card margins (8+16) + container
@@ -86,7 +95,8 @@ const double kHeroMediumHeight = 88;
 /// Conservative height of one regular article card, for the user's current
 /// display mode. Exposed as a function (not just the constant) so call sites
 /// read intent and a future per-card refinement has a single seam.
-double estimateRegularCardHeight([DisplayModeSpec spec = DisplayModeSpec.normal]) =>
+double estimateRegularCardHeight(
+        [DisplayModeSpec spec = DisplayModeSpec.normal]) =>
     spec.regularCardHeight;
 
 /// Largest article count in `[minCount, maxCount]` whose stack

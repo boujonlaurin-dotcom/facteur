@@ -60,10 +60,10 @@ void main() {
       () {
     const p = DisplayModeSpec.playful;
     expect(p.imageOnTop, isTrue);
-    expect(p.regularImageHeight, 170);
+    expect(p.regularImageHeight, 130); // raccourcie (170→130) pour tenir 2-3
     expect(p.thumbSize, 0); // plus de thumb carré à droite
     expect(p.fontScale, 1.05); // était 1.15, trop grossi
-    expect(p.regularCardHeight, 312); // image 170 + bloc texte
+    expect(p.regularCardHeight, 272); // image 130 + bloc texte
     expect(p.heroLeadHeight, 164);
     expect(p.heroMediumHeight, 90);
   });
@@ -86,10 +86,10 @@ void main() {
     expect(DisplayModeSpec.playful.titleMaxLinesDelta, -1);
   });
 
-  test('sectionFitCeiling : seul le minimaliste monte au-dessus du nominal',
+  test('sectionFitCeiling : chaque mode porte son plafond (cibles 3-4/4-6/2-3)',
       () {
-    expect(DisplayModeSpec.normal.sectionFitCeiling, isNull);
-    expect(DisplayModeSpec.playful.sectionFitCeiling, isNull);
-    expect(DisplayModeSpec.minimal.sectionFitCeiling, 7);
+    expect(DisplayModeSpec.normal.sectionFitCeiling, 4);
+    expect(DisplayModeSpec.minimal.sectionFitCeiling, 6);
+    expect(DisplayModeSpec.playful.sectionFitCeiling, 3);
   });
 }

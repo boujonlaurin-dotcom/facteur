@@ -688,22 +688,23 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   }
 
   /// Caps each downstream section's `coreVisibleCount` to what fits the usable
-  /// viewport (plancher 1). Le cap nominal est le plafond par défaut ; en mode
-  /// minimaliste (`spec.sectionFitCeiling`) le fit peut **monter** au-dessus du
-  /// nominal jusqu'à `min(ceiling, totalCount)` quand l'écran a de la place.
-  /// No-op when the height isn't measured yet. The hero is handled upstream
-  /// (trim de la liste), so it passes through.
+  /// viewport. Le fit dépend du mode (`DisplayModeSpec`) : il peut monter ou
+  /// descendre jusqu'à `min(ceiling, totalCount)` (plancher dur 2). The hero is
+  /// handled upstream (trim de la liste), so it passes through.
   List<FluxSection> _capSectionsToFit(
     List<FluxSection> sections,
     double? usableHeight,
   ) {
-    // Mesure absente OU implausiblement petite (render box détachée / recompose
-    // hors-écran déclenchée par un changement de mode d'affichage) : on garde
-    // les comptes nominaux plutôt que d'effondrer chaque section à 1 carte.
-    if (usableHeight == null || usableHeight < kMinPlausibleUsableHeight) {
-      return sections;
-    }
-    return [for (final s in sections) _capSectionToFit(s, usableHeight)];
+    // Mesure absente (1ᵉʳ frame) OU implausiblement petite (render box détachée /
+    // recompose hors-écran) : on applique malgré tout un cap **dépendant du
+    // mode** sur une hauteur de référence, JAMAIS le nominal backend mode-aveugle
+    // (qui déborde en Lisible : 3 grosses cartes ; et sous-remplit en
+    // Minimaliste). La vraie mesure affine ensuite dès qu'elle arrive.
+    final effectiveHeight =
+        (usableHeight != null && usableHeight >= kMinPlausibleUsableHeight)
+            ? usableHeight
+            : kReferenceUsableHeight;
+    return [for (final s in sections) _capSectionToFit(s, effectiveHeight)];
   }
 
   FluxSection _capSectionToFit(FluxSection s, double usableHeight) {
@@ -711,17 +712,28 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final hasBlurb = s.blurb?.trim().isNotEmpty ?? false;
     final spec = ref.read(displayModeSpecProvider);
     // Le cap intervient après dédup, donc les articles révélés au-dessus du
-    // nominal sont déjà dédupliqués.
+    // nominal sont déjà dédupliqués. Chaque mode porte son plafond (cf.
+    // DisplayModeSpec) : le fit peut **monter** OU **descendre** jusqu'à
+    // `min(ceiling, totalCount)` pour remplir l'écran selon le mode,
+    // indépendamment du nominal backend.
     final ceiling = spec.sectionFitCeiling;
     final maxCount = ceiling == null
         ? s.coreVisibleCount
-        : math.max(s.coreVisibleCount, math.min(ceiling, s.totalCount));
+        : math.max(1, math.min(ceiling, s.totalCount));
+    // Plancher dur : **jamais 1 seul article** dès qu'au moins 2 sont
+    // disponibles (même en Lisible sur un petit écran — la cible « remplir sans
+    // déborder » ne doit pas tomber à 1). Borné au pool réel pour ne pas
+    // inventer de carte.
+    final minCount = math.min(2, s.totalCount);
     final fitCap = fitVisibleCount(
       usableHeight: usableHeight,
       bannerHeight: hasBlurb ? kBannerHeightWithBlurb : kBannerHeightNoBlurb,
-      footerHeight: kSectionFooterHeight,
+      // Le footer (gap de fin de section) glisse hors écran au scroll : il ne
+      // doit pas coûter une carte → exclu du budget.
+      footerHeight: 0,
       cardHeight: estimateRegularCardHeight(spec),
       maxCount: maxCount,
+      minCount: minCount,
     );
     if (fitCap == s.coreVisibleCount) return s;
     return switch (s) {

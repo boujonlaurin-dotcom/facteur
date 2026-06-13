@@ -48,10 +48,11 @@ void main() {
 
   group('FluxContinuArticleCard — mode ludique (image on top)', () {
     testWidgets(
-        'avec thumbnail : image pleine largeur en haut (hauteur fixe 170) '
+        'avec thumbnail : image pleine largeur en haut (hauteur fixe 130) '
         'et titre plafonné à 3 lignes', (tester) async {
       await tester.pumpWidget(_wrap(
-        FluxContinuArticleCard(article: _content(
+        FluxContinuArticleCard(
+            article: _content(
           thumbnailUrl: 'https://img.test/x.jpg',
         )),
         spec: DisplayModeSpec.playful,
@@ -84,7 +85,8 @@ void main() {
     testWidgets('mode minimaliste : pas d\'image, titre 5 lignes',
         (tester) async {
       await tester.pumpWidget(_wrap(
-        FluxContinuArticleCard(article: _content(
+        FluxContinuArticleCard(
+            article: _content(
           thumbnailUrl: 'https://img.test/x.jpg',
         )),
         spec: DisplayModeSpec.minimal,

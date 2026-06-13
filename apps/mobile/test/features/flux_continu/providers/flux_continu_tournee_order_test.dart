@@ -15,6 +15,8 @@ import 'package:facteur/features/feed/providers/tab_order_prefs_provider.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
+import 'package:facteur/features/settings/models/display_mode_spec.dart';
+import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/features/flux_continu/providers/tournee_order_prefs_provider.dart';
 import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
 import 'package:facteur/features/flux_continu/repositories/flux_continu_repository.dart';
@@ -304,6 +306,9 @@ void main() {
           () => _StubVeilleActiveConfigNotifier(veilleCfg),
         ),
         sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+        // Le cap de fit lit displayModeSpecProvider (box Hive 'settings' non
+        // ouverte en test) ⇒ court-circuit.
+        displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),
       ],
     );
     container.read(sereinToggleProvider.notifier).setEnabledLocal(isSerene);
