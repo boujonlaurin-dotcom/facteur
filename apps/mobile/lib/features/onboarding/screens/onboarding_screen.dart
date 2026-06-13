@@ -33,6 +33,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final state = ref.watch(onboardingProvider);
 
     return Scaffold(
+      // Le clavier recouvre le bas sans redimensionner le body ; l'espace
+      // scrollable est réservé par le padding viewInsets des SingleChildScrollView.
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: Column(
           children: [

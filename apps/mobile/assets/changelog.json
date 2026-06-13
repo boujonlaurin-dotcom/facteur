@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Corrections",
+      "summary": "Saisie d'un sujet plus fluide à l'onboarding, fermeture évidente de la modal Favoris, et navigation des lettres de progression fiabilisée."
+    },
+    {
       "tag": "Sources",
       "summary": "Fiche source repensée : présentation du média en premier, évaluation accessible et repliée."
     },
