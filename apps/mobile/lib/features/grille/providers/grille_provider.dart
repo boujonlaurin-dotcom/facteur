@@ -190,6 +190,9 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
         featuredExcerpt: res.featuredExcerpt ?? after.today.featuredExcerpt,
         featuredUrl: res.featuredUrl ?? after.today.featuredUrl,
         featuredSource: res.featuredSource ?? after.today.featuredSource,
+        hybridField: res.hybridField ?? after.today.hybridField,
+        hybridSnippet: res.hybridSnippet ?? after.today.hybridSnippet,
+        hybridMatch: res.hybridMatch ?? after.today.hybridMatch,
       );
 
       state = AsyncData(
@@ -265,6 +268,9 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
         featuredExcerpt: res.featuredExcerpt ?? after.today.featuredExcerpt,
         featuredUrl: res.featuredUrl ?? after.today.featuredUrl,
         featuredSource: res.featuredSource ?? after.today.featuredSource,
+        hybridField: res.hybridField ?? after.today.hybridField,
+        hybridSnippet: res.hybridSnippet ?? after.today.hybridSnippet,
+        hybridMatch: res.hybridMatch ?? after.today.hybridMatch,
       );
       state = AsyncData(
         after.copyWith(

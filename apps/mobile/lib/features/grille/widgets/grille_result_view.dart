@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
 import '../grille_constants.dart';
@@ -156,9 +157,12 @@ class GrilleResultView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                // Si un vrai article de la tournée est accroché, on l'affiche
-                // (titre + extrait) ; sinon on retombe sur la phrase « pourquoi ».
-                if (today.featuredExcerpt != null) ...[
+                // Priorité : sélection hybride (« où le mot se cachait dans
+                // l'actu réelle »), puis l'ancien snapshot featured (titre +
+                // extrait), puis la phrase « pourquoi » (fallback historique).
+                if (today.hybridSnippet != null)
+                  ..._hybrid(context)
+                else if (today.featuredExcerpt != null) ...[
                   Text(
                     today.featuredTitle ?? '',
                     style: GoogleFonts.fraunces(
@@ -202,6 +206,126 @@ class GrilleResultView extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// Bloc « où le mot se cachait » : badge titre/description, snippet avec la
+  /// surface matchée surlignée, source, et lien « Lire l'article ».
+  List<Widget> _hybrid(BuildContext context) {
+    final c = context.facteurColors;
+    final isTitle = today.hybridField == 'title';
+    final badge = isTitle ? 'caché dans le titre' : 'caché dans la description';
+    return [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: c.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(FacteurRadius.small),
+        ),
+        child: Text(
+          badge,
+          style: FacteurTypography.bodySmall(c.primary)
+              .copyWith(fontSize: 11, fontWeight: FontWeight.w700),
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text.rich(
+        _highlight(
+          context,
+          today.hybridSnippet!,
+          today.hybridMatch,
+        ),
+        style: GoogleFonts.fraunces(
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+          height: 1.45,
+          color: c.textPrimary,
+        ),
+      ),
+      if (today.featuredSource != null) ...[
+        const SizedBox(height: 8),
+        Text(
+          today.featuredSource!,
+          style: FacteurTypography.bodySmall(c.textTertiary)
+              .copyWith(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ],
+      if (today.featuredUrl != null) ...[
+        const SizedBox(height: 10),
+        InkWell(
+          onTap: () => _openArticle(today.featuredUrl!),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Lire l\'article',
+                style: FacteurTypography.bodySmall(c.primary).copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(Icons.arrow_forward, size: 14, color: c.primary),
+            ],
+          ),
+        ),
+      ],
+    ];
+  }
+
+  Future<void> _openArticle(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+  }
+
+  /// Découpe `snippet` autour de `surface` (insensible casse/accents) et met la
+  /// surface en gras + surligné. Si la surface est introuvable, rend le texte tel quel.
+  TextSpan _highlight(BuildContext context, String snippet, String? surface) {
+    final c = context.facteurColors;
+    final bold = GoogleFonts.fraunces(
+      fontSize: 15,
+      fontWeight: FontWeight.w800,
+      height: 1.45,
+      color: c.primary,
+      backgroundColor: c.primary.withValues(alpha: 0.14),
+    );
+    if (surface == null || surface.isEmpty) {
+      return TextSpan(text: snippet);
+    }
+    final hay = _fold(snippet);
+    final needle = _fold(surface);
+    final idx = hay.indexOf(needle);
+    if (idx < 0) {
+      return TextSpan(text: snippet);
+    }
+    final end = idx + surface.length;
+    return TextSpan(
+      children: [
+        TextSpan(text: snippet.substring(0, idx)),
+        TextSpan(text: snippet.substring(idx, end), style: bold),
+        TextSpan(text: snippet.substring(end)),
+      ],
+    );
+  }
+
+  /// Normalisation légère pour la recherche de surface : minuscules + accents
+  /// FR courants repliés (la longueur est préservée → les offsets restent valides).
+  String _fold(String s) {
+    const map = {
+      'à': 'a', 'â': 'a', 'ä': 'a', 'á': 'a',
+      'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+      'î': 'i', 'ï': 'i', 'í': 'i',
+      'ô': 'o', 'ö': 'o', 'ó': 'o',
+      'û': 'u', 'ü': 'u', 'ù': 'u', 'ú': 'u',
+      'ç': 'c',
+    };
+    final lower = s.toLowerCase();
+    final buf = StringBuffer();
+    for (var i = 0; i < lower.length; i++) {
+      final ch = lower[i];
+      buf.write(map[ch] ?? ch);
+    }
+    return buf.toString();
   }
 }
 
