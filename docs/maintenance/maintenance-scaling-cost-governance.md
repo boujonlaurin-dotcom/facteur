@@ -8,7 +8,7 @@ Les compteurs en mémoire sont remis à zéro à **chaque restart de process** �
 
 ## Changements (data-gated, sûrs, réversibles)
 1. **Budget persistant** : `app/services/observability/cost_budget.py` lit la conso du mois calendaire courant depuis `api_usage_events` (déjà alimentée par `usage_recorder` sur les 6 call sites), avec cache process-local TTL `cost_budget_cache_ttl_s` (120 s) pour ne pas requêter à chaque recherche. Survit aux restarts.
-2. **Remplacement des compteurs mémoire** : `smart_source_search` utilise `is_over_cap("brave"/"mistral", cap)` au lieu des globals supprimés. Aucun incrément manuel : enregistrer l'événement (via `track_api_call`, déjà en place) **est** l'incrément.
+2. **Remplacement des compteurs mémoire** : `smart_source_search` utilise `is_over_cap(provider, cap, call_site=...)` au lieu des globals supprimés. Aucun incrément manuel : enregistrer l'événement (via `track_api_call`, déjà en place) **est** l'incrément. Le cap est **scopé sur le call site** (`smart_search_brave` / `smart_search_mistral`) — préserve la sémantique d'origine : le provider `mistral` couvre aussi classif/éditorial/veille (volume bien plus élevé), qui ne doivent pas consommer le budget du fallback recherche.
 3. **Projection G3 automatisée** : job scheduler quotidien (05:00 Paris) `log_budget_projection` → log `cost_budget_projection` = conso réelle par provider/call_site + projection ×2.25 (89→200 users). Évidence G3 sans requête manuelle.
 
 ## Hors périmètre (follow-up flag-gated, dépend de la donnée)

@@ -37,6 +37,36 @@ async def test_monthly_call_count_queries_and_caches():
 
 
 @pytest.mark.asyncio
+async def test_call_site_scoped_count_is_cached_separately():
+    """Le cap recherche doit compter SON call site, pas tout le provider :
+    `mistral` couvre aussi classif/éditorial. Compteurs en cache distincts."""
+    maker, session = _session_returning(7)
+    with patch("app.services.observability.cost_budget.safe_async_session", maker):
+        provider_wide = await cost_budget.monthly_call_count("mistral")
+        scoped = await cost_budget.monthly_call_count(
+            "mistral", call_site="smart_search_mistral"
+        )
+    assert provider_wide == 7
+    assert scoped == 7
+    # 2 requêtes DB distinctes (clés de cache différentes), pas un seul hit
+    assert session.execute.await_count == 2
+    assert "mistral" in cost_budget._cache
+    assert "mistral:smart_search_mistral" in cost_budget._cache
+
+
+@pytest.mark.asyncio
+async def test_is_over_cap_accepts_call_site():
+    maker, _ = _session_returning(2000)
+    with patch("app.services.observability.cost_budget.safe_async_session", maker):
+        assert (
+            await cost_budget.is_over_cap(
+                "mistral", 2000, call_site="smart_search_mistral"
+            )
+            is True
+        )
+
+
+@pytest.mark.asyncio
 async def test_monthly_call_count_force_refresh_bypasses_cache():
     maker, session = _session_returning(10)
     with patch("app.services.observability.cost_budget.safe_async_session", maker):

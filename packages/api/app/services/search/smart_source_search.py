@@ -458,7 +458,9 @@ class SmartSourceSearchService:
         brave_eligible = (
             external_eligible
             and self.brave.is_ready
-            and not await is_over_cap("brave", settings.brave_monthly_cap)
+            and not await is_over_cap(
+                "brave", settings.brave_monthly_cap, call_site="smart_search_brave"
+            )
         )
 
         if expand and external_eligible and brave_eligible:
@@ -523,9 +525,14 @@ class SmartSourceSearchService:
                         expand=expand,
                     )
 
-        # (f) Mistral fallback — catch-all, skipped when a type filter is set
+        # (f) Mistral fallback — catch-all, skipped when a type filter is set.
+        # Cap scopé sur le call site `smart_search_mistral` : le provider
+        # `mistral` couvre aussi classif/éditorial/veille (volume bien plus
+        # élevé), qui ne doivent pas consommer le budget du fallback recherche.
         if content_type is None and not await is_over_cap(
-            "mistral", settings.mistral_monthly_cap
+            "mistral",
+            settings.mistral_monthly_cap,
+            call_site="smart_search_mistral",
         ):
             mistral_results = await self._search_mistral(normalized, user_themes)
             for r in mistral_results:
@@ -978,7 +985,7 @@ class SmartSourceSearchService:
         cap = settings.brave_monthly_cap
         if cap <= 0:
             return
-        calls = await monthly_call_count("brave")
+        calls = await monthly_call_count("brave", call_site="smart_search_brave")
         if calls >= int(cap * 0.8):
             logger.warning("smart_search.brave_budget_warning", calls=calls, cap=cap)
 

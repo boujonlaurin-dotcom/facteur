@@ -35,7 +35,8 @@ from app.models.api_usage_event import ApiUsageEvent
 
 logger = structlog.get_logger()
 
-# Cache process-local : { provider: (count, fetched_at_monotonic) }.
+# Cache process-local : { cache_key: (count, fetched_at_monotonic) }.
+# La clé inclut le call_site quand il est précisé (compteurs distincts).
 _cache: dict[str, tuple[int, float]] = {}
 
 
@@ -44,48 +45,59 @@ def _month_start_utc() -> datetime:
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
-async def monthly_call_count(provider: str, *, force_refresh: bool = False) -> int:
-    """Nombre d'appels `provider` (status != error) ce mois calendaire (UTC).
+async def monthly_call_count(
+    provider: str, *, call_site: str | None = None, force_refresh: bool = False
+) -> int:
+    """Nombre d'appels (status != error) ce mois calendaire (UTC).
+
+    Si `call_site` est fourni, compte uniquement ce call site — sinon tout le
+    provider. **Important** pour les caps : le provider `mistral` couvre
+    classif + éditorial + veille + recherche ; ne plafonner que le call site
+    voulu (ex. `smart_search_mistral`) évite que le trafic système ne consomme
+    le budget du fallback recherche.
 
     Caché `cost_budget_cache_ttl_s` secondes. Best-effort : en cas d'erreur DB,
     renvoie la dernière valeur connue (ou 0), pour ne jamais bloquer un appel
     métier sur une panne d'observabilité.
     """
+    cache_key = provider if call_site is None else f"{provider}:{call_site}"
     ttl = get_settings().cost_budget_cache_ttl_s
     now = time.monotonic()
-    cached = _cache.get(provider)
+    cached = _cache.get(cache_key)
     if not force_refresh and cached is not None and (now - cached[1]) < ttl:
         return cached[0]
 
     try:
         async with safe_async_session() as session:
+            conditions = [
+                ApiUsageEvent.provider == provider,
+                ApiUsageEvent.created_at >= _month_start_utc(),
+                ApiUsageEvent.status != "error",
+            ]
+            if call_site is not None:
+                conditions.append(ApiUsageEvent.call_site == call_site)
             result = await session.execute(
-                select(func.count())
-                .select_from(ApiUsageEvent)
-                .where(
-                    ApiUsageEvent.provider == provider,
-                    ApiUsageEvent.created_at >= _month_start_utc(),
-                    ApiUsageEvent.status != "error",
-                )
+                select(func.count()).select_from(ApiUsageEvent).where(*conditions)
             )
             count = int(result.scalar_one())
-            _cache[provider] = (count, now)
+            _cache[cache_key] = (count, now)
             return count
     except Exception as exc:  # noqa: BLE001 — l'observabilité ne bloque jamais l'appelant
         logger.warning(
             "cost_budget.count_failed",
             provider=provider,
+            call_site=call_site,
             error=str(exc),
             exc_type=type(exc).__name__,
         )
         return cached[0] if cached is not None else 0
 
 
-async def is_over_cap(provider: str, cap: int) -> bool:
-    """True si le provider a atteint son cap mensuel (persistant)."""
+async def is_over_cap(provider: str, cap: int, *, call_site: str | None = None) -> bool:
+    """True si le call site (ou le provider) a atteint son cap mensuel."""
     if cap <= 0:
         return False
-    return await monthly_call_count(provider) >= cap
+    return await monthly_call_count(provider, call_site=call_site) >= cap
 
 
 def invalidate_cache() -> None:
