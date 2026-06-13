@@ -17,13 +17,14 @@ const Color _terracotta = Color(0xFFE07A5F);
 /// when [onSwipeDismiss] is non-null (backwards compatible).
 ///
 /// [enableHintAnimation]: plays a subtle micro-slide to hint at left-swipe
-/// discoverability. Should only be true once per app lifetime.
+/// discoverability. Frequency is coordinated by the caller.
 class SwipeToOpenCard extends StatefulWidget {
   final Widget child;
   final VoidCallback onSwipeOpen;
   final VoidCallback? onSwipeDismiss;
   final bool enableHintAnimation;
   final VoidCallback? onHintAnimationComplete;
+  final VoidCallback? onSwipeGesture;
 
   const SwipeToOpenCard({
     super.key,
@@ -32,6 +33,7 @@ class SwipeToOpenCard extends StatefulWidget {
     this.onSwipeDismiss,
     this.enableHintAnimation = false,
     this.onHintAnimationComplete,
+    this.onSwipeGesture,
   });
 
   @override
@@ -143,8 +145,7 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
         final phase = t < 0.5 ? t * 2 : (t - 0.5) * 2;
         final direction = t < 0.5 ? 1.0 : -1.0;
         final shape = phase <= 0.5 ? phase * 2 : (1.0 - phase) * 2;
-        _dragExtent =
-            direction * 45.0 * Curves.easeInOutSine.transform(shape);
+        _dragExtent = direction * 45.0 * Curves.easeInOutSine.transform(shape);
       });
     }
   }
@@ -180,26 +181,28 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
     final velocity = details.primaryVelocity ?? 0;
     final ratio = _dragExtent / screenWidth;
 
-    // Right swipe: open
+    // Reset synchronously before navigation. The route transition covers the
+    // reset, and the card is already centered when the user comes back.
     if (!_hasTriggered &&
         _dragExtent > 0 &&
         (ratio > _threshold || velocity > _flingVelocity)) {
       _hasTriggered = true;
       HapticFeedback.mediumImpact();
+      widget.onSwipeGesture?.call();
+      setState(() => _dragExtent = 0);
       widget.onSwipeOpen();
-      if (!mounted) return;
-      _snapBack();
       return;
     }
 
-    // Left swipe: snap back and fire callback (Epic 12: opens bottom sheet)
+    // Left swipe: fire callback (Epic 12: opens bottom sheet). Same rationale
+    // as above — let the bottom sheet take over instead of snapping back.
     if (!_hasTriggered &&
         _dragExtent < 0 &&
         widget.onSwipeDismiss != null &&
         (ratio < -_threshold || velocity < -_flingVelocity)) {
       _hasTriggered = true;
       HapticFeedback.mediumImpact();
-      _snapBack();
+      widget.onSwipeGesture?.call();
       widget.onSwipeDismiss!();
       return;
     }

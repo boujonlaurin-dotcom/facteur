@@ -37,6 +37,7 @@ dependencies:
   cached_network_image: ^3.3.1
   shimmer: ^3.0.0
   lottie: ^3.1.2
+  flutter_svg: ^2.0.10+1
 
   # WebView
   webview_flutter: ^4.7.0
@@ -51,6 +52,9 @@ dependencies:
   intl: ^0.20.2
   url_launcher: ^6.2.5
   flutter_secure_storage: ^10.0.0
+
+  # Geolocation (Story 10.1 — météo géolocalisée, client-only, iOS/Android/web)
+  geolocator: ^13.0.4
   
   # Home Screen Widget
   home_widget: ^0.7.0
@@ -89,6 +93,9 @@ dependencies:
   open_filex: ^4.5.0
   flutter_downloader: ^1.11.8
   flutter_inappwebview: ^6.1.5
+
+  # PWA install prompt detection (Story web.1 — iOS Safari add-to-home)
+  web: ^1.1.0
 
 dev_dependencies:
   mocktail: ^1.0.3
@@ -141,7 +148,9 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/images/weather/
     - assets/icons/
     - assets/loaders/
     - assets/notifications/
+    - assets/changelog.json
 

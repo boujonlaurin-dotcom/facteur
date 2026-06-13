@@ -20,7 +20,13 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-from app.models.enums import BiasOrigin, BiasStance, ReliabilityScore, SourceType
+from app.models.enums import (
+    BiasOrigin,
+    BiasStance,
+    InterestState,
+    ReliabilityScore,
+    SourceType,
+)
 
 
 class Source(Base):
@@ -113,6 +119,10 @@ class Source(Base):
     # Paywall detection config (per-source patterns)
     paywall_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # Premium source connection config. Credentials are never collected by
+    # Facteur; the mobile app only uses these URLs in its own WebView session.
+    premium_connection_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     # Editorial digest: source tier (Story 10.22)
     # "mainstream" (default) or "deep" (fond/systémique sources for "pas de recul")
     source_tier: Mapped[str] = mapped_column(
@@ -122,6 +132,12 @@ class Source(Base):
     # Tone classification for humorous/satirical content (actu décalée)
     # Values: "informative", "analytical", "humorous", "satirical", None
     tone: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+
+    # Langue majoritaire dénormalisée (re-calculée par job périodique à
+    # partir de Content.language des 30 derniers jours). NULL = source dont
+    # la langue n'a pas pu être déterminée (échantillon trop faible) →
+    # traitée comme FR par défaut côté curation (rétro-compat).
+    language: Mapped[str | None] = mapped_column(String(8), nullable=True, index=True)
 
     # Auto-include in serein mode even if user doesn't follow this source
     serein_default: Mapped[bool] = mapped_column(
@@ -177,6 +193,23 @@ class UserSource(Base):
     # Premium source: user declares they have a subscription to this source
     has_subscription: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
+    )
+    subscription_connected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    subscription_last_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    state: Mapped[InterestState] = mapped_column(
+        Enum(
+            InterestState,
+            name="interest_state",
+            create_type=False,
+            values_callable=lambda e: [v.value for v in e],
+        ),
+        nullable=False,
+        default=InterestState.FOLLOWED,
+        server_default=InterestState.FOLLOWED.value,
     )
 
     # Relations

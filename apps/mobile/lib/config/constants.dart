@@ -30,6 +30,11 @@ class ApiConstants {
   /// Timeout des requêtes HTTP
   static const Duration timeout = Duration(seconds: 30);
 
+  /// Timeout dédié au POST `grille/today/guess` — court, pour éviter le hang
+  /// silencieux (clavier figé) quand le réseau traîne. Override du `timeout`
+  /// global de 30 s ; le retry serveur est rendu idempotent côté backend.
+  static const Duration grilleGuessTimeout = Duration(seconds: 12);
+
   /// Nombre d'items par page dans le feed
   static const int feedPageSize = 20;
 }
@@ -39,14 +44,22 @@ class SupabaseConstants {
   SupabaseConstants._();
 
   /// URL Supabase (à configurer via env)
+  /// Fallback = URL du projet prod (publique, même valeur que .vscode/launch.json).
+  /// En CI ou build release, injecter via --dart-define=SUPABASE_URL=... pour
+  /// écraser ce fallback.
   static final String url = _validateAndCleanSupabaseUrl(
-    const String.fromEnvironment('SUPABASE_URL', defaultValue: ''),
+    const String.fromEnvironment(
+      'SUPABASE_URL',
+      defaultValue: 'https://ykuadtelnzavrqzbfdve.supabase.co',
+    ),
   );
 
   /// Clé anonyme Supabase (à configurer via env)
+  /// Fallback = clé anon publique (non-secrète, déjà présente dans launch.json).
+  /// En CI ou build release, injecter via --dart-define=SUPABASE_ANON_KEY=...
   static final String anonKey = _cleanEnvVar(const String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: '',
+    defaultValue: 'sb_publishable_0L_kPMbe0Pk9eBdzeEsIZg_0pogzm3k',
   ));
 
   static String _cleanEnvVar(String value) {
@@ -108,11 +121,27 @@ class RevenueCatConstants {
     defaultValue: '',
   );
 
+  /// Clé API Android
+  static const String androidApiKey = String.fromEnvironment(
+    'REVENUECAT_ANDROID_KEY',
+    defaultValue: '',
+  );
+
+  /// Identifiant de l'entitlement Premium côté RevenueCat.
+  static const String entitlementId = 'premium';
+
   /// ID du produit mensuel
   static const String monthlyProductId = 'facteur_premium_monthly';
 
   /// ID du produit annuel
-  static const String yearlyProductId = 'facteur_premium_yearly';
+  static const String annualProductId = 'facteur_premium_annual';
+
+  /// ID du produit Founder (tarif fondateur·rice 2,99 €).
+  static const String founderProductId = 'facteur_premium_founder';
+
+  /// Vrai si on a une clé API pour la plateforme courante.
+  static bool isConfigured({required bool isIOS}) =>
+      isIOS ? iosApiKey.isNotEmpty : androidApiKey.isNotEmpty;
 }
 
 /// Seuils de consommation
@@ -226,6 +255,13 @@ class AppUpdateConstants {
   static const bool isPlayStoreBuild =
       bool.fromEnvironment('PLAYSTORE_BUILD');
 
+  /// Update channel injected by CI : "beta" pour le flavor staging (env
+  /// continu), "stable" pour le flavor prod (vrais users). Sélectionne le
+  /// préfixe de tag filtré côté backend : stable→release-, beta→beta-.
+  /// Défaut "stable" → comportement prod pour tout build sans dart-define.
+  static const String updateChannel =
+      String.fromEnvironment('UPDATE_CHANNEL', defaultValue: 'stable');
+
   /// Whether this is a CI-built release (not a dev build)
   static bool get isReleaseBuild => releaseTag.isNotEmpty;
 }
@@ -272,6 +308,18 @@ class SentryConstants {
   static bool get isEnabled => dsn.isNotEmpty;
 }
 
+/// Story 22.1 — système d'intérêts unifié 4-états.
+/// Cap dur du nombre de favoris (intérêts ET sources, séparément).
+/// DOIT rester synchronisé avec `packages/api/app/constants.py::FAVORITE_CAP`.
+class InterestConstants {
+  InterestConstants._();
+
+  static const int favoriteCap = 7;
+}
+
+/// Alias top-level expliciment demandé par le hand-off 22.1.2.
+const int kFavoriteCap = InterestConstants.favoriteCap;
+
 /// Liens externes
 class ExternalLinks {
   ExternalLinks._();
@@ -283,6 +331,18 @@ class ExternalLinks {
   /// Lien d'invitation au groupe WhatsApp "Facteur - Retours & idées"
   static const String whatsappGroupUrl =
       'https://chat.whatsapp.com/Fq4oKgSDEgc9AmAyZR9uhJ?mode=gi_t';
+}
+
+/// Liens légaux et support — pages statiques servies par le landing facteur.app.
+class LegalLinks {
+  LegalLinks._();
+
+  static const String privacy =
+      'https://facteur.app/politique-confidentialite.html';
+  static const String terms = 'https://facteur.app/conditions-utilisation.html';
+  static const String accountDeletion =
+      'https://facteur.app/supprimer-mon-compte.html';
+  static const String supportEmail = 'mailto:boujon.laurin@gmail.com';
 }
 
 /// Contact direct du créateur — utilisé par le fallback "Quelques pépins"

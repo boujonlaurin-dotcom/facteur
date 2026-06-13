@@ -89,6 +89,26 @@ class NudgeCoordinator {
     return _dismiss(outcome: 'converted', markSeen: true);
   }
 
+  /// Records use of the gesture represented by [id], even when its visual
+  /// nudge is not currently active. This restarts cooldown-based reminders.
+  Future<String?> recordConversion(String id) async {
+    final nudge = NudgeRegistry.get(id);
+    await _service.markShown(id);
+    if (_active != id) return _active;
+
+    await _events?.dismissed(id, outcome: 'converted');
+    if (nudge.consumesSessionBudget) {
+      _sessionNonCriticalShown += 1;
+      _lastNonCriticalAt = _clock();
+    }
+    _active = null;
+    await _advance();
+    if (_active != null) {
+      await _emitShown(_active!);
+    }
+    return _active;
+  }
+
   Future<String?> _dismiss({
     required String outcome,
     required bool markSeen,

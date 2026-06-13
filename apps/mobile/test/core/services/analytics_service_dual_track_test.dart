@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -45,13 +47,9 @@ void main() {
     api = _MockApiClient();
     dio = _MockDio();
     when(() => api.dio).thenReturn(dio);
-    when(
-      () => dio.post(any(), data: any(named: 'data')),
-    ).thenAnswer(
-      (_) async => Response(
-        requestOptions: RequestOptions(path: ''),
-        statusCode: 201,
-      ),
+    when(() => dio.post(any(), data: any(named: 'data'))).thenAnswer(
+      (_) async =>
+          Response(requestOptions: RequestOptions(path: ''), statusCode: 201),
     );
     posthog = _RecordingPostHog();
   });
@@ -61,42 +59,82 @@ void main() {
     await service.startSession(isOrganic: true);
 
     expect(posthog.captured.map((e) => e.event), contains('app_open'));
-    // Backend logging still happens.
-    verify(
-      () => dio.post('analytics/events', data: any(named: 'data')),
-    ).called(1);
+    final capturedCalls = verify(
+      () => dio.post('analytics/events', data: captureAny(named: 'data')),
+    ).captured;
+    expect(capturedCalls, hasLength(1));
+    final captured = capturedCalls.single as Map<String, dynamic>;
+    expect(
+      captured['event_data']['local_date'],
+      matches(RegExp(r'^\d{4}-\d{2}-\d{2}$')),
+    );
   });
 
-  test('content_interaction read >30s emits article_read + article_completed',
+  test('endSession clears active state before awaiting the backend call',
       () async {
     final service = AnalyticsService(api, posthog: posthog);
-    await service.trackContentInteraction(
-      action: 'read',
-      surface: 'digest',
-      contentId: 'c1',
-      sourceId: 's1',
-      timeSpentSeconds: 45,
-    );
+    final endSessionCompleter = Completer<Response<dynamic>>();
+    var callCount = 0;
 
-    final events = posthog.captured.map((e) => e.event).toList();
-    expect(events, containsAll(<String>['article_read', 'article_completed']));
+    when(() => dio.post(any(), data: any(named: 'data'))).thenAnswer((_) {
+      callCount++;
+      if (callCount == 1) {
+        return Future.value(
+          Response(requestOptions: RequestOptions(path: ''), statusCode: 201),
+        );
+      }
+      return endSessionCompleter.future;
+    });
+
+    await service.startSession();
+    expect(service.hasActiveSession, isTrue);
+
+    final endFuture = service.endSession();
+    expect(service.hasActiveSession, isFalse);
+
+    endSessionCompleter.complete(
+      Response(requestOptions: RequestOptions(path: ''), statusCode: 201),
+    );
+    await endFuture;
   });
 
-  test('content_interaction read <30s emits article_read but NOT completed',
-      () async {
-    final service = AnalyticsService(api, posthog: posthog);
-    await service.trackContentInteraction(
-      action: 'read',
-      surface: 'digest',
-      contentId: 'c1',
-      sourceId: 's1',
-      timeSpentSeconds: 12,
-    );
+  test(
+    'content_interaction read >30s emits article_read + article_completed',
+    () async {
+      final service = AnalyticsService(api, posthog: posthog);
+      await service.trackContentInteraction(
+        action: 'read',
+        surface: 'digest',
+        contentId: 'c1',
+        sourceId: 's1',
+        timeSpentSeconds: 45,
+      );
 
-    final events = posthog.captured.map((e) => e.event).toList();
-    expect(events, contains('article_read'));
-    expect(events, isNot(contains('article_completed')));
-  });
+      final events = posthog.captured.map((e) => e.event).toList();
+      expect(
+        events,
+        containsAll(<String>['article_read', 'article_completed']),
+      );
+    },
+  );
+
+  test(
+    'content_interaction read <30s emits article_read but NOT completed',
+    () async {
+      final service = AnalyticsService(api, posthog: posthog);
+      await service.trackContentInteraction(
+        action: 'read',
+        surface: 'digest',
+        contentId: 'c1',
+        sourceId: 's1',
+        timeSpentSeconds: 12,
+      );
+
+      final events = posthog.captured.map((e) => e.event).toList();
+      expect(events, contains('article_read'));
+      expect(events, isNot(contains('article_completed')));
+    },
+  );
 
   test('save action does not emit article_read', () async {
     final service = AnalyticsService(api, posthog: posthog);
@@ -114,10 +152,7 @@ void main() {
     final service = AnalyticsService(api, posthog: posthog);
     await service.trackSourceAdd('source-42');
 
-    expect(
-      posthog.captured.map((e) => e.event),
-      contains('source_added'),
-    );
+    expect(posthog.captured.map((e) => e.event), contains('source_added'));
   });
 
   test('trackComparisonViewed fires comparison_viewed on PostHog', () async {
@@ -150,18 +185,23 @@ void main() {
     ).called(2);
   });
 
-  test('trackArticleRead mirrors article_read + article_completed when >=30s',
-      () async {
-    // Story 14.1 — feed/detail surfaces still call the legacy
-    // trackArticleRead, so it must mirror to PostHog with the same
-    // threshold logic as trackContentInteraction. Otherwise
-    // article_completed would never fire from real reading flows.
-    final service = AnalyticsService(api, posthog: posthog);
-    await service.trackArticleRead('c1', 's1', 45);
+  test(
+    'trackArticleRead mirrors article_read + article_completed when >=30s',
+    () async {
+      // Story 14.1 — feed/detail surfaces still call the legacy
+      // trackArticleRead, so it must mirror to PostHog with the same
+      // threshold logic as trackContentInteraction. Otherwise
+      // article_completed would never fire from real reading flows.
+      final service = AnalyticsService(api, posthog: posthog);
+      await service.trackArticleRead('c1', 's1', 45);
 
-    final events = posthog.captured.map((e) => e.event).toList();
-    expect(events, containsAll(<String>['article_read', 'article_completed']));
-  });
+      final events = posthog.captured.map((e) => e.event).toList();
+      expect(
+        events,
+        containsAll(<String>['article_read', 'article_completed']),
+      );
+    },
+  );
 
   test('trackArticleRead <30s emits article_read but NOT completed', () async {
     final service = AnalyticsService(api, posthog: posthog);
@@ -173,8 +213,9 @@ void main() {
   });
 
   test('backend failure does not crash analytics layer', () async {
-    when(() => dio.post(any(), data: any(named: 'data')))
-        .thenThrow(DioException(requestOptions: RequestOptions(path: '')));
+    when(
+      () => dio.post(any(), data: any(named: 'data')),
+    ).thenThrow(DioException(requestOptions: RequestOptions(path: '')));
 
     final service = AnalyticsService(api, posthog: posthog);
     // Must not throw

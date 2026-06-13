@@ -53,6 +53,8 @@ jobs:
         env:
           DATABASE_URL: postgresql+psycopg://postgres:test@localhost:5432/facteur_test?sslmode=disable
         run: |
-          heads=$(alembic heads | wc -l)
+          # Filter to lines ending with "(head)" — structlog INFO lines on stdout
+          # would otherwise be counted by plain `wc -l`, yielding a false "3 heads".
+          heads=$(alembic heads | grep -c "(head)")
           echo "Heads: $heads"
           test "$heads" -eq 1

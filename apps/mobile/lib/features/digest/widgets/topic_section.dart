@@ -22,6 +22,7 @@ import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import 'a_la_une_badge.dart';
+import '../../settings/providers/display_mode_provider.dart';
 import 'article_thumbs_feedback.dart';
 import 'divergence_analysis_block.dart';
 import 'editorial_badge.dart';
@@ -884,6 +885,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   sourceDomain: p.sourceDomain,
                   biasStance: p.biasStance,
                   publishedAt: p.publishedAt,
+                  highlightSpans: p.highlightSpans,
+                  sharedTokens: p.sharedTokens,
                 ))
             .toList(),
         biasDistribution: response.biasDistribution,
@@ -894,6 +897,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         // action (e.g. analyzePerspectives) operates on the same content.
         contentId: pivotId,
         comparisonQuality: response.comparisonQuality,
+        divergenceLevel: widget.topic.divergenceLevel,
       ),
     );
   }
@@ -1113,6 +1117,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             descriptionFontSize: 15,
             titleMaxLines: _digestTitleMaxLines,
             denseLayout: true,
+            displaySpec: ref.watch(displayModeSpecProvider),
+            divergenceLevel: widget.topic.divergenceLevel,
             onImageError: () => _onImageError(article.contentId),
             onTap: () => widget.onArticleTap(article),
             onSourceTap: widget.onSourceTap != null && article.source?.id != null
@@ -1159,6 +1165,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           descriptionFontSize: 15,
           titleMaxLines: _digestTitleMaxLines,
           denseLayout: true,
+          displaySpec: ref.watch(displayModeSpecProvider),
+          divergenceLevel: widget.topic.divergenceLevel,
           onImageError: () => _onImageError(article.contentId),
           onTap: () => widget.onArticleTap(article),
           onSourceTap: widget.onSourceTap != null && article.source?.id != null

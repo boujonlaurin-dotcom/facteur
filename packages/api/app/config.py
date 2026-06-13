@@ -119,6 +119,15 @@ class Settings(BaseSettings):
     brave_monthly_cap: int = 1800
     mistral_monthly_cap: int = 2000
 
+    # Veille LLM suggesters — Story 23.3 (curation synchrone à l'instant du flow).
+    # Medium = bon compromis qualité/coût ; override pour switch large si besoin.
+    veille_llm_model: str = "mistral-medium-latest"
+
+    # Observabilité scaling (enabler WP-E) — instrumentation API externes +
+    # sonde pool. Purement additif : ne change aucun comportement métier.
+    usage_tracking_enabled: bool = True  # kill-switch insert api_usage_events
+    pool_alert_threshold_pct: int = 80  # seuil alerte sonde pool périodique (%)
+
     # GitHub (app update feature)
     github_token: str = ""
     github_repo: str = "boujonlaurin-dotcom/facteur"

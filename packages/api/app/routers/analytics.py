@@ -1,16 +1,19 @@
 """Router pour les analytics."""
 
+from datetime import UTC, date, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Header
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
 from app.services.analytics_service import AnalyticsService
+from app.services.streak_service import StreakService
 
-router = APIRouter(prefix="/analytics", tags=["Analytics"])
+router = APIRouter(tags=["Analytics"])
 
 
 class EventCreate(BaseModel):
@@ -21,11 +24,31 @@ class EventCreate(BaseModel):
     device_id: str | None = Field(None, description="Identifiant unique du device")
 
 
+async def _update_app_version(user_id: UUID, app_version: str) -> None:
+    """Met à jour app_version sur user_profiles si la version a changé (fire-and-forget)."""
+    async with safe_async_session() as db:
+        await db.execute(
+            text(
+                """
+                UPDATE user_profiles
+                SET app_version = :v,
+                    app_version_updated_at = :ts
+                WHERE user_id = :uid
+                  AND app_version IS DISTINCT FROM :v
+                """
+            ),
+            {"v": app_version, "ts": datetime.now(UTC), "uid": str(user_id)},
+        )
+        await db.commit()
+
+
 @router.post("/events", status_code=201)
 async def log_event(
     event: EventCreate,
+    background_tasks: BackgroundTasks,
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
+    x_app_version: str | None = Header(None, alias="X-App-Version"),
 ):
     """Enregistre un événement analytique."""
     service = AnalyticsService(db)
@@ -35,6 +58,32 @@ async def log_event(
         event_data=event.event_data,
         device_id=event.device_id,
     )
+
+    if event.event_type == "session_start":
+        local_date: date | None = None
+        raw_local_date = event.event_data.get("local_date")
+        if isinstance(raw_local_date, str):
+            try:
+                local_date = date.fromisoformat(raw_local_date)
+            except ValueError:
+                local_date = None
+
+        await StreakService(db).record_session_start(
+            str(user_id),
+            local_date=local_date,
+        )
+        await db.commit()
+
+    # Update per-user version tracking on session_start or when header is present.
+    # Priority: explicit header > event_data field.
+    app_version = x_app_version or (
+        event.event_data.get("app_version")
+        if event.event_type == "session_start"
+        else None
+    )
+    if app_version:
+        background_tasks.add_task(_update_app_version, user_id, app_version)
+
     return {"status": "ok"}
 
 

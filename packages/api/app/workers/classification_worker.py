@@ -17,6 +17,8 @@ from app.models.content import Content
 from app.models.source import Source
 from app.services.classification_queue_service import ClassificationQueueService
 from app.services.ml.classification_service import get_classification_service
+from app.services.ml.good_news_classifier import get_good_news_classifier
+from app.services.ml.language_filter import is_french_source, looks_english
 
 settings = get_settings()
 
@@ -59,6 +61,7 @@ class ClassificationWorker:
         )
 
         self._classifier = None
+        self._good_news_classifier = None
         self._loop_count = 0
 
     def _get_classifier(self):
@@ -66,6 +69,12 @@ class ClassificationWorker:
         if self._classifier is None:
             self._classifier = get_classification_service()
         return self._classifier
+
+    def _get_good_news_classifier(self):
+        """Lazy load good-news classifier (mistral-large pass 2)."""
+        if self._good_news_classifier is None:
+            self._good_news_classifier = get_good_news_classifier()
+        return self._good_news_classifier
 
     async def start(self):
         """Start the worker in the background."""
@@ -114,6 +123,10 @@ class ClassificationWorker:
         classifier = self._get_classifier()
         if classifier:
             await classifier.close()
+
+        good_news_classifier = self._get_good_news_classifier()
+        if good_news_classifier:
+            await good_news_classifier.close()
 
         await self.engine.dispose()
 
@@ -238,12 +251,55 @@ class ClassificationWorker:
                         "classification_worker.entity_extraction_failed",
                         error=str(e),
                     )
+
+                # Step 3: Good-news pass (mistral-large) on serene+FR survivors
+                # Initialize good_news=None for all; only mutated for evaluated items
+                for r in all_results:
+                    r["good_news"] = None
+
+                good_news_indices: list[int] = []
+                good_news_items: list[dict] = []
+                for idx, (bi, result) in enumerate(
+                    zip(batch_items, all_results, strict=False)
+                ):
+                    if result.get("serene") is not True:
+                        continue
+                    source_name = bi.get("source_name", "")
+                    title = bi.get("title", "")
+                    if not is_french_source(source_name):
+                        continue
+                    if looks_english(title):
+                        continue
+                    good_news_indices.append(idx)
+                    good_news_items.append(bi)
+
+                if good_news_items:
+                    gn_classifier = self._get_good_news_classifier()
+                    if gn_classifier and gn_classifier.is_ready():
+                        try:
+                            gn_results = await gn_classifier.classify_batch_async(
+                                good_news_items
+                            )
+                            for offset, idx in enumerate(good_news_indices):
+                                if offset < len(gn_results):
+                                    all_results[idx]["good_news"] = gn_results[offset]
+                            logger.info(
+                                "classification_worker.good_news_pass",
+                                evaluated=len(good_news_items),
+                                positives=sum(1 for v in gn_results if v is True),
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                "classification_worker.good_news_pass_failed",
+                                error=str(e),
+                            )
             else:
                 all_results = [
                     {
                         "topics": [],
                         "serene": None,
                         "good_news": None,
+                        "is_ad": None,
                         "entities": [],
                     }
                     for _ in batch_items
@@ -259,7 +315,7 @@ class ClassificationWorker:
                         await service.mark_completed_with_entities(item.id, [], [])
                         continue
 
-                    # Get topics, serene and entities from batch result
+                    # Get topics, serene, is_ad and entities from batch result
                     if i in batch_indices:
                         result = (
                             all_results[batch_result_idx]
@@ -268,6 +324,7 @@ class ClassificationWorker:
                                 "topics": [],
                                 "serene": None,
                                 "good_news": None,
+                                "is_ad": None,
                                 "entities": [],
                             }
                         )
@@ -275,11 +332,13 @@ class ClassificationWorker:
                         topics = result.get("topics", [])
                         is_serene = result.get("serene")
                         is_good_news = result.get("good_news")
+                        is_ad = result.get("is_ad")
                         entities = result.get("entities", [])
                     else:
                         topics = []
                         is_serene = None
                         is_good_news = None
+                        is_ad = None
                         entities = []
 
                     # If still no topics after individual retry, let the retry
@@ -301,6 +360,7 @@ class ClassificationWorker:
                         entities,
                         is_serene=is_serene,
                         is_good_news=is_good_news,
+                        is_ad=is_ad,
                     )
 
                 except Exception as e:

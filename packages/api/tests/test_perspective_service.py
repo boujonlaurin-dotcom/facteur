@@ -6,6 +6,7 @@ from app.services.perspective_service import (
     PERSPECTIVE_TITLE_JACCARD_MIN,
     Perspective,
     PerspectiveService,
+    _strip_source_suffix,
 )
 from app.services.text_similarity import normalize_title
 
@@ -36,23 +37,86 @@ async def test_perspective_filtering_logic():
     </channel>
     </rss>"""
 
-    # 1. Test without exclusion
+    # 1. Test without exclusion — titles are stripped at ingestion
     results = await service._parse_rss(mock_rss)
     assert len(results) == 3
+    assert [r.title for r in results] == [
+        "Article Original",
+        "Autre Article",
+        "Doublon Titre",
+    ]
 
     # 2. Test with URL exclusion
     results_url = await service._parse_rss(mock_rss, exclude_url="http://lemonde.fr/article1")
     assert len(results_url) == 2
-    assert results_url[0].title == "Autre Article - Figaro"
+    assert results_url[0].title == "Autre Article"
 
-    # 3. Test with Title exclusion (similarity check)
-    # The logic splits by " - " and compares
+    # 3. Test with Title exclusion (similarity check on stripped title)
     results_title = await service._parse_rss(mock_rss, exclude_title="Doublon Titre")
-    assert len(results_title) == 2
-    assert results_title[1].title == "Autre Article - Figaro"  # Order might change due to set, but here list
-    # Actually Liberation was the 3rd one.
     titles = [r.title for r in results_title]
-    assert "Doublon Titre - Libe" not in titles
+    assert "Doublon Titre" not in titles
+    assert len(results_title) == 2
+
+
+def test_strip_source_suffix_uses_known_source_name():
+    """Primary path: exact match against <source> element."""
+    assert (
+        _strip_source_suffix("Macron annonce une réforme - Le Monde", "Le Monde")
+        == "Macron annonce une réforme"
+    )
+    # Em-dash variant
+    assert (
+        _strip_source_suffix("Sujet brûlant – Libération", "Libération")
+        == "Sujet brûlant"
+    )
+    # Pipe variant
+    assert (
+        _strip_source_suffix("Headline | The Guardian", "The Guardian")
+        == "Headline"
+    )
+    # Case-insensitive
+    assert (
+        _strip_source_suffix("Foo - LE MONDE", "Le Monde") == "Foo"
+    )
+
+
+def test_strip_source_suffix_fallback_regex_when_source_mismatches():
+    """When <source> doesn't match (Google News localized variant), fallback."""
+    # `Figaro` doesn't equal `Le Figaro` exactly → fallback regex catches it.
+    assert (
+        _strip_source_suffix("Autre Article - Figaro", "Le Figaro")
+        == "Autre Article"
+    )
+
+
+def test_strip_source_suffix_preserves_legitimate_dash_titles():
+    """Hyphens in real titles must NOT trigger a strip."""
+    # Suffix too long (>40 chars after separator)
+    assert (
+        _strip_source_suffix(
+            "Flipper One - Le Linux de poche qui terrifie ses propres créateurs",
+            None,
+        )
+        == "Flipper One - Le Linux de poche qui terrifie ses propres créateurs"
+    )
+    # Contains a colon → not a source suffix
+    assert (
+        _strip_source_suffix(
+            "Accord États-Unis – Iran : Finkielkraut espère", None
+        )
+        == "Accord États-Unis – Iran : Finkielkraut espère"
+    )
+    # Numeric date suffix (Google News-style timestamp on radio shows)
+    assert (
+        _strip_source_suffix("Le Grand entretien - 26/05", None)
+        == "Le Grand entretien - 26/05"
+    )
+
+
+def test_strip_source_suffix_handles_empty_and_whitespace():
+    assert _strip_source_suffix("", "Le Monde") == ""
+    assert _strip_source_suffix("Foo - Le Monde  ", "Le Monde") == "Foo"
+    assert _strip_source_suffix("Foo", "Le Monde") == "Foo"
 
 
 # ---------------------------------------------------------------------------
@@ -198,21 +262,27 @@ def test_topical_signals_external_low_jaccard_rejected():
     assert reason == "low_jaccard"
 
 
-def test_topical_signals_shared_topic_rescues_low_jaccard():
-    """Si Jaccard titre faible mais 1 topic ML partagé → accepter (Layer 1)."""
+def test_topical_signals_shared_topic_alone_insufficient_with_zero_jaccard():
+    """1 topic partagé seul + Jaccard ≈ 0 → rejeter (faux-positif "Trump partout").
+
+    Un topic générique ("politics", "religion"…) partagé sans entité discriminante
+    ET sans aucune similarité de titre ne suffit plus à valider une perspective.
+    Empêche ex: Congo/Trump vs Ukraine/Trump via seul topic "politics".
+    """
     seed_tokens, seed_topics, _ = _seed_signals_inputs()
     signals = PerspectiveService._topical_signals(
         seed_tokens,
         seed_topics,
         seed_disc_entities=set(),
         cand_title="Article au titre totalement différent qui ne matche rien",
-        cand_topics=["religion"],  # 1 topic en commun
+        cand_topics=["religion"],  # 1 topic en commun, mais 0 entité, jaccard ≈ 0
         cand_entities=[],
     )
     assert signals["title_jaccard"] < PERSPECTIVE_TITLE_JACCARD_MIN
     assert signals["shared_topics"] == 1
-    is_ok, _ = PerspectiveService._is_topically_coherent(signals)
-    assert is_ok is True
+    is_ok, reason = PerspectiveService._is_topically_coherent(signals)
+    assert is_ok is False
+    assert reason == "no_signal"
 
 
 def test_topical_signals_2_shared_entities_rescues_low_jaccard():
@@ -288,6 +358,104 @@ def test_filter_external_perspectives_disabled_via_flag(monkeypatch):
     kept, filtered_out = service._filter_external_perspectives(seed_tokens, candidates)
     assert len(kept) == 1
     assert filtered_out == 0
+
+
+# ---------------------------------------------------------------------------
+# Calibration Iter 1 — floor « weak double signal » 0.08 → 0.12
+# Ref : docs/maintenance/maintenance-clustering-calibration.md
+# Pool junk-drawer « Trump » : deux articles ne partageant que l'entité saillante
+# (Trump) + un topic générique (geopolitics) mais parlant d'événements distincts.
+# ---------------------------------------------------------------------------
+
+# Le cas Cuba/Chagos du plan : Jaccard ≈ 0.091, dans la fenêtre [0.08, 0.12).
+# Avant Iter 1 (floor 0.08) → accepté à tort via « weak double signal » (FP).
+# Après Iter 1 (floor 0.12) → rejeté.
+TRUMP_CUBA = {
+    "title": "Cuba : l'ultimatum économique de Trump",
+    "topics": ["geopolitics", "usa"],
+    "entities": [json.dumps({"name": "Trump", "type": "PERSON"})],
+}
+TRUMP_CHAGOS = {
+    "title": (
+        "Après le Groenland, Donald Trump convoite un autre territoire, "
+        "l'archipel des îles Chagos"
+    ),
+    "topics": ["geopolitics", "usa"],
+    "entities": [json.dumps({"name": "Trump", "type": "PERSON"})],
+}
+
+# Vrai intra-événement (mobilisation anti-projet immobilier Trump en Albanie) :
+# Jaccard ≈ 0.143 ≥ 0.12 → reste accepté après Iter 1 (rappel préservé).
+TRUMP_ALBANIE_A = {
+    "title": (
+        "En Albanie, la mobilisation prend de l'ampleur contre le projet "
+        "immobilier de luxe porté par Trump"
+    ),
+    "topics": ["geopolitics", "usa"],
+    "entities": [json.dumps({"name": "Trump", "type": "PERSON"})],
+}
+TRUMP_ALBANIE_B = {
+    "title": (
+        "« Ce serait fatal » : des Albanais continuent à protester contre un "
+        "projet immobilier lié à Trump"
+    ),
+    "topics": ["geopolitics", "usa"],
+    "entities": [json.dumps({"name": "Trump", "type": "PERSON"})],
+}
+
+
+def test_trump_cross_event_rejected_after_floor_calibration():
+    """Cuba ↔ Chagos : même entité Trump + topic geopolitics, événements distincts.
+
+    Jaccard ≈ 0.091 tombe dans la fenêtre [ancien floor 0.08, nouveau floor 0.12) :
+    c'était la fuite « weak double signal » (cf. capture PO « cluster Trump »).
+    Après calibration Iter 1, la porte rejette la paire.
+    """
+    from app.services.perspective_service import PERSPECTIVE_MIN_JACCARD_FLOOR
+
+    seed_tokens = normalize_title(TRUMP_CUBA["title"])
+    seed_disc = {"Trump"}
+    signals = PerspectiveService._topical_signals(
+        seed_tokens,
+        seed_topics={"geopolitics", "usa"},
+        seed_disc_entities=seed_disc,
+        cand_title=TRUMP_CHAGOS["title"],
+        cand_topics=TRUMP_CHAGOS["topics"],
+        cand_entities=TRUMP_CHAGOS["entities"],
+    )
+    # Le signal qui fuyait : topic + entité partagés, Jaccard faible mais > 0.08.
+    assert signals["shared_topics"] >= 1
+    assert signals["shared_entities"] >= 1
+    assert 0.08 <= signals["title_jaccard"] < PERSPECTIVE_MIN_JACCARD_FLOOR
+    # La porte calibrée (floor 0.12) doit rejeter.
+    is_ok, reason = PerspectiveService._is_topically_coherent(signals)
+    assert is_ok is False
+    assert reason == "no_signal"
+
+
+def test_trump_intra_event_still_accepted_after_floor_calibration():
+    """Albanie ↔ Albanie : même événement, Jaccard ≈ 0.143 ≥ 0.12 → reste accepté.
+
+    Garde-fou de rappel : le durcissement du floor ne doit pas casser les vraies
+    paires intra-événement multi-sources qui dépassent le nouveau seuil.
+    """
+    from app.services.perspective_service import PERSPECTIVE_MIN_JACCARD_FLOOR
+
+    seed_tokens = normalize_title(TRUMP_ALBANIE_A["title"])
+    signals = PerspectiveService._topical_signals(
+        seed_tokens,
+        seed_topics={"geopolitics", "usa"},
+        seed_disc_entities={"Trump"},
+        cand_title=TRUMP_ALBANIE_B["title"],
+        cand_topics=TRUMP_ALBANIE_B["topics"],
+        cand_entities=TRUMP_ALBANIE_B["entities"],
+    )
+    assert signals["title_jaccard"] >= PERSPECTIVE_MIN_JACCARD_FLOOR
+    assert signals["shared_topics"] >= 1
+    assert signals["shared_entities"] >= 1
+    is_ok, reason = PerspectiveService._is_topically_coherent(signals)
+    assert is_ok is True
+    assert reason == ""
 
 
 def test_topical_signals_empty_seed_title():

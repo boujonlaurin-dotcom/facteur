@@ -1,243 +1,613 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:facteur/features/veille/models/veille_config.dart';
 import 'package:facteur/features/veille/models/veille_config_dto.dart';
 import 'package:facteur/features/veille/providers/veille_config_provider.dart';
+import 'package:facteur/features/veille/providers/veille_repository_provider.dart';
+import 'package:facteur/features/veille/providers/veille_themes_provider.dart';
+import 'package:facteur/features/veille/repositories/veille_repository.dart';
+import 'package:facteur/features/veille/screens/steps/step3_sources_screen.dart';
 
+/// Repo factice qui capture le body d'`upsertConfig` (pour tester le mapping
+/// `_buildUpsertRequest`). Toute autre méthode throw → instrumentation à fixer.
+class _CaptureRepo implements VeilleRepository {
+  VeilleConfigUpsertRequest? captured;
+  List<VeilleResolveSourceCandidateRequest>? capturedResolveCandidates;
+  VeilleResolveSourceCandidatesResponseDto resolveResponse =
+      const VeilleResolveSourceCandidatesResponseDto();
+  VeilleResolvedTopicDto resolvedTopic = const VeilleResolvedTopicDto(
+    label: 'Musées contemporains de Barcelone',
+    topicId: 'custom-musees-contemporains-de-barcelone',
+    keywords: ['macba', 'exposition'],
+    description: 'Suivi des expositions',
+  );
+
+  @override
+  Future<VeilleConfigDto> upsertConfig(VeilleConfigUpsertRequest body) async {
+    captured = body;
+    return VeilleConfigDto(
+      id: 'cfg-1',
+      userId: 'user-1',
+      themeId: body.themeId,
+      themeLabel: body.themeLabel,
+      status: 'active',
+      createdAt: DateTime(2024),
+      updatedAt: DateTime(2024),
+      topics: const [],
+      sources: const [],
+      keywords: const [],
+    );
+  }
+
+  @override
+  Future<VeilleResolvedTopicDto> resolveTopic({
+    required String topic,
+    String? themeId,
+    String? themeLabel,
+  }) async => resolvedTopic;
+
+  @override
+  Future<VeilleResolveSourceCandidatesResponseDto> resolveSourceCandidates(
+    List<VeilleResolveSourceCandidateRequest> candidates,
+  ) async {
+    capturedResolveCandidates = candidates;
+    return resolveResponse;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} non mocké');
+}
+
+/// Tests business-logic du `VeilleConfigNotifier` après le drop des suggesters
+/// LLM (PR-4, Story 23.3). On vérifie surtout les transitions d'état et le
+/// payload envoyé au backend.
 void main() {
-  group('VeilleConfigNotifier — purpose + brief setters (PR B)', () {
-    late ProviderContainer container;
+  late ProviderContainer container;
+  late VeilleConfigNotifier notifier;
 
-    setUp(() {
-      container = ProviderContainer();
-    });
-
-    tearDown(() => container.dispose());
-
-    test('setPurpose stores slug', () {
-      final notifier = container.read(veilleConfigProvider.notifier);
-      notifier.setPurpose('preparer_projet');
-      expect(container.read(veilleConfigProvider).purpose, 'preparer_projet');
-    });
-
-    test('setPurpose to non-autre clears purposeOther', () {
-      final notifier = container.read(veilleConfigProvider.notifier);
-      notifier.setPurpose('autre');
-      notifier.setPurposeOther('rédiger un livre');
-      expect(container.read(veilleConfigProvider).purposeOther, 'rédiger un livre');
-
-      notifier.setPurpose('culture_generale');
-      expect(container.read(veilleConfigProvider).purpose, 'culture_generale');
-      expect(container.read(veilleConfigProvider).purposeOther, isNull);
-    });
-
-    test('setPurpose to autre keeps purposeOther', () {
-      final notifier = container.read(veilleConfigProvider.notifier);
-      notifier.setPurpose('autre');
-      notifier.setPurposeOther('rédiger un livre');
-      // Re-set purpose to autre — purposeOther doit rester (re-tap UX).
-      notifier.setPurpose('autre');
-      expect(container.read(veilleConfigProvider).purposeOther, 'rédiger un livre');
-    });
-
-    test('setEditorialBrief trims and treats empty as null', () {
-      final notifier = container.read(veilleConfigProvider.notifier);
-      notifier.setEditorialBrief('  Plutôt analyses long format  ');
-      expect(
-        container.read(veilleConfigProvider).editorialBrief,
-        'Plutôt analyses long format',
-      );
-
-      notifier.setEditorialBrief('   ');
-      expect(container.read(veilleConfigProvider).editorialBrief, isNull);
-    });
-
-    test('setPurposeOther trims and treats empty as null', () {
-      final notifier = container.read(veilleConfigProvider.notifier);
-      notifier.setPurpose('autre');
-      notifier.setPurposeOther('  veille perso  ');
-      expect(container.read(veilleConfigProvider).purposeOther, 'veille perso');
-
-      notifier.setPurposeOther('');
-      expect(container.read(veilleConfigProvider).purposeOther, isNull);
-    });
+  setUp(() {
+    container = ProviderContainer();
+    notifier = container.read(veilleConfigProvider.notifier);
   });
 
-  group('VeilleConfigNotifier — hydrateFromActiveConfig (T3 edit mode)', () {
-    late ProviderContainer container;
+  tearDown(() => container.dispose());
 
-    setUp(() {
-      container = ProviderContainer();
-    });
+  test('selectTheme reset customThemeLabel quand on quitte "other"', () {
+    notifier.selectTheme(kVeilleOtherThemeSlug);
+    notifier.setCustomThemeLabel('Musées contemporains');
+    expect(
+      container.read(veilleConfigProvider).customThemeLabel,
+      'Musées contemporains',
+    );
 
-    tearDown(() => container.dispose());
+    notifier.selectTheme('tech');
+    expect(container.read(veilleConfigProvider).customThemeLabel, isNull);
+  });
 
-    VeilleConfigDto buildDto({
-      String frequency = 'biweekly',
-      int? dayOfWeek = 3,
-    }) {
-      final now = DateTime.utc(2026, 5, 4);
-      return VeilleConfigDto(
-        id: 'cfg-1',
-        userId: 'user-1',
-        themeId: 'education',
-        themeLabel: 'Éducation',
-        frequency: frequency,
-        dayOfWeek: dayOfWeek,
-        deliveryHour: 7,
-        timezone: 'Europe/Paris',
-        status: 'active',
-        lastDeliveredAt: null,
-        nextScheduledAt: now,
-        createdAt: now,
-        updatedAt: now,
-        topics: const [
-          VeilleTopicDto(
-            id: 't-1',
-            topicId: 'evaluations',
-            label: 'Évaluations',
-            kind: 'preset',
-            reason: null,
-            position: 0,
-          ),
-          VeilleTopicDto(
-            id: 't-2',
-            topicId: 'custom-cnl',
-            label: 'CNL',
-            kind: 'custom',
-            reason: 'sujet ajouté',
-            position: 1,
-          ),
-          VeilleTopicDto(
-            id: 't-3',
-            topicId: 'didactique-numerique',
-            label: 'Didactique numérique',
-            kind: 'suggested',
-            reason: null,
-            position: 2,
+  test('addKeyword normalise + dédupe + respecte le cap maxKeywords', () {
+    for (var i = 0; i < VeilleConfigNotifier.maxKeywords + 5; i++) {
+      notifier.addKeyword('kw-$i');
+    }
+    final keywords = container.read(veilleConfigProvider).keywords;
+    expect(keywords.length, VeilleConfigNotifier.maxKeywords);
+
+    notifier.addKeyword('  KW-0  '); // doublon normalisé
+    expect(
+      container.read(veilleConfigProvider).keywords.length,
+      VeilleConfigNotifier.maxKeywords,
+    );
+  });
+
+  test('addKeyword rejette les inputs trop courts ou trop longs', () {
+    notifier.addKeyword('a'); // 1 char → rejeté
+    notifier.addKeyword('ok');
+    notifier.addKeyword('x' * 61); // > 60 → rejeté
+    expect(container.read(veilleConfigProvider).keywords, {'ok'});
+  });
+
+  test('skipStep2 avance à step 3 et clear les signaux optionnels', () {
+    notifier.selectTheme('tech');
+    notifier.goNext(); // step 2
+    notifier.addKeyword('foo');
+    notifier.setEditorialBrief('Focus PME');
+
+    notifier.skipStep2();
+
+    final s = container.read(veilleConfigProvider);
+    expect(s.step, 3);
+    expect(s.skippedStep2, isTrue);
+    expect(s.keywords, isEmpty);
+    expect(s.editorialBrief, isNull);
+  });
+
+  test('skipStep2 est no-op si on n\'est pas en step 2', () {
+    notifier.selectTheme('tech');
+    notifier.skipStep2();
+    expect(container.read(veilleConfigProvider).step, 1);
+    expect(container.read(veilleConfigProvider).skippedStep2, isFalse);
+  });
+
+  test('addCustomTopic ajoute + coche, doublon idempotent', () {
+    notifier.addCustomTopic('IA générative');
+    final s1 = container.read(veilleConfigProvider);
+    expect(s1.customTopics.length, 1);
+    expect(s1.selectedTopics.length, 1);
+
+    notifier.addCustomTopic('  IA Générative  ');
+    final s2 = container.read(veilleConfigProvider);
+    expect(s2.customTopics.length, 1, reason: 'doublon ignoré');
+    expect(s2.selectedTopics.length, 1);
+  });
+
+  test('addCustomTopic re-coche un topic déjà présent mais décoché', () {
+    notifier.addCustomTopic('IA générative');
+    final id = container.read(veilleConfigProvider).customTopics.first.id;
+    notifier.toggleTopic(id); // décoche
+    expect(container.read(veilleConfigProvider).selectedTopics, isEmpty);
+
+    notifier.addCustomTopic('IA générative');
+    expect(container.read(veilleConfigProvider).selectedTopics, {id});
+  });
+
+  test('setAdvancedMode ne touche pas aux valeurs déjà saisies', () {
+    notifier.addKeyword('foo');
+    notifier.setEditorialBrief('brief');
+    notifier.setAdvancedMode(true);
+    notifier.setAdvancedMode(false);
+    final s = container.read(veilleConfigProvider);
+    expect(s.keywords, {'foo'});
+    expect(s.editorialBrief, 'brief');
+  });
+
+  test('resolvedThemeLabel utilise customThemeLabel quand thème = other', () {
+    notifier.selectTheme(kVeilleOtherThemeSlug);
+    notifier.setCustomThemeLabel('Musées');
+    expect(
+      container.read(veilleConfigProvider).resolvedThemeLabel('Autre'),
+      'Musées',
+    );
+  });
+
+  test(
+    'resolvedThemeLabel fallback quand customThemeLabel vide en mode other',
+    () {
+      notifier.selectTheme(kVeilleOtherThemeSlug);
+      expect(
+        container.read(veilleConfigProvider).resolvedThemeLabel('Autre'),
+        'Autre',
+      );
+    },
+  );
+
+  test('goNext cap à step 3 / goBack cap à step 1', () {
+    expect(container.read(veilleConfigProvider).step, 1);
+    notifier.goNext();
+    notifier.goNext();
+    notifier.goNext(); // tentative au-delà
+    expect(container.read(veilleConfigProvider).step, 3);
+
+    notifier.goBack();
+    notifier.goBack();
+    notifier.goBack(); // tentative en-dessous
+    expect(container.read(veilleConfigProvider).step, 1);
+  });
+
+  test('source suggérée est présélectionnée pending et ne compte pas CTA', () {
+    notifier.addCustomSourceToVeille(
+      sourceId: 'src-1',
+      name: 'Le Monde',
+      url: 'https://lemonde.fr',
+    );
+    notifier.registerSuggestedSources(const [
+      VeilleSourceSuggestionDto(
+        name: 'MACBA',
+        url: 'https://www.macba.cat',
+        why: 'Musée officiel',
+        relevanceScore: 1,
+      ),
+    ]);
+    final slug = VeilleConfigNotifier.sourceSuggestionSlug(
+      'MACBA',
+      'https://www.macba.cat',
+    );
+    final s = container.read(veilleConfigProvider);
+
+    expect(s.selectedSourceIds, contains(slug));
+    expect(
+      s.sourcesMeta[slug]!.connectionStatus,
+      VeilleSourceConnectionStatus.pending,
+    );
+    expect(s.realSelectedSourceCount, 1);
+  });
+
+  test(
+    'resolvePendingSources marque les candidats résolus connected',
+    () async {
+      final repo = _CaptureRepo();
+      repo.resolveResponse = const VeilleResolveSourceCandidatesResponseDto(
+        resolved: [
+          VeilleResolvedSourceCandidateDto(
+            clientSlug: 'niche-wwwmacbacat-macba',
+            sourceId: 'src-macba',
+            name: 'MACBA',
+            url: 'https://www.macba.cat',
+            feedUrl: 'https://www.macba.cat/feed.xml',
+            logoUrl: 'https://logo.test/macba.png',
           ),
         ],
-        sources: const [
-          VeilleSourceDto(
-            id: 'vs-1',
-            source: VeilleSourceLiteDto(
-              id: 'src-followed-1',
-              name: 'Café Pédago',
-              url: 'https://cafe.example.com',
-              feedUrl: 'https://cafe.example.com/feed',
-              theme: 'education',
-              type: 'rss',
-              isCurated: true,
-              logoUrl: null,
-            ),
-            kind: 'followed',
-            why: null,
-            position: 0,
-          ),
-          VeilleSourceDto(
-            id: 'vs-2',
-            source: VeilleSourceLiteDto(
-              id: 'src-niche-1',
-              name: 'NicheBlog',
-              url: 'https://niche.example.com',
-              feedUrl: 'https://niche.example.com/feed',
-              theme: 'education',
-              type: 'rss',
-              isCurated: false,
-              logoUrl: null,
-            ),
-            kind: 'niche',
-            why: 'spécialiste des évals',
-            position: 1,
-          ),
-        ],
-        purpose: 'culture_generale',
-        purposeOther: null,
-        editorialBrief: 'Plutôt analyses long format',
-        presetId: 'preset-edu',
+      );
+      final c = ProviderContainer(
+        overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+      );
+      addTearDown(c.dispose);
+      final n = c.read(veilleConfigProvider.notifier);
+
+      n.registerSuggestedSources(const [
+        VeilleSourceSuggestionDto(
+          name: 'MACBA',
+          url: 'https://www.macba.cat',
+          why: 'Musée officiel',
+          relevanceScore: 1,
+        ),
+      ]);
+      final slug = VeilleConfigNotifier.sourceSuggestionSlug(
+        'MACBA',
+        'https://www.macba.cat',
+      );
+      await n.resolvePendingSources();
+
+      final s = c.read(veilleConfigProvider);
+      expect(repo.capturedResolveCandidates!.single.clientSlug, slug);
+      expect(s.sourcesMeta[slug]!.apiSourceId, 'src-macba');
+      expect(
+        s.sourcesMeta[slug]!.connectionStatus,
+        VeilleSourceConnectionStatus.connected,
+      );
+      expect(s.realSelectedSourceCount, 1);
+    },
+  );
+
+  test('resolvePendingSources désélectionne les candidats KO', () async {
+    final repo = _CaptureRepo();
+    final slug = VeilleConfigNotifier.sourceSuggestionSlug(
+      'MACBA',
+      'https://www.macba.cat',
+    );
+    repo.resolveResponse = VeilleResolveSourceCandidatesResponseDto(
+      failed: [
+        VeilleFailedSourceCandidateDto(
+          clientSlug: slug,
+          name: 'MACBA',
+          url: 'https://www.macba.cat',
+          reason: 'Aucun flux RSS.',
+        ),
+      ],
+    );
+    final c = ProviderContainer(
+      overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+    );
+    addTearDown(c.dispose);
+    final n = c.read(veilleConfigProvider.notifier);
+
+    n.registerSuggestedSources(const [
+      VeilleSourceSuggestionDto(
+        name: 'MACBA',
+        url: 'https://www.macba.cat',
+        why: 'Musée officiel',
+        relevanceScore: 1,
+      ),
+    ]);
+    await n.resolvePendingSources();
+
+    final s = c.read(veilleConfigProvider);
+    expect(s.selectedSourceIds, isNot(contains(slug)));
+    expect(
+      s.sourcesMeta[slug]!.connectionStatus,
+      VeilleSourceConnectionStatus.failed,
+    );
+    expect(s.lastError, contains("n'a pas pu être connectée"));
+  });
+
+  test('submit sérialise un candidat résolu en source_id', () async {
+    final repo = _CaptureRepo();
+    final slug = VeilleConfigNotifier.sourceSuggestionSlug(
+      'MACBA',
+      'https://www.macba.cat',
+    );
+    repo.resolveResponse = VeilleResolveSourceCandidatesResponseDto(
+      resolved: [
+        VeilleResolvedSourceCandidateDto(
+          clientSlug: slug,
+          sourceId: 'src-macba',
+          name: 'MACBA',
+          url: 'https://www.macba.cat',
+          feedUrl: 'https://www.macba.cat/feed.xml',
+        ),
+      ],
+    );
+    final c = ProviderContainer(
+      overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+    );
+    addTearDown(c.dispose);
+    final n = c.read(veilleConfigProvider.notifier);
+
+    n.selectTheme('culture');
+    n.selectMainTopic('museums', 'Musées');
+    n.registerSuggestedSources(const [
+      VeilleSourceSuggestionDto(
+        name: 'MACBA',
+        url: 'https://www.macba.cat',
+        why: 'Musée officiel',
+        relevanceScore: 1,
+      ),
+    ]);
+    await n.resolvePendingSources();
+    await n.submit();
+
+    final source = repo.captured!.sourceSelections.single;
+    expect(source.kind, 'niche');
+    expect(source.sourceId, 'src-macba');
+    expect(source.nicheCandidate, isNull);
+    expect(source.toJson()['source_id'], 'src-macba');
+  });
+
+  test('addUrlSourceToVeille ajoute une source niche locale sélectionnée', () {
+    notifier.addUrlSourceToVeille(
+      name: 'Blog niche',
+      url: 'https://example.com/rss.xml',
+      why: 'Flux spécialisé',
+    );
+
+    final s = container.read(veilleConfigProvider);
+    final slug = VeilleConfigNotifier.sourceSuggestionSlug(
+      'Blog niche',
+      'https://example.com/rss.xml',
+    );
+    expect(s.selectedSourceIds, contains(slug));
+    expect(s.sourcesMeta[slug]!.kind, 'niche');
+    expect(s.sourcesMeta[slug]!.apiSourceId, isNull);
+    expect(s.sourcesMeta[slug]!.url, 'https://example.com/rss.xml');
+  });
+
+  test('buildSuggestionQuery borne angles et mots-clés au cap suggester', () {
+    notifier.selectTheme('tech');
+    notifier.selectMainTopic('ai', 'Intelligence artificielle');
+
+    for (var i = 0; i < VeilleConfigNotifier.maxKeywords; i++) {
+      notifier.addKeyword('global-$i');
+    }
+    for (var i = 0; i < 25; i++) {
+      notifier.toggleAngle(
+        VeilleAngleSuggestionDto(
+          title: 'Angle $i',
+          keywords: [for (var j = 0; j < 10; j++) 'kw-$i-$j'],
+        ),
       );
     }
 
-    test('populates state from dto (theme, topics, sources, frequency, day, purpose)',
-        () {
-      final notifier = container.read(veilleConfigProvider.notifier);
-      notifier.hydrateFromActiveConfig(buildDto());
-      final s = container.read(veilleConfigProvider);
+    final query = buildSuggestionQuery(container.read(veilleConfigProvider))!;
+    final angles = query.anglesKey.split('|');
+    final keywords = query.keywordsKey.split('|');
 
-      expect(s.step, 1);
-      expect(s.selectedTheme, 'education');
-      expect(s.selectedTopics, containsAll(['evaluations', 'custom-cnl']));
-      expect(s.selectedSuggestions, contains('didactique-numerique'));
-      expect(s.customTopics.map((t) => t.id), contains('custom-cnl'));
-      expect(s.topicLabels['custom-cnl'], 'CNL');
-      expect(s.selectedSourceIds, contains('src-followed-1'));
-      expect(s.selectedSourceIds, contains('src-niche-1'));
-      expect(s.sourcesMeta['src-niche-1']?.kind, 'niche');
-      expect(s.sourcesMeta['src-niche-1']?.apiSourceId, 'src-niche-1');
-      expect(s.frequency, VeilleFrequency.biweekly);
-      expect(s.day, VeilleDay.thu); // dayOfWeek=3 → jeu
-      expect(s.purpose, 'culture_generale');
-      expect(s.editorialBrief, 'Plutôt analyses long format');
-      expect(s.presetId, 'preset-edu');
-    });
-
-    test('idempotent — second call no-op when selectedTheme already set', () {
-      final notifier = container.read(veilleConfigProvider.notifier);
-      notifier.hydrateFromActiveConfig(buildDto());
-      final s1 = container.read(veilleConfigProvider);
-
-      // Tente une 2e hydratation avec un dto différent — doit être ignorée.
-      notifier.hydrateFromActiveConfig(
-        buildDto(frequency: 'monthly', dayOfWeek: null),
-      );
-      final s2 = container.read(veilleConfigProvider);
-
-      expect(s2.frequency, s1.frequency); // pas écrasé
-      expect(s2.day, s1.day);
-    });
-
-    test('monthly frequency maps day to default mon (no dayOfWeek)', () {
-      final notifier = container.read(veilleConfigProvider.notifier);
-      notifier.hydrateFromActiveConfig(
-        buildDto(frequency: 'monthly', dayOfWeek: null),
-      );
-      final s = container.read(veilleConfigProvider);
-      expect(s.frequency, VeilleFrequency.monthly);
-      expect(s.day, VeilleDay.mon);
-    });
+    expect(angles.length, VeilleConfigNotifier.maxSuggestAngles);
+    expect(keywords.length, VeilleConfigNotifier.maxSuggestKeywords);
+    expect(angles.first, 'Intelligence artificielle');
+    expect(keywords.take(2), ['global-0', 'global-1']);
   });
 
-  group('VeilleConfigNotifier — loadingMaxDurationFor (Iter 4)', () {
-    test('Step1 → Step2 reste à 8 s (pré-fetch topics rapide)', () {
-      expect(
-        VeilleConfigNotifier.loadingMaxDurationFor(1),
-        const Duration(seconds: 8),
-      );
-    });
+  // ─── Angles LLM (PR-3) ──────────────────────────────────────────────────
 
-    test('Step2 → Step3 monte à 25 s (LLM 16s + boucle)', () {
-      // Décalage budget client/serveur documenté dans
-      // docs/bugs/bug-veille-suggestions-sources-pending-rollback.md (Iter 4) :
-      // la requête /suggestions/sources prend ~19-24 s typique, donc 8 s
-      // est trop court et l'utilisateur basculait sur Step3 spinner au
-      // lieu de la transition halo. 25 s laisse 5 s de marge sous le
-      // Dio.timeout = 30 s.
-      expect(
-        VeilleConfigNotifier.loadingMaxDurationFor(2),
-        const Duration(seconds: 25),
-      );
-    });
+  const angle = VeilleAngleSuggestionDto(
+    title: 'IA générative',
+    keywords: ['IA Générative', 'llm', 'chatgpt'],
+    reason: 'Impact sur les workflows',
+  );
 
-    test('autres steps tombent sur le défaut 8 s', () {
+  test(
+    'toggleAngle sélectionne (slug angle-, label, grappe normalisée seedée)',
+    () {
+      notifier.toggleAngle(angle);
+      final s = container.read(veilleConfigProvider);
+      final slug = VeilleConfigNotifier.angleSlug('IA générative');
+
+      expect(slug, 'angle-ia-generative');
+      expect(s.selectedSuggestions, {slug});
+      expect(s.topicLabels[slug], 'IA générative');
+      // Grappe normalisée : lowercase + dédupe (accents conservés, comme
+      // `addKeyword` — seul le slug strippe les diacritiques).
+      expect(s.angleKeywords[slug], ['ia générative', 'llm', 'chatgpt']);
+    },
+  );
+
+  test(
+    'toggleAngle re-toggle désélectionne mais conserve la grappe éditée',
+    () {
+      notifier.toggleAngle(angle);
+      final slug = VeilleConfigNotifier.angleSlug(angle.title);
+      notifier.addAngleKeyword(slug, 'gpt-5');
+
+      notifier.toggleAngle(angle); // désélection
+      final s = container.read(veilleConfigProvider);
+      expect(s.selectedSuggestions, isEmpty);
       expect(
-        VeilleConfigNotifier.loadingMaxDurationFor(0),
-        const Duration(seconds: 8),
+        s.angleKeywords[slug],
+        contains('gpt-5'),
+        reason: 'edits préservés pour un re-toggle',
       );
+
+      // Re-sélection : la grappe éditée n'est PAS écrasée par le seed initial.
+      notifier.toggleAngle(angle);
       expect(
-        VeilleConfigNotifier.loadingMaxDurationFor(3),
-        const Duration(seconds: 8),
+        container.read(veilleConfigProvider).angleKeywords[slug],
+        contains('gpt-5'),
       );
-    });
+    },
+  );
+
+  test('addAngleKeyword dédupe + cap maxAngleKeywords, removeAngleKeyword', () {
+    notifier.toggleAngle(
+      const VeilleAngleSuggestionDto(title: 'Vide', keywords: []),
+    );
+    final slug = VeilleConfigNotifier.angleSlug('Vide');
+
+    for (var i = 0; i < VeilleConfigNotifier.maxAngleKeywords + 5; i++) {
+      notifier.addAngleKeyword(slug, 'kw-$i');
+    }
+    expect(
+      container.read(veilleConfigProvider).angleKeywords[slug]!.length,
+      VeilleConfigNotifier.maxAngleKeywords,
+    );
+
+    notifier.addAngleKeyword(slug, '  KW-0 '); // doublon normalisé
+    expect(
+      container.read(veilleConfigProvider).angleKeywords[slug]!.length,
+      VeilleConfigNotifier.maxAngleKeywords,
+    );
+
+    notifier.removeAngleKeyword(slug, 'kw-0');
+    expect(
+      container.read(veilleConfigProvider).angleKeywords[slug],
+      isNot(contains('kw-0')),
+    );
   });
+
+  test(
+    '_buildUpsertRequest peuple keywords sur le topic suggested de l\'angle',
+    () async {
+      final repo = _CaptureRepo();
+      final c = ProviderContainer(
+        overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+      );
+      addTearDown(c.dispose);
+      final n = c.read(veilleConfigProvider.notifier);
+
+      n.selectTheme('tech');
+      n.toggleAngle(angle);
+      await n.submit();
+
+      final slug = VeilleConfigNotifier.angleSlug(angle.title);
+      final topic = repo.captured!.topics.firstWhere((t) => t.topicId == slug);
+      expect(topic.kind, 'suggested');
+      expect(topic.keywords, ['ia générative', 'llm', 'chatgpt']);
+      final json = topic.toJson();
+      expect(json['keywords'], ['ia générative', 'llm', 'chatgpt']);
+    },
+  );
+
+  // ─── Sujet principal granulaire (Story 23.4) ────────────────────────────
+
+  test(
+    'selectMainTopic émet le sujet principal en position 0 (kind preset)',
+    () async {
+      final repo = _CaptureRepo();
+      final c = ProviderContainer(
+        overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+      );
+      addTearDown(c.dispose);
+      final n = c.read(veilleConfigProvider.notifier);
+
+      n.selectTheme('tech');
+      n.selectMainTopic('ai', 'Intelligence artificielle');
+      // Un angle optionnel à côté, pour vérifier que le main reste en tête.
+      n.toggleAngle(angle);
+      await n.submit();
+
+      final topics = repo.captured!.topics;
+      expect(topics.first.topicId, 'ai');
+      expect(
+        topics.first.kind,
+        'preset',
+        reason: 'slug canonique → Content.topics',
+      );
+      expect(topics.first.position, 0);
+      // Pas de doublon du main dans les angles.
+      expect(topics.where((t) => t.topicId == 'ai').length, 1);
+    },
+  );
+
+  test('selectTheme reset le sujet principal au changement de macro', () {
+    notifier.selectTheme('tech');
+    notifier.selectMainTopic('ai', 'IA');
+    expect(container.read(veilleConfigProvider).mainTopicSlug, 'ai');
+
+    notifier.selectTheme('science');
+    final s = container.read(veilleConfigProvider);
+    expect(s.mainTopicSlug, isNull);
+    expect(s.mainTopicLabel, isNull);
+  });
+
+  test('selectMainTopic re-tap désélectionne', () {
+    notifier.selectTheme('tech');
+    notifier.selectMainTopic('ai', 'IA');
+    notifier.selectMainTopic('ai', 'IA');
+    expect(container.read(veilleConfigProvider).mainTopicSlug, isNull);
+  });
+
+  test(
+    'resolveCustomMainTopic enrichit un sujet local veille en main custom',
+    () async {
+      final repo = _CaptureRepo();
+      final c = ProviderContainer(
+        overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+      );
+      addTearDown(c.dispose);
+      final n = c.read(veilleConfigProvider.notifier);
+
+      n.selectTheme('culture');
+      await n.resolveCustomMainTopic('musées barcelone');
+
+      final s = c.read(veilleConfigProvider);
+      expect(s.mainTopicSlug, 'custom-musees-contemporains-de-barcelone');
+      expect(s.mainTopicLabel, 'Musées contemporains de Barcelone');
+      expect(s.angleKeywords[s.mainTopicSlug], ['macba', 'exposition']);
+      expect(s.customTopics.single.id, s.mainTopicSlug);
+    },
+  );
+
+  test(
+    'hydrateFromActiveConfig restaure macro + sujet principal (position 0)',
+    () {
+      final cfg = VeilleConfigDto(
+        id: 'cfg-1',
+        userId: 'user-1',
+        themeId: 'tech',
+        themeLabel: 'Tech',
+        status: 'active',
+        createdAt: DateTime(2024),
+        updatedAt: DateTime(2024),
+        topics: const [
+          VeilleTopicDto(
+            id: 't0',
+            topicId: 'ai',
+            label: 'IA',
+            kind: 'preset',
+            reason: null,
+            position: 0,
+            keywords: [],
+          ),
+          VeilleTopicDto(
+            id: 't1',
+            topicId: 'angle-x',
+            label: 'Angle X',
+            kind: 'suggested',
+            reason: null,
+            position: 1,
+            keywords: ['gpt'],
+          ),
+        ],
+        sources: const [],
+        keywords: const [],
+      );
+
+      notifier.hydrateFromActiveConfig(cfg);
+      final s = container.read(veilleConfigProvider);
+      expect(s.selectedTheme, 'tech', reason: 'macro restauré');
+      expect(s.mainTopicSlug, 'ai', reason: 'granulaire = topic position 0');
+      expect(s.mainTopicLabel, 'IA');
+      // Le sujet principal n'est PAS rejoué comme topic optionnel (sinon doublon).
+      expect(s.selectedTopics, isNot(contains('ai')));
+      expect(s.selectedSuggestions, contains('angle-x'));
+    },
+  );
 }

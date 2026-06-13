@@ -3,15 +3,11 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
-import '../widgets/halo_loader.dart';
 import '../widgets/veille_widgets.dart';
 
 /// Écran d'introduction au flow Veille — affiché au premier accès
 /// (pas de config active, pas de mode édition). Cadre le pitch avant
-/// le wizard en 4 étapes.
-///
-/// Layout single-page : header simplifié (close), illustration centrale
-/// (HaloLoader animé), pitch, CTA primaire « C'est parti ».
+/// le wizard en 3 étapes.
 class VeilleIntroScreen extends StatelessWidget {
   final VoidCallback onClose;
   final VoidCallback onStart;
@@ -50,10 +46,14 @@ class VeilleIntroScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
             child: Column(
               children: [
-                const SizedBox(height: 12),
-                const HaloLoader(),
+                const SizedBox(height: 40),
+                Icon(
+                  PhosphorIcons.binoculars(PhosphorIconsStyle.duotone),
+                  size: 72,
+                  color: const Color(0xFF2C3E50),
+                ),
                 const SizedBox(height: 28),
-                const VeilleAiEyebrow('Le facteur prépare ta veille'),
+                const VeilleAiEyebrow('Ta veille personnalisée'),
                 const SizedBox(height: 14),
                 Text(
                   'Une veille pensée pour toi',
@@ -70,9 +70,9 @@ class VeilleIntroScreen extends StatelessWidget {
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 320),
                   child: Text(
-                    'Choisis un thème, on s\'occupe de trouver les bons '
-                    'angles, les bonnes sources, et de te livrer un digest '
-                    'au rythme qui te convient.',
+                    'Configure une veille sur-mesure — elle s\'ajoutera à '
+                    'ta Tournée du jour avec ses propres sujets, sources et '
+                    'angles.',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.dmSans(
                       fontSize: 14,

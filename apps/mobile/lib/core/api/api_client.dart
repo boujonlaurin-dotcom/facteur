@@ -1,9 +1,39 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/constants.dart';
 import '../auth/session_refresher.dart';
 import 'retry_interceptor.dart';
+
+/// Notifier global pour les 410 Gone interceptés par [ApiClient].
+///
+/// Story 23.2 PR-4 — quand un endpoint retiré (par exemple les routes LLM
+/// `/api/veille/suggestions/*` ou `/api/veille/deliveries/*` post-Story 23.1)
+/// est appelé par un client mobile pas encore à jour, le backend répond
+/// 410 Gone. L'UI top-level peut écouter ce notifier pour afficher un banner
+/// "Mise à jour requise" sans coupler ApiClient à un BuildContext.
+///
+/// Implémenté comme singleton lazy parce que ApiClient est instancié dans un
+/// provider Riverpod et n'a pas accès au Navigator/Overlay/ScaffoldMessenger.
+class ApiGoneNotifier extends ChangeNotifier {
+  ApiGoneNotifier._();
+  static final ApiGoneNotifier instance = ApiGoneNotifier._();
+
+  String? _lastGonePath;
+  String? get lastGonePath => _lastGonePath;
+
+  void onGoneReceived(String path) {
+    _lastGonePath = path;
+    notifyListeners();
+  }
+
+  void clear() {
+    if (_lastGonePath == null) return;
+    _lastGonePath = null;
+    notifyListeners();
+  }
+}
 
 /// Client API basé sur Dio avec authentification automatique
 class ApiClient {
@@ -27,7 +57,13 @@ class ApiClient {
     String? baseUrl,
     this.onAuthError,
     this.onAuthRecovered,
+    String? appVersion,
   }) {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      if (appVersion != null) 'X-App-Version': appVersion,
+    };
     _dio = Dio(
       BaseOptions(
         baseUrl: baseUrl ?? ApiConstants.baseUrl,
@@ -35,10 +71,7 @@ class ApiClient {
         // Backend optimizations are in progress, this buys time for those to take effect
         connectTimeout: const Duration(seconds: 30),
         receiveTimeout: ApiConstants.timeout,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        headers: headers,
       ),
     );
 
@@ -170,6 +203,14 @@ class ApiClient {
             }
             // Aucun fallthrough vers onAuthError(403) ici : les 403 transients
             // et non-email (rate limit, RLS) passent tels quels au caller.
+          } else if (statusCode == 410) {
+            // Story 23.2 PR-4 : un 410 Gone signale que l'endpoint a été retiré
+            // (cas des endpoints LLM veille post-Story 23.1). Les vieux clients
+            // mobile qui tomberaient ici doivent être invités à mettre à jour.
+            // ignore: avoid_print
+            print(
+                '⚠️ ApiClient: 410 Gone on ${error.requestOptions.path} — endpoint retired. User should update.');
+            ApiGoneNotifier.instance.onGoneReceived(error.requestOptions.path);
           }
 
           // Logger les erreurs (sans les tokens)

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../my_interests/models/user_interests_state.dart';
+import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
 import 'pepite_card.dart';
@@ -12,12 +14,16 @@ import 'source_detail_modal.dart';
 /// le feed pour aider à découvrir des sources de qualité. Visibilité gérée
 /// côté backend (rate-limit + cool-down) : liste vide → SizedBox.shrink.
 class PepitesCarousel extends ConsumerWidget {
-  const PepitesCarousel({super.key});
+  final bool alwaysVisible;
+
+  const PepitesCarousel({super.key, this.alwaysVisible = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
-    final asyncPepites = ref.watch(pepitesProvider);
+    final asyncPepites = alwaysVisible
+        ? ref.watch(pepitesAlwaysProvider)
+        : ref.watch(pepitesProvider);
 
     return asyncPepites.when(
       data: (sources) {
@@ -64,9 +70,11 @@ class PepitesCarousel extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                _DismissButton(
-                  onPressed: () => ref.read(pepitesProvider.notifier).dismiss(),
-                ),
+                if (!alwaysVisible)
+                  _DismissButton(
+                    onPressed: () =>
+                        ref.read(pepitesProvider.notifier).dismiss(),
+                  ),
               ],
             ),
           ),
@@ -80,13 +88,19 @@ class PepitesCarousel extends ConsumerWidget {
               separatorBuilder: (_, __) => const SizedBox(width: 10),
               itemBuilder: (_, index) {
                 final source = sources[index];
-                final isFollowing = ref.watch(userSourcesProvider).maybeWhen(
+                final state = ref.watch(userSourcesStateProvider).valueOrNull;
+                final legacyFollowing = ref
+                    .watch(userSourcesProvider)
+                    .maybeWhen(
                       data: (list) =>
                           list.any((s) => s.id == source.id && s.isTrusted),
-                      orElse: () => false,
+                      orElse: () => source.isTrusted,
                     );
+                final isFollowing =
+                    _isFollowedSourceState(state?.stateOf(source.id)) ||
+                    legacyFollowing;
                 return PepiteCard(
-                  source: source,
+                  source: source.copyWith(isTrusted: isFollowing),
                   isFollowing: isFollowing,
                   onToggleFollow: () =>
                       _onToggleFollow(ref, source, isFollowing),
@@ -105,9 +119,16 @@ class PepitesCarousel extends ConsumerWidget {
     Source source,
     bool currentlyFollowing,
   ) async {
-    await ref
-        .read(userSourcesProvider.notifier)
-        .toggleTrust(source.id, currentlyFollowing);
+    if (currentlyFollowing) return;
+
+    try {
+      await ref
+          .read(userSourcesStateProvider.notifier)
+          .setSourceState(source.id, InterestState.followed);
+      ref.invalidate(userSourcesProvider);
+    } catch (_) {
+      // Rollback is handled by userSourcesStateProvider's optimistic notifier.
+    }
   }
 
   void _onTap(BuildContext context, WidgetRef ref, Source source) {
@@ -116,21 +137,43 @@ class PepitesCarousel extends ConsumerWidget {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        final live = ref.watch(userSourcesProvider).maybeWhen(
+        final state = ref.watch(userSourcesStateProvider).valueOrNull;
+        final live = ref
+            .watch(userSourcesProvider)
+            .maybeWhen(
               data: (list) =>
                   list.where((s) => s.id == source.id).firstOrNull ?? source,
               orElse: () => source,
             );
+        final stateFollowing = _isFollowedSourceState(
+          state?.stateOf(source.id),
+        );
+        final display = live.copyWith(
+          isTrusted: stateFollowing || live.isTrusted,
+        );
         return SourceDetailModal(
-          source: live,
-          onToggleTrust: () => ref
-              .read(userSourcesProvider.notifier)
-              .toggleTrust(source.id, live.isTrusted),
+          source: display,
+          onToggleTrust: () async {
+            final next = display.isTrusted
+                ? InterestState.unfollowed
+                : InterestState.followed;
+            try {
+              await ref
+                  .read(userSourcesStateProvider.notifier)
+                  .setSourceState(source.id, next);
+              ref.invalidate(userSourcesProvider);
+            } catch (_) {
+              // Optimistic rollback is handled by the canonical notifier.
+            }
+          },
         );
       },
     );
   }
 }
+
+bool _isFollowedSourceState(InterestState? state) =>
+    state == InterestState.followed || state == InterestState.favorite;
 
 class _DismissButton extends StatelessWidget {
   final VoidCallback onPressed;

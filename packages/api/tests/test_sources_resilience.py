@@ -173,22 +173,39 @@ class TestSourcesCache:
 # ─── get_sources router ────────────────────────────────────────────────
 
 
+def _make_mock_session_ctx(session: MagicMock) -> MagicMock:
+    """Crée un faux async context manager simulant safe_async_session().
+
+    Fix PYTHON-4R : get_sources() ouvre maintenant sa propre session APRÈS
+    le lock (via safe_async_session()), donc les tests doivent mocker
+    safe_async_session plutôt que de passer db= en argument.
+    """
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=session)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    return ctx
+
+
 class TestGetSourcesEndpoint:
     @pytest.mark.asyncio
     async def test_returns_503_when_db_keeps_failing(self):
         from app.routers import sources as sources_mod
 
         user_id = str(uuid4())
-        db = MagicMock()
-        db.rollback = AsyncMock()
+        mock_session = MagicMock()
+        mock_session.rollback = AsyncMock()
 
         failing_service = MagicMock()
         failing_service.get_all_sources = AsyncMock(side_effect=_op_error("pool gone"))
 
+        mock_ctx = _make_mock_session_ctx(mock_session)
+
         with patch.object(
+            sources_mod, "safe_async_session", MagicMock(return_value=mock_ctx)
+        ), patch.object(
             sources_mod, "SourceService", MagicMock(return_value=failing_service)
         ), pytest.raises(HTTPException) as exc_info:
-            await sources_mod.get_sources(user_id=user_id, db=db)
+            await sources_mod.get_sources(user_id=user_id)
 
         assert exc_info.value.status_code == 503
         assert exc_info.value.detail == "sources_unavailable"
@@ -200,8 +217,8 @@ class TestGetSourcesEndpoint:
         from app.routers import sources as sources_mod
 
         user_id = str(uuid4())
-        db = MagicMock()
-        db.rollback = AsyncMock()
+        mock_session = MagicMock()
+        mock_session.rollback = AsyncMock()
 
         payload = SourceCatalogResponse(curated=[], custom=[])
         recovering_service = MagicMock()
@@ -209,10 +226,14 @@ class TestGetSourcesEndpoint:
             side_effect=[_op_error(), payload]
         )
 
+        mock_ctx = _make_mock_session_ctx(mock_session)
+
         with patch.object(
+            sources_mod, "safe_async_session", MagicMock(return_value=mock_ctx)
+        ), patch.object(
             sources_mod, "SourceService", MagicMock(return_value=recovering_service)
         ):
-            result = await sources_mod.get_sources(user_id=user_id, db=db)
+            result = await sources_mod.get_sources(user_id=user_id)
 
         assert result is payload
         assert recovering_service.get_all_sources.await_count == 2
@@ -226,15 +247,18 @@ class TestGetSourcesEndpoint:
         from app.routers import sources as sources_mod
 
         user_id = str(uuid4())
-        db = MagicMock()
         payload = SourceCatalogResponse(curated=[], custom=[])
         SOURCES_CACHE.put(UUID(user_id), payload)
 
         service_factory = MagicMock()
+        mock_safe_session = MagicMock()  # ne doit PAS être appelé (cache hit)
 
-        with patch.object(sources_mod, "SourceService", service_factory):
-            result = await sources_mod.get_sources(user_id=user_id, db=db)
+        with patch.object(
+            sources_mod, "safe_async_session", mock_safe_session
+        ), patch.object(sources_mod, "SourceService", service_factory):
+            result = await sources_mod.get_sources(user_id=user_id)
 
         assert result is payload
-        # Service must not even be instantiated
+        # Ni le service ni la session ne doivent être instanciés
         service_factory.assert_not_called()
+        mock_safe_session.assert_not_called()

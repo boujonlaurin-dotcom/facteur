@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# Slugs autorisés pour `theme_id` dans les requêtes de suggestion. Doit
-# rester aligné avec la contrainte SQL `ck_source_theme_valid` (cf.
-# alembic/versions/*_add_*_to_constraint.py) ET avec la liste des thèmes
-# Facteur côté front (`kVeilleFacteurThemes`) + onboarding
-# (`user_service.py:170`). Un slug hors liste → 422 immédiat.
 VeilleThemeSlug = Literal[
     "tech",
     "society",
@@ -25,8 +20,13 @@ VeilleThemeSlug = Literal[
     "sport",
 ]
 
+MAX_KEYWORDS_PER_CONFIG = 20
+MAX_SUGGEST_SOURCE_ANGLES = 20
+MAX_SUGGEST_SOURCE_KEYWORDS = 40
 
-# ─── Sub-objects ─────────────────────────────────────────────────────────────
+
+def _normalize_keyword(raw: str) -> str:
+    return " ".join(raw.split()).lower()
 
 
 class VeilleTopicResponse(BaseModel):
@@ -38,6 +38,8 @@ class VeilleTopicResponse(BaseModel):
     kind: Literal["preset", "suggested", "custom"]
     reason: str | None = None
     position: int = 0
+    # Grappe de mots-clés de l'angle (round-trip avec VeilleTopicSelection).
+    keywords: list[str] = Field(default_factory=list)
 
 
 class VeilleSourceLite(BaseModel):
@@ -63,9 +65,33 @@ class VeilleSourceResponse(BaseModel):
     kind: Literal["followed", "niche"]
     why: str | None = None
     position: int = 0
+    # Santé du flux (alimente le badge « flux inactif / aucun article récent »
+    # côté config). `last_article_at` = date du dernier article ingéré ;
+    # `recent_article_count` = nb d'articles sur la fenêtre Bloc A (30 j).
+    last_article_at: datetime | None = None
+    recent_article_count: int = 0
 
 
-# ─── Config (GET / POST / PATCH) ─────────────────────────────────────────────
+class VeilleKeywordResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    keyword: str
+    position: int = 0
+
+
+class VeilleUnconnectedSource(BaseModel):
+    """Source niche dont le flux RSS n'a pas pu être détecté à l'enregistrement.
+
+    Renvoyée par `POST /api/veille/config` pour que le mobile puisse afficher
+    « X sources n'ont pas pu être connectées » + une CTA de recherche, au lieu
+    de les laisser disparaître silencieusement (cf. plan veille V0, Problème 1).
+    """
+
+    url: str
+    reason: str
+    client_slug: str | None = None
+    name: str | None = None
 
 
 class VeilleConfigResponse(BaseModel):
@@ -75,21 +101,18 @@ class VeilleConfigResponse(BaseModel):
     user_id: UUID
     theme_id: str
     theme_label: str
-    frequency: Literal["weekly", "biweekly", "monthly"]
-    day_of_week: int | None = None
-    delivery_hour: int = 7
-    timezone: str = "Europe/Paris"
     status: Literal["active", "paused", "archived"]
-    last_delivered_at: datetime | None = None
-    next_scheduled_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     topics: list[VeilleTopicResponse] = []
     sources: list[VeilleSourceResponse] = []
+    keywords: list[VeilleKeywordResponse] = []
     purpose: str | None = None
-    purpose_other: str | None = None
     editorial_brief: str | None = None
     preset_id: str | None = None
+    # Sources niche dont le flux RSS n'a pas pu être détecté lors de l'upsert.
+    # Toujours vide sur GET /config ; peuplé uniquement par POST /config.
+    unconnected_sources: list[VeilleUnconnectedSource] = Field(default_factory=list)
 
 
 class VeilleTopicSelection(BaseModel):
@@ -98,6 +121,21 @@ class VeilleTopicSelection(BaseModel):
     kind: Literal["preset", "suggested", "custom"]
     reason: str | None = Field(default=None, max_length=500)
     position: int = Field(default=0, ge=0)
+    # Grappe de mots-clés de l'angle — normalisés lowercase, dédupliqués.
+    # Ces mots-clés pilotent le scoring (custom-topic) en plus du slug.
+    keywords: list[str] = Field(default_factory=list, max_length=10)
+
+    @field_validator("keywords")
+    @classmethod
+    def _normalize_cluster(cls, v: list[str]) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for raw in v:
+            kw = _normalize_keyword(raw)
+            if kw and 1 <= len(kw) <= 80 and kw not in seen:
+                seen.add(kw)
+                out.append(kw)
+        return out
 
 
 class VeilleNicheCandidate(BaseModel):
@@ -106,6 +144,7 @@ class VeilleNicheCandidate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     url: str = Field(min_length=4, max_length=2048)
     why: str | None = Field(default=None, max_length=500)
+    client_slug: str | None = Field(default=None, max_length=120)
 
 
 class VeilleSourceSelection(BaseModel):
@@ -118,145 +157,49 @@ class VeilleSourceSelection(BaseModel):
     position: int = Field(default=0, ge=0)
 
 
+class VeilleKeywordSelection(BaseModel):
+    """Mot-clé / angle libre saisi par l'utilisateur — normalisé lowercase."""
+
+    keyword: str = Field(min_length=2, max_length=60)
+    position: int = Field(default=0, ge=0)
+
+    @field_validator("keyword")
+    @classmethod
+    def _normalize(cls, v: str) -> str:
+        return _normalize_keyword(v)
+
+
 class VeilleConfigUpsert(BaseModel):
+    """Upsert config veille. Au moins UN parmi topics/sources/keywords requis."""
+
     theme_id: str = Field(min_length=1, max_length=50)
     theme_label: str = Field(min_length=1, max_length=120)
     topics: list[VeilleTopicSelection] = Field(default_factory=list)
-    # min_length=1 garantit qu'aucune config n'est créée sans source résolue —
-    # cf. bug-veille-config-without-sources.md (digest vide systématique quand
-    # le mobile retombait sur un fallback mock sans `apiSourceId`).
-    source_selections: list[VeilleSourceSelection] = Field(min_length=1)
-    frequency: Literal["weekly", "biweekly", "monthly"]
-    day_of_week: int | None = Field(default=None, ge=0, le=6)
-    delivery_hour: int = Field(default=7, ge=0, le=23)
-    timezone: str = Field(default="Europe/Paris", max_length=64)
-    # V1 personalization — acceptés par le schéma (PR A) mais persistance
-    # cablée plus tard (PR B).
+    source_selections: list[VeilleSourceSelection] = Field(default_factory=list)
+    keywords: list[VeilleKeywordSelection] = Field(
+        default_factory=list, max_length=MAX_KEYWORDS_PER_CONFIG
+    )
     purpose: str | None = Field(default=None, max_length=80)
-    purpose_other: str | None = Field(default=None, max_length=80)
     editorial_brief: str | None = Field(default=None, max_length=280)
     preset_id: str | None = Field(default=None, max_length=80)
 
+    @field_validator("keywords")
+    @classmethod
+    def _dedupe_keywords(
+        cls, v: list[VeilleKeywordSelection]
+    ) -> list[VeilleKeywordSelection]:
+        seen: set[str] = set()
+        out: list[VeilleKeywordSelection] = []
+        for kw in v:
+            if kw.keyword in seen:
+                continue
+            seen.add(kw.keyword)
+            out.append(kw)
+        return out
 
-class VeilleConfigPatch(BaseModel):
-    frequency: Literal["weekly", "biweekly", "monthly"] | None = None
-    day_of_week: int | None = Field(default=None, ge=0, le=6)
-    delivery_hour: int | None = Field(default=None, ge=0, le=23)
-    timezone: str | None = Field(default=None, max_length=64)
-    status: Literal["active", "paused", "archived"] | None = None
-    purpose: str | None = Field(default=None, max_length=80)
-    purpose_other: str | None = Field(default=None, max_length=80)
-    editorial_brief: str | None = Field(default=None, max_length=280)
-    preset_id: str | None = Field(default=None, max_length=80)
-
-
-# ─── Suggestions ─────────────────────────────────────────────────────────────
-
-
-class VeilleTopicSuggestion(BaseModel):
-    topic_id: str
-    label: str
-    reason: str | None = None
-
-
-class VeilleSuggestTopicsRequest(BaseModel):
-    theme_id: VeilleThemeSlug
-    theme_label: str = Field(min_length=1, max_length=120)
-    selected_topic_ids: list[str] = Field(default_factory=list)
-    exclude_topic_ids: list[str] = Field(default_factory=list)
-    purpose: str | None = Field(default=None, max_length=80)
-    purpose_other: str | None = Field(default=None, max_length=80)
-    editorial_brief: str | None = Field(default=None, max_length=280)
-
-
-class VeilleSourceSuggestion(BaseModel):
-    source_id: UUID
-    name: str
-    url: str
-    feed_url: str
-    theme: str
-    why: str | None = None
-    is_already_followed: bool = False
-    relevance_score: float | None = None
-
-
-class VeilleSourceSuggestionsResponse(BaseModel):
-    sources: list[VeilleSourceSuggestion]
-
-
-class VeilleSuggestSourcesRequest(BaseModel):
-    theme_id: VeilleThemeSlug
-    topic_labels: list[str] = Field(default_factory=list)
-    exclude_source_ids: list[UUID] = Field(default_factory=list)
-    purpose: str | None = Field(default=None, max_length=80)
-    purpose_other: str | None = Field(default=None, max_length=80)
-    editorial_brief: str | None = Field(default=None, max_length=280)
-
-
-# ─── Deliveries ──────────────────────────────────────────────────────────────
-
-
-class VeilleDeliveryListItem(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    veille_config_id: UUID
-    target_date: date
-    generation_state: Literal["pending", "running", "succeeded", "failed"]
-    item_count: int = 0
-    generated_at: datetime | None = None
-    created_at: datetime
-
-
-class VeilleDeliveryArticle(BaseModel):
-    """Article référencé dans un cluster d'une livraison veille."""
-
-    content_id: UUID
-    source_id: UUID
-    title: str
-    url: str
-    excerpt: str = ""
-    published_at: datetime
-
-
-class VeilleDeliveryItem(BaseModel):
-    """Cluster thématique exposé au front (Story 18.2)."""
-
-    cluster_id: str
-    title: str
-    articles: list[VeilleDeliveryArticle] = Field(default_factory=list)
-    why_it_matters: str = ""
-
-
-class VeilleDeliveryResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    veille_config_id: UUID
-    target_date: date
-    items: list[VeilleDeliveryItem] = Field(default_factory=list)
-    generation_state: Literal["pending", "running", "succeeded", "failed"]
-    attempts: int
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
-    last_error: str | None = None
-    version: int
-    generated_at: datetime | None = None
-    created_at: datetime
-    updated_at: datetime
-
-
-class VeilleGenerateRequest(BaseModel):
-    """Force une génération pour la config courante au target_date=today."""
-
-    target_date: date | None = None
-
-
-class VeilleGenerateFirstResponse(BaseModel):
-    """Réponse 202 du POST /deliveries/generate-first."""
-
-    delivery_id: UUID
-    estimated_seconds: int = 60
+    def model_post_init(self, __context: object) -> None:
+        if not (self.topics or self.source_selections or self.keywords):
+            raise ValueError("Au moins un topic, une source ou un mot-clé est requis.")
 
 
 class VeilleSourceExample(BaseModel):
@@ -266,9 +209,6 @@ class VeilleSourceExample(BaseModel):
     url: str
     published_at: datetime | None = None
     excerpt: str = ""
-
-
-# ─── Presets (V1 onboarding) ─────────────────────────────────────────────────
 
 
 class VeillePresetResponse(BaseModel):
@@ -288,3 +228,151 @@ class VeillePresetResponse(BaseModel):
     purposes: list[str] = Field(default_factory=list)
     editorial_brief: str = ""
     sources: list[VeilleSourceLite] = Field(default_factory=list)
+
+
+class VeilleFeedArticle(BaseModel):
+    """Article exposé par GET /api/veille/feed."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    title: str
+    url: str
+    description: str | None = None
+    published_at: datetime | None = None
+    source: VeilleSourceLite
+    theme: str | None = None
+    topics: list[str] = Field(default_factory=list)
+    thumbnail_url: str | None = None
+    matched_on: list[Literal["theme", "topic", "source", "keyword"]] = Field(
+        default_factory=list
+    )
+    # Bloc de curation auquel appartient l'article (refonte deux blocs) :
+    # « sources » = Bloc A « Tes sources » ; « elargie » = Bloc B « Couverture
+    # élargie ». Le mobile dérive les en-têtes de section au rendu sur les
+    # transitions de `group`. Défaut backward-safe (clients pré-refonte).
+    group: Literal["sources", "elargie"] = "sources"
+
+
+class VeilleFeedResponse(BaseModel):
+    """Réponse de GET /api/veille/feed."""
+
+    items: list[VeilleFeedArticle] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+    has_more: bool = False
+
+
+# ─── Suggesters LLM (Story 23.3) ─────────────────────────────────────────────
+
+
+class VeilleResolveTopicRequest(BaseModel):
+    """Input du POST /api/veille/resolve/topic."""
+
+    topic: str = Field(min_length=2, max_length=200)
+    theme_id: str | None = Field(default=None, max_length=50)
+    theme_label: str | None = Field(default=None, max_length=120)
+
+
+class VeilleResolveTopicResponse(BaseModel):
+    """Sujet libre enrichi pour une veille, sans création de UserTopicProfile."""
+
+    label: str = Field(min_length=1, max_length=200)
+    topic_id: str = Field(min_length=1, max_length=80)
+    keywords: list[str] = Field(default_factory=list, max_length=10)
+    description: str = ""
+    metadata: dict[str, str | None] = Field(default_factory=dict)
+
+
+class VeilleSuggestAnglesRequest(BaseModel):
+    """Input du POST /api/veille/suggest/angles."""
+
+    theme_id: str = Field(min_length=1, max_length=50)
+    theme_label: str = Field(min_length=1, max_length=120)
+    brief: str = Field(default="", max_length=500)
+
+
+class VeilleAngleSuggestion(BaseModel):
+    """Un angle proposé par le LLM avec ses mots-clés explicites."""
+
+    title: str = Field(min_length=1, max_length=120)
+    keywords: list[str] = Field(default_factory=list, max_length=10)
+    reason: str | None = Field(default=None, max_length=300)
+
+
+class VeilleSuggestAnglesResponse(BaseModel):
+    angles: list[VeilleAngleSuggestion] = Field(default_factory=list)
+
+
+class VeilleSuggestSourcesRequest(BaseModel):
+    """Input du POST /api/veille/suggest/sources."""
+
+    theme_id: str = Field(min_length=1, max_length=50)
+    theme_label: str = Field(min_length=1, max_length=120)
+    brief: str = Field(default="", max_length=500)
+    angles: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+
+    @field_validator("angles", mode="after")
+    @classmethod
+    def truncate_angles(cls, v: list[str]) -> list[str]:
+        return v[:MAX_SUGGEST_SOURCE_ANGLES]
+
+    @field_validator("keywords", mode="after")
+    @classmethod
+    def truncate_keywords(cls, v: list[str]) -> list[str]:
+        return v[:MAX_SUGGEST_SOURCE_KEYWORDS]
+
+
+class VeilleSourceSuggestion(BaseModel):
+    """Une source proposée par le LLM — pas encore ingérée en DB."""
+
+    name: str = Field(min_length=1, max_length=200)
+    url: str = Field(min_length=4, max_length=2048)
+    why: str | None = Field(default=None, max_length=300)
+    relevance_score: float = Field(ge=0.0, le=1.0)
+
+
+class VeilleSuggestSourcesResponse(BaseModel):
+    sources: list[VeilleSourceSuggestion] = Field(default_factory=list)
+
+
+# ─── Résolution batch de sources candidates (Step 3) ────────────────────────
+
+
+class VeilleResolveSourceCandidate(BaseModel):
+    """Candidat source proposé/local côté mobile, pas encore attaché à la veille."""
+
+    client_slug: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=200)
+    url: str = Field(min_length=4, max_length=2048)
+    why: str | None = Field(default=None, max_length=500)
+
+
+class VeilleResolveSourceCandidatesRequest(BaseModel):
+    candidates: list[VeilleResolveSourceCandidate] = Field(
+        default_factory=list, max_length=12
+    )
+
+
+class VeilleResolvedSourceCandidate(BaseModel):
+    client_slug: str
+    source_id: UUID
+    name: str
+    url: str
+    feed_url: str
+    logo_url: str | None = None
+    description: str | None = None
+
+
+class VeilleFailedSourceCandidate(BaseModel):
+    client_slug: str
+    name: str
+    url: str
+    reason: str
+
+
+class VeilleResolveSourceCandidatesResponse(BaseModel):
+    resolved: list[VeilleResolvedSourceCandidate] = Field(default_factory=list)
+    failed: list[VeilleFailedSourceCandidate] = Field(default_factory=list)

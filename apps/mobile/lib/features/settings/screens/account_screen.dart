@@ -1,15 +1,19 @@
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/services/widget_service.dart';
+import '../../../core/ui/notification_service.dart';
 import '../providers/user_profile_provider.dart';
-import 'package:facteur/core/ui/notification_service.dart';
 
 /// Écran de gestion du compte utilisateur
 class AccountScreen extends ConsumerWidget {
@@ -64,8 +68,11 @@ class AccountScreen extends ConsumerWidget {
                   const SizedBox(height: FacteurSpacing.space2),
                   Row(
                     children: [
-                      Icon(Icons.email_outlined,
-                          color: colors.primary, size: 20),
+                      Icon(
+                        Icons.email_outlined,
+                        color: colors.primary,
+                        size: 20,
+                      ),
                       const SizedBox(width: FacteurSpacing.space3),
                       Expanded(
                         child: Column(
@@ -76,9 +83,7 @@ class AccountScreen extends ConsumerWidget {
                               style: Theme.of(context)
                                   .textTheme
                                   .labelSmall
-                                  ?.copyWith(
-                                    color: colors.textTertiary,
-                                  ),
+                                  ?.copyWith(color: colors.textTertiary),
                             ),
                             Text(
                               userEmail,
@@ -152,7 +157,8 @@ class AccountScreen extends ConsumerWidget {
                           ),
                           Icon(
                             PhosphorIcons.arrowSquareOut(
-                                PhosphorIconsStyle.regular),
+                              PhosphorIconsStyle.regular,
+                            ),
                             color: colors.textTertiary,
                             size: 18,
                           ),
@@ -191,7 +197,7 @@ class AccountScreen extends ConsumerWidget {
             SizedBox(
               width: double.infinity,
               child: TextButton(
-                onPressed: () => _showDeleteConfirmation(context, ref),
+                onPressed: () => _showDeleteConfirmation(context),
                 style: TextButton.styleFrom(
                   foregroundColor: colors.error,
                   padding: const EdgeInsets.symmetric(
@@ -209,40 +215,11 @@ class AccountScreen extends ConsumerWidget {
     );
   }
 
-  void _showDeleteConfirmation(BuildContext context, WidgetRef ref) {
-    final colors = context.facteurColors;
-
+  void _showDeleteConfirmation(BuildContext context) {
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: colors.surface,
-        title: Text(
-          'Supprimer mon compte ?',
-          style: TextStyle(color: colors.textPrimary),
-        ),
-        content: Text(
-          'Cette action est irréversible. Toutes vos données seront perdues.',
-          style: TextStyle(color: colors.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child:
-                Text('Annuler', style: TextStyle(color: colors.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-              // TODO: Implémenter la suppression via Supabase RPC
-              // Pour l'instant, on se contente de déconnecter
-              NotificationService.showError(
-                'Contactez le support pour supprimer votre compte.',
-              );
-            },
-            child: Text('Supprimer', style: TextStyle(color: colors.error)),
-          ),
-        ],
-      ),
+      barrierDismissible: false,
+      builder: (_) => const _DeleteAccountDialog(),
     );
   }
 
@@ -255,8 +232,10 @@ class AccountScreen extends ConsumerWidget {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: colors.surface,
-        title: Text('Nom d\'affichage',
-            style: TextStyle(color: colors.textPrimary)),
+        title: Text(
+          'Nom d\'affichage',
+          style: TextStyle(color: colors.textPrimary),
+        ),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -269,14 +248,16 @@ class AccountScreen extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child:
-                Text('Annuler', style: TextStyle(color: colors.textSecondary)),
+            child: Text(
+              'Annuler',
+              style: TextStyle(color: colors.textSecondary),
+            ),
           ),
           TextButton(
             onPressed: () {
-              ref.read(userProfileProvider.notifier).updateProfile(
-                    displayName: controller.text.trim(),
-                  );
+              ref
+                  .read(userProfileProvider.notifier)
+                  .updateProfile(displayName: controller.text.trim());
               Navigator.of(context).pop();
             },
             child: Text('Enregistrer', style: TextStyle(color: colors.primary)),
@@ -318,20 +299,141 @@ class _InfoRow extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colors.textTertiary,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(color: colors.textTertiary),
                 ),
-                Text(
-                  value,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
+                Text(value, style: Theme.of(context).textTheme.bodyMedium),
               ],
             ),
           ),
           Icon(Icons.edit_outlined, color: colors.textTertiary, size: 18),
         ],
       ),
+    );
+  }
+}
+
+/// Dialog de confirmation de suppression de compte avec garde-fou textuel.
+///
+/// Apple 5.1.1(v) et Google Play Account Deletion : la suppression doit être
+/// initiable depuis l'app et exécutable sans interaction manuelle du support.
+/// Le backend fait un soft-delete (deleted_at + email_hash) avec purge cron à
+/// J+30 — l'utilisateur peut se reconnecter pendant cette fenêtre pour annuler.
+class _DeleteAccountDialog extends ConsumerStatefulWidget {
+  const _DeleteAccountDialog();
+
+  @override
+  ConsumerState<_DeleteAccountDialog> createState() =>
+      _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends ConsumerState<_DeleteAccountDialog> {
+  static const _confirmationKeyword = 'SUPPRIMER';
+
+  final _controller = TextEditingController();
+  bool _isDeleting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  bool get _canDelete =>
+      !_isDeleting && _controller.text == _confirmationKeyword;
+
+  Future<void> _confirmDelete() async {
+    setState(() => _isDeleting = true);
+    try {
+      await ref.read(userApiServiceProvider).deleteAccount();
+      await ref.read(authStateProvider.notifier).signOut();
+      if (!mounted) return;
+      // Sortir explicitement du stack Settings vers le login. Le router a déjà
+      // un redirect basé sur isAuthenticated, mais goNamed garantit qu'on ne
+      // revient pas dans un écran orphelin (ex. Profile) après le pop.
+      Navigator.of(context).pop();
+      context.goNamed(RouteNames.login);
+    } on DioException {
+      if (!mounted) return;
+      setState(() => _isDeleting = false);
+      NotificationService.showError(
+        'Suppression impossible. Vérifie ta connexion et réessaye.',
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isDeleting = false);
+      NotificationService.showError(
+        'Une erreur est survenue. Réessaye plus tard.',
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+
+    return AlertDialog(
+      backgroundColor: colors.surface,
+      title: Text(
+        'Supprimer mon compte ?',
+        style: TextStyle(color: colors.textPrimary),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Toutes tes données (profil, préférences, historique de lecture) '
+            'seront supprimées. Tu as 30 jours pour annuler la suppression en '
+            'te reconnectant — passé ce délai, l\'effacement est définitif.',
+            style: TextStyle(color: colors.textSecondary),
+          ),
+          const SizedBox(height: FacteurSpacing.space4),
+          Text(
+            'Tape $_confirmationKeyword pour confirmer.',
+            style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+          ),
+          const SizedBox(height: FacteurSpacing.space2),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            enabled: !_isDeleting,
+            textCapitalization: TextCapitalization.characters,
+            style: TextStyle(color: colors.textPrimary),
+            decoration: InputDecoration(
+              hintText: _confirmationKeyword,
+              hintStyle: TextStyle(color: colors.textTertiary),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isDeleting ? null : () => Navigator.of(context).pop(),
+          child: Text('Annuler', style: TextStyle(color: colors.textSecondary)),
+        ),
+        TextButton(
+          onPressed: _canDelete ? _confirmDelete : null,
+          child: _isDeleting
+              ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colors.error,
+                  ),
+                )
+              : Text('Supprimer', style: TextStyle(color: colors.error)),
+        ),
+      ],
     );
   }
 }

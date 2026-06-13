@@ -16,6 +16,9 @@ class NudgeIds {
   static const feedSwipeHint = 'feed_swipe_hint';
   static const feedBadgeLongpress = 'feed_badge_longpress';
   static const feedPreviewLongpress = 'feed_preview_longpress';
+  static const personalisationCta = 'personalisation_cta';
+  // ID kept after the slider→picker migration so users who already dismissed
+  // the explainer don't see it pop again.
   static const prioritySliderExplainer = 'priority_slider_explainer';
   static const articleSaveNotes = 'article_save_notes';
   static const perspectivesCta = 'perspectives_cta';
@@ -23,4 +26,7 @@ class NudgeIds {
 
   // Story 14.3 — self-reported "well-informed" score (NPS-style).
   static const wellInformedPoll = 'well_informed_poll';
+
+  // Story web.1 — Modal "Ajouter à l'écran d'accueil" sur iOS Safari.
+  static const iosAddToHome = 'ios_add_to_home';
 }

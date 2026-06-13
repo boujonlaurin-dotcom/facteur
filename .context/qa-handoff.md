@@ -1,91 +1,60 @@
-# QA Handoff — Veille `/suggestions/sources` : savepoint + timeouts + retry mobile
+# QA Handoff — Modes d'affichage des articles (Story 10.1, finalisation)
+
+> Rempli par l'agent dev. Input de /validate-feature.
 
 ## Feature développée
-Hotfix critique sur le bug "loading infini" perçu en Step 3 de l'onboarding veille (PYTHON-3P/3Q : 13 occurrences en 3 h, 2 users). Trois corrections backend (savepoint par candidat, timeouts par candidat + global LLM, sentry capture) + une correction mobile (réintroduction du bouton « Réessayer » perdu dans PR2 #562).
+Différenciation réelle des 3 modes d'affichage (Normal / Minimaliste / Ludique) : le minimaliste révèle plus d'articles par section (le fit peut monter au-dessus du top 3 nominal, plafond 7) avec titres jusqu'à 5 lignes ; le ludique met l'image en élément principal (pleine largeur en haut de carte, hauteur fixe 170, fontScale 1.05, titres 3 lignes). Bonus : le CTA « Tout lire » de bas de section est remplacé par un banner cliquable (chevron accent + « +X » gris dans le titre) et les chips de thème des tuiles de l'Essentiel sont retirées.
 
 ## PR associée
-À créer après /go (cible : `main`).
+À créer via /go (base main).
 
 ## Écrans impactés
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Step 3 — Sources | `/veille/config` (step 3) | Modifié (bouton Réessayer dans `_MockSourcesFallback`) |
+| Tournée (Flux Continu) | / (home) | Modifié (cartes, banners, fit) |
+| Profil → Affichage des articles | /profile (bottom sheet) | Existant (sélecteur de mode) |
+| Page thème / source (deep-dive) | /flux-continu/theme/:key | Modifié (accès via tap banner) |
+| Flâner (banner large) | page Flâner | Inchangé attendu (pas de chevron) |
 
 ## Scénarios de test
 
-### Scénario 1 : Happy path — sources arrivent normalement
+### Scénario 1 : Mode minimaliste — plus d'articles
 **Parcours** :
-1. App connectée, sans veille active.
-2. Aller sur `/veille/config` → Step 1 (thème) → choisir « Tech ».
-3. Step 2 (topics) → choisir 2-3 topics.
-4. Step 2 → tap « Continuer ».
-5. Animation halo Step 2→3.
-**Résultat attendu** :
-- Le serveur répond en < 25 s (timeouts en place).
-- Step 3 affiche la liste rankée par pertinence (8-12 sources).
-- Aucun spinner infini.
+1. Profil → « Affichage des articles » → Minimaliste → valider
+2. Revenir sur la Tournée
+**Résultat attendu** : cartes texte seul compactes ; les sections (Bonnes Nouvelles incluse) affichent plus de 3 articles si l'écran le permet (jusqu'à 7) ; titres longs jusqu'à 5 lignes ; aucune carte ne déborde de l'écran (filet `[fit-net]` silencieux).
 
-### Scénario 2 : Backend hang sur un domaine bad
+### Scénario 2 : Mode ludique — image en haut
 **Parcours** :
-1. Reproduire localement avec un candidat URL qui hang (ex : `binge.audio/feed/`).
-2. Lancer `/api/veille/suggestions/sources`.
-**Résultat attendu** :
-- Backend skip le candidat après 8 s (`source_suggester.candidate_timeout` log).
-- Les autres candidats sont ingérés normalement.
-- Réponse 200 sous 25 s.
+1. Profil → « Affichage des articles » → Ludique → valider
+2. Parcourir la Tournée
+**Résultat attendu** : cartes régulières avec image pleine largeur en haut (type carrousel) et texte dessous ; textes à peine plus gros que Normal (1.05) ; titres max 3 lignes ; badge play conservé sur les vidéos ; hero Essentiel inchangé structurellement.
 
-### Scénario 3 : Backend 503 (PendingRollbackError simulé) — fallback mobile
+### Scénario 3 : Carte ludique avec image cassée (cas d'erreur)
 **Parcours** :
-1. Backend down ou throw 503 sur `/suggestions/sources`.
-2. Step 3 mounted → spinner pendant ~30 s (timeout Dio) puis erreur API.
-**Résultat attendu** :
-- Mock fallback affiché avec message « Suggestions indisponibles, conserve ta sélection. ».
-- **Bouton « Réessayer » présent et cliquable** (régression PR2 #562 corrigée).
-- Tap « Réessayer » → relance la requête (`refreshKeepingChecked`).
-- Si backend toujours KO → reste sur le mock fallback ; si recovery → liste rankée affichée.
+1. En mode ludique, trouver un article dont la vignette 404 (ou couper le réseau après le 1er rendu)
+**Résultat attendu** : la carte retombe sur le layout texte standard (pas d'espace vide de 170px, pas d'image grise cassée).
 
-### Scénario 4 : LLM Mistral timeout (> 20 s)
+### Scénario 4 : Banner cliquable (Bonus 1)
 **Parcours** :
-1. Configurer un délai artificiel sur le serveur mock LLM ou couper Mistral API.
-2. Appeler `/suggestions/sources`.
-**Résultat attendu** :
-- Backend bascule sur `_fallback` (sources curées du thème).
-- Réponse 200 avec `sources` non-vide (relevance_score=null).
-- Log `source_suggester.llm_timeout` émis.
+1. Sur la Tournée, taper le banner d'une section thème, source, veille, Actus du jour et Bonnes Nouvelles
+2. Taper l'étoile favorite d'une section favorite, puis le bouton réglages (tune) de la veille
+**Résultat attendu** : tap banner → ouvre la page « tout lire » de la section ; chevron « > » fin couleur accent après le titre + « +X » gris si articles cachés ; plus aucun bouton « Tout lire » en bas de section ; l'étoile ouvre « Composer ma Tournée » (pas la navigation) ; le tune ouvre la config veille ; le banner large de la page Flâner n'a ni chevron ni tap.
 
-### Scénario 5 : Une violation de contrainte ne poison plus la session
+### Scénario 5 : Essentiel allégé (Bonus 2)
 **Parcours** :
-1. LLM produit 3 candidats dont un avec un `name` > 200 chars (violation `String(200)`).
-2. Backend ingère.
-**Résultat attendu** :
-- Le candidat fautif est skippé via SAVEPOINT rollback.
-- Les 2 autres candidats sont ingérés et committés.
-- `db.commit()` final ne lève pas `PendingRollbackError`.
-- Le candidat fautif est remonté à Sentry via `sentry_sdk.capture_exception`.
+1. Observer la carte « Ton Essentiel » (lead + médiums)
+**Résultat attendu** : plus de balises de thème (« Technologie », etc.) sur les tuiles ; le badge « Actu du jour » reste sur le lead concerné ; les tuiles médiums montrent source + titre.
 
 ## Critères d'acceptation
-- [ ] **Backend** : `pytest tests/test_veille_source_ingestion.py` → tests verts (incluant 3 nouveaux : `test_session_recovers_from_integrity_error`, `test_slow_candidate_is_skipped`, `test_llm_timeout_falls_back_to_curated`).
-- [ ] **Mobile** : `flutter test test/features/veille/screens/step3_sources_screen_test.dart` → 1 test vert (bouton Réessayer présent + cliquable + déclenche fetch).
-- [ ] **Sentry** : zéro nouvelle occurrence PYTHON-3P 24 h après merge en prod.
-- [ ] **Supabase** : `SELECT count(*) FROM sources WHERE created_at > NOW() - INTERVAL '24 hours' AND is_curated = false` > 0 (preuve qu'au moins une ingestion réussit).
-- [ ] **E2E mobile** : flow complet onboarding veille → Step 3 affiche des sources réelles (pas le mock fallback) sur thème `tech` avec topics IA.
+- [ ] Minimaliste : > 3 articles/section sur écran standard ; titres 5 lignes max
+- [ ] Ludique : image pleine largeur en haut, fontScale 1.05, titres 3 lignes, fallback image cassée
+- [ ] Banner cliquable sur les 5 types de sections, chevron + « +X », étoile/tune indépendants
+- [ ] Plus de bouton « Lire plus » en bas des sections
+- [ ] Plus de chips de thème dans l'Essentiel
+- [ ] Aucun débordement de carte dans les 3 modes (logs `[fit-net]` propres)
 
-## Zones de risque
-
-1. **Savepoint behaviour avec test fixture `db_session`** : la fixture utilise `join_transaction_mode="create_savepoint"` ; les `session.begin_nested()` du code de prod créent des savepoints imbriqués. Vérifier que les tests de la suite pré-existante (15 dans `test_veille_source_ingestion.py`) restent verts.
-
-2. **`asyncio.wait_for` + httpx timeouts** : `EditorialLLMClient` a déjà un `httpx.Timeout(30.0)` ; `_LLM_TIMEOUT_S=20s` est plus strict, donc effectif. RSSParser a 7 s par requête HTTP → un candidat qui exécute 14 variants suffix peut quand même dépasser 8 s ; le timeout par candidat coupe net.
-
-3. **Sentry noise potential** : `sentry_sdk.capture_exception` dans le `except Exception` peut générer du bruit si le LLM produit régulièrement des candidats invalides. À surveiller dans les premiers jours post-merge ; ajuster le filter rule si > 50/jour.
-
-## Dépendances
-
-- **Endpoints touchés** : POST `/api/veille/suggestions/sources`.
-- **Services backend** : `SourceSuggester`, `SourceService.detect_source` (RSSParser), `EditorialLLMClient` (Mistral).
-- **Mobile** : `VeilleSourcesSuggestionsNotifier` (provider famille autoDispose), `Step3SourcesScreen`.
-- **Doc** : `docs/bugs/bug-veille-suggestions-sources-pending-rollback.md` (diagnostic + fix complet).
-
-## Hors scope (à créer en issues séparées)
-
-- **Optim RSSParser** : éviter les 14 variants suffix sur un même domaine (les 100+ HTTP calls par request). Refactor `detect()` pour bail-out plus tôt.
-- **Cleanup script rows stuck `running > 15min`** : pré-existait à ce bug.
+## Vérifications déjà faites (dev)
+- `flutter analyze` : 0 erreur.
+- `flutter test test/features/flux_continu/ test/features/settings/` : 245/245 verts.
+- Suite complète : retour exact à la baseline (23 échecs pré-existants Hive/Supabase, hors périmètre).

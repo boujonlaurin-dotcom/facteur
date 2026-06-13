@@ -73,6 +73,8 @@ class DigestTopicArticle(BaseModel):
     is_saved: bool = False
     is_liked: bool = False
     is_dismissed: bool = False
+    # Langue détectée du titre (forward-compat — label éventuel mobile).
+    language: str | None = None
 
     @field_serializer("entities", when_used="always")
     def serialize_entities(self, value: list[str]) -> list[dict]:
@@ -102,8 +104,6 @@ class DigestTopic(BaseModel):
         default_factory=list, description="Clustering keywords for display"
     )
     articles: list[DigestTopicArticle] = Field(default_factory=list)
-    intro_text: str | None = None
-    transition_text: str | None = None
     # Perspective analysis fields
     perspective_count: int = 0
     bias_distribution: dict[str, int] | None = None
@@ -172,41 +172,6 @@ class DigestItem(BaseModel):
         from_attributes = True
 
 
-class PepiteResponse(BaseModel):
-    """Pépite article in the editorial digest — a surprise pick by the LLM."""
-
-    content_id: UUID
-    mini_editorial: str
-    badge: str = "pepite"
-    title: str
-    url: str
-    thumbnail_url: str | None = None
-    published_at: datetime | None = None
-    source: SourceMini
-    is_read: bool = False
-    is_saved: bool = False
-    is_liked: bool = False
-    is_dismissed: bool = False
-
-
-class CoupDeCoeurResponse(BaseModel):
-    """Coup de coeur article — most saved by the community."""
-
-    content_id: UUID
-    title: str
-    source_name: str
-    save_count: int
-    badge: str = "coup_de_coeur"
-    url: str
-    thumbnail_url: str | None = None
-    published_at: datetime | None = None
-    source: SourceMini
-    is_read: bool = False
-    is_saved: bool = False
-    is_liked: bool = False
-    is_dismissed: bool = False
-
-
 class QuoteResponse(BaseModel):
     """Literary/philosophical quote for serein digest."""
 
@@ -260,13 +225,6 @@ class DigestResponse(BaseModel):
         ),
     )
 
-    # Editorial fields (populated when format_version="editorial_v1")
-    header_text: str | None = None
-    closure_text: str | None = None
-    cta_text: str | None = None
-    pepite: PepiteResponse | None = None
-    coup_de_coeur: CoupDeCoeurResponse | None = None
-    actu_decalee: PepiteResponse | None = None
     quote: QuoteResponse | None = None
 
     # Community 🌻 carousel (most recently sunflowered articles)

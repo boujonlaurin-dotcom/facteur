@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
 import '../../digest/widgets/editorial_badge.dart';
+import '../../settings/providers/display_mode_provider.dart';
 import '../models/content_model.dart';
 import '../utils/article_title_layout.dart';
 import 'feed_card.dart';
@@ -14,7 +16,7 @@ import 'feed_card.dart';
 /// Displays 3-5 articles as a PageView (viewportFraction 0.88) with
 /// contextual badges, animated page indicator dots, and a simple header.
 /// Based on the TopicSection pattern from the Digest.
-class FeedCarousel extends StatefulWidget {
+class FeedCarousel extends ConsumerStatefulWidget {
   final FeedCarouselData data;
   final void Function(Content) onArticleTap;
   final void Function(String sourceId)? onSourceTap;
@@ -60,10 +62,10 @@ class FeedCarousel extends StatefulWidget {
   });
 
   @override
-  State<FeedCarousel> createState() => _FeedCarouselState();
+  ConsumerState<FeedCarousel> createState() => _FeedCarouselState();
 }
 
-class _FeedCarouselState extends State<FeedCarousel> {
+class _FeedCarouselState extends ConsumerState<FeedCarousel> {
   late final PageController _pageController;
   int _currentPage = 0;
   final Set<String> _collapsedImages = {};
@@ -93,6 +95,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
   static const double _imageAspectRatio = 2.1;
 
   bool _imageWillRender(Content article) {
+    if (!ref.read(displayModeSpecProvider).showImages) return false;
     final url = article.thumbnailUrl;
     return url != null &&
         url.isNotEmpty &&
@@ -107,6 +110,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
   }
 
   double _estimateCardHeight(Content article, double cardWidth) {
+    final spec = ref.read(displayModeSpecProvider);
     final hasImage = _imageWillRender(article);
 
     final titleLines = ArticleTitleLayout.estimateTitleLines(
@@ -114,7 +118,13 @@ class _FeedCarouselState extends State<FeedCarousel> {
       availableWidth: cardWidth - _bodyPadding,
       hasImage: hasImage,
     );
-    final titleHeight = titleLines * ArticleTitleLayout.titleLineHeight;
+    // fontScale agrandit le titre (mode ludique) : la hauteur de ligne ET le
+    // nombre de lignes croissent — approximé par un double facteur, le
+    // ClipRect/AnimatedContainer absorbe l'arrondi.
+    final titleHeight = titleLines *
+        ArticleTitleLayout.titleLineHeight *
+        spec.fontScale *
+        spec.fontScale;
 
     double bodyHeight = _bodyPadding + titleHeight + _spacer + _metaRowHeight;
 
@@ -137,7 +147,8 @@ class _FeedCarouselState extends State<FeedCarousel> {
       }
     }
 
-    final imageHeight = hasImage ? cardWidth / _imageAspectRatio : 0.0;
+    final imageRatio = spec.feedImageAspectRatio ?? _imageAspectRatio;
+    final imageHeight = hasImage ? cardWidth / imageRatio : 0.0;
     return imageHeight + bodyHeight + _footerHeight + _badgeHeight;
   }
 
@@ -153,6 +164,9 @@ class _FeedCarouselState extends State<FeedCarousel> {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+    // Watch (et non read) pour reconstruire le carrousel — hauteur incluse —
+    // au changement de mode d'affichage.
+    ref.watch(displayModeSpecProvider);
     final data = widget.data;
 
     if (data.items.isEmpty) return const SizedBox.shrink();
@@ -264,6 +278,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
           descriptionFontSize: 15,
           titleMaxLines: 5,
           imageAspectRatio: _imageAspectRatio,
+          displaySpec: ref.watch(displayModeSpecProvider),
           onImageError: () => _onImageError(article.id),
           onTap: () => widget.onArticleTap(article),
           // T1: Full card feature parity
@@ -364,6 +379,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
       descriptionFontSize: 15,
       titleMaxLines: 5,
       imageAspectRatio: _imageAspectRatio,
+      displaySpec: ref.watch(displayModeSpecProvider),
       onImageError: () => _onImageError(article.id),
       onTap: () => widget.onArticleTap(article),
       // T1: Full card feature parity

@@ -74,36 +74,45 @@ class TestParseTopics:
         self.service = ClassificationService.__new__(ClassificationService)
 
     def test_parse_json_object(self):
-        """New format: JSON object with topics and serene."""
-        raw = '{"topics": ["sport", "health"], "serene": true}'
+        """New format: JSON object with topics, serene and is_ad."""
+        raw = '{"topics": ["sport", "health"], "serene": true, "is_ad": false}'
         result = self.service._parse_topics(raw, top_k=3)
         assert result["topics"] == ["sport", "health"]
         assert result["serene"] is True
+        assert result["is_ad"] is False
+
+    def test_parse_json_object_is_ad_true(self):
+        """is_ad=true is parsed correctly."""
+        raw = '{"topics": ["tech"], "serene": true, "is_ad": true}'
+        result = self.service._parse_topics(raw, top_k=3)
+        assert result["is_ad"] is True
 
     def test_parse_json_array_single_element(self):
         """New format: JSON array with one object."""
-        raw = '[{"topics": ["ai", "tech"], "serene": false}]'
+        raw = '[{"topics": ["ai", "tech"], "serene": false, "is_ad": false}]'
         result = self.service._parse_topics(raw, top_k=3)
         assert result["topics"] == ["ai", "tech"]
         assert result["serene"] is False
+        assert result["is_ad"] is False
 
     def test_parse_comma_separated_fallback(self):
-        """Old format: comma-separated slugs → serene is None."""
+        """Old format: comma-separated slugs → serene and is_ad are None."""
         raw = "sport, health, wellness"
         result = self.service._parse_topics(raw, top_k=3)
         assert result["topics"] == ["sport", "health", "wellness"]
         assert result["serene"] is None
+        assert result["is_ad"] is None
 
     def test_filters_invalid_slugs(self):
         """Invalid slugs are filtered out."""
-        raw = '{"topics": ["sport", "invalid_slug", "tech"], "serene": true}'
+        raw = '{"topics": ["sport", "invalid_slug", "tech"], "serene": true, "is_ad": false}'
         result = self.service._parse_topics(raw, top_k=3)
         assert result["topics"] == ["sport", "tech"]
         assert "invalid_slug" not in result["topics"]
 
     def test_top_k_limits(self):
         """top_k limits the number of returned topics."""
-        raw = '{"topics": ["sport", "health", "wellness", "tech"], "serene": true}'
+        raw = '{"topics": ["sport", "health", "wellness", "tech"], "serene": true, "is_ad": false}'
         result = self.service._parse_topics(raw, top_k=2)
         assert len(result["topics"]) == 2
 
@@ -112,12 +121,25 @@ class TestParseTopics:
         raw = ""
         result = self.service._parse_topics(raw, top_k=3)
         assert result["topics"] == []
+        assert result["is_ad"] is None
 
     def test_invalid_serene_becomes_none(self):
         """Non-boolean serene values become None."""
         raw = '{"topics": ["sport"], "serene": "maybe"}'
         result = self.service._parse_topics(raw, top_k=3)
         assert result["serene"] is None
+
+    def test_invalid_is_ad_becomes_none(self):
+        """Non-boolean is_ad values become None."""
+        raw = '{"topics": ["sport"], "serene": true, "is_ad": "maybe"}'
+        result = self.service._parse_topics(raw, top_k=3)
+        assert result["is_ad"] is None
+
+    def test_missing_is_ad_becomes_none(self):
+        """Missing is_ad field becomes None (backward compat)."""
+        raw = '{"topics": ["sport"], "serene": true}'
+        result = self.service._parse_topics(raw, top_k=3)
+        assert result["is_ad"] is None
 
 
 class TestParseBatchResponse:
@@ -127,13 +149,13 @@ class TestParseBatchResponse:
         self.service = ClassificationService.__new__(ClassificationService)
 
     def test_correct_count_new_format(self):
-        """JSON array of 5 objects parsed correctly."""
+        """JSON array of 5 objects parsed correctly including is_ad."""
         data = [
-            {"topics": ["sport"], "serene": True},
-            {"topics": ["ai", "tech"], "serene": True},
-            {"topics": ["geopolitics"], "serene": False},
-            {"topics": ["cinema", "art"], "serene": True},
-            {"topics": ["health"], "serene": False},
+            {"topics": ["sport"], "serene": True, "is_ad": False},
+            {"topics": ["ai", "tech"], "serene": True, "is_ad": False},
+            {"topics": ["geopolitics"], "serene": False, "is_ad": False},
+            {"topics": ["cinema", "art"], "serene": True, "is_ad": False},
+            {"topics": ["health"], "serene": False, "is_ad": True},
         ]
         raw = json.dumps(data)
         results = self.service._parse_batch_response(raw, expected_count=5, top_k=3)
@@ -141,16 +163,32 @@ class TestParseBatchResponse:
         assert len(results) == 5
         assert results[0]["topics"] == ["sport"]
         assert results[0]["serene"] is True
+        assert results[0]["is_ad"] is False
         assert results[1]["topics"] == ["ai", "tech"]
         assert results[2]["serene"] is False
+        assert results[4]["is_ad"] is True
+
+    def test_is_ad_stored_in_batch_result(self):
+        """is_ad=True is correctly stored from batch response."""
+        data = [{"topics": ["tech"], "serene": True, "is_ad": True}]
+        raw = json.dumps(data)
+        results = self.service._parse_batch_response(raw, expected_count=1, top_k=3)
+        assert results[0]["is_ad"] is True
+
+    def test_missing_is_ad_in_batch_becomes_none(self):
+        """Missing is_ad in batch item becomes None (backward compat)."""
+        data = [{"topics": ["sport"], "serene": True}]
+        raw = json.dumps(data)
+        results = self.service._parse_batch_response(raw, expected_count=1, top_k=3)
+        assert results[0]["is_ad"] is None
 
     def test_wrong_count_returns_partial_results(self):
         """JSON with fewer items than expected returns partial results, padded with empty."""
         data = [
-            {"topics": ["sport"], "serene": True},
-            {"topics": ["ai"], "serene": False},
-            {"topics": ["health"], "serene": True},
-            {"topics": ["cinema"], "serene": True},
+            {"topics": ["sport"], "serene": True, "is_ad": False},
+            {"topics": ["ai"], "serene": False, "is_ad": False},
+            {"topics": ["health"], "serene": True, "is_ad": False},
+            {"topics": ["cinema"], "serene": True, "is_ad": False},
         ]
         raw = json.dumps(data)
         results = self.service._parse_batch_response(raw, expected_count=5, top_k=3)
@@ -161,12 +199,13 @@ class TestParseBatchResponse:
         assert results[1]["topics"] == ["ai"]
         assert results[2]["topics"] == ["health"]
         assert results[3]["topics"] == ["cinema"]
-        # 5th should be padded empty
+        # 5th should be padded empty with is_ad=None
         assert results[4]["topics"] == []
         assert results[4]["serene"] is None
+        assert results[4]["is_ad"] is None
 
     def test_fallback_old_format(self):
-        """Old format (array of arrays) → topics OK, serene=None."""
+        """Old format (array of arrays) → topics OK, serene=None, is_ad=None."""
         data = [
             ["sport", "health"],
             ["ai", "tech"],
@@ -178,12 +217,13 @@ class TestParseBatchResponse:
         assert len(results) == 3
         assert results[0]["topics"] == ["sport", "health"]
         assert results[0]["serene"] is None
+        assert results[0]["is_ad"] is None
         assert results[1]["topics"] == ["ai", "tech"]
 
     def test_filters_invalid_slugs_in_batch(self):
         """Invalid slugs are filtered in batch responses."""
         data = [
-            {"topics": ["sport", "invalid"], "serene": True},
+            {"topics": ["sport", "invalid"], "serene": True, "is_ad": False},
         ]
         raw = json.dumps(data)
         results = self.service._parse_batch_response(raw, expected_count=1, top_k=3)
@@ -404,7 +444,7 @@ class TestResponseFormatInPayloads:
             resp.raise_for_status = MagicMock()
             resp.json.return_value = {
                 "choices": [
-                    {"message": {"content": '{"topics": ["sport"], "serene": true}'}}
+                    {"message": {"content": '{"topics": ["sport"], "serene": true, "is_ad": false}'}}
                 ],
                 "usage": {},
             }
@@ -429,7 +469,7 @@ class TestResponseFormatInPayloads:
             resp.raise_for_status = MagicMock()
             resp.json.return_value = {
                 "choices": [
-                    {"message": {"content": '[{"topics": ["sport"], "serene": true}]'}}
+                    {"message": {"content": '[{"topics": ["sport"], "serene": true, "is_ad": false}]'}}
                 ],
                 "usage": {},
             }

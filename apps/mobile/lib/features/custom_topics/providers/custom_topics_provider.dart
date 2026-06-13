@@ -6,6 +6,7 @@ import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../lettres/providers/letters_provider.dart';
+import '../../my_interests/providers/user_interests_provider.dart';
 import '../models/topic_models.dart';
 import '../repositories/topic_repository.dart';
 
@@ -111,6 +112,7 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
           ));
       // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
       unawaited(ref.read(lettersProvider.notifier).silentRefresh());
+      ref.invalidate(userInterestsProvider);
       return created;
     } catch (e) {
       // Rollback
@@ -147,38 +149,7 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
               origin: 'custom_topics',
             ));
       }
-    } catch (e) {
-      state = previousState;
-      rethrow;
-    }
-  });
-
-  /// Update priority multiplier for a topic.
-  /// Optimistic: updates the value immediately, rolls back on error.
-  Future<void> updatePriority(String topicId, double newPriority) => _serialized(() async {
-    final repo = ref.read(topicRepositoryProvider);
-
-    final previousState = state;
-    if (state.hasValue) {
-      state = AsyncData([
-        for (final topic in state.value!)
-          if (topic.id == topicId)
-            topic.copyWith(priorityMultiplier: newPriority)
-          else
-            topic,
-      ]);
-    }
-
-    try {
-      final updated = await repo.updateTopicPriority(topicId, newPriority);
-
-      // Replace with server response (may have updated composite_score)
-      if (state.hasValue) {
-        state = AsyncData([
-          for (final topic in state.value!)
-            if (topic.id == topicId) updated else topic,
-        ]);
-      }
+      ref.invalidate(userInterestsProvider);
     } catch (e) {
       state = previousState;
       rethrow;
@@ -281,12 +252,27 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
       }
       // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
       unawaited(ref.read(lettersProvider.notifier).silentRefresh());
+      ref.invalidate(userInterestsProvider);
       return created;
     } catch (e) {
       state = previousState;
       rethrow;
     }
   });
+
+  /// Follow a disambiguation suggestion — entity if typed, plain topic
+  /// otherwise. Shared by `EntityAddSheet` and the source-search « Sujets »
+  /// section so the entity/topic branching lives in one place.
+  Future<UserTopicProfile?> followSuggestion(DisambiguationSuggestion s) {
+    if (s.entityType != null) {
+      return followEntity(
+        s.canonicalName,
+        s.entityType!,
+        slugParent: s.slugParent,
+      );
+    }
+    return followTopic(s.canonicalName, slugParent: s.slugParent);
+  }
 }
 
 // Topic suggestions provider (parameterized by optional theme slug)

@@ -1,12 +1,11 @@
-"""Tests pour les modèles SQLAlchemy de « Ma veille » (Story 18.1).
+"""Tests pour les modèles SQLAlchemy de « Ma veille » (Story 23.1).
 
 Couvre :
-- CRUD basique sur les 4 tables (config / topics / sources / deliveries).
+- CRUD basique sur les 4 tables (config / topics / sources / keywords).
 - Partial UNIQUE constraint `uq_veille_configs_user_active` (1 active par user).
-- Cascade ondelete CASCADE depuis veille_configs vers topics/sources/deliveries.
+- Cascade ondelete CASCADE depuis veille_configs vers topics/sources/keywords.
 """
 
-from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -19,9 +18,7 @@ from app.models.source import Source
 from app.models.user import UserProfile
 from app.models.veille import (
     VeilleConfig,
-    VeilleDelivery,
-    VeilleFrequency,
-    VeilleGenerationState,
+    VeilleKeyword,
     VeilleSource,
     VeilleSourceKind,
     VeilleStatus,
@@ -67,10 +64,6 @@ class TestVeilleConfigCRUD:
             user_id=test_user.user_id,
             theme_id="education",
             theme_label="Éducation",
-            frequency=VeilleFrequency.WEEKLY,
-            day_of_week=0,
-            delivery_hour=7,
-            timezone="Europe/Paris",
             status=VeilleStatus.ACTIVE,
         )
         db_session.add(cfg)
@@ -80,16 +73,11 @@ class TestVeilleConfigCRUD:
         assert cfg.id is not None
         assert cfg.user_id == test_user.user_id
         assert cfg.theme_id == "education"
-        assert cfg.frequency == VeilleFrequency.WEEKLY
         assert cfg.status == VeilleStatus.ACTIVE
-        assert cfg.last_delivered_at is None
-        assert cfg.next_scheduled_at is None
         assert cfg.created_at is not None
 
     @pytest.mark.asyncio
-    async def test_partial_unique_one_active_per_user(
-        self, db_session, test_user
-    ):
+    async def test_partial_unique_one_active_per_user(self, db_session, test_user):
         """Le partial UNIQUE empêche 2 configs ACTIVE pour le même user,
         mais autorise 1 active + N archived."""
         user_id = test_user.user_id
@@ -97,20 +85,15 @@ class TestVeilleConfigCRUD:
             user_id=user_id,
             theme_id="education",
             theme_label="Éducation",
-            frequency=VeilleFrequency.WEEKLY,
-            delivery_hour=7,
             status=VeilleStatus.ACTIVE,
         )
         db_session.add(active)
         await db_session.commit()
 
-        # Une 2e ACTIVE doit casser la contrainte partial UNIQUE.
         dupe = VeilleConfig(
             user_id=user_id,
             theme_id="health",
             theme_label="Santé",
-            frequency=VeilleFrequency.MONTHLY,
-            delivery_hour=8,
             status=VeilleStatus.ACTIVE,
         )
         db_session.add(dupe)
@@ -118,13 +101,10 @@ class TestVeilleConfigCRUD:
             await db_session.commit()
         await db_session.rollback()
 
-        # Une ARCHIVED en plus de l'ACTIVE doit passer.
         archived = VeilleConfig(
             user_id=user_id,
             theme_id="health",
             theme_label="Santé",
-            frequency=VeilleFrequency.MONTHLY,
-            delivery_hour=8,
             status=VeilleStatus.ARCHIVED,
         )
         db_session.add(archived)
@@ -140,8 +120,6 @@ class TestVeilleTopicAndSource:
             user_id=test_user.user_id,
             theme_id="education",
             theme_label="Éducation",
-            frequency=VeilleFrequency.WEEKLY,
-            delivery_hour=7,
             status=VeilleStatus.ACTIVE,
         )
         db_session.add(c)
@@ -216,15 +194,13 @@ class TestVeilleTopicAndSource:
         assert link.kind == VeilleSourceKind.FOLLOWED
 
 
-class TestVeilleDelivery:
+class TestVeilleKeyword:
     @pytest_asyncio.fixture
     async def cfg(self, db_session, test_user):
         c = VeilleConfig(
             user_id=test_user.user_id,
-            theme_id="education",
-            theme_label="Éducation",
-            frequency=VeilleFrequency.WEEKLY,
-            delivery_hour=7,
+            theme_id="tech",
+            theme_label="Tech",
             status=VeilleStatus.ACTIVE,
         )
         db_session.add(c)
@@ -233,55 +209,115 @@ class TestVeilleDelivery:
         return c
 
     @pytest.mark.asyncio
-    async def test_create_delivery_default_state(self, db_session, cfg):
-        delivery = VeilleDelivery(
-            veille_config_id=cfg.id,
-            target_date=date.today(),
+    async def test_create_keyword(self, db_session, cfg):
+        db_session.add(
+            VeilleKeyword(
+                veille_config_id=cfg.id,
+                keyword="ia générative",
+                position=0,
+            )
         )
-        db_session.add(delivery)
         await db_session.commit()
-        await db_session.refresh(delivery)
 
-        assert delivery.generation_state == VeilleGenerationState.PENDING
-        assert delivery.items == []
-        assert delivery.attempts == 0
-        assert delivery.version == 1
+        rows = (
+            (
+                await db_session.execute(
+                    select(VeilleKeyword).where(
+                        VeilleKeyword.veille_config_id == cfg.id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].keyword == "ia générative"
 
     @pytest.mark.asyncio
-    async def test_unique_per_config_date(self, db_session, cfg):
-        target = date.today()
+    async def test_keyword_unique_per_topic(self, db_session, cfg):
+        """Unique = (config, topic_id, keyword) — collision sous un même angle."""
+        topic = VeilleTopic(
+            veille_config_id=cfg.id,
+            topic_id="climat",
+            label="Climat",
+            kind=VeilleTopicKind.PRESET,
+            position=0,
+        )
+        db_session.add(topic)
+        await db_session.commit()
+        await db_session.refresh(topic)
+
         db_session.add(
-            VeilleDelivery(veille_config_id=cfg.id, target_date=target)
+            VeilleKeyword(
+                veille_config_id=cfg.id,
+                veille_topic_id=topic.id,
+                keyword="climat",
+                position=0,
+            )
         )
         await db_session.commit()
 
         db_session.add(
-            VeilleDelivery(veille_config_id=cfg.id, target_date=target)
+            VeilleKeyword(
+                veille_config_id=cfg.id,
+                veille_topic_id=topic.id,
+                keyword="climat",
+                position=1,
+            )
         )
         with pytest.raises(IntegrityError):
             await db_session.commit()
         await db_session.rollback()
 
     @pytest.mark.asyncio
-    async def test_state_transitions(self, db_session, cfg):
-        delivery = VeilleDelivery(
+    async def test_same_keyword_allowed_under_two_angles(self, db_session, cfg):
+        """La même clé peut vivre sous deux angles distincts (triplet unique)."""
+        t1 = VeilleTopic(
             veille_config_id=cfg.id,
-            target_date=date.today(),
+            topic_id="climat",
+            label="Climat",
+            kind=VeilleTopicKind.PRESET,
+            position=0,
         )
-        db_session.add(delivery)
+        t2 = VeilleTopic(
+            veille_config_id=cfg.id,
+            topic_id="energie",
+            label="Énergie",
+            kind=VeilleTopicKind.PRESET,
+            position=1,
+        )
+        db_session.add_all([t1, t2])
+        await db_session.commit()
+        await db_session.refresh(t1)
+        await db_session.refresh(t2)
+
+        db_session.add_all(
+            [
+                VeilleKeyword(
+                    veille_config_id=cfg.id, veille_topic_id=t1.id, keyword="co2"
+                ),
+                VeilleKeyword(
+                    veille_config_id=cfg.id, veille_topic_id=t2.id, keyword="co2"
+                ),
+                # + un mot-clé global (veille_topic_id NULL) identique : autorisé.
+                VeilleKeyword(veille_config_id=cfg.id, keyword="co2"),
+            ]
+        )
         await db_session.commit()
 
-        delivery.generation_state = VeilleGenerationState.RUNNING
-        delivery.started_at = datetime.now(UTC)
-        await db_session.commit()
-        await db_session.refresh(delivery)
-        assert delivery.generation_state == VeilleGenerationState.RUNNING
-
-        delivery.generation_state = VeilleGenerationState.SUCCEEDED
-        delivery.finished_at = datetime.now(UTC)
-        await db_session.commit()
-        await db_session.refresh(delivery)
-        assert delivery.generation_state == VeilleGenerationState.SUCCEEDED
+        rows = (
+            (
+                await db_session.execute(
+                    select(VeilleKeyword).where(
+                        VeilleKeyword.veille_config_id == cfg.id,
+                        VeilleKeyword.keyword == "co2",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 3
 
 
 class TestCascade:
@@ -293,8 +329,6 @@ class TestCascade:
             user_id=test_user.user_id,
             theme_id="education",
             theme_label="Éducation",
-            frequency=VeilleFrequency.WEEKLY,
-            delivery_hour=7,
             status=VeilleStatus.ACTIVE,
         )
         db_session.add(cfg)
@@ -316,9 +350,9 @@ class TestCascade:
                     source_id=test_source.id,
                     kind=VeilleSourceKind.FOLLOWED,
                 ),
-                VeilleDelivery(
+                VeilleKeyword(
                     veille_config_id=cfg_id,
-                    target_date=date.today() - timedelta(days=1),
+                    keyword="évaluations",
                 ),
             ]
         )
@@ -333,11 +367,9 @@ class TestCascade:
         sources = await db_session.execute(
             select(VeilleSource).where(VeilleSource.veille_config_id == cfg_id)
         )
-        deliveries = await db_session.execute(
-            select(VeilleDelivery).where(
-                VeilleDelivery.veille_config_id == cfg_id
-            )
+        keywords = await db_session.execute(
+            select(VeilleKeyword).where(VeilleKeyword.veille_config_id == cfg_id)
         )
         assert list(topics.scalars().all()) == []
         assert list(sources.scalars().all()) == []
-        assert list(deliveries.scalars().all()) == []
+        assert list(keywords.scalars().all()) == []

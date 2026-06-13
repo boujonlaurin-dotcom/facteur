@@ -8,6 +8,10 @@ WORKDIR /app
 COPY packages/api/requirements.txt .
 RUN pip install --no-cache-dir --timeout 300 --retries 5 -r requirements.txt
 
+# Télécharge le modèle spaCy fr_core_news_md utilisé par TitleAnnotationService
+# pour le surlignage des titres de perspectives. ~40 MB.
+RUN python -m spacy download fr_core_news_md
+
 # Copy application AND required configs/scripts
 COPY packages/api/app/ app/
 COPY packages/api/config/ config/

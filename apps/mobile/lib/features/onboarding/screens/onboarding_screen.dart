@@ -9,14 +9,12 @@ import '../onboarding_strings.dart';
 import 'questions/objective_question.dart';
 import 'questions/approach_question.dart';
 import 'questions/response_style_question.dart';
-import 'questions/gamification_question.dart';
-import 'questions/article_count_question.dart';
 import 'questions/digest_mode_question.dart';
 import 'questions/media_concentration_screen.dart';
 import 'questions/themes_question.dart';
 import 'questions/subtopics_question.dart';
 import 'questions/sources_question.dart';
-import 'questions/sources_page2_question.dart';
+import 'questions/sources_intent_question.dart';
 import 'questions/finalize_question.dart';
 import 'questions/intro_screen.dart';
 
@@ -97,6 +95,20 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 child: _buildCurrentContent(state),
               ),
             ),
+
+            // Bouton « Passer » : un seul point d'insertion, conditionnel à la
+            // question courante (cf. OnboardingState.isSkippable). Applique un
+            // défaut sain et avance — évite de toucher chaque écran de question.
+            if (state.isSkippable)
+              Padding(
+                padding: const EdgeInsets.only(bottom: FacteurSpacing.space2),
+                child: TextButton(
+                  onPressed: () {
+                    ref.read(onboardingProvider.notifier).skipCurrentQuestion();
+                  },
+                  child: Text(OnboardingStrings.skipButton),
+                ),
+              ),
           ],
         ),
       ),
@@ -181,19 +193,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
       case Section2Question.responseStyle:
         return const ResponseStyleQuestion(key: ValueKey('response_style'));
-
-      case Section2Question.gamification:
-        return const GamificationQuestion(key: ValueKey('gamification'));
-
-      case Section2Question.articleCount:
-        return const ArticleCountQuestion(key: ValueKey('article_count'));
-
-      case Section2Question.digestMode:
-        return const DigestModeQuestion(key: ValueKey('digest_mode'));
     }
   }
 
-  /// Section 3 : Source Preferences (Themes → Sources → Sources Reaction → Finalize)
+  /// Section 3 : Source Preferences
+  /// (Themes → Subtopics → Intent → Sources → [Mode serein] → Finalize)
   Widget _buildSection3Content(OnboardingState state) {
     final question = state.currentSection3Question;
 
@@ -204,11 +208,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       case Section3Question.subtopics:
         return const SubtopicsQuestion(key: ValueKey('subtopics'));
 
+      case Section3Question.sourcesIntent:
+        return const SourcesIntentQuestion(key: ValueKey('sources_intent'));
+
       case Section3Question.sources:
         return const SourcesQuestion(key: ValueKey('sources'));
 
-      case Section3Question.sourcesReaction:
-        return const SourcesPage2Question(key: ValueKey('sources_page2'));
+      case Section3Question.digestMode:
+        return const DigestModeQuestion(key: ValueKey('digest_mode'));
 
       case Section3Question.finalize:
         return const FinalizeQuestion(key: ValueKey('finalize'));

@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../config/theme.dart';
 import '../models/letter.dart';
 import 'envelope_thumb.dart';
+import 'letter_mini_progress.dart';
 
 class LetterRow extends StatelessWidget {
   final Letter letter;
@@ -20,13 +21,6 @@ class LetterRow extends StatelessWidget {
     final colors = context.facteurColors;
     final isArchived = letter.status == LetterStatus.archived;
     final isUpcoming = letter.status == LetterStatus.upcoming;
-
-    final dateForDisplay = isArchived ? letter.archivedAt : letter.startedAt;
-    final dateLabel = dateForDisplay != null
-        ? _formatShortDate(dateForDisplay.toLocal())
-        : null;
-    final metaParts = <String>['Étape ${letter.letterNum}'];
-    if (dateLabel != null) metaParts.add(dateLabel);
 
     final pillData = switch (letter.status) {
       LetterStatus.active => (
@@ -47,9 +41,8 @@ class LetterRow extends StatelessWidget {
     };
 
     final showProgress = letter.actions.isNotEmpty;
-    final doneCount =
-        letter.actions.where((a) => a.status == LetterActionStatus.done).length;
-    final total = letter.actions.length;
+    final doneCount = letter.doneActionCount;
+    final total = letter.totalActionCount;
 
     Widget content = Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -81,16 +74,6 @@ class LetterRow extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        metaParts.join(' · ').toUpperCase(),
-                        style: GoogleFonts.courierPrime(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2,
-                          color: colors.textTertiary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
                         letter.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -109,11 +92,10 @@ class LetterRow extends StatelessWidget {
                       ),
                       if (showProgress) ...[
                         const SizedBox(height: 6),
-                        _MiniProgress(
+                        LetterMiniProgress(
                           progress: letter.progress,
                           done: doneCount,
                           total: total,
-                          colors: colors,
                           dimmed: isUpcoming,
                         ),
                       ],
@@ -164,76 +146,4 @@ class _StatusPill extends StatelessWidget {
       ),
     );
   }
-}
-
-class _MiniProgress extends StatelessWidget {
-  final double progress;
-  final int done;
-  final int total;
-  final FacteurColors colors;
-  final bool dimmed;
-
-  const _MiniProgress({
-    required this.progress,
-    required this.done,
-    required this.total,
-    required this.colors,
-    required this.dimmed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final fillColor =
-        dimmed ? colors.textTertiary.withOpacity(0.4) : colors.primary;
-    return Row(
-      children: [
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: Stack(
-              children: [
-                Container(
-                  height: 3,
-                  color: Colors.black.withOpacity(0.07),
-                ),
-                FractionallySizedBox(
-                  widthFactor: progress.clamp(0.0, 1.0),
-                  child: Container(height: 3, color: fillColor),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          '$done/$total',
-          style: GoogleFonts.courierPrime(
-            fontSize: 10,
-            fontWeight: FontWeight.w400,
-            letterSpacing: 0.5,
-            color: colors.textTertiary,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-const _months = [
-  'janv.',
-  'févr.',
-  'mars',
-  'avril',
-  'mai',
-  'juin',
-  'juil.',
-  'août',
-  'sept.',
-  'oct.',
-  'nov.',
-  'déc.',
-];
-
-String _formatShortDate(DateTime d) {
-  return '${d.day} ${_months[d.month - 1]}';
 }

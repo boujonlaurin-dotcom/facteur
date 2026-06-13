@@ -17,6 +17,7 @@ import httpx
 import structlog
 
 from app.config import get_settings
+from app.services.observability.usage_recorder import track_api_call
 
 log = structlog.get_logger()
 
@@ -48,9 +49,13 @@ def _validate_entities(raw_entities: list) -> list[dict]:
 _EMPTY_RESULT: dict = {
     "topics": [],
     "serene": None,
-    "good_news": None,
     "entities": [],
+    "is_ad": None,
 }
+
+
+def _coerce_bool(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
 
 
 # 51 topic slugs in the Facteur taxonomy
@@ -265,25 +270,6 @@ serene = false : tout sujet susceptible de provoquer de l'anxiété chez le lect
 Règle : si le sujet principal de l'article est anxiogène, même partiellement, marque false.
 En cas de doute, marque false.
 
-## BONNE NOUVELLE
-Pour chaque article, détermine "good_news": true ou false.
-good_news = true UNIQUEMENT si l'article rapporte une VRAIE bonne nouvelle, c'est-à-dire :
-- Un progrès tangible et concret (avancée scientifique réalisée, traitement médical efficace, libération, sauvetage, réussite environnementale mesurée)
-- Un impact positif net sur la vie des gens, l'environnement ou la société
-- Quelque chose qui suscite un optimisme fondé, donne de l'espoir, donne envie d'en savoir plus
-
-good_news = false dans TOUS les autres cas, en particulier :
-- Sport (résultats de match, exploits sportifs anodins, transferts) → toujours false
-- Politique : votes, lois, déclarations, polémiques → false (sauf signal d'espoir EXPLICITE et MAJEUR : accord de paix signé, abolition concrète d'une oppression)
-- People, célébrités, buzz, divertissement médiatique, lifestyle léger → false
-- Annonces, intentions, promesses, projets sans réalisation → false
-- Nouveautés tech/produits commerciaux (sortie d'iPhone, IA d'OpenAI) → false sauf bénéfice humain direct et démontré
-- Sujets simplement "neutres" ou "non-anxiogènes" → false (l'absence de mauvaise nouvelle n'est PAS une bonne nouvelle)
-- Tout sujet anxiogène → false
-
-Règle d'or : en cas de doute, marque false. On préfère manquer une bonne nouvelle que d'en signaler une fausse.
-Une bonne nouvelle peut être marquée serene=true ET good_news=true. L'inverse n'est PAS automatique : la majorité des serene=true ne sont PAS good_news=true.
-
 ## ENTITÉS NOMMÉES
 Pour chaque article, extrais 3 à 5 entités nommées principales.
 Types autorisés : PERSON, ORG, EVENT, LOCATION, PRODUCT
@@ -303,9 +289,26 @@ Règles :
 7. Assigne 2-3 topics si l'article couvre clairement plusieurs sujets
 8. Le premier topic est le PLUS pertinent
 
+## PUBLICITÉ / NATIVE AD (is_ad)
+Détermine si l'article est un contenu publicitaire, sponsorisé ou promotionnel déguisé en contenu éditorial.
+
+is_ad = true si l'article est :
+- Un article "bons plans" ou deal commercial (mention d'un prix réduit, remise, code promo, "au meilleur prix", "bradé", lien vers un site marchand)
+- Un contenu d'affiliation ou comparatif orienté achat ("quel est le meilleur produit", "guide d'achat", "top N produits à acheter")
+- Un communiqué de presse déguisé en article (annonce produit sans analyse ni recul critique)
+- Un "test" ou "unboxing" dont l'objectif principal est la conversion commerciale sans critique négative
+
+is_ad = false si l'article est :
+- Une actualité, analyse, enquête ou opinion journalistique, même si un produit y est mentionné
+- Une actualité sur une entreprise avec contexte et recul éditorial (licenciements, stratégie, etc.)
+- Un guide pratique (comment faire X) à valeur informative sans lien marchand
+- Un test comparatif avec véritable critique nuancée ou négative
+
+En cas de doute, is_ad = false (préférer les faux négatifs aux faux positifs).
+
 ## FORMAT
 Réponds en JSON array. Chaque élément :
-{"topics": ["slug1", "slug2"], "serene": true/false, "good_news": true/false, "entities": [{"name": "Nom Complet", "type": "PERSON"}]}
+{"topics": ["slug1", "slug2"], "serene": true/false, "entities": [{"name": "Nom Complet", "type": "PERSON"}], "is_ad": true/false}
 Pas de texte avant ou après."""
 
 CLASSIFICATION_MODEL = "mistral-small-latest"
@@ -381,58 +384,65 @@ class ClassificationService:
         Returns parsed JSON response dict, or None on failure.
         """
         client = self._get_client()
-        for attempt in range(max_retries):
-            try:
-                response = await client.post(MISTRAL_API_URL, json=payload)
-                response.raise_for_status()
-                data = response.json()
+        async with track_api_call(
+            "mistral", "classification_pass1", model=payload.get("model")
+        ) as _call:
+            for attempt in range(max_retries):
+                try:
+                    response = await client.post(MISTRAL_API_URL, json=payload)
+                    response.raise_for_status()
+                    data = response.json()
 
-                # Log usage tokens + truncation detection
-                usage = data.get("usage", {})
-                max_tokens = payload.get("max_tokens")
-                completion_tokens = usage.get("completion_tokens")
-                log.info(
-                    "classification.api_usage",
-                    model=payload.get("model"),
-                    prompt_tokens=usage.get("prompt_tokens"),
-                    completion_tokens=completion_tokens,
-                )
-                if max_tokens and completion_tokens == max_tokens:
-                    log.warning(
-                        "classification.truncated",
-                        max_tokens=max_tokens,
+                    # Log usage tokens + truncation detection
+                    usage = data.get("usage", {})
+                    max_tokens = payload.get("max_tokens")
+                    completion_tokens = usage.get("completion_tokens")
+                    log.info(
+                        "classification.api_usage",
+                        model=payload.get("model"),
+                        prompt_tokens=usage.get("prompt_tokens"),
                         completion_tokens=completion_tokens,
                     )
+                    if max_tokens and completion_tokens == max_tokens:
+                        log.warning(
+                            "classification.truncated",
+                            max_tokens=max_tokens,
+                            completion_tokens=completion_tokens,
+                        )
 
-                return data
+                    _call.status = "ok"
+                    return data
 
-            except httpx.HTTPStatusError as e:
-                status = e.response.status_code
-                if status == 429 and attempt < max_retries - 1:
-                    delay = 2**attempt  # 1s, 2s, 4s
-                    log.warning(
-                        "classification.rate_limited",
-                        attempt=attempt,
-                        delay=delay,
+                except httpx.HTTPStatusError as e:
+                    status = e.response.status_code
+                    if status == 429 and attempt < max_retries - 1:
+                        _call.status = "rate_limited"
+                        delay = 2**attempt  # 1s, 2s, 4s
+                        log.warning(
+                            "classification.rate_limited",
+                            attempt=attempt,
+                            delay=delay,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    if status == 429:
+                        _call.status = "rate_limited"
+                    log.error(
+                        "classification.http_error",
+                        status_code=status,
+                        body=e.response.text[:300],
                     )
-                    await asyncio.sleep(delay)
-                    continue
-                log.error(
-                    "classification.http_error",
-                    status_code=status,
-                    body=e.response.text[:300],
-                )
-                return None
-            except json.JSONDecodeError as e:
-                log.error("classification.json_error", error=str(e))
-                return None
-            except httpx.TimeoutException:
-                log.error("classification.timeout", attempt=attempt)
-                return None
-            except Exception as e:
-                log.error("classification.unexpected", error=str(e))
-                return None
-        return None
+                    return None
+                except json.JSONDecodeError as e:
+                    log.error("classification.json_error", error=str(e))
+                    return None
+                except httpx.TimeoutException:
+                    log.error("classification.timeout", attempt=attempt)
+                    return None
+                except Exception as e:
+                    log.error("classification.unexpected", error=str(e))
+                    return None
+            return None
 
     async def classify_async(
         self,
@@ -576,15 +586,15 @@ class ClassificationService:
         return (
             f"Classifie chacun de ces {len(items)} articles.\n"
             f"Réponds en JSON array de exactement {len(items)} éléments.\n"
-            'Exemple pour 2 articles: [{"topics": ["politics", "europe"], "serene": false, "good_news": false, '
-            '"entities": [{"name": "Emmanuel Macron", "type": "PERSON"}]}, '
-            '{"topics": ["health", "science"], "serene": true, "good_news": true, '
-            '"entities": [{"name": "Institut Pasteur", "type": "ORG"}]}]\n\n'
+            'Exemple pour 2 articles: [{"topics": ["politics", "europe"], "serene": false, '
+            '"entities": [{"name": "Emmanuel Macron", "type": "PERSON"}], "is_ad": false}, '
+            '{"topics": ["health", "science"], "serene": true, '
+            '"entities": [{"name": "Institut Pasteur", "type": "ORG"}], "is_ad": false}]\n\n'
             f"{articles_text}"
         )
 
     def _parse_topics(self, raw: str, top_k: int) -> dict:
-        """Parse la réponse du LLM pour un article unique. Retourne dict avec topics, serene et entities."""
+        """Parse la réponse du LLM pour un article unique. Retourne dict avec topics, serene, entities et is_ad."""
         raw = raw.strip()
 
         # Try JSON parse first (new format: single object or array with one element)
@@ -596,18 +606,12 @@ class ClassificationService:
                     for s in parsed["topics"]
                     if isinstance(s, str) and s.strip().lower() in VALID_TOPIC_SLUGS
                 ]
-                serene = parsed.get("serene")
-                if not isinstance(serene, bool):
-                    serene = None
-                good_news = parsed.get("good_news")
-                if not isinstance(good_news, bool):
-                    good_news = None
                 entities = _validate_entities(parsed.get("entities", []))
                 return {
                     "topics": topics[:top_k],
-                    "serene": serene,
-                    "good_news": good_news,
+                    "serene": _coerce_bool(parsed.get("serene")),
                     "entities": entities,
+                    "is_ad": _coerce_bool(parsed.get("is_ad")),
                 }
             if (
                 isinstance(parsed, list)
@@ -620,18 +624,12 @@ class ClassificationService:
                     for s in item.get("topics", [])
                     if isinstance(s, str) and s.strip().lower() in VALID_TOPIC_SLUGS
                 ]
-                serene = item.get("serene")
-                if not isinstance(serene, bool):
-                    serene = None
-                good_news = item.get("good_news")
-                if not isinstance(good_news, bool):
-                    good_news = None
                 entities = _validate_entities(item.get("entities", []))
                 return {
                     "topics": topics[:top_k],
-                    "serene": serene,
-                    "good_news": good_news,
+                    "serene": _coerce_bool(item.get("serene")),
                     "entities": entities,
+                    "is_ad": _coerce_bool(item.get("is_ad")),
                 }
         except (json.JSONDecodeError, TypeError):
             pass
@@ -643,8 +641,8 @@ class ClassificationService:
         return {
             "topics": valid[:top_k],
             "serene": None,
-            "good_news": None,
             "entities": [],
+            "is_ad": None,
         }
 
     def _parse_batch_response(
@@ -663,7 +661,7 @@ class ClassificationService:
                         raw=raw[:200],
                     )
 
-                # Array of objects with "topics", "serene" and "entities"
+                # Array of objects with "topics", "serene", "entities" and "is_ad"
                 if parsed and isinstance(parsed[0], dict):
                     results = []
                     for item in parsed[:expected_count]:
@@ -674,29 +672,23 @@ class ClassificationService:
                                 if isinstance(s, str)
                                 and s.strip().lower() in VALID_TOPIC_SLUGS
                             ]
-                            serene = item.get("serene")
-                            if not isinstance(serene, bool):
-                                serene = None
-                            good_news = item.get("good_news")
-                            if not isinstance(good_news, bool):
-                                good_news = None
                             entities = _validate_entities(item.get("entities", []))
                             results.append(
                                 {
                                     "topics": topics[:top_k],
-                                    "serene": serene,
-                                    "good_news": good_news,
+                                    "serene": _coerce_bool(item.get("serene")),
                                     "entities": entities,
+                                    "is_ad": _coerce_bool(item.get("is_ad")),
                                 }
                             )
                         else:
-                            results.append(_EMPTY_RESULT)
+                            results.append(_EMPTY_RESULT.copy())
                     # Pad with empty results if Mistral returned fewer than expected
                     while len(results) < expected_count:
-                        results.append(_EMPTY_RESULT)
+                        results.append(_EMPTY_RESULT.copy())
                     return results
 
-                # Fallback: old format (array of arrays), treat serene as None
+                # Fallback: old format (array of arrays), treat serene/is_ad as None
                 if parsed and isinstance(parsed[0], list):
                     log.info("classification_service.batch_old_format_fallback")
                     results = []
@@ -712,14 +704,14 @@ class ClassificationService:
                                 {
                                     "topics": valid[:top_k],
                                     "serene": None,
-                                    "good_news": None,
                                     "entities": [],
+                                    "is_ad": None,
                                 }
                             )
                         else:
-                            results.append(_EMPTY_RESULT)
+                            results.append(_EMPTY_RESULT.copy())
                     while len(results) < expected_count:
-                        results.append(_EMPTY_RESULT)
+                        results.append(_EMPTY_RESULT.copy())
                     return results
 
         except (json.JSONDecodeError, TypeError):
@@ -737,13 +729,13 @@ class ClassificationService:
                 {
                     "topics": valid[:top_k],
                     "serene": None,
-                    "good_news": None,
                     "entities": [],
+                    "is_ad": None,
                 }
             )
 
         while len(results) < expected_count:
-            results.append(_EMPTY_RESULT)
+            results.append(_EMPTY_RESULT.copy())
 
         return results
 

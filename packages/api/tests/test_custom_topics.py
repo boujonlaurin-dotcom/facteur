@@ -124,27 +124,6 @@ class TestUserTopicProfileModel:
             await db_session.commit()
 
     @pytest.mark.asyncio
-    async def test_update_priority_multiplier(self, db_session, test_user):
-        """Test updating the priority multiplier."""
-        topic = UserTopicProfile(
-            user_id=test_user.user_id,
-            topic_name="Climat",
-            slug_parent="climate",
-            keywords=["réchauffement"],
-        )
-        db_session.add(topic)
-        await db_session.commit()
-
-        # Update
-        topic.priority_multiplier = 2.0
-        await db_session.commit()
-
-        result = await db_session.scalar(
-            select(UserTopicProfile).where(UserTopicProfile.id == topic.id)
-        )
-        assert result.priority_multiplier == 2.0
-
-    @pytest.mark.asyncio
     async def test_delete_topic(self, db_session, test_user):
         """Test deleting a topic."""
         topic = UserTopicProfile(
@@ -622,9 +601,9 @@ class TestRecencyBaseAdjustment:
         """Verify recency_base has been raised to 100 (Epic 11)."""
         assert ScoringWeights.recency_base == 100.0
 
-    def test_custom_topic_base_bonus_is_15(self):
-        """Verify CUSTOM_TOPIC_BASE_BONUS is set."""
-        assert ScoringWeights.CUSTOM_TOPIC_BASE_BONUS == 15.0
+    def test_custom_topic_base_bonus_is_25(self):
+        """Verify CUSTOM_TOPIC_BASE_BONUS is set (bumped 15→25 for top3 thematic)."""
+        assert ScoringWeights.CUSTOM_TOPIC_BASE_BONUS == 25.0
 
 
 # ============================================================

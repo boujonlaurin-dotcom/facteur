@@ -46,7 +46,10 @@ def extract_content_ids(items: Any, format_version: str | None) -> set[UUID]:
 
     fmt = format_version or "flat_v1"
 
-    if fmt == "editorial_v1" and isinstance(items, dict):
+    # editorial_v1 et editorial_v2 partagent EXACTEMENT la même forme JSON
+    # (`items` = dict avec `subjects[]`) — seule la sémantique de sélection
+    # diffère. L'extraction des content_ids est donc identique.
+    if fmt in ("editorial_v1", "editorial_v2") and isinstance(items, dict):
         for subject in items.get("subjects") or []:
             if not isinstance(subject, dict):
                 continue

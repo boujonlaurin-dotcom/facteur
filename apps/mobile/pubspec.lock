@@ -582,6 +582,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.1.3"
+  flutter_svg:
+    dependency: "direct main"
+    description:
+      name: flutter_svg
+      sha256: "35882981abcbfb8c15b286f0cd690ff25bac12d95eff3e25ee207f37d4c42e7f"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.3.0"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -632,6 +640,54 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.5.0"
+  geolocator:
+    dependency: "direct main"
+    description:
+      name: geolocator
+      sha256: f62bcd90459e63210bbf9c35deb6a51c521f992a78de19a1fe5c11704f9530e2
+      url: "https://pub.dev"
+    source: hosted
+    version: "13.0.4"
+  geolocator_android:
+    dependency: transitive
+    description:
+      name: geolocator_android
+      sha256: fcb1760a50d7500deca37c9a666785c047139b5f9ee15aa5469fae7dbbe3170d
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.6.2"
+  geolocator_apple:
+    dependency: transitive
+    description:
+      name: geolocator_apple
+      sha256: dbdd8789d5aaf14cf69f74d4925ad1336b4433a6efdf2fce91e8955dc921bf22
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.3.13"
+  geolocator_platform_interface:
+    dependency: transitive
+    description:
+      name: geolocator_platform_interface
+      sha256: "30cb64f0b9adcc0fb36f628b4ebf4f731a2961a0ebd849f4b56200205056fe67"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.2.6"
+  geolocator_web:
+    dependency: transitive
+    description:
+      name: geolocator_web
+      sha256: b1ae9bdfd90f861fde8fd4f209c37b953d65e92823cb73c7dee1fa021b06f172
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.1.3"
+  geolocator_windows:
+    dependency: transitive
+    description:
+      name: geolocator_windows
+      sha256: "175435404d20278ffd220de83c2ca293b73db95eafbdc8131fe8609be1421eb6"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.5"
   glob:
     dependency: transitive
     description:
@@ -992,6 +1048,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.9.1"
+  path_parsing:
+    dependency: transitive
+    description:
+      name: path_parsing
+      sha256: "883402936929eac138ee0a45da5b0f2c80f89913e6dc3bf77eb65b84b409c6ca"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.0"
   path_provider:
     dependency: "direct main"
     description:
@@ -1557,6 +1621,30 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.5.2"
+  vector_graphics:
+    dependency: transitive
+    description:
+      name: vector_graphics
+      sha256: "2306c03da2ba81724afeb589c351ebbc0aa7d86005925be8f8735856dbe5e42d"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.2"
+  vector_graphics_codec:
+    dependency: transitive
+    description:
+      name: vector_graphics_codec
+      sha256: "99fd9fbd34d9f9a32efd7b6a6aae14125d8237b10403b422a6a6dfeac2806146"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.13"
+  vector_graphics_compiler:
+    dependency: transitive
+    description:
+      name: vector_graphics_compiler
+      sha256: b9b3f391857781aa96acacef96066f2f49b4cd03cf9fce3ca4d8da2ef5ea129e
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.3"
   vector_math:
     dependency: transitive
     description:
@@ -1590,7 +1678,7 @@ packages:
     source: hosted
     version: "1.2.1"
   web:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: web
       sha256: "868d88a33d8a87b18ffc05f9f030ba328ffefba92d6c127917a2ba740f9cfe4a"

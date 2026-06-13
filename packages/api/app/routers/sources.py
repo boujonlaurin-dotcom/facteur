@@ -3,21 +3,29 @@
 import contextlib
 import time
 from collections import defaultdict
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import func, select
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from sqlalchemy import and_, func, select
 from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
+from app.models.content import Content
+from app.models.enums import InterestState
 from app.models.failed_source_attempt import FailedSourceAttempt
-from app.models.source import Source
+from app.models.source import Source, UserSource
 from app.models.user import UserInterest
 from app.schemas.source import (
+    CoverageResponse,
+    CoverageRow,
+    PremiumConnectionResponse,
+    RecentItemsRequest,
+    RecentItemsResponse,
     SearchAbandonedRequest,
     SmartSearchRecentItem,
     SmartSearchRequest,
@@ -27,6 +35,7 @@ from app.schemas.source import (
     SourceCreate,
     SourceDetectRequest,
     SourceDetectResponse,
+    SourceRecentItems,
     SourceResponse,
     SourceSearchResponse,
     ThemeFollowed,
@@ -34,19 +43,23 @@ from app.schemas.source import (
     ThemeSourceGroup,
     ThemeSourcesResponse,
     UpdateSourceSubscriptionRequest,
-    UpdateSourceWeightRequest,
 )
 from app.services.feed_cache import FEED_CACHE
 from app.services.pepite_service import PepiteService
+from app.services.premium_curated_sources import (
+    PREMIUM_CURATED_MAP,
+    is_paywalled_source,
+)
 from app.services.search.smart_source_search import (
     SmartSourceSearchService,
     mark_search_abandoned,
 )
-from app.services.source_service import SourceService
+from app.services.source_service import PremiumConnectionNotEnabled, SourceService
 from app.services.sources_cache import SOURCES_CACHE
 from app.utils.db_retry import retry_db_op
 
 logger = structlog.get_logger()
+FOLLOWED_SOURCE_STATES = (InterestState.FOLLOWED, InterestState.FAVORITE)
 
 router = APIRouter()
 
@@ -107,7 +120,6 @@ def _check_search_endpoint_rate(user_id: str) -> bool:
 @router.get("", response_model=SourceCatalogResponse)
 async def get_sources(
     user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
 ) -> SourceCatalogResponse:
     """Récupérer toutes les sources (curées + custom).
 
@@ -115,6 +127,14 @@ async def get_sources(
     (PYTHON-4 / PYTHON-26 — pool pressure). Returns 503 ``sources_unavailable``
     on persistent failure so the mobile FriendlyErrorView can render the
     "Petit souci de serveur" copy instead of a raw DioException.
+
+    Fix PYTHON-4R / PYTHON-3C (IdleInTransactionSessionTimeout lors de
+    l'onboarding) : la session DB est ouverte APRÈS l'acquisition du lock
+    SOURCES_CACHE, pas avant. Auparavant, ``Depends(get_db)`` ouvrait
+    ``BEGIN; SET LOCAL idle_in_transaction_session_timeout=10s`` avant même
+    d'avoir le lock — si un request concurrent tenait le lock plus de 10 s
+    (ex. retry mobile), Postgres tuait la transaction idle et le request
+    retombait en 503 après 3 retries exhaustés.
     """
     user_uuid = UUID(user_id)
 
@@ -127,13 +147,17 @@ async def get_sources(
         if cached is not None:
             return cached
 
-        service = SourceService(db)
+        # Session ouverte ICI — après le lock, juste avant les queries.
+        # Le timer idle_in_transaction_session_timeout ne démarre qu'à ce
+        # moment, éliminant le risque de timeout pendant l'attente de lock.
         try:
-            sources = await retry_db_op(
-                lambda: service.get_all_sources(user_id),
-                session=db,
-                op_name="sources.get_all",
-            )
+            async with safe_async_session() as db:
+                service = SourceService(db)
+                sources = await retry_db_op(
+                    lambda: service.get_all_sources(user_id),
+                    session=db,
+                    op_name="sources.get_all",
+                )
         except (SQLAlchemyError, DBAPIError) as e:
             logger.error(
                 "sources_endpoint_db_error",
@@ -177,6 +201,7 @@ async def get_trending_sources(
 @router.get("/pepites", response_model=list[SourceResponse])
 async def get_pepites(
     limit: int = 4,
+    force_show: bool = False,
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> list[SourceResponse]:
@@ -186,8 +211,10 @@ async def get_pepites(
     (rate-limité ou dismiss récent).
     """
     service = PepiteService(db)
-    sources = await service.get_pepites_for_user(user_id, limit=limit)
-    if sources:
+    sources = await service.get_pepites_for_user(
+        user_id, limit=limit, force_show=force_show
+    )
+    if sources and not force_show:
         await db.commit()
     return sources
 
@@ -247,6 +274,10 @@ def _source_to_response(
         score_ux=s.score_ux,
         recommended_by=getattr(s, "recommended_by", None),
         recommendation_reason=getattr(s, "recommendation_reason", None),
+        has_paywall=is_paywalled_source(s, curated_map=PREMIUM_CURATED_MAP),
+        premium_connection=PremiumConnectionResponse.from_source(
+            s, curated_map=PREMIUM_CURATED_MAP
+        ),
     )
 
 
@@ -338,6 +369,82 @@ async def log_search_abandoned(
     )
 
 
+@router.post("/recent-items", response_model=RecentItemsResponse)
+async def get_recent_items(
+    data: RecentItemsRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> RecentItemsResponse:
+    """Derniers contenus par source, groupés (animation de conclusion onboarding).
+
+    Bornes anti-abus via le schéma : max 30 sources, max 5 items par source.
+    """
+    if not data.source_ids:
+        return RecentItemsResponse(sources=[])
+
+    rn = (
+        func.row_number()
+        .over(
+            partition_by=Content.source_id,
+            order_by=Content.published_at.desc(),
+        )
+        .label("rn")
+    )
+    ranked = (
+        select(
+            Content.source_id,
+            Content.title,
+            Content.published_at,
+            Content.theme,
+            rn,
+        )
+        .where(Content.source_id.in_(data.source_ids))
+        .subquery()
+    )
+    rows = (
+        await db.execute(
+            select(
+                ranked.c.source_id,
+                ranked.c.title,
+                ranked.c.published_at,
+                ranked.c.theme,
+            )
+            .where(ranked.c.rn <= data.per_source)
+            .order_by(ranked.c.source_id, ranked.c.published_at.desc())
+        )
+    ).all()
+
+    items_by_source: dict[UUID, list[SmartSearchRecentItem]] = defaultdict(list)
+    for row in rows:
+        items_by_source[row.source_id].append(
+            SmartSearchRecentItem(
+                title=row.title,
+                published_at=row.published_at.isoformat() if row.published_at else "",
+                theme=row.theme,
+            )
+        )
+
+    sources_result = await db.execute(
+        select(Source.id, Source.name, Source.logo_url).where(
+            Source.id.in_(items_by_source.keys())
+        )
+    )
+    source_meta = {row.id: row for row in sources_result.all()}
+
+    # Ordre de la requête préservé pour un rendu déterministe côté mobile.
+    grouped = [
+        SourceRecentItems(
+            source_id=source_id,
+            name=source_meta[source_id].name,
+            logo_url=source_meta[source_id].logo_url,
+            items=items_by_source[source_id],
+        )
+        for source_id in dict.fromkeys(data.source_ids)
+        if source_id in source_meta
+    ]
+    return RecentItemsResponse(sources=grouped)
+
+
 @router.get("/by-theme/{slug}", response_model=ThemeSourcesResponse)
 async def get_sources_by_theme(
     slug: str,
@@ -346,10 +453,11 @@ async def get_sources_by_theme(
     db: AsyncSession = Depends(get_db),
 ) -> ThemeSourcesResponse:
     """Sources par thème : Curées → Candidates → Communauté."""
-    from app.models.source import UserSource
-
     # Sources déjà suivies par l'utilisateur (pour flag is_trusted dans la réponse)
-    trusted_stmt = select(UserSource.source_id).where(UserSource.user_id == user_id)
+    trusted_stmt = select(UserSource.source_id).where(
+        UserSource.user_id == UUID(user_id),
+        UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+    )
     trusted_result = await db.execute(trusted_stmt)
     trusted_ids: set[UUID] = {row[0] for row in trusted_result.all()}
 
@@ -407,7 +515,13 @@ async def get_sources_by_theme(
 
             stmt_community = (
                 select(Source, func.count(UserSource.user_id).label("followers"))
-                .join(UserSource, UserSource.source_id == Source.id)
+                .join(
+                    UserSource,
+                    and_(
+                        UserSource.source_id == Source.id,
+                        UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+                    ),
+                )
                 .where(Source.is_active.is_(True))
             )
             if exclude_ids:
@@ -438,10 +552,9 @@ async def get_themes_followed(
     db: AsyncSession = Depends(get_db),
 ) -> ThemesFollowedResponse:
     """Thèmes suivis par l'utilisateur avec count de sources."""
-    from app.models.source import UserSource
-
     # Get user interests
-    stmt = select(UserInterest.interest_slug).where(UserInterest.user_id == user_id)
+    user_uuid = UUID(user_id)
+    stmt = select(UserInterest.interest_slug).where(UserInterest.user_id == user_uuid)
     result = await db.execute(stmt)
     slugs = [row[0] for row in result.fetchall()]
 
@@ -451,7 +564,8 @@ async def get_themes_followed(
             select(func.count())
             .select_from(Source)
             .join(UserSource, UserSource.source_id == Source.id)
-            .where(UserSource.user_id == user_id)
+            .where(UserSource.user_id == user_uuid)
+            .where(UserSource.state.in_(FOLLOWED_SOURCE_STATES))
             .where(Source.is_active.is_(True))
             .where((Source.theme == slug) | (Source.secondary_themes.any(slug)))
         )
@@ -581,29 +695,99 @@ async def detect_source(
         )
 
 
-@router.put("/{source_id}/weight", response_model=SourceResponse)
-async def update_source_weight(
+# Nombre maximum de thèmes affichés individuellement ; la longue traîne au-delà
+# est regroupée dans une ligne unique `theme="autres"`.
+COVERAGE_TOP_N = 6
+# Clé brute utilisée pour la ligne agrégée (longue traîne + thèmes NULL).
+COVERAGE_OTHER_THEME = "autres"
+# Espace fine insécable (U+202F) — séparateur des milliers en typographie FR.
+_NARROW_NBSP = " "
+
+
+def _format_fr_thousands(value: int) -> str:
+    """Formate un entier avec une espace fine insécable comme séparateur des milliers."""
+    return f"{value:,}".replace(",", _NARROW_NBSP)
+
+
+@router.get("/{source_id}/coverage", response_model=CoverageResponse)
+async def get_source_coverage(
     source_id: UUID,
-    data: UpdateSourceWeightRequest,
+    days: int = Query(default=30, ge=1, le=365),
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
-) -> SourceResponse:
-    """Mettre à jour le poids d'une source (0.2, 1.0, 2.0)."""
-    service = SourceService(db)
-    result = await service.update_source_weight(
-        user_id, str(source_id), data.priority_multiplier
-    )
+) -> CoverageResponse:
+    """Couverture par thèmes d'une source sur une fenêtre glissante.
 
-    if not result:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Source not found or not followed by user",
+    Agrège `contents` par `theme` sur les `days` derniers jours. Trie par
+    volume décroissant, conserve le top N et regroupe la longue traîne (ainsi
+    que les thèmes NULL) dans une ligne unique `autres`. La clé `theme` reste
+    brute : le mapping label/couleur est fait côté front.
+    """
+    period_label = f"{days} derniers jours"
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+
+    result = await db.execute(
+        select(Content.theme, func.count())
+        .where(Content.source_id == source_id)
+        .where(Content.published_at >= cutoff)
+        .group_by(Content.theme)
+    )
+    aggregates = result.all()
+
+    # total_count = somme sur TOUS les thèmes de la fenêtre (avant troncature top-N).
+    total_count = sum(int(count) for _theme, count in aggregates)
+
+    if total_count == 0:
+        return CoverageResponse(
+            period_label=period_label,
+            total_count=0,
+            caption="Aucun article publié sur la période",
+            rows=[],
         )
 
-    await db.commit()
-    FEED_CACHE.invalidate(UUID(user_id))
-    SOURCES_CACHE.invalidate(UUID(user_id))
-    return result
+    # Sépare les thèmes nommés (non-NULL) de la part NULL, qui ira dans « autres ».
+    named: list[tuple[str, int]] = []
+    other_count = 0
+    for theme, count in aggregates:
+        count = int(count)
+        if theme is None:
+            other_count += count
+        else:
+            named.append((theme, count))
+
+    named.sort(key=lambda item: item[1], reverse=True)
+
+    # Top N affichés individuellement ; le reste rejoint « autres ».
+    head = named[:COVERAGE_TOP_N]
+    tail = named[COVERAGE_TOP_N:]
+    other_count += sum(count for _theme, count in tail)
+
+    rows = [
+        CoverageRow(
+            theme=theme,
+            count=count,
+            pct=round(count / total_count * 100),
+        )
+        for theme, count in head
+    ]
+    if other_count > 0:
+        rows.append(
+            CoverageRow(
+                theme=COVERAGE_OTHER_THEME,
+                count=other_count,
+                pct=round(other_count / total_count * 100),
+            )
+        )
+
+    noun = "article publié" if total_count == 1 else "articles publiés"
+    caption = f"{_format_fr_thousands(total_count)} {noun} sur la période"
+
+    return CoverageResponse(
+        period_label=period_label,
+        total_count=total_count,
+        caption=caption,
+        rows=rows,
+    )
 
 
 @router.put("/{source_id}/subscription", response_model=SourceResponse)
@@ -615,9 +799,15 @@ async def update_source_subscription(
 ) -> SourceResponse:
     """Mettre à jour l'abonnement premium d'une source."""
     service = SourceService(db)
-    result = await service.update_source_subscription(
-        user_id, str(source_id), data.has_subscription
-    )
+    try:
+        result = await service.update_source_subscription(
+            user_id, str(source_id), data.has_subscription
+        )
+    except PremiumConnectionNotEnabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Premium connection is not enabled for this source",
+        ) from None
 
     if not result:
         raise HTTPException(

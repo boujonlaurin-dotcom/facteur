@@ -1,15 +1,12 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
-import '../../../core/services/push_notification_service.dart';
 import '../../../core/services/widget_service.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
-import '../../settings/providers/notifications_settings_provider.dart';
 import '../models/digest_models.dart';
 import '../repositories/digest_repository.dart';
 import 'serein_toggle_provider.dart';
@@ -21,10 +18,11 @@ final digestRepositoryProvider = Provider<DigestRepository>((ref) {
 });
 
 // Digest state provider
-final digestProvider =
-    AsyncNotifierProvider<DigestNotifier, DigestResponse?>(() {
-  return DigestNotifier();
-});
+final digestProvider = AsyncNotifierProvider<DigestNotifier, DigestResponse?>(
+  () {
+    return DigestNotifier();
+  },
+);
 
 /// Read-only snapshot of the dual digest cache (both Essentiel + Lecture
 /// apaisée variants). Re-emits when [digestProvider] changes. Falls back to
@@ -32,11 +30,11 @@ final digestProvider =
 /// yet — keeps the feed carousel resilient before /digest/both lands.
 final dualDigestPreviewProvider =
     Provider<({DigestResponse? normal, DigestResponse? serein})>((ref) {
-  final state = ref.watch(digestProvider);
-  final notifier = ref.read(digestProvider.notifier);
-  final normal = notifier.normalDigest ?? state.valueOrNull;
-  return (normal: normal, serein: notifier.sereinDigest);
-});
+      final state = ref.watch(digestProvider);
+      final notifier = ref.read(digestProvider.notifier);
+      final normal = notifier.normalDigest ?? state.valueOrNull;
+      return (normal: normal, serein: notifier.sereinDigest);
+    });
 
 class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   bool _isCompleting = false;
@@ -141,7 +139,9 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
 
     for (var attempt = 0; attempt <= _digestMaxRetries; attempt++) {
       try {
-        final dual = await repository.fetchBothDigests(date: date).timeout(
+        final dual = await repository
+            .fetchBothDigests(date: date)
+            .timeout(
               const Duration(seconds: 45),
               onTimeout: () => throw TimeoutException(
                 'Le chargement a pris trop de temps. Verifiez votre connexion et reessayez.',
@@ -154,8 +154,6 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         ref.read(sereinToggleProvider.notifier).initFromApi(dual.sereinEnabled);
         // Push to home screen widget
         _syncWidget();
-        // Update notification with dynamic topic keywords
-        unawaited(_updateNotificationWithTopics());
         // If either variant was served as yesterday's stale fallback while
         // fresh content is being generated in background, schedule a silent
         // auto-refetch so the user sees today's digest without pulling.
@@ -166,7 +164,8 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         if (attempt < _digestMaxRetries) {
           // ignore: avoid_print
           print(
-              'DigestNotifier: 202 preparing, retry ${attempt + 1}/$_digestMaxRetries...');
+            'DigestNotifier: 202 preparing, retry ${attempt + 1}/$_digestMaxRetries...',
+          );
           await Future<void>.delayed(_digestRetryDelays[attempt]);
           continue;
         }
@@ -179,7 +178,8 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         if (attempt < 1) {
           // ignore: avoid_print
           print(
-              'DigestNotifier: 503 digest_generation_timeout, 1 retry only (attempt ${attempt + 1})...');
+            'DigestNotifier: 503 digest_generation_timeout, 1 retry only (attempt ${attempt + 1})...',
+          );
           await Future<void>.delayed(const Duration(seconds: 15));
           continue;
         }
@@ -193,7 +193,8 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         if (attempt < maxGenerationRetries) {
           // ignore: avoid_print
           print(
-              'DigestNotifier: 503 error, retry ${attempt + 1}/$maxGenerationRetries...');
+            'DigestNotifier: 503 error, retry ${attempt + 1}/$maxGenerationRetries...',
+          );
           await Future<void>.delayed(_digestRetryDelays[attempt]);
           continue;
         }
@@ -205,7 +206,6 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
           _normalDigest = digest;
           _cachedDate = _todayDateString;
           ref.read(sereinToggleProvider.notifier).initFromApi(false);
-          unawaited(_updateNotificationWithTopics());
           _maybeScheduleStaleFallbackRefetch();
           return digest;
         } catch (_) {
@@ -290,46 +290,6 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     WidgetService.updateWidget(digest: _normalDigest);
   }
 
-  /// Update the daily notification with topic keywords from the loaded digest.
-  /// Uses the normal digest topics to build an engaging notification body.
-  /// Only updates if push notifications are enabled in user settings.
-  ///
-  /// If the user has Serein mode enabled, a calmer notification copy is used
-  /// to avoid triggering anxiety before reading.
-  Future<void> _updateNotificationWithTopics() async {
-    try {
-      final settings = ref.read(notificationsSettingsProvider);
-      if (!settings.pushEnabled) return;
-
-      final digest = _normalDigest;
-      if (digest == null) return;
-
-      final isSerein = ref.read(sereinToggleProvider).enabled;
-      final topTopics = digest.topics
-          .map((t) => t.label.trim())
-          .where((l) => l.isNotEmpty)
-          .take(3)
-          .toList();
-
-      // Variante C (jour calme) hors v1 — Serein + variante A pour rester
-      // cohérent avec le brief §6.1 (variante C = override manuel uniquement).
-      final variant = (!isSerein && topTopics.isNotEmpty)
-          ? NotifVariant.variantB
-          : NotifVariant.variantA;
-
-      await PushNotificationService().scheduleDailyDigestNotification(
-        timeSlot: settings.timeSlot,
-        variant: variant,
-        teasers: variant == NotifVariant.variantB ? topTopics : null,
-      );
-      debugPrint(
-        'DigestNotifier: Re-scheduled (variant: $variant, slot: ${settings.timeSlot})',
-      );
-    } catch (e, stack) {
-      debugPrint('DigestNotifier: Failed to update notification: $e\n$stack');
-    }
-  }
-
   /// Clear the in-memory cache (forces next load to call API).
   void _clearCache() {
     _normalDigest = null;
@@ -350,7 +310,8 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   /// polling rather than spin forever. The counter resets as soon as a
   /// fresh (non-stale) response arrives or on manual cache clear.
   void _maybeScheduleStaleFallbackRefetch() {
-    final isStale = (_normalDigest?.isStaleFallback ?? false) ||
+    final isStale =
+        (_normalDigest?.isStaleFallback ?? false) ||
         (_sereinDigest?.isStaleFallback ?? false);
     _staleFallbackRefetchTimer?.cancel();
     if (!isStale) {
@@ -366,8 +327,11 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       _staleFallbackRefetchTimer = null;
       return;
     }
-    final delay = _staleFallbackBackoff[
-        _staleFallbackAttempts.clamp(0, _staleFallbackBackoff.length - 1)];
+    final delay =
+        _staleFallbackBackoff[_staleFallbackAttempts.clamp(
+          0,
+          _staleFallbackBackoff.length - 1,
+        )];
     _staleFallbackAttempts++;
     _staleFallbackRefetchTimer = Timer(delay, () async {
       // Only auto-refetch if still authenticated and same day, and the
@@ -431,11 +395,13 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     }).toList();
 
     // Also update pepite/coup_de_coeur if contentId matches (editorial_v1)
-    final updatedPepite = currentDigest.pepite != null &&
+    final updatedPepite =
+        currentDigest.pepite != null &&
             currentDigest.pepite!.contentId == contentId
         ? _applyActionToPepite(currentDigest.pepite!, action)
         : currentDigest.pepite;
-    final updatedCoupDeCoeur = currentDigest.coupDeCoeur != null &&
+    final updatedCoupDeCoeur =
+        currentDigest.coupDeCoeur != null &&
             currentDigest.coupDeCoeur!.contentId == contentId
         ? _applyActionToCoupDeCoeur(currentDigest.coupDeCoeur!, action)
         : currentDigest.coupDeCoeur;
@@ -491,8 +457,11 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   }
 
   /// Sync a digest item's state from the detail screen (local only, no API).
-  void syncItemFromDetail(String contentId,
-      {required bool isSaved, String? noteText}) {
+  void syncItemFromDetail(
+    String contentId, {
+    required bool isSaved,
+    String? noteText,
+  }) {
     final currentDigest = state.value;
     if (currentDigest == null) return;
 
@@ -509,11 +478,13 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     }).toList();
 
     // Also sync pepite/coup_de_coeur
-    final updatedPepite = currentDigest.pepite != null &&
+    final updatedPepite =
+        currentDigest.pepite != null &&
             currentDigest.pepite!.contentId == contentId
         ? currentDigest.pepite!.copyWith(isSaved: isSaved)
         : currentDigest.pepite;
-    final updatedCoupDeCoeur = currentDigest.coupDeCoeur != null &&
+    final updatedCoupDeCoeur =
+        currentDigest.coupDeCoeur != null &&
             currentDigest.coupDeCoeur!.contentId == contentId
         ? currentDigest.coupDeCoeur!.copyWith(isSaved: isSaved)
         : currentDigest.coupDeCoeur;
@@ -534,25 +505,29 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   }
 
   /// Complete the digest
-  Future<void> completeDigest() async {
+  Future<DigestCompletionResponse?> completeDigest() async {
     final currentDigest = state.value;
-    if (currentDigest == null || currentDigest.isCompleted || _isCompleting) {
-      return;
+    if (currentDigest == null || _isCompleting) {
+      return null;
     }
 
     _isCompleting = true;
+    final alreadyCompleted = currentDigest.isCompleted;
 
     try {
       final repository = ref.read(digestRepositoryProvider);
-      await repository.completeDigest(currentDigest.digestId);
+      final completionData = await repository.completeDigest(
+        currentDigest.digestId,
+      );
 
-      // Trigger celebratory haptic
-      await HapticFeedback.heavyImpact();
+      if (!alreadyCompleted) {
+        await HapticFeedback.heavyImpact();
+      }
 
       // Update local state and cache
       final completedDigest = currentDigest.copyWith(
         isCompleted: true,
-        completedAt: DateTime.now(),
+        completedAt: completionData.completedAt ?? DateTime.now(),
       );
       state = AsyncData(completedDigest);
       _updateActiveCache(completedDigest);
@@ -560,12 +535,15 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       // Push completed state to home screen widget
       _syncWidget();
 
-      // Show completion notification
-      NotificationService.showSuccess('Briefing terminé !');
+      if (!alreadyCompleted) {
+        NotificationService.showSuccess('Briefing terminé !');
+      }
+      return completionData;
     } catch (e) {
       // ignore: avoid_print
       print('DigestNotifier: completeDigest failed: $e');
       // Don't rethrow - completion failure shouldn't block UI
+      return null;
     } finally {
       _isCompleting = false;
     }
@@ -588,7 +566,11 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         return item.copyWith(isDismissed: true, isRead: false);
       case 'undo':
         return item.copyWith(
-            isRead: false, isSaved: false, isLiked: false, isDismissed: false);
+          isRead: false,
+          isSaved: false,
+          isLiked: false,
+          isDismissed: false,
+        );
       default:
         return item;
     }
@@ -611,7 +593,11 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         return p.copyWith(isDismissed: true, isRead: false);
       case 'undo':
         return p.copyWith(
-            isRead: false, isSaved: false, isLiked: false, isDismissed: false);
+          isRead: false,
+          isSaved: false,
+          isLiked: false,
+          isDismissed: false,
+        );
       default:
         return p;
     }
@@ -619,7 +605,9 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
 
   /// Apply an action mutation to a CoupDeCoeurResponse's flags.
   CoupDeCoeurResponse _applyActionToCoupDeCoeur(
-      CoupDeCoeurResponse c, String action) {
+    CoupDeCoeurResponse c,
+    String action,
+  ) {
     switch (action) {
       case 'like':
         return c.copyWith(isLiked: true);
@@ -635,7 +623,11 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         return c.copyWith(isDismissed: true, isRead: false);
       case 'undo':
         return c.copyWith(
-            isRead: false, isSaved: false, isLiked: false, isDismissed: false);
+          isRead: false,
+          isSaved: false,
+          isLiked: false,
+          isDismissed: false,
+        );
       default:
         return c;
     }
@@ -739,7 +731,9 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     final timeSpentSeconds = _readingTimers.consume(item.contentId, action);
 
     try {
-      ref.read(analyticsServiceProvider).trackContentInteraction(
+      ref
+          .read(analyticsServiceProvider)
+          .trackContentInteraction(
             action: analyticsAction,
             surface: 'digest',
             contentId: item.contentId,
@@ -808,17 +802,22 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   }
 
   /// Update a specific item's state locally (for optimistic updates)
-  void updateItemState(String contentId,
-      {bool? isRead, bool? isSaved, bool? isLiked, bool? isDismissed}) {
+  void updateItemState(
+    String contentId, {
+    bool? isRead,
+    bool? isSaved,
+    bool? isLiked,
+    bool? isDismissed,
+  }) {
     final currentDigest = state.value;
     if (currentDigest == null) return;
 
     DigestItem applyFlags(DigestItem item) => item.copyWith(
-          isRead: isRead ?? item.isRead,
-          isSaved: isSaved ?? item.isSaved,
-          isLiked: isLiked ?? item.isLiked,
-          isDismissed: isDismissed ?? item.isDismissed,
-        );
+      isRead: isRead ?? item.isRead,
+      isSaved: isSaved ?? item.isSaved,
+      isLiked: isLiked ?? item.isLiked,
+      isDismissed: isDismissed ?? item.isDismissed,
+    );
 
     final updatedItems = currentDigest.items.map((item) {
       return item.contentId == contentId ? applyFlags(item) : item;
@@ -832,7 +831,8 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     }).toList();
 
     // Also update pepite/coup_de_coeur
-    final updatedPepite = currentDigest.pepite != null &&
+    final updatedPepite =
+        currentDigest.pepite != null &&
             currentDigest.pepite!.contentId == contentId
         ? currentDigest.pepite!.copyWith(
             isRead: isRead ?? currentDigest.pepite!.isRead,
@@ -841,7 +841,8 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
             isDismissed: isDismissed ?? currentDigest.pepite!.isDismissed,
           )
         : currentDigest.pepite;
-    final updatedCoupDeCoeur = currentDigest.coupDeCoeur != null &&
+    final updatedCoupDeCoeur =
+        currentDigest.coupDeCoeur != null &&
             currentDigest.coupDeCoeur!.contentId == contentId
         ? currentDigest.coupDeCoeur!.copyWith(
             isRead: isRead ?? currentDigest.coupDeCoeur!.isRead,

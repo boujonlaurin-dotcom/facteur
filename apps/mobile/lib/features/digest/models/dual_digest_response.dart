@@ -7,11 +7,7 @@ class DualDigestResponse {
   final DigestResponse? serein;
   final bool sereinEnabled;
 
-  DualDigestResponse({
-    this.normal,
-    this.serein,
-    required this.sereinEnabled,
-  });
+  DualDigestResponse({this.normal, this.serein, required this.sereinEnabled});
 
   factory DualDigestResponse.fromJson(Map<String, dynamic> json) {
     return DualDigestResponse(
@@ -24,4 +20,10 @@ class DualDigestResponse {
       sereinEnabled: json['serein_enabled'] as bool? ?? false,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'normal': normal?.toJson(),
+    'serein': serein?.toJson(),
+    'serein_enabled': sereinEnabled,
+  };
 }

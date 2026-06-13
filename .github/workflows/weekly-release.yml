@@ -1,0 +1,151 @@
+name: Weekly Production Release
+
+# Bouton hebdo (manuel) : avance la branche `production` sur `main`, builde
+# l'APK flavor `prod` (com.example.facteur, canal stable -> tags release-*) et
+# publie la release vue par les vrais users.
+#
+# Railway redéploie le backend prod indépendamment, via son propre webhook sur
+# le push `production`. Le `git push` ci-dessous utilise le GITHUB_TOKEN, qui ne
+# re-déclenche PAS les workflows GitHub Actions (dont promote-to-production.yml) ;
+# c'est pourquoi ce workflow builde l'APK prod lui-même et fait son propre smoke.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # historique complet requis pour le fast-forward
+
+      - name: Advance production to main (fast-forward only)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main production
+          git checkout production
+          # --ff-only : refuse d'avancer si production a divergé de main
+          # (garde-fou : production ne doit JAMAIS recevoir de commits directs).
+          git merge --ff-only origin/main
+          git push origin production
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.6'
+          channel: 'stable'
+
+      - name: Decode keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > apps/mobile/android/app/facteur-release.jks
+
+      - name: Create key.properties
+        run: |
+          cat > apps/mobile/android/key.properties <<EOF
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=facteur-release.jks
+          EOF
+
+      - name: Install dependencies
+        run: |
+          cd apps/mobile
+          flutter pub get
+
+      - name: Generate icons
+        run: |
+          cd apps/mobile
+          flutter pub run flutter_launcher_icons
+
+      # Tag prod stable : release-AAAAMMJJ-HHMM (préfixe `release-`, canal stable).
+      - name: Generate version
+        id: version
+        run: echo "version=release-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
+
+      - name: Build APK (beta flavor — side-loaded, canal stable)
+        run: |
+          cd apps/mobile
+          # versionCode = epoch (monotone et TOUJOURS > les anciens run_number).
+          # github.run_number repart à 1 pour ce workflow neuf -> versionCode=1 ->
+          # downgrade refusé par Android ("le package semble ne pas être valide")
+          # chez tous les users prod déjà installés. Plafond Android 2.1e9 -> ok ~2036.
+          # Flavor `beta` = APK side-loaded (REQUEST_INSTALL_PACKAGES requis pour
+          # l'auto-update) ; UPDATE_CHANNEL=stable -> pull des tags release-*.
+          flutter build apk --release --flavor beta \
+            --build-number=$(date +%s) \
+            --dart-define="API_BASE_URL=https://facteur-production.up.railway.app/api" \
+            --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
+            --dart-define="SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" \
+            --dart-define="REVENUECAT_IOS_KEY=${{ secrets.REVENUECAT_IOS_KEY }}" \
+            --dart-define="POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}" \
+            --dart-define="POSTHOG_HOST=${{ vars.POSTHOG_HOST || 'https://eu.i.posthog.com' }}" \
+            --dart-define="SENTRY_DSN=${{ secrets.SENTRY_DSN_FLUTTER }}" \
+            --dart-define="SENTRY_ENVIRONMENT=production" \
+            --dart-define="UPDATE_CHANNEL=stable" \
+            --dart-define="APP_RELEASE_TAG=${{ steps.version.outputs.version }}"
+
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: facteur-app-prod-release
+          path: apps/mobile/build/app/outputs/flutter-apk/app-beta-release.apk
+
+      - name: Rename APK
+        run: |
+          mv apps/mobile/build/app/outputs/flutter-apk/app-beta-release.apk \
+             apps/mobile/build/app/outputs/flutter-apk/Facteur-${{ steps.version.outputs.version }}.apk
+
+      - name: Create Production Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "Facteur - ${{ steps.version.outputs.version }}"
+          body: |
+            ## Telecharger l'APK
+
+            **Clique sur le fichier `.apk` ci-dessous pour telecharger l'application.**
+
+            ### Installation sur Android
+            1. Telecharge le fichier `.apk` sur ton telephone
+            2. Ouvre le fichier telecharge
+            3. Si demande, autorise l'installation d'apps inconnues
+            4. Installe l'application
+
+            **Ou depuis l'app**: si tu as deja une version installee, appuie sur l'icone de mise a jour en haut a droite du digest.
+
+            ---
+            Build: ${{ steps.version.outputs.version }}
+            Commit: ${{ github.sha }}
+          files: apps/mobile/build/app/outputs/flutter-apk/Facteur-${{ steps.version.outputs.version }}.apk
+          prerelease: true
+          generate_release_notes: true
+
+      # Smoke prod best-effort : Railway redeploie sur le push production, mais le
+      # GITHUB_TOKEN ne re-déclenche pas promote-to-production.yml -> on vérifie ici.
+      # Non bloquant : la release est déjà publiée, on ne fait que remonter l'état.
+      - name: Smoke test production backend
+        run: |
+          sleep 60
+          for i in {1..10}; do
+            RESPONSE=$(curl -sf https://facteur-production.up.railway.app/api/health) && {
+              ENV=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('environment','unknown'))")
+              if [ "$ENV" = "production" ]; then
+                echo "✅ Prod backend up, environment=production"
+                exit 0
+              fi
+              echo "Health OK but environment=$ENV (attendu production)"
+            }
+            echo "Attempt $i: prod pas encore prêt, retry dans 15s..."
+            sleep 15
+          done
+          echo "⚠️ Smoke prod non confirmé après 10 tentatives (release déjà publiée)."

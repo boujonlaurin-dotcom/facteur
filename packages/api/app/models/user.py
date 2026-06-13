@@ -1,11 +1,22 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.models.enums import InterestState
 
 
 class UserProfile(Base):
@@ -33,6 +44,13 @@ class UserProfile(Base):
     # SHA256 of the auth.users email captured at delete-time — kept post-purge
     # for support/legal traceability without storing PII.
     email_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Last app version seen for this user (e.g. "1.2.3+42"), updated on session_start.
+    app_version: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, index=True
+    )
+    app_version_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
@@ -74,6 +92,11 @@ class UserInterest(Base):
     """Centres d'intérêt utilisateur."""
 
     __tablename__ = "user_interests"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "interest_slug", name="user_interests_user_slug_uniq"
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
@@ -83,6 +106,17 @@ class UserInterest(Base):
     )
     interest_slug: Mapped[str] = mapped_column(String(50), nullable=False)
     weight: Mapped[float] = mapped_column(Float, default=1.0)
+    state: Mapped[InterestState] = mapped_column(
+        Enum(
+            InterestState,
+            name="interest_state",
+            create_type=False,
+            values_callable=lambda e: [v.value for v in e],
+        ),
+        nullable=False,
+        default=InterestState.FOLLOWED,
+        server_default=InterestState.FOLLOWED.value,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

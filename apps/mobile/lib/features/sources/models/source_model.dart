@@ -8,6 +8,60 @@ enum SourceType {
   reddit,
 }
 
+class PremiumConnection {
+  final bool enabled;
+  final String loginUrl;
+  final String testUrl;
+  final String? displayHint;
+
+  /// `true` quand la config vient d'un fallback générique côté backend (URL =
+  /// home de la source) plutôt que d'une config curée/explicite. Sert à adapter
+  /// le label du CTA ("Associer" vs "Connecter").
+  final bool isGeneric;
+
+  const PremiumConnection({
+    this.enabled = true,
+    required this.loginUrl,
+    required this.testUrl,
+    this.displayHint,
+    this.isGeneric = false,
+  });
+
+  factory PremiumConnection.fromJson(Map<String, dynamic> json) {
+    return PremiumConnection(
+      enabled: (json['enabled'] as bool?) ?? true,
+      loginUrl: (json['login_url'] as String?)?.trim() ?? '',
+      testUrl: (json['test_url'] as String?)?.trim() ?? '',
+      displayHint: (json['display_hint'] as String?)?.trim(),
+      isGeneric: (json['is_generic'] as bool?) ?? false,
+    );
+  }
+
+  bool get isUsable => enabled && loginUrl.isNotEmpty && testUrl.isNotEmpty;
+}
+
+/// Returns the usable premium connection for [source].
+///
+/// Paid sources without curated connection metadata fall back to their home
+/// page so users can still authenticate through the generic WebView flow.
+PremiumConnection? resolvePremiumConnection(Source source) {
+  final existing = source.premiumConnection;
+  if (existing != null && existing.isUsable) return existing;
+  if (!source.hasPaywall) return null;
+
+  final url = source.url?.trim() ?? '';
+  if (!url.startsWith('http://') && !url.startsWith('https://')) return null;
+
+  return PremiumConnection(
+    loginUrl: url,
+    testUrl: url,
+    displayHint:
+        'Connecte-toi à ton compte sur le site du média, puis reviens lire '
+        'tes articles.',
+    isGeneric: true,
+  );
+}
+
 class Source {
   final String id;
   final String name;
@@ -32,8 +86,18 @@ class Source {
   final int followerCount;
   final double priorityMultiplier;
   final bool hasSubscription;
+
+  /// Source payante (paywall détecté ou média curé). Pilote l'affichage des
+  /// CTA "Lire avec mon abonnement" / "Associer mon abonnement". Défaut false.
+  final bool hasPaywall;
+  final PremiumConnection? premiumConnection;
   final String? recommendedBy;
   final String? recommendationReason;
+
+  /// Langue ISO de la source ("fr","en",...). `null` ⇒ traité comme `fr`
+  /// (convention back-end Phase 4). Forward-compat : non encore consommé
+  /// par l'UI, prêt pour Story 7.7 (label EN sur cartes).
+  final String? language;
 
   Source({
     required this.id,
@@ -59,8 +123,11 @@ class Source {
     this.followerCount = 0,
     this.priorityMultiplier = 1.0,
     this.hasSubscription = false,
+    this.hasPaywall = false,
+    this.premiumConnection,
     this.recommendedBy,
     this.recommendationReason,
+    this.language,
   });
 
   Source copyWith({
@@ -87,8 +154,11 @@ class Source {
     int? followerCount,
     double? priorityMultiplier,
     bool? hasSubscription,
+    bool? hasPaywall,
+    PremiumConnection? premiumConnection,
     String? recommendedBy,
     String? recommendationReason,
+    String? language,
   }) {
     return Source(
       id: id ?? this.id,
@@ -114,8 +184,11 @@ class Source {
       followerCount: followerCount ?? this.followerCount,
       priorityMultiplier: priorityMultiplier ?? this.priorityMultiplier,
       hasSubscription: hasSubscription ?? this.hasSubscription,
+      hasPaywall: hasPaywall ?? this.hasPaywall,
+      premiumConnection: premiumConnection ?? this.premiumConnection,
       recommendedBy: recommendedBy ?? this.recommendedBy,
       recommendationReason: recommendationReason ?? this.recommendationReason,
+      language: language ?? this.language,
     );
   }
 
@@ -156,12 +229,26 @@ class Source {
         priorityMultiplier:
             (json['priority_multiplier'] as num?)?.toDouble() ?? 1.0,
         hasSubscription: (json['has_subscription'] as bool?) ?? false,
+        hasPaywall: (json['has_paywall'] as bool?) ?? false,
+        premiumConnection: _parsePremiumConnection(json['premium_connection']),
         recommendedBy: json['recommended_by'] as String?,
         recommendationReason: json['recommendation_reason'] as String?,
+        language: json['language'] as String?,
       );
     } catch (e) {
       debugPrint('Source.fromJson: [ERROR] Failed to parse: $e');
       return Source.fallback();
+    }
+  }
+
+  static PremiumConnection? _parsePremiumConnection(dynamic value) {
+    if (value is! Map<String, dynamic>) return null;
+    try {
+      final connection = PremiumConnection.fromJson(value);
+      return connection.isUsable ? connection : null;
+    } catch (e) {
+      debugPrint('Source.fromJson: [WARNING] premium_connection ignored: $e');
+      return null;
     }
   }
 

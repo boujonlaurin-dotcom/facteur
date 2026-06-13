@@ -146,6 +146,12 @@ const Map<String, String> _slugToMacroTheme = {
   'middleeast': 'Géopolitique',
   // Sport
   'sport': 'Sport',
+  // Macro-theme slugs (fallback si enrichissement retourne un slug macro)
+  'society': 'Société',
+  'society_climate': 'Société',
+  'culture': 'Culture',
+  'culture_ideas': 'Culture',
+  'international': 'Géopolitique',
 };
 
 /// Reverse mapping: macro-theme label → API theme slug.

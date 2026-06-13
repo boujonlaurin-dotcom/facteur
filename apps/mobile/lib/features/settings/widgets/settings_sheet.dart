@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,9 +10,16 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/routes.dart';
 import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../app_update/providers/app_update_provider.dart';
 import '../../app_update/widgets/update_bottom_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
+import '../../lettres/models/facteur_grade.dart';
+import '../../lettres/providers/letters_provider.dart';
+import '../../lettres/widgets/ring_avatar.dart';
+import '../../my_interests/providers/user_interests_provider.dart';
+import '../../veille/providers/veille_active_config_provider.dart';
+import '../../veille/providers/veille_repository_provider.dart';
 import '../providers/user_profile_provider.dart';
 import 'feedback_modal.dart';
 
@@ -59,8 +70,9 @@ class SettingsSheet extends ConsumerWidget {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Réglages',
-                    style: FacteurTypography.serifTitle(colors.textPrimary)
-                        .copyWith(fontSize: 28, height: 1.15),
+                    style: FacteurTypography.serifTitle(
+                      colors.textPrimary,
+                    ).copyWith(fontSize: 28, height: 1.15),
                   ),
                 ),
               ),
@@ -102,57 +114,47 @@ class _ProfileBlock extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
+    final displayName = ref.watch(userProfileProvider).displayName?.trim();
+    final serein = ref.watch(sereinToggleProvider.select((s) => s.enabled));
+    final lettersState = ref.watch(lettersProvider).valueOrNull;
+    final grade = lettersState?.grade;
+    final shown = (displayName == null || displayName.isEmpty)
+        ? 'Mon profil'
+        : displayName;
     return _SheetCard(
       onTap: () => context.pushNamed(RouteNames.profile),
       child: Padding(
         padding: const EdgeInsets.all(FacteurSpacing.space4),
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: colors.primary.withOpacity(0.10),
-                border: Border.all(
-                  color: colors.primary.withOpacity(0.25),
-                  width: 1,
-                ),
-              ),
-              alignment: Alignment.center,
-              child: Icon(
-                PhosphorIcons.userCircle(PhosphorIconsStyle.duotone),
-                size: 30,
-                color: colors.primary,
-              ),
+            // Même identité visuelle que l'avatar du header (initiales,
+            // serein, badge de niveau).
+            RingAvatar.fromName(
+              displayName,
+              lettersState?.activeLetter?.progress,
+              serein: serein,
+              level: grade?.level,
             ),
             const SizedBox(width: FacteurSpacing.space4),
             Expanded(
-              child: Consumer(builder: (context, ref, _) {
-                final displayName =
-                    ref.watch(userProfileProvider).displayName?.trim();
-                final shown = (displayName == null || displayName.isEmpty)
-                    ? 'Mon profil'
-                    : displayName;
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      shown,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Plan gratuit',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.textSecondary,
-                          ),
-                    ),
-                  ],
-                );
-              }),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    shown,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    grade?.title ?? facteurLadder.first.title,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                  ),
+                ],
+              ),
             ),
             Icon(
               PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
@@ -171,6 +173,7 @@ class _UpdateAvailableTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (kIsWeb || !Platform.isAndroid) return const SizedBox.shrink();
     final colors = context.facteurColors;
     final info = ref.watch(appUpdateProvider).valueOrNull;
     if (info == null || !info.updateAvailable) {
@@ -301,23 +304,18 @@ class _SereinSwitchTile extends ConsumerWidget {
   }
 }
 
-class _ContentShortcuts extends StatelessWidget {
+class _ContentShortcuts extends ConsumerWidget {
   const _ContentShortcuts();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Point d'entrée veille dédié et découvrable (restauré après le retrait au
+    // commit dbb6aa20). État adaptatif : veille active → « Ma veille » (édition) ;
+    // sinon → libellé incitatif vers la création.
+    final hasVeille = ref.watch(veilleActiveConfigProvider).valueOrNull != null;
     return _SheetCard(
       child: Column(
         children: [
-          _ShortcutTile(
-            icon: PhosphorIcons.envelope(PhosphorIconsStyle.regular),
-            label: 'Progression',
-            onTap: () {
-              Navigator.of(context).pop();
-              context.pushNamed(RouteNames.lettres);
-            },
-          ),
-          const _Divider(),
           _ShortcutTile(
             icon: PhosphorIcons.bookOpen(PhosphorIconsStyle.regular),
             label: 'Mes sources',
@@ -332,8 +330,18 @@ class _ContentShortcuts extends StatelessWidget {
           const _Divider(),
           _ShortcutTile(
             icon: PhosphorIcons.binoculars(PhosphorIconsStyle.regular),
-            label: 'Configurer ma veille',
-            onTap: () => context.pushNamed(RouteNames.veilleConfig),
+            label: hasVeille ? 'Ma veille' : 'Crée ta veille',
+            // Même destination que l'ancien « Gérer ma veille » de Mes intérêts :
+            // veille active → menu modifier/archiver ; sinon → flow de création.
+            onTap: () => hasVeille
+                ? _showVeilleManageMenu(context, ref)
+                : context.pushNamed(RouteNames.veilleConfig),
+          ),
+          const _Divider(),
+          _ShortcutTile(
+            icon: PhosphorIcons.palette(PhosphorIconsStyle.regular),
+            label: 'Apparence',
+            onTap: () => context.pushNamed(RouteNames.appearance),
           ),
           const _Divider(),
           _ShortcutTile(
@@ -347,19 +355,104 @@ class _ContentShortcuts extends StatelessWidget {
   }
 }
 
-class _FeedbackTile extends StatelessWidget {
+/// Menu de gestion de la veille (modifier / archiver) — déplacé depuis Mes
+/// intérêts vers le point d'entrée dédié des réglages (« Ma veille »).
+Future<void> _showVeilleManageMenu(BuildContext context, WidgetRef ref) async {
+  final choice = await showModalBottomSheet<String>(
+    context: context,
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: Icon(PhosphorIcons.pencilSimple()),
+            title: const Text('Modifier la veille'),
+            onTap: () => Navigator.of(sheetContext).pop('edit'),
+          ),
+          ListTile(
+            leading: Icon(PhosphorIcons.archive(), color: Colors.red.shade700),
+            title: Text(
+              'Archiver',
+              style: TextStyle(color: Colors.red.shade700),
+            ),
+            onTap: () => Navigator.of(sheetContext).pop('archive'),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (!context.mounted) return;
+  if (choice == 'edit') {
+    await context.pushNamed(
+      RouteNames.veilleConfig,
+      queryParameters: const {'mode': 'edit'},
+    );
+  } else if (choice == 'archive') {
+    await _confirmAndArchiveVeille(context, ref);
+  }
+}
+
+Future<void> _confirmAndArchiveVeille(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Archiver la veille ?'),
+      content: const Text(
+        'Ta veille sera retirée de Mes intérêts et de ta Tournée. '
+        'Tu pourras en créer une nouvelle à tout moment.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Annuler'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
+          child: const Text('Archiver'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  try {
+    await ref.read(veilleRepositoryProvider).deleteConfig();
+    // La config active devient null → le libellé de la tuile repasse à
+    // « Crée ta veille » et le favori veille disparaît de Mes intérêts.
+    ref.invalidate(veilleActiveConfigProvider);
+    ref.invalidate(userInterestsProvider);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Veille archivée')));
+  } catch (_) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Impossible d'archiver la veille.")),
+    );
+  }
+}
+
+class _FeedbackTile extends ConsumerWidget {
   const _FeedbackTile();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     return _SheetCard(
-      onTap: () => showModalBottomSheet<void>(
-        context: context,
-        backgroundColor: Colors.transparent,
-        isScrollControlled: true,
-        builder: (_) => const FeedbackModal(),
-      ),
+      onTap: () {
+        // Trace serveur pour la lettre 4 (action give_app_feedback).
+        unawaited(ref.read(analyticsServiceProvider).trackAppFeedbackOpened());
+        showModalBottomSheet<void>(
+          context: context,
+          backgroundColor: Colors.transparent,
+          isScrollControlled: true,
+          builder: (_) => const FeedbackModal(),
+        );
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: FacteurSpacing.space4,
@@ -422,9 +515,9 @@ class _ShortcutTile extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
               ),
             ),
             Icon(
@@ -447,10 +540,7 @@ class _Divider extends StatelessWidget {
     final colors = context.facteurColors;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space4),
-      child: Container(
-        height: 1,
-        color: colors.border.withOpacity(0.5),
-      ),
+      child: Container(height: 1, color: colors.border.withOpacity(0.5)),
     );
   }
 }

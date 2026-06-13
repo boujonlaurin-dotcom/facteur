@@ -112,11 +112,24 @@ class NotificationsSettingsNotifier
   static const _kGoodNewsEnabled = 'notif_good_news_enabled';
   static const _kGoodNewsTimeSlot = 'notif_good_news_time_slot';
   static const _kNotifVeilleEnabled = 'notif_veille_enabled';
+  // Derniers teasers connus, écrits/lus en direct dans la box (hors `state`,
+  // `_persist` et `_patchBackend`) : purement locaux, jamais shippés au
+  // backend. Le contenu d'une notif locale étant « cuit » au scheduling, ces
+  // clés permettent aux 3 points de déclenchement (cold start, load frais,
+  // mutation réglages) de re-poser la variante B personnalisée. Publiques pour
+  // que `main.dart` (cold start) lise la même clé sans dupliquer le littéral.
+  static const kEssentielTeasers = 'notif_essentiel_teasers';
+  static const kGoodNewsTeasers = 'notif_good_news_teasers';
+  // Dernier état connu de la préférence `serein_enabled`, persisté localement
+  // pour cuire la notif digest sur le bon ton (en-tête + CTA apaisés) aux 3
+  // points de scheduling. Publique : `main.dart` (cold start) la lit aussi.
+  static const kSereinNotif = 'notif_serein_enabled';
 
   Future<Box<dynamic>> _box() => Hive.openBox<dynamic>(_boxName);
 
   Future<void> _loadFromHive() async {
     final box = await _box();
+    if (!mounted) return;
     state = NotificationsSettings(
       pushEnabled: box.get(_kPush, defaultValue: false) as bool,
       preset: NotifPresetX.fromWire(box.get(_kPreset) as String?),
@@ -125,11 +138,9 @@ class NotificationsSettingsNotifier
       refusalCount: box.get(_kRefusalCount, defaultValue: 0) as int,
       lastRefusalAt: _readDate(box, _kLastRefusalAt),
       lastRenudgeAt: _readDate(box, _kLastRenudgeAt),
-      renudgeShownCount:
-          box.get(_kRenudgeShownCount, defaultValue: 0) as int,
+      renudgeShownCount: box.get(_kRenudgeShownCount, defaultValue: 0) as int,
       emailDigestEnabled: box.get(_kEmailDigest, defaultValue: false) as bool,
-      goodNewsEnabled:
-          box.get(_kGoodNewsEnabled, defaultValue: false) as bool,
+      goodNewsEnabled: box.get(_kGoodNewsEnabled, defaultValue: false) as bool,
       goodNewsTimeSlot: NotifTimeSlotX.fromWire(
         box.get(_kGoodNewsTimeSlot) as String?,
       ),
@@ -178,6 +189,7 @@ class NotificationsSettingsNotifier
         renudgeShownCount: dto.renudgeShownCount,
         notifVeilleEnabled: dto.notifVeilleEnabled,
       );
+      if (!mounted) return;
       state = fresh;
       await _persist(fresh);
       await _drainPendingSync();
@@ -225,8 +237,19 @@ class NotificationsSettingsNotifier
     await push.cancelDigestNotification();
     await push.cancelWeeklyCommunityPick();
     await push.cancelGoodNewsNotification();
+    final box = await _box();
+    final essentielTeasers = readTeasers(box, kEssentielTeasers);
+    final goodNewsTeasers = readTeasers(box, kGoodNewsTeasers);
+    final serene = readSerein(box);
     if (state.pushEnabled) {
-      await push.scheduleDailyDigestNotification(timeSlot: state.timeSlot);
+      await push.scheduleDailyDigestNotification(
+        timeSlot: state.timeSlot,
+        variant: essentielTeasers.isEmpty
+            ? NotifVariant.variantA
+            : NotifVariant.variantB,
+        teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
+        serene: serene,
+      );
       if (state.preset == NotifPreset.curieux) {
         await push.scheduleWeeklyCommunityPick();
       }
@@ -234,8 +257,49 @@ class NotificationsSettingsNotifier
     if (state.goodNewsEnabled) {
       await push.scheduleDailyGoodNewsNotification(
         timeSlot: state.goodNewsTimeSlot,
+        teasers: goodNewsTeasers.isEmpty ? null : goodNewsTeasers,
       );
     }
+  }
+
+  /// Lecture défensive d'une liste de teasers persistée. Hive rend des
+  /// `List<dynamic>` ; on filtre aux `String` pour éviter un crash de cast.
+  /// Statique + publique : `main.dart` (cold start) lit la même box sans
+  /// dupliquer la logique de cast défensif.
+  static List<String> readTeasers(Box<dynamic> box, String key) {
+    final raw = box.get(key);
+    if (raw is! List) return const [];
+    return raw.whereType<String>().toList(growable: false);
+  }
+
+  /// Lecture défensive du flag serein persisté (défaut `false`). Statique +
+  /// publique : `main.dart` (cold start) lit la même clé sans dupliquer le cast.
+  static bool readSerein(Box<dynamic> box) {
+    final raw = box.get(kSereinNotif);
+    return raw is bool ? raw : false;
+  }
+
+  /// Met à jour les teasers persistés depuis le dernier digest chargé, puis
+  /// replanifie les notifs perso. Appelée fire-and-forget depuis
+  /// `fluxContinuProvider` après un load frais.
+  ///
+  /// Écriture **conditionnelle** : on n'écrase une liste persistée que si la
+  /// fraîche est non vide — un échec réseau transitoire (digest partiel) ne
+  /// doit pas effacer la perso d'hier.
+  Future<void> syncDigestTeasers({
+    required List<String> essentielTeasers,
+    required List<String> goodNewsTeasers,
+    required bool sereinEnabled,
+  }) async {
+    final box = await _box();
+    if (essentielTeasers.isNotEmpty) {
+      await box.put(kEssentielTeasers, essentielTeasers);
+    }
+    if (goodNewsTeasers.isNotEmpty) {
+      await box.put(kGoodNewsTeasers, goodNewsTeasers);
+    }
+    await box.put(kSereinNotif, sereinEnabled);
+    await _reschedule();
   }
 
   /// Persiste, replanifie, sync backend.

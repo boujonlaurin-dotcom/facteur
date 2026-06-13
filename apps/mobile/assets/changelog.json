@@ -1,0 +1,56 @@
+{
+  "unreleased": [
+    {
+      "tag": "Sources",
+      "summary": "Fiche source repensée : présentation du média en premier, évaluation accessible et repliée."
+    },
+    {
+      "tag": "Affichage",
+      "summary": "Choisis ton mode d'affichage des articles : normal, minimaliste ou lisible."
+    },
+    {
+      "tag": "Progression",
+      "summary": "Deux nouvelles lettres du Facteur : des défis de curation (veille, notes, sources) et un palier de fond pour les lecteurs assidus."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Sections plus légères : le titre de section devient cliquable pour tout lire, fini le bouton en bas."
+    },
+    {
+      "tag": "Flâner",
+      "summary": "Nouveau carrousel « Tes sources discrètes » : ne ratez plus les sources que vous suivez et qui publient rarement."
+    },
+    {
+      "tag": "Flâner",
+      "summary": "Carrousels plus fréquents dans le fil, et « Actu chaude » regroupe désormais des articles qui couvrent vraiment le même sujet."
+    },
+    {
+      "tag": "Veille",
+      "summary": "Veille plus précise (moins de hors-sujet) et plus facile à retrouver dans les réglages."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Questionnaire plus court et plus fluide, fin du blocage en sortie."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Ajoutez n'importe quelle source et voyez ses derniers articles arriver instantanément."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Choix des sources plus clair et premier feed qui met en avant votre thème préféré."
+    }
+  ],
+  "released": [
+    {
+      "version": "1.0.0",
+      "date": "2026-06-09",
+      "entries": [
+        {
+          "tag": "Quoi de neuf",
+          "summary": "Découvrez les nouveautés de chaque mise à jour directement dans l'app."
+        }
+      ]
+    }
+  ]
+}

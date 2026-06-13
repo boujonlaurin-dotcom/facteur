@@ -1,0 +1,286 @@
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../../../config/theme.dart';
+import '../grille_constants.dart';
+import '../models/grille_models.dart';
+import 'dashed_border.dart';
+import 'mot_grid.dart';
+
+/// Vue de résultat (`GMotResultat`, sans `CartePlusLoin`) : cachet de verdict,
+/// titre, sous-titre, grille révélée et carte « pourquoi » (voix Facteur).
+class GrilleResultView extends StatelessWidget {
+  const GrilleResultView({
+    super.key,
+    required this.today,
+    this.animateReveal = false,
+  });
+
+  final GrilleTodayResponse today;
+
+  /// Joue le flip de la dernière ligne (arrivée fraîche depuis le jeu).
+  final bool animateReveal;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.facteurColors;
+    final solved = today.isSolved;
+    final revealed = today.isRevealed;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        _Cachet(solved: solved, revealed: revealed),
+        const SizedBox(height: 16),
+        Text(
+          revealed
+              ? 'Tu as donné ta langue au chat.'
+              : solved
+                  ? 'Mot livré.'
+                  : 'Mot non distribué.',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.fraunces(
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.4,
+            color: c.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 5),
+        _subtitle(context, solved, revealed),
+        const SizedBox(height: 20),
+        MotGrid(
+          longueur: today.longueur,
+          essaisMax: today.essaisMax,
+          premiereLettre: today.premiereLettre,
+          essais: today.essais,
+          variant: MotGridVariant.resultat,
+          revealRow:
+              animateReveal && solved ? today.essais.length - 1 : -1,
+          bounceRevealRow: animateReveal && solved,
+        ),
+        const SizedBox(height: 18),
+        if (today.pourquoi != null) _pourquoi(context),
+      ],
+    );
+  }
+
+  Widget _subtitle(BuildContext context, bool solved, bool revealed) {
+    final c = context.facteurColors;
+    final base = FacteurTypography.bodyMedium(c.textSecondary)
+        .copyWith(fontSize: 14);
+    final bold = base.copyWith(
+      color: c.textPrimary,
+      fontWeight: FontWeight.w700,
+    );
+    if (revealed) {
+      return Text.rich(
+        TextSpan(
+          style: base,
+          children: [
+            const TextSpan(text: 'Pas de défaite — le mot du jour était '),
+            TextSpan(text: today.mot ?? '', style: bold),
+            const TextSpan(text: '. Cette grille ne compte pas au classement.'),
+          ],
+        ),
+        textAlign: TextAlign.center,
+      );
+    }
+    if (solved) {
+      final n = today.nbEssais;
+      return Text.rich(
+        TextSpan(
+          style: base,
+          children: [
+            const TextSpan(text: 'Trouvé en '),
+            TextSpan(text: '$n', style: bold),
+            TextSpan(text: ' essai${n > 1 ? 's' : ''} sur ${today.essaisMax}.'),
+          ],
+        ),
+        textAlign: TextAlign.center,
+      );
+    }
+    return Text.rich(
+      TextSpan(
+        style: base,
+        children: [
+          const TextSpan(text: 'Le mot du jour était '),
+          TextSpan(text: today.mot ?? '', style: bold),
+          const TextSpan(text: '.'),
+        ],
+      ),
+      textAlign: TextAlign.center,
+    );
+  }
+
+  Widget _pourquoi(BuildContext context) {
+    final c = context.facteurColors;
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surfaceElevated,
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+              color: GrilleConstants.avatarFallback,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  today.mot ?? '',
+                  style: GoogleFonts.fraunces(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                    color: c.primary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                // Si un vrai article de la tournée est accroché, on l'affiche
+                // (titre + extrait) ; sinon on retombe sur la phrase « pourquoi ».
+                if (today.featuredExcerpt != null) ...[
+                  Text(
+                    today.featuredTitle ?? '',
+                    style: GoogleFonts.fraunces(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
+                      color: c.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    today.featuredExcerpt!,
+                    style: GoogleFonts.fraunces(
+                      fontSize: 14,
+                      fontStyle: FontStyle.italic,
+                      height: 1.5,
+                      color: c.textSecondary,
+                    ),
+                  ),
+                  if (today.featuredSource != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      today.featuredSource!,
+                      style: FacteurTypography.bodySmall(c.textTertiary)
+                          .copyWith(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ] else
+                  Text(
+                    '« ${today.pourquoi} »',
+                    style: GoogleFonts.fraunces(
+                      fontSize: 14,
+                      fontStyle: FontStyle.italic,
+                      height: 1.5,
+                      color: c.textSecondary,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Cachet circulaire de verdict (`.mv-cachet`) — ✓ Livré / ✕ Manqué /
+/// « ? » Révélé (langue au chat, ni gagné ni perdu).
+class _Cachet extends StatelessWidget {
+  const _Cachet({required this.solved, this.revealed = false});
+  final bool solved;
+  final bool revealed;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.facteurColors;
+    final color = revealed
+        ? c.textStamp
+        : solved
+            ? c.success
+            : c.error;
+    final glyph = revealed
+        ? '?'
+        : solved
+            ? '✓'
+            : '✕';
+    final label = revealed
+        ? 'RÉVÉLÉ'
+        : solved
+            ? 'LIVRÉ'
+            : 'MANQUÉ';
+    return Transform.rotate(
+      angle: -9 * math.pi / 180,
+      child: Container(
+        width: 84,
+        height: 84,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: color, width: 2.5),
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.all(5),
+                child: CustomPaint(
+                  painter: DashedRRectPainter(
+                    color: color.withValues(alpha: 0.45),
+                    strokeWidth: 1.5,
+                    radius: 999,
+                  ),
+                ),
+              ),
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  glyph,
+                  style: TextStyle(
+                    fontSize: 26,
+                    height: 1,
+                    color: color,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: GoogleFonts.courierPrime(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.5,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

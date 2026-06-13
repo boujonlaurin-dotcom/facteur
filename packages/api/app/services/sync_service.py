@@ -17,10 +17,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.content import Content
 from app.models.enums import ContentType, SourceType
 from app.models.source import Source, UserSource
+from app.models.veille import VeilleSource
 from app.services.content_extractor import ContentExtractor
+from app.services.ml.language_filter import detect_language
 from app.services.paywall_detector import detect_paywall
 
 logger = structlog.get_logger()
+
+# Cooldown avant de re-tenter une extraction trafilatura sur le même article.
+# Évite que chaque sync (toutes les 30 min) re-tente d'extraire des articles
+# dont l'extraction a déjà échoué récemment (paywalls, JS-only, 404, etc.).
+# Sans ce gate, chaque sync génère un UPDATE extraction_attempted_at par
+# article — observé en prod : ~3 M UPDATE/jour sur la table contents.
+_EXTRACTION_RETRY_DELAY = datetime.timedelta(hours=24)
+
+
+def _is_extraction_stale(attempted_at: datetime.datetime | None) -> bool:
+    """True si on peut re-tenter l'extraction (jamais tentée OU > 24 h)."""
+    if attempted_at is None:
+        return True
+    if attempted_at.tzinfo is None:
+        attempted_at = attempted_at.replace(tzinfo=datetime.UTC)
+    return datetime.datetime.now(datetime.UTC) - attempted_at > _EXTRACTION_RETRY_DELAY
 
 
 class SyncService:
@@ -72,10 +90,15 @@ class SyncService:
             .distinct()
             .scalar_subquery()
         )
+        # Sources niche référencées par une veille : is_curated=False et absentes
+        # de user_sources → autrement jamais synchronisées (plan veille V0, Pb 1).
+        veille_source_ids = select(VeilleSource.source_id).distinct().scalar_subquery()
         result = await self.session.execute(
             select(Source).where(
                 Source.is_active,
-                (Source.is_curated) | (Source.id.in_(custom_source_ids)),
+                (Source.is_curated)
+                | (Source.id.in_(custom_source_ids))
+                | (Source.id.in_(veille_source_ids)),
             )
         )
         sources = result.scalars().all()
@@ -260,6 +283,7 @@ class SyncService:
             # Base content data
             content_data = {
                 "source_id": source.id,
+                "source_name": source.name,
                 "title": title,
                 "url": link,
                 "guid": guid,
@@ -598,6 +622,7 @@ class SyncService:
                     existing.content_type == ContentType.ARTICLE
                     and existing.content_quality != "full"
                     and not existing.html_content
+                    and _is_extraction_stale(existing.extraction_attempted_at)
                 )
                 if needs_enrich:
                     # Marquer AVANT l'await externe pour garantir le cooldown
@@ -629,6 +654,7 @@ class SyncService:
                 html_content=data.get("html_content"),
                 audio_url=data.get("audio_url"),
                 is_paid=data.get("is_paid", False),
+                language=detect_language(data["title"], data.get("source_name")),
                 created_at=datetime.datetime.utcnow(),
             )
 

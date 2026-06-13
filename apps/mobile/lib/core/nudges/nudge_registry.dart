@@ -8,9 +8,7 @@ import 'nudge_ids.dart';
 class NudgeRegistry {
   NudgeRegistry._();
 
-  static final Map<String, Nudge> _byId = {
-    for (final n in _all) n.id: n,
-  };
+  static final Map<String, Nudge> _byId = {for (final n in _all) n.id: n};
 
   static Nudge get(String id) {
     final nudge = _byId[id];
@@ -59,7 +57,8 @@ class NudgeRegistry {
       surface: NudgeSurface.feed,
       placement: NudgePlacement.hintAnimation,
       priority: NudgePriority.high,
-      frequency: NudgeFrequency.once,
+      frequency: NudgeFrequency.cooldown,
+      cooldown: Duration(days: 14),
       legacySeenKey: 'feed_swipe_hint_seen',
     ),
     const Nudge(
@@ -74,8 +73,16 @@ class NudgeRegistry {
       surface: NudgeSurface.feed,
       placement: NudgePlacement.tooltip,
       priority: NudgePriority.normal,
-      frequency: NudgeFrequency.once,
-      prerequisites: [NudgeIds.feedBadgeLongpress],
+      frequency: NudgeFrequency.cooldown,
+      cooldown: Duration(days: 14),
+    ),
+    const Nudge(
+      id: NudgeIds.personalisationCta,
+      surface: NudgeSurface.feed,
+      placement: NudgePlacement.inlineBanner,
+      priority: NudgePriority.low,
+      frequency: NudgeFrequency.cooldown,
+      cooldown: Duration(days: 30),
     ),
     const Nudge(
       id: NudgeIds.prioritySliderExplainer,
@@ -116,6 +123,18 @@ class NudgeRegistry {
       priority: NudgePriority.low,
       frequency: NudgeFrequency.cooldown,
       cooldown: Duration(days: 5),
+    ),
+
+    // Story web.1 — iOS Safari "Ajouter à l'écran d'accueil". Cooldown 7j
+    // pour les utilisateurs qui ferment via "Plus tard" ; `markSeen`
+    // permanent quand l'utilisateur confirme "C'est fait".
+    const Nudge(
+      id: NudgeIds.iosAddToHome,
+      surface: NudgeSurface.global,
+      placement: NudgePlacement.modal,
+      priority: NudgePriority.high,
+      frequency: NudgeFrequency.cooldown,
+      cooldown: Duration(days: 7),
     ),
   ];
 }
