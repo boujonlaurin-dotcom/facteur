@@ -56,6 +56,9 @@ def _featured_fields(puzzle: GrillePuzzle) -> dict[str, object | None]:
         "featuredExcerpt": puzzle.featured_excerpt,
         "featuredUrl": puzzle.featured_url,
         "featuredSource": puzzle.featured_source,
+        "hybridField": puzzle.hybrid_field,
+        "hybridSnippet": puzzle.hybrid_snippet,
+        "hybridMatch": puzzle.hybrid_match,
     }
 
 

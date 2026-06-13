@@ -44,6 +44,9 @@ _$GrilleTodayResponseImpl _$$GrilleTodayResponseImplFromJson(
       featuredExcerpt: json['featuredExcerpt'] as String?,
       featuredUrl: json['featuredUrl'] as String?,
       featuredSource: json['featuredSource'] as String?,
+      hybridField: json['hybridField'] as String?,
+      hybridSnippet: json['hybridSnippet'] as String?,
+      hybridMatch: json['hybridMatch'] as String?,
     );
 
 Map<String, dynamic> _$$GrilleTodayResponseImplToJson(
@@ -70,6 +73,9 @@ Map<String, dynamic> _$$GrilleTodayResponseImplToJson(
       'featuredExcerpt': instance.featuredExcerpt,
       'featuredUrl': instance.featuredUrl,
       'featuredSource': instance.featuredSource,
+      'hybridField': instance.hybridField,
+      'hybridSnippet': instance.hybridSnippet,
+      'hybridMatch': instance.hybridMatch,
     };
 
 _$GrilleRevealResponseImpl _$$GrilleRevealResponseImplFromJson(
@@ -83,6 +89,9 @@ _$GrilleRevealResponseImpl _$$GrilleRevealResponseImplFromJson(
       featuredExcerpt: json['featuredExcerpt'] as String?,
       featuredUrl: json['featuredUrl'] as String?,
       featuredSource: json['featuredSource'] as String?,
+      hybridField: json['hybridField'] as String?,
+      hybridSnippet: json['hybridSnippet'] as String?,
+      hybridMatch: json['hybridMatch'] as String?,
     );
 
 Map<String, dynamic> _$$GrilleRevealResponseImplToJson(
@@ -96,6 +105,9 @@ Map<String, dynamic> _$$GrilleRevealResponseImplToJson(
       'featuredExcerpt': instance.featuredExcerpt,
       'featuredUrl': instance.featuredUrl,
       'featuredSource': instance.featuredSource,
+      'hybridField': instance.hybridField,
+      'hybridSnippet': instance.hybridSnippet,
+      'hybridMatch': instance.hybridMatch,
     };
 
 _$GrilleGuessResponseImpl _$$GrilleGuessResponseImplFromJson(
@@ -114,6 +126,9 @@ _$GrilleGuessResponseImpl _$$GrilleGuessResponseImplFromJson(
       featuredExcerpt: json['featuredExcerpt'] as String?,
       featuredUrl: json['featuredUrl'] as String?,
       featuredSource: json['featuredSource'] as String?,
+      hybridField: json['hybridField'] as String?,
+      hybridSnippet: json['hybridSnippet'] as String?,
+      hybridMatch: json['hybridMatch'] as String?,
     );
 
 Map<String, dynamic> _$$GrilleGuessResponseImplToJson(
@@ -131,6 +146,9 @@ Map<String, dynamic> _$$GrilleGuessResponseImplToJson(
       'featuredExcerpt': instance.featuredExcerpt,
       'featuredUrl': instance.featuredUrl,
       'featuredSource': instance.featuredSource,
+      'hybridField': instance.hybridField,
+      'hybridSnippet': instance.hybridSnippet,
+      'hybridMatch': instance.hybridMatch,
     };
 
 _$GrilleDistributionItemImpl _$$GrilleDistributionItemImplFromJson(

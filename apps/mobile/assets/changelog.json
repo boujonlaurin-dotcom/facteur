@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Grille",
+      "summary": "Le mot du jour vient d'un vrai titre de l'actu, et on te montre où il se cachait."
+    },
+    {
       "tag": "Sources",
       "summary": "Fiche source repensée : présentation du média en premier, évaluation accessible et repliée."
     },

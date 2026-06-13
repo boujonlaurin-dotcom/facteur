@@ -78,6 +78,14 @@ class GrillePuzzle(Base):
     featured_matched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Sélection hybride (Story mot-du-jour-actu) : le mot du jour est extrait de
+    # l'actu réelle et on fige l'occurrence exacte pour le reveal. Tout nullable
+    # (additif / expand-contract) : NULL → ancien comportement (mot seedé +
+    # `pourquoi`). `hybrid_word_source == "hybrid"` sert d'idempotence + d'obs.
+    hybrid_field: Mapped[str | None] = mapped_column(Text, nullable=True)
+    hybrid_snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
+    hybrid_match: Mapped[str | None] = mapped_column(Text, nullable=True)
+    hybrid_word_source: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False
     )
