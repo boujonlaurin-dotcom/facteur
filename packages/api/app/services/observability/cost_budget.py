@@ -122,7 +122,9 @@ async def monthly_usage_by_call_site() -> dict[str, dict[str, int]]:
         return {}
 
 
-async def log_budget_projection(projection_factor: float = 2.25) -> dict[str, dict[str, int]]:
+async def log_budget_projection(
+    projection_factor: float = 2.25,
+) -> dict[str, dict[str, int]]:
     """Émet `cost_budget_projection` : conso mois courant + projection ×facteur.
 
     `projection_factor` = ratio cible/actuel users (200 / ~89 ≈ 2.25 au

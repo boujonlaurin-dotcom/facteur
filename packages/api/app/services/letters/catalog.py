@@ -168,8 +168,7 @@ LETTER_3: dict = {
                 "ajoute une note : une idée, une citation, un pourquoi."
             ),
             "completion_palier": (
-                "Première note posée. Lire, c'est bien ; garder une trace, "
-                "c'est mieux."
+                "Première note posée. Lire, c'est bien ; garder une trace, c'est mieux."
             ),
             "target_route": "/saved",
         },
@@ -193,8 +192,7 @@ LETTER_3: dict = {
                 "rejoignent ta tournée."
             ),
             "completion_palier": (
-                "Cinq chaînes dans la tournée. Ta sélection ne se limite "
-                "plus au texte."
+                "Cinq chaînes dans la tournée. Ta sélection ne se limite plus au texte."
             ),
             "target_route": "/settings/sources/add",
         },
@@ -217,20 +215,15 @@ LETTER_4: dict = {
     "title": "Facteur de fond",
     "default_status": "upcoming",
     "intro_palier": (
-        "Dernière lettre. Ici, on ne compte plus les gestes : on mesure "
-        "l'endurance."
+        "Dernière lettre. Ici, on ne compte plus les gestes : on mesure l'endurance."
     ),
     "actions": [
         {
             "id": "read_50_articles",
             "label": "Lire 50 articles",
-            "help": (
-                "Cinquante articles, à ton rythme. La régularité fait le "
-                "reste."
-            ),
+            "help": ("Cinquante articles, à ton rythme. La régularité fait le reste."),
             "completion_palier": (
-                "Cinquante lectures. Tu n'es plus un visiteur, tu es un "
-                "habitué."
+                "Cinquante lectures. Tu n'es plus un visiteur, tu es un habitué."
             ),
             "target_route": "/flaner",
         },
@@ -254,8 +247,7 @@ LETTER_4: dict = {
                 "les angles. Dix comparaisons aiguisent le regard."
             ),
             "completion_palier": (
-                "Dix sujets vus sous plusieurs angles. Le doute méthodique "
-                "te va bien."
+                "Dix sujets vus sous plusieurs angles. Le doute méthodique te va bien."
             ),
             "target_route": "/flaner",
         },

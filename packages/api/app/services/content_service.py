@@ -135,8 +135,7 @@ class ContentService:
         result = await self.session.scalars(stmt)
         updated_status = result.one_or_none()
         transitioned_to_consumed = (
-            update_data.status == ContentStatus.CONSUMED
-            and updated_status is not None
+            update_data.status == ContentStatus.CONSUMED and updated_status is not None
         )
 
         if updated_status is None:

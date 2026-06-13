@@ -980,9 +980,7 @@ class SmartSourceSearchService:
             return
         calls = await monthly_call_count("brave")
         if calls >= int(cap * 0.8):
-            logger.warning(
-                "smart_search.brave_budget_warning", calls=calls, cap=cap
-            )
+            logger.warning("smart_search.brave_budget_warning", calls=calls, cap=cap)
 
     async def _search_brave(self, query: str, user_themes: list[str]) -> list[dict]:
         """Search Brave and keep only candidates that resolve to a real RSS feed.
