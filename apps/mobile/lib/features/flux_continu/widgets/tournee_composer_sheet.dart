@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../config/theme.dart';
 import '../../../shared/widgets/buttons/primary_button.dart';
 import 'manage_favorites_sheet.dart';
 
@@ -17,26 +18,53 @@ Future<void> showTourneeComposerSheet(BuildContext context) {
 
 /// Bouton « Composer ma Tournée » — point d'entrée vers la sheet unifiée.
 ///
-/// Style canonique [PrimaryButton] (terracotta plein, `elevation:0`,
-/// `FacteurRadius.small`) au lieu de l'ancienne tuile teintée + ombre, perçue
-/// comme un « dégradé étrange » hors design-system. L'haptique est conservée.
+enum ComposeTourneeButtonStyle { primary, secondary }
+
 class ComposeTourneeButton extends StatelessWidget {
-  const ComposeTourneeButton({super.key, this.padding});
+  const ComposeTourneeButton({
+    super.key,
+    this.padding,
+    this.style = ComposeTourneeButtonStyle.primary,
+  });
 
   final EdgeInsetsGeometry? padding;
+  final ComposeTourneeButtonStyle style;
+
+  void _open(BuildContext context) {
+    HapticFeedback.mediumImpact();
+    showTourneeComposerSheet(context);
+  }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: padding ?? EdgeInsets.zero,
-      child: PrimaryButton(
-        label: 'Composer ma Tournée',
-        icon: PhosphorIcons.slidersHorizontal(PhosphorIconsStyle.bold),
-        onPressed: () {
-          HapticFeedback.mediumImpact();
-          showTourneeComposerSheet(context);
-        },
-      ),
+      child: style == ComposeTourneeButtonStyle.primary
+          ? PrimaryButton(
+              label: 'Composer ma Tournée',
+              icon: PhosphorIcons.slidersHorizontal(PhosphorIconsStyle.bold),
+              onPressed: () => _open(context),
+            )
+          : SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: OutlinedButton.icon(
+                onPressed: () => _open(context),
+                icon: Icon(
+                  PhosphorIcons.slidersHorizontal(
+                    PhosphorIconsStyle.regular,
+                  ),
+                ),
+                label: const Text('Composer ma Tournée'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: context.facteurColors.textPrimary,
+                  side: BorderSide(color: context.facteurColors.border),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(FacteurRadius.small),
+                  ),
+                ),
+              ),
+            ),
     );
   }
 }

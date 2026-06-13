@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../shared/widgets/buttons/primary_button.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/premium_source_connection.dart';
@@ -35,14 +38,26 @@ class SubscriptionsScreen extends ConsumerWidget {
             );
           }
           if (subscribed.isEmpty) {
-            return _EmptyState(colors: colors);
+            return _EmptyState(
+              colors: colors,
+              onAdd: () => _showAddSubscriptionSheet(context),
+            );
           }
-          return ListView.separated(
+          return ListView(
             padding: const EdgeInsets.all(FacteurSpacing.space4),
-            itemCount: subscribed.length,
-            separatorBuilder: (_, __) =>
-                const SizedBox(height: FacteurSpacing.space3),
-            itemBuilder: (_, i) => _SubscriptionTile(source: subscribed[i]),
+            children: [
+              PrimaryButton(
+                label: 'Ajouter un abonnement',
+                icon: PhosphorIcons.plus(PhosphorIconsStyle.bold),
+                onPressed: () => _showAddSubscriptionSheet(context),
+              ),
+              const SizedBox(height: FacteurSpacing.space4),
+              for (var i = 0; i < subscribed.length; i++) ...[
+                _SubscriptionTile(source: subscribed[i]),
+                if (i < subscribed.length - 1)
+                  const SizedBox(height: FacteurSpacing.space3),
+              ],
+            ],
           );
         }(),
       ),
@@ -52,7 +67,9 @@ class SubscriptionsScreen extends ConsumerWidget {
 
 class _EmptyState extends StatelessWidget {
   final FacteurColors colors;
-  const _EmptyState({required this.colors});
+  final VoidCallback onAdd;
+
+  const _EmptyState({required this.colors, required this.onAdd});
 
   @override
   Widget build(BuildContext context) {
@@ -78,13 +95,19 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: FacteurSpacing.space2),
             Text(
-              'Connecte un abonnement à un média payant depuis sa fiche pour '
-              'lire ses articles directement dans Facteur.',
+              'Connecte un média payant que tu suis déjà pour lire ses '
+              'articles directement dans Facteur.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: colors.textSecondary,
                     height: 1.45,
                   ),
+            ),
+            const SizedBox(height: FacteurSpacing.space6),
+            PrimaryButton(
+              label: 'Ajouter un abonnement',
+              icon: PhosphorIcons.plus(PhosphorIconsStyle.bold),
+              onPressed: onAdd,
             ),
           ],
         ),
@@ -133,15 +156,13 @@ class _SubscriptionTile extends ConsumerWidget {
                       builder: (context, snap) {
                         final active = snap.data ?? false;
                         return Text(
-                          active
-                              ? 'Session active'
-                              : 'Reconnexion nécessaire',
-                          style:
-                              Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: active
-                                        ? colors.success
-                                        : colors.warning,
-                                  ),
+                          active ? 'Session active' : 'Reconnexion nécessaire',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(
+                                color: active ? colors.success : colors.warning,
+                              ),
                         );
                       },
                     ),
@@ -175,11 +196,13 @@ class _SubscriptionTile extends ConsumerWidget {
   }
 
   Future<void> _reconnect(BuildContext context, WidgetRef ref) async {
-    if (source.premiumConnection == null) return;
+    final connection = resolvePremiumConnection(source);
+    if (connection == null) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => PremiumSourceConnection(
           source: source,
+          connection: connection,
           onConnected: () => ref
               .read(userSourcesProvider.notifier)
               .connectSubscription(source.id),
@@ -193,5 +216,279 @@ class _SubscriptionTile extends ConsumerWidget {
         .read(userSourcesProvider.notifier)
         .disconnectSubscription(source.id);
     await ref.read(premiumSessionStoreProvider).clearForSource(source);
+  }
+}
+
+Future<void> _showAddSubscriptionSheet(BuildContext context) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => const _AddSubscriptionSheet(),
+  );
+}
+
+class _AddSubscriptionSheet extends ConsumerStatefulWidget {
+  const _AddSubscriptionSheet();
+
+  @override
+  ConsumerState<_AddSubscriptionSheet> createState() =>
+      _AddSubscriptionSheetState();
+}
+
+class _AddSubscriptionSheetState extends ConsumerState<_AddSubscriptionSheet> {
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(() {
+      setState(() => _query = _searchController.text.trim().toLowerCase());
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final eligible = ref.watch(eligibleSubscriptionSourcesProvider);
+    final visible = _query.isEmpty
+        ? eligible
+        : eligible
+            .where((source) => source.name.toLowerCase().contains(_query))
+            .toList();
+
+    return FractionallySizedBox(
+      heightFactor: 0.82,
+      child: Material(
+        color: colors.backgroundPrimary,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(FacteurRadius.large),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              const SizedBox(height: FacteurSpacing.space3),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: colors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  FacteurSpacing.space4,
+                  FacteurSpacing.space4,
+                  FacteurSpacing.space2,
+                  FacteurSpacing.space3,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Ajouter un abonnement',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Fermer',
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: Icon(
+                        PhosphorIcons.x(PhosphorIconsStyle.regular),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (eligible.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    FacteurSpacing.space4,
+                    0,
+                    FacteurSpacing.space4,
+                    FacteurSpacing.space3,
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Rechercher parmi mes sources suivies',
+                      prefixIcon: Icon(
+                        PhosphorIcons.magnifyingGlass(
+                          PhosphorIconsStyle.regular,
+                        ),
+                      ),
+                    ),
+                    onTapOutside: (_) => FocusScope.of(context).unfocus(),
+                  ),
+                ),
+              Expanded(
+                child: eligible.isEmpty
+                    ? _NoEligibleSources(
+                        onChooseSources: () {
+                          final router = GoRouter.of(context);
+                          Navigator.of(context).pop();
+                          router.pushNamed(RouteNames.sources);
+                        },
+                      )
+                    : visible.isEmpty
+                        ? Center(
+                            child: Text(
+                              'Aucun média ne correspond à cette recherche.',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(color: colors.textSecondary),
+                            ),
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(
+                              FacteurSpacing.space4,
+                              0,
+                              FacteurSpacing.space4,
+                              FacteurSpacing.space6,
+                            ),
+                            itemCount: visible.length,
+                            separatorBuilder: (_, __) => Divider(
+                              color: colors.border.withValues(alpha: 0.5),
+                            ),
+                            itemBuilder: (_, index) => _EligibleSourceTile(
+                              source: visible[index],
+                            ),
+                          ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NoEligibleSources extends StatelessWidget {
+  const _NoEligibleSources({required this.onChooseSources});
+
+  final VoidCallback onChooseSources;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(FacteurSpacing.space6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
+              size: 44,
+              color: colors.textTertiary,
+            ),
+            const SizedBox(height: FacteurSpacing.space4),
+            Text(
+              'Aucun média payant suivi',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: FacteurSpacing.space2),
+            Text(
+              'Suis d’abord un média payant dans Mes sources pour pouvoir '
+              'connecter ton abonnement.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.textSecondary,
+                    height: 1.4,
+                  ),
+            ),
+            const SizedBox(height: FacteurSpacing.space6),
+            OutlinedButton.icon(
+              onPressed: onChooseSources,
+              icon: Icon(PhosphorIcons.bookOpen(PhosphorIconsStyle.regular)),
+              label: const Text('Choisir mes sources'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EligibleSourceTile extends ConsumerWidget {
+  const _EligibleSourceTile({required this.source});
+
+  final Source source;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.facteurColors;
+    final connection = resolvePremiumConnection(source)!;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: FacteurSpacing.space2),
+      child: Row(
+        children: [
+          SourceLogoAvatar(source: source, size: 40),
+          const SizedBox(width: FacteurSpacing.space3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  source.name,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  connection.isGeneric
+                      ? 'Connexion sur le site du média'
+                      : 'Connexion guidée disponible',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: FacteurSpacing.space2),
+          TextButton(
+            onPressed: () => _connect(context, ref, connection),
+            child: Text(connection.isGeneric ? 'Associer' : 'Connecter'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _connect(
+    BuildContext context,
+    WidgetRef ref,
+    PremiumConnection connection,
+  ) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PremiumSourceConnection(
+          source: source,
+          connection: connection,
+          onConnected: () => ref
+              .read(userSourcesProvider.notifier)
+              .connectSubscription(source.id),
+        ),
+      ),
+    );
   }
 }

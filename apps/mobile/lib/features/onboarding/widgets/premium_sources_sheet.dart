@@ -298,7 +298,7 @@ class _PremiumSourcesSheetState extends ConsumerState<PremiumSourcesSheet> {
         child: const Text('Dissocier'),
       );
     }
-    final connection = _resolveConnection(source);
+    final connection = resolvePremiumConnection(source);
     if (connection == null) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
@@ -320,27 +320,6 @@ class _PremiumSourcesSheetState extends ConsumerState<PremiumSourcesSheet> {
     return TextButton(
       onPressed: () => _connectSource(context, source, connection),
       child: Text(connection.isGeneric ? 'Associer' : 'Connecter'),
-    );
-  }
-
-  /// Résout la connexion premium d'une source, avec fallback générique frontend
-  /// quand la config est absente. Mêmes règles que le backend
-  /// `PremiumConnectionResponse.from_source` (étape 3) : source payante
-  /// (`hasPaywall`) + URL http(s) valide → login=test=home du média,
-  /// `isGeneric=true`. Retourne `null` pour une source clairement gratuite.
-  PremiumConnection? _resolveConnection(Source source) {
-    final existing = source.premiumConnection;
-    if (existing != null) return existing;
-    if (!source.hasPaywall) return null;
-    final url = source.url?.trim() ?? '';
-    if (!url.startsWith('http://') && !url.startsWith('https://')) return null;
-    return PremiumConnection(
-      loginUrl: url,
-      testUrl: url,
-      displayHint:
-          'Connecte-toi à ton compte sur le site du média, puis reviens lire '
-          'tes articles.',
-      isGeneric: true,
     );
   }
 

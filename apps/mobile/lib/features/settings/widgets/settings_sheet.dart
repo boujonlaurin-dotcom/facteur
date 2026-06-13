@@ -317,15 +317,6 @@ class _ContentShortcuts extends ConsumerWidget {
       child: Column(
         children: [
           _ShortcutTile(
-            icon: PhosphorIcons.envelope(PhosphorIconsStyle.regular),
-            label: 'Progression',
-            onTap: () {
-              Navigator.of(context).pop();
-              context.pushNamed(RouteNames.lettres);
-            },
-          ),
-          const _Divider(),
-          _ShortcutTile(
             icon: PhosphorIcons.bookOpen(PhosphorIconsStyle.regular),
             label: 'Mes sources',
             onTap: () => context.pushNamed(RouteNames.sources),

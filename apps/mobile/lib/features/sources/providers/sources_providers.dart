@@ -34,6 +34,21 @@ final subscribedSourcesProvider = Provider<List<Source>>((ref) {
   return sources.where((s) => s.hasSubscription).toList();
 });
 
+/// Followed paid sources that can be connected from « Mes abonnements ».
+final eligibleSubscriptionSourcesProvider = Provider<List<Source>>((ref) {
+  final sources =
+      ref.watch(userSourcesProvider).valueOrNull ?? const <Source>[];
+  return sources
+      .where(
+        (source) =>
+            source.isTrusted &&
+            !source.hasSubscription &&
+            resolvePremiumConnection(source) != null,
+      )
+      .toList()
+    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+});
+
 typedef SmartSearchQuery = ({String query, String? contentType, bool expand});
 
 final smartSearchProvider =

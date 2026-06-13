@@ -210,6 +210,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
             // dans « Composer ma Tournée ». L'ancienne liste reorderable inline
             // est remplacée par ce point d'entrée unique.
             const ComposeTourneeButton(
+              style: ComposeTourneeButtonStyle.secondary,
               padding: EdgeInsets.fromLTRB(
                 FacteurSpacing.space4,
                 0,

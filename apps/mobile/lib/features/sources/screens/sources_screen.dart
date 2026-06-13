@@ -308,7 +308,9 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                 const SizedBox(height: 12),
                 // Gestion des favoris (sources + thèmes + veille, ordre libre,
                 // cap 5) centralisée dans « Composer ma Tournée ».
-                const ComposeTourneeButton(),
+                const ComposeTourneeButton(
+                  style: ComposeTourneeButtonStyle.secondary,
+                ),
                 const SizedBox(height: 8),
                 if (premiumSources.isNotEmpty)
                   _buildCollapsibleSection(
@@ -761,22 +763,38 @@ class _SourceSettingsCta extends StatelessWidget {
     final colors = context.facteurColors;
     final borderRadius = BorderRadius.circular(FacteurRadius.large);
     return Material(
-      color: colors.primary,
+      key: const Key('source-settings-cta'),
+      color: colors.surface,
       borderRadius: borderRadius,
       child: InkWell(
         onTap: () => context.pushNamed(RouteNames.sourceSettings),
         borderRadius: borderRadius,
-        child: Padding(
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: borderRadius,
+            border: Border.all(color: colors.surfaceElevated),
+          ),
           padding: const EdgeInsets.symmetric(
             horizontal: FacteurSpacing.space4,
-            vertical: FacteurSpacing.space4,
+            vertical: FacteurSpacing.space3,
           ),
           child: Row(
             children: [
-              Icon(
-                PhosphorIcons.slidersHorizontal(PhosphorIconsStyle.bold),
-                color: colors.surface,
-                size: 24,
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colors.primary.withValues(alpha: 0.10),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  PhosphorIcons.slidersHorizontal(
+                    PhosphorIconsStyle.regular,
+                  ),
+                  color: colors.primary,
+                  size: 19,
+                ),
               ),
               const SizedBox(width: FacteurSpacing.space3),
               Expanded(
@@ -785,24 +803,24 @@ class _SourceSettingsCta extends StatelessWidget {
                   children: [
                     Text(
                       'Paramètres des sources',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: colors.surface,
-                            fontWeight: FontWeight.w700,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w600,
                           ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       'Langues, articles payants et abonnements',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.surface.withValues(alpha: 0.85),
+                            color: colors.textSecondary,
                           ),
                     ),
                   ],
                 ),
               ),
               Icon(
-                PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
-                color: colors.surface,
+                PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
+                color: colors.textTertiary,
                 size: 18,
               ),
             ],

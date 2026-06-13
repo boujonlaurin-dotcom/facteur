@@ -52,6 +52,7 @@ class SourceDetailModal extends ConsumerWidget {
             .firstOrNull ??
         source;
     final displaySource = liveSource;
+    final premiumConnection = resolvePremiumConnection(displaySource);
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -135,7 +136,8 @@ class SourceDetailModal extends ConsumerWidget {
             decoration: BoxDecoration(
               color: colors.backgroundSecondary,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: colors.textTertiary.withValues(alpha: 0.2)),
+              border:
+                  Border.all(color: colors.textTertiary.withValues(alpha: 0.2)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -181,7 +183,8 @@ class SourceDetailModal extends ConsumerWidget {
               decoration: BoxDecoration(
                 color: colors.backgroundSecondary,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: colors.textTertiary.withValues(alpha: 0.2)),
+                border: Border.all(
+                    color: colors.textTertiary.withValues(alpha: 0.2)),
               ),
               child: Row(
                 children: [
@@ -217,7 +220,8 @@ class SourceDetailModal extends ConsumerWidget {
               decoration: BoxDecoration(
                 color: colors.backgroundSecondary,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: colors.textTertiary.withValues(alpha: 0.2)),
+                border: Border.all(
+                    color: colors.textTertiary.withValues(alpha: 0.2)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -269,7 +273,8 @@ class SourceDetailModal extends ConsumerWidget {
             decoration: BoxDecoration(
               color: colors.surface,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: colors.textTertiary.withValues(alpha: 0.2)),
+              border:
+                  Border.all(color: colors.textTertiary.withValues(alpha: 0.2)),
             ),
             child: Text(
               source.description ??
@@ -317,13 +322,17 @@ class SourceDetailModal extends ConsumerWidget {
             // CTA abonnement premium — proéminent (primary, en tête) pour les
             // sources payantes. Label selon l'état : déjà abonné / config
             // générique (« Associer ») / config curée (« Connecter »).
-            if (displaySource.premiumConnection != null) ...[
+            if (premiumConnection != null) ...[
               FacteurButton(
-                onPressed: () =>
-                    _openPremiumConnectionFlow(context, ref, displaySource),
+                onPressed: () => _openPremiumConnectionFlow(
+                  context,
+                  ref,
+                  displaySource,
+                  premiumConnection,
+                ),
                 label: displaySource.hasSubscription
                     ? 'Reconnecter cet abonnement'
-                    : (displaySource.premiumConnection!.isGeneric
+                    : (premiumConnection.isGeneric
                         ? 'Associer mon abonnement'
                         : 'Connecter mon abonnement'),
                 type: displaySource.hasPaywall
@@ -351,7 +360,7 @@ class SourceDetailModal extends ConsumerWidget {
                         ? 'Ne plus suivre'
                         : 'Ajouter comme source de confiance'),
                 type: (!isSelected &&
-                        !(displaySource.premiumConnection != null &&
+                        !(premiumConnection != null &&
                             displaySource.hasPaywall))
                     ? FacteurButtonType.primary
                     : FacteurButtonType.secondary,
@@ -463,6 +472,7 @@ class SourceDetailModal extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     Source source,
+    PremiumConnection connection,
   ) async {
     final navigator = Navigator.of(context);
     navigator.pop();
@@ -471,6 +481,7 @@ class SourceDetailModal extends ConsumerWidget {
       MaterialPageRoute(
         builder: (_) => PremiumSourceConnection(
           source: source,
+          connection: connection,
           onConnected: () => ref
               .read(userSourcesProvider.notifier)
               .connectSubscription(source.id),
