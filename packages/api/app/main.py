@@ -526,7 +526,6 @@ app.include_router(
 )
 
 
-
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Log all uncaught exceptions and forward to Sentry."""
