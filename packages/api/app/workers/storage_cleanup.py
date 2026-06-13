@@ -8,6 +8,7 @@ from sqlalchemy import delete, exists, func, not_, select
 
 from app.config import get_settings
 from app.database import safe_async_session
+from app.models.classification_queue import ClassificationQueue
 from app.models.content import Content, UserContentStatus
 from app.models.daily_digest import DailyDigest
 from app.models.source import Source
@@ -21,6 +22,45 @@ settings = get_settings()
 # editorial_article_not_found and triggers a 503 for the owning user.
 # 90 days covers the longest realistic streak fallback window.
 DIGEST_REFERENCE_PROTECTION_DAYS = 90
+
+# Rétention des lignes terminées de classification_queue. Doit rester très
+# au-dessus de la fenêtre de requeue_for_reclassification (48 h) : une ligne
+# purgée trop tôt serait ré-enqueueable et re-classifiée pour rien.
+CLASSIFICATION_QUEUE_RETENTION_DAYS = 30
+
+
+async def purge_finished_classification_queue() -> int:
+    """Purge les lignes completed/failed/cancelled de classification_queue.
+
+    La file est append-only côté terminé : sans purge, les lignes (et leurs
+    index) croissent en O(articles) pour toujours. Best-effort : un échec ne
+    doit pas faire échouer le cleanup des articles.
+
+    Returns:
+        Nombre de lignes supprimées (0 en cas d'erreur).
+    """
+    cutoff = datetime.now(UTC) - timedelta(days=CLASSIFICATION_QUEUE_RETENTION_DAYS)
+    try:
+        async with safe_async_session() as session:
+            result = await session.execute(
+                delete(ClassificationQueue).where(
+                    ClassificationQueue.status.in_(
+                        ["completed", "failed", "cancelled"]
+                    ),
+                    ClassificationQueue.updated_at < cutoff,
+                )
+            )
+            await session.commit()
+            deleted = result.rowcount
+            logger.info(
+                "classification_queue_purged",
+                deleted_count=deleted,
+                retention_days=CLASSIFICATION_QUEUE_RETENTION_DAYS,
+            )
+            return deleted
+    except Exception as e:
+        logger.error("classification_queue_purge_failed", error=str(e))
+        return 0
 
 
 async def _collect_referenced_content_ids(session) -> set[UUID]:
@@ -58,6 +98,14 @@ async def cleanup_old_articles() -> dict:
         retention_days=retention_days,
         cutoff_date=cutoff_date.isoformat(),
     )
+
+    # Purge des lignes terminées de classification_queue, co-localisée ici
+    # (même fenêtre de maintenance 03:00, pas de slot cron supplémentaire).
+    # Distincte du CASCADE déclenché par le DELETE Content plus bas : le CASCADE
+    # ne nettoie que les lignes liées aux articles supprimés, pas celles dont
+    # le Content a survécu (bookmark/deep/digest-ref) mais dont la file est
+    # terminée. Best-effort : un échec ne bloque pas le cleanup des articles.
+    purged_queue_rows = await purge_finished_classification_queue()
 
     async with safe_async_session() as session:
         try:
@@ -135,6 +183,7 @@ async def cleanup_old_articles() -> dict:
                     "preserved_bookmarks": preserved_bookmarks,
                     "preserved_deep": preserved_deep,
                     "preserved_digest_refs": preserved_digest_refs,
+                    "purged_queue_rows": purged_queue_rows,
                 }
 
             # Delete - réutilise les mêmes conditions que le count. FK CASCADE
@@ -160,6 +209,7 @@ async def cleanup_old_articles() -> dict:
                 "preserved_bookmarks": preserved_bookmarks,
                 "preserved_deep": preserved_deep,
                 "preserved_digest_refs": preserved_digest_refs,
+                "purged_queue_rows": purged_queue_rows,
             }
 
         except Exception as e:
