@@ -394,6 +394,170 @@ class TestMatchForTopics:
         llm.chat_json.assert_not_called()
 
 
+def _make_pivot_content(
+    title: str = "Réforme des retraites",
+    topics: list[str] | None = None,
+    theme: str | None = "economy",
+    entities: list[str] | None = None,
+    cluster_id=None,
+):
+    """An opened article used as the pivot for match_for_content."""
+    c = MagicMock()
+    c.id = uuid4()
+    c.title = title
+    c.topics = topics if topics is not None else ["retraites", "reforme"]
+    c.theme = theme
+    c.entities = entities or []
+    c.cluster_id = cluster_id
+    return c
+
+
+class TestEntityNames:
+    def test_parses_json_and_legacy_formats(self):
+        content = _make_pivot_content(
+            entities=[
+                '{"name": "Macron", "type": "PERSON"}',
+                "Renaissance:ORG",
+                "",
+                None,
+            ]
+        )
+        names = DeepMatcher._entity_names(content)
+        assert names == {"macron", "renaissance"}
+
+    def test_empty_entities_returns_empty_set(self):
+        assert DeepMatcher._entity_names(_make_pivot_content(entities=[])) == set()
+
+
+class TestMatchForContent:
+    @pytest.mark.asyncio
+    async def test_llm_selects_deep_for_opened_article(self):
+        pool = [_make_deep_content("Modèle de retraite par répartition")]
+        llm = MagicMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(
+            return_value={"selected_index": 0, "reason": "Analyse de fond"}
+        )
+
+        matcher = DeepMatcher(AsyncMock(), llm, _make_config())
+        pivot = _make_pivot_content()
+
+        with (
+            patch.object(matcher, "_load_deep_articles", AsyncMock(return_value=pool)),
+            patch.object(matcher, "_expand_query", AsyncMock(return_value=set())),
+            patch.object(matcher, "_prefilter", return_value=[(pool[0], 0.5)]),
+        ):
+            result = await matcher.match_for_content(pivot)
+
+        assert isinstance(result, MatchedDeepArticle)
+        assert result.content_id == pool[0].id
+        assert result.match_reason == "Analyse de fond"
+
+    @pytest.mark.asyncio
+    async def test_excludes_self_from_pool(self):
+        pivot = _make_pivot_content()
+        # Pool contains the opened article itself + another deep article.
+        other = _make_deep_content("Autre analyse")
+        other.cluster_id = None
+        pool = [pivot, other]
+
+        captured: dict = {}
+
+        def fake_prefilter(*, articles, **kwargs):
+            captured["articles"] = articles
+            return [(articles[0], 0.5)] if articles else []
+
+        llm = MagicMock()
+        llm.is_ready = False  # skip LLM, go straight to fallback
+
+        matcher = DeepMatcher(AsyncMock(), llm, _make_config())
+        with (
+            patch.object(matcher, "_load_deep_articles", AsyncMock(return_value=pool)),
+            patch.object(matcher, "_prefilter", side_effect=fake_prefilter),
+        ):
+            await matcher.match_for_content(pivot)
+
+        pool_ids = {a.id for a in captured["articles"]}
+        assert pivot.id not in pool_ids
+        assert other.id in pool_ids
+
+    @pytest.mark.asyncio
+    async def test_excludes_same_cluster(self):
+        cid = uuid4()
+        pivot = _make_pivot_content(cluster_id=cid)
+        same_event = _make_deep_content("Même évènement, autre dépêche")
+        same_event.cluster_id = cid
+        elsewhere = _make_deep_content("Mise en perspective historique")
+        elsewhere.cluster_id = None
+        pool = [same_event, elsewhere]
+
+        captured: dict = {}
+
+        def fake_prefilter(*, articles, **kwargs):
+            captured["articles"] = articles
+            return [(articles[0], 0.5)] if articles else []
+
+        llm = MagicMock()
+        llm.is_ready = False
+
+        matcher = DeepMatcher(AsyncMock(), llm, _make_config())
+        with (
+            patch.object(matcher, "_load_deep_articles", AsyncMock(return_value=pool)),
+            patch.object(matcher, "_prefilter", side_effect=fake_prefilter),
+        ):
+            await matcher.match_for_content(pivot)
+
+        pool_ids = {a.id for a in captured["articles"]}
+        assert same_event.id not in pool_ids
+        assert elsewhere.id in pool_ids
+
+    @pytest.mark.asyncio
+    async def test_empty_pool_returns_none(self):
+        llm = MagicMock()
+        llm.is_ready = True
+        matcher = DeepMatcher(AsyncMock(), llm, _make_config())
+
+        with patch.object(
+            matcher, "_load_deep_articles", AsyncMock(return_value=[])
+        ):
+            result = await matcher.match_for_content(_make_pivot_content())
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_no_title_no_topics_returns_none(self):
+        """A thin pivot (no title, no topics, no theme) yields no deep — we
+        refuse to surface a random analysis. No pool load, no LLM call."""
+        llm = MagicMock()
+        llm.is_ready = True
+        load_mock = AsyncMock(return_value=[_make_deep_content("X")])
+        matcher = DeepMatcher(AsyncMock(), llm, _make_config())
+        pivot = _make_pivot_content(title="  ", topics=[], theme=None)
+
+        with patch.object(matcher, "_load_deep_articles", load_mock):
+            result = await matcher.match_for_content(pivot)
+
+        assert result is None
+        load_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_llm_falls_back_to_jaccard(self):
+        pool = [_make_deep_content("Best Jaccard match")]
+        llm = MagicMock()
+        llm.is_ready = False
+
+        matcher = DeepMatcher(AsyncMock(), llm, _make_config())
+        with (
+            patch.object(matcher, "_load_deep_articles", AsyncMock(return_value=pool)),
+            patch.object(matcher, "_prefilter", return_value=[(pool[0], 0.5)]),
+        ):
+            result = await matcher.match_for_content(_make_pivot_content())
+
+        assert result is not None
+        assert result.content_id == pool[0].id
+        llm.chat_json.assert_not_called()
+
+
 class TestFallbackPick:
     def test_returns_top_candidate(self):
         article = _make_deep_content("Top match")
