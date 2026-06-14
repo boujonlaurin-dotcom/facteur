@@ -1,31 +1,35 @@
-feat(observabilité): instrumentation API externes + sonde pool + résumé digest (scaling WP-E)
+feat(onboarding): préférences « profondes » ré-aiguillées + swipe désambiguateur (Story 2.8)
 
-Enabler scaling **purement additif** (aucun impact user-facing, aucun changement de comportement métier). Phase 1 de l'investigation scaling 200 users — *mesurer avant de remédier*. Débloque WP-D (quotas/coûts Mistral), WP-B (digest), WP-A (pool). Doc : `docs/maintenance/maintenance-observabilite-scaling.md`.
+Recentre les questions d'intro de l'onboarding sur les axes qui distinguent les **sources d'un même thème**, et les **câble enfin** au recommender (jusqu'ici `approach`/`response_style` étaient collectés mais jamais utilisés). Additif, **aucune migration**.
 
-## Volet 1 — Tracking persistant des appels API externes
-- Nouvelle table append-only **`api_usage_events`** (`provider`, `model`, `call_site`, `user_id`, `status`, `latency_ms`, `created_at` + 2 index). Pas de contrainte d'unicité → zéro hot-row contention.
-- Recorder best-effort **`record_api_call`** (`app/services/observability/usage_recorder.py`) : session courte dédiée (`safe_async_session`), jamais bloquant, ne lève jamais, gated par le kill-switch `usage_tracking_enabled`.
-- 6 call sites instrumentés en `try/finally` (capte aussi `error`/`rate_limited`) : `classification_pass1`, `good_news_pass2`, `editorial` (chokepoint unique curation/pipeline/deep/perspective), `veille_suggester`, `smart_search_mistral`, `smart_search_brave`. Compteurs in-memory veille existants **laissés en place** (pas de rebranchement d'enforcement → WP-D).
+## Ce que ça change
 
-## Volet 2 — Résumé de run digest always-on
-- `compute_digest_coverage(session, target_date)` factorisé depuis le watchdog (source unique de la couverture, partagée scheduler ↔ job).
-- Log always-on `digest_run_summary` (`duration_seconds`, `total_users`, `success`, `failed`, `coverage_pct`) + `coverage_pct` ajouté à l'event PostHog `digest_generated`. Couverture lue dans une session dédiée best-effort. Aucune nouvelle table.
+- **Profondeur** (ré-aiguillage de `approach`) : sources qui vont à l'essentiel (`direct`) vs qui creusent (`detailed`).
+- **Indépendance** (nouvelle question) : références établies vs indépendants. Cadré comme un **goût**, pas un jugement de fiabilité.
+- **Posture (ex-`response_style`) RETIRÉE** du parcours (décision PO : ne discrimine pas, presque tout le monde veut voir les perspectives). Le signal de perspective vient désormais du seul swipe (carte « autre angle »).
+- **Swipe désambiguateur** : page active (parcours « curieux » ; sautée si « je connais déjà »), cartes étalées sur les axes (fond / actu / indépendant / référence / perspective) ; chaque swipe = vote *révélé* qui repondère le recommender. Sources likées **pré-sélectionnées** au reveal.
 
-## Volet 3 — Sonde pool périodique + métrique idle-in-tx
-- `read_pool_stats(engine)` factorisé (`app/observability/pool_stats.py`), réutilisé par `/api/health/pool` (comportement inchangé) **et** par la nouvelle sonde.
-- Job APScheduler `_pool_health_probe` (interval 5 min) : alerte `db_pool_pressure_high` + `sentry_sdk.capture_message(level="warning")` au seuil `pool_alert_threshold_pct` (défaut 80).
-- `zombie_session_sweeper` émet désormais `db_idle_in_transaction_swept{count}` always-on (idle-in-tx requêtable même à 0).
+## Câblage & stockage (additif, sans migration)
 
-## Config (kill-switches)
-`usage_tracking_enabled: bool = True` · `pool_alert_threshold_pct: int = 80`.
+- `SourceRecommender.recommend()` reçoit `depthPref`, `independencePref`, `swipeLiked`, `swipeDisliked` → deltas de score (réutilise le scoring thème/fiabilité existant) + `buildSpanningSet()` pour le swipe.
+- `score_independence`/`bias_stance`/`source_tier` déjà sérialisés côté API (aucun champ source ajouté).
+- Backend : `OnboardingAnswers` gagne `independence_pref`/`swipe_liked`/`swipe_disliked` (optionnels, payload sans eux reste valide) ; `save_onboarding` persiste `independence_pref` + agrégats `swipe_liked_count`/`swipe_disliked_count` (≤ 100 car., aucune migration).
+- Version onboarding Hive **5 → 6** (réindexation d'enums).
 
-## Migration
-`au01_api_usage_events`, `down_revision = gr02_grille_featured_article` (head courant ; `vf02` du plan était dépassé depuis #784). **1 seul head** confirmé via `alembic heads`. Additive pure (CREATE TABLE + 2 index), rollback trivial. `upgrade head` + `downgrade -1` rejoués sur **DB vide** → OK.
+## Changements connexes (heads-up review)
 
-## Tests & VERIFY
-- Nouveaux : `tests/test_usage_recorder.py` (kill-switch, best-effort never-raises, coercition user_id, call_site inconnu), `tests/test_pool_observability.py` (`read_pool_stats` saturé/ok/NullPool + sonde alerte/quiet/registration).
-- Non-régression : `tests/ml/`, `tests/editorial/`, `tests/workers/`, `tests/test_digest_generation_job.py`, `tests/test_health_pool.py`, `tests/services/search/` → **tout vert** (~355 tests sur les modules touchés).
-- Intégration live (Postgres) : 1 ligne/appel écrite (Mistral + Brave), kill-switch ⇒ 0 insert, requête WP-D `GROUP BY provider, model, day` OK.
+- **Fix d'un `changelog.json` malformé pré-existant** sur `main` (entrée « Corrections » du #842 fusionnée avec « Grille » sans séparateur → JSON invalide, `json.decode` cassé). Corrigé + entrée `Onboarding` ajoutée.
+- **Feed filters** : la priorisation « Rester serein » lisait `responseStyle == 'nuanced' || perspective == 'big_picture'` (deux signaux désormais morts) → re-câblée sur l'objectif vivant `anxiety`.
 
-## Risques & rollback
-Write amplification négligeable (append-only + best-effort + flag, ~3k/j). Rollback à chaud : `usage_tracking_enabled=False` (sans redéploiement schéma) ou `alembic downgrade -1`. Pas de changelog user (PR backend sans impact visible).
+## Vérification
+
+- Backend : `pytest` ciblé → **17 passed** (parsing, persistance, backward-compat sans les nouveaux champs).
+- Mobile : `flutter analyze` → **0 erreur** ; `flutter test test/features/onboarding/ test/features/feed/personalized_filters_provider_test.dart` → **64 passed**.
+- Swipe bâti sur `Dismissible` (built-in) → **aucune dépendance ajoutée**.
+
+## Follow-ups explicites (hors scope, cf. story 2.8)
+
+- Intégrer les axes dans les pillars du feed serveur + persister l'affinité par source issue du swipe.
+- Backfill `tone` via le pipeline d'évals (futur axe « ton »).
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

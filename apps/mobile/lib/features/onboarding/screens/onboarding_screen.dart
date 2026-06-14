@@ -8,13 +8,14 @@ import '../widgets/reaction_screen.dart';
 import '../onboarding_strings.dart';
 import 'questions/objective_question.dart';
 import 'questions/approach_question.dart';
-import 'questions/response_style_question.dart';
+import 'questions/independence_question.dart';
 import 'questions/digest_mode_question.dart';
 import 'questions/media_concentration_screen.dart';
 import 'questions/themes_question.dart';
 import 'questions/subtopics_question.dart';
 import 'questions/sources_question.dart';
 import 'questions/sources_intent_question.dart';
+import 'questions/swipe_disambiguator_question.dart';
 import 'questions/finalize_question.dart';
 import 'questions/intro_screen.dart';
 
@@ -194,8 +195,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       case Section2Question.approach:
         return const ApproachQuestion(key: ValueKey('approach'));
 
-      case Section2Question.responseStyle:
-        return const ResponseStyleQuestion(key: ValueKey('response_style'));
+      case Section2Question.independence:
+        return const IndependenceQuestion(key: ValueKey('independence'));
     }
   }
 
@@ -213,6 +214,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
       case Section3Question.sourcesIntent:
         return const SourcesIntentQuestion(key: ValueKey('sources_intent'));
+
+      case Section3Question.swipe:
+        return const SwipeDisambiguatorQuestion(key: ValueKey('swipe'));
 
       case Section3Question.sources:
         return const SourcesQuestion(key: ValueKey('sources'));

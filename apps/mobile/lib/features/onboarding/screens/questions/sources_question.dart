@@ -84,20 +84,31 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
     final subtopics = answers.subtopics ?? [];
     final objectives = answers.objectives ?? [];
 
+    final swipeLiked = answers.swipeLiked ?? const <String>[];
+
     final reco = SourceRecommender.recommend(
       selectedThemes: themes,
       selectedSubtopics: subtopics,
       allSources: allSources,
       objectives: objectives,
+      // Axes "profondeur" ré-aiguillés (v6) : déclaratif (approach +
+      // indépendance) repondéré par le révélé (swipe).
+      depthPref: answers.approach,
+      independencePref: answers.independencePref,
+      swipeLiked: swipeLiked,
+      swipeDisliked: answers.swipeDisliked ?? const <String>[],
     );
     _recommendation = reco;
     _suggestions = _computeSuggestions(reco, hasThemes: themes.isNotEmpty);
 
-    // Pré-sélection (curious uniquement) : limitée aux suggestions visibles,
-    // au lieu des 13-20 matched+gems d'avant.
+    // Pré-sélection (curious uniquement) : suggestions visibles + sources
+    // swipées à droite (garanties pré-cochées au reveal, double usage du swipe).
     if (!_hasAppliedPreselection) {
       _hasAppliedPreselection = true;
-      _selectedSourceIds = _suggestions!.map((r) => r.source.id).toSet();
+      _selectedSourceIds = {
+        ..._suggestions!.map((r) => r.source.id),
+        ...swipeLiked,
+      };
     }
   }
 
