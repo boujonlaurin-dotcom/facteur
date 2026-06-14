@@ -407,13 +407,13 @@ class DeepMatcher:
 
             similarity = self._detector.jaccard_similarity(topic_tokens, article_tokens)
 
-            # Entity overlap bonus: shared named entities boost similarity
+            # Entity overlap bonus: shared named entities boost similarity.
+            # Parse the candidate's entities with the same tolerant helper as
+            # the pivot side — entities are persisted as JSON ({"name": ...})
+            # in prod (classification_queue_service), so the legacy "name:type"
+            # split alone never matched and this bonus silently never fired.
             if cluster_entities and article.entities:
-                article_entity_names = {
-                    e.split(":")[0].lower().strip()
-                    for e in article.entities
-                    if e and ":" in e
-                }
+                article_entity_names = self._entity_names(article)
                 entity_overlap = len(cluster_entities & article_entity_names)
                 if entity_overlap > 0:
                     similarity += min(0.05 * entity_overlap, 0.15)

@@ -1215,6 +1215,11 @@ async def _compute_deep_reco_background(content_id: str, user_id: str) -> None:
             )
     except Exception:
         logger.exception("deep_reco_background_failed", content_id=content_id)
+        # Resolve to "no match" for the TTL window so a persistent failure
+        # can't leave deep_pending=True forever: otherwise the reader refetches
+        # every ~2.2s and each poll reschedules this (2-LLM-call) compute. A
+        # transient blip self-heals on the next open once the TTL entry expires.
+        _deep_reco_cache.setdefault(content_id, _DEEP_NO_MATCH)
     finally:
         _deep_reco_inflight.discard(content_id)
 

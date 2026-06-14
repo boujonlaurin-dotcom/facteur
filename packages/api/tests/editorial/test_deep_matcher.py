@@ -598,3 +598,40 @@ class TestFallbackPick:
             )
             is None
         )
+
+
+class TestPrefilterEntityBonus:
+    """The entity-overlap bonus must fire for entities persisted as JSON
+    ({"name": ...}) — the prod format — not only the legacy "name:type" form.
+    """
+
+    def _matcher(self) -> DeepMatcher:
+        llm = MagicMock()
+        llm.is_ready = False
+        return DeepMatcher(AsyncMock(), llm, _make_config())
+
+    def test_json_and_legacy_entities_both_boost_similarity(self):
+        matcher = self._matcher()
+        topic = _make_topic(label="Réforme retraites", deep_angle="Macron")
+
+        # Identical text → identical base Jaccard; only entities differ.
+        base = _make_deep_content(title="Réforme retraites analyse", topics=["retraites"])
+        base.entities = []
+        with_json = _make_deep_content(title="Réforme retraites analyse", topics=["retraites"])
+        with_json.entities = ['{"name": "Macron", "type": "PER"}']
+        with_legacy = _make_deep_content(title="Réforme retraites analyse", topics=["retraites"])
+        with_legacy.entities = ["Macron:PER"]
+
+        scored = matcher._prefilter(
+            topic=topic,
+            articles=[base, with_json, with_legacy],
+            limit=10,
+            threshold=0.0,
+            cluster_entities={"macron"},
+        )
+        by_id = {a.id: s for a, s in scored}
+
+        # +0.05 bonus (one shared entity) over the entity-less baseline...
+        assert by_id[with_json.id] == pytest.approx(by_id[base.id] + 0.05)
+        # ...and the JSON form now matches the legacy form exactly.
+        assert by_id[with_json.id] == pytest.approx(by_id[with_legacy.id])
