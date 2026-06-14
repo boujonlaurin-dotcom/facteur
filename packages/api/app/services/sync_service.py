@@ -18,27 +18,11 @@ from app.models.content import Content
 from app.models.enums import ContentType, SourceType
 from app.models.source import Source, UserSource
 from app.models.veille import VeilleSource
-from app.services.content_extractor import ContentExtractor
+from app.services.content_quality import compute_content_quality
 from app.services.ml.language_filter import detect_language
 from app.services.paywall_detector import detect_paywall
 
 logger = structlog.get_logger()
-
-# Cooldown avant de re-tenter une extraction trafilatura sur le même article.
-# Évite que chaque sync (toutes les 30 min) re-tente d'extraire des articles
-# dont l'extraction a déjà échoué récemment (paywalls, JS-only, 404, etc.).
-# Sans ce gate, chaque sync génère un UPDATE extraction_attempted_at par
-# article — observé en prod : ~3 M UPDATE/jour sur la table contents.
-_EXTRACTION_RETRY_DELAY = datetime.timedelta(hours=24)
-
-
-def _is_extraction_stale(attempted_at: datetime.datetime | None) -> bool:
-    """True si on peut re-tenter l'extraction (jamais tentée OU > 24 h)."""
-    if attempted_at is None:
-        return True
-    if attempted_at.tzinfo is None:
-        attempted_at = attempted_at.replace(tzinfo=datetime.UTC)
-    return datetime.datetime.now(datetime.UTC) - attempted_at > _EXTRACTION_RETRY_DELAY
 
 
 class SyncService:
@@ -62,7 +46,7 @@ class SyncService:
         """Yield a short-lived session for one DB operation.
 
         Cf. docs/bugs/bug-infinite-load-requests.md (P2). On NE TIENT JAMAIS
-        de session ouverte pendant un await externe (httpx, trafilatura). Cette
+        de session ouverte pendant un await externe (httpx, feedparser). Cette
         helper ouvre une session, commit en sortie nominale, rollback sur
         exception, et la ferme. Si `session_maker` n'est pas fourni
         (constructeur legacy / tests unitaires), on retombe sur `self.session`
@@ -152,7 +136,7 @@ class SyncService:
 
         Refactor P2 (cf. docs/bugs/bug-infinite-load-requests.md) : la session
         SQLAlchemy n'est PLUS tenue ouverte pendant la boucle de 50 entries. Les
-        I/O externes (httpx, trafilatura, feedparser) s'exécutent hors session ;
+        I/O externes (httpx, feedparser) s'exécutent hors session ;
         chaque INSERT/UPDATE ouvre une session courte via `_short_session()`.
         Avant ce fix, `self.session` restait checked-out pendant 4 à 20 minutes
         par source × 5 sources en parallèle → fuite massive du pool DB.
@@ -195,8 +179,6 @@ class SyncService:
             new_contents_count = 0
 
             # 3. Process entries — chaque itération ouvre des sessions COURTES.
-            # Aucun `await` externe (httpx, trafilatura) ne se produit dans un
-            # `with session:` bloc.
             for entry in feed.entries[:50]:
                 content_data = self._parse_entry(entry, source)
                 if not content_data:
@@ -218,15 +200,9 @@ class SyncService:
                     html_head=html_head,
                 )
 
-                # 3c. Upsert atomique (session COURTE) — retourne ce qu'il faut
-                # pour décider de l'enrichissement trafilatura suivant.
+                # 3c. Upsert atomique (session COURTE).
                 try:
-                    (
-                        is_new,
-                        content_id,
-                        needs_enrich,
-                        content_url,
-                    ) = await self._save_content(content_data)
+                    is_new = await self._save_content(content_data)
                 except SQLAlchemyError as save_err:
                     logger.warning(
                         "Failed to save content",
@@ -238,20 +214,6 @@ class SyncService:
 
                 if is_new:
                     new_contents_count += 1
-
-                # 3d. Trafilatura (HORS session DB, max 20s).
-                if needs_enrich and content_id is not None and content_url:
-                    extraction = await self._run_extraction_safely(content_url)
-                    # 3e. Apply extraction result en session COURTE.
-                    if extraction is not None:
-                        try:
-                            await self._apply_extraction(content_id, extraction)
-                        except SQLAlchemyError as enrich_err:
-                            logger.warning(
-                                "Failed to apply extraction",
-                                content_id=str(content_id),
-                                error=str(enrich_err),
-                            )
 
             # 4. Update source.last_synced_at en session COURTE.
             await self._update_source_last_synced(source_id)
@@ -436,6 +398,12 @@ class SyncService:
                     if not content_data["html_content"] and entry.content:
                         content_data["html_content"] = entry.content[0].get("value")
 
+            quality_source = content_data.get("html_content") or content_data.get(
+                "description"
+            )
+            content_data["content_quality"] = content_data.get(
+                "content_quality"
+            ) or compute_content_quality(quality_source)
             return content_data
 
         except Exception as e:
@@ -565,21 +533,8 @@ class SyncService:
             return None
         return None
 
-    async def _save_content(
-        self, data: dict
-    ) -> tuple[bool, UUID | None, bool, str | None]:
-        """Upsert the content row in a SHORT session and return enrichment hints.
-
-        Returns (is_new, content_id, needs_enrich, content_url) :
-        - is_new : True si une nouvelle ligne a été insérée
-        - content_id : UUID de la ligne à enrichir (None si pas d'enrichissement)
-        - needs_enrich : True si trafilatura doit tenter une extraction
-        - content_url : URL à passer à trafilatura
-
-        L'extraction trafilatura (await externe long) se fait HORS de cette
-        session pour ne pas tenir le pool. `extraction_attempted_at` est écrit
-        avant le retour pour garantir le cooldown même si l'extraction hang.
-        """
+    async def _save_content(self, data: dict) -> bool:
+        """Upsert the content row in a short database session."""
         # Pre-flush priority computation (pure)
         priority = self._compute_classification_priority(data)
 
@@ -601,6 +556,7 @@ class SyncService:
                 # Story 5.2: Backfill html_content and audio_url if missing
                 if not existing.html_content and data.get("html_content"):
                     existing.html_content = data["html_content"]
+                    existing.content_quality = data.get("content_quality")
                 if not existing.audio_url and data.get("audio_url"):
                     existing.audio_url = data["audio_url"]
 
@@ -610,34 +566,15 @@ class SyncService:
 
                 # Compute current quality if not set
                 if not existing.content_quality:
-                    extractor = ContentExtractor()
-                    if existing.html_content or existing.description:
-                        existing.content_quality = (
-                            extractor.compute_quality_for_existing(
-                                existing.html_content, existing.description
-                            )
-                        )
-
-                needs_enrich = (
-                    existing.content_type == ContentType.ARTICLE
-                    and existing.content_quality != "full"
-                    and not existing.html_content
-                    and _is_extraction_stale(existing.extraction_attempted_at)
-                )
-                if needs_enrich:
-                    # Marquer AVANT l'await externe pour garantir le cooldown
-                    # même si trafilatura hang. Cf. bug-infinite-load-requests.md.
-                    existing.extraction_attempted_at = datetime.datetime.now(
-                        datetime.UTC
-                    )
+                    quality_source = existing.html_content or existing.description
+                    existing.content_quality = compute_content_quality(quality_source)
 
                 await session.flush()
-                return (
-                    False,
-                    existing.id if needs_enrich else None,
-                    needs_enrich,
-                    existing.url if needs_enrich else None,
-                )
+                return False
+
+            content_quality = data.get("content_quality") or compute_content_quality(
+                data.get("html_content") or data.get("description")
+            )
 
             # Create new content
             new_content = Content(
@@ -653,6 +590,7 @@ class SyncService:
                 duration_seconds=data["duration_seconds"],
                 html_content=data.get("html_content"),
                 audio_url=data.get("audio_url"),
+                content_quality=content_quality,
                 is_paid=data.get("is_paid", False),
                 language=detect_language(data["title"], data.get("source_name")),
                 created_at=datetime.datetime.utcnow(),
@@ -661,51 +599,12 @@ class SyncService:
             session.add(new_content)
             await session.flush()
 
-            content_id_for_enrich: UUID | None = None
-            url_for_enrich: str | None = None
-            needs_enrich = new_content.content_type == ContentType.ARTICLE
-            if needs_enrich:
-                new_content.extraction_attempted_at = datetime.datetime.now(
-                    datetime.UTC
-                )
-                content_id_for_enrich = new_content.id
-                url_for_enrich = new_content.url
-
             # US-2 : add to classification queue (same SHORT session for atomicity)
             await self._enqueue_for_classification_in_session(
                 session, new_content.id, priority
             )
 
-            return (True, content_id_for_enrich, needs_enrich, url_for_enrich)
-
-    async def _run_extraction_safely(self, url: str):
-        """Lance trafilatura en thread pool, borné à 20 s. JAMAIS dans une session.
-
-        Retourne le résultat ContentExtractor ou None en cas d'échec / timeout.
-        """
-        extractor = ContentExtractor()
-        try:
-            return await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(None, extractor.extract, url),
-                timeout=20.0,
-            )
-        except Exception:
-            logger.exception("content_enrichment_failed", url=url)
-            return None
-
-    async def _apply_extraction(self, content_id: UUID, result) -> None:
-        """Applique le résultat trafilatura à la ligne en session COURTE."""
-        async with self._short_session() as session:
-            content = await session.get(Content, content_id)
-            if content is None:
-                return
-            if result.html_content:
-                content.html_content = result.html_content
-            if result.reading_time_seconds and not content.duration_seconds:
-                content.duration_seconds = result.reading_time_seconds
-            # Always set quality (even if extraction returned 'none')
-            content.content_quality = result.content_quality
-            await session.flush()
+            return True
 
     async def _update_source_last_synced(self, source_id: UUID) -> None:
         """Met à jour `sources.last_synced_at` en session COURTE."""

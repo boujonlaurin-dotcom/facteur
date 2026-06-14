@@ -823,9 +823,13 @@ class RecommendationService:
             else:
                 score = self.scoring_engine.compute_score(content, context)
             # Serein mode: boost humorous/satirical sources x1.3
-            if serein and hasattr(content, "source") and content.source:
-                if content.source.tone in ("humorous", "satirical"):
-                    score *= 1.3
+            if (
+                serein
+                and hasattr(content, "source")
+                and content.source
+                and content.source.tone in ("humorous", "satirical")
+            ):
+                score *= 1.3
             scored_candidates.append((content, score))
 
         t5 = time.monotonic()

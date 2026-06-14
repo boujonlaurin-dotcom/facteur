@@ -145,7 +145,6 @@ class ContentDetailResponse(BaseModel):
     html_content: str | None = None  # Story 5.2: In-App Reading Mode
     audio_url: str | None = None  # Story 5.2: In-App Reading Mode
     content_quality: str | None = None  # In-App Reading: 'full', 'partial', 'none'
-    extraction_attempted_at: datetime | None = None
     content_type: ContentType
     duration_seconds: int | None
     published_at: datetime
