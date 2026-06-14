@@ -7,15 +7,16 @@ import '../../widgets/delayed_continue_button.dart';
 import '../../widgets/selection_card.dart';
 import '../../onboarding_strings.dart';
 
-/// Q6 : "Quand tu lis, tu aimes..."
-/// Réponses tranchées vs nuancées
-class ResponseStyleQuestion extends ConsumerWidget {
-  const ResponseStyleQuestion({super.key});
+/// Q5b : axe "Indépendance" (nouvelle question v6).
+/// Références établies vs médias indépendants. Cadré comme un GOÛT de sourcing,
+/// pas un jugement de fiabilité. Valeurs : established / independent.
+class IndependenceQuestion extends ConsumerWidget {
+  const IndependenceQuestion({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(onboardingProvider);
-    final selectedStyle = state.answers.responseStyle;
+    final selected = state.answers.independencePref;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
       child: Column(
@@ -30,7 +31,7 @@ class ResponseStyleQuestion extends ConsumerWidget {
                   const SizedBox(height: FacteurSpacing.space8),
 
                   Text(
-                    OnboardingStrings.q6Title,
+                    OnboardingStrings.qIndependenceTitle,
                     style: Theme.of(context).textTheme.displayLarge,
                     textAlign: TextAlign.center,
                   ),
@@ -43,28 +44,32 @@ class ResponseStyleQuestion extends ConsumerWidget {
                       children: [
                         Expanded(
                           child: BinarySelectionCard(
-                            emoji: '⚔️',
-                            label: OnboardingStrings.q6DecisiveLabel,
-                            subtitle: OnboardingStrings.q6DecisiveSubtitle,
-                            isSelected: selectedStyle == 'decisive',
+                            emoji: '🏛️',
+                            label: OnboardingStrings
+                                .qIndependenceEstablishedLabel,
+                            subtitle: OnboardingStrings
+                                .qIndependenceEstablishedSubtitle,
+                            isSelected: selected == 'established',
                             onTap: () {
                               ref
                                   .read(onboardingProvider.notifier)
-                                  .selectResponseStyle('decisive');
+                                  .selectIndependence('established');
                             },
                           ),
                         ),
                         const SizedBox(width: FacteurSpacing.space3),
                         Expanded(
                           child: BinarySelectionCard(
-                            emoji: '⚖️',
-                            label: OnboardingStrings.q6NuancedLabel,
-                            subtitle: OnboardingStrings.q6NuancedSubtitle,
-                            isSelected: selectedStyle == 'nuanced',
+                            emoji: '🌱',
+                            label: OnboardingStrings
+                                .qIndependenceIndependentLabel,
+                            subtitle: OnboardingStrings
+                                .qIndependenceIndependentSubtitle,
+                            isSelected: selected == 'independent',
                             onTap: () {
                               ref
                                   .read(onboardingProvider.notifier)
-                                  .selectResponseStyle('nuanced');
+                                  .selectIndependence('independent');
                             },
                           ),
                         ),
@@ -79,11 +84,11 @@ class ResponseStyleQuestion extends ConsumerWidget {
           ),
 
           DelayedContinueButton(
-            visible: selectedStyle != null,
+            visible: selected != null,
             onPressed: () {
               ref
                   .read(onboardingProvider.notifier)
-                  .selectResponseStyle(selectedStyle!);
+                  .selectIndependence(selected!);
             },
           ),
         ],

@@ -72,6 +72,17 @@ class SourceRecommendation {
   });
 }
 
+/// Pôle d'axe sondé par une carte du swipe désambiguateur. Chaque carte
+/// incarne un pôle distinct pour révéler les préférences "profondes".
+enum SwipeAxisPole { deep, mainstream, independent, established, perspective }
+
+/// Une source retenue pour le swipe, avec le pôle d'axe qu'elle sonde.
+class SpanningSource {
+  final Source source;
+  final SwipeAxisPole pole;
+  const SpanningSource({required this.source, required this.pole});
+}
+
 /// Computes personalized source recommendations based on user's onboarding choices.
 ///
 /// Replaces the static ThemeToSourcesMapping with dynamic scoring using
@@ -86,17 +97,32 @@ class SourceRecommender {
   static const _sereinThemes = {'tech', 'science', 'culture', 'sport'};
 
   /// Compute recommendations from user choices and available sources.
+  ///
+  /// Axes "profondeur" ré-aiguillés (onboarding v6) — optionnels, sans défaut
+  /// imposé : un appel sans ces paramètres garde le comportement historique.
+  /// - [depthPref] : `direct` (actu factuelle) | `detailed` (analyse de fond),
+  ///   ré-aiguillé de `approach` ;
+  /// - [independencePref] : `established` (références) | `independent`
+  ///   (pure-players) ;
+  /// - [swipeLiked]/[swipeDisliked] : IDs triés au swipe désambiguateur —
+  ///   signal *révélé* qui repondère le scoring (boost / malus) avant le reveal.
   static SourceRecommendation recommend({
     required List<String> selectedThemes,
     required List<String> selectedSubtopics,
     required List<Source> allSources,
     List<String> objectives = const [],
+    String? depthPref,
+    String? independencePref,
+    List<String> swipeLiked = const [],
+    List<String> swipeDisliked = const [],
   }) {
     final curated = allSources.where((s) => s.isCurated).toList();
 
     final hasNoise = objectives.contains('noise');
     final hasBias = objectives.contains('bias');
     final hasAnxiety = objectives.contains('anxiety');
+    final likedSet = swipeLiked.toSet();
+    final dislikedSet = swipeDisliked.toSet();
 
     // Score all sources
     final scored = <String, int>{};
@@ -110,6 +136,10 @@ class SourceRecommender {
         hasNoise: hasNoise,
         hasBias: hasBias,
         hasAnxiety: hasAnxiety,
+        depthPref: depthPref,
+        independencePref: independencePref,
+        swipeLiked: likedSet,
+        swipeDisliked: dislikedSet,
       );
       scored[source.id] = result.score;
       tagResults[source.id] = result;
@@ -190,6 +220,10 @@ class SourceRecommender {
     required bool hasNoise,
     required bool hasBias,
     required bool hasAnxiety,
+    String? depthPref,
+    String? independencePref,
+    Set<String> swipeLiked = const {},
+    Set<String> swipeDisliked = const {},
   }) {
     int score = 0;
     String bestReason = '';
@@ -249,6 +283,42 @@ class SourceRecommender {
       score += 1;
     }
 
+    // --- Axes "profondeur" ré-aiguillés (v6) ---
+
+    // Profondeur : aligne le tier de la source sur la préférence déclarée.
+    if (depthPref == 'detailed' && source.sourceTier == 'deep') {
+      score += 2;
+    } else if (depthPref == 'direct' && source.sourceTier == 'mainstream') {
+      score += 2;
+    }
+
+    // Indépendance : goût de sourcing (établis vs indépendants), pas un
+    // jugement de fiabilité. `score_independence` est déjà sérialisé côté API.
+    final independence = source.scoreIndependence;
+    if (independencePref == 'independent') {
+      if (independence != null && independence >= 0.7) {
+        score += 3;
+      } else if (independence != null && independence >= 0.5) {
+        score += 1;
+      }
+      if (source.biasStance == 'alternative' ||
+          source.biasStance == 'specialized') {
+        score += 1;
+      }
+    } else if (independencePref == 'established') {
+      // Références installées : fiables et plutôt « centrales ».
+      if (source.reliabilityScore == 'high') score += 2;
+      if (independence != null && independence <= 0.4) score += 1;
+    }
+
+    // Swipe désambiguateur : signal *révélé*. Un like prime sur le déclaratif
+    // (boost fort + garantit la pré-sélection), un rejet pénalise nettement.
+    if (swipeLiked.contains(source.id)) {
+      score += 5;
+    } else if (swipeDisliked.contains(source.id)) {
+      score -= 4;
+    }
+
     // --- Objective-based tags ---
 
     // Anti-bruit: user worried about noise → tag sources that provide depth
@@ -293,25 +363,8 @@ class SourceRecommender {
     required List<Source> allCurated,
     required Set<String> usedIds,
   }) {
-    // Determine majority bias of matched sources
-    int leftCount = 0;
-    int rightCount = 0;
-    for (final r in matched) {
-      final bias = r.source.biasStance;
-      if (bias == 'left' || bias == 'center-left') leftCount++;
-      if (bias == 'right' || bias == 'center-right') rightCount++;
-    }
-
-    // Look for opposite bias
-    final Set<String> targetBiases;
-    if (leftCount > rightCount) {
-      targetBiases = {'right', 'center-right'};
-    } else if (rightCount > leftCount) {
-      targetBiases = {'left', 'center-left'};
-    } else {
-      // Balanced or no bias info — show both sides
-      targetBiases = {'left', 'center-left', 'right', 'center-right'};
-    }
+    // Cible : les biais opposés à la majorité des sources matchées.
+    final targetBiases = _oppositeBiases(matched.map((r) => r.source).toList());
 
     final candidates = allCurated
         .where((s) =>
@@ -369,6 +422,137 @@ class SourceRecommender {
         reason: reason,
       );
     }).toList();
+  }
+
+  /// Construit un "spanning set" pour le swipe désambiguateur : au plus
+  /// [maxCards] sources, **1 par pôle d'axe**, choisies parmi le curé matchant
+  /// les thèmes de l'utilisateur et délibérément étalées (fond / actu directe /
+  /// indépendant / référence / perspective). Chaque carte sonde un pôle, si
+  /// bien qu'un swipe devient un vote sur cet axe.
+  ///
+  /// Dégrade proprement : sur les thèmes pauvres, on complète depuis le
+  /// catalogue large (sources les plus suivies) ; un pôle sans candidat est
+  /// simplement omis (moins de cartes).
+  static List<SpanningSource> buildSpanningSet({
+    required List<String> selectedThemes,
+    required List<String> selectedSubtopics,
+    required List<Source> allSources,
+    int maxCards = 5,
+  }) {
+    final curated = allSources.where((s) => s.isCurated).toList();
+    if (curated.isEmpty) return const [];
+
+    bool matchesThemes(Source s) {
+      if (selectedThemes.isEmpty && selectedSubtopics.isEmpty) return true;
+      if (s.theme != null && selectedThemes.contains(s.theme)) return true;
+      if (s.secondaryThemes.any(selectedThemes.contains)) return true;
+      if (s.granularTopics.any(selectedSubtopics.contains)) return true;
+      return false;
+    }
+
+    final matched = curated.where(matchesThemes).toList();
+    final matchedIds = matched.map((s) => s.id).toSet();
+
+    // Pool = matchés d'abord, complétés par le reste du curé (par audience)
+    // pour garantir un set étalé même sur thèmes pauvres.
+    var pool = [...matched];
+    if (pool.length < maxCards) {
+      final extra = curated.where((s) => !matchedIds.contains(s.id)).toList()
+        ..sort((a, b) => b.followerCount.compareTo(a.followerCount));
+      pool = [...pool, ...extra];
+    }
+
+    final targetPerspectiveBiases = _oppositeBiases(matched);
+
+    final used = <String>{};
+    final result = <SpanningSource>[];
+
+    int byFollowers(Source a, Source b) =>
+        b.followerCount.compareTo(a.followerCount);
+
+    // Sélectionne la meilleure source d'un pôle, en préférant les sources
+    // matchées thématiquement avant de puiser dans le catalogue large.
+    void pick(
+      SwipeAxisPole pole,
+      bool Function(Source) test,
+      int Function(Source, Source) rank,
+    ) {
+      if (result.length >= maxCards) return;
+      final candidates =
+          pool.where((s) => !used.contains(s.id) && test(s)).toList()
+            ..sort((a, b) {
+              final am = matchedIds.contains(a.id) ? 1 : 0;
+              final bm = matchedIds.contains(b.id) ? 1 : 0;
+              if (am != bm) return bm - am; // matchés d'abord
+              return rank(a, b);
+            });
+      if (candidates.isEmpty) return;
+      used.add(candidates.first.id);
+      result.add(SpanningSource(source: candidates.first, pole: pole));
+    }
+
+    // 1. Indépendant : forte indépendance ou posture alternative/spécialisée.
+    pick(
+      SwipeAxisPole.independent,
+      (s) =>
+          (s.scoreIndependence ?? 0) >= 0.6 ||
+          s.biasStance == 'alternative' ||
+          s.biasStance == 'specialized',
+      (a, b) =>
+          (b.scoreIndependence ?? 0).compareTo(a.scoreIndependence ?? 0),
+    );
+    // 2. Fond : tier deep.
+    pick(SwipeAxisPole.deep, (s) => s.sourceTier == 'deep', byFollowers);
+    // 3. Référence établie : fiabilité haute + faible indépendance.
+    pick(
+      SwipeAxisPole.established,
+      (s) =>
+          s.reliabilityScore == 'high' && (s.scoreIndependence ?? 1) <= 0.5,
+      (a, b) =>
+          (a.scoreIndependence ?? 1).compareTo(b.scoreIndependence ?? 1),
+    );
+    // 4. Actu directe : tier mainstream.
+    pick(
+      SwipeAxisPole.mainstream,
+      (s) => s.sourceTier == 'mainstream',
+      byFollowers,
+    );
+    // 5. Perspective : bord opposé à la majorité matchée.
+    pick(
+      SwipeAxisPole.perspective,
+      (s) => targetPerspectiveBiases.contains(s.biasStance),
+      byFollowers,
+    );
+
+    // Complète si des pôles manquaient (thèmes pauvres) avec les sources
+    // matchées restantes les plus suivies (pôle neutre = actu directe).
+    if (result.length < maxCards) {
+      final fillers = pool.where((s) => !used.contains(s.id)).toList()
+        ..sort(byFollowers);
+      for (final s in fillers) {
+        if (result.length >= maxCards) break;
+        used.add(s.id);
+        result.add(
+          SpanningSource(source: s, pole: SwipeAxisPole.mainstream),
+        );
+      }
+    }
+
+    return result;
+  }
+
+  /// Biais "opposés" à la majorité d'un ensemble de sources (pour le pôle
+  /// perspective). Ensemble équilibré ou sans info → les deux bords.
+  static Set<String> _oppositeBiases(List<Source> sources) {
+    int left = 0;
+    int right = 0;
+    for (final s in sources) {
+      if (s.biasStance == 'left' || s.biasStance == 'center-left') left++;
+      if (s.biasStance == 'right' || s.biasStance == 'center-right') right++;
+    }
+    if (left > right) return {'right', 'center-right'};
+    if (right > left) return {'left', 'center-left'};
+    return {'left', 'center-left', 'right', 'center-right'};
   }
 }
 

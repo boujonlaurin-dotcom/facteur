@@ -63,7 +63,7 @@ void main() {
 
   });
 
-  testWidgets('tap « Plutôt curieux » : intent enregistré + route vers sources',
+  testWidgets('tap « Plutôt curieux » : intent enregistré + route vers le swipe',
       (tester) async {
     final container = makeContainer();
     await tester.pumpWidget(buildTestWidget(container));
@@ -74,9 +74,10 @@ void main() {
     expect(container.read(onboardingProvider).answers.sourcesIntent, 'curious');
 
     await tester.pump(const Duration(milliseconds: 350));
+    // Parcours curieux → étape swipe désambiguateur (v6) avant la page sources.
     expect(
       container.read(onboardingProvider).currentQuestionIndex,
-      Section3Question.sources.index,
+      Section3Question.swipe.index,
     );
 
   });

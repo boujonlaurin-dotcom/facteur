@@ -20,53 +20,69 @@ void main() {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // Ordre des enums — garde-fou contre la réindexation (v5) qui casserait la
+  // Ordre des enums — garde-fou contre la réindexation (v6) qui casserait la
   // reprise Hive et le routage des questions.
   // ──────────────────────────────────────────────────────────────────────
-  group('Enum order (v5)', () {
-    test('Section2Question = {approach, responseStyle}', () {
+  group('Enum order (v6)', () {
+    test('Section2Question = {approach, independence}', () {
       expect(Section2Question.values, hasLength(2));
       expect(Section2Question.approach.index, 0);
-      expect(Section2Question.responseStyle.index, 1);
+      expect(Section2Question.independence.index, 1);
     });
 
-    test('Section3Question : sourcesIntent avant sources, digestMode avant finalize',
-        () {
-      expect(Section3Question.values, hasLength(6));
+    test(
+        'Section3Question : swipe entre sourcesIntent et sources, '
+        'digestMode avant finalize', () {
+      expect(Section3Question.values, hasLength(7));
       expect(Section3Question.themes.index, 0);
       expect(Section3Question.subtopics.index, 1);
       expect(Section3Question.sourcesIntent.index, 2);
-      expect(Section3Question.sources.index, 3);
-      expect(Section3Question.digestMode.index, 4);
-      expect(Section3Question.finalize.index, 5);
+      expect(Section3Question.swipe.index, 3);
+      expect(Section3Question.sources.index, 4);
+      expect(Section3Question.digestMode.index, 5);
+      expect(Section3Question.finalize.index, 6);
     });
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // Mode serein conditionnel : la séquence Section 3 et la progression
-  // dépendent de l'objectif « anxiety ».
+  // Séquence Section 3 : digestMode conditionnel (anxiety) + swipe conditionnel
+  // (parcours « curieux » seul).
   // ──────────────────────────────────────────────────────────────────────
-  group('Section 3 sequence (gating anxiety)', () {
-    OnboardingState stateWith(List<String> objectives) => OnboardingState(
+  group('Section 3 sequence (gating anxiety + swipe)', () {
+    OnboardingState stateWith(List<String> objectives, {String? sourcesIntent}) =>
+        OnboardingState(
           currentSection: OnboardingSection.sourcePreferences,
-          answers: OnboardingAnswers(objectives: objectives),
+          answers: OnboardingAnswers(
+            objectives: objectives,
+            sourcesIntent: sourcesIntent,
+          ),
         );
 
-    test('sans anxiety : digestMode est retiré (5 étapes)', () {
-      final s = stateWith(['noise']);
+    test('sans anxiety, parcours curieux : digestMode retiré, swipe présent (6)',
+        () {
+      final s = stateWith(['noise']); // sourcesIntent null ⇒ curieux
       expect(s.hasAnxietyObjective, isFalse);
       expect(s.section3Sequence, isNot(contains(Section3Question.digestMode)));
-      expect(s.section3QuestionCount, 5);
-      // total = section1(5) + section2(2) + section3(5)
-      expect(s.totalSteps, 12);
+      expect(s.section3Sequence, contains(Section3Question.swipe));
+      expect(s.section3QuestionCount, 6);
+      // total = section1(5) + section2(2) + section3(6)
+      expect(s.totalSteps, 13);
     });
 
-    test('avec anxiety : digestMode inclus (6 étapes)', () {
+    test('avec anxiety, parcours curieux : digestMode + swipe inclus (7)', () {
       final s = stateWith(['anxiety']);
       expect(s.hasAnxietyObjective, isTrue);
       expect(s.section3Sequence, contains(Section3Question.digestMode));
-      expect(s.section3QuestionCount, 6);
-      expect(s.totalSteps, 13);
+      expect(s.section3Sequence, contains(Section3Question.swipe));
+      expect(s.section3QuestionCount, 7);
+      expect(s.totalSteps, 14);
+    });
+
+    test('parcours « je connais déjà » : swipe retiré', () {
+      final s = stateWith(['noise'], sourcesIntent: 'knows');
+      expect(s.section3Sequence, isNot(contains(Section3Question.swipe)));
+      // themes, subtopics, sourcesIntent, sources, finalize
+      expect(s.section3QuestionCount, 5);
     });
   });
 
@@ -96,7 +112,7 @@ void main() {
       );
     });
 
-    test('approach et responseStyle skippables', () {
+    test('approach et independence skippables', () {
       expect(
         OnboardingState(
           currentSection: OnboardingSection.appPreferences,
@@ -107,22 +123,24 @@ void main() {
       expect(
         OnboardingState(
           currentSection: OnboardingSection.appPreferences,
-          currentQuestionIndex: Section2Question.responseStyle.index,
+          currentQuestionIndex: Section2Question.independence.index,
         ).isSkippable,
         isTrue,
       );
     });
 
-    test('sourcesIntent/digestMode skippables, pas themes/subtopics/sources/finalize',
-        () {
+    test(
+        'sourcesIntent/swipe/digestMode skippables, '
+        'pas themes/subtopics/sources/finalize', () {
       OnboardingState s3(Section3Question q) => OnboardingState(
             currentSection: OnboardingSection.sourcePreferences,
             currentQuestionIndex: q.index,
           );
-      // Décision PO (item 3) : thèmes + sous-thèmes ne sont plus skippables.
+      // Décision PO : thèmes + sous-thèmes ne sont plus skippables.
       expect(s3(Section3Question.themes).isSkippable, isFalse);
       expect(s3(Section3Question.subtopics).isSkippable, isFalse);
       expect(s3(Section3Question.sourcesIntent).isSkippable, isTrue);
+      expect(s3(Section3Question.swipe).isSkippable, isTrue);
       expect(s3(Section3Question.digestMode).isSkippable, isTrue);
       expect(s3(Section3Question.sources).isSkippable, isFalse);
       expect(s3(Section3Question.finalize).isSkippable, isFalse);
@@ -151,7 +169,7 @@ void main() {
       expect(s.showReaction, isFalse);
     });
 
-    test('approach → responseStyle avec défaut detailed', () async {
+    test('approach → independence avec défaut detailed', () async {
       final c = ProviderContainer();
       addTearDown(c.dispose);
       await _settle();
@@ -162,24 +180,24 @@ void main() {
 
       final s = c.read(onboardingProvider);
       expect(s.currentSection, OnboardingSection.appPreferences);
-      expect(s.currentQuestionIndex, Section2Question.responseStyle.index);
+      expect(s.currentQuestionIndex, Section2Question.independence.index);
       expect(s.answers.approach, 'detailed');
     });
 
-    test('responseStyle → Section 3 (themes) avec défaut nuanced', () async {
+    test('independence → Section 3 (themes) avec défaut established', () async {
       final c = ProviderContainer();
       addTearDown(c.dispose);
       await _settle();
       final n = c.read(onboardingProvider.notifier);
 
       n.continueAfterReaction();
-      n.skipCurrentQuestion(); // approach → responseStyle
-      n.skipCurrentQuestion(); // responseStyle → _transitionToSection3 (sync)
+      n.skipCurrentQuestion(); // approach → independence
+      n.skipCurrentQuestion(); // independence → _transitionToSection3 (sync)
 
       final s = c.read(onboardingProvider);
       expect(s.currentSection, OnboardingSection.sourcePreferences);
       expect(s.currentQuestionIndex, Section3Question.themes.index);
-      expect(s.answers.responseStyle, 'nuanced');
+      expect(s.answers.independencePref, 'established');
     });
 
     test('themes → sourcesIntent (saute subtopics) avec thèmes vides',
@@ -190,7 +208,7 @@ void main() {
       final n = c.read(onboardingProvider.notifier);
 
       n.continueAfterReaction();
-      n.skipCurrentQuestion(); // → responseStyle
+      n.skipCurrentQuestion(); // → independence
       n.skipCurrentQuestion(); // → Section 3 themes
       n.skipCurrentQuestion(); // themes → sourcesIntent
 
@@ -199,21 +217,40 @@ void main() {
       expect(s.answers.themes, isEmpty);
     });
 
-    test('sourcesIntent → sources avec défaut curious', () async {
+    test('sourcesIntent → swipe avec défaut curious', () async {
       final c = ProviderContainer();
       addTearDown(c.dispose);
       await _settle();
       final n = c.read(onboardingProvider.notifier);
 
       n.continueAfterReaction();
-      n.skipCurrentQuestion(); // → responseStyle
+      n.skipCurrentQuestion(); // → independence
       n.skipCurrentQuestion(); // → Section 3 themes
       n.skipCurrentQuestion(); // themes → sourcesIntent
-      n.skipCurrentQuestion(); // sourcesIntent → sources
+      n.skipCurrentQuestion(); // sourcesIntent → swipe (curieux)
+
+      final s = c.read(onboardingProvider);
+      expect(s.currentQuestionIndex, Section3Question.swipe.index);
+      expect(s.answers.sourcesIntent, 'curious');
+    });
+
+    test('swipe → sources avec votes vides', () async {
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      await _settle();
+      final n = c.read(onboardingProvider.notifier);
+
+      n.continueAfterReaction();
+      n.skipCurrentQuestion(); // → independence
+      n.skipCurrentQuestion(); // → Section 3 themes
+      n.skipCurrentQuestion(); // themes → sourcesIntent
+      n.skipCurrentQuestion(); // sourcesIntent → swipe
+      n.skipCurrentQuestion(); // swipe → sources
 
       final s = c.read(onboardingProvider);
       expect(s.currentQuestionIndex, Section3Question.sources.index);
-      expect(s.answers.sourcesIntent, 'curious');
+      expect(s.answers.swipeLiked, isEmpty);
+      expect(s.answers.swipeDisliked, isEmpty);
     });
 
     test('digestMode → finalize avec défaut pour_vous', () async {
@@ -224,7 +261,7 @@ void main() {
 
       n.selectObjectives(['anxiety']);
       n.continueAfterReaction();
-      n.skipCurrentQuestion(); // → responseStyle
+      n.skipCurrentQuestion(); // → independence
       n.skipCurrentQuestion(); // → Section 3 themes (anxiety préservé)
       n.selectSources(['s1']); // anxiety → digestMode
       await _settle();
@@ -242,31 +279,50 @@ void main() {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // selectSourcesIntent : routage vers la page sources + réponse persistée.
+  // selectSourcesIntent : route vers le swipe (curieux) ou directement la page
+  // sources (je connais déjà).
   // ──────────────────────────────────────────────────────────────────────
   group('selectSourcesIntent', () {
-    test('subtopics → sourcesIntent → sources, intent enregistré', () async {
+    test('curious : subtopics → sourcesIntent → swipe', () async {
       final c = ProviderContainer();
       addTearDown(c.dispose);
       await _settle();
       final n = c.read(onboardingProvider.notifier);
 
       n.continueAfterReaction();
-      n.skipCurrentQuestion(); // → responseStyle
+      n.skipCurrentQuestion(); // → independence
       n.skipCurrentQuestion(); // → Section 3 themes
       n.selectThemes(['tech']);
       await _settle();
-      expect(
-        c.read(onboardingProvider).currentQuestionIndex,
-        Section3Question.subtopics.index,
-      );
-
       n.selectSubtopics(['ai']);
       await _settle();
       expect(
         c.read(onboardingProvider).currentQuestionIndex,
         Section3Question.sourcesIntent.index,
       );
+
+      n.selectSourcesIntent('curious');
+      expect(c.read(onboardingProvider).answers.sourcesIntent, 'curious');
+      await _settle();
+      expect(
+        c.read(onboardingProvider).currentQuestionIndex,
+        Section3Question.swipe.index,
+      );
+    });
+
+    test('knows : sourcesIntent → sources (swipe sauté)', () async {
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      await _settle();
+      final n = c.read(onboardingProvider.notifier);
+
+      n.continueAfterReaction();
+      n.skipCurrentQuestion(); // → independence
+      n.skipCurrentQuestion(); // → Section 3 themes
+      n.selectThemes(['tech']);
+      await _settle();
+      n.selectSubtopics(['ai']);
+      await _settle();
 
       n.selectSourcesIntent('knows');
       expect(c.read(onboardingProvider).answers.sourcesIntent, 'knows');
@@ -279,8 +335,38 @@ void main() {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // selectSources : routage de fin de parcours selon l'objectif anxiety
-  // (logique reprise de l'ex-continueFromSourcesPage2).
+  // completeSwipe : enregistre les votes et enchaîne sur la page sources.
+  // ──────────────────────────────────────────────────────────────────────
+  group('completeSwipe', () {
+    test('enregistre les votes likés/rejetés puis avance vers sources',
+        () async {
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      await _settle();
+      final n = c.read(onboardingProvider.notifier);
+
+      n.continueAfterReaction();
+      n.skipCurrentQuestion(); // → independence
+      n.skipCurrentQuestion(); // → Section 3 themes
+      n.skipCurrentQuestion(); // themes → sourcesIntent
+      n.skipCurrentQuestion(); // sourcesIntent → swipe
+
+      n.completeSwipe(['liked-1', 'liked-2'], ['disliked-1']);
+      expect(c.read(onboardingProvider).answers.swipeLiked,
+          equals(['liked-1', 'liked-2']));
+      expect(c.read(onboardingProvider).answers.swipeDisliked,
+          equals(['disliked-1']));
+
+      await _settle();
+      expect(
+        c.read(onboardingProvider).currentQuestionIndex,
+        Section3Question.sources.index,
+      );
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // selectSources : routage de fin de parcours selon l'objectif anxiety.
   // ──────────────────────────────────────────────────────────────────────
   group('selectSources (gating anxiety)', () {
     test('sans anxiety : pose pour_vous et saute au final', () async {
@@ -291,7 +377,7 @@ void main() {
 
       n.selectObjectives(['noise']);
       n.continueAfterReaction();
-      n.skipCurrentQuestion();
+      n.skipCurrentQuestion(); // approach → independence
       n.skipCurrentQuestion(); // → Section 3 themes
       n.selectSources(['s1']);
 
@@ -313,7 +399,7 @@ void main() {
 
       n.selectObjectives(['anxiety']);
       n.continueAfterReaction();
-      n.skipCurrentQuestion();
+      n.skipCurrentQuestion(); // approach → independence
       n.skipCurrentQuestion(); // → Section 3 themes
       n.selectSources(['s1']);
 
@@ -329,10 +415,11 @@ void main() {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // goBack : navigation arrière sur la séquence active de la Section 3.
+  // goBack : navigation arrière sur la séquence active de la Section 3
+  // (parcours curieux → le swipe est dans la séquence).
   // ──────────────────────────────────────────────────────────────────────
   group('goBack (Section 3)', () {
-    test('depuis sources, goBack remonte la séquence sans digestMode',
+    test('depuis sources, goBack remonte la séquence avec swipe, sans digestMode',
         () async {
       final c = ProviderContainer();
       addTearDown(c.dispose);
@@ -341,13 +428,20 @@ void main() {
 
       n.selectObjectives(['noise']);
       n.continueAfterReaction();
-      n.skipCurrentQuestion();
+      n.skipCurrentQuestion(); // approach → independence
       n.skipCurrentQuestion(); // → Section 3 themes
       n.skipCurrentQuestion(); // themes → sourcesIntent
-      n.skipCurrentQuestion(); // sourcesIntent → sources
+      n.skipCurrentQuestion(); // sourcesIntent → swipe (curieux)
+      n.skipCurrentQuestion(); // swipe → sources
       expect(
         c.read(onboardingProvider).currentQuestionIndex,
         Section3Question.sources.index,
+      );
+
+      n.goBack();
+      expect(
+        c.read(onboardingProvider).currentQuestionIndex,
+        Section3Question.swipe.index,
       );
 
       n.goBack();
@@ -383,6 +477,22 @@ void main() {
       expect(restored.themes, equals(['tech', 'science']));
       expect(restored.subtopics, equals(['ai', 'climate']));
       expect(restored.preferredSources, equals(['source-1', 'source-2']));
+    });
+
+    test('toJson/fromJson roundtrip préserve les axes profondeur (v6)', () {
+      const answers = OnboardingAnswers(
+        approach: 'detailed',
+        independencePref: 'independent',
+        swipeLiked: ['s1', 's2'],
+        swipeDisliked: ['s3'],
+      );
+
+      final restored = OnboardingAnswers.fromJson(answers.toJson());
+
+      expect(restored.approach, 'detailed');
+      expect(restored.independencePref, 'independent');
+      expect(restored.swipeLiked, equals(['s1', 's2']));
+      expect(restored.swipeDisliked, equals(['s3']));
     });
 
     test('toJson (payload API) n\'expose pas sources_intent', () {
