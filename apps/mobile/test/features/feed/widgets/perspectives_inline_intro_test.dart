@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/features/digest/widgets/divergence_inline_badge.dart';
 import 'package:facteur/features/feed/widgets/perspectives_bottom_sheet.dart';
 
 Perspective _p(String name, {String bias = 'center'}) => Perspective(
@@ -96,5 +97,20 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
 
     expect(find.text('TRAITEMENTS SIMILAIRES'), findsOneWidget);
+  });
+
+  testWidgets('badge de la couverture utilise l’échelle agrandie 1.45',
+      (tester) async {
+    await _pumpInline(
+      tester,
+      perspectives: [_p('A'), _p('B', bias: 'right')],
+      divergenceLevel: 'medium',
+    );
+    await tester.pump(const Duration(seconds: 1));
+
+    final badge = tester.widget<DivergenceInlineBadge>(
+      find.byType(DivergenceInlineBadge),
+    );
+    expect(badge.scale, 1.45);
   });
 }

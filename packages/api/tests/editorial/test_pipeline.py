@@ -15,6 +15,17 @@ from app.services.editorial.schemas import (
     SelectedTopic,
 )
 
+# T1 (couverture v4) : l'étape 3B-bis (annotation LLM bias) du pipeline est
+# désactivée — la boucle est commentée dans `editorial.pipeline`, donc plus
+# aucun appel Mistral. Les tests pipeline-level qui exerçaient le gating de
+# cette boucle (et patchaient `get_title_annotation_service`, désormais retiré
+# de l'import) sont skippés. Le helper `_annotate_cluster_llm_bias` reste en
+# place et ses tests (helper-level) restent actifs → réactivation triviale.
+_LLM_BIAS_STEP_DISABLED = pytest.mark.skip(
+    reason="T1: étape LLM bias désactivée dans le pipeline (boucle commentée). "
+    "Test conservé pour réactivation future."
+)
+
 
 def _make_content_mock(title="Test article", bias_stance="center"):
     c = MagicMock()
@@ -870,6 +881,7 @@ class TestLLMBiasAnnotationStep:
 
     # ---------- Tests pipeline-level (gates `is_ready` / singleton / crash) ----
 
+    @_LLM_BIAS_STEP_DISABLED
     @pytest.mark.asyncio
     async def test_skips_when_service_not_ready(self, mock_dependencies):
         from app.services.editorial.pipeline import EditorialPipelineService
@@ -934,6 +946,7 @@ class TestLLMBiasAnnotationStep:
         mock_llm_service.annotate_variant.assert_not_called()
         mock_title_service.write_llm_annotations.assert_not_called()
 
+    @_LLM_BIAS_STEP_DISABLED
     @pytest.mark.asyncio
     async def test_skips_singleton_clusters(self, mock_dependencies):
         from app.services.editorial.pipeline import EditorialPipelineService
@@ -991,6 +1004,7 @@ class TestLLMBiasAnnotationStep:
         mock_llm_service.annotate_variant.assert_not_called()
         mock_title_service.write_llm_annotations.assert_not_called()
 
+    @_LLM_BIAS_STEP_DISABLED
     @pytest.mark.asyncio
     async def test_failure_does_not_crash_digest(self, mock_dependencies):
         from app.services.editorial.pipeline import EditorialPipelineService

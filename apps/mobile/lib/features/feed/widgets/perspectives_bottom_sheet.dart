@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../../core/web/web_perf.dart';
 import '../../../widgets/design/facteur_card.dart';
 import '../../digest/widgets/divergence_inline_badge.dart';
 import '../../digest/widgets/markdown_text.dart';
@@ -85,8 +87,10 @@ class Perspective {
   });
 
   factory Perspective.fromJson(Map<String, dynamic> json) {
-    final rawHighlights = json['highlight_spans'] as List<dynamic>?;
-    final rawShared = json['shared_tokens'] as List<dynamic>?;
+    // DÉSACTIVÉ (T1) : le highlighting des biais n'est plus affiché → on ne
+    // parse plus `highlight_spans` / `shared_tokens` ; les champs restent à
+    // `const []` ⇒ DiffTitle rend un titre plain. Réactivation = re-parser ici
+    // (et aux autres sites de construction de Perspective).
     return Perspective(
       title: (json['title'] as String?) ?? '',
       url: (json['url'] as String?) ?? '',
@@ -94,16 +98,6 @@ class Perspective {
       sourceDomain: (json['source_domain'] as String?) ?? '',
       biasStance: (json['bias_stance'] as String?) ?? 'unknown',
       publishedAt: json['published_at'] as String?,
-      highlightSpans: rawHighlights == null
-          ? const []
-          : rawHighlights
-              .map((e) => HighlightSpan.fromJson(e as Map<String, dynamic>))
-              .toList(),
-      sharedTokens: rawShared == null
-          ? const []
-          : rawShared
-              .map((e) => TokenSpan.fromJson(e as Map<String, dynamic>))
-              .toList(),
       language: json['language'] as String?,
     );
   }
@@ -112,7 +106,7 @@ class Perspective {
       Perspective.colorForStance(biasStance, colors);
 
   /// Mapping bord politique → couleur. Single source of truth réutilisé par
-  /// [getBiasColor] (instance) et [biasColorFromString] (chaîne brute).
+  /// [getBiasColor] (instance).
   static Color colorForStance(String stance, FacteurColors colors) {
     switch (stance) {
       case 'left':
@@ -1382,12 +1376,85 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
 enum _EmptyStage { none, fading, collapsed }
 
 // ── Timing de la séquence "aucune source trouvée" ──────────────────────────
-// Ajuster ces 4 valeurs pour calibrer l'animation :
-const _kEmptyReadDelay   = Duration(milliseconds: 2000); // pause avant le fade
-const _kEmptyFadeDuration = Duration(milliseconds: 2000);  // fade 0.28 → 0
-const _kEmptySlideDuration = Duration(milliseconds: 650); // glissement vers la droite
-const _kEmptyInitialOpacity = 0.28;                       // opacité pendant la pause
+// Escamotage doux : pause de lecture (message lisible) → fondu → repli de
+// hauteur. Pas de glissement latéral (jugé abrupt).
+const _kEmptyReadDelay   = Duration(milliseconds: 1800); // pause avant le fade
+const _kEmptyFadeDuration = Duration(milliseconds: 450);  // fondu 1 → 0
+const _kEmptyInitialOpacity = 1.0;                       // message lisible pendant la pause
 // ──────────────────────────────────────────────────────────────────────────
+
+/// Carte placeholder shimmer (gabarit carte réel 248×192) pour le squelette de
+/// chargement du carrousel. Reprend l'animation de [CoverageSpectrumBarShimmer].
+class _CoverageCardSkeleton extends StatefulWidget {
+  const _CoverageCardSkeleton();
+
+  @override
+  State<_CoverageCardSkeleton> createState() => _CoverageCardSkeletonState();
+}
+
+class _CoverageCardSkeletonState extends State<_CoverageCardSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final baseColor = colors.textTertiary.withValues(alpha: 0.10);
+    final highlightColor = Colors.white.withValues(alpha: 0.30);
+    const radius = BorderRadius.all(Radius.circular(16));
+
+    return SizedBox(
+      width: 248,
+      height: 192,
+      child: ClipRRect(
+        borderRadius: radius,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            final offset = _controller.value * 2.8;
+            return ShaderMask(
+              blendMode: BlendMode.srcATop,
+              shaderCallback: (rect) {
+                return LinearGradient(
+                  begin: Alignment(-1.4 + offset, 0),
+                  end: Alignment(-0.2 + offset, 0),
+                  colors: [
+                    Colors.transparent,
+                    highlightColor,
+                    Colors.transparent,
+                  ],
+                  stops: const [0.0, 0.5, 1.0],
+                ).createShader(rect);
+              },
+              child: child,
+            );
+          },
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: baseColor,
+              borderRadius: radius,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _PerspectivesInlineSectionState
     extends ConsumerState<PerspectivesInlineSection> {
@@ -1400,11 +1467,11 @@ class _PerspectivesInlineSectionState
   // les setState parents.
   int _animationGeneration = 0;
 
-  // Hauteur du viewport du carrousel : carte 168 (proto min 160, +marge pour
-  // que la carte CTA gradient tienne sans overflow) + padding vertical (15 haut
-  // + 16 bas). La hauteur fixe borne la hauteur des cartes → `Expanded` du titre
-  // avec footer épinglé en bas (cf. CoverageComparisonCard).
-  static const double _kCarouselViewportHeight = 168.0 + 15 + 16;
+  // Carte 192 + padding vertical (15 haut + 16 bas). La hauteur fixe borne les
+  // cartes médias et CTA au même gabarit.
+  static const double _kCarouselCardHeight = 192;
+  static const double _kCarouselViewportHeight =
+      _kCarouselCardHeight + 15 + 16;
 
   @override
   void initState() {
@@ -1450,9 +1517,11 @@ class _PerspectivesInlineSectionState
     _emptyDismissTimer = Timer(_kEmptyReadDelay, () {
       if (!mounted || widget.status != PerspectivesSectionStatus.empty) return;
       setState(() => _emptyStage = _EmptyStage.fading);
-      // Collapse hauteur une fois le slide terminé
-      _emptyCollapseTimer = Timer(_kEmptySlideDuration, () {
-        if (!mounted || widget.status != PerspectivesSectionStatus.empty) return;
+      // Collapse hauteur une fois le fondu terminé
+      _emptyCollapseTimer = Timer(_kEmptyFadeDuration, () {
+        if (!mounted || widget.status != PerspectivesSectionStatus.empty) {
+          return;
+        }
         setState(() => _emptyStage = _EmptyStage.collapsed);
       });
     });
@@ -1473,13 +1542,14 @@ class _PerspectivesInlineSectionState
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+    final isDark = context.isDarkMode;
     final textTheme = Theme.of(context).textTheme;
     final variants = _sortedPerspectives.take(8).toList();
     final isReady = widget.status == PerspectivesSectionStatus.ready;
     final isEmpty = widget.status == PerspectivesSectionStatus.empty;
     final isLoading = widget.status == PerspectivesSectionStatus.loading;
     final shouldShowBand = !isEmpty || _emptyStage != _EmptyStage.collapsed;
-    final label = isLoading
+    final label = (isLoading || isEmpty)
         ? 'Couverture médiatique'
         : 'Couverture médiatique (${widget.perspectives.length})';
 
@@ -1488,54 +1558,95 @@ class _PerspectivesInlineSectionState
       curve: Curves.easeInOut,
       alignment: Alignment.topCenter,
       child: shouldShowBand
-          // Disparition empty : à la fin du fade, le bandeau glisse vers la
-          // droite hors écran avant que l'`AnimatedSize` ne replie la hauteur.
-          ? AnimatedSlide(
-              duration: _kEmptySlideDuration,
-              curve: Curves.easeOutCubic,
-              offset: isEmpty && _emptyStage != _EmptyStage.none
-                  ? const Offset(1.1, 0)
-                  : Offset.zero,
-              // Fondu front-loadé : disparaît avant que le slide ne s'amorce.
-              child: AnimatedOpacity(
-                duration: _kEmptyFadeDuration,
-                curve: Curves.easeOut,
-                opacity: isEmpty
-                    ? (_emptyStage != _EmptyStage.none
-                        ? 0
-                        : _kEmptyInitialOpacity)
-                    : 1,
-                // Bande proto `--bg2` : fond #EBE0CC + filets noirs @0.06.
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: colors.backgroundSecondary,
-                    border: Border(
-                      top: BorderSide(
-                        color: Colors.black.withValues(
-                          alpha: isReady ? 0.06 : 0,
-                        ),
-                        width: 1,
-                      ),
-                      bottom: BorderSide(
-                        color: Colors.black.withValues(
-                          alpha: isReady ? 0.06 : 0,
-                        ),
-                        width: 1,
-                      ),
-                    ),
-                  ),
-                  padding: const EdgeInsets.fromLTRB(0, 16, 0, 6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildHeader(colors, textTheme, label, isLoading, isEmpty),
-                      if (isReady) _buildCarousel(variants),
+          // Disparition empty : fondu doux du bandeau puis repli de la hauteur
+          // par l'`AnimatedSize` (pas de glissement latéral).
+          ? AnimatedOpacity(
+              duration: _kEmptyFadeDuration,
+              curve: Curves.easeOut,
+              opacity: isEmpty
+                  ? (_emptyStage != _EmptyStage.none
+                      ? 0
+                      : _kEmptyInitialOpacity)
+                  : 1,
+              // Bande frostée edge-to-edge encastrée : teinte crème assombri
+              // translucide (laisse transparaître le parchemin du reader,
+              // reste plus foncée que les cartes) + flou verre + hairline
+              // chaude très douce haut/bas (creux secondaire, pas d'ombre).
+              child: _buildFrostedBand(
+                colors: colors,
+                isDark: isDark,
+                isReady: isReady,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeader(colors, textTheme, label, isLoading, isEmpty),
+                    if (isReady) ...[
+                      _buildCarousel(variants),
+                      // Libellé de polarisation déplacé SOUS le carrousel
+                      // (le header ne porte plus que le titre + la barre).
+                      _buildBandFooter(colors, textTheme),
+                    ] else if (isLoading) ...[
+                      // Squelette plein-format : la bande garde la stature de
+                      // l'état prêt (sinon un mince filet « ressemble à un bug »).
+                      _buildLoadingSkeleton(),
+                    ] else if (isEmpty) ...[
+                      _buildEmptyMessage(colors, textTheme),
                     ],
-                  ),
+                  ],
                 ),
               ),
             )
           : const SizedBox.shrink(),
+    );
+  }
+
+  /// Coque verre crème encastrée : la bande s'efface *derrière* le plan de
+  /// l'article (secondaire). Teinte crème assombri translucide composée sur le
+  /// parchemin de la page ⇒ rendu plus foncé que les cartes article (`surface
+  /// #FDFBF7`), qui « popent » du coup. Pas d'ombre portée (elle faisait
+  /// flotter/avancer la bande) : seulement une hairline chaude très douce
+  /// top + bottom, lue comme un léger creux. Padding interne `(0,16,0,6)`.
+  Widget _buildFrostedBand({
+    required FacteurColors colors,
+    required bool isDark,
+    required bool isReady,
+    required Widget child,
+  }) {
+    // Teinte quasi-invisible : à peine ~2 % sous le parchemin de la page. La
+    // zone ne se lit plus comme un panneau ; c'est la hairline qui délimite.
+    // Clair : crème translucide très léger. Sombre : backgroundPrimary discret.
+    final tint = isDark
+        ? colors.backgroundPrimary.withValues(alpha: 0.6)
+        : const Color.fromRGBO(232, 222, 203, 0.55);
+    // Web n'a pas de blur (no-op opaque) → teinte composée plus proche du fond.
+    final fallbackColor = isDark
+        ? colors.backgroundPrimary
+        : const Color.fromRGBO(237, 228, 211, 1);
+    // Hairline chaude nette mais fine : c'est la VRAIE séparation (élégante,
+    // marquée). Top + bottom, gardée sur isReady.
+    final hairlineColor = isDark
+        ? Colors.white.withValues(alpha: isReady ? 0.09 : 0)
+        : colors.border.withValues(alpha: isReady ? 0.7 : 0);
+
+    return ClipRect(
+      // ClipRect (bords droits) borne le BackdropFilter → vrai effet verre.
+      child: webBlurFallback(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        fallbackColor: fallbackColor,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: tint,
+            border: Border(
+              top: BorderSide(color: hairlineColor, width: 1),
+              bottom: BorderSide(color: hairlineColor, width: 1),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(0, 16, 0, 6),
+            child: child,
+          ),
+        ),
+      ),
     );
   }
 
@@ -1552,56 +1663,64 @@ class _PerspectivesInlineSectionState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Ligne 1 : libellé + compteur + barre spectre (flexible 70..150).
+          // Ligne 1 : libellé à gauche (FittedBox scaleDown absorbe les titres
+          // longs sans wrap), barre spectre (96 px) épinglée à droite et
+          // centrée verticalement sur le titre.
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.dmSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: colors.textPrimary,
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: colors.textPrimary,
+                    ),
                   ),
                 ),
               ),
               if (!isEmpty) ...[
                 const SizedBox(width: 11),
-                Flexible(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      minWidth: 70,
-                      maxWidth: 150,
-                    ),
-                    child: isLoading
-                        ? const CoverageSpectrumBarShimmer()
-                        : CoverageSpectrumBar(
-                            distribution: widget.biasDistribution,
-                          ),
-                  ),
+                SizedBox(
+                  width: 96,
+                  child: isLoading
+                      ? const CoverageSpectrumBarShimmer()
+                      : CoverageSpectrumBar(
+                          distribution: widget.biasDistribution,
+                        ),
                 ),
               ],
             ],
           ),
-          // Ligne 2 : badge divergence (shrink si null) + bouton info. Rendue
-          // seulement quand la couverture est prête (données présentes).
-          if (widget.status == PerspectivesSectionStatus.ready) ...[
-            const SizedBox(height: 12),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                DivergenceInlineBadge(divergenceLevel: widget.divergenceLevel),
-                const SizedBox(width: 8),
-                _HighlightInfoButton(
-                  colors: colors,
-                  onTap: () => _showHighlightInfo(context, colors, textTheme),
-                ),
-              ],
+        ],
+      ),
+    );
+  }
+
+  /// Pied de bande, sous le carrousel : libellé de polarisation à gauche +
+  /// bouton info (surlignage) à droite. Rendu uniquement quand la couverture
+  /// est prête (le `if (isReady)` du parent garantit déjà la condition).
+  Widget _buildBandFooter(FacteurColors colors, TextTheme textTheme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 0, 10, 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: DivergenceInlineBadge(
+              divergenceLevel: widget.divergenceLevel,
+              scale: 1.45,
             ),
-          ],
+          ),
+          const SizedBox(width: 8),
+          _HighlightInfoButton(
+            colors: colors,
+            onTap: () => _showHighlightInfo(context, colors, textTheme),
+          ),
         ],
       ),
     );
@@ -1632,6 +1751,43 @@ class _PerspectivesInlineSectionState
               count: widget.perspectives.length,
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Squelette du carrousel pendant le chargement : 2 cartes placeholder au
+  /// gabarit réel (248×192) avec shimmer, dans le même viewport à hauteur fixe
+  /// que l'état prêt → la bande ne se réduit pas à un filet.
+  Widget _buildLoadingSkeleton() {
+    return const SizedBox(
+      height: _kCarouselViewportHeight,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(18, 15, 18, 16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _CoverageCardSkeleton(),
+            SizedBox(width: 13),
+            _CoverageCardSkeleton(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Corps de l'état vide : message explicite, lisible pendant la pause de
+  /// lecture avant l'escamotage en fondu.
+  Widget _buildEmptyMessage(FacteurColors colors, TextTheme textTheme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
+      child: Text(
+        "Pas d'autre source trouvée",
+        textAlign: TextAlign.center,
+        style: textTheme.bodySmall?.copyWith(
+          color: colors.textTertiary,
         ),
       ),
     );
@@ -2032,14 +2188,6 @@ class AnalysisSheetData {
   });
 }
 
-/// Chip « vocabulaire » dérivé d'un `highlight_span` : mot + bord politique.
-class VocabChip {
-  final String text;
-  final String bias;
-
-  const VocabChip({required this.text, required this.bias});
-}
-
 /// Découpe le texte d'analyse en (essentiel partagé, là où ça diverge) sur le
 /// **1ᵉʳ `\n\n`**. Absent → essentiel vide, tout sous « divergent ». Trim.
 ({String essentiel, String divergent}) splitAnalysisSections(String raw) {
@@ -2049,41 +2197,6 @@ class VocabChip {
     essentiel: raw.substring(0, idx).trim(),
     divergent: raw.substring(idx + 2).trim(),
   );
-}
-
-/// Couleur du bord politique à partir de sa chaîne (`left`…`right`).
-/// Délègue au mapping partagé [Perspective.colorForStance].
-Color biasColorFromString(String bias, FacteurColors colors) =>
-    Perspective.colorForStance(bias, colors);
-
-/// Agrège tous les `highlight_spans` des perspectives → un chip par groupe de
-/// `bias` (le mot de **poids max**), dédupé par mot minuscule, ordonné L→R.
-List<VocabChip> deriveVocabChips(List<Perspective> perspectives) {
-  const order = ['left', 'center-left', 'center', 'center-right', 'right'];
-  final bestByBias = <String, HighlightSpan>{};
-  for (final p in perspectives) {
-    for (final span in p.highlightSpans) {
-      if (span.text.trim().isEmpty) continue;
-      final existing = bestByBias[span.bias];
-      if (existing == null || (span.weight ?? 0) > (existing.weight ?? 0)) {
-        bestByBias[span.bias] = span;
-      }
-    }
-  }
-
-  final biasesInOrder = <String>[
-    ...order.where(bestByBias.containsKey),
-    ...bestByBias.keys.where((b) => !order.contains(b)),
-  ];
-  final seen = <String>{};
-  final chips = <VocabChip>[];
-  for (final bias in biasesInOrder) {
-    final span = bestByBias[bias]!;
-    final word = span.text.trim();
-    if (!seen.add(word.toLowerCase())) continue;
-    chips.add(VocabChip(text: word, bias: bias));
-  }
-  return chips;
 }
 
 /// Ouvre le bottom sheet d'analyse. Scrim `rgba(20,16,12,.52)` sans blur ;
@@ -2303,7 +2416,6 @@ class _AnalysisSheet extends StatelessWidget {
       case PerspectivesAnalysisState.done:
         final (:essentiel, :divergent) =
             splitAnalysisSections(value.text ?? '');
-        final chips = deriveVocabChips(perspectives);
         final bodyStyle = (textTheme.bodyMedium ?? const TextStyle()).copyWith(
           fontSize: 14.5,
           height: 1.62,
@@ -2324,18 +2436,9 @@ class _AnalysisSheet extends StatelessWidget {
               MarkdownText(text: divergent, style: bodyStyle),
               const SizedBox(height: 18),
             ],
-            if (chips.isNotEmpty) ...[
-              _sectionTitle('3 · LE VOCABULAIRE QUI SÉPARE', colors),
-              const SizedBox(height: 9),
-              Wrap(
-                spacing: 7,
-                runSpacing: 7,
-                children: [
-                  for (final chip in chips) _vocabChip(chip, colors),
-                ],
-              ),
-              const SizedBox(height: 18),
-            ],
+            // DÉSACTIVÉ (T1) : section « 3 · LE VOCABULAIRE QUI SÉPARE » retirée
+            // (dérivée du highlighting des biais, désormais coupé). Sections 1 &
+            // 2 (prose Analyse Facteur) + disclaimer conservés.
             Divider(
               height: 1,
               thickness: 1,
@@ -2376,36 +2479,6 @@ class _AnalysisSheet extends StatelessWidget {
         fontWeight: FontWeight.w700,
         letterSpacing: 0.7,
         color: colors.primary,
-      ),
-    );
-  }
-
-  Widget _vocabChip(VocabChip chip, FacteurColors colors) {
-    final color = biasColorFromString(chip.bias, colors);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(100),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 7,
-            height: 7,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            '« ${chip.text} »',
-            style: GoogleFonts.dmSans(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              color: colors.textPrimary,
-            ),
-          ),
-        ],
       ),
     );
   }

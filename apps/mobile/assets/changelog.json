@@ -2,7 +2,11 @@
   "unreleased": [
     {
       "tag": "Couverture médiatique",
-      "summary": "La couverture médiatique reste affichée sous l'article : compare les titres dans un carrousel, et « Analyse Facteur » remonte une synthèse neutre en un tap."
+      "summary": "La couverture médiatique reste affichée sous l'article : compare les titres dans un carrousel, et « Analyse Facteur » remonte une synthèse neutre en un tap. Présentation allégée et plus lisible, qui se détache mieux de l'article."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "En-tête d'article épuré : un tap sur la source ouvre sa fiche, et les titres comparés s'affichent plus sobrement."
     },
     {
       "tag": "Corrections",

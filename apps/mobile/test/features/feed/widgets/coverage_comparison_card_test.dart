@@ -54,7 +54,7 @@ GoRouter _router(Widget home) => GoRouter(
 /// elle exige donc une hauteur bornée (le carrousel la fournit en prod).
 Widget _host(Perspective p) => Center(
       child: SizedBox(
-        height: 168,
+        height: 192,
         child: CoverageComparisonCard(perspective: p),
       ),
     );
@@ -76,7 +76,8 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
     // FacteurCard.onTap await `HapticFeedback.mediumImpact()` avant de router.
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(SystemChannels.platform, (call) async => null);
+        .setMockMethodCallHandler(
+            SystemChannels.platform, (call) async => null);
   });
 
   tearDown(() {
@@ -88,9 +89,20 @@ void main() {
     await tester.pumpWidget(_app(_host(_persp())));
     await tester.pump(const Duration(seconds: 1));
 
+    expect(tester.getSize(find.byType(CoverageComparisonCard)).height, 192);
     final titleY = tester.getTopLeft(find.byType(DiffTitle)).dy;
     final sourceY = tester.getTopLeft(find.text('Libération')).dy;
     expect(titleY, lessThan(sourceY));
+  });
+
+  testWidgets('titre en 16.5 px et tronqué au plus tôt après 5 lignes',
+      (tester) async {
+    await tester.pumpWidget(_app(_host(_persp())));
+    await tester.pump(const Duration(seconds: 1));
+
+    final title = tester.widget<DiffTitle>(find.byType(DiffTitle));
+    expect(title.maxLines, 5);
+    expect(title.baseStyle.fontSize, 16.5);
   });
 
   testWidgets('chip biais en MAJUSCULES', (tester) async {
@@ -127,7 +139,8 @@ void main() {
     expect(find.byIcon(clock), findsNothing);
   });
 
-  testWidgets('tap → route content-external avec la perspective', (tester) async {
+  testWidgets('tap → route content-external avec la perspective',
+      (tester) async {
     await tester.pumpWidget(_app(_host(_persp())));
     await tester.pump(const Duration(seconds: 1));
 

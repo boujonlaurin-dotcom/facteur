@@ -53,9 +53,11 @@ class CoverageComparisonCard extends StatelessWidget {
         backgroundColor: colors.surface,
         borderRadius: 16,
         padding: const EdgeInsets.all(15),
+        // Ombre allégée (0.10 → 0.06) : la bande frostée porte déjà sa propre
+        // ombre douce, inutile de cumuler des ombres lourdes à l'intérieur.
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.10),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -69,15 +71,15 @@ class CoverageComparisonCard extends StatelessWidget {
                 highlightSpans: perspective.highlightSpans,
                 sharedTokens: perspective.sharedTokens,
                 biasColor: biasColor,
-                maxLines: 4,
+                maxLines: 5,
                 baseStyle: textTheme.bodyMedium?.copyWith(
-                      fontSize: 15.5,
+                      fontSize: 16.5,
                       height: 1.42,
                       letterSpacing: -0.1,
                       color: colors.textPrimary,
                     ) ??
                     GoogleFonts.dmSans(
-                      fontSize: 15.5,
+                      fontSize: 16.5,
                       height: 1.42,
                       letterSpacing: -0.1,
                       color: colors.textPrimary,

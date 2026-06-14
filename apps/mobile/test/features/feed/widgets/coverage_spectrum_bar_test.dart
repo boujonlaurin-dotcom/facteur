@@ -21,8 +21,21 @@ void main() {
     );
   }
 
+  // Les 5 segments sont désormais des AnimatedContainer toujours montés (largeur
+  // explicite animée, 0 si count nul) — cf. refonte carrousel. On lit la largeur
+  // via les contraintes (width → BoxConstraints.tightFor → maxWidth).
+  List<double> segmentWidths(WidgetTester tester) => tester
+      .widgetList<AnimatedContainer>(
+        find.descendant(
+          of: find.byType(CoverageSpectrumBar),
+          matching: find.byType(AnimatedContainer),
+        ),
+      )
+      .map((c) => c.constraints?.maxWidth ?? 0.0)
+      .toList();
+
   group('CoverageSpectrumBar', () {
-    testWidgets('hauteur fixe 8, largeur déléguée, 5 segments distincts',
+    testWidgets('hauteur fixe 8, largeur déléguée, 5 segments montés',
         (tester) async {
       await tester.pumpWidget(host(const {
         'left': 1,
@@ -45,16 +58,17 @@ void main() {
       // Largeur non fixée par la barre (déléguée au parent).
       expect(sized.width, isNull);
 
-      expect(
-        find.descendant(
-          of: find.byType(CoverageSpectrumBar),
-          matching: find.byType(Expanded),
-        ),
-        findsNWidgets(5),
-      );
+      // 5 segments toujours montés ; distribution uniforme → 5 largeurs égales > 0.
+      final widths = segmentWidths(tester);
+      expect(widths.length, 5);
+      expect(widths.every((w) => w > 0), isTrue);
+      for (final w in widths) {
+        expect(w, closeTo(widths.first, 0.5));
+      }
     });
 
-    testWidgets('flex proportionnel à la distribution brute', (tester) async {
+    testWidgets('largeur proportionnelle à la distribution brute',
+        (tester) async {
       await tester.pumpWidget(host(const {
         'left': 4,
         'center-left': 0,
@@ -64,30 +78,26 @@ void main() {
       }));
       await tester.pumpAndSettle();
 
-      final expandeds = tester
-          .widgetList<Expanded>(
-            find.descendant(
-              of: find.byType(CoverageSpectrumBar),
-              matching: find.byType(Expanded),
-            ),
-          )
-          .toList();
-
-      expect(expandeds.map((e) => e.flex).toList(), [4, 2]);
+      final widths = segmentWidths(tester);
+      expect(widths.length, 5);
+      // Seuls left (idx 0) et center (idx 2) ont une largeur ; ratio 4:2 = 2:1.
+      final visible = [
+        for (var i = 0; i < widths.length; i++)
+          if (widths[i] > 0) (i, widths[i]),
+      ];
+      expect(visible.map((e) => e.$1).toList(), [0, 2]);
+      expect(visible[0].$2, closeTo(visible[1].$2 * 2, 0.5));
     });
 
-    testWidgets('ne rend aucun segment pour une distribution vide',
+    testWidgets('aucune largeur de segment pour une distribution vide',
         (tester) async {
       await tester.pumpWidget(host(const <String, int>{}));
       await tester.pumpAndSettle();
 
-      expect(
-        find.descendant(
-          of: find.byType(CoverageSpectrumBar),
-          matching: find.byType(Expanded),
-        ),
-        findsNothing,
-      );
+      final widths = segmentWidths(tester);
+      // 5 segments montés mais tous à largeur nulle (rien de visible).
+      expect(widths.length, 5);
+      expect(widths.every((w) => w == 0), isTrue);
     });
   });
 }

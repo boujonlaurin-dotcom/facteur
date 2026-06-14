@@ -53,14 +53,26 @@ Future<void> _pumpInline(
 }
 
 void main() {
-  testWidgets('loading : libellé + shimmer, pas de carrousel ni CTA',
+  testWidgets('loading : libellé + shimmer + squelette plein-format',
       (tester) async {
     await _pumpInline(tester, status: PerspectivesSectionStatus.loading);
 
     expect(find.text('Couverture médiatique'), findsOneWidget);
     expect(find.byType(CoverageSpectrumBarShimmer), findsOneWidget);
+    // Squelette : le carrousel garde sa hauteur (pas un mince filet), sans
+    // vraies cartes ni CTA, et sans message « … ».
+    final horizontalCarousel = tester
+        .widgetList<SingleChildScrollView>(find.byType(SingleChildScrollView))
+        .singleWhere(
+          (scrollView) => scrollView.scrollDirection == Axis.horizontal,
+        );
+    expect(
+      tester.getSize(find.byWidget(horizontalCarousel)).height,
+      223,
+    );
     expect(find.byType(CoverageComparisonCard), findsNothing);
     expect(find.text('Analyse Facteur'), findsNothing);
+    expect(find.textContaining('Recherche'), findsNothing);
   });
 
   test('partial empty response keeps perspectives status loading', () {
@@ -107,31 +119,34 @@ void main() {
     );
   });
 
-  testWidgets('empty fades out after delay then collapses', (tester) async {
+  testWidgets('empty : message lisible puis fondu doux et collapse',
+      (tester) async {
     await _pumpInline(tester, status: PerspectivesSectionStatus.empty);
 
-    expect(find.text('Couverture médiatique (0)'), findsOneWidget);
+    // Titre sans count + message explicite, lisibles pendant la pause.
+    expect(find.text('Couverture médiatique'), findsOneWidget);
+    expect(find.text("Pas d'autre source trouvée"), findsOneWidget);
     expect(find.byType(CoverageSpectrumBarShimmer), findsNothing);
     expect(
       tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
-      0.28,
+      1.0,
     );
 
     // Pause de lecture : le bandeau reste visible.
-    await tester.pump(const Duration(milliseconds: 1999));
-    expect(find.text('Couverture médiatique (0)'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1799));
+    expect(find.text("Pas d'autre source trouvée"), findsOneWidget);
 
-    // Timer 2000 ms → fading + slide démarrent.
+    // Timer 1800 ms → fondu démarre.
     await tester.pump(const Duration(milliseconds: 1));
     expect(
       tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
       0,
     );
 
-    // Collapse après le slide (650 ms) + AnimatedSize (250 ms).
-    await tester.pump(const Duration(milliseconds: 650));
+    // Collapse après le fondu (450 ms) + AnimatedSize (250 ms).
+    await tester.pump(const Duration(milliseconds: 450));
     await tester.pump(const Duration(milliseconds: 250));
-    expect(find.text('Couverture médiatique (0)'), findsNothing);
+    expect(find.text("Pas d'autre source trouvée"), findsNothing);
   });
 
   testWidgets('ready : carrousel de cartes + carte CTA, pas de caret',
@@ -146,6 +161,19 @@ void main() {
     expect(find.text('Couverture médiatique (2)'), findsOneWidget);
     expect(find.byType(CoverageSpectrumBar), findsOneWidget);
     expect(find.byType(CoverageComparisonCard), findsNWidgets(2));
+    expect(
+      tester.getSize(find.byType(CoverageComparisonCard).first).height,
+      192,
+    );
+    final horizontalCarousel = tester
+        .widgetList<SingleChildScrollView>(find.byType(SingleChildScrollView))
+        .singleWhere(
+          (scrollView) => scrollView.scrollDirection == Axis.horizontal,
+        );
+    expect(
+      tester.getSize(find.byWidget(horizontalCarousel)).height,
+      223,
+    );
     // Carte CTA Analyse en fin de carrousel.
     expect(find.text('Analyse Facteur'), findsOneWidget);
     // Le disclaimer Mistral n'est plus inline (il vit dans le bottom sheet).

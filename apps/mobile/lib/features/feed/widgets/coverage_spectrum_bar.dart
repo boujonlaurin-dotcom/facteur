@@ -29,6 +29,11 @@ class CoverageSpectrumBar extends StatelessWidget {
     'right',
   ];
 
+  // Lissage de l'évolution de la barre quand `distribution` change (refetch
+  // incrémental ~2.2 s) : chaque segment grandit/rétrécit au lieu de sauter.
+  static const _kSegmentAnim = Duration(milliseconds: 350);
+  static const _kGap = 2.0;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
@@ -39,36 +44,49 @@ class CoverageSpectrumBar extends StatelessWidget {
       colors.biasCenterRight,
       colors.biasRight,
     ];
-    final visibleSegments = List.generate(
-      _keys.length,
-      (index) =>
-          (count: distribution[_keys[index]] ?? 0, color: segmentColors[index]),
-    ).where((segment) => segment.count > 0).toList();
+    final counts =
+        List.generate(_keys.length, (i) => distribution[_keys[i]] ?? 0);
+    final total = counts.fold<int>(0, (sum, c) => sum + c);
 
     return SizedBox(
       height: 8,
-      child: Row(
-        // stretch : sans ça, le DecoratedBox sans enfant reçoit une contrainte
-        // cross-axis loose (0..8) et se peint à hauteur 0 → invisible. cf.
-        // coverage_spectrum_visible_test.dart.
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: List.generate(visibleSegments.length, (i) {
-          final segment = visibleSegments[i];
-          return Expanded(
-            flex: segment.count,
-            child: Padding(
-              padding: EdgeInsets.only(
-                right: i == visibleSegments.length - 1 ? 0 : 2,
-              ),
-              child: DecoratedBox(
+      // LayoutBuilder : on calcule des largeurs explicites pour pouvoir les
+      // animer (les `flex` d'`Expanded` ne s'animent pas → saut visible).
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Les 5 segments sont toujours montés (largeur 0 si count 0) pour
+          // qu'un nouveau segment *grandisse* de 0 au lieu d'apparaître sec.
+          final visibleCount = counts.where((c) => c > 0).length;
+          final totalGap = visibleCount > 1 ? (visibleCount - 1) * _kGap : 0.0;
+          final barWidth =
+              (constraints.maxWidth - totalGap).clamp(0.0, constraints.maxWidth);
+
+          return Row(
+            // stretch : sans ça, un AnimatedContainer sans enfant reçoit une
+            // contrainte cross-axis loose (0..8) → hauteur 0, invisible. cf.
+            // coverage_spectrum_visible_test.dart.
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: List.generate(_keys.length, (i) {
+              final count = counts[i];
+              final width = total > 0 ? barWidth * count / total : 0.0;
+              // Gap à droite seulement s'il reste un segment visible après.
+              final hasLaterVisible =
+                  counts.skip(i + 1).any((c) => c > 0);
+              final rightGap =
+                  count > 0 && hasLaterVisible ? _kGap : 0.0;
+              return AnimatedContainer(
+                duration: _kSegmentAnim,
+                curve: Curves.easeOutCubic,
+                width: width,
+                margin: EdgeInsets.only(right: rightGap),
                 decoration: BoxDecoration(
-                  color: segment.color,
+                  color: segmentColors[i],
                   borderRadius: _radius,
                 ),
-              ),
-            ),
+              );
+            }),
           );
-        }),
+        },
       ),
     );
   }
@@ -90,7 +108,7 @@ class _CoverageSpectrumBarShimmerState extends State<CoverageSpectrumBarShimmer>
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1500),
       vsync: this,
     )..repeat();
   }
@@ -104,8 +122,8 @@ class _CoverageSpectrumBarShimmerState extends State<CoverageSpectrumBarShimmer>
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final baseColor = colors.textTertiary.withValues(alpha: 0.16);
-    final highlightColor = Colors.white.withValues(alpha: 0.72);
+    final baseColor = colors.textTertiary.withValues(alpha: 0.12);
+    final highlightColor = Colors.white.withValues(alpha: 0.32);
 
     return SizedBox(
       height: 8,
